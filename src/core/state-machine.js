@@ -31,6 +31,19 @@ export function nextStatus(current, event) {
         { type: "post_error_comment", message: event.message || "run failed" },
         { type: "mark_badge_red" },
       ]);
+    case "review_approved":
+      if (current !== "in_review") {
+        return unchanged([{ type: "error", message: `cannot approve from ${current}` }]);
+      }
+      return change("done", [{ type: "set_completed_at" }]);
+    case "review_rejected":
+      if (current !== "in_review") {
+        return unchanged([{ type: "error", message: `cannot reject from ${current}` }]);
+      }
+      return change("in_progress", [
+        { type: "post_review_comment", notes: event.notes || "" },
+        { type: "clear_error_text" },
+      ]);
     default:
       return unchanged([{ type: "error", message: `unknown event ${event.type}` }]);
   }
