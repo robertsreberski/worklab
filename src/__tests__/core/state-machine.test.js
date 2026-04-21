@@ -50,3 +50,35 @@ describe("in_review transitions", () => {
     expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
   });
 });
+
+describe("human_move transitions", () => {
+  it.each([
+    ["todo", "in_progress"],
+    ["in_progress", "todo"],
+    ["in_progress", "in_review"],
+    ["in_review", "done"],
+    ["in_review", "in_progress"],
+    ["done", "todo"],
+    ["done", "in_progress"],
+    ["done", "in_review"],
+  ])("%s → %s via human_move is allowed", (from, to) => {
+    const r = nextStatus(from, { type: "human_move", target: to });
+    expect(r.status).toBe(to);
+  });
+
+  it("rejects invalid target", () => {
+    const r = nextStatus("todo", { type: "human_move", target: "mystery" });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects.some(s => s.type === "error")).toBe(true);
+  });
+
+  it("sets completed_at on human_move → done", () => {
+    const r = nextStatus("in_review", { type: "human_move", target: "done" });
+    expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+  });
+
+  it("clears completed_at on human_move from done → anywhere else", () => {
+    const r = nextStatus("done", { type: "human_move", target: "todo" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_completed_at" });
+  });
+});
