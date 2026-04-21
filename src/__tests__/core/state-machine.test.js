@@ -82,3 +82,53 @@ describe("human_move transitions", () => {
     expect(r.sideEffects).toContainEqual({ type: "clear_completed_at" });
   });
 });
+
+describe("transition coverage", () => {
+  it("rejects run_requested from invalid states with error", () => {
+    for (const s of ["in_review", "done"]) {
+      const r = nextStatus(s, { type: "run_requested", executorAgent: "x" });
+      expect(r.status).toBe(s);
+      expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
+    }
+  });
+
+  it("unknown event type yields error", () => {
+    const r = nextStatus("todo", { type: "bogus" });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects[0].type).toBe("error");
+  });
+
+  it("run_completed from non-in_progress state → error", () => {
+    const r = nextStatus("todo", { type: "run_completed", reviewerAgent: null });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
+  });
+
+  it("run_failed from non-in_progress state → error", () => {
+    const r = nextStatus("todo", { type: "run_failed", message: "oops" });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
+  });
+
+  it("review_approved from non-in_review state → error", () => {
+    const r = nextStatus("todo", { type: "review_approved" });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
+  });
+
+  it("review_rejected from non-in_review state → error", () => {
+    const r = nextStatus("todo", { type: "review_rejected", notes: "nope" });
+    expect(r.status).toBe("todo");
+    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
+  });
+
+  it("run_failed without message falls back to default message", () => {
+    const r = nextStatus("in_progress", { type: "run_failed" });
+    expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "run failed" });
+  });
+
+  it("review_rejected without notes defaults to empty string", () => {
+    const r = nextStatus("in_review", { type: "review_rejected" });
+    expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "" });
+  });
+});
