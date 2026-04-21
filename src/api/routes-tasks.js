@@ -97,4 +97,37 @@ export function registerTaskRoutes(app, { db, broker }) {
     broker.broadcast("global", { type: "task_updated", id: req.params.id });
     res.json({ task: rowToTask(row) });
   });
+
+  app.delete("/api/tasks/:id", (req, res) => {
+    const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
+    if (r.changes === 0) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+    broker.broadcast("global", { type: "task_deleted", id: req.params.id });
+    res.status(204).end();
+  });
+
+  app.post("/api/tasks/:id/comments", (req, res) => {
+    const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
+    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+    const { body } = req.body || {};
+    if (!body || typeof body !== "string") {
+      return res.status(400).json({ error: { code: "validation", message: "body is required" } });
+    }
+    const id = newCommentId();
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
+      VALUES (?, ?, 'human', NULL, ?, ?)
+    `).run(id, req.params.id, body, now);
+    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, req.params.id);
+    broker.broadcast("global", { type: "task_updated", id: req.params.id });
+    const row = db.prepare("SELECT * FROM task_comments WHERE id = ?").get(id);
+    res.status(201).json({ comment: row });
+  });
+
+  app.get("/api/tasks/:id/runs", (req, res) => {
+    const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
+    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+    const runs = db.prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC").all(req.params.id);
+    res.json({ runs });
+  });
 }

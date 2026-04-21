@@ -106,3 +106,53 @@ describe("PATCH /api/tasks/:id status", () => {
     expect(res.body.task.completed_at).toBeNull();
   });
 });
+
+describe("DELETE /api/tasks/:id", () => {
+  it("removes task and cascades comments", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "hi" }).expect(201);
+    await agent.delete(`/api/tasks/${task.id}`).expect(204);
+    expect(db.prepare("SELECT COUNT(*) AS c FROM tasks").get().c).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS c FROM task_comments").get().c).toBe(0);
+  });
+
+  it("returns 404 for missing", async () => {
+    const { agent } = makeTestServer();
+    await agent.delete("/api/tasks/missing").expect(404);
+  });
+});
+
+describe("POST /api/tasks/:id/comments", () => {
+  it("creates a human comment", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "a note" }).expect(201);
+    expect(res.body.comment.body).toBe("a note");
+    expect(res.body.comment.author_type).toBe("human");
+  });
+
+  it("rejects empty body", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.post(`/api/tasks/${task.id}/comments`).send({}).expect(400);
+  });
+
+  it("broadcasts task_updated", async () => {
+    const { agent, broker } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const events = [];
+    broker.broadcast = (ch, p) => { if (ch === "global") events.push(p); };
+    await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "x" });
+    expect(events.some(e => e.type === "task_updated")).toBe(true);
+  });
+});
+
+describe("GET /api/tasks/:id/runs", () => {
+  it("returns empty list for new task", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.get(`/api/tasks/${task.id}/runs`).expect(200);
+    expect(res.body).toEqual({ runs: [] });
+  });
+});
