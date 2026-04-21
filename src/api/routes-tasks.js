@@ -1,4 +1,5 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
+import { nextStatus, STATUSES } from "../core/state-machine.js";
 
 function rowToTask(row) {
   if (!row) return null;
@@ -55,6 +56,8 @@ export function registerTaskRoutes(app, { db, broker }) {
 
     const fields = [];
     const values = [];
+
+    // Non-status fields
     for (const k of PATCHABLE) {
       if (k in req.body) {
         fields.push(`${k} = ?`);
@@ -62,17 +65,33 @@ export function registerTaskRoutes(app, { db, broker }) {
       }
     }
 
-    // Status handled in T18 (via state machine). For now, PATCH with only status and no other fields is a no-op.
-    if (fields.length === 0 && !("status" in req.body)) {
+    // Status handling via state machine
+    if ("status" in req.body) {
+      if (!STATUSES.includes(req.body.status)) {
+        return res.status(400).json({ error: { code: "validation", message: "invalid status" } });
+      }
+      const result = nextStatus(existing.status, { type: "human_move", target: req.body.status });
+      if (result.sideEffects.some(se => se.type === "error")) {
+        return res.status(400).json({
+          error: { code: "invalid_transition", message: result.sideEffects.find(se => se.type === "error").message },
+        });
+      }
+      fields.push("status = ?");
+      values.push(result.status);
+      for (const se of result.sideEffects) {
+        if (se.type === "set_completed_at") { fields.push("completed_at = ?"); values.push(Date.now()); }
+        if (se.type === "clear_completed_at") { fields.push("completed_at = ?"); values.push(null); }
+      }
+    }
+
+    if (fields.length === 0) {
       return res.json({ task: rowToTask(existing) });
     }
 
-    if (fields.length > 0) {
-      fields.push("updated_at = ?");
-      values.push(Date.now());
-      values.push(req.params.id);
-      db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-    }
+    fields.push("updated_at = ?");
+    values.push(Date.now());
+    values.push(req.params.id);
+    db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
     broker.broadcast("global", { type: "task_updated", id: req.params.id });

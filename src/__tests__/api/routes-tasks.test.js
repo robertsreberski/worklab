@@ -75,3 +75,34 @@ describe("PATCH /api/tasks/:id", () => {
     expect(got).toEqual({ type: "task_updated", id: task.id });
   });
 });
+
+describe("PATCH /api/tasks/:id status", () => {
+  it("human_move todo → in_progress when allowed", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "in_progress" });
+    expect(res.body.task.status).toBe("in_progress");
+  });
+
+  it("invalid status value returns 400", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ status: "bogus" }).expect(400);
+  });
+
+  it("setting status=done sets completed_at", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ status: "in_review" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "done" });
+    expect(res.body.task.completed_at).toBeTruthy();
+  });
+
+  it("moving done → todo clears completed_at", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ status: "done" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "todo" });
+    expect(res.body.task.completed_at).toBeNull();
+  });
+});
