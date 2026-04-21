@@ -40,3 +40,38 @@ describe("POST /api/tasks", () => {
     expect(captured).toMatchObject({ type: "task_created" });
   });
 });
+
+describe("GET /api/tasks/:id", () => {
+  it("returns 404 for missing task", async () => {
+    const { agent } = makeTestServer();
+    await agent.get("/api/tasks/nope").expect(404);
+  });
+
+  it("returns task with comments and runs arrays", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+    expect(res.body.task.id).toBe(task.id);
+    expect(res.body.comments).toEqual([]);
+    expect(res.body.runs).toEqual([]);
+  });
+});
+
+describe("PATCH /api/tasks/:id", () => {
+  it("updates title, description, instructions", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "orig" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ title: "new", description: "desc" });
+    expect(res.body.task.title).toBe("new");
+    expect(res.body.task.description).toBe("desc");
+  });
+
+  it("PATCH broadcasts task_updated", async () => {
+    const { agent, broker } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "a" });
+    let got = null;
+    broker.broadcast = (ch, p) => { if (ch === "global" && p.type === "task_updated") got = p; };
+    await agent.patch(`/api/tasks/${task.id}`).send({ title: "b" });
+    expect(got).toEqual({ type: "task_updated", id: task.id });
+  });
+});
