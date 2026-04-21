@@ -14,3 +14,24 @@ describe("nextStatus", () => {
     expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("no executor") });
   });
 });
+
+describe("in_progress transitions", () => {
+  it("run_completed with reviewer → in_review, spawn_reviewer", () => {
+    const r = nextStatus("in_progress", { type: "run_completed", reviewerAgent: "checker" });
+    expect(r.status).toBe("in_review");
+    expect(r.sideEffects).toContainEqual({ type: "spawn_reviewer", agentName: "checker" });
+  });
+
+  it("run_completed without reviewer → in_review, no spawn", () => {
+    const r = nextStatus("in_progress", { type: "run_completed", reviewerAgent: null });
+    expect(r.status).toBe("in_review");
+    expect(r.sideEffects.some(s => s.type === "spawn_reviewer")).toBe(false);
+  });
+
+  it("run_failed → stays in_progress, posts error comment, red badge", () => {
+    const r = nextStatus("in_progress", { type: "run_failed", message: "timeout" });
+    expect(r.status).toBe("in_progress");
+    expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "timeout" });
+    expect(r.sideEffects).toContainEqual({ type: "mark_badge_red" });
+  });
+});
