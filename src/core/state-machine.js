@@ -44,6 +44,15 @@ export function nextStatus(current, event) {
         { type: "post_review_comment", notes: event.notes || "" },
         { type: "clear_error_text" },
       ]);
+    case "human_move": {
+      if (!STATUSES.includes(event.target)) {
+        return unchanged([{ type: "error", message: `invalid target ${event.target}` }]);
+      }
+      const sideEffects = [];
+      if (event.target === "done") sideEffects.push({ type: "set_completed_at" });
+      if (current === "done" && event.target !== "done") sideEffects.push({ type: "clear_completed_at" });
+      return change(event.target, sideEffects);
+    }
     default:
       return unchanged([{ type: "error", message: `unknown event ${event.type}` }]);
   }
