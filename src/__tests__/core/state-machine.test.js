@@ -35,3 +35,18 @@ describe("in_progress transitions", () => {
     expect(r.sideEffects).toContainEqual({ type: "mark_badge_red" });
   });
 });
+
+describe("in_review transitions", () => {
+  it("review_approved → done, set_completed_at", () => {
+    const r = nextStatus("in_review", { type: "review_approved" });
+    expect(r.status).toBe("done");
+    expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+  });
+
+  it("review_rejected → in_progress, post comment, clear error", () => {
+    const r = nextStatus("in_review", { type: "review_rejected", notes: "not ok" });
+    expect(r.status).toBe("in_progress");
+    expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "not ok" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
+  });
+});
