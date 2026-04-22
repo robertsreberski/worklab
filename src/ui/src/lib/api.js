@@ -11,12 +11,33 @@ async function request(method, path, body) {
 }
 
 export const api = {
-  listTasks: () => request("GET", "/tasks"),
+  // tasks
+  listTasks: (query) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`),
   getTask: (id) => request("GET", `/tasks/${id}`),
   createTask: (data) => request("POST", "/tasks", data),
   patchTask: (id, patch) => request("PATCH", `/tasks/${id}`, patch),
   deleteTask: (id) => request("DELETE", `/tasks/${id}`),
   addComment: (id, body) => request("POST", `/tasks/${id}/comments`, { body }),
+  runTask: (id) => request("POST", `/tasks/${id}/run`),
+  cancelTask: (id) => request("POST", `/tasks/${id}/cancel`),
+  // runs
+  getRun: (id) => request("GET", `/runs/${id}`),
+  // settings
   getSettings: () => request("GET", "/settings"),
   patchSettings: (patch) => request("PATCH", "/settings", patch),
+  // agents
+  listAgents: () => request("GET", "/agents"),
+  getAgent: (name) => request("GET", `/agents/${name}`),
+  createAgent: (data) => request("POST", "/agents", data),
+  patchAgent: (name, patch) => request("PATCH", `/agents/${name}`, patch),
+  deleteAgent: (name) => request("DELETE", `/agents/${name}`),
+  // skills
+  listSkills: () => request("GET", "/skills"),
+  getSkill: (name) => request("GET", `/skills/${name}`),
+  createSkill: (data) => request("POST", "/skills", data),
+  patchSkill: (name, patch) => request("PATCH", `/skills/${name}`, patch),
+  deleteSkill: (name) => request("DELETE", `/skills/${name}`),
+  // mcp
+  getMcpConfig: () => request("GET", "/mcp"),
+  putMcpConfig: (data) => request("PUT", "/mcp", data),
 };

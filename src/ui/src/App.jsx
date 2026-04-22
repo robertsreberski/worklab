@@ -2,6 +2,10 @@ import { useEffect, useState } from "preact/hooks";
 import { Kanban } from "./routes/Kanban.jsx";
 import { TaskDetail } from "./routes/TaskDetail.jsx";
 import { Settings } from "./routes/Settings.jsx";
+import { Agents } from "./routes/Agents.jsx";
+import { AgentEdit } from "./routes/AgentEdit.jsx";
+import { Skills } from "./routes/Skills.jsx";
+import { SkillEdit } from "./routes/SkillEdit.jsx";
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -21,6 +25,10 @@ export function App() {
   let body;
   if (route === "tasks" && rest[0]) body = <TaskDetail id={rest[0]} />;
   else if (route === "tasks") body = <Kanban />;
+  else if (route === "agents" && rest[0]) body = <AgentEdit name={rest[0]} />;
+  else if (route === "agents") body = <Agents />;
+  else if (route === "skills" && rest[0]) body = <SkillEdit name={rest[0]} />;
+  else if (route === "skills") body = <Skills />;
   else if (route === "settings") body = <Settings />;
   else body = <Kanban />;
 
@@ -28,6 +36,8 @@ export function App() {
     <div class="app">
       <nav class="topnav">
         <a href="#/tasks" class={route === "tasks" ? "active" : ""}>Tasks</a>
+        <a href="#/agents" class={route === "agents" ? "active" : ""}>Agents</a>
+        <a href="#/skills" class={route === "skills" ? "active" : ""}>Skills</a>
         <a href="#/settings" class={route === "settings" ? "active" : ""}>Settings</a>
       </nav>
       <main>{body}</main>
