@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildExecuteSystemPrompt, buildReviewSystemPrompt } from "../../core/context.js";
+import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt } from "../../core/context.js";
 
 describe("buildExecuteSystemPrompt", () => {
   const baseAgent = { name: "coder", instructions: "you are a coder" };
@@ -332,5 +332,21 @@ describe("buildReviewSystemPrompt", () => {
       expect(p).not.toContain("undefined");
       expect(p).not.toContain("NaN");
     }
+  });
+});
+
+describe("buildConsolidationSystemPrompt", () => {
+  it("contains only the agent role, current memory, full journal, and consolidation directive", () => {
+    const p = buildConsolidationSystemPrompt({
+      agent: { name: "alice", instructions: "Keep operational memory concise." },
+      memory: "# Procedures\n- old",
+      journal: "## run\n- new fact",
+    });
+    expect(p).toContain("Keep operational memory concise.");
+    expect(p).toContain("# Procedures\n- old");
+    expect(p).toContain("## run\n- new fact");
+    expect(p).toContain("Return only the complete new MEMORY.md content.");
+    expect(p).not.toContain("journal_append");
+    expect(p).not.toContain("VERDICT:");
   });
 });

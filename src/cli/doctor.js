@@ -2,28 +2,52 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
-import { openDb } from "../core/db.js";
+import { openDb, runMigrations } from "../core/db.js";
+import { getKeyFingerprint } from "../core/crypto.js";
+import { loadMcpConfig } from "../core/mcp-config.js";
+import { testEmbeddingBackend } from "../core/embeddings.js";
 
 export async function doctor() {
   const config = loadConfig();
   const problems = [];
+  let db = null;
 
   const [major] = process.versions.node.split(".").map(Number);
   if (major < 20) problems.push(`node ${process.versions.node} < 20 required`);
 
   const dbPath = join(config.dataDir, "worklab.db");
   if (existsSync(dbPath)) {
-    const db = openDb(dbPath);
+    db = openDb(dbPath);
     try {
+      runMigrations(db);
       const rows = db.pragma("integrity_check");
       if (rows[0]?.integrity_check !== "ok") problems.push(`db integrity: ${JSON.stringify(rows)}`);
-    } finally { db.close(); }
+    } catch (err) {
+      problems.push(`db check failed: ${err.message}`);
+    }
   }
 
   const mcp = join(config.dataDir, "config/mcp.json");
   if (existsSync(mcp)) {
-    try { JSON.parse(readFileSync(mcp, "utf8")); }
+    try {
+      JSON.parse(readFileSync(mcp, "utf8"));
+      loadMcpConfig(config.dataDir);
+    }
     catch (err) { problems.push(`mcp.json invalid: ${err.message}`); }
+  }
+
+  try { getKeyFingerprint({ dataDir: config.dataDir }); }
+  catch (err) { problems.push(`provider encryption key unavailable: ${err.message}`); }
+
+  if (db) {
+    try {
+      const embedding = await testEmbeddingBackend({ db, dataDir: config.dataDir });
+      if (!embedding.ok) problems.push(`embedding backend unreachable (${embedding.model}): ${embedding.error}`);
+    } catch (err) {
+      problems.push(`embedding backend check failed: ${err.message}`);
+    } finally {
+      db.close();
+    }
   }
 
   if (problems.length === 0) console.log("doctor: OK");

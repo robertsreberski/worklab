@@ -22,4 +22,19 @@ describe("activity", () => {
     expect(res.body.items[0].id).toBe("r2");
     expect(res.body.nextCursor).toBeTruthy();
   });
+
+  it("returns taskless consolidation runs", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at, ended_at)
+                VALUES (?, NULL, 'consolidate', 'alice', 'complete', ?, ?)`).run("r-consolidate", now - 1000, now);
+    const res = await agent.get("/api/activity").expect(200);
+    expect(res.body.items[0]).toMatchObject({
+      id: "r-consolidate",
+      task_id: null,
+      task_title: null,
+      mode: "consolidate",
+      agent_name: "alice",
+    });
+  });
 });

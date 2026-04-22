@@ -3,10 +3,12 @@ import { api } from "../lib/api.js";
 
 export function Settings() {
   const [settings, setSettings] = useState(null);
+  const [indexStatus, setIndexStatus] = useState(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     api.getSettings().then((r) => setSettings(r.settings));
+    api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
   }, []);
 
   if (!settings) return <div>Loading…</div>;
@@ -21,6 +23,7 @@ export function Settings() {
         cancel_grace_ms: Number(settings.cancel_grace_ms),
         journal_tail_lines: Number(settings.journal_tail_lines),
         kb_pinned_limit: Number(settings.kb_pinned_limit),
+        default_embedding_model: settings.default_embedding_model,
       });
     } finally { setSaving(false); }
   }
@@ -40,6 +43,22 @@ export function Settings() {
       <div class="field"><label>Cancel grace (ms)</label>
         <input type="number" value={settings.cancel_grace_ms}
           onInput={(e) => setSettings({ ...settings, cancel_grace_ms: e.target.value })} /></div>
+      <div class="field"><label>Journal tail lines</label>
+        <input type="number" min="0" max="1000" value={settings.journal_tail_lines}
+          onInput={(e) => setSettings({ ...settings, journal_tail_lines: e.target.value })} /></div>
+      <div class="field"><label>Pinned KB limit</label>
+        <input type="number" min="0" max="100" value={settings.kb_pinned_limit}
+          onInput={(e) => setSettings({ ...settings, kb_pinned_limit: e.target.value })} /></div>
+      <div class="field"><label>Embedding model</label>
+        <input value={settings.default_embedding_model || ""}
+          onInput={(e) => setSettings({ ...settings, default_embedding_model: e.target.value })} />
+        <div class="meta">Use ollama:&lt;model&gt;, openai:&lt;model&gt;, or provider:&lt;providerId&gt;:&lt;model&gt;.</div>
+      </div>
+      {indexStatus && (
+        <div class="meta" style="margin:12px 0">
+          Search index: {indexStatus.total} chunks · {indexStatus.vectorized} vectorized · {indexStatus.errors} errors · {indexStatus.model}
+        </div>
+      )}
       <button class="primary" onClick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
     </div>
   );

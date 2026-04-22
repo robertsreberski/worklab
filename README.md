@@ -9,9 +9,9 @@ Local, single-user AI agent orchestration tool for work tasks.
 - **Phase 2 plan** — Claude agent runtime, skills, MCP, journaling: [`/opt/claude-workspace/docs/superpowers/plans/2026-04-22-worklab-phase-2.md`](/opt/claude-workspace/docs/superpowers/plans/2026-04-22-worklab-phase-2.md) (tag `phase-2`)
 - **Phase 3 plan** — reviewer loop, KB CRUD, pinned KB in prompts, comment UI polish: [`/home/mickey/.claude/plans/using-writing-plans-baseed-calm-pine.md`](/home/mickey/.claude/plans/using-writing-plans-baseed-calm-pine.md) (tag `phase-3`)
 
-Upcoming phases (plans not yet written):
-- **Phase 4** — multi-SDK, custom providers, encryption.
-- **Phase 5** — consolidation, semantic search, service install, backup, activity/settings polish.
+Implemented through Phase 5:
+- **Phase 4** — explicit model references, OpenAI/custom providers, encrypted provider credentials.
+- **Phase 5** — agent memory consolidation, indexed search, service install helpers, local backups, activity/settings polish.
 
 ## Quick start
 
