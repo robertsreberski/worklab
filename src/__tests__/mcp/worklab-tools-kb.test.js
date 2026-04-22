@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +6,15 @@ import { createToolHandlers, toolDefinitions } from "../../mcp/worklab-tools.js"
 
 describe("worklab-tools KB handlers", () => {
   const dirs = [];
+  const oldOllamaBase = process.env.WORKLAB_OLLAMA_BASE_URL;
+
+  beforeEach(() => {
+    process.env.WORKLAB_OLLAMA_BASE_URL = "http://127.0.0.1:9";
+  });
+
   afterEach(() => {
+    if (oldOllamaBase === undefined) delete process.env.WORKLAB_OLLAMA_BASE_URL;
+    else process.env.WORKLAB_OLLAMA_BASE_URL = oldOllamaBase;
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
     dirs.length = 0;
   });
@@ -218,17 +226,35 @@ describe("worklab-tools KB handlers", () => {
     expect(r.entries).toEqual([]);
   });
 
+  // ── kb_search ────────────────────────────────────────────────────────────
+
+  it("kb_search returns indexed content snippets", async () => {
+    const c = ctx();
+    const h = createToolHandlers(c);
+    await h.kb_create({
+      slug: "release-freeze",
+      title: "Release Freeze",
+      body: "During release freeze, only ship incident rollback fixes.",
+    });
+    const r = await h.kb_search({ query: "incident rollback", limit: 3 });
+    expect(r.results[0]).toMatchObject({
+      slug: "release-freeze",
+      title: "Release Freeze",
+      kind: "kb",
+    });
+  });
+
   // ── toolDefinitions count ────────────────────────────────────────────────
 
-  it("toolDefinitions includes all 5 new KB tools", () => {
-    const kbTools = ["kb_create", "kb_update", "kb_delete", "kb_read", "kb_list"];
+  it("toolDefinitions includes KB and search tools", () => {
+    const kbTools = ["kb_create", "kb_update", "kb_delete", "kb_read", "kb_list", "kb_search", "journal_search", "memory_search"];
     const names = toolDefinitions.map((t) => t.name);
     for (const name of kbTools) {
       expect(names).toContain(name);
     }
   });
 
-  it("toolDefinitions has 8 total entries (3 existing + 5 KB)", () => {
-    expect(toolDefinitions.length).toBe(8);
+  it("toolDefinitions has 11 total entries (3 existing + 5 KB + 3 search)", () => {
+    expect(toolDefinitions.length).toBe(11);
   });
 });

@@ -1,0 +1,469 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { basename, join, relative, sep } from "node:path";
+import { newEmbeddingId } from "./ids.js";
+import { kbList, kbRead } from "./kb.js";
+import { agentJournalPath, agentMemoryPath } from "./journal.js";
+import { getProvider } from "./providers.js";
+
+const MAX_CHUNK_CHARS = 1800;
+const MAX_EMBED_CHARS = 8000;
+const TIER_ALIASES = new Set(["haiku", "sonnet", "opus"]);
+
+function cleanPart(value, message) {
+  if (!value || typeof value !== "string" || value.trim() !== value) throw new Error(message);
+  return value;
+}
+
+export function parseEmbeddingReference(value) {
+  if (!value || typeof value !== "string") throw new Error("embedding model reference required");
+  const i = value.indexOf(":");
+  if (i <= 0 || i === value.length - 1) {
+    throw new Error("invalid embedding model reference; expected ollama:<model>, openai:<model>, or provider:<providerId>:<model>");
+  }
+  const kind = value.slice(0, i);
+  const rest = value.slice(i + 1);
+  if (kind === "ollama" || kind === "openai") {
+    const model = cleanPart(rest, "embedding model id required");
+    if (TIER_ALIASES.has(model)) throw new Error("tier aliases are not valid embedding model references; use an exact model id");
+    return { kind, model, reference: value };
+  }
+  if (kind === "provider") {
+    const j = rest.indexOf(":");
+    if (j <= 0 || j === rest.length - 1) throw new Error("invalid provider embedding reference; expected provider:<providerId>:<model>");
+    const providerId = cleanPart(rest.slice(0, j), "provider id required");
+    const model = cleanPart(rest.slice(j + 1), "embedding model id required");
+    if (TIER_ALIASES.has(model)) throw new Error("tier aliases are not valid embedding model references; use an exact model id");
+    return { kind, providerId, model, reference: value };
+  }
+  throw new Error(`unknown embedding provider: ${kind}`);
+}
+
+export function hashText(text) {
+  return createHash("sha256").update(text || "").digest("hex");
+}
+
+export function floatArrayToBuffer(arr) {
+  return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength);
+}
+
+export function bufferToFloatArray(buf) {
+  const copy = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+  return new Float32Array(copy);
+}
+
+export function cosineSimilarity(a, b) {
+  if (!a || !b || a.length !== b.length) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
+function rootUrl(baseUrl) {
+  return baseUrl.replace(/\/+$/, "").replace(/\/(api|v1)$/, "");
+}
+
+function v1Url(baseUrl) {
+  const trimmed = baseUrl.replace(/\/+$/, "");
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
+function authHeaders(apiKey) {
+  return apiKey ? { authorization: `Bearer ${apiKey}` } : {};
+}
+
+async function postJson(url, body, { headers = {}, fetchImpl = fetch, timeoutMs = 1500 } = {}) {
+  const signal = AbortSignal.timeout ? AbortSignal.timeout(timeoutMs) : undefined;
+  const resp = await fetchImpl(url, {
+    method: "POST",
+    headers: { "content-type": "application/json", ...headers },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!resp.ok) throw new Error(`${url} returned ${resp.status}`);
+  return await resp.json();
+}
+
+function firstEmbedding(data) {
+  const vector = data?.embedding
+    || data?.embeddings?.[0]
+    || data?.data?.[0]?.embedding;
+  if (!Array.isArray(vector)) throw new Error("embedding response did not include a vector");
+  return new Float32Array(vector.map(Number));
+}
+
+export async function generateEmbedding({ db, dataDir, modelRef, text, fetchImpl = fetch }) {
+  const parsed = parseEmbeddingReference(modelRef);
+  const input = String(text || "").slice(0, MAX_EMBED_CHARS);
+  if (!input.trim()) return { vector: null, error: "empty input" };
+
+  try {
+    if (parsed.kind === "ollama") {
+      const data = await postJson(
+        `${process.env.WORKLAB_OLLAMA_BASE_URL || "http://localhost:11434"}/api/embed`,
+        { model: parsed.model, input },
+        { fetchImpl },
+      );
+      return { vector: firstEmbedding(data), error: null };
+    }
+    if (parsed.kind === "openai") {
+      if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY not set");
+      const data = await postJson(
+        "https://api.openai.com/v1/embeddings",
+        { model: parsed.model, input },
+        { fetchImpl, headers: authHeaders(process.env.OPENAI_API_KEY), timeoutMs: 5000 },
+      );
+      return { vector: firstEmbedding(data), error: null };
+    }
+
+    const provider = getProvider({ db, dataDir, id: parsed.providerId, includeKey: true });
+    if (!provider) throw new Error(`provider not found: ${parsed.providerId}`);
+    if (!provider.enabled) throw new Error(`provider disabled: ${parsed.providerId}`);
+    const url = provider.provider_type === "ollama"
+      ? `${rootUrl(provider.base_url)}/api/embed`
+      : `${v1Url(provider.base_url)}/embeddings`;
+    const data = await postJson(
+      url,
+      { model: parsed.model, input },
+      { fetchImpl, headers: authHeaders(provider.api_key), timeoutMs: 5000 },
+    );
+    return { vector: firstEmbedding(data), error: null };
+  } catch (err) {
+    return { vector: null, error: err.message || String(err) };
+  }
+}
+
+export function getEmbeddingModel(db) {
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'default_embedding_model'").get();
+  if (!row) return "ollama:nomic-embed-text";
+  try { return JSON.parse(row.value); } catch { return row.value; }
+}
+
+export function chunkMarkdown(text, maxChars = MAX_CHUNK_CHARS) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const sections = [];
+  let current = "";
+  for (const line of raw.split(/\r?\n/)) {
+    if (/^#{1,4}\s+/.test(line) && current.trim()) {
+      sections.push(current.trim());
+      current = "";
+    }
+    current += `${line}\n`;
+  }
+  if (current.trim()) sections.push(current.trim());
+
+  const chunks = [];
+  for (const section of sections.length ? sections : [raw]) {
+    if (section.length <= maxChars) {
+      chunks.push(section);
+      continue;
+    }
+    for (let i = 0; i < section.length; i += maxChars) {
+      const part = section.slice(i, i + maxChars).trim();
+      if (part) chunks.push(part);
+    }
+  }
+  return chunks;
+}
+
+function deleteSourcePrefix(db, kind, sourceRef) {
+  const rows = db.prepare("SELECT id FROM embeddings WHERE kind = ? AND source_ref LIKE ?").all(kind, `${sourceRef}#%`);
+  const delFts = db.prepare("DELETE FROM embeddings_fts WHERE id = ?");
+  const delEmb = db.prepare("DELETE FROM embeddings WHERE id = ?");
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      delFts.run(row.id);
+      delEmb.run(row.id);
+    }
+  });
+  tx();
+}
+
+export function removeSource({ db, kind, sourceRef }) {
+  deleteSourcePrefix(db, kind, sourceRef);
+}
+
+function sourceToChunks(source) {
+  return chunkMarkdown(source.body).map((chunkText, index) => ({
+    ...source,
+    source_ref: `${source.source_ref}#chunk-${index}`,
+    chunk_text: chunkText,
+    content_hash: hashText(chunkText),
+  }));
+}
+
+function upsertChunk(db, chunk, { vector, model, error }) {
+  const now = Date.now();
+  const existing = db.prepare("SELECT id, content_hash, model FROM embeddings WHERE kind = ? AND source_ref = ?").get(chunk.kind, chunk.source_ref);
+  if (existing && existing.content_hash === chunk.content_hash && existing.model === model && !error) return existing.id;
+  const id = existing?.id || newEmbeddingId();
+  const vectorBuf = vector ? floatArrayToBuffer(vector) : null;
+  db.prepare(`
+    INSERT INTO embeddings
+      (id, kind, ref, source_ref, agent, title, chunk_text, vector, model, content_hash, indexing_error, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(kind, source_ref) DO UPDATE SET
+      ref = excluded.ref,
+      agent = excluded.agent,
+      title = excluded.title,
+      chunk_text = excluded.chunk_text,
+      vector = excluded.vector,
+      model = excluded.model,
+      content_hash = excluded.content_hash,
+      indexing_error = excluded.indexing_error,
+      updated_at = excluded.updated_at
+  `).run(
+    id,
+    chunk.kind,
+    chunk.source_ref,
+    chunk.source_ref,
+    chunk.agent || null,
+    chunk.title || null,
+    chunk.chunk_text,
+    vectorBuf,
+    model || null,
+    chunk.content_hash,
+    error || null,
+    now,
+    now,
+  );
+  db.prepare("DELETE FROM embeddings_fts WHERE id = ?").run(id);
+  db.prepare("INSERT INTO embeddings_fts (id, kind, source_ref, title, chunk_text) VALUES (?, ?, ?, ?, ?)")
+    .run(id, chunk.kind, chunk.source_ref, chunk.title || "", chunk.chunk_text);
+  return id;
+}
+
+export async function indexSource({ db, dataDir, source, modelRef = getEmbeddingModel(db), fetchImpl = fetch, allowVector = true }) {
+  const chunks = sourceToChunks(source);
+  deleteSourcePrefix(db, source.kind, source.source_ref);
+  const out = [];
+  let vectorEnabled = allowVector;
+  for (const chunk of chunks) {
+    let vector = null;
+    let error = null;
+    if (vectorEnabled) {
+      const embedded = await generateEmbedding({ db, dataDir, modelRef, text: chunk.chunk_text, fetchImpl });
+      vector = embedded.vector;
+      error = embedded.error;
+      if (error) vectorEnabled = false;
+    }
+    out.push(upsertChunk(db, chunk, { vector, model: vector ? modelRef : null, error }));
+  }
+  return out;
+}
+
+export function scanSources({ dataDir, kind = "all" } = {}) {
+  const sources = [];
+  if (kind === "all" || kind === "kb") {
+    for (const meta of kbList({ dataDir })) {
+      const entry = kbRead({ dataDir, slug: meta.slug });
+      if (!entry) continue;
+      sources.push({
+        kind: "kb",
+        source_ref: `knowledge/${meta.slug}.md`,
+        title: entry.meta.title || meta.slug,
+        body: entry.body,
+        slug: meta.slug,
+      });
+    }
+  }
+
+  const agentsDir = join(dataDir, "agents");
+  if (existsSync(agentsDir) && (kind === "all" || kind === "journal" || kind === "memory")) {
+    for (const agent of readdirSync(agentsDir)) {
+      if (agent.startsWith(".")) continue;
+      if (kind === "all" || kind === "journal") {
+        const path = agentJournalPath(dataDir, agent);
+        if (existsSync(path)) {
+          sources.push({
+            kind: "journal",
+            agent,
+            source_ref: `agents/${agent}/JOURNAL.md`,
+            title: `Journal: ${agent}`,
+            body: readFileSync(path, "utf8"),
+          });
+        }
+      }
+      if (kind === "all" || kind === "memory") {
+        const path = agentMemoryPath(dataDir, agent);
+        if (existsSync(path)) {
+          sources.push({
+            kind: "memory",
+            agent,
+            source_ref: `agents/${agent}/MEMORY.md`,
+            title: `Memory: ${agent}`,
+            body: readFileSync(path, "utf8"),
+          });
+        }
+      }
+    }
+  }
+  return sources.filter((source) => String(source.body || "").trim().length > 0);
+}
+
+export async function indexAllSources({ db, dataDir, fetchImpl = fetch } = {}) {
+  const modelRef = getEmbeddingModel(db);
+  const sources = scanSources({ dataDir });
+  const stats = { sources: 0, chunks: 0, model: modelRef };
+  let allowVector = true;
+  for (const source of sources) {
+    const ids = await indexSource({ db, dataDir, source, modelRef, fetchImpl, allowVector });
+    const errored = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE kind = ? AND source_ref LIKE ? AND indexing_error IS NOT NULL")
+      .get(source.kind, `${source.source_ref}#%`).count;
+    if (errored > 0) allowVector = false;
+    stats.sources += 1;
+    stats.chunks += ids.length;
+  }
+  return stats;
+}
+
+export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
+  const rel = relative(dataDir, filePath).split(sep).join("/");
+  if (/^knowledge\/[^/]+\.md$/.test(rel)) {
+    const slug = basename(rel, ".md");
+    if (!existsSync(filePath)) return removeSource({ db, kind: "kb", sourceRef: `knowledge/${slug}.md` });
+    const entry = kbRead({ dataDir, slug });
+    if (!entry) return;
+    return indexSource({
+      db,
+      dataDir,
+      fetchImpl,
+      source: { kind: "kb", source_ref: `knowledge/${slug}.md`, title: entry.meta.title || slug, body: entry.body, slug },
+    });
+  }
+  const m = /^agents\/([^/]+)\/(JOURNAL|MEMORY)\.md$/.exec(rel);
+  if (!m) return null;
+  const [, agent, name] = m;
+  const kind = name === "JOURNAL" ? "journal" : "memory";
+  const sourceRef = `agents/${agent}/${name}.md`;
+  if (!existsSync(filePath)) return removeSource({ db, kind, sourceRef });
+  return indexSource({
+    db,
+    dataDir,
+    fetchImpl,
+    source: { kind, agent, source_ref: sourceRef, title: `${name === "JOURNAL" ? "Journal" : "Memory"}: ${agent}`, body: readFileSync(filePath, "utf8") },
+  });
+}
+
+function searchTokens(query) {
+  return String(query || "").toLowerCase().match(/[a-z0-9_]+/g) || [];
+}
+
+function snippet(text, tokens) {
+  const body = String(text || "").replace(/\s+/g, " ").trim();
+  if (!body) return "";
+  const lower = body.toLowerCase();
+  const idx = tokens.map((t) => lower.indexOf(t)).filter((i) => i >= 0).sort((a, b) => a - b)[0] ?? 0;
+  const start = Math.max(0, idx - 80);
+  return `${start > 0 ? "..." : ""}${body.slice(start, start + 220)}${start + 220 < body.length ? "..." : ""}`;
+}
+
+function resultFromRow(row, score, tokens) {
+  const source = row.source_ref.split("#chunk-")[0];
+  const slugMatch = /^knowledge\/(.+)\.md$/.exec(source);
+  const agentMatch = /^agents\/([^/]+)\//.exec(source);
+  return {
+    kind: row.kind,
+    ref: row.source_ref,
+    source_ref: source,
+    title: row.title || source,
+    agent: row.agent || agentMatch?.[1] || null,
+    slug: slugMatch?.[1] || null,
+    snippet: snippet(row.chunk_text, tokens),
+    score,
+  };
+}
+
+export async function search({ db, dataDir, query, kind = "all", agent = null, limit = 8, fetchImpl = fetch } = {}) {
+  const tokens = searchTokens(query);
+  if (!tokens.length) return [];
+  const capped = Math.max(1, Math.min(Number(limit) || 8, 50));
+  const where = [];
+  const params = [];
+  if (kind && kind !== "all") {
+    where.push("e.kind = ?");
+    params.push(kind);
+  }
+  if (agent) {
+    where.push("e.agent = ?");
+    params.push(agent);
+  }
+  const filter = where.length ? ` AND ${where.join(" AND ")}` : "";
+  const match = tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(" OR ");
+  let ftsRows = [];
+  try {
+    ftsRows = db.prepare(`
+      SELECT e.*, bm25(embeddings_fts) AS rank
+      FROM embeddings_fts
+      JOIN embeddings e ON e.id = embeddings_fts.id
+      WHERE embeddings_fts MATCH ?${filter}
+      LIMIT ?
+    `).all(match, ...params, capped * 4);
+  } catch {
+    ftsRows = [];
+  }
+
+  const scores = new Map();
+  ftsRows.forEach((row, index) => {
+    scores.set(row.id, { row, fts: 1 - (index / Math.max(1, ftsRows.length)) });
+  });
+
+  const modelRef = getEmbeddingModel(db);
+  const queryEmbedding = await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl });
+  if (queryEmbedding.vector) {
+    const rows = db.prepare(`
+      SELECT * FROM embeddings e
+      WHERE e.vector IS NOT NULL AND e.model = ?${filter}
+    `).all(modelRef, ...params);
+    for (const row of rows) {
+      const sim = cosineSimilarity(queryEmbedding.vector, bufferToFloatArray(row.vector));
+      if (sim <= 0) continue;
+      const existing = scores.get(row.id) || { row, fts: 0 };
+      existing.vector = sim;
+      scores.set(row.id, existing);
+    }
+  }
+
+  const ranked = [...scores.values()]
+    .map((item) => {
+      const hasFts = item.fts != null && item.fts > 0;
+      const hasVector = item.vector != null && item.vector > 0;
+      const score = hasFts && hasVector
+        ? (item.vector * 0.65) + (item.fts * 0.35)
+        : (item.vector || item.fts || 0);
+      return resultFromRow(item.row, score, tokens);
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, capped);
+  return ranked;
+}
+
+export function getIndexStatus(db) {
+  const total = db.prepare("SELECT COUNT(*) AS count FROM embeddings").get().count;
+  const byKind = db.prepare("SELECT kind, COUNT(*) AS count FROM embeddings GROUP BY kind").all()
+    .reduce((acc, row) => ({ ...acc, [row.kind]: row.count }), {});
+  const vectorized = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE vector IS NOT NULL").get().count;
+  const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
+  return { total, byKind, vectorized, errors, model: getEmbeddingModel(db) };
+}
+
+export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = {}) {
+  const modelRef = getEmbeddingModel(db);
+  const parsed = parseEmbeddingReference(modelRef);
+  const result = await generateEmbedding({ db, dataDir, modelRef, text: "worklab embedding health check", fetchImpl });
+  return {
+    ok: !!result.vector,
+    model: modelRef,
+    kind: parsed.kind,
+    error: result.error || null,
+    dimensions: result.vector?.length || 0,
+  };
+}

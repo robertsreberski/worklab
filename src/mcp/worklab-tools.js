@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { z } from "zod";
 import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../core/journal.js";
-import { kbCreate, kbUpdate, kbDelete, kbRead, kbList } from "../core/kb.js";
+import { openDb, runMigrations } from "../core/db.js";
+import { search, indexPath, removeSource } from "../core/embeddings.js";
+import { kbCreate, kbUpdate, kbDelete, kbRead, kbList, kbPath } from "../core/kb.js";
 
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
 export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
@@ -47,6 +50,31 @@ export const kbListSchema = z.object({
   pinned: z.boolean().optional(),
 });
 
+const searchSchema = z.object({
+  query: z.string().min(1, "query is required"),
+  limit: z.number().int().min(1).max(50).optional(),
+});
+
+export const kbSearchSchema = searchSchema;
+export const journalSearchSchema = searchSchema.extend({
+  agent: z.string().optional(),
+});
+export const memorySearchSchema = searchSchema.extend({
+  agent: z.string().optional(),
+});
+
+async function withDb(dataDir, fn) {
+  const db = openDb(join(dataDir, "worklab.db"));
+  runMigrations(db);
+  try { return await fn(db); } finally { db.close(); }
+}
+
+async function bestEffortIndexKb(dataDir, slug) {
+  try {
+    await withDb(dataDir, (db) => indexPath({ db, dataDir, filePath: kbPath(dataDir, slug) }));
+  } catch { /* watcher/startup indexer will retry */ }
+}
+
 export function createToolHandlers(context) {
   const { dataDir, agent, runId, taskId, taskTitle } = context;
   return {
@@ -71,6 +99,7 @@ export function createToolHandlers(context) {
       const { slug, title, body, tags, category, pinned } = kbCreateSchema.parse(input);
       // author is always sourced from context.agent — never from caller input
       kbCreate({ dataDir, slug, title, body, tags, category, pinned, author: agent });
+      await bestEffortIndexKb(dataDir, slug);
       return { ok: true, slug };
     },
 
@@ -79,6 +108,7 @@ export function createToolHandlers(context) {
       const existing = kbRead({ dataDir, slug });
       if (existing === null) throw new Error(`not_found: ${slug}`);
       kbUpdate({ dataDir, slug, patch });
+      await bestEffortIndexKb(dataDir, slug);
       return { ok: true };
     },
 
@@ -86,6 +116,7 @@ export function createToolHandlers(context) {
       const { slug } = kbDeleteSchema.parse(input);
       const deleted = kbDelete({ dataDir, slug });
       if (!deleted) throw new Error(`not_found: ${slug}`);
+      await withDb(dataDir, (db) => removeSource({ db, kind: "kb", sourceRef: `knowledge/${slug}.md` })).catch(() => {});
       return { ok: true };
     },
 
@@ -100,6 +131,24 @@ export function createToolHandlers(context) {
       const { tag, category, pinned } = kbListSchema.parse(input);
       const entries = kbList({ dataDir, tag, category, pinned });
       return { entries };
+    },
+
+    async kb_search(input) {
+      const { query, limit } = kbSearchSchema.parse(input);
+      const results = await withDb(dataDir, (db) => search({ db, dataDir, query, kind: "kb", limit: limit || 8 }));
+      return { results };
+    },
+
+    async journal_search(input) {
+      const { query, limit, agent: targetAgent } = journalSearchSchema.parse(input);
+      const results = await withDb(dataDir, (db) => search({ db, dataDir, query, kind: "journal", agent: targetAgent, limit: limit || 8 }));
+      return { results };
+    },
+
+    async memory_search(input) {
+      const { query, limit, agent: targetAgent } = memorySearchSchema.parse(input);
+      const results = await withDb(dataDir, (db) => search({ db, dataDir, query, kind: "memory", agent: targetAgent, limit: limit || 8 }));
+      return { results };
     },
   };
 }
@@ -213,6 +262,44 @@ export const toolDefinitions = [
         category: { type: "string", description: "Filter to entries with this category" },
         pinned: { type: "boolean", description: "Filter to pinned (true) or unpinned (false) entries" },
       },
+    },
+  },
+  {
+    name: "kb_search",
+    description: "Search the knowledge base with hybrid FTS/semantic search. Returns compact snippets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        limit: { type: "number", minimum: 1, maximum: 50 },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "journal_search",
+    description: "Search agent journals with hybrid FTS/semantic search. Optionally scope to one agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        agent: { type: "string" },
+        limit: { type: "number", minimum: 1, maximum: 50 },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "memory_search",
+    description: "Search consolidated agent memories with hybrid FTS/semantic search. Optionally scope to one agent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        agent: { type: "string" },
+        limit: { type: "number", minimum: 1, maximum: 50 },
+      },
+      required: ["query"],
     },
   },
 ];
