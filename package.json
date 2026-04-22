@@ -30,7 +30,6 @@
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "nanoid": "^5.0.9",
-    "ollama-ai-provider-v2": "^3.5.0",
     "picomatch": "^4.0.4",
     "pino": "^9.5.0",
     "preact": "^10.25.0",

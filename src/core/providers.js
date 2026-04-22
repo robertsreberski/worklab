@@ -1,7 +1,6 @@
 import net from "node:net";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOllama as createAiSdkOllama } from "ai-sdk-ollama";
-import { createOllama as createLegacyOllama } from "ollama-ai-provider-v2";
 import { encrypt, decrypt } from "./crypto.js";
 import { newProviderId, newModelId } from "./ids.js";
 
@@ -364,10 +363,6 @@ export function createVercelClient(provider, { modelName = "", capabilities = {}
     if (capabilities.reasoning && /gpt-oss/i.test(modelName)) {
       const compat = createOpenAICompatible({ name: "ollama", baseURL: `${root}/v1`, apiKey: provider.api_key || "ollama" });
       return (nextModelName) => compat.chatModel(nextModelName);
-    }
-    if (process.env.LEGACY_OLLAMA_PROVIDER === "1") {
-      const ollama = createLegacyOllama({ baseURL: `${root}/api` });
-      return (nextModelName) => ollama.chat(nextModelName);
     }
     const ollama = createAiSdkOllama({ baseURL: root, ...(provider.api_key ? { apiKey: provider.api_key } : {}) });
     return (nextModelName, settings = {}) => ollama.chat(nextModelName, settings);
