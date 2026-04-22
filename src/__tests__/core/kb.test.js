@@ -568,6 +568,35 @@ Body.
     expect(out.meta.tags).toEqual(["true", "42", "plain"]);
     for (const t of out.meta.tags) expect(typeof t).toBe("string");
   });
+
+  it("round-trips flow-array tags containing commas", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "comma-tags",
+      title: "T",
+      body: "b",
+      tags: ["a, b", "c:d", "normal"],
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "comma-tags" });
+    expect(out.meta.tags).toEqual(["a, b", "c:d", "normal"]);
+    expect(out.meta.tags.length).toBe(3);
+    expect(out.meta.tags[0]).toBe("a, b");
+  });
+
+  it("round-trips standalone string value with comma", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "comma-title",
+      title: "Intro, Chapter 1",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "comma-title" });
+    expect(out.meta.title).toBe("Intro, Chapter 1");
+  });
 });
 
 describe("kbList — malformed frontmatter tolerance", () => {
