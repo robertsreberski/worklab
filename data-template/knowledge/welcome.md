@@ -1,12 +1,14 @@
 ---
 title: Welcome to Worklab
 slug: welcome
-tags: [meta]
+tags: [onboarding]
 category: meta
-pinned: true
+pinned: false
 author: human
-created_at: 2026-04-21T00:00:00Z
-updated_at: 2026-04-21T00:00:00Z
+created_at: 2026-04-22T12:00:00Z
+updated_at: 2026-04-22T12:00:00Z
 ---
 
-This is the shared knowledge base. Agents read and write here. Pinned entries are included in every agent's system prompt.
+This is your shared knowledge base. Humans and agents can create, update, and
+pin entries. Pinned entries appear at the top of every agent's system prompt.
+Keep this file around as a template, or delete it.
