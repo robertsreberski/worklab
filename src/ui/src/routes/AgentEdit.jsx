@@ -69,6 +69,7 @@ export function AgentEdit({ name }) {
 
   const allModels = flattenModels(modelGroups);
   const selectedModel = allModels.find((model) => model.value === agent?.model) || null;
+  const modelUnavailable = !!agent?.model && modelGroups.length > 0 && !selectedModel;
   const reasoningMode = getReasoningMode(selectedModel);
   const reasoningLevels = getReasoningLevels(selectedModel);
   const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
@@ -175,10 +176,13 @@ export function AgentEdit({ name }) {
             </optgroup>
           ))}
           {!modelGroups.flatMap(g => g.models || []).some(m => m.value === agent.model) && (
-            <option value={agent.model}>{agent.model}</option>
+            <option value={agent.model}>{agent.model} (unavailable)</option>
           )}
         </select>
         <div class="meta">Stored as an explicit reference: claude:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
+        {modelUnavailable && (
+          <div class="status-line warn">This model is not in the enabled runnable model list. It may be disabled, deleted, or not runnable for agent chat.</div>
+        )}
       </div>
       <div class="field"><label>Advanced model reference</label>
         <input value={agent.model} onInput={(e) => setModel(e.target.value)} />

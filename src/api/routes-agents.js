@@ -1,4 +1,5 @@
 import { parseModelReference } from "../core/ai.js";
+import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../core/providers.js";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -26,7 +27,26 @@ const PATCHABLE = [
   "enabled",
 ];
 
-export function registerAgentRoutes(app, { db, broker, consolidation }) {
+function validateModelForAgent({ db, dataDir, model }) {
+  const resolved = parseModelReference(model);
+  if (resolved.sdk !== "vercel") return resolved;
+
+  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: false });
+  if (!provider) throw new Error(`provider not found: ${resolved.providerId}`);
+  if (!provider.enabled) throw new Error(`provider disabled: ${provider.name}`);
+
+  const modelRow = getModelByProviderAndName({ db, providerId: resolved.providerId, modelName: resolved.modelName });
+  if (!modelRow) return resolved;
+  if (!modelRow.enabled) throw new Error(`model disabled: ${resolved.modelName}`);
+
+  const capabilities = buildModelCapabilities(provider.provider_type, modelRow.model_name, modelRow.capabilities);
+  if (!capabilities.runnable_for_agent) {
+    throw new Error(`model is not runnable for agents: ${capabilities.unavailable_reason}`);
+  }
+  return resolved;
+}
+
+export function registerAgentRoutes(app, { db, broker, consolidation, dataDir }) {
   app.get("/api/agents", (_req, res) => {
     const rows = db.prepare("SELECT * FROM agents ORDER BY name").all();
     res.json({ agents: rows.map(rowToAgent) });
@@ -43,7 +63,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation }) {
     }
     let resolved;
     try {
-      resolved = parseModelReference(model);
+      resolved = validateModelForAgent({ db, dataDir, model });
     } catch (err) {
       return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
     }
@@ -102,7 +122,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation }) {
       if (k in req.body) {
         if (k === "model") {
           try {
-            const resolved = parseModelReference(req.body[k]);
+            const resolved = validateModelForAgent({ db, dataDir, model: req.body[k] });
             fields.push("sdk = ?");
             values.push(resolved.sdk);
           } catch (err) {

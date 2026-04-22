@@ -33,6 +33,7 @@ const OPENAI_COMPAT_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"]
 const OLLAMA_EFFORT_REASONING_HINTS = ["gpt-oss"];
 const OLLAMA_EFFORT_REASONING_LEVELS = ["low", "medium", "high"];
 const OLLAMA_TOGGLE_REASONING_HINTS = ["deepseek", "qwen", "qwq", "thinking", "reasoning"];
+const AGENT_CHAT_CAPABILITIES = new Set(["chat", "completion", "tools", "thinking", "reasoning", "vision"]);
 
 const PRIVATE_HOSTNAMES = new Set(["localhost", "host.docker.internal"]);
 const PRIVATE_V4_CIDRS = [
@@ -342,11 +343,38 @@ export function resolveReasoningCapabilities(providerType, modelName, capabiliti
   };
 }
 
+function advertisedCapabilities(capabilities = {}) {
+  return new Set(Array.isArray(capabilities.advertised_capabilities)
+    ? capabilities.advertised_capabilities.map((value) => String(value).toLowerCase())
+    : []);
+}
+
+export function resolveAgentRunnableStatus(capabilities = {}) {
+  const advertised = advertisedCapabilities(capabilities);
+  if (advertised.size > 0) {
+    const hasChat = [...AGENT_CHAT_CAPABILITIES].some((capability) => advertised.has(capability));
+    if (!hasChat) {
+      if (advertised.has("embedding")) {
+        return { runnable_for_agent: false, unavailable_reason: "Embedding-only model; use it for knowledge/search settings, not agent chat." };
+      }
+      return { runnable_for_agent: false, unavailable_reason: "This model did not advertise chat or completion support." };
+    }
+  }
+
+  if (capabilities.runnable_for_agent === false || capabilities.chat === false || capabilities.completion === false) {
+    return { runnable_for_agent: false, unavailable_reason: capabilities.unavailable_reason || "Not runnable for agent chat." };
+  }
+
+  return { runnable_for_agent: true, unavailable_reason: null };
+}
+
 export function buildModelCapabilities(providerType, modelName, capabilities = {}) {
   const normalized = resolveReasoningCapabilities(providerType, modelName, capabilities);
-  const supportsBuiltinTools = normalized.tool_use !== false;
+  const runnable = resolveAgentRunnableStatus(normalized);
+  const supportsBuiltinTools = runnable.runnable_for_agent && normalized.tool_use !== false;
   return {
     ...normalized,
+    ...runnable,
     builtin_tools: supportsBuiltinTools ? [...WORKLAB_BUILTIN_TOOLS] : [],
     supports_builtin_tools: supportsBuiltinTools,
   };
@@ -384,19 +412,22 @@ function inferOllamaCapabilities(model, show = null) {
   const caps = new Set(Array.isArray(show?.capabilities) ? show.capabilities.map((v) => String(v).toLowerCase()) : []);
   const name = String(show?.model || model?.name || "").toLowerCase();
   const family = `${details.family || ""} ${(details.families || []).join(" ")}`.toLowerCase();
+  const hasChat = caps.size > 0 ? caps.has("completion") || caps.has("chat") : true;
   const reasoningProfile = inferOllamaReasoningProfile({
     modelName: show?.model || model?.name || "",
     family,
     advertisedCapabilities: caps,
   });
   return {
-    tool_use: caps.has("tools") || /llama|mistral|qwen|gemma|phi|granite/.test(family),
-    reasoning: reasoningProfile.reasoning,
+    tool_use: hasChat && (caps.size > 0 ? caps.has("tools") : /llama|mistral|qwen|gemma|phi|granite/.test(family)),
+    reasoning: hasChat && reasoningProfile.reasoning,
     reasoning_mode: reasoningProfile.reasoning_mode,
     reasoning_levels: reasoningProfile.reasoning_levels,
     reasoning_disable_supported: reasoningProfile.reasoning_disable_supported,
-    vision: caps.has("vision") || /vision|llava|multimodal/.test(`${name} ${family}`),
-    json_mode: true,
+    vision: hasChat && (caps.has("vision") || /vision|llava|multimodal/.test(`${name} ${family}`)),
+    json_mode: hasChat,
+    embedding: caps.has("embedding"),
+    chat: hasChat,
     parameter_size: details.parameter_size || null,
     family,
     advertised_capabilities: [...caps],

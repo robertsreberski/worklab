@@ -25,6 +25,10 @@ function withCapabilities(provider, model) {
   };
 }
 
+function modelRunStatus(provider, model, capabilities = model.capabilities) {
+  return buildModelCapabilities(provider.provider_type, model.model_name, capabilities);
+}
+
 export function registerProviderRoutes(app, { db, dataDir, broker }) {
   app.get("/api/providers", (_req, res) => {
     res.json({ providers: listProviders({ db, dataDir }) });
@@ -110,6 +114,13 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     const model = getModel({ db, id: req.params.modelId });
     if (!model || model.provider_id !== req.params.id) return error(res, 404, "not_found", "model not found");
     const body = req.body || {};
+    const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
+    if (body.enabled === true) {
+      const capabilities = modelRunStatus(provider, model, body.capabilities ?? model.capabilities);
+      if (!capabilities.runnable_for_agent) {
+        return error(res, 400, "validation", `model is not runnable for agents: ${capabilities.unavailable_reason}`);
+      }
+    }
     let updated;
     if (body.display_name !== undefined || body.alias !== undefined || body.capabilities !== undefined || body.pricing !== undefined) {
       updated = upsertModel({
@@ -127,7 +138,6 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     } else {
       updated = model;
     }
-    const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
     broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
     res.json({ model: withCapabilities(provider, updated) });
   });

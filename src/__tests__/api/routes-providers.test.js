@@ -66,6 +66,26 @@ describe("provider routes", () => {
     expect(res.body.models.find((m) => m.value === `vercel:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
 
+  it("omits enabled non-runnable custom models from the agent model catalogue", async () => {
+    const { agent, db } = makeTestServer({ dataDir: tmpDataDir() });
+    const p = await agent.post("/api/providers").send({
+      name: "ollama",
+      provider_type: "ollama",
+      base_url: "http://localhost:11434",
+    }).expect(201);
+    upsertModel({
+      db,
+      providerId: p.body.provider.id,
+      modelName: "nomic-embed-text:v1.5",
+      displayName: "nomic-embed-text:v1.5",
+      capabilities: { advertised_capabilities: ["embedding"], embedding: true, chat: false },
+      enabled: true,
+    });
+
+    const res = await agent.get("/api/models/available").expect(200);
+    expect(res.body.models.map((m) => m.value)).not.toContain(`vercel:${p.body.provider.id}:nomic-embed-text:v1.5`);
+  });
+
   it("omits saved models from unsupported legacy provider types", async () => {
     const { agent, db } = makeTestServer({ dataDir: tmpDataDir() });
     const now = Date.now();
@@ -409,6 +429,44 @@ describe("provider routes", () => {
 
       const res = await agent.post("/api/providers/nonexistent/discover").expect(404);
       expect(res.body.error.code).toBe("not_found");
+    });
+  });
+
+  describe("PATCH /api/providers/:id/models/:modelId", () => {
+    it("rejects enabling a non-runnable model", async () => {
+      const dataDir = tmpDataDir();
+      const { agent } = makeTestServer({ dataDir });
+
+      const createRes = await agent.post("/api/providers").send({
+        name: "ollama",
+        provider_type: "ollama",
+        base_url: "http://localhost:11434",
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      vi.stubGlobal("fetch", vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ models: [{ name: "nomic-embed-text:v1.5" }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            model: "nomic-embed-text:v1.5",
+            details: { family: "nomic-bert", parameter_size: "137M" },
+            capabilities: ["embedding"],
+          }),
+        }),
+      );
+
+      const discovered = await agent.post(`/api/providers/${id}/discover`).expect(200);
+      const model = discovered.body.models[0];
+      expect(model.capabilities.runnable_for_agent).toBe(false);
+
+      const res = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: true }).expect(400);
+      expect(res.body.error.message).toMatch(/not runnable for agents/i);
     });
   });
 });

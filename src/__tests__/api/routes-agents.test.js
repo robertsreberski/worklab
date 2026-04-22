@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
+import { createProvider, upsertModel } from "../../core/providers.js";
 
 describe("agents CRUD", () => {
   it("GET /api/agents returns []", async () => {
@@ -68,6 +72,38 @@ describe("agents CRUD", () => {
 
     const rejected = await agent.patch("/api/agents/coder").send({ model: "openai:opus" }).expect(400);
     expect(rejected.body.error.code).toBe("invalid_model");
+  });
+
+  it("POST rejects known non-runnable custom models", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-model-"));
+    try {
+      const { agent, db } = makeTestServer({ dataDir });
+      const provider = createProvider({
+        db,
+        dataDir,
+        name: "ollama",
+        provider_type: "ollama",
+        base_url: "http://localhost:11434",
+      });
+      upsertModel({
+        db,
+        providerId: provider.id,
+        modelName: "nomic-embed-text:v1.5",
+        displayName: "nomic-embed-text:v1.5",
+        capabilities: { advertised_capabilities: ["embedding"], embedding: true, chat: false },
+        enabled: true,
+      });
+
+      const res = await agent.post("/api/agents").send({
+        name: "embedder",
+        display_name: "Embedder",
+        model: `vercel:${provider.id}:nomic-embed-text:v1.5`,
+      }).expect(400);
+      expect(res.body.error.code).toBe("invalid_model");
+      expect(res.body.error.message).toMatch(/not runnable for agents/i);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("DELETE removes agent", async () => {
