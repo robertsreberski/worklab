@@ -55,14 +55,13 @@ function applyPreset(form, providerType) {
   };
 }
 
-function CapabilityBadge({ on, label, title }) {
+function CapabilityBadge({ on, label, offLabel, title }) {
   return (
     <span
-      class="meta"
+      class={`capability-badge ${on ? "on" : "off"}`}
       title={title}
-      style={`display:inline-block;margin-right:6px;padding:2px 6px;border-radius:999px;border:1px solid ${on ? "var(--accent)" : "var(--border)"};opacity:${on ? 1 : 0.55}`}
     >
-      {label}
+      {on ? label : (offLabel || `no ${label}`)}
     </span>
   );
 }
@@ -72,8 +71,16 @@ export function Providers() {
   const [models, setModels] = useState({});
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState(null);
+  const [providerStatus, setProviderStatus] = useState({});
   const selectedType = optionForProviderType(form.provider_type);
   const preset = PRESETS[form.provider_type] || PRESETS.openai_compat;
+
+  function setStatus(providerId, patch) {
+    setProviderStatus((current) => ({
+      ...current,
+      [providerId]: { ...(current[providerId] || {}), ...patch },
+    }));
+  }
 
   async function load() {
     const res = await api.listProviders();
@@ -108,16 +115,27 @@ export function Providers() {
   }
 
   async function test(provider) {
-    const result = await api.testProvider(provider.id);
-    setError(result.ok ? null : `${provider.name}: ${result.error || `HTTP ${result.status}`}`);
+    setError(null);
+    setStatus(provider.id, { testing: true, test: null });
+    try {
+      const result = await api.testProvider(provider.id);
+      setStatus(provider.id, { testing: false, test: { ...result, checked_at: Date.now() } });
+      setError(result.ok ? null : `${provider.name}: ${result.error || `HTTP ${result.status}`}`);
+    } catch (err) {
+      setStatus(provider.id, { testing: false, test: { ok: false, error: err.message || String(err), checked_at: Date.now() } });
+      setError(`${provider.name}: ${err.message || String(err)}`);
+    }
   }
 
   async function discover(provider) {
     setError(null);
+    setStatus(provider.id, { discovering: true, discovery: null });
     try {
-      await api.discoverProviderModels(provider.id);
+      const result = await api.discoverProviderModels(provider.id);
+      setStatus(provider.id, { discovering: false, discovery: { count: (result.models || []).length, checked_at: Date.now() } });
       await load();
     } catch (err) {
+      setStatus(provider.id, { discovering: false, discovery: { error: err.message || String(err), checked_at: Date.now() } });
       setError(`${provider.name}: ${err.message || String(err)}`);
     }
   }
@@ -173,37 +191,62 @@ export function Providers() {
       </section>
 
       <div class="provider-list">
-        {providers.map((provider) => (
+        {providers.map((provider) => {
+          const status = providerStatus[provider.id] || {};
+          return (
           <section class="provider-card" key={provider.id}>
             <div class="provider-head">
-              <div>
+              <div class="provider-title">
                 <h3>{provider.name}</h3>
                 <div class="meta">{optionForProviderType(provider.provider_type).label} · {provider.base_url} · {provider.has_api_key ? "API key saved" : "no API key"}</div>
+                <div class="meta">Model picker visibility: {provider.enabled ? "shown when models are enabled" : "hidden because this provider is disabled"}</div>
+                {status.test && (
+                  <div class={status.test.ok ? "status-line ok" : "status-line error"}>
+                    {status.test.ok
+                      ? `Reachable (${status.test.status}) in ${status.test.duration_ms ?? 0}ms via ${status.test.url || provider.base_url}`
+                      : `Unreachable: ${status.test.error || `HTTP ${status.test.status}`}`}
+                  </div>
+                )}
+                {status.discovery && (
+                  <div class={status.discovery.error ? "status-line error" : "status-line ok"}>
+                    {status.discovery.error ? `Discovery failed: ${status.discovery.error}` : `Discovered ${status.discovery.count} model${status.discovery.count === 1 ? "" : "s"}.`}
+                  </div>
+                )}
               </div>
-              <div>
+              <div class="provider-actions">
                 <button onClick={() => patch(provider, { enabled: !provider.enabled })}>{provider.enabled ? "Disable" : "Enable"}</button>
-                <button onClick={() => test(provider)} style="margin-left:8px">Test</button>
-                <button onClick={() => discover(provider)} style="margin-left:8px">Discover</button>
-                <button onClick={() => remove(provider)} style="margin-left:8px;color:#ff7a7a">Delete</button>
+                <button onClick={() => test(provider)} disabled={status.testing}>{status.testing ? "Testing..." : "Test"}</button>
+                <button onClick={() => discover(provider)} disabled={status.discovering}>{status.discovering ? "Discovering..." : "Discover"}</button>
+                <button onClick={() => remove(provider)} class="danger">Delete</button>
               </div>
             </div>
             <div class="provider-models">
               {(models[provider.id] || []).map((model) => {
                 const capabilities = model.capabilities || {};
+                const runnable = capabilities.runnable_for_agent !== false;
+                const buttonDisabled = !model.enabled && !runnable;
                 return (
-                  <div class="provider-model" key={model.id}>
+                  <div class={`provider-model ${runnable ? "" : "not-runnable"}`} key={model.id}>
                     <div>
                       <strong>{model.display_name || model.model_name}</strong>
                       <div class="meta">{model.model_name}</div>
-                      <div style="margin-top:6px">
-                        <CapabilityBadge on={capabilities.tool_use} label="tools" title="Tool / function calling" />
-                        <CapabilityBadge on={capabilities.reasoning} label={capabilities.reasoning_mode === "toggle" ? "thinking" : "reasoning"} title="Reasoning / thinking control" />
-                        <CapabilityBadge on={capabilities.vision} label="vision" title="Vision / multimodal input" />
-                        <CapabilityBadge on={capabilities.json_mode} label="json" title="Structured JSON output" />
+                      <div class={runnable ? "status-line ok" : "status-line warn"}>
+                        {runnable ? "Runnable for agent chat." : capabilities.unavailable_reason || "Not runnable for agent chat."}
+                      </div>
+                      <div class="capability-list">
+                        <CapabilityBadge on={runnable} label="chat" offLabel="no chat" title="Agent chat / completion support" />
+                        <CapabilityBadge on={capabilities.tool_use} label="tools" offLabel="no tools" title="Tool / function calling" />
+                        <CapabilityBadge on={capabilities.reasoning} label={capabilities.reasoning_mode === "toggle" ? "thinking" : "reasoning"} offLabel="no reasoning" title="Reasoning / thinking control" />
+                        <CapabilityBadge on={capabilities.vision} label="vision" offLabel="no vision" title="Vision / multimodal input" />
+                        <CapabilityBadge on={capabilities.json_mode} label="json" offLabel="no json" title="Structured JSON output" />
                       </div>
                     </div>
-                    <button onClick={() => api.patchProviderModel(provider.id, model.id, { enabled: !model.enabled }).then(load)}>
-                      {model.enabled ? "Disable" : "Enable"}
+                    <button
+                      disabled={buttonDisabled}
+                      title={buttonDisabled ? capabilities.unavailable_reason || "Not runnable for agent chat." : ""}
+                      onClick={() => api.patchProviderModel(provider.id, model.id, { enabled: !model.enabled }).then(load)}
+                    >
+                      {buttonDisabled ? "Not runnable" : (model.enabled ? "Disable" : "Enable")}
                     </button>
                   </div>
                 );
@@ -211,7 +254,7 @@ export function Providers() {
               {(models[provider.id] || []).length === 0 && <div class="meta">No models discovered yet.</div>}
             </div>
           </section>
-        ))}
+        );})}
       </div>
     </div>
   );

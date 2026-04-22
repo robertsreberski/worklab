@@ -6,3 +6,5 @@ src/ui/dist/
 .env
 .env.local
 coverage/
+playwright-report/
+test-results/

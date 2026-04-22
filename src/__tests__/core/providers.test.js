@@ -173,6 +173,7 @@ describe("providers", () => {
   it("adds builtin tool metadata to model capabilities", () => {
     expect(buildModelCapabilities("openai_compat", "deepseek-r1", { tool_use: true, reasoning: true })).toMatchObject({
       supports_builtin_tools: true,
+      runnable_for_agent: true,
       reasoning_mode: "effort",
     });
     expect(buildModelCapabilities("openai_compat", "text-only", { tool_use: false, reasoning: false })).toMatchObject({
@@ -180,5 +181,43 @@ describe("providers", () => {
       builtin_tools: [],
       reasoning_mode: "none",
     });
+  });
+
+  it("marks embedding-only Ollama models as visible but not runnable for agents", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "ollama",
+      provider_type: "ollama",
+      base_url: "http://localhost:11434",
+    });
+    const [model] = await discoverModels({
+      db,
+      dataDir,
+      providerId: provider.id,
+      fetchImpl: vi.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ models: [{ name: "nomic-embed-text:v1.5" }] }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            model: "nomic-embed-text:v1.5",
+            details: { family: "nomic-bert", parameter_size: "137M" },
+            capabilities: ["embedding"],
+          }),
+        }),
+    });
+
+    const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
+    expect(capabilities).toMatchObject({
+      runnable_for_agent: false,
+      supports_builtin_tools: false,
+      builtin_tools: [],
+      embedding: true,
+      chat: false,
+    });
+    expect(capabilities.unavailable_reason).toMatch(/embedding-only/i);
   });
 });
