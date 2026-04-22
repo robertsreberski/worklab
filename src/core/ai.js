@@ -11,6 +11,134 @@ export const BUILTIN_OPENAI_MODELS = [
 ];
 
 export const VALID_MODEL_SDKS = ["claude", "openai", "vercel"];
+export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+
+const BUILTIN_MODEL_GROUPS = [
+  {
+    id: "claude",
+    label: "Claude",
+    models: [
+      {
+        value: "claude:claude-haiku-4-5-20251001",
+        label: "Claude Haiku 4.5",
+        description: "Fast",
+        sdk: "claude",
+        model: "claude-haiku-4-5-20251001",
+        capabilities: {
+          tool_use: true,
+          reasoning: false,
+          reasoning_mode: "none",
+          vision: true,
+          json_mode: true,
+        },
+      },
+      {
+        value: "claude:claude-sonnet-4-6",
+        label: "Claude Sonnet 4.6",
+        description: "Balanced",
+        sdk: "claude",
+        model: "claude-sonnet-4-6",
+        capabilities: {
+          tool_use: true,
+          reasoning: true,
+          reasoning_mode: "effort",
+          reasoning_levels: ["low", "medium", "high", "max"],
+          reasoning_disable_supported: true,
+          vision: true,
+          json_mode: true,
+        },
+      },
+      {
+        value: "claude:claude-opus-4-7",
+        label: "Claude Opus 4.7",
+        description: "Most capable",
+        sdk: "claude",
+        model: "claude-opus-4-7",
+        capabilities: {
+          tool_use: true,
+          reasoning: true,
+          reasoning_mode: "effort",
+          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
+          reasoning_disable_supported: true,
+          vision: true,
+          json_mode: true,
+        },
+      },
+    ],
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    models: [
+      {
+        value: "openai:gpt-5.4-nano",
+        label: "GPT-5.4 Nano",
+        description: "Fast",
+        sdk: "openai",
+        model: "gpt-5.4-nano",
+        capabilities: {
+          tool_use: true,
+          reasoning: false,
+          reasoning_mode: "none",
+          vision: true,
+          json_mode: true,
+        },
+      },
+      {
+        value: "openai:gpt-5.4-mini",
+        label: "GPT-5.4 Mini",
+        description: "Balanced",
+        sdk: "openai",
+        model: "gpt-5.4-mini",
+        capabilities: {
+          tool_use: true,
+          reasoning: true,
+          reasoning_mode: "effort",
+          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
+          reasoning_disable_supported: true,
+          vision: true,
+          json_mode: true,
+        },
+      },
+      {
+        value: "openai:gpt-5.4",
+        label: "GPT-5.4",
+        description: "Most capable",
+        sdk: "openai",
+        model: "gpt-5.4",
+        capabilities: {
+          tool_use: true,
+          reasoning: true,
+          reasoning_mode: "effort",
+          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
+          reasoning_disable_supported: true,
+          vision: true,
+          json_mode: true,
+        },
+      },
+    ],
+  },
+];
+
+function withBuiltinToolMetadata(model) {
+  const supportsBuiltinTools = model?.capabilities?.tool_use !== false;
+  return {
+    ...model,
+    builtin_tools: supportsBuiltinTools ? [...WORKLAB_BUILTIN_TOOLS] : [],
+    supports_builtin_tools: supportsBuiltinTools,
+  };
+}
+
+export function getBuiltinModelGroups() {
+  return BUILTIN_MODEL_GROUPS.map((group) => ({
+    ...group,
+    models: group.models.map(withBuiltinToolMetadata),
+  }));
+}
+
+export function getBuiltinModels() {
+  return getBuiltinModelGroups().flatMap((group) => group.models);
+}
 
 function requireModelPart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) {

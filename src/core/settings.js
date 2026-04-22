@@ -1,9 +1,9 @@
-import { parseEmbeddingReference } from "./embeddings.js";
+import { DEFAULT_EMBEDDING_MODEL, parseEmbeddingReference } from "./embeddings.js";
 
 export const DEFAULT_SETTINGS = {
   consolidation_hour: 3,
   consolidation_enabled: true,
-  default_embedding_model: "ollama:nomic-embed-text",
+  default_embedding_model: DEFAULT_EMBEDDING_MODEL,
   journal_tail_lines: 80,
   kb_pinned_limit: 10,
   worker_timeout_ms: 1800000,
@@ -37,8 +37,7 @@ export function validateSetting(key, value) {
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
     case "default_embedding_model":
-      parseEmbeddingReference(value);
-      return value;
+      return parseEmbeddingReference(value).reference;
     case "journal_tail_lines":
       return integerInRange(key, value, { min: 0, max: 1000 });
     case "kb_pinned_limit":

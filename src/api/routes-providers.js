@@ -1,4 +1,5 @@
 import {
+  buildModelCapabilities,
   createProvider,
   deleteProvider,
   discoverModels,
@@ -15,6 +16,13 @@ import {
 
 function error(res, status, code, message) {
   return res.status(status).json({ error: { code, message } });
+}
+
+function withCapabilities(provider, model) {
+  return {
+    ...model,
+    capabilities: buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities),
+  };
 }
 
 export function registerProviderRoutes(app, { db, dataDir, broker }) {
@@ -81,9 +89,10 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
       return error(res, 404, "not_found", "provider not found");
     }
     try {
+      const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
       const models = await discoverModels({ db, dataDir, providerId: req.params.id });
       broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
-      res.json({ models });
+      res.json({ models: models.map((model) => withCapabilities(provider, model)) });
     } catch (err) {
       error(res, 502, "discovery_failed", err.message);
     }
@@ -93,7 +102,8 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     if (!getProvider({ db, dataDir, id: req.params.id, includeKey: false })) {
       return error(res, 404, "not_found", "provider not found");
     }
-    res.json({ models: listModels({ db, providerId: req.params.id }) });
+    const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
+    res.json({ models: listModels({ db, providerId: req.params.id }).map((model) => withCapabilities(provider, model)) });
   });
 
   app.patch("/api/providers/:id/models/:modelId", (req, res) => {
@@ -117,7 +127,8 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     } else {
       updated = model;
     }
+    const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
     broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
-    res.json({ model: updated });
+    res.json({ model: withCapabilities(provider, updated) });
   });
 }

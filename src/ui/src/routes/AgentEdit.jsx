@@ -19,6 +19,43 @@ const emptyAgent = {
   enabled: true,
 };
 
+function flattenModels(groups = []) {
+  return groups.flatMap((group) => (group.models || []).map((model) => ({ ...model, group: group.label })));
+}
+
+function getReasoningMode(option) {
+  if (!option?.capabilities) return "effort";
+  const mode = option.capabilities.reasoning_mode;
+  if (mode === "none" || mode === "toggle" || mode === "effort") return mode;
+  return option.capabilities.reasoning ? "effort" : "none";
+}
+
+function getReasoningLevels(option) {
+  if (getReasoningMode(option) !== "effort") return [];
+  const explicit = Array.isArray(option?.capabilities?.reasoning_levels)
+    ? option.capabilities.reasoning_levels.filter((level) => EFFORT_OPTIONS.includes(level))
+    : [];
+  return explicit.length ? explicit : EFFORT_OPTIONS;
+}
+
+function normalizeEffort(option, effort) {
+  const mode = getReasoningMode(option);
+  if (mode === "none") return "low";
+  if (mode === "toggle") return effort && effort !== "low" ? "medium" : "low";
+  const supported = getReasoningLevels(option);
+  if (!supported.length) return "low";
+  if (!effort) return supported.includes("medium") ? "medium" : supported[0];
+  if (supported.includes(effort)) return effort;
+  if (effort === "max" && supported.includes("high")) return "high";
+  return supported[supported.length - 1];
+}
+
+function supportedBuiltinTools(option) {
+  if (option?.capabilities?.tool_use === false) return [];
+  if (Array.isArray(option?.builtin_tools) && option.builtin_tools.length) return option.builtin_tools;
+  return BUILTIN_TOOLS;
+}
+
 export function AgentEdit({ name }) {
   const isNew = name === "new";
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
@@ -29,6 +66,14 @@ export function AgentEdit({ name }) {
   const [consolidating, setConsolidating] = useState(false);
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
+
+  const allModels = flattenModels(modelGroups);
+  const selectedModel = allModels.find((model) => model.value === agent?.model) || null;
+  const reasoningMode = getReasoningMode(selectedModel);
+  const reasoningLevels = getReasoningLevels(selectedModel);
+  const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
+  const visibleTools = supportedBuiltinTools(selectedModel);
+  const supportsToolUse = visibleTools.length > 0;
 
   useEffect(() => {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
@@ -49,18 +94,34 @@ export function AgentEdit({ name }) {
   }
 
   function setModel(model) {
-    setAgent({ ...agent, model, sdk: sdkFromModel(model) });
+    const nextOption = allModels.find((item) => item.value === model) || null;
+    setAgent({
+      ...agent,
+      model,
+      sdk: sdkFromModel(model),
+      effort: normalizeEffort(nextOption, agent.effort),
+      builtin_allowlist: nextOption?.capabilities?.tool_use === false
+        ? []
+        : agent.builtin_allowlist.filter((tool) => supportedBuiltinTools(nextOption).includes(tool)),
+    });
   }
 
   async function save() {
     setSaving(true);
     setError(null);
     try {
+      const payload = {
+        ...agent,
+        effort: normalizedEffort,
+        builtin_allowlist: supportsToolUse
+          ? agent.builtin_allowlist.filter((tool) => visibleTools.includes(tool))
+          : [],
+      };
       if (isNew) {
-        await api.createAgent(agent);
+        await api.createAgent(payload);
         window.location.hash = `#/agents/${agent.name}`;
       } else {
-        await api.patchAgent(name, agent);
+        await api.patchAgent(name, payload);
       }
     } catch (err) {
       setError(err.message || String(err));
@@ -122,10 +183,28 @@ export function AgentEdit({ name }) {
       <div class="field"><label>Advanced model reference</label>
         <input value={agent.model} onInput={(e) => setModel(e.target.value)} />
       </div>
-      <div class="field"><label>Effort</label>
-        <select value={agent.effort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
-          {EFFORT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
-        </select></div>
+      <div class="meta" style="margin:-4px 0 12px">
+        {selectedModel?.capabilities?.tool_use === false
+          ? "This model does not support tool use."
+          : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
+        {selectedModel?.capabilities?.reasoning
+          ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : (reasoningLevels.join(", "))}`
+          : " · Reasoning: unavailable"}
+      </div>
+      {reasoningMode === "none" ? (
+        <div class="field"><label>Effort</label><div class="meta">This model does not support adjustable reasoning.</div></div>
+      ) : reasoningMode === "toggle" ? (
+        <div class="field"><label>Thinking</label>
+          <select value={normalizedEffort === "low" ? "off" : "on"} onChange={(e) => setAgent({ ...agent, effort: e.target.value === "off" ? "low" : "medium" })}>
+            <option value="off">Off</option>
+            <option value="on">On</option>
+          </select></div>
+      ) : (
+        <div class="field"><label>Effort</label>
+          <select value={normalizedEffort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
+            {reasoningLevels.map(v => <option key={v} value={v}>{v}</option>)}
+          </select></div>
+      )}
 
       <div class="field"><label>Instructions (free text — becomes the system prompt role)</label>
         <textarea rows="10" value={agent.instructions}
@@ -154,7 +233,8 @@ export function AgentEdit({ name }) {
       </div>
 
       <div class="field"><label>Built-in tools allowlist (empty = all tools)</label>
-        {BUILTIN_TOOLS.map(t => (
+        {!supportsToolUse && <div class="meta">This model cannot call built-in tools.</div>}
+        {supportsToolUse && visibleTools.map(t => (
           <label key={t} style="display:inline-block;margin-right:12px">
             <input type="checkbox" checked={agent.builtin_allowlist.includes(t)}
               onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })} />

@@ -3,8 +3,26 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { createOllama as createAiSdkOllama } from "ai-sdk-ollama";
 import { encrypt, decrypt } from "./crypto.js";
 import { newProviderId, newModelId } from "./ids.js";
+import { WORKLAB_BUILTIN_TOOLS } from "./ai.js";
 
-export const PROVIDER_TYPES = ["ollama", "openai_compat"];
+export const PROVIDER_TYPES = [
+  "ollama",
+  "lmstudio",
+  "vllm",
+  "openai_compat",
+  "anthropic_compat",
+  "google_compat",
+  "groq",
+  "openrouter",
+  "together",
+  "fireworks",
+  "deepseek",
+];
+
+const OPENAI_COMPAT_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+const OLLAMA_EFFORT_REASONING_HINTS = ["gpt-oss"];
+const OLLAMA_EFFORT_REASONING_LEVELS = ["low", "medium", "high"];
+const OLLAMA_TOGGLE_REASONING_HINTS = ["deepseek", "qwen", "qwq", "thinking", "reasoning"];
 
 const PRIVATE_HOSTNAMES = new Set(["localhost", "host.docker.internal"]);
 const PRIVATE_V4_CIDRS = [
@@ -238,6 +256,84 @@ export function setModelEnabled({ db, id, enabled }) {
   return getModel({ db, id });
 }
 
+export function inferOllamaReasoningProfile({ modelName = "", family = "", advertisedCapabilities = new Set() } = {}) {
+  const haystack = `${modelName} ${family}`.toLowerCase();
+  const advertisedThinking = advertisedCapabilities.has("thinking") || advertisedCapabilities.has("reasoning");
+  if (OLLAMA_EFFORT_REASONING_HINTS.some((hint) => haystack.includes(hint))) {
+    return {
+      reasoning: true,
+      reasoning_mode: "effort",
+      reasoning_levels: [...OLLAMA_EFFORT_REASONING_LEVELS],
+      reasoning_disable_supported: false,
+    };
+  }
+  const toggleReasoning = advertisedThinking || OLLAMA_TOGGLE_REASONING_HINTS.some((hint) => haystack.includes(hint));
+  if (!toggleReasoning) {
+    return {
+      reasoning: false,
+      reasoning_mode: "none",
+    };
+  }
+  return {
+    reasoning: true,
+    reasoning_mode: "toggle",
+    reasoning_disable_supported: true,
+  };
+}
+
+export function resolveReasoningCapabilities(providerType, modelName, capabilities = {}) {
+  const next = { ...(capabilities || {}) };
+  if (providerType === "ollama") {
+    const fallback = inferOllamaReasoningProfile({
+      modelName,
+      family: next.family || "",
+      advertisedCapabilities: new Set(Array.isArray(next.advertised_capabilities) ? next.advertised_capabilities : []),
+    });
+    const reasoningMode = next.reasoning_mode || (next.reasoning === false ? "none" : fallback.reasoning_mode);
+    return {
+      ...next,
+      reasoning: next.reasoning ?? (reasoningMode !== "none"),
+      reasoning_mode: reasoningMode,
+      reasoning_levels: reasoningMode === "effort"
+        ? Array.isArray(next.reasoning_levels) && next.reasoning_levels.length > 0
+          ? next.reasoning_levels
+          : [...OLLAMA_EFFORT_REASONING_LEVELS]
+        : undefined,
+      reasoning_disable_supported: reasoningMode === "none"
+        ? undefined
+        : (next.reasoning_disable_supported ?? fallback.reasoning_disable_supported ?? true),
+    };
+  }
+  if (!next.reasoning) {
+    return {
+      ...next,
+      reasoning: false,
+      reasoning_mode: "none",
+      reasoning_levels: undefined,
+      reasoning_disable_supported: undefined,
+    };
+  }
+  return {
+    ...next,
+    reasoning: true,
+    reasoning_mode: next.reasoning_mode || "effort",
+    reasoning_levels: Array.isArray(next.reasoning_levels) && next.reasoning_levels.length > 0
+      ? next.reasoning_levels
+      : [...OPENAI_COMPAT_REASONING_LEVELS],
+    reasoning_disable_supported: next.reasoning_disable_supported ?? true,
+  };
+}
+
+export function buildModelCapabilities(providerType, modelName, capabilities = {}) {
+  const normalized = resolveReasoningCapabilities(providerType, modelName, capabilities);
+  const supportsBuiltinTools = normalized.tool_use !== false;
+  return {
+    ...normalized,
+    builtin_tools: supportsBuiltinTools ? [...WORKLAB_BUILTIN_TOOLS] : [],
+    supports_builtin_tools: supportsBuiltinTools,
+  };
+}
+
 function rootUrl(baseUrl) {
   return baseUrl.replace(/\/+$/, "").replace(/\/(api|v1)$/, "");
 }
@@ -270,20 +366,34 @@ function inferOllamaCapabilities(model, show = null) {
   const caps = new Set(Array.isArray(show?.capabilities) ? show.capabilities.map((v) => String(v).toLowerCase()) : []);
   const name = String(show?.model || model?.name || "").toLowerCase();
   const family = `${details.family || ""} ${(details.families || []).join(" ")}`.toLowerCase();
+  const reasoningProfile = inferOllamaReasoningProfile({
+    modelName: show?.model || model?.name || "",
+    family,
+    advertisedCapabilities: caps,
+  });
   return {
     tool_use: caps.has("tools") || /llama|mistral|qwen|gemma|phi|granite/.test(family),
-    reasoning: /deepseek|qwen|qwq|thinking|reasoning|gpt-oss/.test(`${name} ${family}`) || caps.has("thinking"),
+    reasoning: reasoningProfile.reasoning,
+    reasoning_mode: reasoningProfile.reasoning_mode,
+    reasoning_levels: reasoningProfile.reasoning_levels,
+    reasoning_disable_supported: reasoningProfile.reasoning_disable_supported,
     vision: caps.has("vision") || /vision|llava|multimodal/.test(`${name} ${family}`),
     json_mode: true,
     parameter_size: details.parameter_size || null,
+    family,
+    advertised_capabilities: [...caps],
   };
 }
 
 function inferOpenAICompatCapabilities(model) {
   const id = String(model.id || model.name || "").toLowerCase();
+  const reasoning = /o1|o3|o4|deepseek-r|qwq|thinking|reasoning/.test(id);
   return {
     tool_use: model.tool_use ?? true,
-    reasoning: /o1|o3|o4|deepseek-r|qwq|thinking|reasoning/.test(id),
+    reasoning,
+    reasoning_mode: reasoning ? "effort" : "none",
+    reasoning_levels: reasoning ? [...OPENAI_COMPAT_REASONING_LEVELS] : undefined,
+    reasoning_disable_supported: reasoning ? true : undefined,
     vision: model.vision ?? /vision|vl|multimodal|gpt-4o/.test(id),
     json_mode: model.json_mode ?? true,
   };
@@ -360,7 +470,8 @@ export function createVercelClient(provider, { modelName = "", capabilities = {}
   const baseUrl = provider.base_url.replace(/\/+$/, "");
   if (provider.provider_type === "ollama") {
     const root = rootUrl(baseUrl);
-    if (capabilities.reasoning && /gpt-oss/i.test(modelName)) {
+    const resolved = resolveReasoningCapabilities(provider.provider_type, modelName, capabilities);
+    if (resolved.reasoning_mode === "effort") {
       const compat = createOpenAICompatible({ name: "ollama", baseURL: `${root}/v1`, apiKey: provider.api_key || "ollama" });
       return (nextModelName) => compat.chatModel(nextModelName);
     }
@@ -381,7 +492,7 @@ export function resolveVercelModel({ db, dataDir, providerId, modelName }) {
   if (!provider.enabled) throw new Error(`provider disabled: ${providerId}`);
   const modelRow = getModelByProviderAndName({ db, providerId, modelName });
   if (modelRow && !modelRow.enabled) throw new Error(`model disabled: ${modelName}`);
-  const capabilities = modelRow?.capabilities || {};
+  const capabilities = resolveReasoningCapabilities(provider.provider_type, modelName, modelRow?.capabilities || {});
   const modelFactory = createVercelClient(provider, { modelName, capabilities });
-  return { provider, modelRow, modelFactory };
+  return { provider, modelRow: modelRow ? { ...modelRow, capabilities } : modelRow, modelFactory, capabilities };
 }

@@ -4,11 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb, runMigrations } from "../../core/db.js";
 import {
+  buildModelCapabilities,
   createProvider,
   discoverModels,
   getProvider,
   isPrivateBaseUrl,
   listModels,
+  resolveReasoningCapabilities,
   resolveVercelModel,
   setModelEnabled,
   validateBaseUrl,
@@ -103,5 +105,29 @@ describe("providers", () => {
       fetchImpl: async () => ({ ok: true, json: async () => ({ data: [{ id: "m1" }] }) }),
     });
     expect(() => resolveVercelModel({ db, dataDir, providerId: provider.id, modelName: "m1" })).toThrow(/model disabled/i);
+  });
+
+  it("resolves Ollama reasoning profiles into toggle vs effort modes", () => {
+    expect(resolveReasoningCapabilities("ollama", "qwen2.5:7b", { reasoning: true })).toMatchObject({
+      reasoning: true,
+      reasoning_mode: "toggle",
+    });
+    expect(resolveReasoningCapabilities("ollama", "gpt-oss:20b", { reasoning: true })).toMatchObject({
+      reasoning: true,
+      reasoning_mode: "effort",
+      reasoning_levels: ["low", "medium", "high"],
+    });
+  });
+
+  it("adds builtin tool metadata to model capabilities", () => {
+    expect(buildModelCapabilities("openai_compat", "deepseek-r1", { tool_use: true, reasoning: true })).toMatchObject({
+      supports_builtin_tools: true,
+      reasoning_mode: "effort",
+    });
+    expect(buildModelCapabilities("openai_compat", "text-only", { tool_use: false, reasoning: false })).toMatchObject({
+      supports_builtin_tools: false,
+      builtin_tools: [],
+      reasoning_mode: "none",
+    });
   });
 });

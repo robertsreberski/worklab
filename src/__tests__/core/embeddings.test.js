@@ -24,15 +24,21 @@ describe("embedding references", () => {
       kind: "openai",
       model: "text-embedding-3-small",
     });
-    expect(parseEmbeddingReference("provider:local:text-embedding-3-small")).toMatchObject({
-      kind: "provider",
+    expect(parseEmbeddingReference("vercel:local:text-embedding-3-small")).toMatchObject({
+      kind: "vercel",
       providerId: "local",
       model: "text-embedding-3-small",
+    });
+    expect(parseEmbeddingReference("provider:local:text-embedding-3-small")).toMatchObject({
+      kind: "vercel",
+      providerId: "local",
+      model: "text-embedding-3-small",
+      reference: "vercel:local:text-embedding-3-small",
     });
 
     expect(() => parseEmbeddingReference("sonnet")).toThrow(/invalid embedding model reference/);
     expect(() => parseEmbeddingReference("openai:sonnet")).toThrow(/tier aliases/);
-    expect(() => parseEmbeddingReference("provider:local:haiku")).toThrow(/tier aliases/);
+    expect(() => parseEmbeddingReference("vercel:local:haiku")).toThrow(/tier aliases/);
   });
 });
 

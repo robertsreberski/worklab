@@ -62,6 +62,19 @@ describe("provider routes", () => {
     expect(res.body.models.map((m) => m.value)).toContain("claude:claude-sonnet-4-6");
     expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.4-mini");
     expect(res.body.models.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:${model.model_name}`);
+    expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
+    expect(res.body.models.find((m) => m.value === `vercel:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
+  });
+
+  it("accepts curated hosted provider types", async () => {
+    const { agent } = makeTestServer({ dataDir: tmpDataDir() });
+    const res = await agent.post("/api/providers").send({
+      name: "groq-prod",
+      provider_type: "groq",
+      base_url: "https://api.groq.com/openai",
+      trust_public_url: true,
+    }).expect(201);
+    expect(res.body.provider.provider_type).toBe("groq");
   });
 
   // ── Encrypt/decrypt round-trip ─────────────────────────────────────────────

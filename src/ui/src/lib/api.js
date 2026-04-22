@@ -47,10 +47,10 @@ export const api = {
   putMcpConfig: (data) => request("PUT", "/mcp", data),
   // kb
   listKb: (query) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`),
-  getKb: (slug) => request("GET", `/kb/${slug}`),
+  getKb: (slug) => request("GET", `/kb/${encodeURIComponent(slug)}`),
   createKb: (data) => request("POST", "/kb", data),
-  patchKb: (slug, patch) => request("PATCH", `/kb/${slug}`, patch),
-  deleteKb: (slug) => request("DELETE", `/kb/${slug}`),
+  patchKb: (slug, patch) => request("PATCH", `/kb/${encodeURIComponent(slug)}`, patch),
+  deleteKb: (slug) => request("DELETE", `/kb/${encodeURIComponent(slug)}`),
   // providers/models
   listProviders: () => request("GET", "/providers"),
   getProvider: (id) => request("GET", `/providers/${id}`),
