@@ -1,13 +1,16 @@
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   renameSync,
   unlinkSync,
-  writeFileSync,
+  writeSync,
 } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
@@ -44,32 +47,73 @@ export function kbPath(dataDir, slug) {
 
 // --- Frontmatter parsing ----------------------------------------------------
 
+// Detect a double-quoted string (with our escape set) and return the decoded
+// string. Returns null if `raw` is not a double-quoted literal. This must
+// bypass other coercion rules — a quoted `"true"` is the string "true", not a
+// boolean. Kept symmetric with `needsQuoting` + `quoteString` in the
+// renderer.
+function tryUnquoteDouble(raw) {
+  if (raw.length < 2 || raw[0] !== '"' || raw[raw.length - 1] !== '"') return null;
+  const inner = raw.slice(1, -1);
+  let out = "";
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (ch === "\\" && i + 1 < inner.length) {
+      const next = inner[i + 1];
+      if (next === "\\" || next === '"') {
+        out += next;
+        i++;
+        continue;
+      }
+    }
+    out += ch;
+  }
+  return out;
+}
+
 function coerceScalar(raw) {
+  // Double-quoted literal always yields a string — short-circuits other rules.
+  const unquoted = tryUnquoteDouble(raw);
+  if (unquoted !== null) return unquoted;
   if (raw === "" || raw === "null" || raw === "~") return null;
   if (raw === "true") return true;
   if (raw === "false") return false;
   if (/^-?\d+$/.test(raw)) return parseInt(raw, 10);
-  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+  if (raw.startsWith("'") && raw.endsWith("'") && raw.length >= 2) {
     return raw.slice(1, -1);
   }
   return raw;
 }
 
 function parseFlowArray(raw) {
-  // raw is like "[a, b, c]" or "[a, \"b,c\", d]"
+  // raw is like "[a, b, c]" or '[a, "b,c", d]' or '[a, "he said \"x\"", d]'.
+  // Split at top-level commas while honouring double-quoted literals with
+  // `\"` / `\\` escapes (mirrors `quoteString`), and bare single quotes.
   const inner = raw.slice(1, -1).trim();
   if (inner === "") return [];
-  // Split on commas, respecting simple quoted strings.
   const parts = [];
   let cur = "";
   let quote = null;
-  for (const ch of inner) {
-    if (quote) {
-      if (ch === quote) quote = null;
-      else cur += ch;
+  for (let i = 0; i < inner.length; i++) {
+    const ch = inner[i];
+    if (quote === '"') {
+      cur += ch;
+      if (ch === "\\" && i + 1 < inner.length) {
+        // Preserve the escape sequence verbatim; tryUnquoteDouble decodes it.
+        cur += inner[i + 1];
+        i++;
+        continue;
+      }
+      if (ch === '"') quote = null;
+      continue;
+    }
+    if (quote === "'") {
+      cur += ch;
+      if (ch === "'") quote = null;
       continue;
     }
     if (ch === '"' || ch === "'") {
+      cur += ch;
       quote = ch;
       continue;
     }
@@ -81,12 +125,9 @@ function parseFlowArray(raw) {
     cur += ch;
   }
   if (cur.trim() !== "") parts.push(cur.trim());
-  return parts.map((p) => {
-    if ((p.startsWith('"') && p.endsWith('"')) || (p.startsWith("'") && p.endsWith("'"))) {
-      return p.slice(1, -1);
-    }
-    return p;
-  });
+  // Each part goes through the same scalar coercion as a block-array item,
+  // so a quoted `"true"` stays a string while bare `true` becomes a boolean.
+  return parts.map((p) => coerceScalar(p));
 }
 
 /**
@@ -170,14 +211,44 @@ function parseFrontmatter(content) {
 
 // --- Frontmatter rendering --------------------------------------------------
 
+// A string needs quoting whenever the raw form would be re-parsed as a
+// non-string value (null/true/false/number/flow-array) or is structurally
+// ambiguous (leading/trailing whitespace, `: ` inside). Kept in lockstep
+// with `coerceScalar` so that render→parse is lossless.
+function needsQuoting(s) {
+  if (s === "") return true;
+  if (s === "true" || s === "false" || s === "null" || s === "~") return true;
+  if (/^-?\d+$/.test(s)) return true;
+  if (s.startsWith("[") || s.endsWith("]")) return true;
+  if (s.includes(": ")) return true;
+  if (/^\s/.test(s) || /\s$/.test(s)) return true;
+  // Anything that would open a quoted form must also be quoted so it round
+  // trips verbatim — otherwise a raw `"x"` would decode as the string `x`.
+  if (s.startsWith('"') || s.startsWith("'")) return true;
+  return false;
+}
+
+function quoteString(s) {
+  return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+}
+
+function renderString(s) {
+  return needsQuoting(s) ? quoteString(s) : s;
+}
+
+function renderArrayItem(v) {
+  if (typeof v === "string") return renderString(v);
+  return renderValue(v);
+}
+
 function renderValue(value) {
   if (Array.isArray(value)) {
-    return `[${value.map((v) => String(v)).join(", ")}]`;
+    return `[${value.map((v) => renderArrayItem(v)).join(", ")}]`;
   }
   if (value === null) return "null";
   if (typeof value === "boolean") return value ? "true" : "false";
   if (typeof value === "number") return String(value);
-  // string
+  if (typeof value === "string") return renderString(value);
   return String(value);
 }
 
@@ -210,10 +281,36 @@ function composeFile(meta, body) {
 
 // --- Atomic write -----------------------------------------------------------
 
+// Durable atomic write. Sequence (crash-safe against power loss):
+//   1. open(tmp, O_WRONLY|O_CREAT|O_TRUNC) — fresh temp file
+//   2. write(tmp, content)
+//   3. fsync(tmp)        — force page cache → disk for the data blocks
+//   4. close(tmp)
+//   5. rename(tmp, path) — atomic swap of directory entries
+//   6. open(dir, O_RDONLY) + fsync(dir) + close(dir) — force the rename's
+//      directory metadata to disk so the new name is observable after a
+//      crash (without this the entry can be lost even though the data block
+//      survived).
+// Kept inline here (not imported from any utils) so this module stays
+// self-contained and the safety invariant is visible at the call site.
 function writeAtomic(path, content) {
   const tmp = `${path}.tmp`;
-  writeFileSync(tmp, content);
+  const fd = openSync(tmp, "w");
+  try {
+    writeSync(fd, content);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
   renameSync(tmp, path);
+  // Fsync the parent directory so the rename itself is durable.
+  const dir = dirname(path);
+  const dfd = openSync(dir, "r");
+  try {
+    fsyncSync(dfd);
+  } finally {
+    closeSync(dfd);
+  }
 }
 
 function ensureKnowledgeDir(dataDir) {
@@ -238,16 +335,20 @@ function normalizeMetaForList(meta) {
 }
 
 // Read only the frontmatter block — avoids loading potentially huge bodies.
+// Strict about the terminator: only `\n---\n`, `\n---\r\n`, or `\n---` at
+// EOF closes the block. A mid-body `\n---important` or `\n----` does not.
+// Mirrors the shape of `FRONTMATTER_RE` at the top of this file.
+const FM_TERMINATOR_RE = /\n---(?:\r?\n|$)/;
+
 function readFrontmatterOnly(filePath) {
   const raw = readFileSync(filePath, "utf8");
-  // Find first `---` line and the next `---` line.
-  if (!raw.startsWith("---")) return { meta: {} };
-  const firstNl = raw.indexOf("\n");
-  if (firstNl < 0) return { meta: {} };
-  const rest = raw.slice(firstNl + 1);
-  const endIdx = rest.indexOf("\n---");
-  if (endIdx < 0) return { meta: {} };
-  const yamlBlock = rest.slice(0, endIdx);
+  // Opening fence must start the file and be followed by a newline.
+  const openMatch = /^---\r?\n/.exec(raw);
+  if (!openMatch) throw new Error("missing opening frontmatter fence");
+  const rest = raw.slice(openMatch[0].length);
+  const endMatch = FM_TERMINATOR_RE.exec(rest);
+  if (!endMatch) throw new Error("missing closing frontmatter fence");
+  const yamlBlock = rest.slice(0, endMatch.index);
   // Re-wrap with --- markers so parseFrontmatter can consume uniformly.
   const wrapped = `---\n${yamlBlock}\n---\n`;
   return parseFrontmatter(wrapped);
@@ -350,9 +451,16 @@ export function kbList({ dataDir, tag, category, pinned } = {}) {
     const slug = entry.slice(0, -3);
     if (!SLUG_RE.test(slug)) continue;
     let parsed;
+    const filePath = join(dir, entry);
     try {
-      parsed = readFrontmatterOnly(join(dir, entry));
-    } catch {
+      parsed = readFrontmatterOnly(filePath);
+    } catch (err) {
+      // Keep the list route resilient: malformed entries are skipped rather
+      // than aborting the whole listing, but we log so they're diagnosable.
+      console.warn("[kb] skipping unreadable entry", {
+        file: filePath,
+        err: err.message,
+      });
       continue;
     }
     const meta = normalizeMetaForList({ ...parsed.meta, slug: parsed.meta.slug ?? slug });
