@@ -137,7 +137,7 @@ export function createTaskWatcher({
         `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
       ).run(newCommentId(), taskId, `ERROR: ${errText}`, Date.now());
       db.prepare(
-        "UPDATE tasks SET error_text = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tasks SET status = 'todo', error_text = ?, updated_at = ? WHERE id = ?",
       ).run(errText, Date.now(), taskId);
       broker.broadcast("global", { type: "task_updated", id: taskId });
     }

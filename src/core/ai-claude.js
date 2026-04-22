@@ -31,8 +31,13 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
   const thinkingOpts = thinkingForEffort(effort);
 
+  // Single-turn: concatenate user messages into one prompt string for the SDK
+  const promptString = Array.isArray(messages)
+    ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
+    : String(messages || "");
+
   const stream = query({
-    prompt: messages,
+    prompt: promptString,
     options: {
       systemPrompt,
       model: model.model,
