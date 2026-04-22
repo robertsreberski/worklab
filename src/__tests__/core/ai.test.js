@@ -1,39 +1,48 @@
 import { describe, it, expect } from "vitest";
-import { resolveModel, TIER_MODELS } from "../../core/ai.js";
+import { parseModelReference, resolveModel, isValidModelReference } from "../../core/ai.js";
 
-describe("resolveModel", () => {
-  it("bare 'sonnet' resolves to claude sonnet tier", () => {
-    const r = resolveModel("sonnet");
-    expect(r.sdk).toBe("claude");
-    expect(r.tier).toBe("sonnet");
-    expect(r.model).toBe(TIER_MODELS.sonnet);
+describe("explicit model references", () => {
+  it("parses an exact Claude model reference", () => {
+    expect(parseModelReference("claude:claude-sonnet-4-6")).toEqual({
+      sdk: "claude",
+      model: "claude-sonnet-4-6",
+      reference: "claude:claude-sonnet-4-6",
+    });
   });
 
-  it("bare 'opus' resolves to claude opus tier", () => {
-    expect(resolveModel("opus").tier).toBe("opus");
+  it("parses an exact OpenAI model reference", () => {
+    expect(resolveModel("openai:gpt-5.4-mini")).toMatchObject({
+      sdk: "openai",
+      model: "gpt-5.4-mini",
+    });
   });
 
-  it("bare 'haiku' resolves to claude haiku tier", () => {
-    expect(resolveModel("haiku").tier).toBe("haiku");
+  it("parses a Vercel custom provider reference preserving colons in model name", () => {
+    expect(parseModelReference("vercel:p1:gemma3:4b")).toMatchObject({
+      sdk: "vercel",
+      providerId: "p1",
+      modelName: "gemma3:4b",
+      model: "gemma3:4b",
+    });
   });
 
-  it("claude: prefix resolves explicitly", () => {
-    const r = resolveModel("claude:sonnet");
-    expect(r.sdk).toBe("claude");
-    expect(r.tier).toBe("sonnet");
+  it("rejects bare tier strings", () => {
+    expect(() => parseModelReference("sonnet")).toThrow(/invalid model reference/i);
+    expect(isValidModelReference("opus")).toBe(false);
+  });
+
+  it("rejects tier-looking prefixed values", () => {
+    expect(() => parseModelReference("claude:sonnet")).toThrow(/tier aliases/i);
+    expect(() => parseModelReference("openai:opus")).toThrow(/tier aliases/i);
   });
 
   it("rejects unknown sdk prefix", () => {
-    expect(() => resolveModel("bogus:x")).toThrow(/unknown sdk/i);
+    expect(() => parseModelReference("bogus:x")).toThrow(/unknown sdk/i);
   });
 
-  it("rejects unknown claude tier", () => {
-    expect(() => resolveModel("claude:mystery")).toThrow(/unknown tier/i);
-  });
-
-  it("accepts raw claude model id", () => {
-    const r = resolveModel("claude-opus-4-7");
-    expect(r.sdk).toBe("claude");
-    expect(r.model).toBe("claude-opus-4-7");
+  it("rejects malformed Vercel references", () => {
+    expect(isValidModelReference("vercel:")).toBe(false);
+    expect(isValidModelReference("vercel::model")).toBe(false);
+    expect(isValidModelReference("vercel:p1:")).toBe(false);
   });
 });

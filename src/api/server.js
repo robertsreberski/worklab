@@ -9,8 +9,11 @@ import { registerAgentRoutes } from "./routes-agents.js";
 import { registerSkillRoutes } from "./routes-skills.js";
 import { registerMcpRoutes } from "./routes-mcp.js";
 import { registerKbRoutes } from "./routes-kb.js";
+import { registerProviderRoutes } from "./routes-providers.js";
+import { registerModelRoutes } from "./routes-models.js";
+import { registerSearchRoutes } from "./routes-search.js";
 
-export function createServer({ db, logger, watcher, dataDir }) {
+export function createServer({ db, logger, watcher, dataDir, consolidation }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -24,10 +27,13 @@ export function createServer({ db, logger, watcher, dataDir }) {
   registerSettingsRoutes(app, { db, broker, logger });
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker });
-  registerAgentRoutes(app, { db, broker });
+  registerAgentRoutes(app, { db, broker, consolidation });
   if (dataDir) registerSkillRoutes(app, { dataDir });
   if (dataDir) registerMcpRoutes(app, { dataDir });
   if (dataDir) registerKbRoutes(app, { dataDir, broker });
+  if (dataDir) registerProviderRoutes(app, { db, dataDir, broker });
+  if (dataDir) registerModelRoutes(app, { db, dataDir });
+  if (dataDir) registerSearchRoutes(app, { db, dataDir });
 
   app.use((err, _req, res, _next) => {
     logger?.error?.({ err }, "unhandled error");
