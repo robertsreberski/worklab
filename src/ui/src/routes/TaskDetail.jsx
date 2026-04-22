@@ -2,53 +2,89 @@
 import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useRunStream } from "../lib/useRunStream.js";
 import { CommentList } from "../components/CommentList.jsx";
+import { EventTimeline } from "../components/EventTimeline.jsx";
 
 export function TaskDetail({ id }) {
   const [data, setData] = useState(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
   const [newComment, setNewComment] = useState("");
+  const [activeRunId, setActiveRunId] = useState(null);
+  const [runError, setRunError] = useState(null);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
-  useSSE("global", (evt) => { if (evt.id === id) reload(); });
+  useSSE("global", (evt) => {
+    if (evt.id === id) reload();
+    if (evt.type === "run_started" && evt.taskId === id) setActiveRunId(evt.runId);
+    if (evt.type === "run_ended" && evt.taskId === id) setActiveRunId(null);
+  });
+
+  useEffect(() => {
+    if (data?.runs?.length && !activeRunId) {
+      const latest = data.runs[0];
+      if (latest?.status === "running") setActiveRunId(latest.id);
+    }
+  }, [data, activeRunId]);
+
+  const { events: runEvents } = useRunStream(activeRunId);
 
   if (!data) return <div>Loading…</div>;
   if (data.notFound) return <div>Task not found. <a href="#/tasks">Back</a></div>;
+  const { task, comments, runs } = data;
 
-  const { task, comments } = data;
-
-  async function save() {
-    await api.patchTask(id, draft);
-    setEditing(false);
-  }
-
+  async function save() { await api.patchTask(id, draft); setEditing(false); }
   async function addComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
     await api.addComment(id, newComment.trim());
     setNewComment("");
   }
-
   async function destroy() {
     if (!confirm("Delete this task?")) return;
     await api.deleteTask(id);
     window.location.hash = "#/tasks";
   }
+  async function runNow() {
+    setRunError(null);
+    try {
+      const r = await api.runTask(id);
+      setActiveRunId(r.runId);
+    } catch (err) { setRunError(err.message); }
+  }
+  async function cancelRun() {
+    try { await api.cancelTask(id); } catch (err) { setRunError(err.message); }
+  }
+
+  const canRun = task.executor_agent && (task.status === "todo" || task.status === "in_progress") && !activeRunId;
 
   return (
     <div class="detail">
       <a href="#/tasks">← Back</a>
       <h2>{task.title}</h2>
       <div class="meta">
-        status: {task.status} · created {new Date(task.created_at).toLocaleString()}
+        status: {task.status} · executor: {task.executor_agent || "—"} · reviewer: {task.reviewer_agent || "—"}
       </div>
 
-      {!editing && (
+      <div style="margin:12px 0">
+        <button class="primary" onClick={runNow} disabled={!canRun}>▶ Run now</button>
+        {activeRunId && <button onClick={cancelRun} style="margin-left:8px;color:#ff7a7a">Cancel run</button>}
+        {runError && <span style="color:#ff7a7a;margin-left:12px">{runError}</span>}
+      </div>
+
+      {activeRunId && (
+        <div style="border:1px solid var(--border);border-radius:6px;padding:12px;background:var(--panel);margin-bottom:16px">
+          <h4 style="margin:0 0 8px">Live run</h4>
+          <EventTimeline events={runEvents} />
+        </div>
+      )}
+
+      {!editing ? (
         <>
           <p>{task.description || <span class="meta">No description.</span>}</p>
           <h4>Instructions</h4>
@@ -56,15 +92,29 @@ export function TaskDetail({ id }) {
           <button onClick={() => { setDraft(task); setEditing(true); }}>Edit</button>
           <button onClick={destroy} style="margin-left:8px;color:#ff7a7a">Delete</button>
         </>
-      )}
-
-      {editing && (
+      ) : (
         <>
           <div class="field"><label>Title</label><input value={draft.title} onInput={(e) => setDraft({ ...draft, title: e.target.value })} /></div>
           <div class="field"><label>Description</label><textarea rows="4" value={draft.description} onInput={(e) => setDraft({ ...draft, description: e.target.value })} /></div>
           <div class="field"><label>Instructions</label><textarea rows="8" value={draft.instructions} onInput={(e) => setDraft({ ...draft, instructions: e.target.value })} /></div>
+          <div class="field"><label>Executor agent</label><input value={draft.executor_agent || ""} placeholder="agent name (slug)" onInput={(e) => setDraft({ ...draft, executor_agent: e.target.value || null })} /></div>
+          <div class="field"><label>Reviewer agent</label><input value={draft.reviewer_agent || ""} placeholder="(optional)" onInput={(e) => setDraft({ ...draft, reviewer_agent: e.target.value || null })} /></div>
           <button class="primary" onClick={save}>Save</button>
           <button onClick={() => setEditing(false)} style="margin-left:8px">Cancel</button>
+        </>
+      )}
+
+      {runs?.length > 0 && (
+        <>
+          <h3 style="margin-top:24px">Previous runs</h3>
+          <ul style="list-style:none;padding:0">
+            {runs.slice(0, 5).map(r => (
+              <li key={r.id} class="meta" style="margin-bottom:4px">
+                {r.mode} · {r.agent_name} · {r.status} · {new Date(r.started_at).toLocaleString()}
+                {r.ended_at && ` → ${new Date(r.ended_at).toLocaleString()}`}
+              </li>
+            ))}
+          </ul>
         </>
       )}
 
