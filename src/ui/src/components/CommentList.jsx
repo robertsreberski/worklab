@@ -21,12 +21,12 @@ export function CommentList({ comments }) {
         const { verdict, body: displayBody } = parseVerdict(c.body, c.author_type);
         return (
           <div key={c.id} class="comment">
-            <div class="author" style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <div class="author comment-head">
               <CommentAuthor authorType={c.author_type} authorId={c.author_id} />
               {verdict && (
                 <span class={`verdict-badge ${verdict.toLowerCase()}`}>{verdict}</span>
               )}
-              <span style="margin-left:auto;font-size:11px;color:var(--muted);">
+              <span class="comment-time">
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>

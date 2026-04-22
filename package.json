@@ -8,7 +8,7 @@
     "worklab": "./src/cli/index.js"
   },
   "scripts": {
-    "start": "node src/cli/index.js start",
+    "start": "npm run build:ui && node src/cli/index.js start",
     "dev": "node src/cli/index.js start",
     "build:ui": "vite build --config src/ui/vite.config.js",
     "test": "vitest run",

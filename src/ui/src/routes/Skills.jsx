@@ -8,22 +8,27 @@ export function Skills() {
   useEffect(() => { reload(); }, [reload]);
 
   return (
-    <div class="detail">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h2 style="margin:0">Skills</h2>
-        <a href="#/skills/new" class="primary" style="padding:6px 10px;border-radius:4px;background:var(--accent);color:#fff;text-decoration:none">+ New skill</a>
+    <div class="detail page-stack">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Playbooks</div>
+          <h2 class="page-title">Skills</h2>
+          <div class="page-copy">{skills.length} available</div>
+        </div>
+        <a href="#/skills/new" class="primary">New skill</a>
       </div>
       {skills.length === 0 && <div class="meta">No skills yet.</div>}
-      <ul style="list-style:none;padding:0">
+      <div class="list-stack">
         {skills.map(s => (
-          <li key={s.name} class="task-card" style="margin-bottom:8px">
-            <a href={`#/skills/${s.name}`} style="color:inherit;text-decoration:none">
+          <a key={s.name} href={`#/skills/${s.name}`} class="list-row">
+            <div class="list-row-main">
               <h4>{s.name} {s.priority === "always" && <span class="meta">(always-inlined)</span>}</h4>
-              <div class="meta">{s.trigger} · {s.enabled ? "enabled" : "disabled"}</div>
-            </a>
-          </li>
+              <div class="meta">{s.trigger || "No trigger"}</div>
+            </div>
+            <span class={s.enabled ? "status-badge done" : "status-badge muted"}>{s.enabled ? "Enabled" : "Disabled"}</span>
+          </a>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

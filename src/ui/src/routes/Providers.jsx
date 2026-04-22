@@ -147,19 +147,25 @@ export function Providers() {
   }
 
   return (
-    <div class="detail">
-      <h2>Providers</h2>
-      {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
+    <div class="detail page-stack">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Model backends</div>
+          <h2 class="page-title">Providers</h2>
+          <div class="page-copy">{providers.length} configured</div>
+        </div>
+      </div>
+      {error && <div class="surface-panel compact status-line error">{error}</div>}
 
       <section class="panel-section">
         <h3>New provider</h3>
-        <div class="meta" style="margin-bottom:12px">{selectedType.description}</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px">
+        <div class="meta">{selectedType.description}</div>
+        <div class="provider-type-grid">
           {PROVIDER_TYPE_OPTIONS.map((option) => (
             <button
               key={option.value}
               onClick={() => setForm((current) => applyPreset(current, option.value))}
-              style={`text-align:left;padding:10px;border-radius:6px;border:1px solid ${form.provider_type === option.value ? "var(--accent)" : "var(--border)"};background:var(--panel)`}
+              class={`provider-type-button ${form.provider_type === option.value ? "active" : ""}`}
             >
               <div><strong>{option.label}</strong></div>
               <div class="meta">{option.helper}</div>
@@ -167,29 +173,31 @@ export function Providers() {
           ))}
         </div>
 
-        <div class="field"><label>Name</label>
-          <input value={form.name} onInput={(e) => setForm({ ...form, name: e.target.value })} /></div>
-        <div class="field"><label>Type</label>
-          <select value={form.provider_type} onChange={(e) => setForm((current) => applyPreset(current, e.target.value))}>
-            {PROVIDER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select></div>
-        <div class="field"><label>Base URL</label>
-          <input value={form.base_url} placeholder={preset.base_url || "https://example.com"} onInput={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
-        <div class="field"><label>API key (write-only)</label>
-          <input type="password" value={form.api_key} onInput={(e) => setForm({ ...form, api_key: e.target.value })} />
-          <div class="meta">{preset.api_key_hint}</div>
-        </div>
-        <div class="field">
-          <label class="choice-label">
-            <input type="checkbox" checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })} />
-            <span>Trust public HTTPS URL</span>
-          </label>
-        </div>
-        <div class="field">
-          <label class="choice-label">
-            <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-            <span>Show this provider in model pickers</span>
-          </label>
+        <div class="form-grid">
+          <div class="field"><label>Name</label>
+            <input value={form.name} onInput={(e) => setForm({ ...form, name: e.target.value })} /></div>
+          <div class="field"><label>Type</label>
+            <select value={form.provider_type} onChange={(e) => setForm((current) => applyPreset(current, e.target.value))}>
+              {PROVIDER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select></div>
+          <div class="field span-2"><label>Base URL</label>
+            <input value={form.base_url} placeholder={preset.base_url || "https://example.com"} onInput={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
+          <div class="field span-2"><label>API key (write-only)</label>
+            <input type="password" value={form.api_key} onInput={(e) => setForm({ ...form, api_key: e.target.value })} />
+            <div class="meta">{preset.api_key_hint}</div>
+          </div>
+          <div class="field">
+            <label class="choice-label">
+              <input type="checkbox" checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })} />
+              <span>Trust public HTTPS URL</span>
+            </label>
+          </div>
+          <div class="field">
+            <label class="choice-label">
+              <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+              <span>Show this provider in model pickers</span>
+            </label>
+          </div>
         </div>
         <button class="primary" disabled={!form.name || !form.base_url} onClick={create}>Create provider</button>
       </section>
@@ -202,7 +210,7 @@ export function Providers() {
             <div class="provider-head">
               <div class="provider-title">
                 <h3>{provider.name}</h3>
-                <div class="meta">{optionForProviderType(provider.provider_type).label} · {provider.base_url} · {provider.has_api_key ? "API key saved" : "no API key"}</div>
+                <div class="meta">{optionForProviderType(provider.provider_type).label} / {provider.base_url} / {provider.has_api_key ? "API key saved" : "no API key"}</div>
                 <div class="meta">Model picker visibility: {provider.enabled ? "shown when models are enabled" : "hidden because this provider is disabled"}</div>
                 {status.test && (
                   <div class={status.test.ok ? "status-line ok" : "status-line error"}>

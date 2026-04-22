@@ -14,7 +14,7 @@ export function SkillEdit({ name }) {
     if (!isNew) api.getSkill(name).then(r => setSkill(r.skill)).catch(() => setSkill({ notFound: true }));
   }, [name, isNew]);
 
-  if (!skill) return <div>Loading…</div>;
+  if (!skill) return <div>Loading...</div>;
   if (skill.notFound) return <div>Skill not found. <a href="#/skills">Back</a></div>;
 
   async function save() {
@@ -42,43 +42,68 @@ export function SkillEdit({ name }) {
   }
 
   return (
-    <div class="detail">
-      <a href="#/skills" class="back-link">← Back</a>
-      <h2>{isNew ? "New skill" : skill.name}</h2>
-      {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
+    <div class="detail page-stack">
+      <a href="#/skills" class="back-link">Back to skills</a>
+      <section class="surface-panel task-hero">
+        <div>
+          <div class="eyebrow">Skill</div>
+          <h2>{isNew ? "New skill" : skill.name}</h2>
+          <div class="task-meta-grid">
+            <span class={skill.meta.enabled !== false ? "status-badge done" : "status-badge muted"}>{skill.meta.enabled !== false ? "Enabled" : "Disabled"}</span>
+            <span class="meta-pill">{skill.meta.priority === "always" ? "Always inlined" : "On demand"}</span>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="primary" onClick={save} disabled={saving || !skill.name}>
+            {saving ? "Saving..." : (isNew ? "Create" : "Save")}
+          </button>
+          {!isNew && <button onClick={destroy} class="danger">Delete</button>}
+        </div>
+      </section>
+      {error && <div class="surface-panel compact status-line error">{error}</div>}
 
-      <div class="field"><label>Name (slug)</label>
-        <input value={skill.name} disabled={!isNew}
-          onInput={(e) => setSkill({ ...skill, name: e.target.value })} /></div>
+      <section class="surface-panel">
+        <div class="section-kicker">Metadata</div>
+        <h3 class="section-title">Activation</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label>Name (slug)</label>
+            <input value={skill.name} disabled={!isNew}
+              onInput={(e) => setSkill({ ...skill, name: e.target.value })} />
+          </div>
+          <div class="field">
+            <label>Priority</label>
+            <select value={skill.meta.priority || ""}
+              onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, priority: e.target.value || undefined } })}>
+              <option value="">On demand</option>
+              <option value="always">Always inline full body</option>
+            </select>
+          </div>
+          <div class="field span-2">
+            <label>Trigger</label>
+            <input value={skill.meta.trigger || ""}
+              onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })} />
+          </div>
+          <div class="field span-2">
+            <label class="choice-label">
+              <input type="checkbox" checked={skill.meta.enabled !== false}
+                onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })} />
+              <span>Enabled</span>
+            </label>
+          </div>
+        </div>
+      </section>
 
-      <div class="field"><label>Trigger</label>
-        <input value={skill.meta.trigger || ""}
-          onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })} /></div>
-
-      <div class="field"><label>Priority</label>
-        <select value={skill.meta.priority || ""}
-          onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, priority: e.target.value || undefined } })}>
-          <option value="">(on demand)</option>
-          <option value="always">always (inline full body in every system prompt)</option>
-        </select></div>
-
-      <div class="field">
-        <label class="choice-label">
-          <input type="checkbox" checked={skill.meta.enabled !== false}
-            onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })} />
-          <span>Enabled</span>
-        </label>
-      </div>
-
-      <div class="field"><label>Body (markdown playbook)</label>
-        <textarea rows="20" value={skill.body}
-          onInput={(e) => setSkill({ ...skill, body: e.target.value })}
-          style="font-family:ui-monospace,Menlo,Monaco,monospace" /></div>
-
-      <button class="primary" onClick={save} disabled={saving || !skill.name}>
-        {saving ? "Saving…" : (isNew ? "Create" : "Save")}
-      </button>
-      {!isNew && <button onClick={destroy} style="margin-left:8px;color:#ff7a7a">Delete</button>}
+      <section class="surface-panel">
+        <div class="section-kicker">Playbook</div>
+        <h3 class="section-title">Body</h3>
+        <div class="field">
+          <label>Markdown</label>
+          <textarea rows="22" value={skill.body}
+            onInput={(e) => setSkill({ ...skill, body: e.target.value })}
+            class="mono-input" />
+        </div>
+      </section>
     </div>
   );
 }
