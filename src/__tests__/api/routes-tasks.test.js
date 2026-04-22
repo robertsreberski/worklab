@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
 
 describe("GET /api/tasks", () => {
@@ -193,5 +193,63 @@ describe("GET /api/tasks with filters", () => {
     const res = await agent.get("/api/tasks?status=in_progress&agent=bob").expect(200);
     expect(res.body.tasks.length).toBe(1);
     expect(res.body.tasks[0].id).toBe(t.id);
+  });
+});
+
+describe("POST /api/tasks/:id/run", () => {
+  it("invokes watcher.handleRunRequested", async () => {
+    const calls = [];
+    const { agent } = makeTestServer({
+      watcher: {
+        handleRunRequested: async (id) => { calls.push(id); return { runId: "r1" }; },
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/run`).expect(200);
+    expect(res.body.runId).toBe("r1");
+    expect(calls).toEqual([task.id]);
+  });
+
+  it("returns 400 when watcher throws (e.g., no executor)", async () => {
+    const { agent } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => { throw new Error("no executor assigned"); },
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/run`).expect(400);
+    expect(res.body.error.message).toMatch(/no executor/);
+  });
+});
+
+describe("POST /api/tasks/:id/cancel", () => {
+  it("invokes watcher.cancel when active", async () => {
+    const cancelFn = vi.fn(() => true);
+    const { agent } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r" }),
+        cancel: cancelFn,
+        shutdown: async () => {},
+        isActive: () => true,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.post(`/api/tasks/${task.id}/cancel`).expect(204);
+    expect(cancelFn).toHaveBeenCalledWith(task.id);
+  });
+
+  it("returns 404 when no active run", async () => {
+    const { agent } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r" }),
+        cancel: () => false,
+        shutdown: async () => {},
+        isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.post(`/api/tasks/${task.id}/cancel`).expect(404);
   });
 });

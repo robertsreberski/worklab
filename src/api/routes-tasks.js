@@ -11,7 +11,7 @@ function rowToTask(row) {
   };
 }
 
-export function registerTaskRoutes(app, { db, broker }) {
+export function registerTaskRoutes(app, { db, broker, watcher }) {
   app.get("/api/tasks", (req, res) => {
     const where = [];
     const params = [];
@@ -138,5 +138,22 @@ export function registerTaskRoutes(app, { db, broker }) {
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const runs = db.prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC").all(req.params.id);
     res.json({ runs });
+  });
+
+  app.post("/api/tasks/:id/run", async (req, res) => {
+    if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
+    try {
+      const result = await watcher.handleRunRequested(req.params.id);
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: { code: "invalid_state", message: err.message } });
+    }
+  });
+
+  app.post("/api/tasks/:id/cancel", (req, res) => {
+    if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
+    const cancelled = watcher.cancel(req.params.id);
+    if (!cancelled) return res.status(404).json({ error: { code: "not_running", message: "no active run" } });
+    res.status(204).end();
   });
 }

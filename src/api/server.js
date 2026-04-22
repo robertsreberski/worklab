@@ -5,7 +5,7 @@ import { registerTaskRoutes } from "./routes-tasks.js";
 import { registerSettingsRoutes } from "./routes-settings.js";
 import { registerActivityRoutes } from "./routes-activity.js";
 
-export function createServer({ db, logger }) {
+export function createServer({ db, logger, watcher }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -15,7 +15,7 @@ export function createServer({ db, logger }) {
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
-  registerTaskRoutes(app, { db, broker, logger });
+  registerTaskRoutes(app, { db, broker, logger, watcher });
   registerSettingsRoutes(app, { db, broker, logger });
   registerActivityRoutes(app, { db, logger });
 
