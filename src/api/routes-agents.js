@@ -1,3 +1,5 @@
+import { parseModelReference } from "../core/ai.js";
+
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 function rowToAgent(row) {
@@ -24,20 +26,26 @@ const PATCHABLE = [
   "enabled",
 ];
 
-export function registerAgentRoutes(app, { db, broker }) {
+export function registerAgentRoutes(app, { db, broker, consolidation }) {
   app.get("/api/agents", (_req, res) => {
     const rows = db.prepare("SELECT * FROM agents ORDER BY name").all();
     res.json({ agents: rows.map(rowToAgent) });
   });
 
   app.post("/api/agents", (req, res) => {
-    const { name, display_name, sdk, model } = req.body || {};
+    const { name, display_name, model } = req.body || {};
 
     if (!name || !NAME_RE.test(name)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid name (lowercase slug required)" } });
     }
-    if (!display_name || !sdk || !model) {
-      return res.status(400).json({ error: { code: "validation", message: "display_name, sdk, model required" } });
+    if (!display_name || !model) {
+      return res.status(400).json({ error: { code: "validation", message: "display_name and explicit model reference required" } });
+    }
+    let resolved;
+    try {
+      resolved = parseModelReference(model);
+    } catch (err) {
+      return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
     }
 
     const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(name);
@@ -59,7 +67,7 @@ export function registerAgentRoutes(app, { db, broker }) {
         (name, display_name, description, sdk, model, effort, instructions,
          skills_allowlist, mcp_allowlist, builtin_allowlist, enabled, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, display_name, description, sdk, model, effort, instructions,
+    `).run(name, display_name, description, resolved.sdk, model, effort, instructions,
            skillsAllow, mcpAllow, builtinAllow, enabled, now, now);
 
     broker.broadcast("global", { type: "agent_updated", name });
@@ -73,6 +81,16 @@ export function registerAgentRoutes(app, { db, broker }) {
     res.json({ agent: rowToAgent(row) });
   });
 
+  app.post("/api/agents/:name/consolidate", (req, res) => {
+    if (!consolidation) return res.status(501).json({ error: { code: "not_configured", message: "consolidation not wired" } });
+    try {
+      const result = consolidation.runNow(req.params.name, { force: true });
+      res.json(result);
+    } catch (err) {
+      res.status(400).json({ error: { code: "consolidation_failed", message: err.message } });
+    }
+  });
+
   app.patch("/api/agents/:name", (req, res) => {
     const existing = db.prepare("SELECT * FROM agents WHERE name = ?").get(req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
@@ -82,6 +100,16 @@ export function registerAgentRoutes(app, { db, broker }) {
 
     for (const k of PATCHABLE) {
       if (k in req.body) {
+        if (k === "model") {
+          try {
+            const resolved = parseModelReference(req.body[k]);
+            fields.push("sdk = ?");
+            values.push(resolved.sdk);
+          } catch (err) {
+            return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
+          }
+        }
+        if (k === "sdk") continue;
         fields.push(`${k} = ?`);
         if (k.endsWith("_allowlist")) {
           values.push(JSON.stringify(req.body[k] ?? []));

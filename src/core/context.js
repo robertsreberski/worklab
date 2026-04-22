@@ -4,6 +4,8 @@ const CADENCE = `Journal as you work — call \`journal_append\` for facts you d
 
 const REVIEW_DIRECTIVE = "Review the executor's work against the task instructions. Respond with a final message whose first line is either `VERDICT: APPROVE` or `VERDICT: REJECT`. If REJECT, follow with bullet-pointed notes the executor can act on.";
 
+const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
+
 // Duration split: <1000 ms → "<N>ms"; >=1000 ms → "<N.N>s" (one decimal, e.g. 2350 → "2.4s").
 // Defensively guards against negative, NaN, non-numeric, and other edge cases.
 function formatDuration(ms) {
@@ -85,5 +87,14 @@ export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTa
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(formatExecutorOutput(execution || {}));
   parts.push(REVIEW_DIRECTIVE);
+  return parts.filter(Boolean).join("\n");
+}
+
+export function buildConsolidationSystemPrompt({ agent, memory, journal }) {
+  const parts = [];
+  parts.push(section("Role", agent.instructions || ""));
+  parts.push(section("Current memory", memory || "_No existing memory._"));
+  parts.push(section("Full journal", journal || "_No journal entries._"));
+  parts.push(CONSOLIDATION_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }

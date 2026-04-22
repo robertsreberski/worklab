@@ -3,8 +3,8 @@ import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
 import { loadMcpConfig, getBuiltinMcpServers, pickMcpServers } from "./core/mcp-config.js";
-import { readJournalTail, agentMemoryPath } from "./core/journal.js";
-import { buildExecuteSystemPrompt, buildReviewSystemPrompt } from "./core/context.js";
+import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
+import { buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
@@ -83,11 +83,11 @@ async function main() {
   const runId = process.env.WORKLAB_RUN_ID;
   const config = loadConfig();
 
-  if (!taskId || !mode || !agentName || !runId) {
+  if (!mode || !agentName || !runId || (mode !== "consolidate" && !taskId)) {
     emit({ type: "error", message: "missing required args/env" });
     process.exit(1);
   }
-  if (mode !== "execute" && mode !== "review") {
+  if (mode !== "execute" && mode !== "review" && mode !== "consolidate") {
     emit({ type: "error", message: `mode ${mode} not implemented` });
     process.exit(1);
   }
@@ -96,12 +96,66 @@ async function main() {
 
   const db = openDb(join(config.dataDir, "worklab.db"));
 
-  const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
-  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
-
   const ac = new AbortController();
   process.on("SIGTERM", () => { ac.abort(); });
   process.on("SIGINT", () => { ac.abort(); });
+
+  if (mode === "consolidate") {
+    const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+    if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
+    const memoryPath = agentMemoryPath(config.dataDir, agentName);
+    const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
+    const journal = readFullJournal({ dataDir: config.dataDir, agent: agentName });
+    if (!journal.trim()) {
+      emit({ type: "error", message: `agent ${agentName} has no journal entries to consolidate` });
+      process.exit(1);
+    }
+    const systemPrompt = buildConsolidationSystemPrompt({ agent, memory, journal });
+    try {
+      const result = await generateResponse(systemPrompt, {
+        model: resolveModel(agent.model),
+        effort: agent.effort || "medium",
+        db,
+        dataDir: config.dataDir,
+        skills: [],
+        messages: [{ role: "user", content: "Consolidate this agent's journal into MEMORY.md." }],
+        cwd: config.workspace,
+        mcpServers: {},
+        allowedTools: [],
+        disallowedTools: ["journal_append", "journal_summary"],
+        permissionMode: "bypassPermissions",
+        maxTurns: 10,
+        abortSignal: ac.signal,
+        onEvent: (event) => emit({ type: "sdk_event", event }),
+      });
+      if (result.cancelled) {
+        emit({ type: "cancelled" });
+        process.exit(130);
+      }
+      if (result.error) {
+        emit({ type: "error", message: result.error });
+        process.exit(1);
+      }
+      const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
+      emit({ type: "memory_written", agent: agentName, path });
+      emit({
+        type: "final",
+        text: result.text,
+        usage: result.usage,
+        durationMs: result.durationMs,
+        numTurns: result.numTurns,
+        model: result.model,
+        effort: result.effort,
+      });
+      process.exit(0);
+    } catch (err) {
+      emit({ type: "error", message: err.message || String(err) });
+      process.exit(1);
+    }
+  }
+
+  const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
+  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
 
   // ── Execute mode ────────────────────────────────────────────────────────────
   if (mode === "execute") {
@@ -113,6 +167,9 @@ async function main() {
       const result = await generateResponse(systemPrompt, {
         model: resolveModel(agent.model),
         effort: agent.effort || "medium",
+        db,
+        dataDir: config.dataDir,
+        skills,
         messages: [{ role: "user", content: `Work on task "${task.title}".` }],
         cwd: config.workspace,
         mcpServers,
@@ -176,6 +233,9 @@ async function main() {
       const result = await generateResponse(systemPrompt, {
         model: resolveModel(agent.model),
         effort: agent.effort || "medium",
+        db,
+        dataDir: config.dataDir,
+        skills,
         messages: [{ role: "user", content: `Review task "${task.title}". Respond with your verdict.` }],
         cwd: config.workspace,
         mcpServers,
