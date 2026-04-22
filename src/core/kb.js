@@ -443,6 +443,39 @@ export function kbDelete({ dataDir, slug }) {
   return true;
 }
 
+export function kbListPinned({ dataDir, limit = 10 } = {}) {
+  try {
+    const metas = kbList({ dataDir, pinned: true });
+    const limited = metas.slice(0, limit);
+    const out = [];
+    for (const meta of limited) {
+      try {
+        const entry = kbRead({ dataDir, slug: meta.slug });
+        if (!entry) continue;
+        out.push({
+          slug: entry.meta.slug ?? meta.slug,
+          title: entry.meta.title ?? null,
+          body: entry.body,
+          category: entry.meta.category ?? null,
+          tags: Array.isArray(entry.meta.tags) ? entry.meta.tags : [],
+          pinned: entry.meta.pinned === true,
+          author: entry.meta.author ?? null,
+          created_at: entry.meta.created_at ?? null,
+          updated_at: entry.meta.updated_at ?? null,
+        });
+      } catch (err) {
+        console.warn("[kb] skipping unreadable pinned entry", {
+          slug: meta.slug,
+          err: err.message,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 export function kbList({ dataDir, tag, category, pinned } = {}) {
   const dir = knowledgeDir(dataDir);
   if (!existsSync(dir)) return [];
