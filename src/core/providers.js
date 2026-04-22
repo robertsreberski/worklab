@@ -10,8 +10,6 @@ export const PROVIDER_TYPES = [
   "lmstudio",
   "vllm",
   "openai_compat",
-  "anthropic_compat",
-  "google_compat",
   "groq",
   "openrouter",
   "together",
@@ -19,6 +17,18 @@ export const PROVIDER_TYPES = [
   "deepseek",
 ];
 
+export const OPENAI_COMPAT_PROVIDER_TYPES = [
+  "lmstudio",
+  "vllm",
+  "openai_compat",
+  "groq",
+  "openrouter",
+  "together",
+  "fireworks",
+  "deepseek",
+];
+
+const OPENAI_COMPAT_PROVIDER_TYPE_SET = new Set(OPENAI_COMPAT_PROVIDER_TYPES);
 const OPENAI_COMPAT_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 const OLLAMA_EFFORT_REASONING_HINTS = ["gpt-oss"];
 const OLLAMA_EFFORT_REASONING_LEVELS = ["low", "medium", "high"];
@@ -55,6 +65,14 @@ function inCidrV4(ip, cidr, bits) {
 
 export function isValidProviderType(type) {
   return PROVIDER_TYPES.includes(type);
+}
+
+export function isOpenAICompatibleProviderType(type) {
+  return OPENAI_COMPAT_PROVIDER_TYPE_SET.has(type);
+}
+
+function unsupportedProviderTypeError(provider) {
+  return new Error(`unsupported provider_type: ${provider.provider_type}`);
 }
 
 export function isPrivateBaseUrl(url) {
@@ -416,7 +434,7 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
         capabilities: inferOllamaCapabilities(model, show),
       });
     }
-  } else {
+  } else if (isOpenAICompatibleProviderType(provider.provider_type)) {
     const resp = await fetchImpl(modelsUrl(provider.base_url), { headers: authHeaders(provider) });
     if (!resp.ok) throw new Error(`/v1/models returned ${resp.status}`);
     const data = await resp.json();
@@ -429,6 +447,8 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
         capabilities: inferOpenAICompatCapabilities(model),
       });
     }
+  } else {
+    throw unsupportedProviderTypeError(provider);
   }
 
   return discovered.map((model) => upsertModel({
@@ -444,9 +464,16 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
 export async function testProvider({ db, dataDir, providerId, fetchImpl = fetch }) {
   const provider = getProvider({ db, id: providerId, includeKey: true, dataDir });
   if (!provider) throw new Error("provider not found");
-  const url = provider.provider_type === "ollama" ? `${rootUrl(provider.base_url)}/api/tags` : modelsUrl(provider.base_url);
+  let url = null;
   const start = Date.now();
   try {
+    if (provider.provider_type === "ollama") {
+      url = `${rootUrl(provider.base_url)}/api/tags`;
+    } else if (isOpenAICompatibleProviderType(provider.provider_type)) {
+      url = modelsUrl(provider.base_url);
+    } else {
+      throw unsupportedProviderTypeError(provider);
+    }
     const resp = await fetchImpl(url, { headers: authHeaders(provider) });
     return { ok: resp.ok, status: resp.status, duration_ms: Date.now() - start, url };
   } catch (err) {
@@ -477,6 +504,9 @@ export function createVercelClient(provider, { modelName = "", capabilities = {}
     }
     const ollama = createAiSdkOllama({ baseURL: root, ...(provider.api_key ? { apiKey: provider.api_key } : {}) });
     return (nextModelName, settings = {}) => ollama.chat(nextModelName, settings);
+  }
+  if (!isOpenAICompatibleProviderType(provider.provider_type)) {
+    throw unsupportedProviderTypeError(provider);
   }
   const compat = createOpenAICompatible({
     name: provider.provider_type,

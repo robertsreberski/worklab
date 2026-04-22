@@ -1,11 +1,12 @@
 import { getBuiltinModelGroups } from "../core/ai.js";
-import { buildModelCapabilities, listModels, listProviders } from "../core/providers.js";
+import { buildModelCapabilities, isValidProviderType, listModels, listProviders } from "../core/providers.js";
 
 export function registerModelRoutes(app, { db, dataDir }) {
   app.get("/api/models/available", (_req, res) => {
     const groups = getBuiltinModelGroups();
 
     for (const provider of listProviders({ db, dataDir, enabledOnly: true })) {
+      if (!isValidProviderType(provider.provider_type)) continue;
       const models = listModels({ db, providerId: provider.id, enabledOnly: true }).map((model) => {
         const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
         return {

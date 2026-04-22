@@ -5,6 +5,7 @@ import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
+import { selectActiveRunId } from "./taskDetailRuns.js";
 
 function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false }) {
   const { events, loading } = useRunStream(run?.id, { subscribe });
@@ -44,8 +45,9 @@ export function TaskDetail({ id }) {
   });
 
   useEffect(() => {
-    if (data?.runs?.length && !activeRunId) {
-      setActiveRunId(data.runs[0].id);
+    const nextRunId = selectActiveRunId(data?.runs || [], activeRunId);
+    if (nextRunId !== activeRunId) {
+      setActiveRunId(nextRunId);
     }
   }, [data, activeRunId]);
 

@@ -66,6 +66,26 @@ describe("provider routes", () => {
     expect(res.body.models.find((m) => m.value === `vercel:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
 
+  it("omits saved models from unsupported legacy provider types", async () => {
+    const { agent, db } = makeTestServer({ dataDir: tmpDataDir() });
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO custom_providers
+        (id, name, provider_type, base_url, trust_public_url, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy", "legacy", "anthropic_compat", "http://localhost:8000", 0, 1, now, now);
+    upsertModel({
+      db,
+      providerId: "legacy",
+      modelName: "claude-compatible",
+      displayName: "claude-compatible",
+      enabled: true,
+    });
+
+    const res = await agent.get("/api/models/available").expect(200);
+    expect(res.body.models.map((m) => m.value)).not.toContain("vercel:legacy:claude-compatible");
+  });
+
   it("accepts curated hosted provider types", async () => {
     const { agent } = makeTestServer({ dataDir: tmpDataDir() });
     const res = await agent.post("/api/providers").send({
@@ -75,6 +95,18 @@ describe("provider routes", () => {
       trust_public_url: true,
     }).expect(201);
     expect(res.body.provider.provider_type).toBe("groq");
+  });
+
+  it("rejects unsupported Anthropic and Google provider types", async () => {
+    const { agent } = makeTestServer({ dataDir: tmpDataDir() });
+    for (const provider_type of ["anthropic_compat", "google_compat"]) {
+      const res = await agent.post("/api/providers").send({
+        name: provider_type,
+        provider_type,
+        base_url: "http://localhost:8000",
+      }).expect(400);
+      expect(res.body.error.code).toBe("validation");
+    }
   });
 
   // ── Encrypt/decrypt round-trip ─────────────────────────────────────────────
