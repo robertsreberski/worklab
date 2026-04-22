@@ -151,7 +151,7 @@ export function AgentEdit({ name }) {
 
   return (
     <div class="detail">
-      <a href="#/agents">← Back</a>
+      <a href="#/agents" class="back-link">← Back</a>
       <h2>{isNew ? "New agent" : agent.display_name}</h2>
       {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
       {notice && <div class="meta" style="margin-bottom:12px">{notice}</div>}
@@ -216,40 +216,48 @@ export function AgentEdit({ name }) {
 
       <div class="field"><label>Skills allowlist (empty = all enabled skills)</label>
         {skills.length === 0 && <div class="meta">No skills defined yet.</div>}
-        {skills.map(s => (
-          <label key={s.name} style="display:inline-block;margin-right:12px">
+        <div class="choice-list">
+          {skills.map(s => (
+          <label key={s.name} class="choice-label">
             <input type="checkbox" checked={agent.skills_allowlist.includes(s.name)}
               onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })} />
-            {s.name}
+            <span>{s.name}</span>
           </label>
         ))}
+        </div>
       </div>
 
       <div class="field"><label>MCP servers allowlist (empty = all registered, worklab always included)</label>
         {mcpServers.length === 0 && <div class="meta">No user MCP servers registered.</div>}
-        {mcpServers.map(m => (
-          <label key={m} style="display:inline-block;margin-right:12px">
+        <div class="choice-list">
+          {mcpServers.map(m => (
+          <label key={m} class="choice-label">
             <input type="checkbox" checked={agent.mcp_allowlist.includes(m)}
               onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })} />
-            {m}
+            <span>{m}</span>
           </label>
         ))}
+        </div>
       </div>
 
       <div class="field"><label>Built-in tools allowlist (empty = all tools)</label>
         {!supportsToolUse && <div class="meta">This model cannot call built-in tools.</div>}
-        {supportsToolUse && visibleTools.map(t => (
-          <label key={t} style="display:inline-block;margin-right:12px">
+        {supportsToolUse && <div class="choice-list">{visibleTools.map(t => (
+          <label key={t} class="choice-label">
             <input type="checkbox" checked={agent.builtin_allowlist.includes(t)}
               onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })} />
-            {t}
+            <span>{t}</span>
           </label>
-        ))}
+        ))}</div>}
       </div>
 
-      <div class="field"><label>Enabled</label>
-        <input type="checkbox" checked={agent.enabled}
-          onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })} /></div>
+      <div class="field">
+        <label class="choice-label">
+          <input type="checkbox" checked={agent.enabled}
+            onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })} />
+          <span>Enabled</span>
+        </label>
+      </div>
 
       <button class="primary" onClick={save} disabled={saving || !agent.name || !agent.display_name}>
         {saving ? "Saving…" : (isNew ? "Create" : "Save")}

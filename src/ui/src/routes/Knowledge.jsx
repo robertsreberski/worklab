@@ -54,7 +54,7 @@ export function Knowledge() {
     <div class="detail">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
         <h2 style="margin:0">Knowledge Base</h2>
-        <a href="#/knowledge/new" class="primary" style="padding:6px 10px;border-radius:4px;background:var(--accent);color:#fff;text-decoration:none">+ New entry</a>
+        <a href="#/knowledge/new" class="primary">+ New entry</a>
       </div>
 
       <div class="field" style="margin-bottom:12px">
@@ -93,36 +93,36 @@ export function Knowledge() {
       )}
 
       {filtered.length > 0 && (
-        <table style="width:100%;border-collapse:collapse">
+        <table class="knowledge-table">
           <thead>
-            <tr style="text-align:left;border-bottom:1px solid var(--border)">
-              <th style="padding:6px 8px">Title</th>
-              <th style="padding:6px 8px">Category</th>
-              <th style="padding:6px 8px">Tags</th>
-              <th style="padding:6px 8px;text-align:center">Pinned</th>
-              <th style="padding:6px 8px">Updated</th>
+            <tr>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Tags</th>
+              <th style="text-align:center">Pinned</th>
+              <th>Updated</th>
             </tr>
           </thead>
           <tbody>
             {filtered.map(e => (
-              <tr key={e.slug} style="border-bottom:1px solid var(--border);cursor:pointer"
+              <tr key={e.slug}
                 onClick={() => { window.location.hash = `#/knowledge/${e.slug}`; }}>
-                <td style="padding:6px 8px">
-                  <a href={`#/knowledge/${e.slug}`} style="color:var(--accent);text-decoration:none"
+                <td data-label="Title">
+                  <a href={`#/knowledge/${e.slug}`} class="title-link"
                     onClick={(ev) => ev.stopPropagation()}>
                     {e.title}
                   </a>
                 </td>
-                <td style="padding:6px 8px" class="meta">{e.category || "—"}</td>
-                <td style="padding:6px 8px" class="meta">
+                <td data-label="Category" class="meta">{e.category || "—"}</td>
+                <td data-label="Tags" class="meta">
                   {(e.tags || []).length > 0
                     ? (e.tags || []).join(", ")
                     : "—"}
                 </td>
-                <td style="padding:6px 8px;text-align:center">
+                <td data-label="Pinned" style="text-align:center">
                   {e.pinned ? "⭐" : ""}
                 </td>
-                <td style="padding:6px 8px" class="meta">
+                <td data-label="Updated" class="meta">
                   {e.updated_at ? new Date(e.updated_at).toLocaleDateString() : "—"}
                 </td>
               </tr>

@@ -1,12 +1,11 @@
 // src/ui/src/routes/KbEdit.jsx
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
-
-const emptyEntry = { slug: "", title: "", category: "", tags: "", pinned: false, body: "" };
+import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 
 export function KbEdit({ slug }) {
   const isNew = slug === "new";
-  const [entry, setEntry] = useState(isNew ? emptyEntry : null);
+  const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [slugTouched, setSlugTouched] = useState(false);
@@ -18,22 +17,14 @@ export function KbEdit({ slug }) {
     setSlugError(null);
     setSlugTouched(false);
     if (isNew) {
-      setEntry(emptyEntry);
+      setEntry(EMPTY_KB_FORM_ENTRY);
       return () => { cancelled = true; };
     }
     setEntry(null);
     api.getKb(slug)
       .then(r => {
         if (cancelled) return;
-        const e = r.entry;
-        setEntry({
-          slug: e.slug,
-          title: e.title,
-          category: e.category || "",
-          tags: (e.tags || []).join(", "),
-          pinned: !!e.pinned,
-          body: e.body || "",
-        });
+        setEntry(normalizeKbFormEntry(r.entry));
       })
       .catch(() => {
         if (!cancelled) setEntry({ notFound: true });
@@ -92,7 +83,7 @@ export function KbEdit({ slug }) {
 
   return (
     <div class="detail">
-      <a href="#/knowledge">← Back</a>
+      <a href="#/knowledge" class="back-link">← Back</a>
       <h2>{isNew ? "New KB entry" : entry.title}</h2>
       {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
 
@@ -142,14 +133,13 @@ export function KbEdit({ slug }) {
       </div>
 
       <div class="field">
-        <label>
+        <label class="choice-label">
           <input
             type="checkbox"
             checked={entry.pinned}
             onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
-            style="margin-right:6px"
           />
-          Pinned ⭐
+          <span>Pinned ⭐</span>
         </label>
       </div>
 
