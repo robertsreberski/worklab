@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -419,5 +419,251 @@ describe("slug validation", () => {
   it("kbDelete rejects invalid slug (defensive)", () => {
     const d = mk();
     expect(() => kbDelete({ dataDir: d, slug: "Bad_Slug" })).toThrow(/invalid slug/i);
+  });
+});
+
+describe("string coercion round-trip (quoted strings)", () => {
+  it("round-trips title that looks like a boolean (\"true\")", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-true",
+      title: "true",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-true" });
+    expect(typeof out.meta.title).toBe("string");
+    expect(out.meta.title).toBe("true");
+  });
+
+  it("round-trips title that looks like a number (\"42\")", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-42",
+      title: "42",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-42" });
+    expect(typeof out.meta.title).toBe("string");
+    expect(out.meta.title).toBe("42");
+  });
+
+  it("round-trips title that looks like a flow array (\"[note]\")", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-flow",
+      title: "[note]",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-flow" });
+    expect(typeof out.meta.title).toBe("string");
+    expect(out.meta.title).toBe("[note]");
+  });
+
+  it("round-trips title with ambiguous colon (\"My: sequel\")", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-colon",
+      title: "My: sequel",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-colon" });
+    expect(out.meta.title).toBe("My: sequel");
+  });
+
+  it("round-trips title that is null sentinel (\"null\")", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-null",
+      title: "null",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-null" });
+    expect(typeof out.meta.title).toBe("string");
+    expect(out.meta.title).toBe("null");
+  });
+
+  it("round-trips empty-string title", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "str-empty",
+      title: "",
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-empty" });
+    expect(typeof out.meta.title).toBe("string");
+    expect(out.meta.title).toBe("");
+  });
+
+  it("escapes backslash and double quotes inside strings", () => {
+    const d = mk();
+    const evil = 'she said "hi" and \\ then left';
+    kbCreate({
+      dataDir: d,
+      slug: "str-escape",
+      title: evil,
+      body: "b",
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "str-escape" });
+    expect(out.meta.title).toBe(evil);
+  });
+
+  it("round-trips tags array with coercible strings [\"true\", \"42\", \"a:b\"]", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "tags-coerce",
+      title: "T",
+      body: "b",
+      tags: ["true", "42", "a:b"],
+      author: "human",
+    });
+    const out = kbRead({ dataDir: d, slug: "tags-coerce" });
+    expect(Array.isArray(out.meta.tags)).toBe(true);
+    expect(out.meta.tags).toEqual(["true", "42", "a:b"]);
+    for (const t of out.meta.tags) expect(typeof t).toBe("string");
+  });
+
+  it("does not add redundant quotes for plain strings", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "plain",
+      title: "Just a title",
+      body: "b",
+      author: "human",
+    });
+    const raw = readFileSync(join(d, "knowledge", "plain.md"), "utf8");
+    expect(raw).toMatch(/^title: Just a title$/m);
+  });
+
+  it("block-form tags parser strips double quotes on coercion-trigger items", () => {
+    const d = mk();
+    mkdirSync(join(d, "knowledge"), { recursive: true });
+    const content = `---
+title: Block Q
+slug: block-q
+tags:
+  - "true"
+  - "42"
+  - plain
+---
+
+Body.
+`;
+    writeFileSync(join(d, "knowledge", "block-q.md"), content);
+    const out = kbRead({ dataDir: d, slug: "block-q" });
+    expect(out.meta.tags).toEqual(["true", "42", "plain"]);
+    for (const t of out.meta.tags) expect(typeof t).toBe("string");
+  });
+});
+
+describe("kbList — malformed frontmatter tolerance", () => {
+  it("skips a file with broken frontmatter and warns on stderr", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "good", title: "Good", body: "b", author: "human" });
+    // Craft a broken file: opening `---` but no closing delimiter.
+    const broken = `---
+title: Broken
+slug: broken
+this file never closes its frontmatter
+`;
+    writeFileSync(join(d, "knowledge", "broken.md"), broken);
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let list;
+    expect(() => {
+      list = kbList({ dataDir: d });
+    }).not.toThrow();
+
+    // The valid entry is returned; the malformed one is omitted.
+    expect(list.map((x) => x.slug)).toEqual(["good"]);
+    // A warning was emitted for the broken entry.
+    const call = warnSpy.mock.calls.find((c) => c[0] === "[kb] skipping unreadable entry");
+    expect(call).toBeDefined();
+    expect(call[1]).toMatchObject({
+      file: expect.stringContaining("broken.md"),
+      err: expect.any(String),
+    });
+    warnSpy.mockRestore();
+  });
+
+  it("does NOT misread a mid-body `---` as the frontmatter terminator", () => {
+    const d = mk();
+    mkdirSync(join(d, "knowledge"), { recursive: true });
+    const content = `---
+title: real
+slug: real
+tags: [x]
+category: notes
+pinned: false
+author: human
+created_at: 2026-04-22T10:00:00Z
+updated_at: 2026-04-22T10:00:00Z
+---
+
+Intro paragraph.
+---
+This is a section after a horizontal rule.
+`;
+    writeFileSync(join(d, "knowledge", "real.md"), content);
+    const list = kbList({ dataDir: d });
+    expect(list.length).toBe(1);
+    const entry = list[0];
+    expect(entry.slug).toBe("real");
+    expect(entry.title).toBe("real");
+    expect(entry.tags).toEqual(["x"]);
+    expect(entry.category).toBe("notes");
+    expect(entry.author).toBe("human");
+  });
+
+  it("readFrontmatterOnly rejects loose `\\n---foo` mid-body match", () => {
+    const d = mk();
+    mkdirSync(join(d, "knowledge"), { recursive: true });
+    // Body contains `\n---important` which is NOT a valid terminator
+    // (no newline or EOF after the three dashes).
+    const content = `---
+title: tight
+slug: tight
+tags: []
+author: human
+---
+
+Some body.
+---important notice
+---
+`;
+    writeFileSync(join(d, "knowledge", "tight.md"), content);
+    const list = kbList({ dataDir: d });
+    // Frontmatter should parse only the block bounded by the first `---` and
+    // the first line that is exactly `---`.
+    expect(list.length).toBe(1);
+    expect(list[0].title).toBe("tight");
+    expect(list[0].slug).toBe("tight");
+  });
+});
+
+describe("writeAtomic durability", () => {
+  it("produces a readable file after kbCreate (no .tmp leftover)", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "dura", title: "T", body: "b", author: "human" });
+    const finalPath = join(d, "knowledge", "dura.md");
+    expect(existsSync(finalPath)).toBe(true);
+    expect(existsSync(`${finalPath}.tmp`)).toBe(false);
+    // File is fully written and terminates with a newline.
+    const raw = readFileSync(finalPath, "utf8");
+    expect(raw.endsWith("\n")).toBe(true);
   });
 });
