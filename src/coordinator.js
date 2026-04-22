@@ -4,7 +4,7 @@ import { existsSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import express from "express";
 import { createServer } from "./api/server.js";
-import { getDb } from "./core/db.js";
+import { getDb, closeDb } from "./core/db.js";
 import { logger } from "./core/logger.js";
 import { loadConfig } from "./core/config.js";
 import { seedDataFromTemplate } from "./core/first-boot.js";
@@ -41,6 +41,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   function shutdown() {
     logger.info("shutdown");
     http.close(() => {
+      closeDb();
       try { unlinkSync(pidFile); } catch {}
       process.exit(0);
     });
