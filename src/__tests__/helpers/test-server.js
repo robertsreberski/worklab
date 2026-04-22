@@ -2,8 +2,14 @@ import supertest from "supertest";
 import { makeTestDb } from "./test-db.js";
 import { createServer } from "../../api/server.js";
 
-export function makeTestServer() {
+export function makeTestServer({ watcher } = {}) {
   const db = makeTestDb();
-  const { app, broker } = createServer({ db, logger: undefined });
-  return { app, broker, db, agent: supertest(app) };
+  const stubWatcher = watcher || {
+    handleRunRequested: async () => ({ runId: "fake-run" }),
+    cancel: () => true,
+    shutdown: async () => {},
+    isActive: () => false,
+  };
+  const { app, broker } = createServer({ db, logger: undefined, watcher: stubWatcher });
+  return { app, broker, db, watcher: stubWatcher, agent: supertest(app) };
 }
