@@ -221,6 +221,7 @@ function needsQuoting(s) {
   if (/^-?\d+$/.test(s)) return true;
   if (s.startsWith("[") || s.endsWith("]")) return true;
   if (s.includes(": ")) return true;
+  if (s.includes(",")) return true;
   if (/^\s/.test(s) || /\s$/.test(s)) return true;
   // Anything that would open a quoted form must also be quoted so it round
   // trips verbatim — otherwise a raw `"x"` would decode as the string `x`.
