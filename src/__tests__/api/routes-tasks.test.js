@@ -169,7 +169,10 @@ describe("GET /api/tasks with filters", () => {
   });
 
   it("filters by agent (executor OR reviewer match)", async () => {
-    const { agent } = makeTestServer();
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("alice", "Alice", "claude", "sonnet", now, now);
     const { body: { task: t1 } } = await agent.post("/api/tasks").send({ title: "x" });
     const { body: { task: t2 } } = await agent.post("/api/tasks").send({ title: "y" });
     await agent.patch(`/api/tasks/${t1.id}`).send({ executor_agent: "alice" });
@@ -180,7 +183,10 @@ describe("GET /api/tasks with filters", () => {
   });
 
   it("combines filters", async () => {
-    const { agent } = makeTestServer();
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("bob", "Bob", "claude", "sonnet", now, now);
     const { body: { task: t } } = await agent.post("/api/tasks").send({ title: "t" });
     await agent.patch(`/api/tasks/${t.id}`).send({ executor_agent: "bob", status: "in_progress" });
     await agent.post("/api/tasks").send({ title: "other" });
