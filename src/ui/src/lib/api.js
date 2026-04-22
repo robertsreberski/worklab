@@ -40,4 +40,10 @@ export const api = {
   // mcp
   getMcpConfig: () => request("GET", "/mcp"),
   putMcpConfig: (data) => request("PUT", "/mcp", data),
+  // kb
+  listKb: (query) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`),
+  getKb: (slug) => request("GET", `/kb/${slug}`),
+  createKb: (data) => request("POST", "/kb", data),
+  patchKb: (slug, patch) => request("PATCH", `/kb/${slug}`, patch),
+  deleteKb: (slug) => request("DELETE", `/kb/${slug}`),
 };
