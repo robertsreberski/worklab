@@ -17,8 +17,12 @@ export function createTaskWatcher({
    * Apply a list of side effects to the DB and post derived system comments.
    * Does NOT handle spawn_executor / spawn_reviewer — those require spawn
    * machinery and are orchestrated by the caller.
+   *
+   * DB mutations are wrapped in a single transaction for atomicity.
+   * The broker.broadcast call is intentionally kept OUTSIDE the transaction
+   * (it is an I/O side effect and must not be rolled back with DB writes).
    */
-  function applySideEffects(taskId, sideEffects, currentStatus, newStatus) {
+  const applyTx = db.transaction((taskId, sideEffects, currentStatus, newStatus) => {
     const now = Date.now();
     const fields = [];
     const values = [];
@@ -76,6 +80,10 @@ export function createTaskWatcher({
       values.push(taskId);
       db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
     }
+  });
+
+  function applySideEffects(taskId, sideEffects, currentStatus, newStatus) {
+    applyTx(taskId, sideEffects, currentStatus, newStatus);
     broker.broadcast("global", { type: "task_updated", id: taskId });
   }
 
@@ -143,6 +151,9 @@ export function createTaskWatcher({
   /**
    * Spawn a reviewer worker. Called from onWorkerExit when the state machine
    * emits a `spawn_reviewer` side effect after a successful execute run.
+   *
+   * task_runs.status is updated by spawn-worker.js on child exit; no duplicate
+   * update needed here.
    */
   function spawnReviewer(taskId, reviewerAgent, priorRunId) {
     const runId = newRunId();
@@ -206,6 +217,14 @@ export function createTaskWatcher({
         type: "run_completed",
         reviewerAgent: task.reviewer_agent,
       });
+      const errSe = sm.sideEffects.find((se) => se.type === "error");
+      if (errSe) {
+        logger?.error?.({ taskId, runId, message: errSe.message }, "illegal transition on run exit");
+        db.prepare(
+          `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
+        ).run(newCommentId(), taskId, `State drift: ${errSe.message}`, Date.now());
+        return;
+      }
       applySideEffects(taskId, sm.sideEffects, task.status, sm.status);
 
       const spawnRev = sm.sideEffects.find((se) => se.type === "spawn_reviewer");
@@ -213,15 +232,25 @@ export function createTaskWatcher({
         spawnReviewer(taskId, spawnRev.agentName, runId);
       }
     } else if (res.status === "cancelled") {
+      logger?.info?.({ taskId, runId }, "execute run cancelled");
       db.prepare(
         `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
       ).run(newCommentId(), taskId, "Run cancelled.", Date.now());
       broker.broadcast("global", { type: "task_updated", id: taskId });
     } else {
+      logger?.error?.({ taskId, runId, message: res.error || "run failed" }, "execute run failed");
       const sm = nextStatus(task.status, {
         type: "run_failed",
         message: res.error || "run failed",
       });
+      const errSe = sm.sideEffects.find((se) => se.type === "error");
+      if (errSe) {
+        logger?.error?.({ taskId, runId, message: errSe.message }, "illegal transition on run exit");
+        db.prepare(
+          `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
+        ).run(newCommentId(), taskId, `State drift: ${errSe.message}`, Date.now());
+        return;
+      }
       applySideEffects(taskId, sm.sideEffects, task.status, sm.status);
     }
   }
@@ -258,6 +287,14 @@ export function createTaskWatcher({
 
       if (verdict === "APPROVE") {
         const sm = nextStatus(task.status, { type: "review_approved" });
+        const errSe = sm.sideEffects.find((se) => se.type === "error");
+        if (errSe) {
+          logger?.error?.({ taskId, runId, message: errSe.message }, "illegal transition on run exit");
+          db.prepare(
+            `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
+          ).run(newCommentId(), taskId, `State drift: ${errSe.message}`, Date.now());
+          return;
+        }
         applySideEffects(taskId, sm.sideEffects, task.status, sm.status);
         // Supplemental system verdict summary.
         db.prepare(
@@ -268,9 +305,21 @@ export function createTaskWatcher({
         const sm = nextStatus(task.status, { type: "review_rejected", notes });
         // The reducer emits post_review_comment with the rejection notes,
         // which applySideEffects turns into a system comment.
+        const errSe = sm.sideEffects.find((se) => se.type === "error");
+        if (errSe) {
+          logger?.error?.({ taskId, runId, message: errSe.message }, "illegal transition on run exit");
+          db.prepare(
+            `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
+          ).run(newCommentId(), taskId, `State drift: ${errSe.message}`, Date.now());
+          return;
+        }
         applySideEffects(taskId, sm.sideEffects, task.status, sm.status);
       } else {
         // Parse failure — stay in_review, flag for the user.
+        logger?.warn?.({ taskId, runId, reviewerAgent }, "reviewer did not emit VERDICT line");
+        db.prepare(
+          `UPDATE tasks SET error_text = ?, updated_at = ? WHERE id = ?`,
+        ).run("Reviewer did not emit a VERDICT line", Date.now(), taskId);
         db.prepare(
           `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
         ).run(
@@ -282,11 +331,13 @@ export function createTaskWatcher({
         broker.broadcast("global", { type: "task_updated", id: taskId });
       }
     } else if (res.status === "cancelled") {
+      logger?.info?.({ taskId, runId }, "review run cancelled");
       db.prepare(
         `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
       ).run(newCommentId(), taskId, "Review cancelled.", Date.now());
       broker.broadcast("global", { type: "task_updated", id: taskId });
     } else {
+      logger?.error?.({ taskId, runId, message: res.error || "unknown error" }, "review run failed");
       const msg = res.error || "unknown error";
       db.prepare(
         `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,

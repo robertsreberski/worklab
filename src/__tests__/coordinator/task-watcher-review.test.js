@@ -14,6 +14,14 @@ function stubBroker() {
   };
 }
 
+function stubLogger() {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  };
+}
+
 function seedAgent(db, name) {
   const now = Date.now();
   db.prepare(
@@ -262,12 +270,13 @@ describe("task-watcher: reviewer loop + run_failed alignment", () => {
     expect(systemComment).toBeTruthy();
   });
 
-  it("reviewer emits no VERDICT → task stays in_review, system warning posted", async () => {
+  it("reviewer emits no VERDICT → task stays in_review, system warning posted, logger.warn called, error_text set", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     seedAgent(db, "checker");
     const taskId = seedTask(db, { executor: "coder", reviewer: "checker" });
     const broker = stubBroker();
+    const logger = stubLogger();
 
     const resolvers = [];
     const spawnStub = vi.fn(() => {
@@ -277,7 +286,7 @@ describe("task-watcher: reviewer loop + run_failed alignment", () => {
       return { pid: 1000 + resolvers.length, done, cancel: vi.fn() };
     });
 
-    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake" });
+    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake", logger });
     await watcher.handleRunRequested(taskId);
 
     resolvers[0]({ exitCode: 0, status: "complete", finalText: "executor output" });
@@ -294,6 +303,7 @@ describe("task-watcher: reviewer loop + run_failed alignment", () => {
 
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.status).toBe("in_review");
+    expect(task.error_text).toBe("Reviewer did not emit a VERDICT line");
 
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
@@ -303,6 +313,11 @@ describe("task-watcher: reviewer loop + run_failed alignment", () => {
     );
     expect(warning).toBeTruthy();
     expect(warning.body).toMatch(/did not emit/i);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId, runId: expect.any(String), reviewerAgent: "checker" }),
+      "reviewer did not emit VERDICT line",
+    );
   });
 
   it("reviewer spawn env includes WORKLAB_PRIOR_RUN_ID referencing the execute run", async () => {
@@ -341,5 +356,191 @@ describe("task-watcher: reviewer loop + run_failed alignment", () => {
       events: [{ type: "verdict", verdict: "APPROVE", notes: "" }],
     });
     await new Promise((r) => setTimeout(r, 20));
+  });
+
+  // Issue B: state drift test — illegal transition on run exit
+  it("state drift: task manually set to todo before execute completes → State drift comment, logger.error, no status change", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { executor: "coder" });
+    const broker = stubBroker();
+    const logger = stubLogger();
+
+    let resolveDone;
+    const handle = {
+      pid: 1,
+      done: new Promise((r) => { resolveDone = r; }),
+      cancel: vi.fn(),
+    };
+    const spawnStub = vi.fn(() => handle);
+    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake", logger });
+
+    await watcher.handleRunRequested(taskId);
+
+    // Externally flip task status from in_progress → todo before worker exits
+    db.prepare("UPDATE tasks SET status = 'todo' WHERE id = ?").run(taskId);
+
+    // Now simulate worker completing successfully
+    resolveDone({ exitCode: 0, status: "complete", finalText: "done" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Task status should remain whatever the manual override was (todo)
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    expect(task.status).toBe("todo");
+
+    // State drift comment must be present
+    const comments = db
+      .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
+      .all(taskId);
+    const driftComment = comments.find(
+      (c) => c.author_type === "system" && c.body.startsWith("State drift:"),
+    );
+    expect(driftComment).toBeTruthy();
+    expect(driftComment.body).toMatch(/State drift:/);
+
+    // logger.error must have been called with the illegal transition message
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId, message: expect.any(String) }),
+      "illegal transition on run exit",
+    );
+  });
+
+  // Issue B: state drift for reviewer path — illegal review_approved transition
+  it("state drift: task manually set to in_progress before reviewer approves → State drift comment, logger.error", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { executor: "coder", reviewer: "checker" });
+    const broker = stubBroker();
+    const logger = stubLogger();
+
+    const resolvers = [];
+    const spawnStub = vi.fn(() => {
+      let resolve;
+      const done = new Promise((r) => { resolve = r; });
+      resolvers.push(resolve);
+      return { pid: 1000 + resolvers.length, done, cancel: vi.fn() };
+    });
+
+    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake", logger });
+    await watcher.handleRunRequested(taskId);
+
+    // Executor completes — task goes to in_review, reviewer spawned
+    resolvers[0]({ exitCode: 0, status: "complete", finalText: "executor output" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Manually flip task from in_review → in_progress before reviewer exits
+    db.prepare("UPDATE tasks SET status = 'in_progress' WHERE id = ?").run(taskId);
+
+    // Reviewer approves
+    resolvers[1]({
+      exitCode: 0,
+      status: "complete",
+      finalText: "VERDICT: APPROVE",
+      events: [{ type: "verdict", verdict: "APPROVE", notes: "" }],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Task status should remain in_progress (manual override preserved)
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    expect(task.status).toBe("in_progress");
+
+    // State drift comment must be present
+    const comments = db
+      .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
+      .all(taskId);
+    const driftComment = comments.find(
+      (c) => c.author_type === "system" && c.body.startsWith("State drift:"),
+    );
+    expect(driftComment).toBeTruthy();
+
+    // logger.error must have been called
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId, message: expect.any(String) }),
+      "illegal transition on run exit",
+    );
+  });
+
+  // Issue F: reviewer cancelled
+  it("reviewer cancelled → task stays in_review, system comment contains 'cancel'", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { executor: "coder", reviewer: "checker" });
+    const broker = stubBroker();
+    const logger = stubLogger();
+
+    const resolvers = [];
+    const spawnStub = vi.fn(() => {
+      let resolve;
+      const done = new Promise((r) => { resolve = r; });
+      resolvers.push(resolve);
+      return { pid: 1000 + resolvers.length, done, cancel: vi.fn() };
+    });
+
+    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake", logger });
+    await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({ exitCode: 0, status: "complete", finalText: "executor output" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Reviewer exits cancelled
+    resolvers[1]({ exitCode: 130, status: "cancelled", finalText: null, events: [] });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    expect(task.status).toBe("in_review");
+
+    const comments = db
+      .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
+      .all(taskId);
+    const cancelComment = comments.find(
+      (c) => c.author_type === "system" && c.body.toLowerCase().includes("cancel"),
+    );
+    expect(cancelComment).toBeTruthy();
+  });
+
+  // Issue F: reviewer exits with error
+  it("reviewer exits with error → task stays in_review, system comment contains error message", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { executor: "coder", reviewer: "checker" });
+    const broker = stubBroker();
+    const logger = stubLogger();
+
+    const resolvers = [];
+    const spawnStub = vi.fn(() => {
+      let resolve;
+      const done = new Promise((r) => { resolve = r; });
+      resolvers.push(resolve);
+      return { pid: 1000 + resolvers.length, done, cancel: vi.fn() };
+    });
+
+    const watcher = createTaskWatcher({ db, broker, spawn: spawnStub, workerBinary: "/fake", logger });
+    await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({ exitCode: 0, status: "complete", finalText: "executor output" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Reviewer exits with error
+    resolvers[1]({ exitCode: 1, status: "error", error: "reviewer crashed", finalText: null, events: [] });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    expect(task.status).toBe("in_review");
+
+    const comments = db
+      .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
+      .all(taskId);
+    const errorComment = comments.find(
+      (c) => c.author_type === "system" && (c.body.toLowerCase().includes("fail") || c.body.includes("reviewer crashed")),
+    );
+    expect(errorComment).toBeTruthy();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ taskId, message: "reviewer crashed" }),
+      "review run failed",
+    );
   });
 });
