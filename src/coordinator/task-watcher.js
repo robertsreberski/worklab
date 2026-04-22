@@ -136,6 +136,7 @@ export function createTaskWatcher({
       db.prepare(
         `INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)`,
       ).run(newCommentId(), taskId, `ERROR: ${errText}`, Date.now());
+      // Flip to todo so user can retry via Run now. State machine's run_failed keeps status unchanged (in_progress); we diverge intentionally.
       db.prepare(
         "UPDATE tasks SET status = 'todo', error_text = ?, updated_at = ? WHERE id = ?",
       ).run(errText, Date.now(), taskId);
