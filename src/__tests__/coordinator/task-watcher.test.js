@@ -79,7 +79,9 @@ describe("task-watcher", () => {
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/already/i);
   });
 
-  it("failed worker moves task back to todo and adds error comment", async () => {
+  it("failed worker keeps task in_progress with error_text and error comment", async () => {
+    // Per spec §5.10 and T6: run_failed routes through the reducer which
+    // keeps the task in in_progress, sets error_text, and posts an ERROR comment.
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db, { executor: "coder" });
@@ -97,7 +99,7 @@ describe("task-watcher", () => {
     resolveDone({ exitCode: 1, status: "error", error: "timeout" });
     await new Promise((r) => setTimeout(r, 20));
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    expect(task.status).toBe("todo");
+    expect(task.status).toBe("in_progress");
     expect(task.error_text).toBe("timeout");
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ?")

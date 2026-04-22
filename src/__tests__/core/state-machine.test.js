@@ -28,11 +28,12 @@ describe("in_progress transitions", () => {
     expect(r.sideEffects.some(s => s.type === "spawn_reviewer")).toBe(false);
   });
 
-  it("run_failed → stays in_progress, posts error comment, red badge", () => {
+  it("run_failed → stays in_progress, posts error comment, red badge, sets error text", () => {
     const r = nextStatus("in_progress", { type: "run_failed", message: "timeout" });
     expect(r.status).toBe("in_progress");
     expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "timeout" });
     expect(r.sideEffects).toContainEqual({ type: "mark_badge_red" });
+    expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: "timeout" });
   });
 });
 
@@ -125,6 +126,7 @@ describe("transition coverage", () => {
   it("run_failed without message falls back to default message", () => {
     const r = nextStatus("in_progress", { type: "run_failed" });
     expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "run failed" });
+    expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: "run failed" });
   });
 
   it("review_rejected without notes defaults to empty string", () => {

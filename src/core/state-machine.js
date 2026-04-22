@@ -23,14 +23,17 @@ export function nextStatus(current, event) {
           ? [{ type: "spawn_reviewer", agentName: event.reviewerAgent }]
           : [],
       );
-    case "run_failed":
+    case "run_failed": {
       if (current !== "in_progress") {
         return unchanged([{ type: "error", message: `cannot fail from ${current}` }]);
       }
+      const message = event.message || "run failed";
       return unchanged([
-        { type: "post_error_comment", message: event.message || "run failed" },
+        { type: "post_error_comment", message },
         { type: "mark_badge_red" },
+        { type: "set_error_text", message },
       ]);
+    }
     case "review_approved":
       if (current !== "in_review") {
         return unchanged([{ type: "error", message: `cannot approve from ${current}` }]);
