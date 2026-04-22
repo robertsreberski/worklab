@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { kbPath, kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../../core/kb.js";
+import { kbPath, kbList, kbRead, kbCreate, kbUpdate, kbDelete, kbListPinned } from "../../core/kb.js";
 
 const dirs = [];
 afterEach(() => {
@@ -694,5 +694,154 @@ describe("writeAtomic durability", () => {
     // File is fully written and terminates with a newline.
     const raw = readFileSync(finalPath, "utf8");
     expect(raw.endsWith("\n")).toBe(true);
+  });
+});
+
+describe("kbListPinned", () => {
+  function seedMixed(d) {
+    kbCreate({
+      dataDir: d,
+      slug: "pinned-a",
+      title: "Pinned A",
+      body: "body of pinned-a",
+      pinned: true,
+      author: "human",
+      now: new Date("2026-04-22T12:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "pinned-b",
+      title: "Pinned B",
+      body: "body of pinned-b",
+      pinned: true,
+      author: "human",
+      now: new Date("2026-04-21T12:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "not-pinned",
+      title: "Not Pinned",
+      body: "body of not-pinned",
+      pinned: false,
+      author: "human",
+      now: new Date("2026-04-23T12:00:00Z"),
+    });
+  }
+
+  it("returns empty array when no KB exists (missing knowledge dir)", () => {
+    const d = mk();
+    expect(kbListPinned({ dataDir: d })).toEqual([]);
+  });
+
+  it("returns only pinned entries", () => {
+    const d = mk();
+    seedMixed(d);
+    const result = kbListPinned({ dataDir: d });
+    expect(result.every((e) => e.pinned === true)).toBe(true);
+    const slugs = result.map((e) => e.slug).sort();
+    expect(slugs).toEqual(["pinned-a", "pinned-b"]);
+  });
+
+  it("returns bodies (not just meta)", () => {
+    const d = mk();
+    seedMixed(d);
+    const result = kbListPinned({ dataDir: d });
+    for (const entry of result) {
+      expect(entry).toHaveProperty("body");
+      expect(typeof entry.body).toBe("string");
+      expect(entry.body.trim().length).toBeGreaterThan(0);
+    }
+    const a = result.find((e) => e.slug === "pinned-a");
+    expect(a.body.trim()).toBe("body of pinned-a");
+  });
+
+  it("orders by updated_at DESC within pinned entries", () => {
+    const d = mk();
+    seedMixed(d);
+    const result = kbListPinned({ dataDir: d });
+    // pinned-a updated 2026-04-22, pinned-b updated 2026-04-21 → a first
+    expect(result.map((e) => e.slug)).toEqual(["pinned-a", "pinned-b"]);
+  });
+
+  it("respects the limit parameter", () => {
+    const d = mk();
+    for (let i = 1; i <= 5; i++) {
+      kbCreate({
+        dataDir: d,
+        slug: `entry-${i}`,
+        title: `Entry ${i}`,
+        body: `body ${i}`,
+        pinned: true,
+        author: "human",
+        now: new Date(`2026-04-${10 + i}T10:00:00Z`),
+      });
+    }
+    const result = kbListPinned({ dataDir: d, limit: 3 });
+    expect(result.length).toBe(3);
+  });
+
+  it("default limit is 10", () => {
+    const d = mk();
+    for (let i = 1; i <= 15; i++) {
+      kbCreate({
+        dataDir: d,
+        slug: `bulk-${i}`,
+        title: `Bulk ${i}`,
+        body: `body ${i}`,
+        pinned: true,
+        author: "human",
+        now: new Date(`2026-04-${String(i).padStart(2, "0")}T10:00:00Z`),
+      });
+    }
+    const result = kbListPinned({ dataDir: d });
+    expect(result.length).toBe(10);
+  });
+
+  it("ignores non-pinned entries even when list is otherwise short", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "unpinned-only",
+      title: "Unpinned",
+      body: "body",
+      pinned: false,
+      author: "human",
+    });
+    const result = kbListPinned({ dataDir: d });
+    expect(result).toEqual([]);
+  });
+
+  it("handles missing knowledge dir gracefully (returns [])", () => {
+    const d = mk();
+    // No knowledge dir created, no files written
+    const result = kbListPinned({ dataDir: "/nonexistent/path/that/does/not/exist" });
+    expect(result).toEqual([]);
+  });
+
+  it("includes full entry shape (slug, title, body, category, tags, pinned, author, created_at, updated_at)", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "full-entry",
+      title: "Full Entry",
+      body: "full body text",
+      pinned: true,
+      tags: ["x", "y"],
+      category: "docs",
+      author: "human",
+      now: new Date("2026-04-22T10:00:00Z"),
+    });
+    const result = kbListPinned({ dataDir: d });
+    expect(result.length).toBe(1);
+    const entry = result[0];
+    expect(entry.slug).toBe("full-entry");
+    expect(entry.title).toBe("Full Entry");
+    expect(entry.body.trim()).toBe("full body text");
+    expect(entry.category).toBe("docs");
+    expect(entry.tags).toEqual(["x", "y"]);
+    expect(entry.pinned).toBe(true);
+    expect(entry.author).toBe("human");
+    expect(entry.created_at).toBe("2026-04-22T10:00:00Z");
+    expect(entry.updated_at).toBe("2026-04-22T10:00:00Z");
   });
 });

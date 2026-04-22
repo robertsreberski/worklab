@@ -8,6 +8,7 @@ import { buildExecuteSystemPrompt, buildReviewSystemPrompt } from "./core/contex
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
+import { kbListPinned } from "./core/kb.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -63,7 +64,11 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
     ? ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"]
     : builtinAllowlist;
 
-  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools };
+  const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
+  const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
+  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
+
+  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
 }
 
 async function main() {
@@ -92,7 +97,7 @@ async function main() {
   const db = openDb(join(config.dataDir, "worklab.db"));
 
   const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
-  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools } = setup;
+  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
 
   const ac = new AbortController();
   process.on("SIGTERM", () => { ac.abort(); });
@@ -101,7 +106,7 @@ async function main() {
   // ── Execute mode ────────────────────────────────────────────────────────────
   if (mode === "execute") {
     const systemPrompt = buildExecuteSystemPrompt({
-      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb: [],
+      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb,
     });
 
     try {
@@ -164,7 +169,7 @@ async function main() {
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
 
     const systemPrompt = buildReviewSystemPrompt({
-      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb: [], execution,
+      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, execution,
     });
 
     try {
