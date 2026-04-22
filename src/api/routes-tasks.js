@@ -1,6 +1,8 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
 import { nextStatus, STATUSES } from "../core/state-machine.js";
 
+const RUNS_ORDER_BY = "ORDER BY started_at DESC, rowid DESC";
+
 function rowToTask(row) {
   if (!row) return null;
   return {
@@ -52,7 +54,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(req.params.id);
     const runs = db
-      .prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC")
+      .prepare(`SELECT * FROM task_runs WHERE task_id = ? ${RUNS_ORDER_BY}`)
       .all(req.params.id);
     res.json({ task: rowToTask(row), comments, runs });
   });
@@ -136,7 +138,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
   app.get("/api/tasks/:id/runs", (req, res) => {
     const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = db.prepare("SELECT * FROM task_runs WHERE task_id = ? ORDER BY started_at DESC").all(req.params.id);
+    const runs = db.prepare(`SELECT * FROM task_runs WHERE task_id = ? ${RUNS_ORDER_BY}`).all(req.params.id);
     res.json({ runs });
   });
 

@@ -39,13 +39,23 @@ export function TaskDetail({ id }) {
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    setActiveRunId(null);
+    setRunError(null);
+  }, [id]);
+
   useSSE("global", (evt) => {
-    if (evt.id === id) reload();
+    const taskChanged = evt.id === id;
+    const runChanged = evt.taskId === id && (evt.type === "run_started" || evt.type === "run_ended");
+    if (taskChanged || runChanged) reload();
     if (evt.type === "run_started" && evt.taskId === id) setActiveRunId(evt.runId);
   });
 
   useEffect(() => {
-    const nextRunId = selectActiveRunId(data?.runs || [], activeRunId);
+    const nextRunId = selectActiveRunId(data?.runs || [], activeRunId, {
+      preserveMissingActive: Boolean(activeRunId),
+    });
     if (nextRunId !== activeRunId) {
       setActiveRunId(nextRunId);
     }
@@ -76,6 +86,7 @@ export function TaskDetail({ id }) {
     try {
       const r = await api.runTask(id);
       setActiveRunId(r.runId);
+      reload();
     } catch (err) { setRunError(err.message); }
   }
   async function cancelRun() {

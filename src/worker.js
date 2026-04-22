@@ -71,6 +71,32 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
   return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
 }
 
+function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
+  const runs = db.prepare(
+    `SELECT * FROM task_runs
+      WHERE task_id = ? AND id != ?
+      ORDER BY started_at DESC, rowid DESC
+      LIMIT ?`,
+  ).all(taskId, currentRunId, limit);
+
+  return runs.map((run) => {
+    const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(run.id);
+    const priorEvents = logRow ? JSON.parse(logRow.events || "[]") : [];
+    const execution = extractExecutionFromEvents(priorEvents, run);
+    return {
+      mode: run.mode,
+      status: run.status,
+      agentName: run.agent_name ?? "unknown",
+      startedAt: run.started_at ?? null,
+      endedAt: run.ended_at ?? null,
+      errorText: run.error_text ?? null,
+      finalText: execution.finalText,
+      numTurns: execution.numTurns,
+      durationMs: execution.durationMs,
+    };
+  });
+}
+
 async function main() {
   const { values } = parseArgs({
     options: {
@@ -159,8 +185,9 @@ async function main() {
 
   // ── Execute mode ────────────────────────────────────────────────────────────
   if (mode === "execute") {
+    const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const systemPrompt = buildExecuteSystemPrompt({
-      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb,
+      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, priorRuns,
     });
 
     try {

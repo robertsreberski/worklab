@@ -55,6 +55,36 @@ describe("task-watcher", () => {
     expect(after.status).toBe("in_review");
   });
 
+  it("broadcasts task_updated only after the new run row exists", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { executor: "coder" });
+    const broadcastRunCounts = [];
+    const broker = {
+      subscribe: () => {},
+      unsubscribe: () => {},
+      size: () => 0,
+      broadcast: (channel, payload) => {
+        if (channel === "global" && payload?.type === "task_updated") {
+          const { count } = db
+            .prepare("SELECT COUNT(*) AS count FROM task_runs WHERE task_id = ?")
+            .get(taskId);
+          broadcastRunCounts.push(count);
+        }
+      },
+    };
+    const spawn = vi.fn(() => ({
+      pid: 12345,
+      done: new Promise(() => {}),
+      cancel: vi.fn(),
+    }));
+
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    expect(broadcastRunCounts).toEqual([1]);
+  });
+
   it("rejects run_requested on task without executor", async () => {
     const db = makeTestDb();
     const taskId = seedTask(db);
