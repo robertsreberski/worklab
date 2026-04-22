@@ -34,11 +34,11 @@ function section(title, body) {
 function formatComments(comments) {
   if (!comments?.length) return "";
   return comments
-    .map(c => {
+    .map((c, index) => {
       const who = c.author_id ? `${c.author_type} ${c.author_id}` : c.author_type;
-      return `- [${who}] ${c.body}`;
+      return `### Comment ${index + 1} (${who})\n\n${String(c.body || "").trim()}`;
     })
-    .join("\n");
+    .join("\n\n");
 }
 
 function formatPinnedKb(pinnedKb) {
@@ -54,6 +54,40 @@ function renderSkills(skills) {
   return buildSkillIndex(enabled).trim() + "\n";
 }
 
+function formatTimestamp(ts) {
+  return ts ? new Date(ts).toISOString() : "";
+}
+
+function clipText(text, maxChars = 1200) {
+  const trimmed = String(text || "").trim();
+  if (!trimmed) return "";
+  if (trimmed.length <= maxChars) return trimmed;
+  return `${trimmed.slice(0, maxChars)}\n...[truncated]`;
+}
+
+function formatPriorRuns(priorRuns) {
+  if (!priorRuns?.length) return "";
+  return priorRuns
+    .map((run, index) => {
+      const lines = [
+        `### Run ${index + 1} - ${run.mode} by ${run.agentName} (${run.status})`,
+        run.startedAt ? `- Started: ${formatTimestamp(run.startedAt)}` : "",
+        run.endedAt ? `- Ended: ${formatTimestamp(run.endedAt)}` : "",
+        run.durationMs ? `- Duration: ${formatDuration(run.durationMs)}` : "",
+        run.numTurns ? `- Turns: ${run.numTurns}` : "",
+        run.errorText ? `- Error: ${run.errorText}` : "",
+      ].filter(Boolean);
+
+      const finalText = clipText(run.finalText);
+      if (finalText) {
+        lines.push("", "**Final output:**", finalText);
+      }
+
+      return lines.join("\n");
+    })
+    .join("\n\n");
+}
+
 function buildTaskBody(task, comments) {
   return [
     `**Title:** ${task.title}`,
@@ -63,7 +97,7 @@ function buildTaskBody(task, comments) {
   ].filter(Boolean).join("\n");
 }
 
-export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb }) {
+export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, priorRuns }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));
   parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
@@ -71,6 +105,7 @@ export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalT
   parts.push(section("Memory", memory || ""));
   parts.push(section("Recent journal", journalTail || ""));
   parts.push(section("Task", buildTaskBody(task, comments)));
+  parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
   parts.push(CADENCE);
   return parts.filter(Boolean).join("\n");
 }

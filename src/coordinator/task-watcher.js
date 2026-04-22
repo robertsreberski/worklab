@@ -103,13 +103,13 @@ export function createTaskWatcher({
     const errSe = result.sideEffects.find((se) => se.type === "error");
     if (errSe) throw new Error(errSe.message);
 
-    applySideEffects(taskId, result.sideEffects, task.status, result.status);
-
     const runId = newRunId();
     const now = Date.now();
     db.prepare(
       "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', ?, ?, 'running')",
     ).run(runId, taskId, task.executor_agent, now);
+
+    applySideEffects(taskId, result.sideEffects, task.status, result.status);
 
     const handle = spawn({
       binary: workerBinary,

@@ -55,6 +55,21 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.comments).toEqual([]);
     expect(res.body.runs).toEqual([]);
   });
+
+  it("orders runs newest first when timestamps match", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'alpha', ?, 'complete')",
+    ).run("run-old", task.id, 1234);
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'alpha', ?, 'running')",
+    ).run("run-new", task.id, 1234);
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
+  });
 });
 
 describe("PATCH /api/tasks/:id", () => {

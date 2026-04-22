@@ -46,6 +46,44 @@ describe("buildExecuteSystemPrompt", () => {
     expect(secondIdx).toBeGreaterThan(firstIdx);
   });
 
+  it("preserves comment bodies and includes bounded prior run history for reruns", () => {
+    const prompt = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [
+        {
+          author_type: "human",
+          author_id: null,
+          body: "Please retry this.\n\n- use the clarifying comment\n- double-check the last run",
+        },
+      ],
+      pinnedKb: [],
+      priorRuns: [
+        {
+          mode: "execute",
+          status: "error",
+          agentName: "mickey",
+          startedAt: 1_700_000_000_000,
+          endedAt: 1_700_000_005_000,
+          errorText: "timeout",
+          finalText: "Tried a first pass fix.",
+          numTurns: 2,
+          durationMs: 5_000,
+        },
+      ],
+    });
+
+    expect(prompt).toContain("### Comment 1 (human)");
+    expect(prompt).toContain("Please retry this.\n\n- use the clarifying comment\n- double-check the last run");
+    expect(prompt).toContain("## Prior run history");
+    expect(prompt).toContain("### Run 1 - execute by mickey (error)");
+    expect(prompt).toContain("- Error: timeout");
+    expect(prompt).toContain("**Final output:**\nTried a first pass fix.");
+  });
+
   it("ends with the cadence instruction", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p.trim().endsWith("if anything rolls up.")).toBe(true);

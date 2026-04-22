@@ -10,6 +10,12 @@ describe("task detail run selection", () => {
     expect(selectActiveRunId([{ id: "run-new" }], "run-old")).toBe("run-new");
   });
 
+  it("preserves a newly started run while refreshed task data catches up", () => {
+    expect(
+      selectActiveRunId([{ id: "run-old" }], "run-new", { preserveMissingActive: true }),
+    ).toBe("run-new");
+  });
+
   it("clears active run state when the current task has no runs", () => {
     expect(selectActiveRunId([], "run-old")).toBeNull();
   });

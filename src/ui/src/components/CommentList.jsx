@@ -1,5 +1,6 @@
 // src/ui/src/components/CommentList.jsx
 import { CommentAuthor } from "./CommentAuthor.jsx";
+import { MarkdownContent } from "./Markdown.jsx";
 
 const VERDICT_RE = /^VERDICT:\s*(APPROVE|REJECT)\b/;
 
@@ -29,7 +30,7 @@ export function CommentList({ comments }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            {displayBody && <div>{displayBody}</div>}
+            {displayBody && <MarkdownContent content={displayBody} className="comment-body doc-content" />}
           </div>
         );
       })}
