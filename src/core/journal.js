@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 export function agentJournalPath(dataDir, agent) {
@@ -49,4 +49,18 @@ export function readJournalTail({ dataDir, agent, maxLines = 80 }) {
   const content = readFileSync(path, "utf8");
   const lines = content.split("\n");
   return lines.slice(-maxLines).join("\n");
+}
+
+export function readFullJournal({ dataDir, agent }) {
+  const path = agentJournalPath(dataDir, agent);
+  return existsSync(path) ? readFileSync(path, "utf8") : "";
+}
+
+export function writeMemory({ dataDir, agent, content }) {
+  const path = agentMemoryPath(dataDir, agent);
+  ensureDir(path);
+  const tmp = `${path}.tmp`;
+  writeFileSync(tmp, String(content || "").replace(/\n*$/, "\n"));
+  renameSync(tmp, path);
+  return path;
 }
