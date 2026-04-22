@@ -7,20 +7,28 @@ import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 import { selectActiveRunId } from "./taskDetailRuns.js";
 
+const STATUS_LABELS = {
+  todo: "To do",
+  in_progress: "In progress",
+  in_review: "In review",
+  done: "Done",
+};
+
 function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false }) {
   const { events, loading } = useRunStream(run?.id, { subscribe });
   if (!run) return null;
   return (
-    <details open={defaultOpen} style="border:1px solid var(--border);border-radius:6px;padding:12px;background:var(--panel);margin-bottom:12px">
-      <summary style="cursor:pointer">
+    <details open={defaultOpen} class="surface-panel run-card">
+      <summary>
         <strong>{title}</strong>
-        <span class="meta" style="margin-left:8px">
-          {run.mode} · {run.agent_name} · {run.status} · {new Date(run.started_at).toLocaleString()}
-          {run.ended_at && ` → ${new Date(run.ended_at).toLocaleString()}`}
+        <span class={`status-badge ${run.status === "running" ? "in_progress" : "muted"}`}>{run.status}</span>
+        <span class="meta">
+          {run.mode} / {run.agent_name} / {new Date(run.started_at).toLocaleString()}
+          {run.ended_at && ` / ${new Date(run.ended_at).toLocaleString()}`}
         </span>
       </summary>
-      <div style="margin-top:12px">
-        {loading ? <div class="meta">Loading…</div> : <EventTimeline events={events} />}
+      <div class="run-card-body">
+        {loading ? <div class="meta">Loading...</div> : <EventTimeline events={events} />}
       </div>
     </details>
   );
@@ -28,6 +36,7 @@ function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false })
 
 export function TaskDetail({ id }) {
   const [data, setData] = useState(null);
+  const [agents, setAgents] = useState([]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
   const [newComment, setNewComment] = useState("");
@@ -39,10 +48,14 @@ export function TaskDetail({ id }) {
   }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+  }, []);
 
   useEffect(() => {
     setActiveRunId(null);
     setRunError(null);
+    setEditing(false);
   }, [id]);
 
   useSSE("global", (evt) => {
@@ -65,90 +78,189 @@ export function TaskDetail({ id }) {
   const historyRuns = data?.runs?.filter((run) => run.id !== activeRunId) || [];
   const activeRunDone = focusedRun ? focusedRun.status !== "running" : false;
 
-  if (!data) return <div>Loading…</div>;
-  if (data.notFound) return <div>Task not found. <a href="#/tasks">Back</a></div>;
-  const { task, comments, runs } = data;
+  if (!data) return <div class="surface-panel">Loading...</div>;
+  if (data.notFound) return <div class="surface-panel">Task not found. <a href="#/tasks">Back</a></div>;
+  const { task, comments } = data;
 
-  async function save() { await api.patchTask(id, draft); setEditing(false); }
+  async function save() {
+    await api.patchTask(id, draft);
+    setEditing(false);
+    reload();
+  }
+
   async function addComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
     await api.addComment(id, newComment.trim());
     setNewComment("");
   }
+
   async function destroy() {
     if (!confirm("Delete this task?")) return;
     await api.deleteTask(id);
     window.location.hash = "#/tasks";
   }
+
   async function runNow() {
     setRunError(null);
     try {
       const r = await api.runTask(id);
       setActiveRunId(r.runId);
       reload();
-    } catch (err) { setRunError(err.message); }
+    } catch (err) {
+      setRunError(err.message);
+    }
   }
+
   async function cancelRun() {
-    try { await api.cancelTask(id); } catch (err) { setRunError(err.message); }
+    try {
+      await api.cancelTask(id);
+    } catch (err) {
+      setRunError(err.message);
+    }
   }
 
   const canRun = task.executor_agent && (task.status === "todo" || task.status === "in_progress") && (!activeRunId || activeRunDone);
 
   return (
-    <div class="detail">
-      <a href="#/tasks" class="back-link">← Back</a>
-      <h2>{task.title}</h2>
-      <div class="meta">
-        status: {task.status} · executor: {task.executor_agent || "—"} · reviewer: {task.reviewer_agent || "—"}
-      </div>
+    <div class="detail task-detail">
+      <a href="#/tasks" class="back-link">Back to tasks</a>
 
-      <div style="margin:12px 0">
-        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-          <button class="primary" onClick={runNow} disabled={!canRun}>▶ Run now</button>
-          {focusedRun?.status === "running" && <button onClick={cancelRun} style="color:#ff7a7a">Cancel run</button>}
-          {runError && <span style="color:#ff7a7a">{runError}</span>}
+      <section class="surface-panel task-hero">
+        <div>
+          <div class="eyebrow">Task</div>
+          <h2>{task.title}</h2>
+          <div class="task-meta-grid">
+            <span class={`status-badge ${task.status}`}>{STATUS_LABELS[task.status] || task.status}</span>
+            <span class="meta-pill">Executor {task.executor_agent || "Unassigned"}</span>
+            <span class="meta-pill">Reviewer {task.reviewer_agent || "None"}</span>
+            {task.error_text && <span class="status-badge error">Error</span>}
+          </div>
         </div>
-        {!task.executor_agent && <div class="field-help">Set an executor agent to enable Run now.</div>}
-      </div>
-
-      {focusedRun && <RunTimelineCard run={focusedRun} title={focusedRun.status === "running" ? "Live run" : "Latest run"} defaultOpen subscribe={focusedRun.status === "running"} />}
-
-      {!editing ? (
-        <>
-          <p>{task.description || <span class="meta">No description.</span>}</p>
-          <h4>Instructions</h4>
-          <pre style="white-space:pre-wrap;background:var(--panel-2);padding:10px;border-radius:6px">{task.instructions || "(none)"}</pre>
+        <div class="toolbar">
+          <button class="primary" onClick={runNow} disabled={!canRun}>Run now</button>
+          {focusedRun?.status === "running" && <button onClick={cancelRun} class="danger">Cancel run</button>}
           <button onClick={() => { setDraft(task); setEditing(true); }}>Edit</button>
-          <button onClick={destroy} style="margin-left:8px;color:#ff7a7a">Delete</button>
-        </>
-      ) : (
-        <>
-          <div class="field"><label>Title</label><input value={draft.title} onInput={(e) => setDraft({ ...draft, title: e.target.value })} /></div>
-          <div class="field"><label>Description</label><textarea rows="4" value={draft.description} onInput={(e) => setDraft({ ...draft, description: e.target.value })} /></div>
-          <div class="field"><label>Instructions</label><textarea rows="8" value={draft.instructions} onInput={(e) => setDraft({ ...draft, instructions: e.target.value })} /></div>
-          <div class="field"><label>Executor agent</label><input value={draft.executor_agent || ""} placeholder="agent name (slug)" onInput={(e) => setDraft({ ...draft, executor_agent: e.target.value || null })} /></div>
-          <div class="field"><label>Reviewer agent</label><input value={draft.reviewer_agent || ""} placeholder="(optional)" onInput={(e) => setDraft({ ...draft, reviewer_agent: e.target.value || null })} /></div>
-          <button class="primary" onClick={save}>Save</button>
-          <button onClick={() => setEditing(false)} style="margin-left:8px">Cancel</button>
-        </>
-      )}
+          <button onClick={destroy} class="danger">Delete</button>
+        </div>
+      </section>
 
-      {historyRuns.length > 0 && (
-        <>
-          <h3 style="margin-top:24px">Previous runs</h3>
-          {historyRuns.slice(0, 5).map((run) => (
-            <RunTimelineCard key={run.id} run={run} title="Run log" />
-          ))}
-        </>
-      )}
+      {runError && <div class="surface-panel compact status-line error">{runError}</div>}
+      {!task.executor_agent && <div class="surface-panel compact field-help">Set an executor agent to enable Run now.</div>}
 
-      <h3 style="margin-top:24px">Comments</h3>
-      <CommentList comments={comments} />
-      <form onSubmit={addComment} style="margin-top:12px">
-        <div class="field"><textarea rows="3" placeholder="Add a comment…" value={newComment} onInput={(e) => setNewComment(e.target.value)} /></div>
-        <button type="submit" class="primary" disabled={!newComment.trim()}>Post</button>
-      </form>
+      <div class="task-detail-grid">
+        <div class="task-main-stack">
+          {focusedRun && (
+            <RunTimelineCard
+              run={focusedRun}
+              title={focusedRun.status === "running" ? "Live run" : "Latest run"}
+              defaultOpen
+              subscribe={focusedRun.status === "running"}
+            />
+          )}
+
+          <section class="surface-panel">
+            <div class="list-header">
+              <div>
+                <div class="section-kicker">Brief</div>
+                <h3 class="section-title">Task context</h3>
+              </div>
+            </div>
+
+            {!editing ? (
+              <>
+                <div class="field">
+                  <label>Description</label>
+                  <div class="detail-copy">{task.description || <span class="meta">No description.</span>}</div>
+                </div>
+                <div class="field">
+                  <label>Instructions</label>
+                  <pre class="code-panel">{task.instructions || "(none)"}</pre>
+                </div>
+              </>
+            ) : (
+              <>
+                <div class="form-grid">
+                  <div class="field span-2">
+                    <label>Title</label>
+                    <input value={draft.title} onInput={(e) => setDraft({ ...draft, title: e.target.value })} />
+                  </div>
+                  <div class="field span-2">
+                    <label>Description</label>
+                    <textarea rows="4" value={draft.description} onInput={(e) => setDraft({ ...draft, description: e.target.value })} />
+                  </div>
+                  <div class="field span-2">
+                    <label>Instructions</label>
+                    <textarea rows="8" value={draft.instructions} onInput={(e) => setDraft({ ...draft, instructions: e.target.value })} />
+                  </div>
+                  <div class="field">
+                    <label>Executor agent</label>
+                    <select value={draft.executor_agent || ""} onChange={(e) => setDraft({ ...draft, executor_agent: e.target.value || null })}>
+                      <option value="">Unassigned</option>
+                      {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>)}
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Reviewer agent</label>
+                    <select value={draft.reviewer_agent || ""} onChange={(e) => setDraft({ ...draft, reviewer_agent: e.target.value || null })}>
+                      <option value="">None</option>
+                      {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div class="form-actions">
+                  <button class="primary" onClick={save}>Save</button>
+                  <button onClick={() => setEditing(false)}>Cancel</button>
+                </div>
+              </>
+            )}
+          </section>
+
+          {historyRuns.length > 0 && (
+            <section class="section-stack">
+              <div class="list-header">
+                <div>
+                  <div class="section-kicker">History</div>
+                  <h3 class="section-title">Previous runs</h3>
+                </div>
+              </div>
+              {historyRuns.slice(0, 5).map((run) => (
+                <RunTimelineCard key={run.id} run={run} title="Run log" />
+              ))}
+            </section>
+          )}
+        </div>
+
+        <aside class="task-side-stack">
+          <section class="surface-panel">
+            <div class="section-kicker">Workflow</div>
+            <h3 class="section-title">Execution state</h3>
+            <div class="list-stack">
+              <div class="meta-pill">Status {STATUS_LABELS[task.status] || task.status}</div>
+              <div class="meta-pill">Executor {task.executor_agent || "Unassigned"}</div>
+              <div class="meta-pill">Reviewer {task.reviewer_agent || "None"}</div>
+              <div class="meta-pill">Retries {task.retry_count ?? 0}</div>
+            </div>
+            {task.error_text && <div class="status-line error">{task.error_text}</div>}
+          </section>
+
+          <section class="surface-panel">
+            <div class="list-header">
+              <div>
+                <div class="section-kicker">Discussion</div>
+                <h3 class="section-title">Comments</h3>
+              </div>
+            </div>
+            <CommentList comments={comments} />
+            <form onSubmit={addComment} class="section-stack">
+              <div class="field">
+                <textarea rows="3" placeholder="Add a comment..." value={newComment} onInput={(e) => setNewComment(e.target.value)} />
+              </div>
+              <button type="submit" class="primary" disabled={!newComment.trim()}>Post</button>
+            </form>
+          </section>
+        </aside>
+      </div>
     </div>
   );
 }

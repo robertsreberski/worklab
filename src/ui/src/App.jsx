@@ -11,6 +11,16 @@ import { KbEdit } from "./routes/KbEdit.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
 
+const ROUTES = [
+  { id: "tasks", label: "Tasks", summary: "Plan, run, and review agent work." },
+  { id: "agents", label: "Agents", summary: "Configure executors, reviewers, tools, and memory." },
+  { id: "skills", label: "Skills", summary: "Manage reusable agent playbooks." },
+  { id: "knowledge", label: "Knowledge", summary: "Curate shared context for humans and agents." },
+  { id: "providers", label: "Providers", summary: "Connect local, hosted, and custom model backends." },
+  { id: "activity", label: "Activity", summary: "Audit recent runs, usage, and outcomes." },
+  { id: "settings", label: "Settings", summary: "Tune runtime behavior and search defaults." },
+];
+
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
   const [route, ...rest] = h.split("/");
@@ -40,18 +50,47 @@ export function App() {
   else if (route === "settings") body = <Settings />;
   else body = <Kanban />;
 
+  const activeRoute = ROUTES.find((item) => item.id === route) || ROUTES[0];
+  const detailContext = rest[0] && rest[0] !== "new";
+  const createContext = rest[0] === "new";
+
   return (
-    <div class="app">
-      <nav class="topnav">
-        <a href="#/tasks" class={route === "tasks" ? "active" : ""}>Tasks</a>
-        <a href="#/agents" class={route === "agents" ? "active" : ""}>Agents</a>
-        <a href="#/skills" class={route === "skills" ? "active" : ""}>Skills</a>
-        <a href="#/knowledge" class={route === "knowledge" ? "active" : ""}>Knowledge</a>
-        <a href="#/providers" class={route === "providers" ? "active" : ""}>Providers</a>
-        <a href="#/activity" class={route === "activity" ? "active" : ""}>Activity</a>
-        <a href="#/settings" class={route === "settings" ? "active" : ""}>Settings</a>
-      </nav>
-      <main>{body}</main>
+    <div class="app app-shell">
+      <aside class="app-rail">
+        <a class="brand-lockup" href="#/tasks" aria-label="Worklab tasks">
+          <span class="brand-mark">W</span>
+          <span class="brand-copy">
+            <strong>Worklab</strong>
+            <span>Local agent ops</span>
+          </span>
+        </a>
+        <nav class="topnav app-nav" aria-label="Primary navigation">
+          {ROUTES.map((item) => (
+            <a key={item.id} href={`#/${item.id}`} class={route === item.id ? "active" : ""}>
+              <span class="nav-dot" aria-hidden="true" />
+              <span>{item.label}</span>
+            </a>
+          ))}
+        </nav>
+        <div class="rail-status">
+          <span class="status-dot status-dot-ok" aria-hidden="true" />
+          <span>localhost</span>
+        </div>
+      </aside>
+      <div class="app-body">
+        <header class="app-header">
+          <div>
+            <div class="eyebrow">Workspace</div>
+            <div class="app-title">{activeRoute.label}</div>
+            <p>{createContext ? "Create a new record." : detailContext ? "Inspect and update the selected record." : activeRoute.summary}</p>
+          </div>
+          <div class="header-meta">
+            <span class="meta-pill">Single-user</span>
+            <span class="meta-pill">YOLO execution</span>
+          </div>
+        </header>
+        <main class="app-main">{body}</main>
+      </div>
     </div>
   );
 }

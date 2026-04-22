@@ -51,40 +51,55 @@ export function Knowledge() {
   const showingSearch = query.trim().length > 0;
 
   return (
-    <div class="detail">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h2 style="margin:0">Knowledge Base</h2>
-        <a href="#/knowledge/new" class="primary">+ New entry</a>
+    <div class="detail page-stack">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Shared context</div>
+          <h2 class="page-title">Knowledge base</h2>
+          <div class="page-copy">{entries.length} entries</div>
+        </div>
+        <a href="#/knowledge/new" class="primary">New entry</a>
       </div>
 
-      <div class="field" style="margin-bottom:12px">
-        <input
-          type="search"
-          placeholder="Search knowledge by title, tag, or content..."
-          value={query}
-          onInput={(e) => setQuery(e.target.value)}
-          style="width:100%;box-sizing:border-box"
-        />
+      <div class="surface-panel compact">
+        <div class="field">
+          <label>Search</label>
+          <input
+            type="search"
+            placeholder="Search knowledge by title, tag, or content..."
+            value={query}
+            onInput={(e) => setQuery(e.target.value)}
+          />
+        </div>
       </div>
 
       {showingSearch && (
-        <div class="search-results">
-          <div class="meta" style="margin-bottom:8px">
-            {searching ? "Searching index..." : `${searchResults.length} indexed result${searchResults.length === 1 ? "" : "s"}`}
+        <div class="search-section">
+          <div class="list-header">
+            <div>
+              <div class="section-kicker">Indexed content</div>
+              <h3 class="section-title">
+                {searching ? "Searching..." : `${searchResults.length} indexed result${searchResults.length === 1 ? "" : "s"}`}
+              </h3>
+            </div>
           </div>
-          {searchResults.map((result) => (
-            <a key={result.ref} class="search-result" href={result.slug ? `#/knowledge/${result.slug}` : "#/knowledge"}>
-              <strong>{result.title}</strong>
-              <span class="meta">{result.snippet || result.source_ref}</span>
-            </a>
-          ))}
+          <div class="search-results">
+            {searchResults.length === 0 && !searching && (
+              <div class="surface-panel compact meta">No indexed content matches. Title and tag matches are still shown below.</div>
+            )}
+            {searchResults.map((result) => (
+              <a key={result.ref} class="search-result" href={result.slug ? `#/knowledge/${result.slug}` : "#/knowledge"}>
+                <strong>{result.title}</strong>
+                <span class="meta">{result.snippet || result.source_ref}</span>
+              </a>
+            ))}
+          </div>
         </div>
       )}
 
       {filtered.length === 0 && entries.length === 0 && (
-        <div class="meta" style="text-align:center;padding:32px 0">
-          No knowledge base entries yet.{" "}
-          <a href="#/knowledge/new">Create the first entry →</a>
+        <div class="surface-panel meta">
+          No knowledge base entries yet. <a href="#/knowledge/new">Create the first entry.</a>
         </div>
       )}
 
@@ -99,7 +114,7 @@ export function Knowledge() {
               <th>Title</th>
               <th>Category</th>
               <th>Tags</th>
-              <th style="text-align:center">Pinned</th>
+              <th class="center-cell">Pinned</th>
               <th>Updated</th>
             </tr>
           </thead>
@@ -113,17 +128,17 @@ export function Knowledge() {
                     {e.title}
                   </a>
                 </td>
-                <td data-label="Category" class="meta">{e.category || "—"}</td>
+                <td data-label="Category" class="meta">{e.category || "-"}</td>
                 <td data-label="Tags" class="meta">
                   {(e.tags || []).length > 0
                     ? (e.tags || []).join(", ")
-                    : "—"}
+                    : "-"}
                 </td>
-                <td data-label="Pinned" style="text-align:center">
-                  {e.pinned ? "⭐" : ""}
+                <td data-label="Pinned" class="center-cell">
+                  {e.pinned ? <span class="status-badge in_review">Pinned</span> : ""}
                 </td>
                 <td data-label="Updated" class="meta">
-                  {e.updated_at ? new Date(e.updated_at).toLocaleDateString() : "—"}
+                  {e.updated_at ? new Date(e.updated_at).toLocaleDateString() : "-"}
                 </td>
               </tr>
             ))}

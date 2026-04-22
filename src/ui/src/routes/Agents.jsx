@@ -10,23 +10,28 @@ export function Agents() {
   useSSE("global", (evt) => { if (evt.type?.startsWith("agent_")) reload(); });
 
   return (
-    <div class="detail">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-        <h2 style="margin:0">Agents</h2>
-        <a href="#/agents/new" class="primary" style="padding:6px 10px;border-radius:4px;background:var(--accent);color:#fff;text-decoration:none">+ New agent</a>
+    <div class="detail page-stack">
+      <div class="page-header">
+        <div>
+          <div class="eyebrow">Agent registry</div>
+          <h2 class="page-title">Agents</h2>
+          <div class="page-copy">{agents.length} configured</div>
+        </div>
+        <a href="#/agents/new" class="primary">New agent</a>
       </div>
       {agents.length === 0 && <div class="meta">No agents yet. Create one to assign to tasks.</div>}
-      <ul style="list-style:none;padding:0">
+      <div class="list-stack">
         {agents.map(a => (
-          <li key={a.name} class="task-card" style="margin-bottom:8px">
-            <a href={`#/agents/${a.name}`} style="color:inherit;text-decoration:none">
+          <a key={a.name} href={`#/agents/${a.name}`} class="list-row">
+            <div class="list-row-main">
               <h4>{a.display_name} <span class="meta">({a.name})</span></h4>
-              <div class="meta">{a.sdk}:{a.model} · effort {a.effort} · {a.enabled ? "enabled" : "disabled"}</div>
-              {a.description && <div style="margin-top:4px">{a.description}</div>}
-            </a>
-          </li>
+              <div class="meta">{a.model} / effort {a.effort}</div>
+              {a.description && <div class="meta">{a.description}</div>}
+            </div>
+            <span class={a.enabled ? "status-badge done" : "status-badge muted"}>{a.enabled ? "Enabled" : "Disabled"}</span>
+          </a>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

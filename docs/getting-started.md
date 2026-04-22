@@ -21,14 +21,14 @@ A guide to installing worklab, creating your first agents, and running your firs
 git clone <repo-url> worklab
 cd worklab
 npm install
-npm run build:ui        # builds the Preact frontend into src/ui/dist/
-npm start               # or: node src/cli/index.js start
+npm start
 ```
 
 The server starts on **http://localhost:7878** by default.
 
-> The frontend build must happen via `npm run build:ui` (or Docker). The host
-> needs the dev dependencies installed — never skip this step.
+`npm start` builds the Preact frontend into `src/ui/dist/` before launching the
+coordinator. Use `node src/cli/index.js start` only when the frontend has already
+been built.
 
 ---
 

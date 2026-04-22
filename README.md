@@ -41,7 +41,6 @@ Original workspace-external copies of the PRD + Phase 1–2 plans live at `/opt/
 
 ```bash
 npm install
-npm run build:ui
 export ANTHROPIC_API_KEY=sk-...   # or CLAUDE_CODE_OAUTH_TOKEN, or OPENAI_API_KEY, or point at local Ollama
 npm start
 ```

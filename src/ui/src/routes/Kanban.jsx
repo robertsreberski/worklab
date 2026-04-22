@@ -10,6 +10,7 @@ const LABELS = { todo: "To do", in_progress: "In progress", in_review: "In revie
 export function Kanban() {
   const [tasks, setTasks] = useState([]);
   const [showNew, setShowNew] = useState(false);
+  const [dragOver, setDragOver] = useState(null);
 
   const reload = useCallback(() => {
     api.listTasks().then((r) => setTasks(r.tasks));
@@ -27,6 +28,7 @@ export function Kanban() {
 
   function onDropColumn(e, status) {
     e.preventDefault();
+    setDragOver(null);
     const id = e.dataTransfer.getData("text/task-id");
     if (!id) return;
     const task = tasks.find((t) => t.id === id);
@@ -35,20 +37,48 @@ export function Kanban() {
     api.patchTask(id, { status }).catch(() => reload());
   }
 
+  const counts = Object.fromEntries(COLUMNS.map((status) => [
+    status,
+    tasks.filter((t) => t.status === status).length,
+  ]));
+  const activeCount = counts.in_progress + counts.in_review;
+  const blockedCount = tasks.filter((task) => task.error_text).length;
+
   return (
-    <>
-      <div style="margin-bottom:12px">
-        <button class="primary" onClick={() => setShowNew(true)}>+ New task</button>
+    <div class="kanban-page">
+      <div class="board-toolbar">
+        <div>
+          <div class="eyebrow">Task board</div>
+          <h2 class="page-title">Agent work queue</h2>
+          <div class="board-stats">
+            <span class="meta-pill">{tasks.length} total</span>
+            <span class="meta-pill">{activeCount} active</span>
+            <span class={blockedCount ? "status-badge error" : "status-badge muted"}>
+              {blockedCount ? `${blockedCount} blocked` : "No errors"}
+            </span>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="primary" aria-label="+ New task" onClick={() => setShowNew(true)}>New task</button>
+          <button onClick={reload}>Refresh</button>
+        </div>
       </div>
       <div class="kanban">
         {COLUMNS.map((status) => (
           <div
             key={status}
-            class="column"
-            onDragOver={(e) => e.preventDefault()}
+            class={`column ${dragOver === status ? "drag-over" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(status); }}
+            onDragLeave={() => setDragOver((current) => current === status ? null : current)}
             onDrop={(e) => onDropColumn(e, status)}
           >
-            <h3>{LABELS[status]}</h3>
+            <div class="column-header">
+              <h3>{LABELS[status]}</h3>
+              <span class="column-count">{counts[status]}</span>
+            </div>
+            {tasks.filter((t) => t.status === status).length === 0 && (
+              <div class="column-empty">Drop work here.</div>
+            )}
             {tasks.filter((t) => t.status === status).map((t) => (
               <TaskCard key={t.id} task={t} onDragStart={onDragStart} />
             ))}
@@ -61,6 +91,6 @@ export function Kanban() {
           onCreated={() => { setShowNew(false); reload(); }}
         />
       )}
-    </>
+    </div>
   );
 }

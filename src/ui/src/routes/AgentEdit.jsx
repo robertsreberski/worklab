@@ -83,7 +83,7 @@ export function AgentEdit({ name }) {
     if (!isNew) api.getAgent(name).then(r => setAgent(r.agent)).catch(() => setAgent({ notFound: true }));
   }, [name, isNew]);
 
-  if (!agent) return <div>Loading…</div>;
+  if (!agent) return <div>Loading...</div>;
   if (agent.notFound) return <div>Agent not found. <a href="#/agents">Back</a></div>;
 
   function toggleList(list, value) {
@@ -150,124 +150,176 @@ export function AgentEdit({ name }) {
   }
 
   return (
-    <div class="detail">
-      <a href="#/agents" class="back-link">← Back</a>
-      <h2>{isNew ? "New agent" : agent.display_name}</h2>
-      {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
-      {notice && <div class="meta" style="margin-bottom:12px">{notice}</div>}
-
-      <div class="field"><label>Name (slug)</label>
-        <input value={agent.name} disabled={!isNew}
-          onInput={(e) => setAgent({ ...agent, name: e.target.value })} /></div>
-      <div class="field"><label>Display name</label>
-        <input value={agent.display_name}
-          onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} /></div>
-      <div class="field"><label>Description</label>
-        <input value={agent.description || ""}
-          onInput={(e) => setAgent({ ...agent, description: e.target.value })} /></div>
-
-      <div class="field"><label>Model</label>
-        <select value={agent.model} onChange={(e) => setModel(e.target.value)}>
-          {modelGroups.map(group => (
-            <optgroup key={group.id} label={group.label}>
-              {(group.models || []).map(o => (
-                <option key={o.value} value={o.value}>{o.label || o.value}</option>
-              ))}
-            </optgroup>
-          ))}
-          {!modelGroups.flatMap(g => g.models || []).some(m => m.value === agent.model) && (
-            <option value={agent.model}>{agent.model} (unavailable)</option>
+    <div class="detail page-stack">
+      <a href="#/agents" class="back-link">Back to agents</a>
+      <section class="surface-panel task-hero">
+        <div>
+          <div class="eyebrow">Agent</div>
+          <h2>{isNew ? "New agent" : agent.display_name}</h2>
+          <div class="task-meta-grid">
+            <span class={agent.enabled ? "status-badge done" : "status-badge muted"}>{agent.enabled ? "Enabled" : "Disabled"}</span>
+            <span class="meta-pill">{agent.model}</span>
+            <span class="meta-pill">Effort {normalizedEffort}</span>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="primary" onClick={save} disabled={saving || !agent.name || !agent.display_name}>
+            {saving ? "Saving..." : (isNew ? "Create" : "Save")}
+          </button>
+          {!isNew && (
+            <button onClick={consolidateNow} disabled={consolidating}>
+              {consolidating ? "Starting..." : "Consolidate memory"}
+            </button>
           )}
-        </select>
-        <div class="meta">Stored as an explicit reference: claude:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
-        {modelUnavailable && (
-          <div class="status-line warn">This model is not in the enabled runnable model list. It may be disabled, deleted, or not runnable for agent chat.</div>
-        )}
-      </div>
-      <div class="field"><label>Advanced model reference</label>
-        <input value={agent.model} onInput={(e) => setModel(e.target.value)} />
-      </div>
-      <div class="meta" style="margin:-4px 0 12px">
-        {selectedModel?.capabilities?.tool_use === false
-          ? "This model does not support tool use."
-          : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
-        {selectedModel?.capabilities?.reasoning
-          ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : (reasoningLevels.join(", "))}`
-          : " · Reasoning: unavailable"}
-      </div>
-      {reasoningMode === "none" ? (
-        <div class="field"><label>Effort</label><div class="meta">This model does not support adjustable reasoning.</div></div>
-      ) : reasoningMode === "toggle" ? (
-        <div class="field"><label>Thinking</label>
-          <select value={normalizedEffort === "low" ? "off" : "on"} onChange={(e) => setAgent({ ...agent, effort: e.target.value === "off" ? "low" : "medium" })}>
-            <option value="off">Off</option>
-            <option value="on">On</option>
-          </select></div>
-      ) : (
-        <div class="field"><label>Effort</label>
-          <select value={normalizedEffort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
-            {reasoningLevels.map(v => <option key={v} value={v}>{v}</option>)}
-          </select></div>
-      )}
-
-      <div class="field"><label>Instructions (free text — becomes the system prompt role)</label>
-        <textarea rows="10" value={agent.instructions}
-          onInput={(e) => setAgent({ ...agent, instructions: e.target.value })} /></div>
-
-      <div class="field"><label>Skills allowlist (empty = all enabled skills)</label>
-        {skills.length === 0 && <div class="meta">No skills defined yet.</div>}
-        <div class="choice-list">
-          {skills.map(s => (
-          <label key={s.name} class="choice-label">
-            <input type="checkbox" checked={agent.skills_allowlist.includes(s.name)}
-              onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })} />
-            <span>{s.name}</span>
-          </label>
-        ))}
+          {!isNew && <button onClick={destroy} class="danger">Delete</button>}
         </div>
-      </div>
+      </section>
 
-      <div class="field"><label>MCP servers allowlist (empty = all registered, worklab always included)</label>
-        {mcpServers.length === 0 && <div class="meta">No user MCP servers registered.</div>}
-        <div class="choice-list">
-          {mcpServers.map(m => (
-          <label key={m} class="choice-label">
-            <input type="checkbox" checked={agent.mcp_allowlist.includes(m)}
-              onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })} />
-            <span>{m}</span>
-          </label>
-        ))}
+      {error && <div class="surface-panel compact status-line error">{error}</div>}
+      {notice && <div class="surface-panel compact meta">{notice}</div>}
+
+      <section class="surface-panel">
+        <div class="section-kicker">Identity</div>
+        <h3 class="section-title">Profile</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label>Name (slug)</label>
+            <input value={agent.name} disabled={!isNew}
+              onInput={(e) => setAgent({ ...agent, name: e.target.value })} />
+          </div>
+          <div class="field">
+            <label>Display name</label>
+            <input value={agent.display_name}
+              onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
+          </div>
+          <div class="field span-2">
+            <label>Description</label>
+            <input value={agent.description || ""}
+              onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
+          </div>
+          <div class="field span-2">
+            <label class="choice-label">
+              <input type="checkbox" checked={agent.enabled}
+                onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })} />
+              <span>Enabled</span>
+            </label>
+          </div>
         </div>
-      </div>
+      </section>
 
-      <div class="field"><label>Built-in tools allowlist (empty = all tools)</label>
-        {!supportsToolUse && <div class="meta">This model cannot call built-in tools.</div>}
-        {supportsToolUse && <div class="choice-list">{visibleTools.map(t => (
-          <label key={t} class="choice-label">
-            <input type="checkbox" checked={agent.builtin_allowlist.includes(t)}
-              onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })} />
-            <span>{t}</span>
-          </label>
-        ))}</div>}
-      </div>
+      <section class="surface-panel">
+        <div class="section-kicker">Runtime</div>
+        <h3 class="section-title">Model and reasoning</h3>
+        <div class="form-grid">
+          <div class="field">
+            <label>Model</label>
+            <select value={agent.model} onChange={(e) => setModel(e.target.value)}>
+              {modelGroups.map(group => (
+                <optgroup key={group.id} label={group.label}>
+                  {(group.models || []).map(o => (
+                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
+                  ))}
+                </optgroup>
+              ))}
+              {!modelGroups.flatMap(g => g.models || []).some(m => m.value === agent.model) && (
+                <option value={agent.model}>{agent.model} (unavailable)</option>
+              )}
+            </select>
+            {modelUnavailable && (
+              <div class="status-line warn">This model is not in the enabled runnable model list.</div>
+            )}
+          </div>
+          <div class="field">
+            {reasoningMode === "none" ? (
+              <>
+                <label>Effort</label>
+                <div class="meta">This model does not support adjustable reasoning.</div>
+              </>
+            ) : reasoningMode === "toggle" ? (
+              <>
+                <label>Thinking</label>
+                <select value={normalizedEffort === "low" ? "off" : "on"} onChange={(e) => setAgent({ ...agent, effort: e.target.value === "off" ? "low" : "medium" })}>
+                  <option value="off">Off</option>
+                  <option value="on">On</option>
+                </select>
+              </>
+            ) : (
+              <>
+                <label>Effort</label>
+                <select value={normalizedEffort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
+                  {reasoningLevels.map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </>
+            )}
+          </div>
+          <div class="field span-2">
+            <label>Advanced model reference</label>
+            <input value={agent.model} onInput={(e) => setModel(e.target.value)} />
+            <div class="meta">
+              {selectedModel?.capabilities?.tool_use === false
+                ? "This model does not support tool use."
+                : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
+              {selectedModel?.capabilities?.reasoning
+                ? ` / Reasoning: ${reasoningMode === "toggle" ? "toggle" : (reasoningLevels.join(", "))}`
+                : " / Reasoning: unavailable"}
+            </div>
+          </div>
+        </div>
+      </section>
 
-      <div class="field">
-        <label class="choice-label">
-          <input type="checkbox" checked={agent.enabled}
-            onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })} />
-          <span>Enabled</span>
-        </label>
-      </div>
+      <section class="surface-panel">
+        <div class="section-kicker">Behavior</div>
+        <h3 class="section-title">Instructions</h3>
+        <div class="field">
+          <label>System prompt role</label>
+          <textarea rows="10" value={agent.instructions}
+            onInput={(e) => setAgent({ ...agent, instructions: e.target.value })} />
+        </div>
+      </section>
 
-      <button class="primary" onClick={save} disabled={saving || !agent.name || !agent.display_name}>
-        {saving ? "Saving…" : (isNew ? "Create" : "Save")}
-      </button>
-      {!isNew && (
-        <button onClick={consolidateNow} disabled={consolidating} style="margin-left:8px">
-          {consolidating ? "Starting…" : "Consolidate memory"}
-        </button>
-      )}
-      {!isNew && <button onClick={destroy} style="margin-left:8px;color:#ff7a7a">Delete</button>}
+      <section class="surface-panel">
+        <div class="section-kicker">Capabilities</div>
+        <h3 class="section-title">Allowlists</h3>
+        <div class="field">
+          <label>Skills allowlist (empty = all enabled skills)</label>
+          {skills.length === 0 && <div class="meta">No skills defined yet.</div>}
+          <div class="choice-list">
+            {skills.map(s => (
+              <label key={s.name} class="choice-label">
+                <input type="checkbox" checked={agent.skills_allowlist.includes(s.name)}
+                  onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })} />
+                <span>{s.name}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="field">
+          <label>MCP servers allowlist (empty = all registered, worklab always included)</label>
+          {mcpServers.length === 0 && <div class="meta">No user MCP servers registered.</div>}
+          <div class="choice-list">
+            {mcpServers.map(m => (
+              <label key={m} class="choice-label">
+                <input type="checkbox" checked={agent.mcp_allowlist.includes(m)}
+                  onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })} />
+                <span>{m}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div class="field">
+          <label>Built-in tools allowlist (empty = all tools)</label>
+          {!supportsToolUse && <div class="meta">This model cannot call built-in tools.</div>}
+          {supportsToolUse && <div class="choice-list">{visibleTools.map(t => (
+            <label key={t} class="choice-label">
+              <input type="checkbox" checked={agent.builtin_allowlist.includes(t)}
+                onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })} />
+              <span>{t}</span>
+            </label>
+          ))}</div>}
+        </div>
+      </section>
     </div>
   );
 }
