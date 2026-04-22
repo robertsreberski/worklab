@@ -179,14 +179,18 @@ export function Providers() {
           <input type="password" value={form.api_key} onInput={(e) => setForm({ ...form, api_key: e.target.value })} />
           <div class="meta">{preset.api_key_hint}</div>
         </div>
-        <label style="display:block;margin-bottom:8px">
-          <input type="checkbox" checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })} />
-          Trust public HTTPS URL
-        </label>
-        <label style="display:block;margin-bottom:12px">
-          <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-          Show this provider in model pickers
-        </label>
+        <div class="field">
+          <label class="choice-label">
+            <input type="checkbox" checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })} />
+            <span>Trust public HTTPS URL</span>
+          </label>
+        </div>
+        <div class="field">
+          <label class="choice-label">
+            <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
+            <span>Show this provider in model pickers</span>
+          </label>
+        </div>
         <button class="primary" disabled={!form.name || !form.base_url} onClick={create}>Create provider</button>
       </section>
 

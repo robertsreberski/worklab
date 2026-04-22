@@ -34,9 +34,13 @@ export function Settings() {
       <div class="field"><label>Consolidation hour (0-23)</label>
         <input type="number" min="0" max="23" value={settings.consolidation_hour}
           onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })} /></div>
-      <div class="field"><label>Consolidation enabled</label>
-        <input type="checkbox" checked={settings.consolidation_enabled}
-          onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })} /></div>
+      <div class="field">
+        <label class="choice-label">
+          <input type="checkbox" checked={settings.consolidation_enabled}
+            onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })} />
+          <span>Consolidation enabled</span>
+        </label>
+      </div>
       <div class="field"><label>Worker timeout (ms)</label>
         <input type="number" value={settings.worker_timeout_ms}
           onInput={(e) => setSettings({ ...settings, worker_timeout_ms: e.target.value })} /></div>

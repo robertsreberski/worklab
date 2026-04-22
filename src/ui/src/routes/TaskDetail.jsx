@@ -86,16 +86,19 @@ export function TaskDetail({ id }) {
 
   return (
     <div class="detail">
-      <a href="#/tasks">← Back</a>
+      <a href="#/tasks" class="back-link">← Back</a>
       <h2>{task.title}</h2>
       <div class="meta">
         status: {task.status} · executor: {task.executor_agent || "—"} · reviewer: {task.reviewer_agent || "—"}
       </div>
 
       <div style="margin:12px 0">
-        <button class="primary" onClick={runNow} disabled={!canRun}>▶ Run now</button>
-        {focusedRun?.status === "running" && <button onClick={cancelRun} style="margin-left:8px;color:#ff7a7a">Cancel run</button>}
-        {runError && <span style="color:#ff7a7a;margin-left:12px">{runError}</span>}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+          <button class="primary" onClick={runNow} disabled={!canRun}>▶ Run now</button>
+          {focusedRun?.status === "running" && <button onClick={cancelRun} style="color:#ff7a7a">Cancel run</button>}
+          {runError && <span style="color:#ff7a7a">{runError}</span>}
+        </div>
+        {!task.executor_agent && <div class="field-help">Set an executor agent to enable Run now.</div>}
       </div>
 
       {focusedRun && <RunTimelineCard run={focusedRun} title={focusedRun.status === "running" ? "Live run" : "Latest run"} defaultOpen subscribe={focusedRun.status === "running"} />}

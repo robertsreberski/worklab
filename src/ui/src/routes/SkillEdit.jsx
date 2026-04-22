@@ -43,7 +43,7 @@ export function SkillEdit({ name }) {
 
   return (
     <div class="detail">
-      <a href="#/skills">← Back</a>
+      <a href="#/skills" class="back-link">← Back</a>
       <h2>{isNew ? "New skill" : skill.name}</h2>
       {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
 
@@ -62,9 +62,13 @@ export function SkillEdit({ name }) {
           <option value="always">always (inline full body in every system prompt)</option>
         </select></div>
 
-      <div class="field"><label>Enabled</label>
-        <input type="checkbox" checked={skill.meta.enabled !== false}
-          onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })} /></div>
+      <div class="field">
+        <label class="choice-label">
+          <input type="checkbox" checked={skill.meta.enabled !== false}
+            onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })} />
+          <span>Enabled</span>
+        </label>
+      </div>
 
       <div class="field"><label>Body (markdown playbook)</label>
         <textarea rows="20" value={skill.body}
