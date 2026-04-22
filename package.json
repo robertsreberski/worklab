@@ -4,7 +4,9 @@
   "description": "Local AI agent orchestration tool",
   "type": "module",
   "private": true,
-  "bin": { "worklab": "./src/cli/index.js" },
+  "bin": {
+    "worklab": "./src/cli/index.js"
+  },
   "scripts": {
     "start": "node src/cli/index.js start",
     "dev": "node src/cli/index.js start",
@@ -13,18 +15,26 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
+    "@ai-sdk/openai-compatible": "^2.0.41",
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
+    "@openai/agents": "^0.8.5",
+    "ai": "^6.0.168",
+    "ai-sdk-ollama": "^3.8.3",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
     "cors": "^2.8.5",
     "express": "^4.21.0",
     "nanoid": "^5.0.9",
+    "ollama-ai-provider-v2": "^3.5.0",
+    "picomatch": "^4.0.4",
     "pino": "^9.5.0",
     "preact": "^10.25.0",
-    "zod": "^3.24.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.9.1",

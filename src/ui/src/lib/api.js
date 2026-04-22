@@ -22,6 +22,10 @@ export const api = {
   cancelTask: (id) => request("POST", `/tasks/${id}/cancel`),
   // runs
   getRun: (id) => request("GET", `/runs/${id}`),
+  // activity/search
+  listActivity: (query) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`),
+  search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),
+  searchStatus: () => request("GET", "/search/status"),
   // settings
   getSettings: () => request("GET", "/settings"),
   patchSettings: (patch) => request("PATCH", "/settings", patch),
@@ -31,6 +35,7 @@ export const api = {
   createAgent: (data) => request("POST", "/agents", data),
   patchAgent: (name, patch) => request("PATCH", `/agents/${name}`, patch),
   deleteAgent: (name) => request("DELETE", `/agents/${name}`),
+  consolidateAgent: (name) => request("POST", `/agents/${name}/consolidate`),
   // skills
   listSkills: () => request("GET", "/skills"),
   getSkill: (name) => request("GET", `/skills/${name}`),
@@ -46,4 +51,15 @@ export const api = {
   createKb: (data) => request("POST", "/kb", data),
   patchKb: (slug, patch) => request("PATCH", `/kb/${slug}`, patch),
   deleteKb: (slug) => request("DELETE", `/kb/${slug}`),
+  // providers/models
+  listProviders: () => request("GET", "/providers"),
+  getProvider: (id) => request("GET", `/providers/${id}`),
+  createProvider: (data) => request("POST", "/providers", data),
+  patchProvider: (id, patch) => request("PATCH", `/providers/${id}`, patch),
+  deleteProvider: (id) => request("DELETE", `/providers/${id}`),
+  testProvider: (id) => request("POST", `/providers/${id}/test`),
+  discoverProviderModels: (id) => request("POST", `/providers/${id}/discover`),
+  listProviderModels: (id) => request("GET", `/providers/${id}/models`),
+  patchProviderModel: (providerId, modelId, patch) => request("PATCH", `/providers/${providerId}/models/${modelId}`, patch),
+  listAvailableModels: () => request("GET", "/models/available"),
 };

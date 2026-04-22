@@ -23,7 +23,19 @@ function renderSdkEvent(ev) {
 
 function renderMessage(ev) {
   if (ev.type === "started") return <div class="meta">▶ run started</div>;
-  if (ev.type === "final") return <div class="comment" style="border-left:3px solid var(--accent);background:var(--panel)"><div class="author">final</div>{ev.text}</div>;
+  if (ev.type === "final") {
+    const u = ev.usage || {};
+    const usage = [
+      ev.model,
+      u.input_tokens != null ? `in ${u.input_tokens}` : null,
+      u.output_tokens != null ? `out ${u.output_tokens}` : null,
+      u.cache_read_tokens != null ? `cache ${u.cache_read_tokens}` : null,
+      ev.durationMs != null ? `${ev.durationMs}ms` : null,
+      ev.numTurns != null ? `${ev.numTurns} turns` : null,
+      u.cost_usd != null ? `$${Number(u.cost_usd).toFixed(5)}` : null,
+    ].filter(Boolean).join(" · ");
+    return <div class="comment" style="border-left:3px solid var(--accent);background:var(--panel)"><div class="author">final{usage ? ` · ${usage}` : ""}</div>{ev.text}</div>;
+  }
   if (ev.type === "error") return <div class="comment" style="border-left:3px solid #ff7a7a"><div class="author">error</div>{ev.message}</div>;
   if (ev.type === "cancelled") return <div class="meta">✕ cancelled</div>;
   if (ev.type === "sdk_event") return renderSdkEvent(ev.event);

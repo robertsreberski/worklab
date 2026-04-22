@@ -2,12 +2,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 
-const SDK_OPTIONS = [{ value: "claude", label: "Claude" }];
-const MODEL_OPTIONS = [
-  { value: "haiku", label: "Claude Haiku 4.5" },
-  { value: "sonnet", label: "Claude Sonnet 4.6" },
-  { value: "opus", label: "Claude Opus 4.7" },
-];
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 
@@ -16,7 +10,7 @@ const emptyAgent = {
   display_name: "",
   description: "",
   sdk: "claude",
-  model: "sonnet",
+  model: "claude:claude-sonnet-4-6",
   effort: "medium",
   instructions: "",
   skills_allowlist: [],
@@ -30,12 +24,16 @@ export function AgentEdit({ name }) {
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
+  const [modelGroups, setModelGroups] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [consolidating, setConsolidating] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
 
   useEffect(() => {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
     api.getMcpConfig().then(r => setMcpServers(Object.keys(r.mcpServers || {}))).catch(() => setMcpServers([]));
+    api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     if (!isNew) api.getAgent(name).then(r => setAgent(r.agent)).catch(() => setAgent({ notFound: true }));
   }, [name, isNew]);
 
@@ -44,6 +42,14 @@ export function AgentEdit({ name }) {
 
   function toggleList(list, value) {
     return list.includes(value) ? list.filter(x => x !== value) : [...list, value];
+  }
+
+  function sdkFromModel(model) {
+    return String(model || "").split(":", 1)[0] || "claude";
+  }
+
+  function setModel(model) {
+    setAgent({ ...agent, model, sdk: sdkFromModel(model) });
   }
 
   async function save() {
@@ -67,11 +73,26 @@ export function AgentEdit({ name }) {
     window.location.hash = "#/agents";
   }
 
+  async function consolidateNow() {
+    setConsolidating(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const res = await api.consolidateAgent(name);
+      setNotice(res.skipped ? "Memory is already current." : `Consolidation started: ${res.runId}`);
+    } catch (err) {
+      setError(err.message || String(err));
+    } finally {
+      setConsolidating(false);
+    }
+  }
+
   return (
     <div class="detail">
       <a href="#/agents">← Back</a>
       <h2>{isNew ? "New agent" : agent.display_name}</h2>
       {error && <div style="color:#ff7a7a;margin-bottom:12px">{error}</div>}
+      {notice && <div class="meta" style="margin-bottom:12px">{notice}</div>}
 
       <div class="field"><label>Name (slug)</label>
         <input value={agent.name} disabled={!isNew}
@@ -83,14 +104,24 @@ export function AgentEdit({ name }) {
         <input value={agent.description || ""}
           onInput={(e) => setAgent({ ...agent, description: e.target.value })} /></div>
 
-      <div class="field"><label>SDK</label>
-        <select value={agent.sdk} onChange={(e) => setAgent({ ...agent, sdk: e.target.value })}>
-          {SDK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select></div>
       <div class="field"><label>Model</label>
-        <select value={agent.model} onChange={(e) => setAgent({ ...agent, model: e.target.value })}>
-          {MODEL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select></div>
+        <select value={agent.model} onChange={(e) => setModel(e.target.value)}>
+          {modelGroups.map(group => (
+            <optgroup key={group.id} label={group.label}>
+              {(group.models || []).map(o => (
+                <option key={o.value} value={o.value}>{o.label || o.value}</option>
+              ))}
+            </optgroup>
+          ))}
+          {!modelGroups.flatMap(g => g.models || []).some(m => m.value === agent.model) && (
+            <option value={agent.model}>{agent.model}</option>
+          )}
+        </select>
+        <div class="meta">Stored as an explicit reference: claude:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
+      </div>
+      <div class="field"><label>Advanced model reference</label>
+        <input value={agent.model} onInput={(e) => setModel(e.target.value)} />
+      </div>
       <div class="field"><label>Effort</label>
         <select value={agent.effort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
           {EFFORT_OPTIONS.map(v => <option key={v} value={v}>{v}</option>)}
@@ -139,6 +170,11 @@ export function AgentEdit({ name }) {
       <button class="primary" onClick={save} disabled={saving || !agent.name || !agent.display_name}>
         {saving ? "Saving…" : (isNew ? "Create" : "Save")}
       </button>
+      {!isNew && (
+        <button onClick={consolidateNow} disabled={consolidating} style="margin-left:8px">
+          {consolidating ? "Starting…" : "Consolidate memory"}
+        </button>
+      )}
       {!isNew && <button onClick={destroy} style="margin-left:8px;color:#ff7a7a">Delete</button>}
     </div>
   );
