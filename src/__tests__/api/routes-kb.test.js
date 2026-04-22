@@ -232,6 +232,35 @@ describe("kb REST routes", () => {
     });
   });
 
+  it("PATCH /api/kb/:slug strips unknown fields (author, created_at)", async () => {
+    const { agent } = mkServer();
+    // Create entry with author="human"
+    const createRes = await agent
+      .post("/api/kb")
+      .send({ slug: "author-safety", title: "Original", body: "original body" })
+      .expect(201);
+    const originalAuthor = createRes.body.entry.meta.author;
+    const originalCreatedAt = createRes.body.entry.meta.created_at;
+    expect(originalAuthor).toBe("human");
+
+    // Try to patch with evil author and created_at
+    const patchRes = await agent
+      .patch("/api/kb/author-safety")
+      .send({
+        title: "Updated",
+        author: "evil",
+        created_at: "1970-01-01T00:00:00Z",
+      })
+      .expect(200);
+    expect(patchRes.body.entry.meta.author).toBe("human");
+    expect(patchRes.body.entry.meta.created_at).toBe(originalCreatedAt);
+
+    // Verify subsequent GET also shows original author and created_at
+    const getRes = await agent.get("/api/kb/author-safety").expect(200);
+    expect(getRes.body.entry.meta.author).toBe("human");
+    expect(getRes.body.entry.meta.created_at).toBe(originalCreatedAt);
+  });
+
   // ── DELETE /api/kb/:slug ────────────────────────────────────────────────────
 
   it("DELETE /api/kb/:slug returns 204", async () => {
