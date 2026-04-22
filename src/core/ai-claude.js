@@ -51,6 +51,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let durationMs = 0;
   let numTurns = 0;
   let cancelled = false;
+  let errorMessage = null;
   const capturedEvents = [];
 
   const abortHandler = async () => {
@@ -67,7 +68,10 @@ export async function generateClaudeResponse(systemPrompt, options) {
       capturedEvents.push(event);
       onEvent(event);
       if (event.type === "assistant") text += extractText(event);
-      else if (event.type === "result") {
+      else if (event.type === "error") {
+        errorMessage = event.error?.message || event.error || "sdk stream error";
+        break;
+      } else if (event.type === "result") {
         usage = event.usage || {};
         durationMs = event.duration_ms || 0;
         numTurns = event.num_turns || 0;
@@ -87,5 +91,6 @@ export async function generateClaudeResponse(systemPrompt, options) {
     model: model.model,
     effort,
     cancelled,
+    error: errorMessage,
   };
 }
