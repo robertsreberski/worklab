@@ -1,10 +1,51 @@
 import { existsSync, readFileSync } from "node:fs";
 import { z } from "zod";
 import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../core/journal.js";
+import { kbCreate, kbUpdate, kbDelete, kbRead, kbList } from "../core/kb.js";
 
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
 export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
 export const memoryReadSchema = z.object({});
+
+// KB schemas
+export const kbCreateSchema = z.object({
+  slug: z.string().min(1, "slug is required"),
+  title: z.string().min(1, "title is required"),
+  body: z.string(),
+  tags: z.array(z.string()).optional(),
+  category: z.string().nullable().optional(),
+  pinned: z.boolean().optional(),
+});
+
+// Only these 5 keys may appear in a patch — .strict() rejects any unknown keys.
+export const kbPatchSchema = z
+  .object({
+    title: z.string().optional(),
+    body: z.string().optional(),
+    tags: z.array(z.string()).optional(),
+    category: z.string().nullable().optional(),
+    pinned: z.boolean().optional(),
+  })
+  .strict();
+
+export const kbUpdateSchema = z.object({
+  slug: z.string().min(1, "slug is required"),
+  patch: kbPatchSchema,
+});
+
+export const kbDeleteSchema = z.object({
+  slug: z.string().min(1, "slug is required"),
+});
+
+export const kbReadSchema = z.object({
+  slug: z.string().min(1, "slug is required"),
+});
+
+export const kbListSchema = z.object({
+  tag: z.string().optional(),
+  category: z.string().optional(),
+  pinned: z.boolean().optional(),
+});
 
 export function createToolHandlers(context) {
   const { dataDir, agent, runId, taskId, taskTitle } = context;
@@ -24,6 +65,41 @@ export function createToolHandlers(context) {
       const path = agentMemoryPath(dataDir, agent);
       if (!existsSync(path)) return { content: "" };
       return { content: readFileSync(path, "utf8") };
+    },
+
+    async kb_create(input) {
+      const { slug, title, body, tags, category, pinned } = kbCreateSchema.parse(input);
+      // author is always sourced from context.agent — never from caller input
+      kbCreate({ dataDir, slug, title, body, tags, category, pinned, author: agent });
+      return { ok: true, slug };
+    },
+
+    async kb_update(input) {
+      const { slug, patch } = kbUpdateSchema.parse(input);
+      const existing = kbRead({ dataDir, slug });
+      if (existing === null) throw new Error(`not_found: ${slug}`);
+      kbUpdate({ dataDir, slug, patch });
+      return { ok: true };
+    },
+
+    async kb_delete(input) {
+      const { slug } = kbDeleteSchema.parse(input);
+      const deleted = kbDelete({ dataDir, slug });
+      if (!deleted) throw new Error(`not_found: ${slug}`);
+      return { ok: true };
+    },
+
+    async kb_read(input) {
+      const { slug } = kbReadSchema.parse(input);
+      const entry = kbRead({ dataDir, slug });
+      if (entry === null) throw new Error(`not_found: ${slug}`);
+      return { meta: entry.meta, body: entry.body };
+    },
+
+    async kb_list(input) {
+      const { tag, category, pinned } = kbListSchema.parse(input);
+      const entries = kbList({ dataDir, tag, category, pinned });
+      return { entries };
     },
   };
 }
@@ -54,5 +130,89 @@ export const toolDefinitions = [
     description:
       "Read this agent's consolidated MEMORY.md for Procedures / Facts / Gotchas.",
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "kb_create",
+    description:
+      "Create a new knowledge-base entry. The author is set automatically from the calling agent context.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: {
+          type: "string",
+          description: "URL-safe identifier (lowercase letters, digits, hyphens; e.g. 'my-note')",
+        },
+        title: { type: "string", description: "Human-readable title for the entry" },
+        body: { type: "string", description: "Markdown body content" },
+        tags: { type: "array", items: { type: "string" }, description: "Optional list of tag strings" },
+        category: {
+          type: "string",
+          nullable: true,
+          description: "Optional category string (null to omit)",
+        },
+        pinned: { type: "boolean", description: "Whether the entry is pinned (default false)" },
+      },
+      required: ["slug", "title", "body"],
+    },
+  },
+  {
+    name: "kb_update",
+    description:
+      "Update fields of an existing knowledge-base entry by slug. Only title, body, tags, category, and pinned may be patched; unknown keys are rejected.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "Slug of the entry to update" },
+        patch: {
+          type: "object",
+          description: "Fields to update. Allowed keys: title, body, tags, category, pinned.",
+          properties: {
+            title: { type: "string" },
+            body: { type: "string" },
+            tags: { type: "array", items: { type: "string" } },
+            category: { type: "string", nullable: true },
+            pinned: { type: "boolean" },
+          },
+          additionalProperties: false,
+        },
+      },
+      required: ["slug", "patch"],
+    },
+  },
+  {
+    name: "kb_delete",
+    description: "Delete a knowledge-base entry by slug. Throws not_found if the entry does not exist.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "Slug of the entry to delete" },
+      },
+      required: ["slug"],
+    },
+  },
+  {
+    name: "kb_read",
+    description:
+      "Read a knowledge-base entry by slug, returning its frontmatter metadata and body. Throws not_found if missing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        slug: { type: "string", description: "Slug of the entry to read" },
+      },
+      required: ["slug"],
+    },
+  },
+  {
+    name: "kb_list",
+    description:
+      "List knowledge-base entries, optionally filtered by tag, category, or pinned status. Returns metadata only (no body). Sorted: pinned first, then by updated_at descending.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tag: { type: "string", description: "Filter to entries that include this tag" },
+        category: { type: "string", description: "Filter to entries with this category" },
+        pinned: { type: "boolean", description: "Filter to pinned (true) or unpinned (false) entries" },
+      },
+    },
   },
 ];
