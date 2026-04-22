@@ -79,7 +79,7 @@ describe("task-watcher", () => {
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/already/i);
   });
 
-  it("failed worker keeps task in_progress and adds error comment", async () => {
+  it("failed worker moves task back to todo and adds error comment", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db, { executor: "coder" });
@@ -97,7 +97,7 @@ describe("task-watcher", () => {
     resolveDone({ exitCode: 1, status: "error", error: "timeout" });
     await new Promise((r) => setTimeout(r, 20));
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    expect(task.status).toBe("in_progress");
+    expect(task.status).toBe("todo");
     expect(task.error_text).toBe("timeout");
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ?")

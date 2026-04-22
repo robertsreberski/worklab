@@ -135,6 +135,19 @@ describe("generateClaudeResponse", () => {
     expect(r.numTurns).toBe(0);  // stream broke before result
   });
 
+  it("passes prompt as a concatenated string (not array)", async () => {
+    mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
+    await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "do the thing" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+    const call = mockQuery.mock.calls[0][0];
+    expect(typeof call.prompt).toBe("string");
+    expect(call.prompt).toBe("do the thing");
+  });
+
   it("abort signal cancels the stream", async () => {
     const stream = mockStream([
       { type: "assistant", message: { content: [{ type: "text", text: "a" }] } },
