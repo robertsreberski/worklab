@@ -1,7 +1,8 @@
 export function TaskCard({ task, onDragStart }) {
+  const cardClass = ["task-card", task.error_text ? "has-error" : ""].filter(Boolean).join(" ");
   return (
     <a
-      class="task-card"
+      class={cardClass}
       href={`#/tasks/${task.id}`}
       draggable
       onDragStart={(e) => onDragStart(e, task)}

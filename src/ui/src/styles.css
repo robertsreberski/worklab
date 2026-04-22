@@ -33,3 +33,50 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 .comment-list { margin-top: 20px; }
 .comment { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px; margin-bottom: 8px; }
 .comment .author { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+
+/* Author chip */
+.comment-author {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.comment-author svg { display: block; }
+.comment-author.agent { color: var(--accent); }
+.comment-author.human { color: var(--text); }
+.comment-author.system { color: var(--muted); }
+.comment-author .author-id {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+/* Verdict badges */
+.verdict-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.verdict-badge.approve { background: #1f3d26; color: #86efac; }
+.verdict-badge.reject { background: #3d1f1f; color: #fca5a5; }
+
+/* Red error dot on task cards */
+.task-card.has-error { position: relative; }
+.task-card.has-error::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ff7a7a;
+}
