@@ -16,7 +16,7 @@ const PatchSchema = z.object({
   tags: z.array(z.string()).optional(),
   category: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
-}).passthrough();
+});
 
 export function registerKbRoutes(app, { dataDir, broker }) {
   // GET /api/kb?tag=&category=&pinned=
