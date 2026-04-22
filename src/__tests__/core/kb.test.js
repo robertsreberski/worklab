@@ -1,0 +1,423 @@
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { kbPath, kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../../core/kb.js";
+
+const dirs = [];
+afterEach(() => {
+  for (const d of dirs) rmSync(d, { recursive: true, force: true });
+  dirs.length = 0;
+});
+function mk() {
+  const d = mkdtempSync(join(tmpdir(), "worklab-kb-"));
+  dirs.push(d);
+  return d;
+}
+
+describe("kbPath", () => {
+  it("joins dataDir/knowledge/<slug>.md", () => {
+    expect(kbPath("/data", "my-note")).toBe("/data/knowledge/my-note.md");
+  });
+});
+
+describe("kbCreate + kbRead (round trip)", () => {
+  it("writes an entry and reads it back with flow-syntax tags", () => {
+    const d = mk();
+    const now = new Date("2026-04-22T10:00:00Z");
+    kbCreate({
+      dataDir: d,
+      slug: "hello-world",
+      title: "Hello",
+      body: "# heading\n\nSome body",
+      tags: ["alpha", "beta"],
+      category: "notes",
+      pinned: false,
+      author: "human",
+      now,
+    });
+    const out = kbRead({ dataDir: d, slug: "hello-world" });
+    expect(out).not.toBeNull();
+    expect(out.meta.title).toBe("Hello");
+    expect(out.meta.slug).toBe("hello-world");
+    expect(out.meta.tags).toEqual(["alpha", "beta"]);
+    expect(out.meta.category).toBe("notes");
+    expect(out.meta.pinned).toBe(false);
+    expect(out.meta.author).toBe("human");
+    expect(out.meta.created_at).toBe("2026-04-22T10:00:00Z");
+    expect(out.meta.updated_at).toBe("2026-04-22T10:00:00Z");
+    expect(out.body.trim()).toBe("# heading\n\nSome body");
+  });
+
+  it("parses block-form (indented) tag lists on read", () => {
+    const d = mk();
+    mkdirSync(join(d, "knowledge"), { recursive: true });
+    // Hand-craft a file with block-form YAML tags
+    const content = `---
+title: Block Tags
+slug: block-tags
+tags:
+  - one
+  - two
+  - three
+category: docs
+pinned: true
+author: human
+created_at: 2026-04-21T10:00:00Z
+updated_at: 2026-04-21T10:00:00Z
+---
+
+Body here.
+`;
+    writeFileSync(join(d, "knowledge", "block-tags.md"), content);
+    const out = kbRead({ dataDir: d, slug: "block-tags" });
+    expect(out.meta.tags).toEqual(["one", "two", "three"]);
+    expect(out.meta.pinned).toBe(true);
+    expect(out.meta.category).toBe("docs");
+  });
+
+  it("kbRead returns null for missing file", () => {
+    const d = mk();
+    expect(kbRead({ dataDir: d, slug: "nope" })).toBeNull();
+  });
+
+  it("rejects creating a slug that already exists", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "dupe", title: "A", body: "x", author: "human" });
+    expect(() =>
+      kbCreate({ dataDir: d, slug: "dupe", title: "B", body: "y", author: "human" }),
+    ).toThrow(/exist/i);
+  });
+
+  it("auto-creates the knowledge directory on first write", () => {
+    const d = mk();
+    expect(existsSync(join(d, "knowledge"))).toBe(false);
+    kbCreate({ dataDir: d, slug: "fresh", title: "T", body: "b", author: "human" });
+    expect(existsSync(join(d, "knowledge"))).toBe(true);
+    expect(existsSync(join(d, "knowledge", "fresh.md"))).toBe(true);
+  });
+
+  it("writes frontmatter in stable key order", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "ordered",
+      title: "T",
+      body: "b",
+      tags: ["x"],
+      category: "c",
+      pinned: true,
+      author: "human",
+      now: new Date("2026-04-22T00:00:00Z"),
+    });
+    const raw = readFileSync(join(d, "knowledge", "ordered.md"), "utf8");
+    const lines = raw.split("\n");
+    const order = [];
+    for (const line of lines) {
+      if (line === "---") continue;
+      if (line.startsWith("#") || line.trim() === "") break;
+      const k = line.split(":")[0].trim();
+      if (k && !k.startsWith("-")) order.push(k);
+    }
+    expect(order).toEqual([
+      "title",
+      "slug",
+      "tags",
+      "category",
+      "pinned",
+      "author",
+      "created_at",
+      "updated_at",
+    ]);
+  });
+
+  it("omits category key when null", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "nocat",
+      title: "T",
+      body: "b",
+      author: "human",
+    });
+    const raw = readFileSync(join(d, "knowledge", "nocat.md"), "utf8");
+    expect(raw).not.toMatch(/^category:/m);
+    const out = kbRead({ dataDir: d, slug: "nocat" });
+    expect(out.meta.category).toBeNull();
+  });
+});
+
+describe("kbUpdate", () => {
+  it("merges frontmatter patch and preserves untouched keys", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "u1",
+      title: "Orig",
+      body: "b",
+      tags: ["a"],
+      category: "cat1",
+      pinned: false,
+      author: "human",
+      now: new Date("2026-04-21T10:00:00Z"),
+    });
+    kbUpdate({
+      dataDir: d,
+      slug: "u1",
+      patch: { title: "New Title", pinned: true },
+      now: new Date("2026-04-22T11:00:00Z"),
+    });
+    const out = kbRead({ dataDir: d, slug: "u1" });
+    expect(out.meta.title).toBe("New Title");
+    expect(out.meta.pinned).toBe(true);
+    expect(out.meta.tags).toEqual(["a"]); // untouched
+    expect(out.meta.category).toBe("cat1"); // untouched
+    expect(out.meta.created_at).toBe("2026-04-21T10:00:00Z"); // untouched
+    expect(out.meta.updated_at).toBe("2026-04-22T11:00:00Z"); // bumped
+  });
+
+  it("patch.body replaces body", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "b1", title: "T", body: "old body", author: "human" });
+    kbUpdate({ dataDir: d, slug: "b1", patch: { body: "brand new body" } });
+    const out = kbRead({ dataDir: d, slug: "b1" });
+    expect(out.body.trim()).toBe("brand new body");
+  });
+
+  it("patch with both frontmatter and body replaces both", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "both",
+      title: "T",
+      body: "old",
+      tags: [],
+      author: "human",
+    });
+    kbUpdate({
+      dataDir: d,
+      slug: "both",
+      patch: { title: "Newer", body: "newer body" },
+    });
+    const out = kbRead({ dataDir: d, slug: "both" });
+    expect(out.meta.title).toBe("Newer");
+    expect(out.body.trim()).toBe("newer body");
+  });
+
+  it("throws on non-existent slug", () => {
+    const d = mk();
+    expect(() => kbUpdate({ dataDir: d, slug: "ghost", patch: { title: "x" } })).toThrow(
+      /not.?found/i,
+    );
+  });
+
+  it("always bumps updated_at even when patch is empty", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "bump",
+      title: "T",
+      body: "b",
+      author: "human",
+      now: new Date("2026-04-21T10:00:00Z"),
+    });
+    kbUpdate({
+      dataDir: d,
+      slug: "bump",
+      patch: {},
+      now: new Date("2026-04-22T11:00:00Z"),
+    });
+    const out = kbRead({ dataDir: d, slug: "bump" });
+    expect(out.meta.updated_at).toBe("2026-04-22T11:00:00Z");
+    expect(out.meta.created_at).toBe("2026-04-21T10:00:00Z");
+  });
+});
+
+describe("kbDelete", () => {
+  it("returns true when file existed and is removed", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "del1", title: "T", body: "b", author: "human" });
+    expect(kbDelete({ dataDir: d, slug: "del1" })).toBe(true);
+    expect(existsSync(join(d, "knowledge", "del1.md"))).toBe(false);
+  });
+
+  it("returns false when file did not exist", () => {
+    const d = mk();
+    expect(kbDelete({ dataDir: d, slug: "ghost" })).toBe(false);
+  });
+});
+
+describe("kbList", () => {
+  function seed(d) {
+    kbCreate({
+      dataDir: d,
+      slug: "one",
+      title: "One",
+      body: "b",
+      tags: ["alpha", "beta"],
+      category: "notes",
+      pinned: false,
+      author: "human",
+      now: new Date("2026-04-20T10:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "two",
+      title: "Two",
+      body: "b",
+      tags: ["alpha"],
+      category: "projects",
+      pinned: true,
+      author: "human",
+      now: new Date("2026-04-21T10:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "three",
+      title: "Three",
+      body: "b",
+      tags: ["gamma"],
+      category: "notes",
+      pinned: false,
+      author: "agent",
+      now: new Date("2026-04-22T10:00:00Z"),
+    });
+  }
+
+  it("returns all entries with metadata and no body key", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d });
+    expect(list.length).toBe(3);
+    for (const entry of list) {
+      expect(entry).not.toHaveProperty("body");
+      expect(entry.slug).toBeDefined();
+      expect(entry.title).toBeDefined();
+      expect(Array.isArray(entry.tags)).toBe(true);
+    }
+  });
+
+  it("does NOT load body content (verified via large body)", () => {
+    const d = mk();
+    const big = "x".repeat(500_000);
+    kbCreate({ dataDir: d, slug: "big", title: "Big", body: big, author: "human" });
+    const list = kbList({ dataDir: d });
+    expect(list.length).toBe(1);
+    expect(list[0]).not.toHaveProperty("body");
+    expect(JSON.stringify(list[0]).length).toBeLessThan(1000);
+  });
+
+  it("sorts pinned first, then updated_at DESC", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d });
+    expect(list.map((x) => x.slug)).toEqual(["two", "three", "one"]);
+    // two is pinned, three/one unpinned with three updated later
+  });
+
+  it("filters by tag", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, tag: "alpha" });
+    expect(list.map((x) => x.slug).sort()).toEqual(["one", "two"]);
+  });
+
+  it("filters by category", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, category: "notes" });
+    expect(list.map((x) => x.slug).sort()).toEqual(["one", "three"]);
+  });
+
+  it("filters by pinned=true", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, pinned: true });
+    expect(list.map((x) => x.slug)).toEqual(["two"]);
+  });
+
+  it("filters by pinned=false", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, pinned: false });
+    expect(list.map((x) => x.slug).sort()).toEqual(["one", "three"]);
+  });
+
+  it("combines filters (tag + category)", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, tag: "alpha", category: "notes" });
+    expect(list.map((x) => x.slug)).toEqual(["one"]);
+  });
+
+  it("combines filters (tag + pinned)", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, tag: "alpha", pinned: true });
+    expect(list.map((x) => x.slug)).toEqual(["two"]);
+  });
+
+  it("combines all three filters", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, tag: "alpha", category: "projects", pinned: true });
+    expect(list.map((x) => x.slug)).toEqual(["two"]);
+  });
+
+  it("returns [] when knowledge dir does not exist", () => {
+    const d = mk();
+    expect(kbList({ dataDir: d })).toEqual([]);
+  });
+
+  it("coerces missing category to null in list output", () => {
+    const d = mk();
+    kbCreate({ dataDir: d, slug: "nc", title: "T", body: "b", author: "human" });
+    const list = kbList({ dataDir: d });
+    expect(list[0].category).toBeNull();
+  });
+});
+
+describe("slug validation", () => {
+  const bad = [
+    ["uppercase", "My-Note"],
+    ["underscore", "my_note"],
+    ["leading dash", "-note"],
+    ["trailing dash", "note-"],
+    ["double dash", "my--note"],
+    ["empty string", ""],
+    ["unicode", "naïve"],
+    ["space", "my note"],
+    ["dot", "my.note"],
+    ["slash", "my/note"],
+  ];
+  it.each(bad)("rejects %s: %s", (_label, slug) => {
+    const d = mk();
+    expect(() =>
+      kbCreate({ dataDir: d, slug, title: "T", body: "b", author: "human" }),
+    ).toThrow(/invalid slug/i);
+  });
+
+  it("accepts valid slugs", () => {
+    const d = mk();
+    for (const slug of ["a", "abc", "my-note", "note-1", "a1b2-c3"]) {
+      kbCreate({ dataDir: d, slug, title: "T", body: "b", author: "human" });
+    }
+  });
+
+  it("kbRead rejects invalid slug (defensive)", () => {
+    const d = mk();
+    expect(() => kbRead({ dataDir: d, slug: "Bad_Slug" })).toThrow(/invalid slug/i);
+  });
+
+  it("kbUpdate rejects invalid slug (defensive)", () => {
+    const d = mk();
+    expect(() => kbUpdate({ dataDir: d, slug: "Bad_Slug", patch: {} })).toThrow(
+      /invalid slug/i,
+    );
+  });
+
+  it("kbDelete rejects invalid slug (defensive)", () => {
+    const d = mk();
+    expect(() => kbDelete({ dataDir: d, slug: "Bad_Slug" })).toThrow(/invalid slug/i);
+  });
+});
