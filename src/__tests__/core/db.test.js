@@ -14,6 +14,7 @@ describe("openDb + runMigrations", () => {
       expect.arrayContaining([
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
         "custom_providers", "custom_models", "embeddings", "settings",
+        "agent_consolidations",
       ]),
     );
   });
@@ -43,6 +44,26 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("1");
+    expect(row.value).toBe("3");
+  });
+
+  it("allows taskless consolidation runs", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at) VALUES (?, NULL, ?, ?, ?)")
+      .run("r1", "consolidate", "alice", Date.now());
+    const row = db.prepare("SELECT task_id, mode FROM task_runs WHERE id = 'r1'").get();
+    expect(row).toMatchObject({ task_id: null, mode: "consolidate" });
+  });
+
+  it("does not rewrite legacy tier model strings during migration", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("legacy", "Legacy", "claude", "sonnet", now, now);
+    runMigrations(db);
+    const row = db.prepare("SELECT sdk, model FROM agents WHERE name = 'legacy'").get();
+    expect(row).toMatchObject({ sdk: "claude", model: "sonnet" });
   });
 });
