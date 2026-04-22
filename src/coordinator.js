@@ -1,6 +1,6 @@
 // src/coordinator.js
 import { createServer as createHttpServer } from "node:http";
-import { existsSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import express from "express";
 import { createServer } from "./api/server.js";
@@ -12,6 +12,8 @@ import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 
 export async function startCoordinator({ config = loadConfig() } = {}) {
+  mkdirSync(config.workspace, { recursive: true });
+
   const templateDir = join(config.repoRoot, "data-template");
   const seedResult = seedDataFromTemplate({ templateDir, dataDir: config.dataDir });
   if (seedResult.seeded) logger.info("seeded data dir from template");
