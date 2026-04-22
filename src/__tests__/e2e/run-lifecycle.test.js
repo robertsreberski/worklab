@@ -66,7 +66,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     // Create agent
     let res = await fetch(`${baseUrl}/api/agents`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: "e2e-coder", display_name: "E2E Coder", sdk: "claude", model: "sonnet" }),
+      body: JSON.stringify({ name: "e2e-coder", display_name: "E2E Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }),
     });
     expect(res.status).toBe(201);
 

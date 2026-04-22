@@ -71,8 +71,8 @@ export function spawnWorker({
 
       db.prepare(
         `INSERT INTO agent_logs
-          (id, task_run_id, events, model, effort, input_tokens, output_tokens, cost_usd, duration_ms, num_turns, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          (id, task_run_id, events, model, effort, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         newAgentLogId(),
         runId,
@@ -81,7 +81,9 @@ export function spawnWorker({
         finalPayload?.effort || null,
         finalPayload?.usage?.input_tokens ?? null,
         finalPayload?.usage?.output_tokens ?? null,
-        null,
+        finalPayload?.usage?.cache_read_tokens ?? null,
+        finalPayload?.usage?.cache_creation_tokens ?? null,
+        finalPayload?.usage?.cost_usd ?? null,
         finalPayload?.durationMs ?? durationMs,
         finalPayload?.numTurns ?? null,
         status,

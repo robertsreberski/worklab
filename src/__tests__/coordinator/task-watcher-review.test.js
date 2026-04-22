@@ -26,7 +26,7 @@ function seedAgent(db, name) {
   const now = Date.now();
   db.prepare(
     "INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(name, name, "claude", "sonnet", now, now);
+  ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
 function seedTask(db, { executor = null, reviewer = null } = {}) {
