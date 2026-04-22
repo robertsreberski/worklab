@@ -156,3 +156,36 @@ describe("GET /api/tasks/:id/runs", () => {
     expect(res.body).toEqual({ runs: [] });
   });
 });
+
+describe("GET /api/tasks with filters", () => {
+  it("filters by status", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/tasks").send({ title: "a" });
+    const { body: { task: b } } = await agent.post("/api/tasks").send({ title: "b" });
+    await agent.patch(`/api/tasks/${b.id}`).send({ status: "in_progress" });
+    const res = await agent.get("/api/tasks?status=in_progress").expect(200);
+    expect(res.body.tasks.length).toBe(1);
+    expect(res.body.tasks[0].id).toBe(b.id);
+  });
+
+  it("filters by agent (executor OR reviewer match)", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: t1 } } = await agent.post("/api/tasks").send({ title: "x" });
+    const { body: { task: t2 } } = await agent.post("/api/tasks").send({ title: "y" });
+    await agent.patch(`/api/tasks/${t1.id}`).send({ executor_agent: "alice" });
+    await agent.patch(`/api/tasks/${t2.id}`).send({ reviewer_agent: "alice" });
+    await agent.post("/api/tasks").send({ title: "unrelated" });
+    const res = await agent.get("/api/tasks?agent=alice").expect(200);
+    expect(res.body.tasks.map(t => t.id).sort()).toEqual([t1.id, t2.id].sort());
+  });
+
+  it("combines filters", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: t } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${t.id}`).send({ executor_agent: "bob", status: "in_progress" });
+    await agent.post("/api/tasks").send({ title: "other" });
+    const res = await agent.get("/api/tasks?status=in_progress&agent=bob").expect(200);
+    expect(res.body.tasks.length).toBe(1);
+    expect(res.body.tasks[0].id).toBe(t.id);
+  });
+});

@@ -13,9 +13,18 @@ function rowToTask(row) {
 
 export function registerTaskRoutes(app, { db, broker }) {
   app.get("/api/tasks", (req, res) => {
-    const rows = db
-      .prepare("SELECT * FROM tasks ORDER BY updated_at DESC")
-      .all();
+    const where = [];
+    const params = [];
+    if (req.query.status) {
+      where.push("status = ?");
+      params.push(req.query.status);
+    }
+    if (req.query.agent) {
+      where.push("(executor_agent = ? OR reviewer_agent = ?)");
+      params.push(req.query.agent, req.query.agent);
+    }
+    const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
+    const rows = db.prepare(sql).all(...params);
     res.json({ tasks: rows.map(rowToTask) });
   });
 
