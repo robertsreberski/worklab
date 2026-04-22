@@ -5,15 +5,19 @@ const CADENCE = `Journal as you work — call \`journal_append\` for facts you d
 const REVIEW_DIRECTIVE = "Review the executor's work against the task instructions. Respond with a final message whose first line is either `VERDICT: APPROVE` or `VERDICT: REJECT`. If REJECT, follow with bullet-pointed notes the executor can act on.";
 
 // Duration split: <1000 ms → "<N>ms"; >=1000 ms → "<N.N>s" (one decimal, e.g. 2350 → "2.4s").
+// Defensively guards against negative, NaN, non-numeric, and other edge cases.
 function formatDuration(ms) {
-  const n = Number(ms) || 0;
+  const n = Math.max(0, Math.trunc(Number(ms) || 0));
   if (n < 1000) return `${n}ms`;
   return `${(n / 1000).toFixed(1)}s`;
 }
 
 function formatExecutorOutput(execution) {
   const { finalText, agentName, numTurns, durationMs } = execution || {};
-  const header = `## Executor output (by ${agentName}, ${numTurns} turns, ${formatDuration(durationMs)})`;
+  const safeAgentName = agentName ?? "unknown";
+  const safeNumTurns = numTurns ?? 0;
+  const safeDurationMs = durationMs ?? 0;
+  const header = `## Executor output (by ${safeAgentName}, ${safeNumTurns} turns, ${formatDuration(safeDurationMs)})`;
   const body = finalText && String(finalText).trim()
     ? String(finalText).trim()
     : "_The executor produced no final text._";
@@ -69,6 +73,8 @@ export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalT
   return parts.filter(Boolean).join("\n");
 }
 
+// NOTE: the first 6 sections MUST match buildExecuteSystemPrompt byte-for-byte
+// (T13 e2e verifies pinned KB + skills appear identically in both modes).
 export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, execution }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));

@@ -268,4 +268,69 @@ describe("buildReviewSystemPrompt", () => {
     expect(kbIdx).toBeGreaterThan(roleIdx);
     expect(taskIdx).toBeGreaterThan(kbIdx);
   });
+
+  it("malformed execution (missing agentName, numTurns) does not render undefined literal string", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: { finalText: "Some output", durationMs: 500 },
+    });
+    expect(p).not.toContain("undefined");
+    expect(p).toContain("(by unknown, 0 turns, 500ms)");
+  });
+
+  it("execution: null does not throw; fallback header and body rendered", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: null,
+    });
+    expect(p).toContain("## Executor output");
+    expect(p).toContain("(by unknown, 0 turns, 0ms)");
+    expect(p).toContain("_The executor produced no final text._");
+  });
+
+  it("negative durationMs is rendered as 0ms", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: { ...baseExecution, durationMs: -500 },
+    });
+    expect(p).toContain("0ms");
+    expect(p).not.toContain("-500");
+    expect(p).not.toContain("-500ms");
+  });
+
+  it("durationMs NaN or bogus values render as 0ms", () => {
+    for (const bad of [NaN, "bogus", {}, []]) {
+      const p = buildReviewSystemPrompt({
+        agent: baseAgent,
+        task: baseTask,
+        skills: [],
+        memory: "",
+        journalTail: "",
+        comments: [],
+        pinnedKb: [],
+        execution: { ...baseExecution, durationMs: bad },
+      });
+      expect(p).toContain("0ms");
+      expect(p).not.toContain("undefined");
+      expect(p).not.toContain("NaN");
+    }
+  });
 });
