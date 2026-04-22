@@ -1,18 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb, runMigrations } from "../../core/db.js";
 import {
   buildModelCapabilities,
+  createVercelClient,
   createProvider,
   discoverModels,
   getProvider,
+  isValidProviderType,
   isPrivateBaseUrl,
   listModels,
   resolveReasoningCapabilities,
   resolveVercelModel,
   setModelEnabled,
+  testProvider,
   validateBaseUrl,
 } from "../../core/providers.js";
 import { _resetForTests } from "../../core/crypto.js";
@@ -33,7 +36,24 @@ afterEach(() => {
   _resetForTests();
 });
 
+function insertLegacyProvider({ id = "legacy-provider", providerType = "anthropic_compat" } = {}) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO custom_providers
+      (id, name, provider_type, base_url, trust_public_url, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, id, providerType, "http://localhost:8000", 0, 1, now, now);
+  return id;
+}
+
 describe("providers", () => {
+  it("does not accept unsupported Anthropic or Google provider types", () => {
+    expect(isValidProviderType("anthropic_compat")).toBe(false);
+    expect(isValidProviderType("google_compat")).toBe(false);
+    expect(isValidProviderType("openai_compat")).toBe(true);
+    expect(isValidProviderType("ollama")).toBe(true);
+  });
+
   it("validates private and public base URLs", () => {
     expect(isPrivateBaseUrl("http://localhost:11434")).toBe(true);
     expect(isPrivateBaseUrl("http://100.64.1.2:11434")).toBe(true);
@@ -73,6 +93,37 @@ describe("providers", () => {
       fetchImpl: async () => ({ ok: true, json: async () => ({ data: [{ id: "llama-3.3-70b" }] }) }),
     });
     expect(models[0]).toMatchObject({ model_name: "llama-3.3-70b", enabled: false });
+  });
+
+  it("does not discover unsupported legacy provider rows as OpenAI-compatible", async () => {
+    const providerId = insertLegacyProvider();
+    const fetchImpl = vi.fn();
+
+    await expect(discoverModels({ db, dataDir, providerId, fetchImpl }))
+      .rejects.toThrow(/unsupported provider_type: anthropic_compat/);
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not test unsupported legacy provider rows as OpenAI-compatible", async () => {
+    const providerId = insertLegacyProvider();
+    const fetchImpl = vi.fn();
+
+    const result = await testProvider({ db, dataDir, providerId, fetchImpl });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: 0,
+      url: null,
+      error: "unsupported provider_type: anthropic_compat",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("does not create execution clients for unsupported provider types", () => {
+    expect(() => createVercelClient({
+      provider_type: "google_compat",
+      base_url: "http://localhost:8000",
+    })).toThrow(/unsupported provider_type: google_compat/);
   });
 
   it("preserves enabled model toggles across rediscovery", async () => {

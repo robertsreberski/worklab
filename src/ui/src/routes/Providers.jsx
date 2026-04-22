@@ -6,8 +6,6 @@ const PROVIDER_TYPE_OPTIONS = [
   { value: "lmstudio", label: "LM Studio", helper: "Local / LAN", description: "LM Studio running as an OpenAI-compatible local server." },
   { value: "vllm", label: "vLLM", helper: "Self-hosted", description: "Dedicated self-hosted OpenAI-compatible serving." },
   { value: "openai_compat", label: "OpenAI-compatible", helper: "Custom gateway", description: "Generic `/v1/chat/completions` compatible endpoint." },
-  { value: "anthropic_compat", label: "Anthropic-compatible", helper: "Custom gateway", description: "Anthropic-style compatible API surface." },
-  { value: "google_compat", label: "Google-compatible", helper: "Custom gateway", description: "Google-style compatible model endpoint." },
   { value: "groq", label: "Groq", helper: "Hosted", description: "Hosted inference for supported open models." },
   { value: "openrouter", label: "OpenRouter", helper: "Hosted", description: "Multi-provider routing with a single endpoint." },
   { value: "together", label: "Together AI", helper: "Hosted", description: "Hosted open models with broad catalogue coverage." },
@@ -20,8 +18,6 @@ const PRESETS = {
   lmstudio: { name: "LM Studio", base_url: "http://localhost:1234", trust_public_url: false, api_key_hint: "Usually no API key unless you configured one locally." },
   vllm: { name: "vLLM", base_url: "http://localhost:8000", trust_public_url: false, api_key_hint: "Often fronted by an internal gateway or reverse proxy." },
   openai_compat: { name: "Custom gateway", base_url: "", trust_public_url: false, api_key_hint: "Use this for any generic OpenAI-compatible host." },
-  anthropic_compat: { name: "Anthropic-compatible", base_url: "", trust_public_url: false, api_key_hint: "Use this when a provider mirrors Anthropic semantics." },
-  google_compat: { name: "Google-compatible", base_url: "", trust_public_url: false, api_key_hint: "Use this when a provider mirrors Google-style APIs." },
   groq: { name: "Groq", base_url: "https://api.groq.com/openai", trust_public_url: true, api_key_hint: "Groq requires a stored API key." },
   openrouter: { name: "OpenRouter", base_url: "https://openrouter.ai/api", trust_public_url: true, api_key_hint: "OpenRouter requires a stored API key." },
   together: { name: "Together AI", base_url: "https://api.together.xyz", trust_public_url: true, api_key_hint: "Together requires a stored API key." },
@@ -39,7 +35,12 @@ const emptyForm = {
 };
 
 function optionForProviderType(value) {
-  return PROVIDER_TYPE_OPTIONS.find((option) => option.value === value) || PROVIDER_TYPE_OPTIONS[0];
+  return PROVIDER_TYPE_OPTIONS.find((option) => option.value === value) || {
+    value,
+    label: `Unsupported (${value})`,
+    helper: "Unsupported",
+    description: "This saved provider type is not currently executable.",
+  };
 }
 
 function applyPreset(form, providerType) {
@@ -112,8 +113,13 @@ export function Providers() {
   }
 
   async function discover(provider) {
-    await api.discoverProviderModels(provider.id);
-    await load();
+    setError(null);
+    try {
+      await api.discoverProviderModels(provider.id);
+      await load();
+    } catch (err) {
+      setError(`${provider.name}: ${err.message || String(err)}`);
+    }
   }
 
   async function remove(provider) {
