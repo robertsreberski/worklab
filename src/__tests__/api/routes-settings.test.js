@@ -31,4 +31,13 @@ describe("settings", () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({ default_embedding_model: "sonnet" }).expect(400);
   });
+
+  it("PATCH accepts vercel embedding references and canonicalizes legacy provider syntax", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({
+      default_embedding_model: "provider:local:text-embedding-3-small",
+    }).expect(200);
+    const res = await agent.get("/api/settings").expect(200);
+    expect(res.body.settings.default_embedding_model).toBe("vercel:local:text-embedding-3-small");
+  });
 });

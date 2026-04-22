@@ -6,6 +6,25 @@ import { useRunStream } from "../lib/useRunStream.js";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 
+function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false }) {
+  const { events, loading } = useRunStream(run?.id, { subscribe });
+  if (!run) return null;
+  return (
+    <details open={defaultOpen} style="border:1px solid var(--border);border-radius:6px;padding:12px;background:var(--panel);margin-bottom:12px">
+      <summary style="cursor:pointer">
+        <strong>{title}</strong>
+        <span class="meta" style="margin-left:8px">
+          {run.mode} · {run.agent_name} · {run.status} · {new Date(run.started_at).toLocaleString()}
+          {run.ended_at && ` → ${new Date(run.ended_at).toLocaleString()}`}
+        </span>
+      </summary>
+      <div style="margin-top:12px">
+        {loading ? <div class="meta">Loading…</div> : <EventTimeline events={events} />}
+      </div>
+    </details>
+  );
+}
+
 export function TaskDetail({ id }) {
   const [data, setData] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -22,17 +41,17 @@ export function TaskDetail({ id }) {
   useSSE("global", (evt) => {
     if (evt.id === id) reload();
     if (evt.type === "run_started" && evt.taskId === id) setActiveRunId(evt.runId);
-    if (evt.type === "run_ended" && evt.taskId === id) setActiveRunId(null);
   });
 
   useEffect(() => {
     if (data?.runs?.length && !activeRunId) {
-      const latest = data.runs[0];
-      if (latest?.status === "running") setActiveRunId(latest.id);
+      setActiveRunId(data.runs[0].id);
     }
   }, [data, activeRunId]);
 
-  const { events: runEvents } = useRunStream(activeRunId);
+  const focusedRun = data?.runs?.find((run) => run.id === activeRunId) || null;
+  const historyRuns = data?.runs?.filter((run) => run.id !== activeRunId) || [];
+  const activeRunDone = focusedRun ? focusedRun.status !== "running" : false;
 
   if (!data) return <div>Loading…</div>;
   if (data.notFound) return <div>Task not found. <a href="#/tasks">Back</a></div>;
@@ -61,7 +80,7 @@ export function TaskDetail({ id }) {
     try { await api.cancelTask(id); } catch (err) { setRunError(err.message); }
   }
 
-  const canRun = task.executor_agent && (task.status === "todo" || task.status === "in_progress") && !activeRunId;
+  const canRun = task.executor_agent && (task.status === "todo" || task.status === "in_progress") && (!activeRunId || activeRunDone);
 
   return (
     <div class="detail">
@@ -73,16 +92,11 @@ export function TaskDetail({ id }) {
 
       <div style="margin:12px 0">
         <button class="primary" onClick={runNow} disabled={!canRun}>▶ Run now</button>
-        {activeRunId && <button onClick={cancelRun} style="margin-left:8px;color:#ff7a7a">Cancel run</button>}
+        {focusedRun?.status === "running" && <button onClick={cancelRun} style="margin-left:8px;color:#ff7a7a">Cancel run</button>}
         {runError && <span style="color:#ff7a7a;margin-left:12px">{runError}</span>}
       </div>
 
-      {activeRunId && (
-        <div style="border:1px solid var(--border);border-radius:6px;padding:12px;background:var(--panel);margin-bottom:16px">
-          <h4 style="margin:0 0 8px">Live run</h4>
-          <EventTimeline events={runEvents} />
-        </div>
-      )}
+      {focusedRun && <RunTimelineCard run={focusedRun} title={focusedRun.status === "running" ? "Live run" : "Latest run"} defaultOpen subscribe={focusedRun.status === "running"} />}
 
       {!editing ? (
         <>
@@ -104,17 +118,12 @@ export function TaskDetail({ id }) {
         </>
       )}
 
-      {runs?.length > 0 && (
+      {historyRuns.length > 0 && (
         <>
           <h3 style="margin-top:24px">Previous runs</h3>
-          <ul style="list-style:none;padding:0">
-            {runs.slice(0, 5).map(r => (
-              <li key={r.id} class="meta" style="margin-bottom:4px">
-                {r.mode} · {r.agent_name} · {r.status} · {new Date(r.started_at).toLocaleString()}
-                {r.ended_at && ` → ${new Date(r.ended_at).toLocaleString()}`}
-              </li>
-            ))}
-          </ul>
+          {historyRuns.slice(0, 5).map((run) => (
+            <RunTimelineCard key={run.id} run={run} title="Run log" />
+          ))}
         </>
       )}
 

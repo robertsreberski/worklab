@@ -1,19 +1,21 @@
 // src/ui/src/lib/useRunStream.js
 import { useEffect, useRef, useState } from "preact/hooks";
 
-export function useRunStream(runId) {
+export function useRunStream(runId, { subscribe = true } = {}) {
   const [events, setEvents] = useState([]);
   const [done, setDone] = useState(false);
+  const [loading, setLoading] = useState(false);
   const esRef = useRef(null);
 
   useEffect(() => {
     if (!runId) return;
-    setEvents([]); setDone(false);
+    setEvents([]); setDone(false); setLoading(true);
     // Preload any already-recorded events (run may have ended before we connected)
     fetch(`/api/runs/${runId}`).then(r => r.ok ? r.json() : null).then(data => {
       if (data?.log?.events?.length) setEvents(data.log.events);
       if (data?.run?.status && data.run.status !== "running") setDone(true);
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setLoading(false));
+    if (!subscribe) return () => {};
     const es = new EventSource(`/api/runs/${runId}/stream`);
     esRef.current = es;
     es.onmessage = (e) => {
@@ -25,7 +27,7 @@ export function useRunStream(runId) {
     };
     es.onerror = () => { es.close(); };
     return () => { es.close(); };
-  }, [runId]);
+  }, [runId, subscribe]);
 
-  return { events, done };
+  return { events, done, loading };
 }

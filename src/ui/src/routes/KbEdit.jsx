@@ -13,21 +13,32 @@ export function KbEdit({ slug }) {
   const [slugError, setSlugError] = useState(null);
 
   useEffect(() => {
-    if (!isNew) {
-      api.getKb(slug)
-        .then(r => {
-          const e = r.entry;
-          setEntry({
-            slug: e.slug,
-            title: e.title,
-            category: e.category || "",
-            tags: (e.tags || []).join(", "),
-            pinned: !!e.pinned,
-            body: e.body || "",
-          });
-        })
-        .catch(() => setEntry({ notFound: true }));
+    let cancelled = false;
+    setError(null);
+    setSlugError(null);
+    setSlugTouched(false);
+    if (isNew) {
+      setEntry(emptyEntry);
+      return () => { cancelled = true; };
     }
+    setEntry(null);
+    api.getKb(slug)
+      .then(r => {
+        if (cancelled) return;
+        const e = r.entry;
+        setEntry({
+          slug: e.slug,
+          title: e.title,
+          category: e.category || "",
+          tags: (e.tags || []).join(", "),
+          pinned: !!e.pinned,
+          body: e.body || "",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setEntry({ notFound: true });
+      });
+    return () => { cancelled = true; };
   }, [slug, isNew]);
 
   if (!entry) return <div>Loading…</div>;

@@ -5,7 +5,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { estimateCost } from "./cost.js";
-import { defaultOllamaNumCtx, resolveVercelModel } from "./providers.js";
+import { defaultOllamaNumCtx, resolveReasoningCapabilities, resolveVercelModel } from "./providers.js";
 import { getVercelTools } from "./ai-vercel-tools.js";
 
 function jsonSchemaToZod(schema) {
@@ -81,13 +81,45 @@ async function closeMcpClients(clients) {
   }
 }
 
-function buildOllamaSettings(modelRow, effort) {
-  const caps = modelRow?.capabilities || {};
+const OPENAI_COMPAT_REASONING_EFFORT = {
+  low: "low",
+  medium: "medium",
+  high: "high",
+  xhigh: "high",
+  max: "high",
+};
+
+function toCamelCase(value = "") {
+  return String(value)
+    .toLowerCase()
+    .replace(/[-_]+([a-z0-9])/g, (_match, chr) => chr.toUpperCase());
+}
+
+function buildProviderOptions(provider, modelRow, modelName, effort) {
+  if (!provider) return undefined;
+  const capabilities = resolveReasoningCapabilities(provider.provider_type, modelName, modelRow?.capabilities || {});
+  const mode = capabilities.reasoning_mode;
+  if (!capabilities.reasoning || mode === "none") return undefined;
+
+  if (provider.provider_type === "ollama" && mode === "effort") {
+    const reasoningEffort = OPENAI_COMPAT_REASONING_EFFORT[effort || "low"];
+    return reasoningEffort ? { ollama: { reasoningEffort } } : undefined;
+  }
+
+  if (!effort || provider.provider_type === "ollama") return undefined;
+  const reasoningEffort = OPENAI_COMPAT_REASONING_EFFORT[effort];
+  return reasoningEffort
+    ? { [toCamelCase(provider.provider_type)]: { reasoningEffort } }
+    : undefined;
+}
+
+function buildOllamaSettings(modelRow, modelName, effort) {
+  const caps = resolveReasoningCapabilities("ollama", modelName, modelRow?.capabilities || {});
   const settings = {
     keep_alive: "10m",
     options: { num_ctx: Number(caps.num_ctx) || defaultOllamaNumCtx(caps.parameter_size) },
   };
-  if (caps.reasoning) settings.think = !!effort && effort !== "low";
+  if (caps.reasoning_mode === "toggle") settings.think = !!effort && effort !== "low";
   return settings;
 }
 
@@ -100,30 +132,39 @@ export async function generateVercelResponse(systemPrompt, options = {}) {
   let mcpClients = [];
 
   try {
-    const { provider, modelRow, modelFactory } = resolveVercelModel({
+    const resolvedModel = resolveVercelModel({
       db: options.db,
       dataDir: options.dataDir,
       providerId: resolved.providerId,
       modelName: resolved.modelName,
     });
+    const { provider, modelRow, modelFactory } = resolvedModel;
+    const capabilities = resolvedModel.capabilities
+      || resolveReasoningCapabilities(provider.provider_type, resolved.modelName, modelRow?.capabilities || {});
     const languageModel = provider.provider_type === "ollama"
-      ? modelFactory(resolved.modelName, buildOllamaSettings(modelRow, options.effort))
+      ? modelFactory(resolved.modelName, buildOllamaSettings(modelRow, resolved.modelName, options.effort))
       : modelFactory(resolved.modelName);
 
-    const builtIns = getVercelTools({
-      allowedTools: options.allowedTools,
-      skillNames: (options.skills || []).map((s) => s.name),
-      dataDir: options.dataDir,
-    });
-    const { clients, tools: mcpTools } = await initMcpTools(options.mcpServers || {}, new Set(Object.keys(builtIns)));
-    mcpClients = clients;
-    const tools = { ...builtIns, ...mcpTools };
+    let tools = {};
+    if (capabilities.tool_use !== false) {
+      const builtIns = getVercelTools({
+        allowedTools: options.allowedTools,
+        skillNames: (options.skills || []).map((s) => s.name),
+        dataDir: options.dataDir,
+      });
+      const { clients, tools: mcpTools } = await initMcpTools(options.mcpServers || {}, new Set(Object.keys(builtIns)));
+      mcpClients = clients;
+      tools = { ...builtIns, ...mcpTools };
+    }
 
     const result = streamText({
       model: languageModel,
       system: systemPrompt,
       messages: options.messages || [],
       tools,
+      ...(buildProviderOptions(provider, modelRow, resolved.modelName, options.effort)
+        ? { providerOptions: buildProviderOptions(provider, modelRow, resolved.modelName, options.effort) }
+        : {}),
       stopWhen: stepCountIs(options.maxTurns || 30),
       abortSignal: options.abortSignal,
       onStepFinish: ({ text, toolCalls, toolResults, usage: stepUsage }) => {

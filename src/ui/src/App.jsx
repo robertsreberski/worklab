@@ -33,7 +33,7 @@ export function App() {
   else if (route === "agents") body = <Agents />;
   else if (route === "skills" && rest[0]) body = <SkillEdit name={rest[0]} />;
   else if (route === "skills") body = <Skills />;
-  else if (route === "knowledge" && rest[0]) body = <KbEdit slug={rest[0]} />;
+  else if (route === "knowledge" && rest[0]) body = <KbEdit key={rest[0]} slug={rest[0]} />;
   else if (route === "knowledge") body = <Knowledge />;
   else if (route === "providers") body = <Providers />;
   else if (route === "activity") body = <Activity />;

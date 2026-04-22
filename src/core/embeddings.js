@@ -9,6 +9,7 @@ import { getProvider } from "./providers.js";
 const MAX_CHUNK_CHARS = 1800;
 const MAX_EMBED_CHARS = 8000;
 const TIER_ALIASES = new Set(["haiku", "sonnet", "opus"]);
+export const DEFAULT_EMBEDDING_MODEL = "ollama:nomic-embed-text";
 
 function cleanPart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) throw new Error(message);
@@ -19,7 +20,7 @@ export function parseEmbeddingReference(value) {
   if (!value || typeof value !== "string") throw new Error("embedding model reference required");
   const i = value.indexOf(":");
   if (i <= 0 || i === value.length - 1) {
-    throw new Error("invalid embedding model reference; expected ollama:<model>, openai:<model>, or provider:<providerId>:<model>");
+    throw new Error("invalid embedding model reference; expected ollama:<model>, openai:<model>, or vercel:<providerId>:<model>");
   }
   const kind = value.slice(0, i);
   const rest = value.slice(i + 1);
@@ -28,13 +29,13 @@ export function parseEmbeddingReference(value) {
     if (TIER_ALIASES.has(model)) throw new Error("tier aliases are not valid embedding model references; use an exact model id");
     return { kind, model, reference: value };
   }
-  if (kind === "provider") {
+  if (kind === "vercel" || kind === "provider") {
     const j = rest.indexOf(":");
-    if (j <= 0 || j === rest.length - 1) throw new Error("invalid provider embedding reference; expected provider:<providerId>:<model>");
+    if (j <= 0 || j === rest.length - 1) throw new Error("invalid custom embedding reference; expected vercel:<providerId>:<model>");
     const providerId = cleanPart(rest.slice(0, j), "provider id required");
     const model = cleanPart(rest.slice(j + 1), "embedding model id required");
     if (TIER_ALIASES.has(model)) throw new Error("tier aliases are not valid embedding model references; use an exact model id");
-    return { kind, providerId, model, reference: value };
+    return { kind: "vercel", providerId, model, reference: `vercel:${providerId}:${model}`, rawReference: value };
   }
   throw new Error(`unknown embedding provider: ${kind}`);
 }
@@ -142,7 +143,7 @@ export async function generateEmbedding({ db, dataDir, modelRef, text, fetchImpl
 
 export function getEmbeddingModel(db) {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'default_embedding_model'").get();
-  if (!row) return "ollama:nomic-embed-text";
+  if (!row) return DEFAULT_EMBEDDING_MODEL;
   try { return JSON.parse(row.value); } catch { return row.value; }
 }
 
