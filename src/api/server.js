@@ -8,6 +8,7 @@ import { registerRunRoutes } from "./routes-runs.js";
 import { registerAgentRoutes } from "./routes-agents.js";
 import { registerSkillRoutes } from "./routes-skills.js";
 import { registerMcpRoutes } from "./routes-mcp.js";
+import { registerKbRoutes } from "./routes-kb.js";
 
 export function createServer({ db, logger, watcher, dataDir }) {
   const app = express();
@@ -26,6 +27,7 @@ export function createServer({ db, logger, watcher, dataDir }) {
   registerAgentRoutes(app, { db, broker });
   if (dataDir) registerSkillRoutes(app, { dataDir });
   if (dataDir) registerMcpRoutes(app, { dataDir });
+  if (dataDir) registerKbRoutes(app, { dataDir, broker });
 
   app.use((err, _req, res, _next) => {
     logger?.error?.({ err }, "unhandled error");
