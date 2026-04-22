@@ -118,6 +118,23 @@ describe("generateClaudeResponse", () => {
     expect(r.text).toBe("done");
   });
 
+  it("captures error event from SDK stream", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      { type: "assistant", message: { content: [{ type: "text", text: "partial" }] } },
+      { type: "error", error: { message: "boom" } },
+      { type: "result", usage: {}, duration_ms: 0, num_turns: 0 },  // should not be reached
+    ]));
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "x" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+    expect(r.error).toBe("boom");
+    expect(r.text).toBe("partial");
+    expect(r.numTurns).toBe(0);  // stream broke before result
+  });
+
   it("abort signal cancels the stream", async () => {
     const stream = mockStream([
       { type: "assistant", message: { content: [{ type: "text", text: "a" }] } },
