@@ -29,7 +29,7 @@ describe("search routes", () => {
       total: 0,
       vectorized: 0,
       errors: 0,
-      model: "ollama:nomic-embed-text",
+      model: null,
     });
   });
 

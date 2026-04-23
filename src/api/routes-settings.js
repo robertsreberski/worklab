@@ -1,6 +1,6 @@
 import { DEFAULT_SETTINGS, readSettings, writeSettings } from "../core/settings.js";
 
-export function registerSettingsRoutes(app, { db, broker }) {
+export function registerSettingsRoutes(app, { db, broker, events }) {
   app.get("/api/settings", (_req, res) => {
     res.json({ settings: readSettings(db) });
   });
@@ -9,7 +9,9 @@ export function registerSettingsRoutes(app, { db, broker }) {
     const body = req.body || {};
     try {
       const settings = writeSettings(db, body);
-      broker?.broadcast?.("global", { type: "settings_updated", keys: Object.keys(body) });
+      const keys = Object.keys(body);
+      broker?.broadcast?.("global", { type: "settings_updated", keys });
+      events?.emit?.("settings:updated", { keys, settings });
       res.json({ settings });
     } catch (err) {
       const isUnknown = Object.keys(body).some((key) => !(key in DEFAULT_SETTINGS));

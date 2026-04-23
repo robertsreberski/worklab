@@ -34,5 +34,14 @@ export function createSseBroker() {
     return channels.get(name)?.size ?? 0;
   }
 
-  return { subscribe, unsubscribe, broadcast, size };
+  function close() {
+    for (const set of channels.values()) {
+      for (const res of set) {
+        try { res.end(); } catch { /* already gone */ }
+      }
+    }
+    channels.clear();
+  }
+
+  return { subscribe, unsubscribe, broadcast, size, close };
 }

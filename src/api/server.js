@@ -13,7 +13,7 @@ import { registerProviderRoutes } from "./routes-providers.js";
 import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 
-export function createServer({ db, logger, watcher, dataDir, consolidation }) {
+export function createServer({ db, logger, watcher, dataDir, consolidation, events }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -24,7 +24,7 @@ export function createServer({ db, logger, watcher, dataDir, consolidation }) {
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
   registerTaskRoutes(app, { db, broker, logger, watcher });
-  registerSettingsRoutes(app, { db, broker, logger });
+  registerSettingsRoutes(app, { db, broker, logger, events });
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });

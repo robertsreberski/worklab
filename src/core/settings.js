@@ -37,6 +37,7 @@ export function validateSetting(key, value) {
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
     case "default_embedding_model":
+      if (value == null || value === "") return "";
       return parseEmbeddingReference(value).reference;
     case "journal_tail_lines":
       return integerInRange(key, value, { min: 0, max: 1000 });

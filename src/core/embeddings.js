@@ -9,7 +9,7 @@ import { getProvider } from "./providers.js";
 const MAX_CHUNK_CHARS = 1800;
 const MAX_EMBED_CHARS = 8000;
 const TIER_ALIASES = new Set(["haiku", "sonnet", "opus"]);
-export const DEFAULT_EMBEDDING_MODEL = "ollama:nomic-embed-text";
+export const DEFAULT_EMBEDDING_MODEL = "";
 
 function cleanPart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) throw new Error(message);
@@ -144,7 +144,9 @@ export async function generateEmbedding({ db, dataDir, modelRef, text, fetchImpl
 export function getEmbeddingModel(db) {
   const row = db.prepare("SELECT value FROM settings WHERE key = 'default_embedding_model'").get();
   if (!row) return DEFAULT_EMBEDDING_MODEL;
-  try { return JSON.parse(row.value); } catch { return row.value; }
+  let value;
+  try { value = JSON.parse(row.value); } catch { value = row.value; }
+  return value || "";
 }
 
 export function chunkMarkdown(text, maxChars = MAX_CHUNK_CHARS) {
@@ -310,16 +312,19 @@ export function scanSources({ dataDir, kind = "all" } = {}) {
   return sources.filter((source) => String(source.body || "").trim().length > 0);
 }
 
-export async function indexAllSources({ db, dataDir, fetchImpl = fetch } = {}) {
+export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldStop = () => false } = {}) {
   const modelRef = getEmbeddingModel(db);
   const sources = scanSources({ dataDir });
-  const stats = { sources: 0, chunks: 0, model: modelRef };
-  let allowVector = true;
+  const stats = { sources: 0, chunks: 0, model: modelRef || null };
+  let allowVector = !!modelRef;
   for (const source of sources) {
-    const ids = await indexSource({ db, dataDir, source, modelRef, fetchImpl, allowVector });
-    const errored = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE kind = ? AND source_ref LIKE ? AND indexing_error IS NOT NULL")
-      .get(source.kind, `${source.source_ref}#%`).count;
-    if (errored > 0) allowVector = false;
+    if (shouldStop()) { stats.aborted = true; break; }
+    const ids = await indexSource({ db, dataDir, source, modelRef: modelRef || null, fetchImpl, allowVector });
+    if (modelRef) {
+      const errored = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE kind = ? AND source_ref LIKE ? AND indexing_error IS NOT NULL")
+        .get(source.kind, `${source.source_ref}#%`).count;
+      if (errored > 0) allowVector = false;
+    }
     stats.sources += 1;
     stats.chunks += ids.length;
   }
@@ -327,6 +332,8 @@ export async function indexAllSources({ db, dataDir, fetchImpl = fetch } = {}) {
 }
 
 export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
+  const modelRef = getEmbeddingModel(db);
+  const allowVector = !!modelRef;
   const rel = relative(dataDir, filePath).split(sep).join("/");
   if (/^knowledge\/[^/]+\.md$/.test(rel)) {
     const slug = basename(rel, ".md");
@@ -337,6 +344,8 @@ export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
       db,
       dataDir,
       fetchImpl,
+      modelRef: modelRef || null,
+      allowVector,
       source: { kind: "kb", source_ref: `knowledge/${slug}.md`, title: entry.meta.title || slug, body: entry.body, slug },
     });
   }
@@ -350,6 +359,8 @@ export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
     db,
     dataDir,
     fetchImpl,
+    modelRef: modelRef || null,
+    allowVector,
     source: { kind, agent, source_ref: sourceRef, title: `${name === "JOURNAL" ? "Journal" : "Memory"}: ${agent}`, body: readFileSync(filePath, "utf8") },
   });
 }
@@ -418,7 +429,9 @@ export async function search({ db, dataDir, query, kind = "all", agent = null, l
   });
 
   const modelRef = getEmbeddingModel(db);
-  const queryEmbedding = await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl });
+  const queryEmbedding = modelRef
+    ? await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl })
+    : { vector: null, error: null };
   if (queryEmbedding.vector) {
     const rows = db.prepare(`
       SELECT * FROM embeddings e
@@ -453,11 +466,13 @@ export function getIndexStatus(db) {
     .reduce((acc, row) => ({ ...acc, [row.kind]: row.count }), {});
   const vectorized = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE vector IS NOT NULL").get().count;
   const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
-  return { total, byKind, vectorized, errors, model: getEmbeddingModel(db) };
+  const model = getEmbeddingModel(db);
+  return { total, byKind, vectorized, errors, model: model || null };
 }
 
 export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = {}) {
   const modelRef = getEmbeddingModel(db);
+  if (!modelRef) return { ok: false, model: null, kind: null, error: "embedding model not configured", dimensions: 0 };
   const parsed = parseEmbeddingReference(modelRef);
   const result = await generateEmbedding({ db, dataDir, modelRef, text: "worklab embedding health check", fetchImpl });
   return {
