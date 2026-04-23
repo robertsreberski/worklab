@@ -1,8 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { loadSkills, parseSkillFrontmatter } from "../core/skills.js";
-
-const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+import { isValidSlug, uniqueSlug } from "../core/slugs.js";
 
 function serializeSkill(meta, body) {
   const yamlLines = ["---"];
@@ -25,6 +24,7 @@ export function registerSkillRoutes(app, { dataDir, db }) {
   app.get("/api/skills", (_req, res) => {
     const skills = loadSkills(skillsDir()).map((s) => ({
       name: s.name,
+      display_name: s.display_name,
       trigger: s.trigger,
       enabled: s.enabled,
       priority: s.priority,
@@ -44,19 +44,27 @@ export function registerSkillRoutes(app, { dataDir, db }) {
 
   app.post("/api/skills", (req, res) => {
     const { name, meta = {}, body = "" } = req.body || {};
-    if (!name || !NAME_RE.test(name)) {
+    if (name && !isValidSlug(name)) {
       return res
         .status(400)
         .json({ error: { code: "validation", message: "invalid name (lowercase slug)" } });
     }
-    const dir = join(skillsDir(), name);
+    if (!name && !meta.display_name) {
+      return res
+        .status(400)
+        .json({ error: { code: "validation", message: "name or display_name is required" } });
+    }
+    const finalName = name || uniqueSlug(meta.display_name, (candidate) => existsSync(join(skillsDir(), candidate)), {
+      fallback: "skill",
+    });
+    const dir = join(skillsDir(), finalName);
     if (existsSync(dir)) {
       return res.status(409).json({ error: { code: "conflict", message: "skill already exists" } });
     }
     mkdirSync(dir, { recursive: true });
-    const finalMeta = { name, ...meta };
+    const finalMeta = { ...meta, name: finalName };
     writeFileSync(join(dir, "SKILL.md"), serializeSkill(finalMeta, body));
-    res.status(201).json({ skill: { name, meta: finalMeta, body } });
+    res.status(201).json({ skill: { name: finalName, meta: finalMeta, body } });
   });
 
   app.patch("/api/skills/:name", (req, res) => {

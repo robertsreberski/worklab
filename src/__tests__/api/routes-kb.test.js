@@ -123,6 +123,21 @@ describe("kb REST routes", () => {
     expect(res.body.entry.meta.author).toBe("human");
   });
 
+  it("POST /api/kb generates a unique slug from title when slug is omitted", async () => {
+    const { agent } = mkServer();
+    const first = await agent
+      .post("/api/kb")
+      .send({ title: "Generated Entry", body: "" })
+      .expect(201);
+    const second = await agent
+      .post("/api/kb")
+      .send({ title: "Generated Entry", body: "" })
+      .expect(201);
+
+    expect(first.body.entry.meta.slug).toBe("generated-entry");
+    expect(second.body.entry.meta.slug).toBe("generated-entry-2");
+  });
+
   it("POST /api/kb hardcodes author=human", async () => {
     const { agent } = mkServer();
     const res = await agent
@@ -156,12 +171,6 @@ describe("kb REST routes", () => {
     await agent.post("/api/kb").send({ slug: "dup", title: "Dup", body: "" }).expect(201);
     const res = await agent.post("/api/kb").send({ slug: "dup", title: "Dup 2", body: "" }).expect(409);
     expect(res.body.error.code).toBe("conflict");
-  });
-
-  it("POST /api/kb returns 400 when slug is missing", async () => {
-    const { agent } = mkServer();
-    const res = await agent.post("/api/kb").send({ title: "No Slug", body: "" }).expect(400);
-    expect(res.body.error.code).toBe("validation");
   });
 
   it("POST /api/kb returns 400 when title is missing", async () => {

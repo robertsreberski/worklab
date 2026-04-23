@@ -60,7 +60,9 @@ export function NewTaskModal({ onClose, onCreated }) {
     } finally { setBusy(false); }
   }
 
-  const agentOptions = agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name }));
+  const agentOptions = agents
+    .filter((agent) => agent.enabled !== false)
+    .map((agent) => ({ value: agent.name, label: agent.display_name || agent.name }));
 
   return (
     <div class="modal-backdrop" onClick={onClose}>

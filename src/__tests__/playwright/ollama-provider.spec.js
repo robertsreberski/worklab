@@ -155,7 +155,6 @@ test("new user configures live Ollama provider and creates an agent with a runna
   await expect(page.locator(".field", { hasText: "Advanced model reference" }).locator("input")).toHaveValue(new RegExp(`:${chatModel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
   await expect(page.locator("body")).toContainText(/Tools:|This model does not support tool use/);
 
-  await page.locator(".field", { hasText: "Name (slug)" }).locator("input").fill("ollama-smoke");
   await page.locator(".field", { hasText: "Display name" }).locator("input").fill("Ollama Smoke");
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Ollama Smoke" })).toBeVisible();

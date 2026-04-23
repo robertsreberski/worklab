@@ -1,5 +1,10 @@
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
 
+function eventHasVisibleText(ev) {
+  const content = ev?.message?.content || ev?.content;
+  return Array.isArray(content) && content.some((block) => block?.type === "text" && String(block.text || "").trim());
+}
+
 function formatFinalUsage(ev) {
   const usage = ev.usage || {};
   return [
@@ -13,11 +18,23 @@ function formatFinalUsage(ev) {
   ].filter(Boolean).join(" / ");
 }
 
-function normalizeWorklabEvent(ev) {
+function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (!ev) return null;
   if (ev.type === "sdk_event") return ev.event;
   if (ev.type === "final") {
     const usage = formatFinalUsage(ev);
+    if (compactFinal) {
+      return {
+        type: "final",
+        compact: true,
+        text: ev.text || "",
+        summary: usage,
+        usage: ev.usage || {},
+        model: ev.model,
+        durationMs: ev.durationMs,
+        numTurns: ev.numTurns,
+      };
+    }
     return {
       type: "final",
       text: usage ? `${ev.text || "Completed"}\n\n${usage}` : (ev.text || "Completed"),
@@ -36,11 +53,23 @@ function normalizeWorklabEvent(ev) {
   return ev;
 }
 
+export function normalizeWorklabEvents(events = []) {
+  let sawAssistantText = false;
+  return events.map((event) => {
+    const normalized = normalizeWorklabEvent(event, {
+      compactFinal: event?.type === "final" && sawAssistantText,
+    });
+    if (event?.type === "sdk_event" && eventHasVisibleText(event.event)) sawAssistantText = true;
+    if (eventHasVisibleText(event)) sawAssistantText = true;
+    return normalized;
+  }).filter(Boolean);
+}
+
 export function EventTimeline({ events, streaming = false }) {
   if (!events.length) return <div class="meta">No events yet.</div>;
   return (
     <AgentEventTimeline
-      events={events.map(normalizeWorklabEvent).filter(Boolean)}
+      events={normalizeWorklabEvents(events)}
       streaming={streaming}
     />
   );

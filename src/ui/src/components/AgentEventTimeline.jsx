@@ -25,6 +25,27 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function formatTokens(n) {
+  if (n == null) return null;
+  const value = Number(n);
+  if (!Number.isFinite(value)) return null;
+  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
+  return String(value);
+}
+
+function formatFinalMeta(event) {
+  const usage = event.usage || {};
+  return [
+    event.model,
+    usage.input_tokens != null ? `in ${formatTokens(usage.input_tokens)}` : null,
+    usage.output_tokens != null ? `out ${formatTokens(usage.output_tokens)}` : null,
+    usage.cache_read_tokens != null ? `cache ${formatTokens(usage.cache_read_tokens)}` : null,
+    event.durationMs != null ? formatDuration(event.durationMs) : null,
+    event.numTurns != null ? `${event.numTurns} turns` : null,
+    usage.cost_usd != null ? `$${Number(usage.cost_usd).toFixed(5)}` : null,
+  ].filter(Boolean).join(" / ");
+}
+
 function RailIcon({ name, tone }) {
   const toneClass = tone && tone !== "muted" ? ` agentlog-tl-icon-${tone}` : "";
   return (
@@ -263,7 +284,20 @@ function TimelineEvent({ event, isLast, streaming }) {
     );
   } else if (type === "result" || type === "final") {
     railIcon = <RailIcon name="check-circle" tone="ok" />;
-    content = <div class="agentlog-event-text">{event.text || event.summary || event.output || "Completed"}</div>;
+    if (type === "final" && event.compact) {
+      const meta = event.summary || formatFinalMeta(event);
+      content = (
+        <div
+          class="agentlog-final-note"
+          title="Persisted final result and usage metadata. The readable answer is shown above and is also posted to Comments."
+        >
+          <span>Final result recorded</span>
+          {meta && <span class="agentlog-final-meta">{meta}</span>}
+        </div>
+      );
+    } else {
+      content = <div class="agentlog-event-text">{event.text || event.summary || event.output || "Completed"}</div>;
+    }
   } else if (type === "error") {
     railIcon = <RailIcon name="alert-triangle" tone="error" />;
     content = <div class="agentlog-event-error">{event.message || event.text || "Error occurred"}</div>;

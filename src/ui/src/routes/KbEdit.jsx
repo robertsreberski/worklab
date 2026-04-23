@@ -4,20 +4,19 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SwitchField } from "../components/SwitchField.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
+import { EntityHeader } from "../components/EntityHeader.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 
 export function KbEdit({ slug }) {
   const isNew = slug === "new";
   const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
-  const [slugTouched, setSlugTouched] = useState(false);
-  const [slugError, setSlugError] = useState(null);
   const [usage, setUsage] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    setSlugError(null);
-    setSlugTouched(false);
     setUsage(null);
     if (isNew) {
       setEntry(EMPTY_KB_FORM_ENTRY);
@@ -38,21 +37,11 @@ export function KbEdit({ slug }) {
     return () => { cancelled = true; };
   }, [slug, isNew]);
 
-  function validateSlug(val) {
-    if (!val) return "Slug is required.";
-    if (!/^[a-z0-9-]+$/.test(val)) return "Slug may only contain lowercase letters, digits, and hyphens.";
-    return null;
-  }
-
   function parseTags(raw) {
     return raw.split(",").map(t => t.trim()).filter(Boolean);
   }
 
   const formSave = useFormSave(async () => {
-    if (isNew) {
-      const err = validateSlug(entry.slug);
-      if (err) { setSlugError(err); setSlugTouched(true); throw new Error(err); }
-    }
     if (!entry.title.trim()) throw new Error("Title is required.");
 
     const payload = {
@@ -63,7 +52,7 @@ export function KbEdit({ slug }) {
       pinned: !!entry.pinned,
     };
     if (isNew) {
-      await api.createKb({ slug: entry.slug, ...payload });
+      await api.createKb(payload);
     } else {
       await api.patchKb(slug, payload);
     }
@@ -85,22 +74,25 @@ export function KbEdit({ slug }) {
   return (
     <div class="detail page-stack">
       <a href="#/knowledge" class="back-link">Back to knowledge</a>
-      <section class="surface-panel task-hero">
-        <div>
-          <div class="eyebrow">Knowledge</div>
-          <h2>{isNew ? "New entry" : entry.title}</h2>
-          <div class="task-meta-grid">
-            <span class={entry.pinned ? "status-badge in_review" : "status-badge muted"}>{entry.pinned ? "Pinned" : "Not pinned"}</span>
-            <span class="meta-pill">{entry.category || "Uncategorized"}</span>
-          </div>
-        </div>
-        <div class="toolbar">
-          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !entry.title.trim() || (isNew && !entry.slug)}>
+      <EntityHeader
+        eyebrow="Knowledge"
+        title={isNew ? "New entry" : entry.title}
+        description="Shared context that humans and agents can reference during work."
+        meta={(
+          <>
+            <StatusSignal tone={entry.pinned ? "blue" : "muted"}>{entry.pinned ? "Pinned in context" : "Library only"}</StatusSignal>
+            <span class="soft-meta">{entry.category || "Uncategorized"}</span>
+          </>
+        )}
+        actions={(
+          <>
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !entry.title.trim()}>
             {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
           {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-        </div>
-      </section>
+          </>
+        )}
+      />
       {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
 
       <section class="surface-panel">
@@ -108,30 +100,12 @@ export function KbEdit({ slug }) {
         <h3 class="section-title">Entry details</h3>
         <div class="form-grid">
           <div class="field">
-            <label>Title *</label>
+            <label>Title</label>
             <input
               value={entry.title}
               onInput={(e) => setEntry({ ...entry, title: e.target.value })}
               placeholder="Entry title"
             />
-          </div>
-
-          <div class="field">
-            <label>Slug *</label>
-            <input
-              value={entry.slug}
-              disabled={!isNew}
-              placeholder="e.g. my-entry-slug"
-              onInput={(e) => {
-                setEntry({ ...entry, slug: e.target.value });
-                if (slugTouched) setSlugError(validateSlug(e.target.value));
-              }}
-              onBlur={() => {
-                setSlugTouched(true);
-                setSlugError(validateSlug(entry.slug));
-              }}
-            />
-            {slugError && <div class="status-line error">{slugError}</div>}
           </div>
 
           <div class="field">
@@ -152,15 +126,17 @@ export function KbEdit({ slug }) {
             />
           </div>
 
-          <div class="field span-2">
-            <CheckboxField
+          <div class="field">
+            <SwitchField
               checked={entry.pinned}
               onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
+              description="Pinned entries are inserted into agent context."
             >
-              Pinned
-            </CheckboxField>
+              Pinned in agent context
+            </SwitchField>
           </div>
         </div>
+        <AdvancedMeta items={[{ label: "Knowledge slug", value: isNew ? "Generated after create" : slug }]} />
       </section>
 
       <section class="surface-panel">
@@ -188,7 +164,7 @@ export function KbEdit({ slug }) {
                 {usage.tasks.map((task) => (
                   <li key={task.id}>
                     <a href={`#/tasks/${task.id}`}>{task.title}</a>
-                    <span class={`status-badge ${task.status}`}>{task.status}</span>
+                    <StatusSignal tone={task.status === "done" ? "green" : task.status === "in_review" ? "blue" : task.status === "in_progress" ? "yellow" : "teal"} compact>{task.status}</StatusSignal>
                     <span class="meta">via {task.via}</span>
                   </li>
                 ))}

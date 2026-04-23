@@ -1,8 +1,9 @@
 import { z } from "zod";
 import { kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../core/kb.js";
+import { uniqueSlug } from "../core/slugs.js";
 
 const CreateSchema = z.object({
-  slug: z.string(),
+  slug: z.string().optional(),
   title: z.string(),
   body: z.string().optional().default(""),
   tags: z.array(z.string()).optional(),
@@ -62,7 +63,10 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
       });
     }
 
-    const { slug, title, body, tags, category, pinned } = parsed.data;
+    const { title, body, tags, category, pinned } = parsed.data;
+    const slug = parsed.data.slug || uniqueSlug(title, (candidate) => Boolean(kbRead({ dataDir, slug: candidate })), {
+      fallback: "entry",
+    });
     let entry;
     try {
       entry = kbCreate({

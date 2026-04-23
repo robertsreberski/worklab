@@ -32,6 +32,7 @@ describe("skills CRUD", () => {
     const res = await agent.get("/api/skills").expect(200);
     expect(res.body.skills.length).toBe(1);
     expect(res.body.skills[0].name).toBe("alpha");
+    expect(res.body.skills[0].display_name).toBe("");
   });
 
   it("POST /api/skills creates folder + SKILL.md", async () => {
@@ -45,6 +46,18 @@ describe("skills CRUD", () => {
     const content = readFileSync(join(dataDir, "skills", "new-skill", "SKILL.md"), "utf8");
     expect(content).toMatch(/trigger:/);
     expect(content).toMatch(/playbook/);
+  });
+
+  it("POST /api/skills generates a folder slug from display_name when name is omitted", async () => {
+    const { agent, dataDir } = mkServer();
+    const res = await agent
+      .post("/api/skills")
+      .send({ meta: { display_name: "Research Planner", trigger: "when planning" }, body: "playbook" })
+      .expect(201);
+
+    expect(res.body.skill.name).toBe("research-planner");
+    expect(res.body.skill.meta.display_name).toBe("Research Planner");
+    expect(existsSync(join(dataDir, "skills", "research-planner", "SKILL.md"))).toBe(true);
   });
 
   it("POST rejects duplicate name", async () => {

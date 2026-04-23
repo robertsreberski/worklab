@@ -3,6 +3,9 @@ import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { shortDate } from "../lib/display.js";
 
 export function Knowledge() {
   const [entries, setEntries] = useState([]);
@@ -59,10 +62,11 @@ export function Knowledge() {
           <h2 class="page-title">Knowledge base</h2>
           <div class="page-copy">{entries.length} entries</div>
         </div>
-        <a href="#/knowledge/new" class="primary">New entry</a>
+        <a href="#/knowledge/new" class="primary"><Icon name="plus" size={15} />New entry</a>
       </div>
 
-      <div class="surface-panel compact">
+      <div class="surface-panel compact command-search">
+        <Icon name="search" size={16} class="command-search-icon" />
         <div class="field">
           <label>Search</label>
           <input
@@ -100,7 +104,7 @@ export function Knowledge() {
 
       {filtered.length === 0 && entries.length === 0 && (
         <EmptyState
-          icon="📚"
+          icon={<Icon name="database" size={20} />}
           title="No knowledge base entries yet"
           body="Pinned entries are inlined into every agent's system prompt. Add notes, references, or step-by-step playbooks here."
           cta={<a href="#/knowledge/new" class="primary">Create the first entry</a>}
@@ -118,7 +122,7 @@ export function Knowledge() {
               <th>Title</th>
               <th>Category</th>
               <th>Tags</th>
-              <th class="center-cell">Pinned</th>
+              <th>Context</th>
               <th>Updated</th>
             </tr>
           </thead>
@@ -138,11 +142,11 @@ export function Knowledge() {
                     ? (e.tags || []).join(", ")
                     : "-"}
                 </td>
-                <td data-label="Pinned" class="center-cell">
-                  {e.pinned ? <span class="status-badge in_review">Pinned</span> : ""}
+                <td data-label="Context">
+                  <StatusSignal tone={e.pinned ? "blue" : "muted"} compact>{e.pinned ? "Pinned" : "Library"}</StatusSignal>
                 </td>
                 <td data-label="Updated" class="meta">
-                  {e.updated_at ? new Date(e.updated_at).toLocaleDateString() : "-"}
+                  {shortDate(e.updated_at)}
                 </td>
               </tr>
             ))}

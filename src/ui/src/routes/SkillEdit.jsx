@@ -4,10 +4,14 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { CheckboxField } from "../components/CheckboxField.jsx";
 import { SelectField } from "../components/SelectField.jsx";
+import { SwitchField } from "../components/SwitchField.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
+import { EntityHeader } from "../components/EntityHeader.jsx";
+import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 
-const emptySkill = { name: "", meta: { trigger: "", enabled: true, priority: "" }, body: "" };
+const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
 
 export function SkillEdit({ name }) {
   const isNew = name === "new";
@@ -28,8 +32,8 @@ export function SkillEdit({ name }) {
     };
     if (!skill.meta.priority) delete payload.meta.priority;
     if (isNew) {
-      await api.createSkill({ name: skill.name, ...payload });
-      window.location.hash = `#/skills/${skill.name}`;
+      const res = await api.createSkill({ ...payload });
+      window.location.hash = `#/skills/${res.skill.name}`;
     } else {
       await api.patchSkill(name, payload);
     }
@@ -50,32 +54,37 @@ export function SkillEdit({ name }) {
   return (
     <div class="detail page-stack">
       <a href="#/skills" class="back-link">Back to skills</a>
-      <section class="surface-panel task-hero">
-        <div>
-          <div class="eyebrow">Skill</div>
-          <h2>{isNew ? "New skill" : skill.name}</h2>
-          <div class="task-meta-grid">
-            <span class={skill.meta.enabled !== false ? "status-badge done" : "status-badge muted"}>{skill.meta.enabled !== false ? "Enabled" : "Disabled"}</span>
-            <span class="meta-pill">{skill.meta.priority === "always" ? "Always inlined" : "On demand"}</span>
-          </div>
-        </div>
-        <div class="toolbar">
-          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !skill.name}>
+      <EntityHeader
+        eyebrow="Skill"
+        title={isNew ? "New skill" : skillDisplayName(skill)}
+        description="Reusable playbooks agents can apply when the trigger matches the work."
+        meta={(
+          <>
+            <StatusSignal tone={skill.meta.enabled !== false ? "green" : "muted"}>{skill.meta.enabled !== false ? "Available" : "Unavailable"}</StatusSignal>
+            <span class="soft-meta">{skill.meta.priority === "always" ? "Always in context" : "On demand"}</span>
+          </>
+        )}
+        actions={(
+          <>
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !(skill.meta.display_name || skill.name)}>
             {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
           {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-        </div>
-      </section>
+          </>
+        )}
+      />
       {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
 
       <section class="surface-panel">
         <div class="section-kicker">Metadata</div>
         <h3 class="section-title">Activation</h3>
         <div class="form-grid">
-          <div class="field">
-            <label>Name (slug)</label>
-            <input value={skill.name} disabled={!isNew}
-              onInput={(e) => setSkill({ ...skill, name: e.target.value })} />
+          <div class="field span-2">
+            <label>Display name</label>
+            <input
+              value={skill.meta.display_name || (isNew ? "" : humanizeSlug(skill.name))}
+              onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, display_name: e.target.value } })}
+            />
           </div>
           <div class="field">
             <label>Priority</label>
@@ -88,20 +97,22 @@ export function SkillEdit({ name }) {
               onChange={(value) => setSkill({ ...skill, meta: { ...skill.meta, priority: value || undefined } })}
             />
           </div>
+          <div class="field">
+            <SwitchField
+              checked={skill.meta.enabled !== false}
+              onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })}
+              description="Unavailable skills stay saved but are not offered to agents."
+            >
+              Available to agents
+            </SwitchField>
+          </div>
           <div class="field span-2">
             <label>Trigger</label>
             <input value={skill.meta.trigger || ""}
               onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })} />
           </div>
-          <div class="field span-2">
-            <CheckboxField
-              checked={skill.meta.enabled !== false}
-              onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })}
-            >
-              Enabled
-            </CheckboxField>
-          </div>
         </div>
+        <AdvancedMeta items={[{ label: "Skill slug", value: isNew ? "Generated after create" : skill.name }]} />
       </section>
 
       <section class="surface-panel">

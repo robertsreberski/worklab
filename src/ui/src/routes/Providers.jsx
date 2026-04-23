@@ -1,8 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SwitchField } from "../components/SwitchField.jsx";
 import { SelectField } from "../components/SelectField.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama", helper: "Local / LAN", description: "Native Ollama server for local or private-network models." },
@@ -171,12 +173,13 @@ export function Providers() {
       </div>
       {error && <div class="surface-panel compact status-line error">{error}</div>}
 
-      <section class="panel-section">
+      <form class="panel-section" onSubmit={(e) => { e.preventDefault(); create(); }}>
         <h3>New provider</h3>
         <div class="meta">{selectedType.description}</div>
         <div class="provider-type-grid">
           {PROVIDER_TYPE_OPTIONS.map((option) => (
             <button
+              type="button"
               key={option.value}
               onClick={() => setForm((current) => applyPreset(current, option.value))}
               class={`provider-type-button ${form.provider_type === option.value ? "active" : ""}`}
@@ -204,22 +207,22 @@ export function Providers() {
           <div class="field span-2"><label>Base URL</label>
             <input value={form.base_url} placeholder={preset.base_url || "https://example.com"} onInput={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
           <div class="field span-2"><label>API key (write-only)</label>
-            <input type="password" value={form.api_key} onInput={(e) => setForm({ ...form, api_key: e.target.value })} />
+            <input type="password" autocomplete="new-password" value={form.api_key} onInput={(e) => setForm({ ...form, api_key: e.target.value })} />
             <div class="meta">{preset.api_key_hint}</div>
           </div>
           <div class="field">
-            <CheckboxField checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })}>
+            <SwitchField checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })}>
               Trust public HTTPS URL
-            </CheckboxField>
+            </SwitchField>
           </div>
           <div class="field">
-            <CheckboxField checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })}>
+            <SwitchField checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })}>
               Show this provider in model pickers
-            </CheckboxField>
+            </SwitchField>
           </div>
         </div>
-        <button class="primary" disabled={!form.name || !form.base_url} onClick={create}>Create provider</button>
-      </section>
+        <button type="submit" class="primary" disabled={!form.name || !form.base_url}><Icon name="plus" size={15} />Create provider</button>
+      </form>
 
       <div class="provider-list">
         {providers.map((provider) => {
@@ -230,7 +233,7 @@ export function Providers() {
               <div class="provider-title">
                 <h3>{provider.name}</h3>
                 <div class="meta">{optionForProviderType(provider.provider_type).label} / {provider.base_url} / {provider.has_api_key ? "API key saved" : "no API key"}</div>
-                <div class="meta">Model picker visibility: {provider.enabled ? "shown when models are enabled" : "hidden because this provider is disabled"}</div>
+                <StatusSignal tone={provider.enabled ? "green" : "muted"}>{provider.enabled ? "Visible in model pickers" : "Hidden from model pickers"}</StatusSignal>
                 {providerAgents[provider.id]?.length > 0 && (
                   <div class="meta">
                     Used by:{" "}
@@ -257,8 +260,8 @@ export function Providers() {
               </div>
               <div class="provider-actions">
                 <button onClick={() => patch(provider, { enabled: !provider.enabled })}>{provider.enabled ? "Disable" : "Enable"}</button>
-                <button onClick={() => test(provider)} disabled={status.testing}>{status.testing ? "Testing..." : "Test"}</button>
-                <button onClick={() => discover(provider)} disabled={status.discovering}>{status.discovering ? "Discovering..." : "Discover"}</button>
+                <button onClick={() => test(provider)} disabled={status.testing}><Icon name="check-circle" size={15} />{status.testing ? "Testing..." : "Test"}</button>
+                <button onClick={() => discover(provider)} disabled={status.discovering}><Icon name="refresh-cw" size={15} />{status.discovering ? "Discovering..." : "Discover"}</button>
                 <ConfirmButton class="danger" onConfirm={() => remove(provider)} confirmLabel="Click again to delete">Delete</ConfirmButton>
               </div>
             </div>

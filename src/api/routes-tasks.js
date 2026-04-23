@@ -1,7 +1,7 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
 import { nextStatus, STATUSES } from "../core/state-machine.js";
 
-const RUNS_ORDER_BY = "ORDER BY started_at DESC, rowid DESC";
+const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 
 function rowToTask(row) {
   if (!row) return null;
@@ -11,6 +11,63 @@ function rowToTask(row) {
     priority: row.priority ?? 0,
     retry_count: row.retry_count ?? 0,
   };
+}
+
+function rowToRun(row) {
+  if (!row) return null;
+  const {
+    log_id,
+    log_model,
+    log_effort,
+    log_input_tokens,
+    log_output_tokens,
+    log_cache_read_tokens,
+    log_cache_creation_tokens,
+    log_cost_usd,
+    log_duration_ms,
+    log_num_turns,
+    log_status,
+    ...run
+  } = row;
+  const hasLog = Boolean(log_id);
+  return {
+    ...run,
+    log: hasLog ? {
+      id: log_id,
+      model: log_model,
+      effort: log_effort,
+      input_tokens: log_input_tokens,
+      output_tokens: log_output_tokens,
+      cache_read_tokens: log_cache_read_tokens,
+      cache_creation_tokens: log_cache_creation_tokens,
+      cost_usd: log_cost_usd,
+      duration_ms: log_duration_ms,
+      num_turns: log_num_turns,
+      status: log_status,
+    } : null,
+  };
+}
+
+function selectRunsWithLog(db, whereClause, ...params) {
+  return db.prepare(`
+    SELECT
+      r.*,
+      l.id AS log_id,
+      l.model AS log_model,
+      l.effort AS log_effort,
+      l.input_tokens AS log_input_tokens,
+      l.output_tokens AS log_output_tokens,
+      l.cache_read_tokens AS log_cache_read_tokens,
+      l.cache_creation_tokens AS log_cache_creation_tokens,
+      l.cost_usd AS log_cost_usd,
+      l.duration_ms AS log_duration_ms,
+      l.num_turns AS log_num_turns,
+      l.status AS log_status
+    FROM task_runs r
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    ${whereClause}
+    ${RUNS_ORDER_BY}
+  `).all(...params).map(rowToRun);
 }
 
 export function registerTaskRoutes(app, { db, broker, watcher }) {
@@ -53,9 +110,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(req.params.id);
-    const runs = db
-      .prepare(`SELECT * FROM task_runs WHERE task_id = ? ${RUNS_ORDER_BY}`)
-      .all(req.params.id);
+    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
     res.json({ task: rowToTask(row), comments, runs });
   });
 
@@ -138,7 +193,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
   app.get("/api/tasks/:id/runs", (req, res) => {
     const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = db.prepare(`SELECT * FROM task_runs WHERE task_id = ? ${RUNS_ORDER_BY}`).all(req.params.id);
+    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
     res.json({ runs });
   });
 
