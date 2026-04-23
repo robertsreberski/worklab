@@ -1,16 +1,15 @@
-// src/ui/src/routes/KbEdit.jsx
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { SwitchField } from "../components/SwitchField.jsx";
-import { StatusSignal } from "../components/StatusSignal.jsx";
+import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
-import { EntityHeader } from "../components/EntityHeader.jsx";
+import { Icon } from "../components/Icon.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 
-export function KbEdit({ slug }) {
+export function KbEdit({ slug, onSaved, onDeleted }) {
   const isNew = slug === "new";
   const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
   const [usage, setUsage] = useState(null);
@@ -24,26 +23,20 @@ export function KbEdit({ slug }) {
     }
     setEntry(null);
     api.getKb(slug)
-      .then(r => {
-        if (cancelled) return;
-        setEntry(normalizeKbFormEntry(r.entry));
-      })
-      .catch(() => {
-        if (!cancelled) setEntry({ notFound: true });
-      });
+      .then((r) => { if (!cancelled) setEntry(normalizeKbFormEntry(r.entry)); })
+      .catch(() => { if (!cancelled) setEntry({ notFound: true }); });
     api.kbUsage(slug)
       .then((r) => { if (!cancelled) setUsage(r); })
-      .catch(() => { /* best-effort */ });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [slug, isNew]);
 
   function parseTags(raw) {
-    return raw.split(",").map(t => t.trim()).filter(Boolean);
+    return raw.split(",").map((t) => t.trim()).filter(Boolean);
   }
 
   const formSave = useFormSave(async () => {
     if (!entry.title.trim()) throw new Error("Title is required.");
-
     const payload = {
       title: entry.title.trim(),
       body: entry.body,
@@ -52,142 +45,162 @@ export function KbEdit({ slug }) {
       pinned: !!entry.pinned,
     };
     if (isNew) {
-      await api.createKb(payload);
+      const res = await api.createKb(payload);
+      onSaved?.(res.entry.slug);
     } else {
       await api.patchKb(slug, payload);
+      onSaved?.(slug);
     }
-    window.location.hash = "#/knowledge";
   });
 
-  if (!entry) return <div>Loading...</div>;
-  if (entry.notFound) return <div>Entry not found. <a href="#/knowledge">Back</a></div>;
+  if (!entry) return <div class="pane-empty">Loading entry...</div>;
+  if (entry.notFound) return (
+    <div class="pane-empty">
+      <h3>Entry not found</h3>
+      <p>This knowledge entry may have been deleted.</p>
+    </div>
+  );
 
   async function destroy() {
     try {
       await api.deleteKb(slug);
-      window.location.hash = "#/knowledge";
+      onDeleted?.();
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
     }
   }
 
+  const title = isNew ? "New entry" : entry.title;
+  const categoryKey = (entry.category || "").toLowerCase();
+  const categoryAttr = categoryKey.includes("how") ? "howto"
+    : categoryKey.includes("policy") ? "policy"
+    : categoryKey.includes("ref") ? "reference"
+    : null;
+
   return (
-    <div class="detail page-stack">
-      <a href="#/knowledge" class="back-link">Back to knowledge</a>
-      <EntityHeader
-        eyebrow="Knowledge"
-        title={isNew ? "New entry" : entry.title}
-        description="Shared context that humans and agents can reference during work."
-        meta={(
-          <>
-            <StatusSignal tone={entry.pinned ? "blue" : "muted"}>{entry.pinned ? "Pinned in context" : "Library only"}</StatusSignal>
-            <span class="soft-meta">{entry.category || "Uncategorized"}</span>
-          </>
-        )}
-        actions={(
-          <>
-          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !entry.title.trim()}>
+    <>
+      <header class="pane-detail-head">
+        <div style={{ minWidth: 0, display: "flex", alignItems: "center", gap: 10 }}>
+          <div>
+            <div class="eyebrow">{isNew ? "Create entry" : "Knowledge"}</div>
+            <h2>{title || "(untitled)"}</h2>
+          </div>
+        </div>
+        <div class="toolbar">
+          {entry.pinned && (
+            <span class="chip chip-accent">
+              <Icon name="pin" size={10} />
+              Pinned
+            </span>
+          )}
+          {categoryAttr && (
+            <span class="kb-category-badge" data-category={categoryAttr}>
+              {entry.category}
+            </span>
+          )}
+          {!isNew && <ConfirmButton class="button danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
+          <button
+            class="button primary"
+            onClick={() => formSave.save().catch(() => {})}
+            disabled={formSave.saving || !entry.title.trim()}
+          >
             {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
-          {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-          </>
-        )}
-      />
-      {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
-
-      <section class="surface-panel">
-        <div class="section-kicker">Metadata</div>
-        <h3 class="section-title">Entry details</h3>
-        <div class="form-grid">
-          <div class="field">
-            <label>Title</label>
-            <input
-              value={entry.title}
-              onInput={(e) => setEntry({ ...entry, title: e.target.value })}
-              placeholder="Entry title"
-            />
-          </div>
-
-          <div class="field">
-            <label>Category</label>
-            <input
-              value={entry.category}
-              onInput={(e) => setEntry({ ...entry, category: e.target.value })}
-              placeholder="e.g. reference, howto"
-            />
-          </div>
-
-          <div class="field">
-            <label>Tags (comma-separated)</label>
-            <input
-              value={entry.tags}
-              onInput={(e) => setEntry({ ...entry, tags: e.target.value })}
-              placeholder="e.g. api, setup, tutorial"
-            />
-          </div>
-
-          <div class="field">
-            <SwitchField
-              checked={entry.pinned}
-              onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
-              description="Pinned entries are inserted into agent context."
-            >
-              Pinned in agent context
-            </SwitchField>
-          </div>
         </div>
-        <AdvancedMeta items={[{ label: "Knowledge slug", value: isNew ? "Generated after create" : slug }]} />
-      </section>
+      </header>
+      <div class="pane-detail-body">
+        {formSave.error && <div class="form-error">Save failed: {formSave.error}</div>}
 
-      <section class="surface-panel">
-        <div class="section-kicker">Content</div>
-        <h3 class="section-title">Markdown body</h3>
-        <div class="field">
-          <label>Body</label>
-          <textarea
-            rows="22"
-            value={entry.body}
-            onInput={(e) => setEntry({ ...entry, body: e.target.value })}
-            class="mono-input"
-          />
-        </div>
-      </section>
-
-      {!isNew && usage && (usage.tasks.length || usage.agents.length) > 0 && (
         <section class="surface-panel">
-          <div class="section-kicker">References</div>
-          <h3 class="section-title">Used by</h3>
-          {usage.tasks.length > 0 && (
+          <div class="section-kicker">Metadata</div>
+          <h3>Entry details</h3>
+          <div class="form-grid">
             <div class="field">
-              <label>Tasks ({usage.tasks.length})</label>
-              <ul class="usage-list">
-                {usage.tasks.map((task) => (
-                  <li key={task.id}>
-                    <a href={`#/tasks/${task.id}`}>{task.title}</a>
-                    <StatusSignal tone={task.status === "done" ? "green" : task.status === "in_review" ? "blue" : task.status === "in_progress" ? "yellow" : "teal"} compact>{task.status}</StatusSignal>
-                    <span class="meta">via {task.via}</span>
-                  </li>
-                ))}
-              </ul>
+              <label class="field-label">Title</label>
+              <input
+                class="form-input"
+                value={entry.title}
+                onInput={(e) => setEntry({ ...entry, title: e.target.value })}
+                placeholder="Entry title"
+              />
             </div>
-          )}
-          {usage.agents.length > 0 && (
             <div class="field">
-              <label>Agent instructions ({usage.agents.length})</label>
-              <ul class="usage-list">
-                {usage.agents.map((agent) => (
-                  <li key={agent.name}>
-                    <a href={`#/agents/${agent.name}`}>{agent.display_name || agent.name}</a>
-                  </li>
-                ))}
-              </ul>
+              <label class="field-label">Category</label>
+              <input
+                class="form-input"
+                value={entry.category}
+                onInput={(e) => setEntry({ ...entry, category: e.target.value })}
+                placeholder="e.g. reference, howto, policy"
+              />
             </div>
-          )}
+            <div class="field">
+              <label class="field-label">Tags (comma-separated)</label>
+              <input
+                class="form-input"
+                value={entry.tags}
+                onInput={(e) => setEntry({ ...entry, tags: e.target.value })}
+                placeholder="api, setup, tutorial"
+              />
+            </div>
+            <div class="field">
+              <SwitchField
+                checked={entry.pinned}
+                onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
+                description="Pinned entries are inserted into agent context."
+              >
+                Pinned in agent context
+              </SwitchField>
+            </div>
+          </div>
+          <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : slug }]} />
         </section>
-      )}
-      {!isNew && usage && usage.tasks.length === 0 && usage.agents.length === 0 && (
-        <div class="meta">No tasks or agents reference this entry yet.</div>
-      )}
-    </div>
+
+        <section class="surface-panel">
+          <div class="section-kicker">Content</div>
+          <h3>Body (Markdown)</h3>
+          <div class="field">
+            <textarea
+              class="form-input mono-input"
+              rows="22"
+              value={entry.body}
+              onInput={(e) => setEntry({ ...entry, body: e.target.value })}
+            />
+          </div>
+        </section>
+
+        {!isNew && usage && (usage.tasks?.length || usage.agents?.length) > 0 && (
+          <section class="surface-panel">
+            <div class="section-kicker">References</div>
+            <h3>Used by</h3>
+            {usage.tasks?.length > 0 && (
+              <div class="field">
+                <label class="field-label">Tasks ({usage.tasks.length})</label>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {usage.tasks.map((t) => (
+                    <li key={t.id}>
+                      <a href={`#/tasks/${t.id}`}>{t.title}</a>
+                      {" "}
+                      <StatusPill status={t.status} size="sm" />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {usage.agents?.length > 0 && (
+              <div class="field">
+                <label class="field-label">Agents ({usage.agents.length})</label>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {usage.agents.map((a) => (
+                    <li key={a.name}>
+                      <a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </>
   );
 }

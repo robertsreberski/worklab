@@ -1,158 +1,161 @@
-// src/ui/src/routes/Knowledge.jsx
-import { useEffect, useState, useCallback } from "preact/hooks";
+import { useEffect, useState, useCallback, useMemo } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
-import { EmptyState } from "../components/EmptyState.jsx";
+import { AppShell } from "../components/AppShell.jsx";
+import { SearchField } from "../components/SearchField.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { StatusSignal } from "../components/StatusSignal.jsx";
-import { shortDate } from "../lib/display.js";
+import { KbEdit } from "./KbEdit.jsx";
 
-export function Knowledge() {
+const CATEGORY_TABS = [
+  { id: "all", label: "All" },
+  { id: "reference", label: "Reference" },
+  { id: "howto", label: "How-to" },
+  { id: "policy", label: "Policy" },
+  { id: "pinned", label: "Pinned" },
+];
+
+function categoryToken(category) {
+  const c = (category || "").toLowerCase();
+  if (c.includes("how")) return "howto";
+  if (c.includes("policy")) return "policy";
+  if (c.includes("ref")) return "reference";
+  return null;
+}
+
+function formatAge(value) {
+  if (!value) return "";
+  const ms = Date.now() - Number(value);
+  if (ms < 86_400_000) return "today";
+  const days = Math.floor(ms / 86_400_000);
+  if (days < 7) return `${days}d`;
+  return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function KbRow({ entry, active }) {
+  const cat = categoryToken(entry.category);
+  return (
+    <a
+      href={`#/knowledge/${entry.slug}`}
+      class={`pane-row ${active ? "active" : ""}`}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+        {entry.pinned && <Icon name="pin" size={11} />}
+      </span>
+      <div class="pane-row-main">
+        <div class="pane-row-title">{entry.title}</div>
+        <div class="pane-row-sub">
+          {cat && <span class="kb-category-badge" data-category={cat}>{cat}</span>}
+          {(entry.tags || []).slice(0, 3).map((t) => (
+            <span key={t} class="tag" style={{ marginLeft: 4 }}>{t}</span>
+          ))}
+        </div>
+      </div>
+      <div class="pane-row-meta">{formatAge(entry.updated_at)}</div>
+    </a>
+  );
+}
+
+export function Knowledge({ selectedSlug = null }) {
   const [entries, setEntries] = useState([]);
   const [query, setQuery] = useState("");
-  const [searchResults, setSearchResults] = useState([]);
-  const [searching, setSearching] = useState(false);
+  const [category, setCategory] = useState("all");
 
   const reload = useCallback(() => {
-    api.listKb().then(r => setEntries(r.entries));
+    api.listKb().then((r) => setEntries(r.entries || [])).catch(() => setEntries([]));
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
   useSSE("global", (evt) => { if (evt.type?.startsWith("kb_")) reload(); });
 
-  useEffect(() => {
-    const q = query.trim();
-    if (!q) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    let list = entries;
+    if (category === "pinned") list = list.filter((e) => e.pinned);
+    else if (category !== "all") list = list.filter((e) => categoryToken(e.category) === category);
+    if (q) {
+      list = list.filter((e) =>
+        e.title?.toLowerCase().includes(q) ||
+        e.category?.toLowerCase().includes(q) ||
+        (e.tags || []).some((t) => t.toLowerCase().includes(q))
+      );
     }
-    let cancelled = false;
-    setSearching(true);
-    const timer = setTimeout(async () => {
-      try {
-        const res = await api.search({ q, kind: "kb", limit: 8 });
-        if (!cancelled) setSearchResults(res.results || []);
-      } catch {
-        if (!cancelled) setSearchResults([]);
-      } finally {
-        if (!cancelled) setSearching(false);
-      }
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [query]);
+    return [...list].sort((a, b) => {
+      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+      return (Number(b.updated_at) || 0) - (Number(a.updated_at) || 0);
+    });
+  }, [entries, query, category]);
 
-  const filtered = query.trim()
-    ? entries.filter(e => {
-        const q = query.toLowerCase();
-        return e.title.toLowerCase().includes(q) ||
-          (e.tags || []).some(t => t.toLowerCase().includes(q));
-      })
-    : entries;
-  const showingSearch = query.trim().length > 0;
+  const headerMeta = (
+    <>
+      <span>{entries.length} entries</span>
+      <span class="dot">·</span>
+      <span>{entries.filter((e) => e.pinned).length} pinned</span>
+    </>
+  );
 
   return (
-    <div class="detail page-stack">
-      <div class="page-header">
-        <div>
-          <div class="eyebrow">Shared context</div>
-          <h2 class="page-title">Knowledge base</h2>
-          <div class="page-copy">{entries.length} entries</div>
-        </div>
-        <a href="#/knowledge/new" class="primary"><Icon name="plus" size={15} />New entry</a>
-      </div>
-
-      <div class="surface-panel compact command-search">
-        <Icon name="search" size={16} class="command-search-icon" />
-        <div class="field">
-          <label>Search</label>
-          <input
-            type="search"
-            placeholder="Search knowledge by title, tag, or content..."
-            value={query}
-            onInput={(e) => setQuery(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {showingSearch && (
-        <div class="search-section">
-          <div class="list-header">
-            <div>
-              <div class="section-kicker">Indexed content</div>
-              <h3 class="section-title">
-                {searching ? "Searching..." : `${searchResults.length} indexed result${searchResults.length === 1 ? "" : "s"}`}
-              </h3>
+    <AppShell route="knowledge" title="Knowledge" headerMeta={headerMeta}>
+      <div class="two-pane">
+        <aside class="pane-list">
+          <div class="pane-list-head">
+            <SearchField
+              value={query}
+              onInput={(e) => setQuery(e.target.value)}
+              placeholder="Search knowledge..."
+            />
+            <div class="pane-list-tabs">
+              {CATEGORY_TABS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  class={`filter-pill ${category === t.id ? "active" : ""}`}
+                  onClick={() => setCategory(t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
+            <a href="#/knowledge/new" class="button primary small" style={{ justifyContent: "center" }}>
+              <Icon name="plus" size={12} />
+              New entry
+            </a>
           </div>
-          <div class="search-results">
-            {searchResults.length === 0 && !searching && (
-              <div class="surface-panel compact meta">No indexed content matches. Title and tag matches are still shown below.</div>
+          <div class="pane-list-body wl-hide-scrollbar">
+            {filtered.length === 0 && (
+              <div class="pane-empty">{query || category !== "all" ? "No entries match." : "No entries yet."}</div>
             )}
-            {searchResults.map((result) => (
-              <a key={result.ref} class="search-result" href={result.slug ? `#/knowledge/${result.slug}` : "#/knowledge"}>
-                <strong>{result.title}</strong>
-                <span class="meta">{result.snippet || result.source_ref}</span>
-              </a>
+            {filtered.map((e) => (
+              <KbRow key={e.slug} entry={e} active={e.slug === selectedSlug} />
             ))}
           </div>
-        </div>
-      )}
-
-      {filtered.length === 0 && entries.length === 0 && (
-        <EmptyState
-          icon={<Icon name="database" size={20} />}
-          title="No knowledge base entries yet"
-          body="Pinned entries are inlined into every agent's system prompt. Add notes, references, or step-by-step playbooks here."
-          cta={<a href="#/knowledge/new" class="primary">Create the first entry</a>}
-        />
-      )}
-
-      {filtered.length === 0 && entries.length > 0 && (
-        <div class="meta">No entries match "{query}".</div>
-      )}
-
-      {filtered.length > 0 && (
-        <table class="knowledge-table">
-          <thead>
-            <tr>
-              <th>Title</th>
-              <th>Category</th>
-              <th>Tags</th>
-              <th>Context</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(e => (
-              <tr key={e.slug}
-                onClick={() => { window.location.hash = `#/knowledge/${e.slug}`; }}>
-                <td data-label="Title">
-                  <a href={`#/knowledge/${e.slug}`} class="title-link"
-                    onClick={(ev) => ev.stopPropagation()}>
-                    {e.title}
-                  </a>
-                </td>
-                <td data-label="Category" class="meta">{e.category || "-"}</td>
-                <td data-label="Tags" class="meta">
-                  {(e.tags || []).length > 0
-                    ? (e.tags || []).join(", ")
-                    : "-"}
-                </td>
-                <td data-label="Context">
-                  <StatusSignal tone={e.pinned ? "blue" : "muted"} compact>{e.pinned ? "Pinned" : "Library"}</StatusSignal>
-                </td>
-                <td data-label="Updated" class="meta">
-                  {shortDate(e.updated_at)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-    </div>
+        </aside>
+        <section class="pane-detail">
+          {selectedSlug ? (
+            <KbEdit
+              key={selectedSlug}
+              slug={selectedSlug}
+              onSaved={(slug) => {
+                reload();
+                if (selectedSlug === "new") window.location.hash = `#/knowledge/${slug}`;
+              }}
+              onDeleted={() => {
+                reload();
+                window.location.hash = "#/knowledge";
+              }}
+            />
+          ) : (
+            <div class="pane-empty">
+              <Icon name="book" size={28} />
+              <h3>Select an entry</h3>
+              <p>Knowledge entries are shared context for humans and agents. Pin entries to include them in agent context.</p>
+              <a href="#/knowledge/new" class="button primary">
+                <Icon name="plus" size={13} />
+                New entry
+              </a>
+            </div>
+          )}
+        </section>
+      </div>
+    </AppShell>
   );
 }
