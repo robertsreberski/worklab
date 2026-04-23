@@ -1,6 +1,7 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { pushToast } from "../lib/toast.js";
+import { useFocusTrap } from "../lib/useFocusTrap.js";
 
 const RECALL_KEY = "worklab.lastTaskAgents";
 
@@ -26,6 +27,8 @@ export function NewTaskModal({ onClose, onCreated }) {
   const [reviewerAgent, setReviewerAgent] = useState(recalled?.reviewer || "");
   const [agents, setAgents] = useState([]);
   const [busy, setBusy] = useState(false);
+  const modalRef = useRef(null);
+  useFocusTrap(modalRef, { active: true, onEscape: onClose });
 
   useEffect(() => {
     api.listAgents().then((r) => {
@@ -58,8 +61,8 @@ export function NewTaskModal({ onClose, onCreated }) {
 
   return (
     <div class="modal-backdrop" onClick={onClose}>
-      <div class="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>New task</h3>
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="new-task-modal-title" ref={modalRef} onClick={(e) => e.stopPropagation()}>
+        <h3 id="new-task-modal-title">New task</h3>
         <form onSubmit={submit}>
           <div class="field span-2">
             <label>Title</label>

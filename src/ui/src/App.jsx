@@ -66,7 +66,7 @@ export function App() {
     <div class="app app-shell">
       <aside class="app-rail">
         <a class="brand-lockup" href="#/tasks" aria-label="Worklab tasks">
-          <span class="brand-mark">W</span>
+          <span class="brand-mark" aria-hidden="true">W</span>
           <span class="brand-copy">
             <strong>Worklab</strong>
             <span>Local agent ops</span>
