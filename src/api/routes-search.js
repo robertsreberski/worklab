@@ -8,7 +8,7 @@ function parseLimit(value) {
 
 export function registerSearchRoutes(app, { db, dataDir }) {
   app.get("/api/search/status", (_req, res) => {
-    res.json({ status: getIndexStatus(db) });
+    res.json({ status: getIndexStatus(db, { dataDir }) });
   });
 
   app.get("/api/search", async (req, res, next) => {

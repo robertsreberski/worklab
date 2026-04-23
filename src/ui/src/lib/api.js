@@ -67,4 +67,5 @@ export const api = {
   listProviderModels: (id) => request("GET", `/providers/${id}/models`),
   patchProviderModel: (providerId, modelId, patch) => request("PATCH", `/providers/${providerId}/models/${modelId}`, patch),
   listAvailableModels: () => request("GET", "/models/available"),
+  listEmbeddingModels: () => request("GET", "/models/embeddings"),
 };

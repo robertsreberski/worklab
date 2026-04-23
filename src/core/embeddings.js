@@ -4,7 +4,7 @@ import { basename, join, relative, sep } from "node:path";
 import { newEmbeddingId } from "./ids.js";
 import { kbList, kbRead } from "./kb.js";
 import { agentJournalPath, agentMemoryPath } from "./journal.js";
-import { getProvider } from "./providers.js";
+import { getProvider, isPrivateBaseUrl } from "./providers.js";
 
 const MAX_CHUNK_CHARS = 1800;
 const MAX_EMBED_CHARS = 8000;
@@ -139,6 +139,26 @@ export async function generateEmbedding({ db, dataDir, modelRef, text, fetchImpl
   } catch (err) {
     return { vector: null, error: err.message || String(err) };
   }
+}
+
+export function isEmbeddingBackendReady({ db, dataDir, modelRef }) {
+  if (!modelRef) return { ready: false, reason: "no embedding model configured" };
+  let parsed;
+  try { parsed = parseEmbeddingReference(modelRef); }
+  catch (err) { return { ready: false, reason: err.message || "invalid embedding reference" }; }
+
+  if (parsed.kind === "ollama") return { ready: true, reason: null };
+  if (parsed.kind === "openai") {
+    if (!process.env.OPENAI_API_KEY) return { ready: false, reason: "OPENAI_API_KEY is not set" };
+    return { ready: true, reason: null };
+  }
+  const provider = getProvider({ db, dataDir, id: parsed.providerId });
+  if (!provider) return { ready: false, reason: `provider ${parsed.providerId} was removed` };
+  if (!provider.enabled) return { ready: false, reason: `provider ${provider.name} is disabled` };
+  if (!provider.has_api_key && !isPrivateBaseUrl(provider.base_url)) {
+    return { ready: false, reason: `provider ${provider.name} needs an API key` };
+  }
+  return { ready: true, reason: null };
 }
 
 export function getEmbeddingModel(db) {
@@ -315,8 +335,9 @@ export function scanSources({ dataDir, kind = "all" } = {}) {
 export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldStop = () => false } = {}) {
   const modelRef = getEmbeddingModel(db);
   const sources = scanSources({ dataDir });
-  const stats = { sources: 0, chunks: 0, model: modelRef || null };
-  let allowVector = !!modelRef;
+  const readiness = isEmbeddingBackendReady({ db, dataDir, modelRef });
+  const stats = { sources: 0, chunks: 0, model: modelRef || null, ready: readiness.ready, reason: readiness.reason };
+  let allowVector = !!modelRef && readiness.ready;
   for (const source of sources) {
     if (shouldStop()) { stats.aborted = true; break; }
     const ids = await indexSource({ db, dataDir, source, modelRef: modelRef || null, fetchImpl, allowVector });
@@ -333,7 +354,7 @@ export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldSt
 
 export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
   const modelRef = getEmbeddingModel(db);
-  const allowVector = !!modelRef;
+  const allowVector = !!modelRef && isEmbeddingBackendReady({ db, dataDir, modelRef }).ready;
   const rel = relative(dataDir, filePath).split(sep).join("/");
   if (/^knowledge\/[^/]+\.md$/.test(rel)) {
     const slug = basename(rel, ".md");
@@ -460,14 +481,15 @@ export async function search({ db, dataDir, query, kind = "all", agent = null, l
   return ranked;
 }
 
-export function getIndexStatus(db) {
+export function getIndexStatus(db, { dataDir } = {}) {
   const total = db.prepare("SELECT COUNT(*) AS count FROM embeddings").get().count;
   const byKind = db.prepare("SELECT kind, COUNT(*) AS count FROM embeddings GROUP BY kind").all()
     .reduce((acc, row) => ({ ...acc, [row.kind]: row.count }), {});
   const vectorized = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE vector IS NOT NULL").get().count;
   const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
   const model = getEmbeddingModel(db);
-  return { total, byKind, vectorized, errors, model: model || null };
+  const readiness = model ? isEmbeddingBackendReady({ db, dataDir, modelRef: model }) : { ready: false, reason: null };
+  return { total, byKind, vectorized, errors, model: model || null, ready: readiness.ready, reason: readiness.reason };
 }
 
 export async function testEmbeddingBackend({ db, dataDir, fetchImpl = fetch } = {}) {

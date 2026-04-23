@@ -74,6 +74,8 @@ export function AgentEdit({ name }) {
   const allModels = flattenModels(modelGroups);
   const selectedModel = allModels.find((model) => model.value === agent?.model) || null;
   const modelUnavailable = !!agent?.model && modelGroups.length > 0 && !selectedModel;
+  const selectedGroup = modelGroups.find((group) => (group.models || []).some((model) => model.value === agent?.model)) || null;
+  const groupUnavailable = !!selectedGroup && selectedGroup.available === false;
   const reasoningMode = getReasoningMode(selectedModel);
   const reasoningLevels = getReasoningLevels(selectedModel);
   const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
@@ -94,7 +96,7 @@ export function AgentEdit({ name }) {
   if (agent.notFound) return <div>Agent not found. <a href="#/agents">Back</a></div>;
   const modelOptions = [
     ...modelGroups.map((group) => ({
-      label: group.label,
+      label: group.available === false ? `${group.label} (credentials not set)` : group.label,
       options: (group.models || []).map((model) => ({
         value: model.value,
         label: model.label || model.value,
@@ -233,6 +235,11 @@ export function AgentEdit({ name }) {
             {modelUnavailable && (
               <div class="status-line warn">This model is not in the enabled runnable model list.</div>
             )}
+            {groupUnavailable && (
+              <div class="status-line warn">
+                {selectedGroup.unavailable_reason || "Provider credentials not configured — runs will fail."}
+              </div>
+            )}
           </div>
           <div class="field">
             {reasoningMode === "none" ? (
@@ -257,8 +264,6 @@ export function AgentEdit({ name }) {
             )}
           </div>
           <div class="field span-2">
-            <label>Advanced model reference</label>
-            <input value={agent.model} onInput={(e) => setModel(e.target.value)} />
             <div class="meta">
               {selectedModel?.capabilities?.tool_use === false
                 ? "This model does not support tool use."
