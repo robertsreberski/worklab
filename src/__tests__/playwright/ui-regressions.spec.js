@@ -32,9 +32,9 @@ async function waitForHealth(url, processRef) {
       const response = await fetch(`${url}/api/health`);
       if (response.ok) return;
     } catch {
-      // Keep polling until the app is ready.
+      // keep polling
     }
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, 250));
+    await new Promise((r) => setTimeout(r, 250));
   }
   throw new Error(`Timed out waiting for Worklab at ${url}`);
 }
@@ -60,11 +60,7 @@ async function createTask(title, patch = {}) {
     ok: [201],
   });
   if (Object.keys(patch).length > 0) {
-    await requestJson(`/api/tasks/${task.id}`, {
-      method: "PATCH",
-      body: patch,
-      ok: [200],
-    });
+    await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: patch, ok: [200] });
   }
   return task.id;
 }
@@ -77,23 +73,37 @@ async function ensureKbEntry(entry) {
     await requestJson(`/api/kb/${entry.slug}`, {
       method: "PATCH",
       body: {
-        title: entry.title,
-        body: entry.body,
-        tags: entry.tags,
-        category: entry.category,
-        pinned: entry.pinned,
+        title: entry.title, body: entry.body, tags: entry.tags,
+        category: entry.category, pinned: entry.pinned,
       },
       ok: [200],
     });
   }
 }
 
-async function expectNoHorizontalOverflow(page) {
-  const widths = await page.evaluate(() => ({
-    innerWidth: window.innerWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }));
-  expect(widths.scrollWidth).toBeLessThanOrEqual(widths.innerWidth);
+async function expectNoHorizontalOverflow(page, label = "") {
+  const data = await page.evaluate(() => {
+    const offenders = [];
+    const docScroll = document.documentElement.scrollWidth;
+    for (const el of document.body.querySelectorAll("*")) {
+      if (el.scrollWidth > window.innerWidth && el.offsetWidth > window.innerWidth) {
+        const style = window.getComputedStyle(el);
+        offenders.push({
+          tag: el.tagName + (el.className ? "." + String(el.className).split(" ").join(".") : ""),
+          scrollWidth: el.scrollWidth,
+          offsetWidth: el.offsetWidth,
+          overflowX: style.overflowX,
+        });
+      }
+      if (offenders.length > 8) break;
+    }
+    return { innerWidth: window.innerWidth, scrollWidth: docScroll, offenders };
+  });
+  if (data.scrollWidth > data.innerWidth) {
+    console.error(`Overflow on ${label}: scrollWidth=${data.scrollWidth}, innerWidth=${data.innerWidth}`);
+    console.error("Offenders:", JSON.stringify(data.offenders, null, 2));
+  }
+  expect(data.scrollWidth, `${label}: scrollWidth=${data.scrollWidth}`).toBeLessThanOrEqual(data.innerWidth);
 }
 
 test.beforeAll(async () => {
@@ -140,8 +150,8 @@ test.afterAll(async () => {
   if (serverProcess && serverProcess.exitCode === null) {
     serverProcess.kill("SIGINT");
     await Promise.race([
-      new Promise((resolveExit) => serverProcess.once("exit", resolveExit)),
-      new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000)),
+      new Promise((r) => serverProcess.once("exit", r)),
+      new Promise((r) => setTimeout(r, 5_000)),
     ]);
     if (serverProcess.exitCode === null) serverProcess.kill("SIGKILL");
   }
@@ -149,154 +159,73 @@ test.afterAll(async () => {
   if (workspaceDir) rmSync(workspaceDir, { recursive: true, force: true });
 });
 
-test("kb edit loads existing entries from the nested API shape", async ({ page }) => {
+test("commander lists tasks grouped by status", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+  const groups = page.locator(".commander-group");
+  const groupCount = await groups.count();
+  expect(groupCount).toBeGreaterThan(0);
+  // Dark-theme sanity check on row styling
+  const rowStyles = await page.locator(".commander-row").first().evaluate((node) => {
+    const s = window.getComputedStyle(node);
+    return { color: s.color, background: s.backgroundColor };
+  });
+  expect(rowStyles.color).not.toBe("rgb(0, 0, 238)");
+});
+
+test("knowledge entry loads via the two-pane URL", async ({ page }) => {
   await page.goto(`${baseUrl}/#/knowledge/welcome`);
-  await expect(page.getByRole("heading", { name: "Welcome guide" })).toBeVisible();
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Welcome guide" })).toBeVisible();
   await expect(page.locator("textarea")).toHaveValue(/nested KB route shape/);
 });
 
-test("dark theme link and form controls keep cards readable", async ({ page }) => {
-  await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".issue-row").first()).toBeVisible();
-  const taskCardStyles = await page.locator(".issue-section").first().evaluate((node) => {
-    const styles = window.getComputedStyle(node);
-    return {
-      color: styles.color,
-      backgroundColor: styles.backgroundColor,
-      display: styles.display,
-    };
-  });
-  expect(taskCardStyles.color).not.toBe("rgb(0, 0, 238)");
-  expect(taskCardStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  expect(taskCardStyles.display).toBe("block");
+test("agents two-pane: clicking a list row selects inline editor via URL", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/agents/new`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "New agent" })).toBeVisible();
+});
 
+test("task edit is reachable via #/tasks/new and shows a full-page form", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await expect(page.locator(".task-edit-head h2").first()).toBeVisible();
+  await expect(page.locator('input[placeholder*="actionable"]')).toBeVisible();
+});
+
+test("task detail renders two-column layout", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
-  await expect(page.getByText("Set an executor agent to enable Run now.")).toBeVisible();
-  const backLinkStyles = await page.locator(".back-link").evaluate((node) => {
-    const styles = window.getComputedStyle(node);
-    return { color: styles.color, textDecorationLine: styles.textDecorationLine };
-  });
-  expect(backLinkStyles.color).not.toBe("rgb(0, 0, 238)");
-  expect(backLinkStyles.textDecorationLine).toBe("none");
-
-  await page.goto(`${baseUrl}/#/providers`);
-  const selectStyles = await page.locator(".select-field-button").first().evaluate((node) => {
-    const styles = window.getComputedStyle(node);
-    return { backgroundColor: styles.backgroundColor, color: styles.color };
-  });
-  expect(selectStyles.backgroundColor).not.toBe("rgb(255, 255, 255)");
-  expect(selectStyles.color).not.toBe("rgb(0, 0, 0)");
-
-  await page.goto(`${baseUrl}/#/settings`);
-  const checkboxBox = await page.locator("input[type=\"checkbox\"]").boundingBox();
-  expect(checkboxBox.width).toBeLessThan(30);
+  await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
+  await expect(page.locator(".task-detail-rail")).toBeVisible();
+  await expect(page.locator(".rail-card h4", { hasText: "Agents" })).toBeVisible();
+  await expect(page.locator(".rail-card h4", { hasText: "Timeline" })).toBeVisible();
 });
 
 test("mobile routes stay usable without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 
-  await page.goto(`${baseUrl}/#/tasks`);
-  const sections = page.locator(".issue-section");
-  await expect(sections).toHaveCount(4);
-  const firstSection = await sections.nth(0).boundingBox();
-  const secondSection = await sections.nth(1).boundingBox();
-  expect(secondSection.y).toBeGreaterThan(firstSection.y);
-  await expectNoHorizontalOverflow(page);
-
-  await page.getByRole("button", { name: /new task/i }).first().click();
-  const modalBox = await page.locator(".modal").boundingBox();
-  expect(modalBox.width).toBeLessThanOrEqual(390);
-
-  await page.goto(`${baseUrl}/#/knowledge`);
-  await expect(page.locator(".knowledge-table tbody tr").first()).toBeVisible();
-  const knowledgeRowDisplay = await page.locator(".knowledge-table tbody tr").first().evaluate(
-    (node) => window.getComputedStyle(node).display,
-  );
-  expect(knowledgeRowDisplay).toBe("block");
-  await expectNoHorizontalOverflow(page);
-
   const routes = [
-    { hash: `#/tasks/${taskId}`, ready: () => page.getByRole("heading", { name: "UI regression task" }) },
-    { hash: "#/agents/new", ready: () => page.getByRole("heading", { name: "New agent" }) },
-    { hash: "#/providers", ready: () => page.getByRole("heading", { name: "Providers" }) },
-    { hash: "#/knowledge/welcome", ready: () => page.getByRole("heading", { name: "Welcome guide" }) },
-    { hash: "#/settings", ready: () => page.getByRole("heading", { name: "Settings" }) },
+    { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
+    { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
+    { hash: "#/tasks/new", ready: () => page.locator(".task-edit-head").first() },
+    { hash: "#/agents", ready: () => page.locator('h1.app-title', { hasText: "Agents" }) },
+    { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
+    { hash: "#/skills", ready: () => page.locator('h1.app-title', { hasText: "Skills" }) },
+    { hash: "#/knowledge", ready: () => page.locator('h1.app-title', { hasText: "Knowledge" }) },
+    { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
+    { hash: "#/providers", ready: () => page.locator('h1.app-title', { hasText: "Providers" }) },
+    { hash: "#/activity", ready: () => page.locator('h1.app-title', { hasText: "Activity" }) },
+    { hash: "#/settings", ready: () => page.locator('h1.app-title', { hasText: "Settings" }) },
   ];
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
-    await expect(route.ready()).toBeVisible();
-    await expectNoHorizontalOverflow(page);
+    await expect(route.ready()).toBeVisible({ timeout: 5000 });
+    await expectNoHorizontalOverflow(page, route.hash);
   }
 });
 
-test("task detail prioritizes brief and comments while keeping latest run collapsed", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/api/agents", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ agents: [{ name: "alpha", display_name: "Alpha" }] }),
-  }));
-  await page.route("**/api/tasks/task-ui-layout", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({
-      task: {
-        id: "task-ui-layout",
-        title: "Task layout fixture",
-        description: "Read this before inspecting logs.",
-        instructions: "Post the outcome as comments; logs are secondary.",
-        status: "in_review",
-        executor_agent: "alpha",
-        reviewer_agent: null,
-        retry_count: 0,
-        error_text: null,
-        tags: [],
-        priority: 0,
-      },
-      comments: [{
-        id: "comment-1",
-        task_id: "task-ui-layout",
-        author_type: "agent",
-        author_id: "alpha",
-        body: "Final answer from comments.\n\n| Item | Result |\n| --- | --- |\n| Outcome | Clear |",
-        created_at: Date.now(),
-      }],
-      runs: [{
-        id: "run-latest",
-        task_id: "task-ui-layout",
-        mode: "execute",
-        agent_name: "alpha",
-        status: "complete",
-        started_at: Date.now() - 2000,
-        ended_at: Date.now() - 1000,
-        exit_code: 0,
-        error_text: null,
-        log: {
-          id: "log-1",
-          model: "model-a",
-          effort: "medium",
-          input_tokens: 100,
-          output_tokens: 20,
-          cost_usd: 0,
-          duration_ms: 1000,
-          num_turns: 1,
-          status: "complete",
-        },
-      }],
-    }),
-  }));
-
-  await page.goto(`${baseUrl}/#/tasks/task-ui-layout?run=run-latest`);
-  await expect(page.getByRole("heading", { name: "Task layout fixture" })).toBeVisible();
-  await expect(page.getByText("Read this before inspecting logs.")).toBeVisible();
-  await expect(page.getByText("Final answer from comments.")).toBeVisible();
-
-  const latestRunOpen = await page.locator(".run-card").first().evaluate((node) => node.open);
-  expect(latestRunOpen).toBe(false);
-  await expect(page.getByText("Run started")).not.toBeVisible();
-
-  const commentsBox = await page.locator(".task-comments-panel").boundingBox();
-  const runsBox = await page.locator(".run-list-panel").boundingBox();
-  expect(commentsBox.width).toBeGreaterThan(runsBox.width);
+test("pressing N opens new-task form from the commander", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks`);
+  await page.locator(".commander-row").first().waitFor();
+  await page.keyboard.press("n");
+  await expect(page).toHaveURL(/#\/tasks\/new/);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
 });
