@@ -1,19 +1,19 @@
 // src/ui/src/routes/KbEdit.jsx
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { useFormSave } from "../lib/useFormSave.js";
+import { pushToast } from "../lib/toast.js";
+import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 
 export function KbEdit({ slug }) {
   const isNew = slug === "new";
   const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugError, setSlugError] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
-    setError(null);
     setSlugError(null);
     setSlugTouched(false);
     if (isNew) {
@@ -32,9 +32,6 @@ export function KbEdit({ slug }) {
     return () => { cancelled = true; };
   }, [slug, isNew]);
 
-  if (!entry) return <div>Loading...</div>;
-  if (entry.notFound) return <div>Entry not found. <a href="#/knowledge">Back</a></div>;
-
   function validateSlug(val) {
     if (!val) return "Slug is required.";
     if (!/^[a-z0-9-]+$/.test(val)) return "Slug may only contain lowercase letters, digits, and hyphens.";
@@ -45,40 +42,38 @@ export function KbEdit({ slug }) {
     return raw.split(",").map(t => t.trim()).filter(Boolean);
   }
 
-  async function save() {
+  const formSave = useFormSave(async () => {
     if (isNew) {
       const err = validateSlug(entry.slug);
-      if (err) { setSlugError(err); setSlugTouched(true); return; }
+      if (err) { setSlugError(err); setSlugTouched(true); throw new Error(err); }
     }
-    if (!entry.title.trim()) { setError("Title is required."); return; }
+    if (!entry.title.trim()) throw new Error("Title is required.");
 
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        title: entry.title.trim(),
-        body: entry.body,
-        tags: parseTags(entry.tags),
-        category: entry.category.trim() || null,
-        pinned: !!entry.pinned,
-      };
-      if (isNew) {
-        await api.createKb({ slug: entry.slug, ...payload });
-      } else {
-        await api.patchKb(slug, payload);
-      }
-      window.location.hash = "#/knowledge";
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally {
-      setSaving(false);
+    const payload = {
+      title: entry.title.trim(),
+      body: entry.body,
+      tags: parseTags(entry.tags),
+      category: entry.category.trim() || null,
+      pinned: !!entry.pinned,
+    };
+    if (isNew) {
+      await api.createKb({ slug: entry.slug, ...payload });
+    } else {
+      await api.patchKb(slug, payload);
     }
-  }
+    window.location.hash = "#/knowledge";
+  });
+
+  if (!entry) return <div>Loading...</div>;
+  if (entry.notFound) return <div>Entry not found. <a href="#/knowledge">Back</a></div>;
 
   async function destroy() {
-    if (!confirm(`Delete entry "${slug}"?`)) return;
-    await api.deleteKb(slug);
-    window.location.hash = "#/knowledge";
+    try {
+      await api.deleteKb(slug);
+      window.location.hash = "#/knowledge";
+    } catch (err) {
+      pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    }
   }
 
   return (
@@ -94,13 +89,13 @@ export function KbEdit({ slug }) {
           </div>
         </div>
         <div class="toolbar">
-          <button class="primary" onClick={save} disabled={saving || !entry.title.trim() || (isNew && !entry.slug)}>
-            {saving ? "Saving..." : (isNew ? "Create" : "Save")}
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !entry.title.trim() || (isNew && !entry.slug)}>
+            {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
-          {!isNew && <button onClick={destroy} class="danger">Delete</button>}
+          {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
         </div>
       </section>
-      {error && <div class="surface-panel compact status-line error">{error}</div>}
+      {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
 
       <section class="surface-panel">
         <div class="section-kicker">Metadata</div>

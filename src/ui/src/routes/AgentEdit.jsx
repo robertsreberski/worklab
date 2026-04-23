@@ -1,6 +1,9 @@
 // src/ui/src/routes/AgentEdit.jsx
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { useFormSave } from "../lib/useFormSave.js";
+import { pushToast } from "../lib/toast.js";
+import { ConfirmButton } from "../components/ConfirmButton.jsx";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -62,9 +65,7 @@ export function AgentEdit({ name }) {
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
-  const [saving, setSaving] = useState(false);
   const [consolidating, setConsolidating] = useState(false);
-  const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
 
   const allModels = flattenModels(modelGroups);
@@ -107,43 +108,39 @@ export function AgentEdit({ name }) {
     });
   }
 
-  async function save() {
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        ...agent,
-        effort: normalizedEffort,
-        builtin_allowlist: supportsToolUse
-          ? agent.builtin_allowlist.filter((tool) => visibleTools.includes(tool))
-          : [],
-      };
-      if (isNew) {
-        await api.createAgent(payload);
-        window.location.hash = `#/agents/${agent.name}`;
-      } else {
-        await api.patchAgent(name, payload);
-      }
-    } catch (err) {
-      setError(err.message || String(err));
-    } finally { setSaving(false); }
-  }
+  const formSave = useFormSave(async () => {
+    const payload = {
+      ...agent,
+      effort: normalizedEffort,
+      builtin_allowlist: supportsToolUse
+        ? agent.builtin_allowlist.filter((tool) => visibleTools.includes(tool))
+        : [],
+    };
+    if (isNew) {
+      await api.createAgent(payload);
+      window.location.hash = `#/agents/${agent.name}`;
+    } else {
+      await api.patchAgent(name, payload);
+    }
+  });
 
   async function destroy() {
-    if (!confirm(`Delete agent "${name}"?`)) return;
-    await api.deleteAgent(name);
-    window.location.hash = "#/agents";
+    try {
+      await api.deleteAgent(name);
+      window.location.hash = "#/agents";
+    } catch (err) {
+      pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    }
   }
 
   async function consolidateNow() {
     setConsolidating(true);
-    setError(null);
     setNotice(null);
     try {
       const res = await api.consolidateAgent(name);
       setNotice(res.skipped ? "Memory is already current." : `Consolidation started: ${res.runId}`);
     } catch (err) {
-      setError(err.message || String(err));
+      pushToast(`Consolidate failed: ${err.message}`, { variant: "error" });
     } finally {
       setConsolidating(false);
     }
@@ -163,19 +160,19 @@ export function AgentEdit({ name }) {
           </div>
         </div>
         <div class="toolbar">
-          <button class="primary" onClick={save} disabled={saving || !agent.name || !agent.display_name}>
-            {saving ? "Saving..." : (isNew ? "Create" : "Save")}
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !agent.name || !agent.display_name}>
+            {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
           {!isNew && (
             <button onClick={consolidateNow} disabled={consolidating}>
               {consolidating ? "Starting..." : "Consolidate memory"}
             </button>
           )}
-          {!isNew && <button onClick={destroy} class="danger">Delete</button>}
+          {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
         </div>
       </section>
 
-      {error && <div class="surface-panel compact status-line error">{error}</div>}
+      {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
       {notice && <div class="surface-panel compact meta">{notice}</div>}
 
       <section class="surface-panel">

@@ -1,44 +1,44 @@
 // src/ui/src/routes/SkillEdit.jsx
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { useFormSave } from "../lib/useFormSave.js";
+import { pushToast } from "../lib/toast.js";
+import { ConfirmButton } from "../components/ConfirmButton.jsx";
 
 const emptySkill = { name: "", meta: { trigger: "", enabled: true, priority: "" }, body: "" };
 
 export function SkillEdit({ name }) {
   const isNew = name === "new";
   const [skill, setSkill] = useState(isNew ? emptySkill : null);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!isNew) api.getSkill(name).then(r => setSkill(r.skill)).catch(() => setSkill({ notFound: true }));
   }, [name, isNew]);
 
+  const formSave = useFormSave(async () => {
+    const payload = {
+      meta: { ...skill.meta, trigger: skill.meta.trigger, enabled: !!skill.meta.enabled },
+      body: skill.body,
+    };
+    if (!skill.meta.priority) delete payload.meta.priority;
+    if (isNew) {
+      await api.createSkill({ name: skill.name, ...payload });
+      window.location.hash = `#/skills/${skill.name}`;
+    } else {
+      await api.patchSkill(name, payload);
+    }
+  });
+
   if (!skill) return <div>Loading...</div>;
   if (skill.notFound) return <div>Skill not found. <a href="#/skills">Back</a></div>;
 
-  async function save() {
-    setSaving(true); setError(null);
-    try {
-      const payload = {
-        meta: { ...skill.meta, trigger: skill.meta.trigger, enabled: !!skill.meta.enabled },
-        body: skill.body,
-      };
-      if (!skill.meta.priority) delete payload.meta.priority;
-      if (isNew) {
-        await api.createSkill({ name: skill.name, ...payload });
-        window.location.hash = `#/skills/${skill.name}`;
-      } else {
-        await api.patchSkill(name, payload);
-      }
-    } catch (err) { setError(err.message || String(err)); }
-    finally { setSaving(false); }
-  }
-
   async function destroy() {
-    if (!confirm(`Delete skill "${name}"?`)) return;
-    await api.deleteSkill(name);
-    window.location.hash = "#/skills";
+    try {
+      await api.deleteSkill(name);
+      window.location.hash = "#/skills";
+    } catch (err) {
+      pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    }
   }
 
   return (
@@ -54,13 +54,13 @@ export function SkillEdit({ name }) {
           </div>
         </div>
         <div class="toolbar">
-          <button class="primary" onClick={save} disabled={saving || !skill.name}>
-            {saving ? "Saving..." : (isNew ? "Create" : "Save")}
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !skill.name}>
+            {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
-          {!isNew && <button onClick={destroy} class="danger">Delete</button>}
+          {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
         </div>
       </section>
-      {error && <div class="surface-panel compact status-line error">{error}</div>}
+      {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
 
       <section class="surface-panel">
         <div class="section-kicker">Metadata</div>

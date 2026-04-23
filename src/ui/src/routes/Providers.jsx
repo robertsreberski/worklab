@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { ConfirmButton } from "../components/ConfirmButton.jsx";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama", helper: "Local / LAN", description: "Native Ollama server for local or private-network models." },
@@ -141,9 +142,12 @@ export function Providers() {
   }
 
   async function remove(provider) {
-    if (!confirm(`Delete provider "${provider.name}"?`)) return;
-    await api.deleteProvider(provider.id);
-    await load();
+    try {
+      await api.deleteProvider(provider.id);
+      await load();
+    } catch (err) {
+      setError(`${provider.name}: ${err.message || String(err)}`);
+    }
   }
 
   return (
@@ -229,7 +233,7 @@ export function Providers() {
                 <button onClick={() => patch(provider, { enabled: !provider.enabled })}>{provider.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => test(provider)} disabled={status.testing}>{status.testing ? "Testing..." : "Test"}</button>
                 <button onClick={() => discover(provider)} disabled={status.discovering}>{status.discovering ? "Discovering..." : "Discover"}</button>
-                <button onClick={() => remove(provider)} class="danger">Delete</button>
+                <ConfirmButton class="danger" onConfirm={() => remove(provider)} confirmLabel="Click again to delete">Delete</ConfirmButton>
               </div>
             </div>
             <div class="provider-models">

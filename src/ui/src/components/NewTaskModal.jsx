@@ -1,17 +1,40 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { pushToast } from "../lib/toast.js";
+
+const RECALL_KEY = "worklab.lastTaskAgents";
+
+function loadRecall() {
+  try {
+    const raw = localStorage.getItem(RECALL_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function saveRecall(executor, reviewer) {
+  try {
+    localStorage.setItem(RECALL_KEY, JSON.stringify({ executor, reviewer }));
+  } catch { /* storage unavailable */ }
+}
 
 export function NewTaskModal({ onClose, onCreated }) {
+  const recalled = loadRecall();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [instructions, setInstructions] = useState("");
-  const [executorAgent, setExecutorAgent] = useState("");
-  const [reviewerAgent, setReviewerAgent] = useState("");
+  const [executorAgent, setExecutorAgent] = useState(recalled?.executor || "");
+  const [reviewerAgent, setReviewerAgent] = useState(recalled?.reviewer || "");
   const [agents, setAgents] = useState([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listAgents().then((r) => {
+      const list = r.agents || [];
+      setAgents(list);
+      // Drop recalled agents that no longer exist.
+      if (executorAgent && !list.find((a) => a.name === executorAgent)) setExecutorAgent("");
+      if (reviewerAgent && !list.find((a) => a.name === reviewerAgent)) setReviewerAgent("");
+    }).catch(() => setAgents([]));
   }, []);
 
   async function submit(e) {
@@ -26,7 +49,10 @@ export function NewTaskModal({ onClose, onCreated }) {
         executor_agent: executorAgent || null,
         reviewer_agent: reviewerAgent || null,
       });
+      saveRecall(executorAgent || "", reviewerAgent || "");
       onCreated(task);
+    } catch (err) {
+      pushToast(`Could not create task: ${err.message}`, { variant: "error" });
     } finally { setBusy(false); }
   }
 

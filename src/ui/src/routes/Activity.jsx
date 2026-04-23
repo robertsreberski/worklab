@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { EmptyState } from "../components/EmptyState.jsx";
 
 function fmtTime(ts) {
   return ts ? new Date(ts).toLocaleString() : "-";
@@ -41,7 +42,15 @@ export function Activity() {
         </div>
         <button onClick={() => load()} disabled={loading}>Refresh</button>
       </div>
-      {items.length === 0 && <div class="surface-panel meta">No runs yet.</div>}
+      {items.length === 0 && !loading && (
+        <EmptyState
+          icon="∅"
+          title="No runs yet"
+          body={"Runs appear here as soon as you click \"Run now\" on a task or a scheduled consolidation fires."}
+          cta={<a href="#/tasks" class="primary">Open the task board</a>}
+        />
+      )}
+      {items.length === 0 && loading && <div class="surface-panel meta">Loading recent activity...</div>}
       <div class="activity-list">
         {items.map((item) => (
           <div class="activity-row" key={item.id}>
