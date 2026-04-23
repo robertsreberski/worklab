@@ -56,6 +56,27 @@ export function readFullJournal({ dataDir, agent }) {
   return existsSync(path) ? readFileSync(path, "utf8") : "";
 }
 
+// Returns the full section text for a single run, or null if the journal
+// has no entries tagged with that runId. The section is everything from the
+// matching `## …  — run <runId> — …` header up to (but not including) the
+// next `## ` header, with leading/trailing blank lines trimmed.
+export function readRunSection({ dataDir, agent, runId }) {
+  const content = readFullJournal({ dataDir, agent });
+  if (!content) return null;
+  const lines = content.split("\n");
+  const headerRe = new RegExp(`^## .* — run ${runId}( |$)`);
+  let start = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (headerRe.test(lines[i])) { start = i; break; }
+  }
+  if (start === -1) return null;
+  let end = lines.length;
+  for (let i = start + 1; i < lines.length; i++) {
+    if (lines[i].startsWith("## ")) { end = i; break; }
+  }
+  return lines.slice(start, end).join("\n").replace(/^\n+|\n+$/g, "");
+}
+
 export function writeMemory({ dataDir, agent, content }) {
   const path = agentMemoryPath(dataDir, agent);
   ensureDir(path);

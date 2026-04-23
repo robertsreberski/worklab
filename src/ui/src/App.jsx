@@ -24,12 +24,19 @@ const ROUTES = [
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
-  const [route, ...rest] = h.split("/");
-  return { route: route || "tasks", rest };
+  const [pathPart, queryPart = ""] = h.split("?");
+  const [route, ...rest] = pathPart.split("/");
+  const query = {};
+  for (const pair of queryPart.split("&")) {
+    if (!pair) continue;
+    const [k, v = ""] = pair.split("=");
+    query[decodeURIComponent(k)] = decodeURIComponent(v);
+  }
+  return { route: route || "tasks", rest, query };
 }
 
 export function App() {
-  const [{ route, rest }, setRoute] = useState(parseHash());
+  const [{ route, rest, query }, setRoute] = useState(parseHash());
 
   useEffect(() => {
     const handler = () => setRoute(parseHash());
@@ -38,7 +45,7 @@ export function App() {
   }, []);
 
   let body;
-  if (route === "tasks" && rest[0]) body = <TaskDetail id={rest[0]} />;
+  if (route === "tasks" && rest[0]) body = <TaskDetail key={rest[0]} id={rest[0]} runParam={query.run || null} />;
   else if (route === "tasks") body = <Kanban />;
   else if (route === "agents" && rest[0]) body = <AgentEdit name={rest[0]} />;
   else if (route === "agents") body = <Agents />;

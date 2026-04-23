@@ -67,7 +67,7 @@ export function Activity() {
                 {fmtCost(item.cost_usd)}
               </div>
             </div>
-            {item.task_id && <a href={`#/tasks/${item.task_id}`}>Open task</a>}
+            {item.task_id && <a href={`#/tasks/${item.task_id}?run=${item.id}`}>Open run</a>}
           </div>
         ))}
       </div>

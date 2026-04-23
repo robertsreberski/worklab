@@ -1,5 +1,6 @@
 import { parseModelReference } from "../core/ai.js";
 import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../core/providers.js";
+import { readRunSection } from "../core/journal.js";
 
 const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
@@ -160,5 +161,37 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
     broker.broadcast("global", { type: "agent_deleted", name: req.params.name });
     res.status(204).end();
+  });
+
+  // Recent runs (joined with task_runs, agent_logs, tasks) — powers the
+  // "Recent runs" section on AgentEdit and the "N runs" pill on Agents.
+  app.get("/api/agents/:name/runs", (req, res) => {
+    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
+    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+    const rows = db.prepare(`
+      SELECT r.id, r.task_id, r.mode, r.status, r.started_at, r.ended_at,
+             t.title AS task_title,
+             l.model, l.cost_usd, l.duration_ms, l.input_tokens, l.output_tokens
+      FROM task_runs r
+      LEFT JOIN tasks t ON t.id = r.task_id
+      LEFT JOIN agent_logs l ON l.task_run_id = r.id
+      WHERE r.agent_name = ?
+      ORDER BY r.started_at DESC
+      LIMIT ?
+    `).all(req.params.name, limit);
+    res.json({ runs: rows });
+  });
+
+  // Run-scoped journal section — renders inline below the event timeline
+  // in TaskDetail, closing the gap between "what the SDK did" (events) and
+  // "what the agent decided" (journal).
+  app.get("/api/agents/:name/journal", (req, res) => {
+    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
+    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const runId = req.query.run;
+    if (!runId) return res.status(400).json({ error: { code: "validation", message: "run query param required" } });
+    const section = readRunSection({ dataDir, agent: req.params.name, runId: String(runId) });
+    res.json({ section: section || null });
   });
 }

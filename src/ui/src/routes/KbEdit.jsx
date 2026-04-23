@@ -11,11 +11,13 @@ export function KbEdit({ slug }) {
   const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
   const [slugTouched, setSlugTouched] = useState(false);
   const [slugError, setSlugError] = useState(null);
+  const [usage, setUsage] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
     setSlugError(null);
     setSlugTouched(false);
+    setUsage(null);
     if (isNew) {
       setEntry(EMPTY_KB_FORM_ENTRY);
       return () => { cancelled = true; };
@@ -29,6 +31,9 @@ export function KbEdit({ slug }) {
       .catch(() => {
         if (!cancelled) setEntry({ notFound: true });
       });
+    api.kbUsage(slug)
+      .then((r) => { if (!cancelled) setUsage(r); })
+      .catch(() => { /* best-effort */ });
     return () => { cancelled = true; };
   }, [slug, isNew]);
 
@@ -172,6 +177,42 @@ export function KbEdit({ slug }) {
           />
         </div>
       </section>
+
+      {!isNew && usage && (usage.tasks.length || usage.agents.length) > 0 && (
+        <section class="surface-panel">
+          <div class="section-kicker">References</div>
+          <h3 class="section-title">Used by</h3>
+          {usage.tasks.length > 0 && (
+            <div class="field">
+              <label>Tasks ({usage.tasks.length})</label>
+              <ul class="usage-list">
+                {usage.tasks.map((task) => (
+                  <li key={task.id}>
+                    <a href={`#/tasks/${task.id}`}>{task.title}</a>
+                    <span class={`status-badge ${task.status}`}>{task.status}</span>
+                    <span class="meta">via {task.via}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {usage.agents.length > 0 && (
+            <div class="field">
+              <label>Agent instructions ({usage.agents.length})</label>
+              <ul class="usage-list">
+                {usage.agents.map((agent) => (
+                  <li key={agent.name}>
+                    <a href={`#/agents/${agent.name}`}>{agent.display_name || agent.name}</a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+      {!isNew && usage && usage.tasks.length === 0 && usage.agents.length === 0 && (
+        <div class="meta">No tasks or agents reference this entry yet.</div>
+      )}
     </div>
   );
 }

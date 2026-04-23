@@ -73,6 +73,7 @@ export function Providers() {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState(null);
   const [providerStatus, setProviderStatus] = useState({});
+  const [providerAgents, setProviderAgents] = useState({});
   const selectedType = optionForProviderType(form.provider_type);
   const preset = PRESETS[form.provider_type] || PRESETS.openai_compat;
 
@@ -95,6 +96,13 @@ export function Providers() {
       }
     }));
     setModels(Object.fromEntries(modelPairs));
+    const agentPairs = await Promise.all((res.providers || []).map(async (provider) => {
+      try {
+        const r = await api.providerAgents(provider.id);
+        return [provider.id, r.agents || []];
+      } catch { return [provider.id, []]; }
+    }));
+    setProviderAgents(Object.fromEntries(agentPairs));
   }
 
   useEffect(() => { load(); }, []);
@@ -216,6 +224,17 @@ export function Providers() {
                 <h3>{provider.name}</h3>
                 <div class="meta">{optionForProviderType(provider.provider_type).label} / {provider.base_url} / {provider.has_api_key ? "API key saved" : "no API key"}</div>
                 <div class="meta">Model picker visibility: {provider.enabled ? "shown when models are enabled" : "hidden because this provider is disabled"}</div>
+                {providerAgents[provider.id]?.length > 0 && (
+                  <div class="meta">
+                    Used by:{" "}
+                    {providerAgents[provider.id].map((agent, i) => (
+                      <span key={agent.name}>
+                        {i > 0 && ", "}
+                        <a href={`#/agents/${agent.name}`}>{agent.display_name || agent.name}</a>
+                      </span>
+                    ))}
+                  </div>
+                )}
                 {status.test && (
                   <div class={status.test.ok ? "status-line ok" : "status-line error"}>
                     {status.test.ok

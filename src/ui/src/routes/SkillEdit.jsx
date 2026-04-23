@@ -10,9 +10,13 @@ const emptySkill = { name: "", meta: { trigger: "", enabled: true, priority: "" 
 export function SkillEdit({ name }) {
   const isNew = name === "new";
   const [skill, setSkill] = useState(isNew ? emptySkill : null);
+  const [usage, setUsage] = useState(null);
 
   useEffect(() => {
-    if (!isNew) api.getSkill(name).then(r => setSkill(r.skill)).catch(() => setSkill({ notFound: true }));
+    if (!isNew) {
+      api.getSkill(name).then(r => setSkill(r.skill)).catch(() => setSkill({ notFound: true }));
+      api.skillUsage(name).then(setUsage).catch(() => {});
+    }
   }, [name, isNew]);
 
   const formSave = useFormSave(async () => {
@@ -104,6 +108,31 @@ export function SkillEdit({ name }) {
             class="mono-input" />
         </div>
       </section>
+
+      {!isNew && usage && (
+        <section class="surface-panel">
+          <div class="section-kicker">References</div>
+          <h3 class="section-title">Used by agents</h3>
+          {usage.explicit.length > 0 ? (
+            <ul class="usage-list">
+              {usage.explicit.map((agent) => (
+                <li key={agent.name}>
+                  <a href={`#/agents/${agent.name}`}>{agent.display_name || agent.name}</a>
+                  <span class="meta">allowlisted</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div class="meta">No agent explicitly allowlists this skill.</div>
+          )}
+          {usage.openAllowlist > 0 && (
+            <div class="meta">
+              {usage.openAllowlist} agent{usage.openAllowlist === 1 ? "" : "s"} with an empty allowlist also
+              {" "}can use this skill (they inherit all enabled skills).
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
 }
