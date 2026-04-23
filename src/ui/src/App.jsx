@@ -10,6 +10,7 @@ import { Knowledge } from "./routes/Knowledge.jsx";
 import { KbEdit } from "./routes/KbEdit.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
+import { ToastHost } from "./components/Toast.jsx";
 
 const ROUTES = [
   { id: "tasks", label: "Tasks", summary: "Plan, run, and review agent work." },
@@ -91,6 +92,7 @@ export function App() {
         </header>
         <main class="app-main">{body}</main>
       </div>
+      <ToastHost />
     </div>
   );
 }

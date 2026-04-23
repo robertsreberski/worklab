@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { pushToast } from "../lib/toast.js";
 import { TaskCard } from "../components/TaskCard.jsx";
 import { NewTaskModal } from "../components/NewTaskModal.jsx";
 
@@ -33,8 +34,12 @@ export function Kanban() {
     if (!id) return;
     const task = tasks.find((t) => t.id === id);
     if (!task || task.status === status) return;
+    const previous = task.status;
     setTasks((ts) => ts.map((t) => (t.id === id ? { ...t, status } : t)));  // optimistic
-    api.patchTask(id, { status }).catch(() => reload());
+    api.patchTask(id, { status }).catch((err) => {
+      pushToast(`Move failed (${LABELS[previous]} → ${LABELS[status]}): ${err.message}`, { variant: "error" });
+      reload();
+    });
   }
 
   const counts = Object.fromEntries(COLUMNS.map((status) => [
@@ -77,7 +82,14 @@ export function Kanban() {
               <span class="column-count">{counts[status]}</span>
             </div>
             {tasks.filter((t) => t.status === status).length === 0 && (
-              <div class="column-empty">Drop work here.</div>
+              <div class="column-empty">
+                <div>Drop work here.</div>
+                {status === "todo" && (
+                  <button type="button" class="link-button" onClick={() => setShowNew(true)}>
+                    + New task
+                  </button>
+                )}
+              </div>
             )}
             {tasks.filter((t) => t.status === status).map((t) => (
               <TaskCard key={t.id} task={t} onDragStart={onDragStart} />

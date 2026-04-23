@@ -3,8 +3,11 @@ import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
+import { useFormSave } from "../lib/useFormSave.js";
+import { pushToast } from "../lib/toast.js";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
+import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { selectActiveRunId } from "./taskDetailRuns.js";
 
 const STATUS_LABELS = {
@@ -78,27 +81,34 @@ export function TaskDetail({ id }) {
   const historyRuns = data?.runs?.filter((run) => run.id !== activeRunId) || [];
   const activeRunDone = focusedRun ? focusedRun.status !== "running" : false;
 
+  const formSave = useFormSave(async (patch) => {
+    await api.patchTask(id, patch);
+    setEditing(false);
+    reload();
+  });
+
   if (!data) return <div class="surface-panel">Loading...</div>;
   if (data.notFound) return <div class="surface-panel">Task not found. <a href="#/tasks">Back</a></div>;
   const { task, comments } = data;
 
-  async function save() {
-    await api.patchTask(id, draft);
-    setEditing(false);
-    reload();
-  }
-
   async function addComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
-    await api.addComment(id, newComment.trim());
-    setNewComment("");
+    try {
+      await api.addComment(id, newComment.trim());
+      setNewComment("");
+    } catch (err) {
+      pushToast(`Could not post comment: ${err.message}`, { variant: "error" });
+    }
   }
 
   async function destroy() {
-    if (!confirm("Delete this task?")) return;
-    await api.deleteTask(id);
-    window.location.hash = "#/tasks";
+    try {
+      await api.deleteTask(id);
+      window.location.hash = "#/tasks";
+    } catch (err) {
+      pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    }
   }
 
   async function runNow() {
@@ -140,8 +150,8 @@ export function TaskDetail({ id }) {
         <div class="toolbar">
           <button class="primary" onClick={runNow} disabled={!canRun}>Run now</button>
           {focusedRun?.status === "running" && <button onClick={cancelRun} class="danger">Cancel run</button>}
-          <button onClick={() => { setDraft(task); setEditing(true); }}>Edit</button>
-          <button onClick={destroy} class="danger">Delete</button>
+          <button onClick={() => { setDraft(task); setEditing(true); formSave.clearError(); }}>Edit</button>
+          <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>
         </div>
       </section>
 
@@ -209,9 +219,12 @@ export function TaskDetail({ id }) {
                   </div>
                 </div>
                 <div class="form-actions">
-                  <button class="primary" onClick={save}>Save</button>
-                  <button onClick={() => setEditing(false)}>Cancel</button>
+                  <button class="primary" onClick={() => formSave.save(draft).catch(() => {})} disabled={formSave.saving}>
+                    {formSave.saving ? "Saving..." : "Save"}
+                  </button>
+                  <button onClick={() => { setEditing(false); formSave.clearError(); }} disabled={formSave.saving}>Cancel</button>
                 </div>
+                {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
               </>
             )}
           </section>

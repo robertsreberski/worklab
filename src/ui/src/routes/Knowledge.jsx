@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { EmptyState } from "../components/EmptyState.jsx";
 
 export function Knowledge() {
   const [entries, setEntries] = useState([]);
@@ -98,9 +99,12 @@ export function Knowledge() {
       )}
 
       {filtered.length === 0 && entries.length === 0 && (
-        <div class="surface-panel meta">
-          No knowledge base entries yet. <a href="#/knowledge/new">Create the first entry.</a>
-        </div>
+        <EmptyState
+          icon="📚"
+          title="No knowledge base entries yet"
+          body="Pinned entries are inlined into every agent's system prompt. Add notes, references, or step-by-step playbooks here."
+          cta={<a href="#/knowledge/new" class="primary">Create the first entry</a>}
+        />
       )}
 
       {filtered.length === 0 && entries.length > 0 && (

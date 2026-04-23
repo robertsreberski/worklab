@@ -386,6 +386,88 @@ test("walk every route at three viewports, capture screenshots and findings", as
   ).toEqual([]);
 });
 
+// ── Phase 2 behavior tests ─────────────────────────────────────────────────
+
+test("save errors surface inline when the API rejects the patch", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.route("**/api/tasks/*", async (route) => {
+    if (route.request().method() === "PATCH") {
+      await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { message: "Simulated server error" } }) });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.goto(`${baseUrl}/#/tasks/${seeded.taskId}`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: /^Edit$/ }).click();
+  await page.getByRole("button", { name: /^Save$/ }).click();
+  await expect(page.locator(".form-error")).toContainText(/Save failed/i);
+  await expect(page.locator(".form-error")).toContainText(/Simulated server error/);
+  await context.close();
+});
+
+test("delete buttons require a second click to confirm", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let deleteCalled = false;
+  await page.route("**/api/tasks/*", async (route) => {
+    if (route.request().method() === "DELETE") {
+      deleteCalled = true;
+      await route.fulfill({ status: 204, body: "" });
+    } else {
+      await route.continue();
+    }
+  });
+  await page.goto(`${baseUrl}/#/tasks/${seeded.taskId}`, { waitUntil: "domcontentloaded" });
+  const deleteBtn = page.getByRole("button", { name: /^(Delete|Click again to delete)$/ });
+  await deleteBtn.click();
+  // First click must NOT delete; the button arms instead
+  expect(deleteCalled).toBe(false);
+  await expect(deleteBtn).toHaveText(/Click again to delete/);
+  await expect(deleteBtn).toHaveClass(/confirm-button-armed/);
+  await deleteBtn.click();
+  // Second click within the timeout window deletes
+  await expect.poll(() => deleteCalled, { timeout: 3000 }).toBe(true);
+  await context.close();
+});
+
+test("NewTaskModal recalls the last-used executor + reviewer", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
+  await page.getByRole("button", { name: "+ New task" }).click();
+  const modal = page.locator(".modal");
+  await modal.locator("input").first().fill("Recall round-trip");
+  const executorSelect = modal.locator("select").nth(0);
+  await executorSelect.selectOption(seeded.agentName);
+  await modal.getByRole("button", { name: /^Create$/ }).click();
+  // Modal closes on success → re-open and verify the value persisted
+  await page.getByRole("button", { name: "+ New task" }).click();
+  await expect(page.locator(".modal select").nth(0)).toHaveValue(seeded.agentName);
+  await context.close();
+});
+
+test("Activity page renders a distinct EmptyState when there are no runs", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  // Force the activity endpoint to return an empty list
+  await page.route("**/api/activity*", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ items: [], nextCursor: null }),
+  }));
+  await page.goto(`${baseUrl}/#/activity`, { waitUntil: "domcontentloaded" });
+  await page.waitForLoadState("load").catch(() => {});
+  await expect(page.locator(".empty-state")).toBeVisible();
+  await expect(page.locator(".empty-state-title")).toHaveText(/No runs yet/);
+  // CTA points back to the task board
+  const cta = page.locator(".empty-state-cta a");
+  await expect(cta).toHaveAttribute("href", "#/tasks");
+  await context.close();
+});
+
 // Targeted regression for the Phase 1 grid-overflow fix. If a `1fr` grid
 // trap reappears in TaskDetail, this catches it independently of the broader
 // audit pass above.
