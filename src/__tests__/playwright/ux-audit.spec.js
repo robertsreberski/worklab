@@ -372,11 +372,38 @@ test("walk every route at three viewports, capture screenshots and findings", as
 
   await context.close();
 
-  // Soft assertion: log a warning summary instead of failing — Phase 0 captures, Phase 1+ enforces
+  // Phase 1+ enforces: no horizontal overflow on any route at any viewport.
+  // Capture all violations so the failure message lists every offender.
   const overflowing = findings.routes.filter((r) => r.overflow?.hasHorizontalOverflow);
   const iconMissing = findings.routes.flatMap((r) => r.iconOnlyMissingName || []);
   console.log(`UX audit captured ${findings.routes.length} route×viewport snapshots.`);
   console.log(`Horizontal overflow on ${overflowing.length} snapshots.`);
   console.log(`Icon-only buttons missing accessible name: ${iconMissing.length} occurrences.`);
   expect(findings.routes.length).toBeGreaterThan(0);
+  expect(
+    overflowing.map((r) => `${r.viewport} ${r.route} (scroll=${r.overflow.scrollWidth} inner=${r.overflow.innerWidth})`),
+    "Horizontal overflow on these snapshots — fix the layout, not this assertion",
+  ).toEqual([]);
+});
+
+// Targeted regression for the Phase 1 grid-overflow fix. If a `1fr` grid
+// trap reappears in TaskDetail, this catches it independently of the broader
+// audit pass above.
+test("TaskDetail with long unwrappable content does not overflow at any viewport", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/#/tasks/${seeded.longContentTaskId}`, { waitUntil: "domcontentloaded" });
+    await page.waitForLoadState("load").catch(() => {});
+    await page.waitForTimeout(200);
+    const widths = await page.evaluate(() => ({
+      innerWidth: window.innerWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(widths.scrollWidth, `${viewport.name} (${viewport.width}px) overflows: scrollWidth=${widths.scrollWidth}`)
+      .toBeLessThanOrEqual(widths.innerWidth + 1);
+  }
+  await context.close();
 });
