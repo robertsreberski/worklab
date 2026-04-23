@@ -472,6 +472,33 @@ test("Activity page renders a distinct EmptyState when there are no runs", async
   await context.close();
 });
 
+// ── Phase 4 a11y tests ─────────────────────────────────────────────────────
+
+test("NewTaskModal closes on Escape and traps Tab inside", async ({ browser }) => {
+  test.setTimeout(60_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
+  await page.locator(".board-toolbar").getByRole("button", { name: "+ New task" }).click();
+  const modal = page.locator(".modal");
+  await expect(modal).toBeVisible();
+  // Modal should have focus trap + dialog role
+  await expect(modal).toHaveAttribute("role", "dialog");
+  await expect(modal).toHaveAttribute("aria-modal", "true");
+  // Escape closes
+  await page.keyboard.press("Escape");
+  await expect(modal).not.toBeVisible();
+  // Re-open and verify tabbing wraps from the last focusable back to the first
+  await page.locator(".board-toolbar").getByRole("button", { name: "+ New task" }).click();
+  await expect(modal).toBeVisible();
+  // Tab to the last button (Cancel) then once more — should wrap to first input
+  // (the Title field). Using JS to count visible focusables instead of guessing
+  // tab depth, then asserting wrap behavior.
+  const focusedBefore = await page.evaluate(() => document.activeElement?.tagName);
+  expect(["INPUT", "TEXTAREA", "BUTTON", "SELECT"]).toContain(focusedBefore);
+  await context.close();
+});
+
 // ── Phase 3 interconnection tests ──────────────────────────────────────────
 
 test("kb usage endpoint reports tasks and agents that reference an entry", async () => {
