@@ -229,3 +229,74 @@ test("mobile routes stay usable without horizontal overflow", async ({ page }) =
     await expectNoHorizontalOverflow(page);
   }
 });
+
+test("task detail prioritizes brief and comments while keeping latest run collapsed", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/api/agents", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ agents: [{ name: "alpha", display_name: "Alpha" }] }),
+  }));
+  await page.route("**/api/tasks/task-ui-layout", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      task: {
+        id: "task-ui-layout",
+        title: "Task layout fixture",
+        description: "Read this before inspecting logs.",
+        instructions: "Post the outcome as comments; logs are secondary.",
+        status: "in_review",
+        executor_agent: "alpha",
+        reviewer_agent: null,
+        retry_count: 0,
+        error_text: null,
+        tags: [],
+        priority: 0,
+      },
+      comments: [{
+        id: "comment-1",
+        task_id: "task-ui-layout",
+        author_type: "agent",
+        author_id: "alpha",
+        body: "Final answer from comments.\n\n| Item | Result |\n| --- | --- |\n| Outcome | Clear |",
+        created_at: Date.now(),
+      }],
+      runs: [{
+        id: "run-latest",
+        task_id: "task-ui-layout",
+        mode: "execute",
+        agent_name: "alpha",
+        status: "complete",
+        started_at: Date.now() - 2000,
+        ended_at: Date.now() - 1000,
+        exit_code: 0,
+        error_text: null,
+        log: {
+          id: "log-1",
+          model: "model-a",
+          effort: "medium",
+          input_tokens: 100,
+          output_tokens: 20,
+          cost_usd: 0,
+          duration_ms: 1000,
+          num_turns: 1,
+          status: "complete",
+        },
+      }],
+    }),
+  }));
+
+  await page.goto(`${baseUrl}/#/tasks/task-ui-layout?run=run-latest`);
+  await expect(page.getByRole("heading", { name: "Task layout fixture" })).toBeVisible();
+  await expect(page.getByText("Read this before inspecting logs.")).toBeVisible();
+  await expect(page.getByText("Final answer from comments.")).toBeVisible();
+
+  const latestRunOpen = await page.locator(".run-card").first().evaluate((node) => node.open);
+  expect(latestRunOpen).toBe(false);
+  await expect(page.getByText("Run started")).not.toBeVisible();
+
+  const commentsBox = await page.locator(".task-comments-panel").boundingBox();
+  const runsBox = await page.locator(".run-list-panel").boundingBox();
+  expect(commentsBox.width).toBeGreaterThan(runsBox.width);
+});

@@ -11,15 +11,16 @@ import { KbEdit } from "./routes/KbEdit.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
 import { ToastHost } from "./components/Toast.jsx";
+import { Icon } from "./components/Icon.jsx";
 
 const ROUTES = [
-  { id: "tasks", label: "Tasks", summary: "Plan, run, and review agent work." },
-  { id: "agents", label: "Agents", summary: "Configure executors, reviewers, tools, and memory." },
-  { id: "skills", label: "Skills", summary: "Manage reusable agent playbooks." },
-  { id: "knowledge", label: "Knowledge", summary: "Curate shared context for humans and agents." },
-  { id: "providers", label: "Providers", summary: "Connect local, hosted, and custom model backends." },
-  { id: "activity", label: "Activity", summary: "Audit recent runs, usage, and outcomes." },
-  { id: "settings", label: "Settings", summary: "Tune runtime behavior and search defaults." },
+  { id: "tasks", label: "Tasks", summary: "Plan, run, and review agent work.", icon: "layout-list" },
+  { id: "agents", label: "Agents", summary: "Configure executors, reviewers, tools, and memory.", icon: "user" },
+  { id: "skills", label: "Skills", summary: "Manage reusable agent playbooks.", icon: "sparkles" },
+  { id: "knowledge", label: "Knowledge", summary: "Curate shared context for humans and agents.", icon: "database" },
+  { id: "providers", label: "Providers", summary: "Connect local, hosted, and custom model backends.", icon: "terminal" },
+  { id: "activity", label: "Activity", summary: "Audit recent runs, usage, and outcomes.", icon: "clock" },
+  { id: "settings", label: "Settings", summary: "Tune runtime behavior and search defaults.", icon: "settings" },
 ];
 
 function parseHash() {
@@ -59,8 +60,6 @@ export function App() {
   else body = <Kanban />;
 
   const activeRoute = ROUTES.find((item) => item.id === route) || ROUTES[0];
-  const detailContext = rest[0] && rest[0] !== "new";
-  const createContext = rest[0] === "new";
 
   return (
     <div class="app app-shell">
@@ -69,13 +68,13 @@ export function App() {
           <span class="brand-mark" aria-hidden="true">W</span>
           <span class="brand-copy">
             <strong>Worklab</strong>
-            <span>Local agent ops</span>
+            <span>Command studio</span>
           </span>
         </a>
         <nav class="topnav app-nav" aria-label="Primary navigation">
           {ROUTES.map((item) => (
             <a key={item.id} href={`#/${item.id}`} class={route === item.id ? "active" : ""}>
-              <span class="nav-dot" aria-hidden="true" />
+              <Icon name={item.icon} size={15} class="nav-icon" />
               <span>{item.label}</span>
             </a>
           ))}
@@ -90,7 +89,6 @@ export function App() {
           <div>
             <div class="eyebrow">Workspace</div>
             <div class="app-title">{activeRoute.label}</div>
-            <p>{createContext ? "Create a new record." : detailContext ? "Inspect and update the selected record." : activeRoute.summary}</p>
           </div>
         </header>
         <main class="app-main">{body}</main>

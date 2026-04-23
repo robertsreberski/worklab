@@ -46,6 +46,7 @@ export function loadSkills(skillsDir) {
     if (!parsed) continue;
     out.push({
       name: parsed.meta.name || entry,
+      display_name: parsed.meta.display_name || parsed.meta.title || "",
       trigger: parsed.meta.trigger || "",
       enabled: parsed.meta.enabled !== false,
       priority: parsed.meta.priority,

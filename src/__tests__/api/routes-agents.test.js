@@ -20,6 +20,15 @@ describe("agents CRUD", () => {
     expect(res.body.agent.effort).toBe("medium");
   });
 
+  it("POST /api/agents generates a unique slug from display_name when name is omitted", async () => {
+    const { agent } = makeTestServer();
+    const first = await agent.post("/api/agents").send({ display_name: "Code Reviewer", model: "claude:claude-sonnet-4-6" }).expect(201);
+    const second = await agent.post("/api/agents").send({ display_name: "Code Reviewer", model: "claude:claude-sonnet-4-6" }).expect(201);
+
+    expect(first.body.agent.name).toBe("code-reviewer");
+    expect(second.body.agent.name).toBe("code-reviewer-2");
+  });
+
   it("POST rejects missing fields", async () => {
     const { agent } = makeTestServer();
     await agent.post("/api/agents").send({ name: "x" }).expect(400);

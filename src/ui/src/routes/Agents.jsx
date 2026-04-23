@@ -2,6 +2,9 @@
 import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { Icon } from "../components/Icon.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { humanizeSlug, modelDisplayName } from "../lib/display.js";
 
 export function Agents() {
   const [agents, setAgents] = useState([]);
@@ -15,20 +18,24 @@ export function Agents() {
         <div>
           <div class="eyebrow">Agent registry</div>
           <h2 class="page-title">Agents</h2>
-          <div class="page-copy">{agents.length} configured</div>
+          <div class="page-copy">{agents.length} configured / {agents.filter((agent) => agent.enabled).length} available</div>
         </div>
-        <a href="#/agents/new" class="primary">New agent</a>
+        <a href="#/agents/new" class="primary"><Icon name="plus" size={15} />New agent</a>
       </div>
       {agents.length === 0 && <div class="meta">No agents yet. Create one to assign to tasks.</div>}
-      <div class="list-stack">
+      <div class="entity-list">
         {agents.map(a => (
-          <a key={a.name} href={`#/agents/${a.name}`} class="list-row">
-            <div class="list-row-main">
-              <h4>{a.display_name} <span class="meta">({a.name})</span></h4>
-              <div class="meta">{a.model} / effort {a.effort}</div>
-              {a.description && <div class="meta">{a.description}</div>}
+          <a key={a.name} href={`#/agents/${a.name}`} class="entity-row">
+            <div class="entity-avatar" aria-hidden="true">{(a.display_name || a.name || "A").slice(0, 1).toUpperCase()}</div>
+            <div class="entity-row-main">
+              <h4>{a.display_name || humanizeSlug(a.name)}</h4>
+              <div class="entity-row-subtitle">{a.description || "No description yet."}</div>
+              <div class="entity-row-meta">
+                <span>{modelDisplayName(a.model)}</span>
+                <span>Effort {a.effort}</span>
+              </div>
             </div>
-            <span class={a.enabled ? "status-badge done" : "status-badge muted"}>{a.enabled ? "Enabled" : "Disabled"}</span>
+            <StatusSignal tone={a.enabled ? "green" : "muted"}>{a.enabled ? "Available" : "Unavailable"}</StatusSignal>
           </a>
         ))}
       </div>

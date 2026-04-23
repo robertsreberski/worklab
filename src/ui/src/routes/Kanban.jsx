@@ -4,9 +4,12 @@ import { useSSE } from "../lib/useSSE.js";
 import { pushToast } from "../lib/toast.js";
 import { NewTaskModal } from "../components/NewTaskModal.jsx";
 import { SelectField } from "../components/SelectField.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { TASK_STATUS_LABELS, agentDisplayName } from "../lib/display.js";
 
 const STATUSES = ["todo", "in_progress", "in_review", "done"];
-const STATUS_LABELS = { todo: "Todo", in_progress: "In progress", in_review: "In review", done: "Done" };
+const STATUS_LABELS = { ...TASK_STATUS_LABELS, todo: "Todo" };
 const STATUS_OPTIONS = STATUSES.map((status) => ({ value: status, label: STATUS_LABELS[status] }));
 
 function formatAge(value) {
@@ -25,10 +28,10 @@ function truncate(text, limit = 150) {
   return value.length > limit ? `${value.slice(0, limit - 1)}...` : value;
 }
 
-function TaskMeta({ task }) {
+function TaskMeta({ task, agents }) {
   const items = [
-    task.executor_agent ? `Executor ${task.executor_agent}` : "No executor",
-    task.reviewer_agent ? `Reviewer ${task.reviewer_agent}` : null,
+    task.executor_agent ? `Executor ${agentDisplayName(agents, task.executor_agent)}` : null,
+    task.reviewer_agent ? `Reviewer ${agentDisplayName(agents, task.reviewer_agent, "None")}` : null,
     task.priority ? `P${task.priority}` : null,
     task.retry_count ? `${task.retry_count} retries` : null,
     `Updated ${formatAge(task.updated_at)}`,
@@ -40,7 +43,7 @@ function TaskMeta({ task }) {
   );
 }
 
-function IssueRow({ task, onStatusChange }) {
+function IssueRow({ task, agents, onStatusChange }) {
   const description = truncate(task.description || task.instructions);
   return (
     <div class={`issue-row ${task.error_text ? "issue-row-error" : ""}`}>
@@ -48,12 +51,12 @@ function IssueRow({ task, onStatusChange }) {
         <span class={`issue-status-dot ${task.status}`} aria-hidden="true" />
         <span class="issue-row-main">
           <span class="issue-row-head">
-            <span class="issue-id">{task.id}</span>
             <span class="issue-title">{task.title}</span>
-            {task.error_text && <span class="status-badge error">Error</span>}
+            {task.error_text && <StatusSignal tone="red" compact>Error</StatusSignal>}
+            {!task.executor_agent && task.status !== "done" && <StatusSignal tone="yellow" compact>Needs executor</StatusSignal>}
           </span>
           {description && <span class="issue-row-preview">{description}</span>}
-          <TaskMeta task={task} />
+          <TaskMeta task={task} agents={agents} />
         </span>
       </a>
       <div class="issue-row-actions">
@@ -71,6 +74,7 @@ function IssueRow({ task, onStatusChange }) {
 
 export function Kanban() {
   const [tasks, setTasks] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [showNew, setShowNew] = useState(false);
 
   const reload = useCallback(() => {
@@ -78,6 +82,9 @@ export function Kanban() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+  }, []);
   useSSE("global", (evt) => {
     if (["task_created", "task_updated", "task_deleted"].includes(evt.type)) reload();
   });
@@ -112,8 +119,8 @@ export function Kanban() {
           </div>
         </div>
         <div class="toolbar">
-          <button class="primary" onClick={() => setShowNew(true)}>New task</button>
-          <button onClick={reload}>Refresh</button>
+          <button class="primary" onClick={() => setShowNew(true)}><Icon name="plus" size={15} />New task</button>
+          <button onClick={reload}><Icon name="refresh-cw" size={15} />Refresh</button>
         </div>
       </div>
 
@@ -137,7 +144,7 @@ export function Kanban() {
                 </div>
               ) : (
                 rows.map((task) => (
-                  <IssueRow key={task.id} task={task} onStatusChange={onStatusChange} />
+                  <IssueRow key={task.id} task={task} agents={agents} onStatusChange={onStatusChange} />
                 ))
               )}
             </section>

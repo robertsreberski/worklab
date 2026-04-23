@@ -70,6 +70,50 @@ describe("GET /api/tasks/:id", () => {
 
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
+
+  it("embeds compact run log metadata for task detail summaries", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, ended_at, status, exit_code) VALUES (?, ?, 'execute', 'alpha', ?, ?, 'complete', 0)",
+    ).run("run-with-log", task.id, 1000, 2500);
+    db.prepare(`
+      INSERT INTO agent_logs
+        (id, task_run_id, events, model, effort, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "log-1",
+      "run-with-log",
+      JSON.stringify([{ type: "final", text: "done" }]),
+      "model-a",
+      "medium",
+      123,
+      45,
+      6,
+      7,
+      0.0123,
+      1500,
+      2,
+      "complete",
+      2500,
+    );
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.runs[0].log).toMatchObject({
+      id: "log-1",
+      model: "model-a",
+      effort: "medium",
+      input_tokens: 123,
+      output_tokens: 45,
+      cache_read_tokens: 6,
+      cache_creation_tokens: 7,
+      cost_usd: 0.0123,
+      duration_ms: 1500,
+      num_turns: 2,
+      status: "complete",
+    });
+  });
 });
 
 describe("PATCH /api/tasks/:id", () => {
@@ -169,6 +213,30 @@ describe("GET /api/tasks/:id/runs", () => {
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     const res = await agent.get(`/api/tasks/${task.id}/runs`).expect(200);
     expect(res.body).toEqual({ runs: [] });
+  });
+
+  it("returns runs with compact log metadata", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'alpha', ?, 'complete')",
+    ).run("run-with-log", task.id, 1000);
+    db.prepare(`
+      INSERT INTO agent_logs
+        (id, task_run_id, events, model, effort, input_tokens, output_tokens, cost_usd, duration_ms, num_turns, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("log-1", "run-with-log", "[]", "model-a", "medium", 10, 5, 0.001, 250, 1, "complete", 1250);
+
+    const res = await agent.get(`/api/tasks/${task.id}/runs`).expect(200);
+
+    expect(res.body.runs[0].log).toMatchObject({
+      id: "log-1",
+      model: "model-a",
+      input_tokens: 10,
+      output_tokens: 5,
+      duration_ms: 250,
+      num_turns: 1,
+    });
   });
 });
 

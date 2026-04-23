@@ -2,7 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
-import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SwitchField } from "../components/SwitchField.jsx";
 import { SelectField } from "../components/SelectField.jsx";
 
 export function Settings() {
@@ -73,12 +73,13 @@ export function Settings() {
             <input type="number" min="0" max="23" value={settings.consolidation_hour}
               onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })} /></div>
           <div class="field">
-            <CheckboxField
+            <SwitchField
               checked={settings.consolidation_enabled}
               onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })}
+              description="Refresh agent memory on the configured local hour."
             >
-              Consolidation enabled
-            </CheckboxField>
+              Nightly memory consolidation
+            </SwitchField>
           </div>
           <div class="field"><label>Journal tail lines</label>
             <input type="number" min="0" max="1000" value={settings.journal_tail_lines}

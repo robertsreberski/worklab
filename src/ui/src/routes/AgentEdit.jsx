@@ -6,6 +6,11 @@ import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { CheckboxField } from "../components/CheckboxField.jsx";
 import { SelectField } from "../components/SelectField.jsx";
+import { SwitchField } from "../components/SwitchField.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
+import { EntityHeader } from "../components/EntityHeader.jsx";
+import { modelDisplayName, STATUS_TONES } from "../lib/display.js";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -109,6 +114,7 @@ export function AgentEdit({ name }) {
     }]),
   ];
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
+  const selectedModelLabel = selectedModel?.label || modelDisplayName(agent.model, modelOptions);
 
   function toggleList(list, value) {
     return list.includes(value) ? list.filter(x => x !== value) : [...list, value];
@@ -134,14 +140,15 @@ export function AgentEdit({ name }) {
   const formSave = useFormSave(async () => {
     const payload = {
       ...agent,
+      name: isNew ? undefined : agent.name,
       effort: normalizedEffort,
       builtin_allowlist: supportsToolUse
         ? agent.builtin_allowlist.filter((tool) => visibleTools.includes(tool))
         : [],
     };
     if (isNew) {
-      await api.createAgent(payload);
-      window.location.hash = `#/agents/${agent.name}`;
+      const res = await api.createAgent(payload);
+      window.location.hash = `#/agents/${res.agent.name}`;
     } else {
       await api.patchAgent(name, payload);
     }
@@ -172,18 +179,20 @@ export function AgentEdit({ name }) {
   return (
     <div class="detail page-stack">
       <a href="#/agents" class="back-link">Back to agents</a>
-      <section class="surface-panel task-hero">
-        <div>
-          <div class="eyebrow">Agent</div>
-          <h2>{isNew ? "New agent" : agent.display_name}</h2>
-          <div class="task-meta-grid">
-            <span class={agent.enabled ? "status-badge done" : "status-badge muted"}>{agent.enabled ? "Enabled" : "Disabled"}</span>
-            <span class="meta-pill">{agent.model}</span>
-            <span class="meta-pill">Effort {normalizedEffort}</span>
-          </div>
-        </div>
-        <div class="toolbar">
-          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !agent.name || !agent.display_name}>
+      <EntityHeader
+        eyebrow="Agent"
+        title={isNew ? "New agent" : agent.display_name}
+        description={agent.description || "Define how this agent behaves, what it can access, and when it is available for assignment."}
+        meta={(
+          <>
+            <StatusSignal tone={agent.enabled ? "green" : "muted"}>{agent.enabled ? "Available" : "Unavailable"}</StatusSignal>
+            {selectedModelLabel && <span class="soft-meta">{selectedModelLabel}</span>}
+            <span class="soft-meta">Effort {normalizedEffort}</span>
+          </>
+        )}
+        actions={(
+          <>
+          <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving || !agent.display_name}>
             {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
           </button>
           {!isNew && (
@@ -192,8 +201,9 @@ export function AgentEdit({ name }) {
             </button>
           )}
           {!isNew && <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-        </div>
-      </section>
+          </>
+        )}
+      />
 
       {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
       {notice && <div class="surface-panel compact meta">{notice}</div>}
@@ -203,26 +213,30 @@ export function AgentEdit({ name }) {
         <h3 class="section-title">Profile</h3>
         <div class="form-grid">
           <div class="field">
-            <label>Name (slug)</label>
-            <input value={agent.name} disabled={!isNew}
-              onInput={(e) => setAgent({ ...agent, name: e.target.value })} />
-          </div>
-          <div class="field">
             <label>Display name</label>
             <input value={agent.display_name}
               onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
+          </div>
+          <div class="field">
+            <SwitchField
+              checked={agent.enabled}
+              onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })}
+              description="Unavailable agents stay configured but cannot be selected for new work."
+            >
+              Available for assignment
+            </SwitchField>
           </div>
           <div class="field span-2">
             <label>Description</label>
             <input value={agent.description || ""}
               onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
           </div>
-          <div class="field span-2">
-            <CheckboxField checked={agent.enabled} onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })}>
-              Enabled
-            </CheckboxField>
-          </div>
         </div>
+        <AdvancedMeta
+          items={[
+            { label: "Agent slug", value: isNew ? "Generated after create" : agent.name },
+          ]}
+        />
       </section>
 
       <section class="surface-panel">
@@ -240,6 +254,10 @@ export function AgentEdit({ name }) {
                 {selectedGroup.unavailable_reason || "Provider credentials not configured — runs will fail."}
               </div>
             )}
+          </div>
+          <div class="field">
+            <label>Advanced model reference</label>
+            <input value={agent.model} readOnly class="mono-input" />
           </div>
           <div class="field">
             {reasoningMode === "none" ? (
@@ -349,7 +367,7 @@ export function AgentEdit({ name }) {
                   {run.task_id
                     ? <a href={`#/tasks/${run.task_id}?run=${run.id}`}>{run.task_title || run.mode}</a>
                     : <span>{run.mode}</span>}
-                  <span class={`status-badge ${run.status === "running" ? "in_progress" : "muted"}`}>{run.status}</span>
+                  <StatusSignal tone={STATUS_TONES[run.status] || "muted"} compact>{run.status}</StatusSignal>
                   <span class="meta">
                     {new Date(run.started_at).toLocaleString()}
                     {run.cost_usd != null && ` · $${Number(run.cost_usd).toFixed(4)}`}

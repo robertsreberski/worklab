@@ -1,8 +1,7 @@
 import { parseModelReference } from "../core/ai.js";
 import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../core/providers.js";
 import { readRunSection } from "../core/journal.js";
-
-const NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
+import { isValidSlug, uniqueSlug } from "../core/slugs.js";
 
 function rowToAgent(row) {
   if (!row) return null;
@@ -56,12 +55,16 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.post("/api/agents", (req, res) => {
     const { name, display_name, model } = req.body || {};
 
-    if (!name || !NAME_RE.test(name)) {
-      return res.status(400).json({ error: { code: "validation", message: "invalid name (lowercase slug required)" } });
-    }
     if (!display_name || !model) {
       return res.status(400).json({ error: { code: "validation", message: "display_name and explicit model reference required" } });
     }
+    if (name && !isValidSlug(name)) {
+      return res.status(400).json({ error: { code: "validation", message: "invalid name (lowercase slug required)" } });
+    }
+    const finalName = name || uniqueSlug(display_name, (candidate) =>
+      Boolean(db.prepare("SELECT name FROM agents WHERE name = ?").get(candidate)),
+      { fallback: "agent" },
+    );
     let resolved;
     try {
       resolved = validateModelForAgent({ db, dataDir, model });
@@ -69,7 +72,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
     }
 
-    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(name);
+    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(finalName);
     if (existing) {
       return res.status(409).json({ error: { code: "conflict", message: "agent name already exists" } });
     }
@@ -88,11 +91,11 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         (name, display_name, description, sdk, model, effort, instructions,
          skills_allowlist, mcp_allowlist, builtin_allowlist, enabled, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(name, display_name, description, resolved.sdk, model, effort, instructions,
+    `).run(finalName, display_name, description, resolved.sdk, model, effort, instructions,
            skillsAllow, mcpAllow, builtinAllow, enabled, now, now);
 
-    broker.broadcast("global", { type: "agent_updated", name });
-    const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(name);
+    broker.broadcast("global", { type: "agent_updated", name: finalName });
+    const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(finalName);
     res.status(201).json({ agent: rowToAgent(row) });
   });
 

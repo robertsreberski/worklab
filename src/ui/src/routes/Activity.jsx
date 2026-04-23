@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { StatusSignal } from "../components/StatusSignal.jsx";
+import { STATUS_TONES, modelDisplayName } from "../lib/display.js";
 
 function fmtTime(ts) {
   return ts ? new Date(ts).toLocaleString() : "-";
@@ -40,11 +43,11 @@ export function Activity() {
           <h2 class="page-title">Activity</h2>
           <div class="page-copy">{items.length} recent items</div>
         </div>
-        <button onClick={() => load()} disabled={loading}>Refresh</button>
+        <button onClick={() => load()} disabled={loading}><Icon name="refresh-cw" size={15} />Refresh</button>
       </div>
       {items.length === 0 && !loading && (
         <EmptyState
-          icon="∅"
+          icon={<Icon name="clock" size={20} />}
           title="No runs yet"
           body={"Runs appear here as soon as you click \"Run now\" on a task or a scheduled consolidation fires."}
           cta={<a href="#/tasks" class="primary">Open the task board</a>}
@@ -57,17 +60,20 @@ export function Activity() {
             <div>
               <strong>{item.mode === "consolidate" ? "Consolidation" : (item.task_title || item.mode)}</strong>
               <div class="meta">
-                {item.mode} / {item.agent_name} / {item.status} / {fmtTime(item.started_at)}
+                {item.mode} / {item.agent_name} / {fmtTime(item.started_at)}
                 {item.ended_at && ` / ${fmtTime(item.ended_at)}`}
               </div>
               <div class="meta">
-                {item.model && `${item.model} / `}
+                {item.model && `${modelDisplayName(item.model)} / `}
                 {item.input_tokens != null && `${item.input_tokens} in / ${item.output_tokens ?? 0} out / `}
                 {item.duration_ms != null && `${item.duration_ms}ms / `}
                 {fmtCost(item.cost_usd)}
               </div>
             </div>
-            {item.task_id && <a href={`#/tasks/${item.task_id}?run=${item.id}`}>Open run</a>}
+            <div class="activity-row-side">
+              <StatusSignal tone={STATUS_TONES[item.status] || "muted"} compact>{item.status}</StatusSignal>
+              {item.task_id && <a href={`#/tasks/${item.task_id}?run=${item.id}`}>Open run</a>}
+            </div>
           </div>
         ))}
       </div>
