@@ -67,6 +67,7 @@ export function AgentEdit({ name }) {
   const [modelGroups, setModelGroups] = useState([]);
   const [consolidating, setConsolidating] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [recentRuns, setRecentRuns] = useState(null);
 
   const allModels = flattenModels(modelGroups);
   const selectedModel = allModels.find((model) => model.value === agent?.model) || null;
@@ -81,7 +82,10 @@ export function AgentEdit({ name }) {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
     api.getMcpConfig().then(r => setMcpServers(Object.keys(r.mcpServers || {}))).catch(() => setMcpServers([]));
     api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
-    if (!isNew) api.getAgent(name).then(r => setAgent(r.agent)).catch(() => setAgent({ notFound: true }));
+    if (!isNew) {
+      api.getAgent(name).then(r => setAgent(r.agent)).catch(() => setAgent({ notFound: true }));
+      api.listAgentRuns(name, 10).then(setRecentRuns).catch(() => setRecentRuns({ runs: [] }));
+    }
   }, [name, isNew]);
 
   if (!agent) return <div>Loading...</div>;
@@ -317,6 +321,32 @@ export function AgentEdit({ name }) {
           ))}</div>}
         </div>
       </section>
+
+      {!isNew && recentRuns && (
+        <section class="surface-panel">
+          <div class="section-kicker">Activity</div>
+          <h3 class="section-title">Recent runs</h3>
+          {recentRuns.runs.length === 0 ? (
+            <div class="meta">No runs by this agent yet.</div>
+          ) : (
+            <ul class="usage-list">
+              {recentRuns.runs.map((run) => (
+                <li key={run.id}>
+                  {run.task_id
+                    ? <a href={`#/tasks/${run.task_id}?run=${run.id}`}>{run.task_title || run.mode}</a>
+                    : <span>{run.mode}</span>}
+                  <span class={`status-badge ${run.status === "running" ? "in_progress" : "muted"}`}>{run.status}</span>
+                  <span class="meta">
+                    {new Date(run.started_at).toLocaleString()}
+                    {run.cost_usd != null && ` · $${Number(run.cost_usd).toFixed(4)}`}
+                    {run.duration_ms != null && ` · ${run.duration_ms}ms`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
     </div>
   );
 }

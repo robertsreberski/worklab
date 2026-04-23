@@ -141,4 +141,18 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
     res.json({ model: withCapabilities(provider, updated) });
   });
+
+  // Reverse link: which agents point at this provider. Agent model strings
+  // for custom providers are of the form `vercel:<providerId>:<modelName>`
+  // (see core/ai.js parseModelReference), so an exact prefix match is a
+  // reliable signal that this provider is in use.
+  app.get("/api/providers/:id/agents", (req, res) => {
+    if (!getProvider({ db, dataDir, id: req.params.id, includeKey: false })) {
+      return error(res, 404, "not_found", "provider not found");
+    }
+    const prefix = `vercel:${req.params.id}:`;
+    const rows = db.prepare("SELECT name, display_name, model, enabled FROM agents").all();
+    const agents = rows.filter((row) => (row.model || "").startsWith(prefix));
+    res.json({ agents });
+  });
 }

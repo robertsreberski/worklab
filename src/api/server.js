@@ -28,9 +28,9 @@ export function createServer({ db, logger, watcher, dataDir, consolidation }) {
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });
-  if (dataDir) registerSkillRoutes(app, { dataDir });
+  if (dataDir) registerSkillRoutes(app, { dataDir, db });
   if (dataDir) registerMcpRoutes(app, { dataDir });
-  if (dataDir) registerKbRoutes(app, { dataDir, broker });
+  if (dataDir) registerKbRoutes(app, { dataDir, broker, db });
   if (dataDir) registerProviderRoutes(app, { db, dataDir, broker });
   if (dataDir) registerModelRoutes(app, { db, dataDir });
   if (dataDir) registerSearchRoutes(app, { db, dataDir });

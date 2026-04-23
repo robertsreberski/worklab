@@ -18,7 +18,7 @@ const PatchSchema = z.object({
   pinned: z.boolean().optional(),
 });
 
-export function registerKbRoutes(app, { dataDir, broker }) {
+export function registerKbRoutes(app, { dataDir, broker, db }) {
   // GET /api/kb?tag=&category=&pinned=
   app.get("/api/kb", (req, res) => {
     const { tag, category } = req.query;
@@ -133,5 +133,60 @@ export function registerKbRoutes(app, { dataDir, broker }) {
 
     broker.broadcast("global", { type: "kb_updated", slug: req.params.slug });
     res.status(204).end();
+  });
+
+  // Reverse links: which tasks and agents mention this entry by slug or title.
+  // The scan is a substring match — cheap, good enough for a single-user tool.
+  // Takes 10-50ms at typical corpus sizes and runs on demand, not on list.
+  app.get("/api/kb/:slug/usage", (req, res) => {
+    if (!db) return res.json({ tasks: [], agents: [] });
+    const slug = req.params.slug;
+    let entry;
+    try {
+      entry = kbRead({ dataDir, slug });
+    } catch (err) {
+      if (err.message.startsWith("invalid slug")) {
+        return res.status(400).json({ error: { code: "invalid_slug", message: err.message } });
+      }
+      throw err;
+    }
+    if (!entry) return res.status(404).json({ error: { code: "not_found", message: "kb entry not found" } });
+
+    const needles = [slug];
+    if (entry.title && entry.title.toLowerCase() !== slug.toLowerCase()) needles.push(entry.title);
+
+    const matches = (haystack) => {
+      const h = (haystack || "").toLowerCase();
+      return needles.some((n) => h.includes(n.toLowerCase()));
+    };
+
+    const tasks = [];
+    const seenTasks = new Set();
+    for (const row of db.prepare("SELECT id, title, description, instructions, status FROM tasks").all()) {
+      if (matches(row.title) || matches(row.description) || matches(row.instructions)) {
+        if (!seenTasks.has(row.id)) {
+          seenTasks.add(row.id);
+          tasks.push({ id: row.id, title: row.title, status: row.status, via: "body" });
+        }
+      }
+    }
+    for (const row of db.prepare("SELECT task_id, body FROM task_comments").all()) {
+      if (matches(row.body) && !seenTasks.has(row.task_id)) {
+        const task = db.prepare("SELECT id, title, status FROM tasks WHERE id = ?").get(row.task_id);
+        if (task) {
+          seenTasks.add(task.id);
+          tasks.push({ id: task.id, title: task.title, status: task.status, via: "comment" });
+        }
+      }
+    }
+
+    const agents = [];
+    for (const row of db.prepare("SELECT name, display_name, instructions FROM agents").all()) {
+      if (matches(row.instructions)) {
+        agents.push({ name: row.name, display_name: row.display_name });
+      }
+    }
+
+    res.json({ tasks, agents });
   });
 }

@@ -37,14 +37,15 @@ function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false })
   );
 }
 
-export function TaskDetail({ id }) {
+export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(null);
   const [agents, setAgents] = useState([]);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({});
   const [newComment, setNewComment] = useState("");
-  const [activeRunId, setActiveRunId] = useState(null);
+  const [activeRunId, setActiveRunId] = useState(runParam);
   const [runError, setRunError] = useState(null);
+  const [journalSection, setJournalSection] = useState(null);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -56,10 +57,11 @@ export function TaskDetail({ id }) {
   }, []);
 
   useEffect(() => {
-    setActiveRunId(null);
+    setActiveRunId(runParam || null);
     setRunError(null);
     setEditing(false);
-  }, [id]);
+    setJournalSection(null);
+  }, [id, runParam]);
 
   useSSE("global", (evt) => {
     const taskChanged = evt.id === id;
@@ -76,6 +78,20 @@ export function TaskDetail({ id }) {
       setActiveRunId(nextRunId);
     }
   }, [data, activeRunId]);
+
+  // Fetch the run-scoped journal section when the focused run changes.
+  const focusedRunForJournal = data?.runs?.find((run) => run.id === activeRunId) || null;
+  useEffect(() => {
+    if (!focusedRunForJournal || focusedRunForJournal.status === "running") {
+      setJournalSection(null);
+      return;
+    }
+    let cancelled = false;
+    api.getAgentJournal(focusedRunForJournal.agent_name, focusedRunForJournal.id)
+      .then((r) => { if (!cancelled) setJournalSection(r.section || null); })
+      .catch(() => { if (!cancelled) setJournalSection(null); });
+    return () => { cancelled = true; };
+  }, [focusedRunForJournal?.id, focusedRunForJournal?.status]);
 
   const focusedRun = data?.runs?.find((run) => run.id === activeRunId) || null;
   const historyRuns = data?.runs?.filter((run) => run.id !== activeRunId) || [];
@@ -167,6 +183,13 @@ export function TaskDetail({ id }) {
               defaultOpen
               subscribe={focusedRun.status === "running"}
             />
+          )}
+          {focusedRun && journalSection && (
+            <section class="surface-panel run-journal" aria-label="Agent journal for this run">
+              <div class="section-kicker">Journal</div>
+              <h3 class="section-title">Agent's notes from this run</h3>
+              <pre class="code-panel">{journalSection}</pre>
+            </section>
           )}
 
           <section class="surface-panel">

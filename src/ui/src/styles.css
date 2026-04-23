@@ -1232,6 +1232,100 @@ pre {
   margin-top: var(--space-1);
 }
 
+.usage-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.usage-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+}
+
+.usage-list li a {
+  color: var(--accent-strong);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.usage-list li a:hover {
+  text-decoration: underline;
+}
+
+.task-card-agents {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0;
+}
+
+.agent-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px 2px 2px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  font-size: 11px;
+  color: var(--text-soft);
+  max-width: 100%;
+}
+
+.agent-chip.empty {
+  padding: 2px 10px;
+  color: var(--muted-2);
+  font-style: italic;
+}
+
+.agent-chip-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #3f4a5e, #252a36);
+  color: var(--accent-strong);
+  font-weight: 700;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.agent-chip-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+
+.run-journal pre {
+  margin: 0;
+}
+
+.author-id {
+  color: var(--muted);
+}
+
+a.author-id {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a.author-id:hover {
+  color: var(--accent-strong);
+  text-decoration: underline;
+}
+
 .toast-host {
   position: fixed;
   bottom: max(var(--space-4), env(safe-area-inset-bottom));
