@@ -4,6 +4,8 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
+import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SelectField } from "../components/SelectField.jsx";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -90,6 +92,21 @@ export function AgentEdit({ name }) {
 
   if (!agent) return <div>Loading...</div>;
   if (agent.notFound) return <div>Agent not found. <a href="#/agents">Back</a></div>;
+  const modelOptions = [
+    ...modelGroups.map((group) => ({
+      label: group.label,
+      options: (group.models || []).map((model) => ({
+        value: model.value,
+        label: model.label || model.value,
+        description: model.description,
+      })),
+    })),
+    ...(allModels.some((model) => model.value === agent.model) ? [] : [{
+      label: "Saved value",
+      options: [{ value: agent.model, label: `${agent.model} (unavailable)` }],
+    }]),
+  ];
+  const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
 
   function toggleList(list, value) {
     return list.includes(value) ? list.filter(x => x !== value) : [...list, value];
@@ -199,11 +216,9 @@ export function AgentEdit({ name }) {
               onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
           </div>
           <div class="field span-2">
-            <label class="choice-label">
-              <input type="checkbox" checked={agent.enabled}
-                onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })} />
-              <span>Enabled</span>
-            </label>
+            <CheckboxField checked={agent.enabled} onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })}>
+              Enabled
+            </CheckboxField>
           </div>
         </div>
       </section>
@@ -214,18 +229,7 @@ export function AgentEdit({ name }) {
         <div class="form-grid">
           <div class="field">
             <label>Model</label>
-            <select value={agent.model} onChange={(e) => setModel(e.target.value)}>
-              {modelGroups.map(group => (
-                <optgroup key={group.id} label={group.label}>
-                  {(group.models || []).map(o => (
-                    <option key={o.value} value={o.value}>{o.label || o.value}</option>
-                  ))}
-                </optgroup>
-              ))}
-              {!modelGroups.flatMap(g => g.models || []).some(m => m.value === agent.model) && (
-                <option value={agent.model}>{agent.model} (unavailable)</option>
-              )}
-            </select>
+            <SelectField value={agent.model} options={modelOptions} onChange={setModel} />
             {modelUnavailable && (
               <div class="status-line warn">This model is not in the enabled runnable model list.</div>
             )}
@@ -239,17 +243,16 @@ export function AgentEdit({ name }) {
             ) : reasoningMode === "toggle" ? (
               <>
                 <label>Thinking</label>
-                <select value={normalizedEffort === "low" ? "off" : "on"} onChange={(e) => setAgent({ ...agent, effort: e.target.value === "off" ? "low" : "medium" })}>
-                  <option value="off">Off</option>
-                  <option value="on">On</option>
-                </select>
+                <SelectField
+                  value={normalizedEffort === "low" ? "off" : "on"}
+                  options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]}
+                  onChange={(value) => setAgent({ ...agent, effort: value === "off" ? "low" : "medium" })}
+                />
               </>
             ) : (
               <>
                 <label>Effort</label>
-                <select value={normalizedEffort} onChange={(e) => setAgent({ ...agent, effort: e.target.value })}>
-                  {reasoningLevels.map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
+                <SelectField value={normalizedEffort} options={effortOptions} onChange={(value) => setAgent({ ...agent, effort: value })} />
               </>
             )}
           </div>
@@ -286,11 +289,13 @@ export function AgentEdit({ name }) {
           {skills.length === 0 && <div class="meta">No skills defined yet.</div>}
           <div class="choice-list">
             {skills.map(s => (
-              <label key={s.name} class="choice-label">
-                <input type="checkbox" checked={agent.skills_allowlist.includes(s.name)}
-                  onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })} />
-                <span>{s.name}</span>
-              </label>
+              <CheckboxField
+                key={s.name}
+                checked={agent.skills_allowlist.includes(s.name)}
+                onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
+              >
+                {s.name}
+              </CheckboxField>
             ))}
           </div>
         </div>
@@ -300,11 +305,13 @@ export function AgentEdit({ name }) {
           {mcpServers.length === 0 && <div class="meta">No user MCP servers registered.</div>}
           <div class="choice-list">
             {mcpServers.map(m => (
-              <label key={m} class="choice-label">
-                <input type="checkbox" checked={agent.mcp_allowlist.includes(m)}
-                  onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })} />
-                <span>{m}</span>
-              </label>
+              <CheckboxField
+                key={m}
+                checked={agent.mcp_allowlist.includes(m)}
+                onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })}
+              >
+                {m}
+              </CheckboxField>
             ))}
           </div>
         </div>
@@ -313,11 +320,13 @@ export function AgentEdit({ name }) {
           <label>Built-in tools allowlist (empty = all tools)</label>
           {!supportsToolUse && <div class="meta">This model cannot call built-in tools.</div>}
           {supportsToolUse && <div class="choice-list">{visibleTools.map(t => (
-            <label key={t} class="choice-label">
-              <input type="checkbox" checked={agent.builtin_allowlist.includes(t)}
-                onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })} />
-              <span>{t}</span>
-            </label>
+            <CheckboxField
+              key={t}
+              checked={agent.builtin_allowlist.includes(t)}
+              onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })}
+            >
+              {t}
+            </CheckboxField>
           ))}</div>}
         </div>
       </section>

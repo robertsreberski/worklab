@@ -92,10 +92,6 @@ export function App() {
             <div class="app-title">{activeRoute.label}</div>
             <p>{createContext ? "Create a new record." : detailContext ? "Inspect and update the selected record." : activeRoute.summary}</p>
           </div>
-          <div class="header-meta">
-            <span class="meta-pill">Single-user</span>
-            <span class="meta-pill">YOLO execution</span>
-          </div>
         </header>
         <main class="app-main">{body}</main>
       </div>

@@ -150,7 +150,8 @@ test("new user configures live Ollama provider and creates an agent with a runna
   await expect(chatRow.getByRole("button", { name: "Disable" })).toBeVisible();
 
   await page.goto(`${baseUrl}/#/agents/new`);
-  await page.locator("select").first().selectOption({ label: chatModel });
+  await page.locator(".field", { hasText: "Model" }).getByRole("combobox").click();
+  await page.getByRole("option", { name: new RegExp(chatModel) }).click();
   await expect(page.locator(".field", { hasText: "Advanced model reference" }).locator("input")).toHaveValue(new RegExp(`:${chatModel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
   await expect(page.locator("body")).toContainText(/Tools:|This model does not support tool use/);
 
@@ -162,7 +163,8 @@ test("new user configures live Ollama provider and creates an agent with a runna
   await page.goto(`${baseUrl}/#/providers`);
   await providerCard.locator(".provider-actions").getByRole("button", { name: "Disable" }).click();
   await page.goto(`${baseUrl}/#/agents/new`);
-  await expect(page.locator("select").first().locator("option", { hasText: chatModel })).toHaveCount(0);
+  await page.locator(".field", { hasText: "Model" }).getByRole("combobox").click();
+  await expect(page.getByRole("option", { name: new RegExp(chatModel) })).toHaveCount(0);
 });
 
 test("providers page does not create horizontal overflow on mobile", async ({ page }) => {

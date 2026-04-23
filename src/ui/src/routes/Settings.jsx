@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
+import { CheckboxField } from "../components/CheckboxField.jsx";
 
 export function Settings() {
   const [settings, setSettings] = useState(null);
@@ -48,11 +49,12 @@ export function Settings() {
             <input type="number" min="0" max="23" value={settings.consolidation_hour}
               onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })} /></div>
           <div class="field">
-            <label class="choice-label">
-              <input type="checkbox" checked={settings.consolidation_enabled}
-                onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })} />
-              <span>Consolidation enabled</span>
-            </label>
+            <CheckboxField
+              checked={settings.consolidation_enabled}
+              onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })}
+            >
+              Consolidation enabled
+            </CheckboxField>
           </div>
           <div class="field"><label>Journal tail lines</label>
             <input type="number" min="0" max="1000" value={settings.journal_tail_lines}

@@ -4,6 +4,8 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
+import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SelectField } from "../components/SelectField.jsx";
 
 const emptySkill = { name: "", meta: { trigger: "", enabled: true, priority: "" }, body: "" };
 
@@ -77,11 +79,14 @@ export function SkillEdit({ name }) {
           </div>
           <div class="field">
             <label>Priority</label>
-            <select value={skill.meta.priority || ""}
-              onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, priority: e.target.value || undefined } })}>
-              <option value="">On demand</option>
-              <option value="always">Always inline full body</option>
-            </select>
+            <SelectField
+              value={skill.meta.priority || ""}
+              options={[
+                { value: "", label: "On demand" },
+                { value: "always", label: "Always inline full body" },
+              ]}
+              onChange={(value) => setSkill({ ...skill, meta: { ...skill.meta, priority: value || undefined } })}
+            />
           </div>
           <div class="field span-2">
             <label>Trigger</label>
@@ -89,11 +94,12 @@ export function SkillEdit({ name }) {
               onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })} />
           </div>
           <div class="field span-2">
-            <label class="choice-label">
-              <input type="checkbox" checked={skill.meta.enabled !== false}
-                onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })} />
-              <span>Enabled</span>
-            </label>
+            <CheckboxField
+              checked={skill.meta.enabled !== false}
+              onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })}
+            >
+              Enabled
+            </CheckboxField>
           </div>
         </div>
       </section>

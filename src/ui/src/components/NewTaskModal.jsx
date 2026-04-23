@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { pushToast } from "../lib/toast.js";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
+import { SelectField } from "./SelectField.jsx";
 
 const RECALL_KEY = "worklab.lastTaskAgents";
 
@@ -59,6 +60,8 @@ export function NewTaskModal({ onClose, onCreated }) {
     } finally { setBusy(false); }
   }
 
+  const agentOptions = agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name }));
+
   return (
     <div class="modal-backdrop" onClick={onClose}>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby="new-task-modal-title" ref={modalRef} onClick={(e) => e.stopPropagation()}>
@@ -79,21 +82,19 @@ export function NewTaskModal({ onClose, onCreated }) {
           <div class="form-grid">
             <div class="field">
               <label>Executor</label>
-              <select value={executorAgent} onChange={(e) => setExecutorAgent(e.target.value)}>
-                <option value="">Unassigned</option>
-                {agents.map((agent) => (
-                  <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>
-                ))}
-              </select>
+              <SelectField
+                value={executorAgent}
+                options={[{ value: "", label: "Unassigned" }, ...agentOptions]}
+                onChange={setExecutorAgent}
+              />
             </div>
             <div class="field">
               <label>Reviewer</label>
-              <select value={reviewerAgent} onChange={(e) => setReviewerAgent(e.target.value)}>
-                <option value="">No reviewer</option>
-                {agents.map((agent) => (
-                  <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>
-                ))}
-              </select>
+              <SelectField
+                value={reviewerAgent}
+                options={[{ value: "", label: "No reviewer" }, ...agentOptions]}
+                onChange={setReviewerAgent}
+              />
             </div>
           </div>
           <div class="form-actions">

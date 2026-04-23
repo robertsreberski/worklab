@@ -157,8 +157,8 @@ test("kb edit loads existing entries from the nested API shape", async ({ page }
 
 test("dark theme link and form controls keep cards readable", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".task-card").first()).toBeVisible();
-  const taskCardStyles = await page.locator(".task-card").first().evaluate((node) => {
+  await expect(page.locator(".issue-row").first()).toBeVisible();
+  const taskCardStyles = await page.locator(".issue-section").first().evaluate((node) => {
     const styles = window.getComputedStyle(node);
     return {
       color: styles.color,
@@ -180,7 +180,7 @@ test("dark theme link and form controls keep cards readable", async ({ page }) =
   expect(backLinkStyles.textDecorationLine).toBe("none");
 
   await page.goto(`${baseUrl}/#/providers`);
-  const selectStyles = await page.locator("select").first().evaluate((node) => {
+  const selectStyles = await page.locator(".select-field-button").first().evaluate((node) => {
     const styles = window.getComputedStyle(node);
     return { backgroundColor: styles.backgroundColor, color: styles.color };
   });
@@ -196,14 +196,14 @@ test("mobile routes stay usable without horizontal overflow", async ({ page }) =
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto(`${baseUrl}/#/tasks`);
-  const columns = page.locator(".column");
-  await expect(columns).toHaveCount(4);
-  const firstColumn = await columns.nth(0).boundingBox();
-  const secondColumn = await columns.nth(1).boundingBox();
-  expect(secondColumn.y).toBeGreaterThan(firstColumn.y);
+  const sections = page.locator(".issue-section");
+  await expect(sections).toHaveCount(4);
+  const firstSection = await sections.nth(0).boundingBox();
+  const secondSection = await sections.nth(1).boundingBox();
+  expect(secondSection.y).toBeGreaterThan(firstSection.y);
   await expectNoHorizontalOverflow(page);
 
-  await page.getByRole("button", { name: "+ New task" }).click();
+  await page.getByRole("button", { name: /new task/i }).first().click();
   const modalBox = await page.locator(".modal").boundingBox();
   expect(modalBox.width).toBeLessThanOrEqual(390);
 
