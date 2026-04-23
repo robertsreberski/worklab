@@ -1,0 +1,333 @@
+import { useEffect, useState } from "preact/hooks";
+import { renderMarkdown } from "./Markdown.jsx";
+import { Icon } from "./Icon.jsx";
+import { ToolCallBlock } from "./ToolCallBlock.jsx";
+
+const PHASE_NAMES = Object.freeze({
+  triage: "Triage",
+  semantic_search: "Semantic search",
+  build_context: "Build context",
+  "build_context.files": "Context files",
+  "build_context.history": "Context history",
+  "build_context.skills": "Context skills",
+  resolve_model: "Resolve model",
+  mcp_config: "MCP config",
+  session_create: "SDK cold spawn",
+  session_reuse: "SDK warm reuse",
+  sdk_open: "SDK warmup",
+  sdk_api: "API call",
+  post_query: "Post-query",
+});
+
+function formatDuration(ms) {
+  if (ms == null) return "-";
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function RailIcon({ name, tone }) {
+  const toneClass = tone && tone !== "muted" ? ` agentlog-tl-icon-${tone}` : "";
+  return (
+    <span class={`agentlog-tl-icon${toneClass}`}>
+      <Icon name={name} size={12} strokeWidth={2} />
+    </span>
+  );
+}
+
+function normaliseBlock(block) {
+  if (!block) return null;
+  if (block.type === "tool_use") {
+    return {
+      type: "tool_use",
+      tool_use_id: block.tool_use_id || block.id,
+      name: block.name,
+      input: block.input,
+    };
+  }
+  if (block.type === "thinking") return { type: "thinking", text: block.text || block.thinking || "" };
+  if (block.type === "text") return { type: "text", text: block.text || "" };
+  if (block.type === "tool_result") {
+    return {
+      type: "tool_result",
+      tool_use_id: block.tool_use_id,
+      output: block.output ?? block.content ?? block.result ?? "",
+      is_error: block.is_error || block.error,
+    };
+  }
+  return block;
+}
+
+function flattenEvents(events) {
+  const flat = [];
+  for (const event of events || []) {
+    if (!event) continue;
+    const content = event.message?.content || event.content;
+    if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {
+      for (const block of content) {
+        const next = normaliseBlock(block);
+        if (next) flat.push(next);
+      }
+      continue;
+    }
+    flat.push(normaliseBlock(event));
+  }
+
+  const coalesced = [];
+  for (const event of flat) {
+    const last = coalesced[coalesced.length - 1];
+    if (event?.type === "thinking" && last?.type === "thinking") {
+      last.text = `${last.text || ""}${event.text || ""}`;
+    } else {
+      coalesced.push(event);
+    }
+  }
+  return coalesced;
+}
+
+function groupEvents(events) {
+  const flat = flattenEvents(events);
+  const resultsByToolUseId = new Map();
+  for (const event of flat) {
+    if (event?.type === "tool_result" && event.tool_use_id) resultsByToolUseId.set(event.tool_use_id, event);
+  }
+  const consumedResultIds = new Set();
+  const items = [];
+  let cluster = null;
+  const flush = () => {
+    if (cluster) {
+      items.push(cluster);
+      cluster = null;
+    }
+  };
+
+  for (const event of flat) {
+    if (event?.type === "phase") {
+      if (!cluster) cluster = { _cluster: true, events: [] };
+      cluster.events.push(event);
+      continue;
+    }
+    flush();
+
+    if (event?.type === "tool_use" && event.tool_use_id) {
+      const paired = resultsByToolUseId.get(event.tool_use_id) || null;
+      if (paired) consumedResultIds.add(event.tool_use_id);
+      items.push({ _toolCall: true, toolUse: event, toolResult: paired });
+      continue;
+    }
+    if (event?.type === "tool_result" && consumedResultIds.has(event.tool_use_id)) continue;
+    items.push(event);
+  }
+  flush();
+  return items;
+}
+
+export function normaliseAgentTimelineEvents(events) {
+  return flattenEvents(events);
+}
+
+export function groupAgentTimelineEvents(events) {
+  return groupEvents(events);
+}
+
+function CollapsibleBlock({ title, text, expanded, onToggle, borderColor, muted }) {
+  const safe = text || "";
+  const preview = safe.slice(0, 140);
+  const isLong = safe.length > 140;
+  return (
+    <div class="agentlog-collapsible" style={borderColor ? { borderLeftColor: borderColor } : undefined}>
+      <button type="button" class="agentlog-coll-header" onClick={onToggle}>
+        <span>{title}</span>
+        <Icon name="chevron-down" size={14} class={`agentlog-coll-arrow ${expanded ? "open" : ""}`} />
+      </button>
+      <pre class={`agentlog-coll-body ${muted ? "agentlog-muted" : ""}`}>
+        {expanded ? safe : `${preview}${isLong ? "..." : ""}`}
+      </pre>
+    </div>
+  );
+}
+
+function ThinkingBlock({ text, streaming }) {
+  const [expanded, setExpanded] = useState(Boolean(streaming));
+  useEffect(() => {
+    if (!streaming) setExpanded(false);
+  }, [streaming]);
+  return (
+    <button
+      type="button"
+      class={`agentlog-thinking ${expanded ? "expanded" : ""}`}
+      onClick={() => setExpanded((current) => !current)}
+      aria-expanded={expanded}
+    >
+      <span class="agentlog-thinking-text">{text || ""}</span>
+      {streaming && <span class="agentlog-thinking-cursor" aria-hidden="true" />}
+    </button>
+  );
+}
+
+function PhaseClusterBlock({ cluster, isLast }) {
+  const [expanded, setExpanded] = useState(false);
+  const rows = [];
+  const pending = new Map();
+  let total = 0;
+  for (const event of cluster.events) {
+    if (event.status === "start") pending.set(event.phase, event);
+    if (event.status === "end") {
+      pending.delete(event.phase);
+      rows.push({ phase: event.phase, durationMs: event.duration_ms || 0 });
+      if (!String(event.phase).includes(".")) total += event.duration_ms || 0;
+    }
+  }
+  const inflight = [...pending.values()];
+  const label = inflight.length
+    ? `Pipeline running (${rows.length} done)`
+    : `Pipeline ${formatDuration(total)} (${rows.length} phase${rows.length === 1 ? "" : "s"})`;
+  return (
+    <div class="agentlog-tl-item">
+      <div class="agentlog-tl-rail">
+        {inflight.length ? <span class="agentlog-tl-icon"><span class="agentlog-phase-spinner" /></span> : <RailIcon name="clock" />}
+        {!isLast && <div class="agentlog-tl-line" />}
+      </div>
+      <div class="agentlog-tl-content">
+        <div class="agentlog-phase-cluster">
+          <button type="button" class="agentlog-phase-header" onClick={() => setExpanded((current) => !current)}>
+            <span>{label}</span>
+            <Icon name="chevron-down" size={14} class={`agentlog-coll-arrow ${expanded ? "open" : ""}`} />
+          </button>
+          {expanded && (
+            <div class="agentlog-phase-rows">
+              {rows.map((row, index) => (
+                <div class={String(row.phase).includes(".") ? "agentlog-phase-row agentlog-phase-sub" : "agentlog-phase-row"} key={`${row.phase}-${index}`}>
+                  <span class="agentlog-phase-name">{PHASE_NAMES[row.phase] || row.phase}</span>
+                  <span class="agentlog-phase-duration">{formatDuration(row.durationMs)}</span>
+                </div>
+              ))}
+              {inflight.map((row, index) => (
+                <div class="agentlog-phase-row agentlog-phase-inflight" key={`inflight-${index}`}>
+                  <span class="agentlog-phase-name">{PHASE_NAMES[row.phase] || row.phase}</span>
+                  <span class="agentlog-phase-duration"><span class="agentlog-phase-spinner" /> running</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolCallTimelineItem({ toolUse, toolResult, messageStatus, isLast }) {
+  const isError = Boolean(toolResult?.is_error || toolResult?.error);
+  const railName = isError ? "alert-triangle" : toolResult ? "check" : "terminal";
+  const railTone = isError ? "error" : toolResult ? "ok" : "muted";
+  return (
+    <div class="agentlog-tl-item">
+      <div class="agentlog-tl-rail">
+        <RailIcon name={railName} tone={railTone} />
+        {!isLast && <div class="agentlog-tl-line" />}
+      </div>
+      <div class="agentlog-tl-content agentlog-tl-content-toolcall">
+        <ToolCallBlock toolUse={toolUse} toolResult={toolResult} messageStatus={messageStatus} />
+      </div>
+    </div>
+  );
+}
+
+function TimelineEvent({ event, isLast, streaming }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!event) return null;
+  const type = event.type || "unknown";
+  let railIcon = <RailIcon name="circle" />;
+  let content = null;
+
+  if (type === "text") {
+    railIcon = <RailIcon name="message-circle" />;
+    const text = event.text || "";
+    content = text.length > 5000
+      ? <div class="agentlog-event-text">{text}</div>
+      : <div class="agentlog-event-text doc-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
+  } else if (type === "thinking") {
+    railIcon = <RailIcon name="sparkles" />;
+    content = <ThinkingBlock text={event.text || ""} streaming={event.streaming || streaming} />;
+  } else if (type === "tool_result" || type === "tool_output") {
+    const isError = event.is_error || event.error;
+    railIcon = <RailIcon name={isError ? "alert-triangle" : "check"} tone={isError ? "error" : "ok"} />;
+    const resultText = event.content ?? event.output ?? event.result ?? "";
+    content = (
+      <CollapsibleBlock
+        title={isError ? "Error" : "Result"}
+        text={typeof resultText === "string" ? resultText : JSON.stringify(resultText, null, 2)}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+        borderColor={isError ? "var(--accent-alert-border)" : "var(--accent-positive-border)"}
+      />
+    );
+  } else if (type === "result" || type === "final") {
+    railIcon = <RailIcon name="check-circle" tone="ok" />;
+    content = <div class="agentlog-event-text">{event.text || event.summary || event.output || "Completed"}</div>;
+  } else if (type === "error") {
+    railIcon = <RailIcon name="alert-triangle" tone="error" />;
+    content = <div class="agentlog-event-error">{event.message || event.text || "Error occurred"}</div>;
+  } else if (type === "retry") {
+    railIcon = <RailIcon name="refresh-cw" />;
+    content = <div class="agentlog-event-warn">{event.message || event.text || "Retrying..."}</div>;
+  } else if (type === "phase") {
+    railIcon = <RailIcon name="clock" />;
+    content = (
+      <div class="agentlog-phase-row">
+        <span class="agentlog-phase-name">{PHASE_NAMES[event.phase] || event.phase}</span>
+        <span class="agentlog-phase-duration">{event.duration_ms != null ? formatDuration(event.duration_ms) : event.status}</span>
+      </div>
+    );
+  } else if (type === "started") {
+    railIcon = <RailIcon name="play" tone="accent" />;
+    content = <div class="agentlog-event-text">Run started</div>;
+  } else if (type === "cancelled") {
+    railIcon = <RailIcon name="circle" tone="error" />;
+    content = <div class="agentlog-event-warn">Cancelled</div>;
+  } else {
+    content = (
+      <CollapsibleBlock
+        title={type}
+        text={JSON.stringify(event, null, 2)}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+      />
+    );
+  }
+
+  return (
+    <div class="agentlog-tl-item">
+      <div class="agentlog-tl-rail">
+        {railIcon}
+        {!isLast && <div class="agentlog-tl-line" />}
+      </div>
+      <div class="agentlog-tl-content">{content}</div>
+    </div>
+  );
+}
+
+export function AgentEventTimeline({ events = [], streaming = false, messageStatus }) {
+  if (!events.length && !streaming) return null;
+  const items = groupEvents(events);
+  const effectiveStatus = messageStatus || (streaming ? "streaming" : "done");
+  return (
+    <div class="agentlog-timeline">
+      {items.map((item, index) => {
+        const isLast = !streaming && index === items.length - 1;
+        if (item?._cluster) return <PhaseClusterBlock key={`cluster-${index}`} cluster={item} isLast={isLast} />;
+        if (item?._toolCall) {
+          return (
+            <ToolCallTimelineItem
+              key={`tool-${item.toolUse?.tool_use_id || index}`}
+              toolUse={item.toolUse}
+              toolResult={item.toolResult}
+              messageStatus={effectiveStatus}
+              isLast={isLast}
+            />
+          );
+        }
+        return <TimelineEvent key={index} event={item} isLast={isLast} streaming={streaming} />;
+      })}
+    </div>
+  );
+}

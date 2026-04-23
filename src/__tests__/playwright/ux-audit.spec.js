@@ -438,19 +438,20 @@ test("NewTaskModal recalls the last-used executor + reviewer", async ({ browser 
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
-  // Use the toolbar "+ New task" button specifically (not an empty-column one)
-  const toolbarNewTask = page.locator(".board-toolbar").getByRole("button", { name: "+ New task" });
+  // Use the toolbar New task button specifically (not an empty-section one).
+  const toolbarNewTask = page.locator(".tasks-toolbar").getByRole("button", { name: /new task/i });
   await toolbarNewTask.click();
   const modal = page.locator(".modal");
   await expect(modal).toBeVisible();
   await modal.locator("input").first().fill("Recall round-trip");
-  await modal.locator("select").nth(0).selectOption(seeded.agentName);
+  await modal.getByRole("combobox").nth(0).click();
+  await page.getByRole("option", { name: "Audit Agent" }).click();
   await modal.getByRole("button", { name: /^Create$/ }).click();
   await expect(modal).not.toBeVisible();
   // Re-open from the toolbar and verify the value persisted
   await toolbarNewTask.click();
   await expect(modal).toBeVisible();
-  await expect(modal.locator("select").nth(0)).toHaveValue(seeded.agentName);
+  await expect(modal.getByRole("combobox").nth(0)).toContainText("Audit Agent");
   await context.close();
 });
 
@@ -479,7 +480,7 @@ test("NewTaskModal closes on Escape and traps Tab inside", async ({ browser }) =
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
-  await page.locator(".board-toolbar").getByRole("button", { name: "+ New task" }).click();
+  await page.locator(".tasks-toolbar").getByRole("button", { name: /new task/i }).click();
   const modal = page.locator(".modal");
   await expect(modal).toBeVisible();
   // Modal should have focus trap + dialog role
@@ -489,13 +490,13 @@ test("NewTaskModal closes on Escape and traps Tab inside", async ({ browser }) =
   await page.keyboard.press("Escape");
   await expect(modal).not.toBeVisible();
   // Re-open and verify tabbing wraps from the last focusable back to the first
-  await page.locator(".board-toolbar").getByRole("button", { name: "+ New task" }).click();
+  await page.locator(".tasks-toolbar").getByRole("button", { name: /new task/i }).click();
   await expect(modal).toBeVisible();
   // Tab to the last button (Cancel) then once more — should wrap to first input
   // (the Title field). Using JS to count visible focusables instead of guessing
   // tab depth, then asserting wrap behavior.
   const focusedBefore = await page.evaluate(() => document.activeElement?.tagName);
-  expect(["INPUT", "TEXTAREA", "BUTTON", "SELECT"]).toContain(focusedBefore);
+  expect(["INPUT", "TEXTAREA", "BUTTON"]).toContain(focusedBefore);
   await context.close();
 });
 

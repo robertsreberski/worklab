@@ -8,6 +8,7 @@ import { pushToast } from "../lib/toast.js";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
+import { SelectField } from "../components/SelectField.jsx";
 import { selectActiveRunId } from "./taskDetailRuns.js";
 
 const STATUS_LABELS = {
@@ -31,7 +32,7 @@ function RunTimelineCard({ run, title, defaultOpen = false, subscribe = false })
         </span>
       </summary>
       <div class="run-card-body">
-        {loading ? <div class="meta">Loading...</div> : <EventTimeline events={events} />}
+        {loading ? <div class="meta">Loading...</div> : <EventTimeline events={events} streaming={run.status === "running"} />}
       </div>
     </details>
   );
@@ -106,6 +107,7 @@ export function TaskDetail({ id, runParam = null }) {
   if (!data) return <div class="surface-panel">Loading...</div>;
   if (data.notFound) return <div class="surface-panel">Task not found. <a href="#/tasks">Back</a></div>;
   const { task, comments } = data;
+  const agentOptions = agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name }));
 
   async function addComment(e) {
     e.preventDefault();
@@ -228,17 +230,19 @@ export function TaskDetail({ id, runParam = null }) {
                   </div>
                   <div class="field">
                     <label>Executor agent</label>
-                    <select value={draft.executor_agent || ""} onChange={(e) => setDraft({ ...draft, executor_agent: e.target.value || null })}>
-                      <option value="">Unassigned</option>
-                      {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>)}
-                    </select>
+                    <SelectField
+                      value={draft.executor_agent || ""}
+                      options={[{ value: "", label: "Unassigned" }, ...agentOptions]}
+                      onChange={(value) => setDraft({ ...draft, executor_agent: value || null })}
+                    />
                   </div>
                   <div class="field">
                     <label>Reviewer agent</label>
-                    <select value={draft.reviewer_agent || ""} onChange={(e) => setDraft({ ...draft, reviewer_agent: e.target.value || null })}>
-                      <option value="">None</option>
-                      {agents.map((agent) => <option key={agent.name} value={agent.name}>{agent.display_name || agent.name}</option>)}
-                    </select>
+                    <SelectField
+                      value={draft.reviewer_agent || ""}
+                      options={[{ value: "", label: "None" }, ...agentOptions]}
+                      onChange={(value) => setDraft({ ...draft, reviewer_agent: value || null })}
+                    />
                   </div>
                 </div>
                 <div class="form-actions">

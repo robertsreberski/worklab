@@ -1,6 +1,6 @@
 # Worklab
 
-Local, single-user AI agent orchestration tool for work. Kanban board for tasks, configurable agents backed by Claude / OpenAI / Ollama / any OpenAI-compat endpoint, automatic reviewer loop, shared filesystem knowledge base, nightly memory consolidation, and hybrid semantic + FTS search — all running on localhost, no auth, no cloud.
+Local, single-user AI agent orchestration tool for work. Linear-style task queue, configurable agents backed by Claude / OpenAI / Ollama / any OpenAI-compat endpoint, automatic reviewer loop, shared filesystem knowledge base, nightly memory consolidation, and hybrid semantic + FTS search — all running on localhost, no auth, no cloud.
 
 > Single-user, localhost-only by design. Expose it to the network at your own risk (Tailscale, reverse proxy + auth, etc.) — there is no built-in authentication.
 

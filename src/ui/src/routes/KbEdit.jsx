@@ -4,6 +4,7 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
+import { CheckboxField } from "../components/CheckboxField.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 
 export function KbEdit({ slug }) {
@@ -152,14 +153,12 @@ export function KbEdit({ slug }) {
           </div>
 
           <div class="field span-2">
-            <label class="choice-label">
-              <input
-                type="checkbox"
-                checked={entry.pinned}
-                onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
-              />
-              <span>Pinned</span>
-            </label>
+            <CheckboxField
+              checked={entry.pinned}
+              onChange={(e) => setEntry({ ...entry, pinned: e.target.checked })}
+            >
+              Pinned
+            </CheckboxField>
           </div>
         </div>
       </section>

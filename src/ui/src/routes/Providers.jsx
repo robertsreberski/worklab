@@ -1,6 +1,8 @@
 import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
+import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SelectField } from "../components/SelectField.jsx";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama", helper: "Local / LAN", description: "Native Ollama server for local or private-network models." },
@@ -189,9 +191,16 @@ export function Providers() {
           <div class="field"><label>Name</label>
             <input value={form.name} onInput={(e) => setForm({ ...form, name: e.target.value })} /></div>
           <div class="field"><label>Type</label>
-            <select value={form.provider_type} onChange={(e) => setForm((current) => applyPreset(current, e.target.value))}>
-              {PROVIDER_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-            </select></div>
+            <SelectField
+              value={form.provider_type}
+              options={PROVIDER_TYPE_OPTIONS.map((option) => ({
+                value: option.value,
+                label: option.label,
+                description: option.helper,
+              }))}
+              onChange={(value) => setForm((current) => applyPreset(current, value))}
+            />
+          </div>
           <div class="field span-2"><label>Base URL</label>
             <input value={form.base_url} placeholder={preset.base_url || "https://example.com"} onInput={(e) => setForm({ ...form, base_url: e.target.value })} /></div>
           <div class="field span-2"><label>API key (write-only)</label>
@@ -199,16 +208,14 @@ export function Providers() {
             <div class="meta">{preset.api_key_hint}</div>
           </div>
           <div class="field">
-            <label class="choice-label">
-              <input type="checkbox" checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })} />
-              <span>Trust public HTTPS URL</span>
-            </label>
+            <CheckboxField checked={form.trust_public_url} onChange={(e) => setForm({ ...form, trust_public_url: e.target.checked })}>
+              Trust public HTTPS URL
+            </CheckboxField>
           </div>
           <div class="field">
-            <label class="choice-label">
-              <input type="checkbox" checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })} />
-              <span>Show this provider in model pickers</span>
-            </label>
+            <CheckboxField checked={form.enabled} onChange={(e) => setForm({ ...form, enabled: e.target.checked })}>
+              Show this provider in model pickers
+            </CheckboxField>
           </div>
         </div>
         <button class="primary" disabled={!form.name || !form.base_url} onClick={create}>Create provider</button>
