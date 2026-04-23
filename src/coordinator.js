@@ -2,6 +2,8 @@
 import { createServer as createHttpServer } from "node:http";
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import { promisify } from "node:util";
 import express from "express";
 import { createServer } from "./api/server.js";
 import { getDb, closeDb } from "./core/db.js";
@@ -39,7 +41,8 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     runNow: (...args) => consolidationHolder.current.runNow(...args),
     isActive: (...args) => consolidationHolder.current.isActive(...args),
   };
-  const { app, broker } = createServer({ db, logger, watcher: watcherProxy, dataDir: config.dataDir, consolidation: consolidationProxy });
+  const events = new EventEmitter();
+  const { app, broker } = createServer({ db, logger, watcher: watcherProxy, dataDir: config.dataDir, consolidation: consolidationProxy, events });
 
   watcherHolder.current = createTaskWatcher({
     db, broker, spawn: spawnWorker, workerBinary, logger,
@@ -50,7 +53,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
   });
   consolidationHolder.current.start();
-  const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger });
+  const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
 
   const uiDist = join(config.repoRoot, "src/ui/dist");
   if (existsSync(uiDist)) {
@@ -67,16 +70,37 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   const pidFile = join(config.dataDir, ".coordinator.pid");
   writeFileSync(pidFile, String(process.pid));
 
+  let shuttingDown = false;
+  const closeHttp = promisify(http.close.bind(http));
+
   async function shutdown() {
+    if (shuttingDown) {
+      logger.warn("shutdown already in progress; forcing exit");
+      process.exit(1);
+    }
+    shuttingDown = true;
     logger.info("shutdown");
+
+    const watchdog = setTimeout(() => {
+      logger.warn("shutdown watchdog fired; forcing exit");
+      process.exit(1);
+    }, 5000);
+    watchdog.unref();
+
     try { await watcherHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
-    http.close(() => {
-      closeDb();
-      try { unlinkSync(pidFile); } catch {}
-      process.exit(0);
-    });
+
+    try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
+    try { http.closeIdleConnections(); } catch {}
+    try { http.closeAllConnections(); } catch {}
+
+    try { await closeHttp(); } catch (err) { logger.warn({ err }, "http close error"); }
+    try { closeDb(); } catch (err) { logger.warn({ err }, "db close error"); }
+    try { unlinkSync(pidFile); } catch {}
+
+    clearTimeout(watchdog);
+    process.exit(0);
   }
 
   process.on("SIGTERM", shutdown);

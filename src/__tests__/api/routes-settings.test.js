@@ -8,7 +8,17 @@ describe("settings", () => {
     expect(res.body.settings.consolidation_hour).toBe(3);
     expect(res.body.settings.consolidation_enabled).toBe(true);
     expect(res.body.settings.worker_timeout_ms).toBe(1800000);
-    expect(res.body.settings.default_embedding_model).toBe("ollama:nomic-embed-text");
+    expect(res.body.settings.default_embedding_model).toBe("");
+  });
+
+  it("PATCH clears the embedding model when given empty string", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({
+      default_embedding_model: "openai:text-embedding-3-small",
+    }).expect(200);
+    await agent.patch("/api/settings").send({ default_embedding_model: "" }).expect(200);
+    const res = await agent.get("/api/settings").expect(200);
+    expect(res.body.settings.default_embedding_model).toBe("");
   });
 
   it("PATCH writes and GET reads back", async () => {

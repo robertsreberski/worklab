@@ -84,11 +84,11 @@ export function Settings() {
         <div class="field"><label>Embedding model</label>
           <input value={settings.default_embedding_model || ""}
             onInput={(e) => setSettings({ ...settings, default_embedding_model: e.target.value })} />
-          <div class="meta">Use ollama:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
+          <div class="meta">Leave blank to disable embeddings; indexing starts as soon as you save a model. Use ollama:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
         </div>
         {indexStatus && (
           <div class={indexStatus.errors ? "status-line warn" : "status-line ok"}>
-            Search index: {indexStatus.total} chunks / {indexStatus.vectorized} vectorized / {indexStatus.errors} errors / {indexStatus.model}
+            Search index: {indexStatus.total} chunks / {indexStatus.vectorized} vectorized / {indexStatus.errors} errors / {indexStatus.model || "—"}
           </div>
         )}
       </section>
