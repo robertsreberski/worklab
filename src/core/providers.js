@@ -436,15 +436,18 @@ function inferOllamaCapabilities(model, show = null) {
 
 function inferOpenAICompatCapabilities(model) {
   const id = String(model.id || model.name || "").toLowerCase();
-  const reasoning = /o1|o3|o4|deepseek-r|qwq|thinking|reasoning/.test(id);
+  const embedding = /embed|embedding/i.test(id);
+  const reasoning = !embedding && /o1|o3|o4|deepseek-r|qwq|thinking|reasoning/.test(id);
   return {
-    tool_use: model.tool_use ?? true,
+    tool_use: !embedding && (model.tool_use ?? true),
     reasoning,
     reasoning_mode: reasoning ? "effort" : "none",
     reasoning_levels: reasoning ? [...OPENAI_COMPAT_REASONING_LEVELS] : undefined,
     reasoning_disable_supported: reasoning ? true : undefined,
-    vision: model.vision ?? /vision|vl|multimodal|gpt-4o/.test(id),
-    json_mode: model.json_mode ?? true,
+    vision: !embedding && (model.vision ?? /vision|vl|multimodal|gpt-4o/.test(id)),
+    json_mode: !embedding && (model.json_mode ?? true),
+    embedding,
+    chat: !embedding,
   };
 }
 

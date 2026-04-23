@@ -3,14 +3,17 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { CheckboxField } from "../components/CheckboxField.jsx";
+import { SelectField } from "../components/SelectField.jsx";
 
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
+  const [embeddingGroups, setEmbeddingGroups] = useState([]);
 
   useEffect(() => {
     api.getSettings().then((r) => setSettings(r.settings));
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
+    api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
   }, []);
 
   const formSave = useFormSave(async () => {
@@ -27,6 +30,27 @@ export function Settings() {
   });
 
   if (!settings) return <div>Loading...</div>;
+
+  const currentEmbedding = settings.default_embedding_model || "";
+  const allEmbeddingValues = embeddingGroups.flatMap((group) => (group.models || []).map((model) => model.value));
+  const embeddingOptions = [
+    { label: "", options: [{ value: "", label: "(disabled — no embeddings)" }] },
+    ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
+      ? [{ label: "Current", options: [{ value: currentEmbedding, label: `${currentEmbedding} (custom)` }] }]
+      : []),
+    ...embeddingGroups.map((group) => ({
+      label: group.available === false ? `${group.label} (credentials not set)` : group.label,
+      options: (group.models || []).map((model) => ({
+        value: model.value,
+        label: model.label || model.value,
+        description: model.description,
+      })),
+    })),
+  ];
+  const selectedEmbeddingGroup = embeddingGroups.find((group) =>
+    (group.models || []).some((model) => model.value === currentEmbedding)
+  ) || null;
+  const embeddingGroupUnavailable = !!selectedEmbeddingGroup && selectedEmbeddingGroup.available === false;
 
   return (
     <div class="detail page-stack">
@@ -81,14 +105,25 @@ export function Settings() {
       <section class="surface-panel">
         <div class="section-kicker">Search</div>
         <h3 class="section-title">Indexing</h3>
-        <div class="field"><label>Embedding model</label>
-          <input value={settings.default_embedding_model || ""}
-            onInput={(e) => setSettings({ ...settings, default_embedding_model: e.target.value })} />
-          <div class="meta">Leave blank to disable embeddings; indexing starts as soon as you save a model. Use ollama:&lt;model&gt;, openai:&lt;model&gt;, or vercel:&lt;providerId&gt;:&lt;model&gt;.</div>
+        <div class="field">
+          <label>Embedding model</label>
+          <SelectField
+            value={currentEmbedding}
+            options={embeddingOptions}
+            onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
+            placeholder="(disabled — no embeddings)"
+          />
+          <div class="meta">Disabled skips vectorization. Enabled custom providers contribute embedding-tagged models automatically; run Discover on a provider if none appear.</div>
+          {embeddingGroupUnavailable && (
+            <div class="status-line warn">
+              {selectedEmbeddingGroup.unavailable_reason || "Provider credentials not configured — vectorization is paused."}
+            </div>
+          )}
         </div>
         {indexStatus && (
-          <div class={indexStatus.errors ? "status-line warn" : "status-line ok"}>
+          <div class={indexStatus.errors ? "status-line warn" : indexStatus.model && !indexStatus.ready ? "status-line muted" : "status-line ok"}>
             Search index: {indexStatus.total} chunks / {indexStatus.vectorized} vectorized / {indexStatus.errors} errors / {indexStatus.model || "—"}
+            {indexStatus.model && !indexStatus.ready && ` / paused — ${indexStatus.reason || "provider not configured"}`}
           </div>
         )}
       </section>
