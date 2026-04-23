@@ -2,6 +2,7 @@ import { useEffect, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
+import { AppShell } from "../components/AppShell.jsx";
 import { SwitchField } from "../components/SwitchField.jsx";
 import { SelectField } from "../components/SelectField.jsx";
 
@@ -26,108 +27,140 @@ export function Settings() {
       kb_pinned_limit: Number(settings.kb_pinned_limit),
       default_embedding_model: settings.default_embedding_model,
     });
-    pushToast("Settings saved.", { variant: "success", ttl: 2500 });
+    pushToast("Settings saved", { variant: "success", ttl: 2500 });
   });
 
-  if (!settings) return <div>Loading...</div>;
+  if (!settings) {
+    return (
+      <AppShell route="settings" title="Settings">
+        <div class="page-wrap"><div style={{ color: "var(--muted)" }}>Loading...</div></div>
+      </AppShell>
+    );
+  }
 
   const currentEmbedding = settings.default_embedding_model || "";
-  const allEmbeddingValues = embeddingGroups.flatMap((group) => (group.models || []).map((model) => model.value));
+  const allEmbeddingValues = embeddingGroups.flatMap((g) => (g.models || []).map((m) => m.value));
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled — no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
       ? [{ label: "Current", options: [{ value: currentEmbedding, label: `${currentEmbedding} (custom)` }] }]
       : []),
-    ...embeddingGroups.map((group) => ({
-      label: group.available === false ? `${group.label} (credentials not set)` : group.label,
-      options: (group.models || []).map((model) => ({
-        value: model.value,
-        label: model.label || model.value,
-        description: model.description,
-      })),
+    ...embeddingGroups.map((g) => ({
+      label: g.available === false ? `${g.label} (credentials not set)` : g.label,
+      options: (g.models || []).map((m) => ({ value: m.value, label: m.label || m.value })),
     })),
   ];
-  const selectedEmbeddingGroup = embeddingGroups.find((group) =>
-    (group.models || []).some((model) => model.value === currentEmbedding)
-  ) || null;
-  const embeddingGroupUnavailable = !!selectedEmbeddingGroup && selectedEmbeddingGroup.available === false;
+
+  const headerActions = (
+    <button
+      class="button primary"
+      onClick={() => formSave.save().catch(() => {})}
+      disabled={formSave.saving}
+    >
+      {formSave.saving ? "Saving..." : "Save"}
+    </button>
+  );
 
   return (
-    <div class="detail page-stack">
-      <div class="page-header">
-        <div>
-          <div class="eyebrow">Runtime</div>
-          <h2 class="page-title">Settings</h2>
-        </div>
-        <button class="primary" onClick={() => formSave.save().catch(() => {})} disabled={formSave.saving}>
-          {formSave.saving ? "Saving..." : "Save"}
-        </button>
-      </div>
-      {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
+    <AppShell route="settings" title="Settings" headerActions={headerActions}>
+      <div class="page-wrap">
+        {formSave.error && <div class="form-error">Save failed: {formSave.error}</div>}
 
-      <section class="surface-panel">
-        <div class="section-kicker">Automation</div>
-        <h3 class="section-title">Consolidation</h3>
-        <div class="settings-grid">
-          <div class="field"><label>Consolidation hour (0-23)</label>
-            <input type="number" min="0" max="23" value={settings.consolidation_hour}
-              onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })} /></div>
-          <div class="field">
-            <SwitchField
-              checked={settings.consolidation_enabled}
-              onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })}
-              description="Refresh agent memory on the configured local hour."
-            >
-              Nightly memory consolidation
-            </SwitchField>
-          </div>
-          <div class="field"><label>Journal tail lines</label>
-            <input type="number" min="0" max="1000" value={settings.journal_tail_lines}
-              onInput={(e) => setSettings({ ...settings, journal_tail_lines: e.target.value })} /></div>
-          <div class="field"><label>Pinned KB limit</label>
-            <input type="number" min="0" max="100" value={settings.kb_pinned_limit}
-              onInput={(e) => setSettings({ ...settings, kb_pinned_limit: e.target.value })} /></div>
-        </div>
-      </section>
-
-      <section class="surface-panel">
-        <div class="section-kicker">Workers</div>
-        <h3 class="section-title">Execution limits</h3>
-        <div class="settings-grid">
-          <div class="field"><label>Worker timeout (ms)</label>
-            <input type="number" value={settings.worker_timeout_ms}
-              onInput={(e) => setSettings({ ...settings, worker_timeout_ms: e.target.value })} /></div>
-          <div class="field"><label>Cancel grace (ms)</label>
-            <input type="number" value={settings.cancel_grace_ms}
-              onInput={(e) => setSettings({ ...settings, cancel_grace_ms: e.target.value })} /></div>
-        </div>
-      </section>
-
-      <section class="surface-panel">
-        <div class="section-kicker">Search</div>
-        <h3 class="section-title">Indexing</h3>
-        <div class="field">
-          <label>Embedding model</label>
-          <SelectField
-            value={currentEmbedding}
-            options={embeddingOptions}
-            onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
-            placeholder="(disabled — no embeddings)"
-          />
-          <div class="meta">Disabled skips vectorization. Enabled custom providers contribute embedding-tagged models automatically; run Discover on a provider if none appear.</div>
-          {embeddingGroupUnavailable && (
-            <div class="status-line warn">
-              {selectedEmbeddingGroup.unavailable_reason || "Provider credentials not configured — vectorization is paused."}
+        <div class="settings-sections">
+          <section class="settings-section">
+            <h3>Consolidation</h3>
+            <p>Nightly memory consolidation refreshes agent journal summaries.</p>
+            <div class="form-grid">
+              <div class="field">
+                <label class="field-label">Hour (0–23)</label>
+                <input
+                  class="form-input"
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={settings.consolidation_hour}
+                  onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })}
+                />
+              </div>
+              <div class="field">
+                <SwitchField
+                  checked={settings.consolidation_enabled}
+                  onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })}
+                >
+                  Enabled
+                </SwitchField>
+              </div>
+              <div class="field">
+                <label class="field-label">Journal tail lines</label>
+                <input
+                  class="form-input"
+                  type="number"
+                  min="0"
+                  max="1000"
+                  value={settings.journal_tail_lines}
+                  onInput={(e) => setSettings({ ...settings, journal_tail_lines: e.target.value })}
+                />
+              </div>
+              <div class="field">
+                <label class="field-label">Pinned KB limit</label>
+                <input
+                  class="form-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={settings.kb_pinned_limit}
+                  onInput={(e) => setSettings({ ...settings, kb_pinned_limit: e.target.value })}
+                />
+              </div>
             </div>
-          )}
+          </section>
+
+          <section class="settings-section">
+            <h3>Execution</h3>
+            <p>Limits for worker subprocesses.</p>
+            <div class="form-grid">
+              <div class="field">
+                <label class="field-label">Worker timeout (ms)</label>
+                <input
+                  class="form-input"
+                  type="number"
+                  value={settings.worker_timeout_ms}
+                  onInput={(e) => setSettings({ ...settings, worker_timeout_ms: e.target.value })}
+                />
+              </div>
+              <div class="field">
+                <label class="field-label">Cancel grace (ms)</label>
+                <input
+                  class="form-input"
+                  type="number"
+                  value={settings.cancel_grace_ms}
+                  onInput={(e) => setSettings({ ...settings, cancel_grace_ms: e.target.value })}
+                />
+              </div>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>Search & embeddings</h3>
+            <p>Controls which embedding model is used to index knowledge and journals.</p>
+            <div class="field">
+              <label class="field-label">Embedding model</label>
+              <SelectField
+                value={currentEmbedding}
+                options={embeddingOptions}
+                onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
+              />
+              <span class="field-hint">Disabled skips vectorization. Run "Discover" on a provider to surface more models.</span>
+            </div>
+            {indexStatus && (
+              <div style={{ fontSize: 12, color: indexStatus.errors ? "var(--yellow)" : "var(--muted)" }}>
+                Search index: {indexStatus.total} chunks · {indexStatus.vectorized} vectorized · {indexStatus.errors} errors · {indexStatus.model || "—"}
+                {indexStatus.model && !indexStatus.ready && ` · paused (${indexStatus.reason || "provider not configured"})`}
+              </div>
+            )}
+          </section>
         </div>
-        {indexStatus && (
-          <div class={indexStatus.errors ? "status-line warn" : indexStatus.model && !indexStatus.ready ? "status-line muted" : "status-line ok"}>
-            Search index: {indexStatus.total} chunks / {indexStatus.vectorized} vectorized / {indexStatus.errors} errors / {indexStatus.model || "—"}
-            {indexStatus.model && !indexStatus.ready && ` / paused — ${indexStatus.reason || "provider not configured"}`}
-          </div>
-        )}
-      </section>
-    </div>
+      </div>
+    </AppShell>
   );
 }

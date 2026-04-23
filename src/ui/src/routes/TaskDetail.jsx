@@ -1,205 +1,88 @@
-// src/ui/src/routes/TaskDetail.jsx
 import { useEffect, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
-import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
+import { AppShell } from "../components/AppShell.jsx";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { SelectField } from "../components/SelectField.jsx";
+import { AgentAvatar } from "../components/AgentAvatar.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { LivePulse } from "../components/primitives/LivePulse.jsx";
+import { ShimmerBar } from "../components/primitives/ShimmerBar.jsx";
 import { selectHighlightedRunId } from "./taskDetailRuns.js";
-import { StatusSignal } from "../components/StatusSignal.jsx";
-import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
-import { EntityHeader } from "../components/EntityHeader.jsx";
-import { TASK_STATUS_LABELS, STATUS_TONES, agentDisplayName } from "../lib/display.js";
+import { agentDisplayName } from "../lib/display.js";
 
-const STATUS_LABELS = TASK_STATUS_LABELS;
-
-const RUN_STATUS_CLASS = {
-  running: "in_progress",
-  complete: "done",
-  error: "error",
-  failed: "error",
-  cancelled: "muted",
-};
-
-function hasOwn(obj, key) {
-  return Object.prototype.hasOwnProperty.call(obj || {}, key);
-}
-
-function formatDate(value) {
-  if (!value) return null;
-  return new Date(value).toLocaleString();
-}
-
+function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 function formatDuration(ms) {
   if (ms == null) return null;
-  const value = Number(ms);
-  if (!Number.isFinite(value)) return null;
-  if (value < 1000) return `${value}ms`;
-  if (value < 60_000) return `${(value / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(value / 60_000);
-  const seconds = Math.round((value % 60_000) / 1000);
-  return `${minutes}m ${seconds}s`;
+  const v = Number(ms);
+  if (!Number.isFinite(v)) return null;
+  if (v < 1000) return `${v}ms`;
+  if (v < 60_000) return `${(v / 1000).toFixed(1)}s`;
+  const m = Math.floor(v / 60_000);
+  const s = Math.round((v % 60_000) / 1000);
+  return `${m}m ${s}s`;
 }
-
 function formatTokens(n) {
   if (n == null) return null;
-  const value = Number(n);
-  if (!Number.isFinite(value)) return null;
-  if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
-  return String(value);
+  const v = Number(n);
+  if (!Number.isFinite(v)) return null;
+  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
+  return String(v);
 }
-
-function formatCost(value) {
-  if (value == null) return null;
-  const cost = Number(value);
-  if (!Number.isFinite(cost)) return null;
-  return `$${cost.toFixed(5)}`;
+function formatCost(v) {
+  if (v == null) return null;
+  const c = Number(v);
+  if (!Number.isFinite(c)) return null;
+  return `$${c.toFixed(4)}`;
 }
-
 function runDuration(run) {
   if (run?.log?.duration_ms != null) return run.log.duration_ms;
   if (run?.ended_at && run?.started_at) return run.ended_at - run.started_at;
   return null;
 }
 
-function runStatusClass(status) {
-  return RUN_STATUS_CLASS[status] || "muted";
-}
-
-function compactRunStats(run) {
-  const log = run.log || {};
-  const tokenText = log.input_tokens != null || log.output_tokens != null
-    ? `in ${formatTokens(log.input_tokens || 0)} / out ${formatTokens(log.output_tokens || 0)}`
-    : null;
-  return [
-    runDuration(run) != null ? formatDuration(runDuration(run)) : (run.status === "running" ? "running" : null),
-    log.num_turns != null ? `${log.num_turns} turns` : null,
-    tokenText,
-    formatCost(log.cost_usd),
-  ].filter(Boolean).join(" / ");
-}
-
-function RunStat({ label, value, title }) {
-  if (value == null || value === "") return null;
-  return (
-    <div class="run-stat" title={title || String(value)}>
-      <div class="run-stat-value">{value}</div>
-      <div class="text-label">{label}</div>
-    </div>
-  );
-}
-
-function RunStatsStrip({ run, agentLabel }) {
-  const log = run.log || {};
-  return (
-    <div class="run-stats-strip">
-      <RunStat label="Mode" value={run.mode} />
-      <RunStat label="Agent" value={agentLabel || run.agent_name} />
-      <RunStat label="Started" value={formatDate(run.started_at)} />
-      <RunStat label="Ended" value={formatDate(run.ended_at) || (run.status === "running" ? "Running" : "-")} />
-      <RunStat label="Duration" value={formatDuration(runDuration(run)) || "-"} />
-      <RunStat label="Turns" value={log.num_turns ?? "-"} />
-      <RunStat label="Input" value={formatTokens(log.input_tokens) || "-"} />
-      <RunStat label="Output" value={formatTokens(log.output_tokens) || "-"} />
-      {log.cache_read_tokens > 0 && <RunStat label="Cache Read" value={formatTokens(log.cache_read_tokens)} />}
-      {log.cache_creation_tokens > 0 && <RunStat label="Cache Write" value={formatTokens(log.cache_creation_tokens)} />}
-      <RunStat label="Cost" value={formatCost(log.cost_usd) || "-"} />
-      <RunStat label="Exit" value={run.exit_code ?? "-"} />
-      {log.effort && <RunStat label="Effort" value={log.effort} />}
-    </div>
-  );
-}
-
-function RunTimelineCard({
-  run,
-  title,
-  expanded = false,
-  highlighted = false,
-  subscribe = false,
-  onToggle,
-  journalSection,
-  agentLabel,
-}) {
-  const [showRawEvents, setShowRawEvents] = useState(false);
-  const shouldLoadEvents = Boolean(expanded || subscribe);
-  const { events, loading } = useRunStream(shouldLoadEvents ? run?.id : null, {
-    subscribe: Boolean(subscribe && shouldLoadEvents),
-  });
-
-  useEffect(() => {
-    if (!expanded) setShowRawEvents(false);
-  }, [expanded]);
-
-  if (!run) return null;
-  const stats = compactRunStats(run);
-  const statusLabel = run.status || "unknown";
+function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
+  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
+  const log = run?.log || {};
 
   function handleToggle(e) {
-    const nextOpen = e.currentTarget.open;
-    if (nextOpen !== expanded) onToggle?.(run.id, nextOpen);
+    onToggle?.(run.id, e.currentTarget.open);
   }
 
   return (
     <details
       open={expanded}
       onToggle={handleToggle}
-      class={`run-card${highlighted ? " highlighted" : ""}`}
+      class="run-card"
     >
-      <summary>
-        <div class="run-summary-main">
-          <div class="run-summary-title">
-            <strong>{title}</strong>
-            {highlighted && <StatusSignal tone="blue" compact>Selected</StatusSignal>}
-            <StatusSignal tone={STATUS_TONES[statusLabel] || runStatusClass(statusLabel)} compact>{statusLabel}</StatusSignal>
+      <summary style={{ cursor: "pointer", listStyle: "none" }}>
+        <div class="run-summary">
+          <div class="run-summary-main">
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <StatusPill status={run.status} size="sm" />
+              <span class="run-summary-title">{formatDate(run.started_at) || "Run"}</span>
+            </div>
+            <div class="muted" style={{ fontSize: 11.5 }}>
+              {run.mode} · {agentLabel || run.agent_name}
+              {formatDuration(runDuration(run)) && ` · ${formatDuration(runDuration(run))}`}
+              {log.cost_usd != null && ` · ${formatCost(log.cost_usd)}`}
+              {log.num_turns != null && ` · ${log.num_turns} turns`}
+            </div>
           </div>
-          <span class="meta">
-            {run.mode} / {agentLabel || run.agent_name} / {formatDate(run.started_at)}
-          </span>
-        </div>
-        <div class="run-summary-side">
-          {stats && <span class="meta">{stats}</span>}
-          <span class="run-open-label">{expanded ? "Hide log" : "Open log"}</span>
+          <div class="run-summary-side">
+            <span>{expanded ? "Hide" : "Open"}</span>
+          </div>
         </div>
       </summary>
-      <div class="run-card-body">
-        <RunStatsStrip run={run} agentLabel={agentLabel} />
-        <AdvancedMeta
-          title="Run identifiers"
-          items={[
-            { label: "Run ID", value: run.id },
-            { label: "Log ID", value: run.log?.id },
-            { label: "Agent slug", value: run.agent_name },
-            { label: "Model reference", value: run.log?.model },
-          ]}
-        />
+      <div style={{ marginTop: 12 }}>
         {loading ? (
-          <div class="meta">Loading run events...</div>
+          <div class="muted" style={{ fontSize: 12 }}>Loading events...</div>
         ) : (
           <EventTimeline events={events} streaming={run.status === "running"} />
-        )}
-        {journalSection && (
-          <section class="run-journal" aria-label="Agent journal for this run">
-            <div class="section-kicker">Journal</div>
-            <h3 class="section-title">Agent notes from this run</h3>
-            <pre class="code-panel">{journalSection}</pre>
-          </section>
-        )}
-        {events.length > 0 && (
-          <div class="run-raw-section">
-            <button
-              type="button"
-              class="run-raw-toggle"
-              aria-expanded={showRawEvents}
-              onClick={() => setShowRawEvents((current) => !current)}
-            >
-              {showRawEvents ? "Hide raw events" : "Raw events"}
-            </button>
-            {showRawEvents && <pre class="run-raw-events">{JSON.stringify(events, null, 2)}</pre>}
-          </div>
         )}
       </div>
     </details>
@@ -209,13 +92,10 @@ function RunTimelineCard({
 export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(null);
   const [agents, setAgents] = useState([]);
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({});
   const [newComment, setNewComment] = useState("");
   const [highlightedRunId, setHighlightedRunId] = useState(runParam);
   const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [runError, setRunError] = useState(null);
-  const [journalSections, setJournalSections] = useState({});
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -230,8 +110,6 @@ export function TaskDetail({ id, runParam = null }) {
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
     setRunError(null);
-    setEditing(false);
-    setJournalSections({});
   }, [id, runParam]);
 
   useSSE("global", (evt) => {
@@ -242,59 +120,47 @@ export function TaskDetail({ id, runParam = null }) {
   });
 
   useEffect(() => {
-    const nextRunId = selectHighlightedRunId(data?.runs || [], highlightedRunId, {
+    const next = selectHighlightedRunId(data?.runs || [], highlightedRunId, {
       preserveMissingActive: Boolean(highlightedRunId),
     });
-    if (nextRunId !== highlightedRunId) {
-      setHighlightedRunId(nextRunId);
-    }
+    if (next !== highlightedRunId) setHighlightedRunId(next);
   }, [data, highlightedRunId]);
 
-  const expandedRunIdsKey = [...expandedRunIds].sort().join("|");
-  const journalSectionsKey = Object.keys(journalSections).sort().join("|");
-  useEffect(() => {
-    const runs = data?.runs || [];
-    let cancelled = false;
-    for (const run of runs) {
-      if (!expandedRunIds.has(run.id) || run.status === "running" || hasOwn(journalSections, run.id)) continue;
-      api.getAgentJournal(run.agent_name, run.id)
-        .then((r) => {
-          if (!cancelled) {
-            setJournalSections((current) => ({ ...current, [run.id]: r.section || null }));
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setJournalSections((current) => ({ ...current, [run.id]: null }));
-          }
-        });
-    }
-    return () => { cancelled = true; };
-  }, [data?.runs, expandedRunIdsKey, journalSectionsKey]);
+  if (!data) {
+    return (
+      <AppShell route="tasks" title="Loading...">
+        <div class="page-wrap"><div style={{ color: "var(--muted)" }}>Loading task...</div></div>
+      </AppShell>
+    );
+  }
+  if (data.notFound) {
+    return (
+      <AppShell route="tasks" title="Not found">
+        <div class="page-wrap">
+          <div class="empty-state">
+            <h3>Task not found</h3>
+            <p>This task may have been deleted.</p>
+            <a href="#/tasks" class="button primary">Back to tasks</a>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
 
-  const formSave = useFormSave(async (patch) => {
-    await api.patchTask(id, patch);
-    setEditing(false);
-    reload();
-  });
-
-  if (!data) return <div class="surface-panel">Loading...</div>;
-  if (data.notFound) return <div class="surface-panel">Task not found. <a href="#/tasks">Back</a></div>;
-  const { task, comments } = data;
+  const { task, comments = [] } = data;
   const runs = data.runs || [];
   const latestRun = runs[0] || null;
-  const runningRun = runs.find((run) => run.status === "running") || null;
-  const agentOptions = agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name }));
-  const executorLabel = agentDisplayName(agents, task.executor_agent);
-  const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, "No reviewer");
+  const runningRun = runs.find((r) => r.status === "running") || null;
+
+  const executorLabel = agentDisplayName(agents, task.executor_agent, "Unassigned");
+  const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
 
   function toggleRun(runId, open) {
     setHighlightedRunId(runId);
-    setExpandedRunIds((current) => {
-      const next = new Set(current);
-      if (open) next.add(runId);
-      else next.delete(runId);
-      return next;
+    setExpandedRunIds((s) => {
+      const n = new Set(s);
+      if (open) n.add(runId); else n.delete(runId);
+      return n;
     });
   }
 
@@ -323,7 +189,7 @@ export function TaskDetail({ id, runParam = null }) {
     try {
       const r = await api.runTask(id);
       setHighlightedRunId(r.runId);
-      setExpandedRunIds((current) => new Set([...current, r.runId]));
+      setExpandedRunIds((s) => new Set([...s, r.runId]));
       reload();
     } catch (err) {
       setRunError(err.message);
@@ -338,154 +204,230 @@ export function TaskDetail({ id, runParam = null }) {
     }
   }
 
-  const canRun = task.executor_agent && (task.status === "todo" || task.status === "in_progress") && !runningRun;
+  const canRun = task.executor_agent
+    && (task.status === "todo" || task.status === "in_progress")
+    && !runningRun;
+
+  const headerActions = (
+    <>
+      {runningRun ? (
+        <button class="button danger" onClick={cancelRun}>
+          <Icon name="stop" size={13} />
+          Cancel run
+        </button>
+      ) : (
+        <button class="button primary" onClick={runNow} disabled={!canRun}>
+          <Icon name="play" size={13} />
+          Run now
+        </button>
+      )}
+      <a class="button ghost" href={`#/tasks/${id}/edit`}>
+        <Icon name="settings" size={13} />
+        Edit
+      </a>
+      <ConfirmButton class="button danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>
+    </>
+  );
 
   return (
-    <div class="detail task-detail">
-      <a href="#/tasks" class="back-link">Back to tasks</a>
+    <AppShell route="tasks" title={task.title} headerActions={headerActions}>
+      <div class="task-detail">
+        <div class="task-detail-main">
+          <div class="task-breadcrumb">
+            <a href="#/tasks">Tasks</a>
+            <span class="sep">/</span>
+            <span>{task.id}</span>
+          </div>
 
-      <EntityHeader
-        eyebrow="Task"
-        title={task.title}
-        meta={(
-          <>
-            <StatusSignal tone={STATUS_TONES[task.status] || "muted"}>{STATUS_LABELS[task.status] || task.status}</StatusSignal>
-            <span class="soft-meta">Executor {executorLabel}</span>
-            <span class="soft-meta">Reviewer {reviewerLabel}</span>
-            {task.retry_count > 0 && <span class="soft-meta">{task.retry_count} retries</span>}
-            {latestRun && <StatusSignal tone={STATUS_TONES[latestRun.status] || "muted"} compact>Latest run {latestRun.status}</StatusSignal>}
-            {task.error_text && <StatusSignal tone="red" compact>Error</StatusSignal>}
-          </>
-        )}
-        actions={(
-          <>
-          <button class="primary" onClick={runNow} disabled={!canRun}>Run now</button>
-          {runningRun && <button onClick={cancelRun} class="danger">Cancel run</button>}
-          <button onClick={() => { setDraft(task); setEditing(true); formSave.clearError(); }}>Edit</button>
-          <ConfirmButton class="danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>
-          </>
-        )}
-      />
-
-      {runError && <div class="surface-panel compact status-line error">{runError}</div>}
-      {task.error_text && <div class="surface-panel compact status-line error">{task.error_text}</div>}
-      {!task.executor_agent && <div class="surface-panel compact field-help">Set an executor agent to enable Run now.</div>}
-      <AdvancedMeta title="Task identifiers" items={[{ label: "Task ID", value: task.id }]} />
-
-      <div class="task-detail-grid">
-        <div class="task-main-stack">
-          <section class="surface-panel task-brief-panel">
-            <div class="list-header">
-              <div>
-                <div class="section-kicker">Brief</div>
-                <h3 class="section-title">Task context</h3>
-              </div>
+          <section class="task-hero">
+            <div class="task-hero-top">
+              <h1 class="task-hero-title">{task.title}</h1>
             </div>
+            <div class="task-hero-meta">
+              <StatusPill status={task.status} />
+              {task.error_text && (
+                <span class="chip chip-error">
+                  <Icon name="alert-triangle" size={10} />
+                  Error
+                </span>
+              )}
+              {Number(task.priority) > 0 && (
+                <span class="chip chip-warn">P{task.priority}</span>
+              )}
+              {task.retry_count > 0 && (
+                <span class="chip">{task.retry_count} retries</span>
+              )}
+            </div>
+          </section>
 
-            {!editing ? (
-              <>
-                <div class="field">
-                  <label>Description</label>
-                  <div class="detail-copy">{task.description || <span class="meta">No description.</span>}</div>
+          {runError && <div class="form-error">{runError}</div>}
+          {task.error_text && <div class="form-error">{task.error_text}</div>}
+
+          {(task.description || task.instructions) && (
+            <section class="surface-panel">
+              <div class="section-kicker">Brief</div>
+              {task.description && (
+                <div class="task-description" style={{ marginBottom: task.instructions ? 16 : 0 }}>
+                  {task.description}
                 </div>
-                <div class="field">
-                  <label>Instructions</label>
-                  <pre class="code-panel">{task.instructions || "(none)"}</pre>
-                </div>
-              </>
+              )}
+              {task.instructions && (
+                <>
+                  <div class="section-kicker" style={{ marginTop: 12 }}>Instructions</div>
+                  <pre class="code-panel" style={{ marginTop: 4 }}>{task.instructions}</pre>
+                </>
+              )}
+            </section>
+          )}
+
+          {runningRun && (
+            <section class="surface-panel">
+              <div class="task-live-header">
+                <LivePulse color="var(--yellow)" size={7} />
+                <span>Running</span>
+                <span class="muted">·</span>
+                <span class="muted">{agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}</span>
+              </div>
+              <ShimmerBar height={2} />
+              <div style={{ marginTop: 10 }}>
+                <RunCard
+                  run={runningRun}
+                  expanded
+                  subscribe
+                  onToggle={toggleRun}
+                  agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
+                />
+              </div>
+            </section>
+          )}
+
+          <section class="surface-panel">
+            <div class="section-kicker">Runs</div>
+            <h3 style={{ margin: "0 0 8px" }}>Execution log</h3>
+            {runs.length === 0 ? (
+              <div class="muted" style={{ fontSize: 12 }}>No runs yet.</div>
             ) : (
-              <>
-                <div class="form-grid">
-                  <div class="field span-2">
-                    <label>Title</label>
-                    <input value={draft.title} onInput={(e) => setDraft({ ...draft, title: e.target.value })} />
-                  </div>
-                  <div class="field span-2">
-                    <label>Description</label>
-                    <textarea rows="4" value={draft.description} onInput={(e) => setDraft({ ...draft, description: e.target.value })} />
-                  </div>
-                  <div class="field span-2">
-                    <label>Instructions</label>
-                    <textarea rows="8" value={draft.instructions} onInput={(e) => setDraft({ ...draft, instructions: e.target.value })} />
-                  </div>
-                  <div class="field">
-                    <label>Executor agent</label>
-                    <SelectField
-                      value={draft.executor_agent || ""}
-                      options={[{ value: "", label: "Unassigned" }, ...agentOptions]}
-                      onChange={(value) => setDraft({ ...draft, executor_agent: value || null })}
-                    />
-                  </div>
-                  <div class="field">
-                    <label>Reviewer agent</label>
-                    <SelectField
-                      value={draft.reviewer_agent || ""}
-                      options={[{ value: "", label: "None" }, ...agentOptions]}
-                      onChange={(value) => setDraft({ ...draft, reviewer_agent: value || null })}
-                    />
-                  </div>
-                </div>
-                <div class="form-actions">
-                  <button class="primary" onClick={() => formSave.save(draft).catch(() => {})} disabled={formSave.saving}>
-                    {formSave.saving ? "Saving..." : "Save"}
-                  </button>
-                  <button onClick={() => { setEditing(false); formSave.clearError(); }} disabled={formSave.saving}>Cancel</button>
-                </div>
-                {formSave.error && <div class="form-error" role="alert">Save failed: {formSave.error}</div>}
-              </>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {runs.slice(0, 8).map((run) => (
+                  <RunCard
+                    key={run.id}
+                    run={run}
+                    expanded={expandedRunIds.has(run.id)}
+                    onToggle={toggleRun}
+                    subscribe={run.status === "running" && expandedRunIds.has(run.id)}
+                    agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
+                  />
+                ))}
+                {runs.length > 8 && <div class="muted" style={{ fontSize: 12 }}>Showing latest 8 runs.</div>}
+              </div>
             )}
           </section>
 
-          <section class="surface-panel task-comments-panel">
-            <div class="list-header">
-              <div>
-                <div class="section-kicker">Outcome</div>
-                <h3 class="section-title">Comments</h3>
-              </div>
-              <span class="soft-meta">{comments.length} total</span>
-            </div>
+          <section class="surface-panel">
+            <div class="section-kicker">Activity</div>
+            <h3 style={{ margin: "0 0 8px" }}>Comments</h3>
             <CommentList comments={comments} />
-            <form onSubmit={addComment} class="comment-form">
-              <div class="field">
-                <textarea rows="4" placeholder="Add a comment..." value={newComment} onInput={(e) => setNewComment(e.target.value)} />
+            <form onSubmit={addComment} style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              <textarea
+                class="form-input"
+                rows="3"
+                placeholder="Add a comment..."
+                value={newComment}
+                onInput={(e) => setNewComment(e.target.value)}
+                style={{ fontFamily: "var(--sans)", fontSize: 13 }}
+              />
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <button type="submit" class="button primary" disabled={!newComment.trim()}>
+                  Post
+                </button>
               </div>
-              <button type="submit" class="primary" disabled={!newComment.trim()}>Post</button>
             </form>
           </section>
         </div>
 
-        <aside class="task-side-stack">
-          <section class="surface-panel run-list-panel">
-            <div class="list-header">
-              <div>
-                <div class="section-kicker">Runs</div>
-                <h3 class="section-title">Execution log</h3>
-              </div>
-              {runs.length > 0 && <span class="soft-meta">{runs.length} total</span>}
+        <aside class="task-detail-rail">
+          <div class="rail-card">
+            <h4>Agents</h4>
+            <div class="rail-row">
+              <span class="label">Executor</span>
+              <span class="value">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <AgentAvatar name={task.executor_agent} label={executorLabel} size={20} />
+                  <span>{executorLabel}</span>
+                </span>
+              </span>
             </div>
-            {runs.length === 0 ? (
-              <div class="meta">No runs yet.</div>
-            ) : (
-              <div class="run-list">
-                {runs.slice(0, 6).map((run, index) => (
-                  <RunTimelineCard
-                    key={run.id}
-                    run={run}
-                    title={index === 0 ? "Latest run" : "Previous run"}
-                    expanded={expandedRunIds.has(run.id)}
-                    highlighted={run.id === highlightedRunId}
-                    subscribe={run.status === "running" && expandedRunIds.has(run.id)}
-                    onToggle={toggleRun}
-                    journalSection={journalSections[run.id]}
-                    agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
-                  />
-                ))}
-                {runs.length > 6 && <div class="meta">Showing latest 6 runs.</div>}
+            {task.reviewer_agent && (
+              <div class="rail-row">
+                <span class="label">Reviewer</span>
+                <span class="value">
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                    <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} />
+                    <span>{reviewerLabel}</span>
+                  </span>
+                </span>
               </div>
             )}
-          </section>
+          </div>
+
+          <div class="rail-card">
+            <h4>Timeline</h4>
+            <div class="rail-row">
+              <span class="label">Created</span>
+              <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.created_at)}</span>
+            </div>
+            <div class="rail-row">
+              <span class="label">Updated</span>
+              <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.updated_at)}</span>
+            </div>
+            {task.completed_at && (
+              <div class="rail-row">
+                <span class="label">Completed</span>
+                <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.completed_at)}</span>
+              </div>
+            )}
+          </div>
+
+          {latestRun && latestRun.log && (
+            <div class="rail-card">
+              <h4>Latest run</h4>
+              <div class="metric-grid">
+                <div class="metric">
+                  <div class="label">Duration</div>
+                  <div class="value">{formatDuration(runDuration(latestRun)) || "—"}</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Turns</div>
+                  <div class="value">{latestRun.log.num_turns ?? "—"}</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Tokens in</div>
+                  <div class="value">{formatTokens(latestRun.log.input_tokens) || "—"}</div>
+                </div>
+                <div class="metric">
+                  <div class="label">Tokens out</div>
+                  <div class="value">{formatTokens(latestRun.log.output_tokens) || "—"}</div>
+                </div>
+                <div class="metric" style={{ gridColumn: "span 2" }}>
+                  <div class="label">Cost</div>
+                  <div class="value">{formatCost(latestRun.log.cost_usd) || "$0"}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(task.tags || []).length > 0 && (
+            <div class="rail-card">
+              <h4>Tags</h4>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                {(task.tags || []).map((t) => (
+                  <span key={t} class="tag">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </aside>
       </div>
-    </div>
+    </AppShell>
   );
 }
