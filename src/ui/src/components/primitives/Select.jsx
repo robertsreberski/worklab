@@ -196,7 +196,7 @@ export function Select({
             </div>
           )}
           {filteredGroups.length === 0 && (
-            <div class="select-option" aria-disabled="true" style={{ color: "var(--text-muted)" }}>
+            <div class="select-option select-option-empty" aria-disabled="true">
               No matches
             </div>
           )}

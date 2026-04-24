@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 let tipUid = 0;
 const DELAY = 400;
 const FADE = 120;
+const OFFSET = 6; // px between trigger edge and tooltip box
 
 export function Tooltip({ label, children, placement = "top" }) {
   const id = useRef(`wl-tooltip-${++tipUid}`);
@@ -20,8 +21,8 @@ export function Tooltip({ label, children, placement = "top" }) {
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const top = placement === "bottom"
-      ? rect.bottom + 6
-      : rect.top - 6;
+      ? rect.bottom + OFFSET
+      : rect.top - OFFSET;
     setCoords({
       left: rect.left + rect.width / 2,
       top,
@@ -58,18 +59,14 @@ export function Tooltip({ label, children, placement = "top" }) {
     : child;
 
   return (
-    <span ref={wrapperRef} style={{ display: "inline-flex" }}>
+    <span ref={wrapperRef} class="tooltip-anchor">
       {enhanced}
       {open && (
         <span
           id={id.current}
           role="tooltip"
-          class="tooltip"
-          style={{
-            left: `${coords.left}px`,
-            top: `${coords.top}px`,
-            transform: placement === "bottom" ? "translate(-50%, 0)" : "translate(-50%, -100%)",
-          }}
+          class={`tooltip tooltip-${placement}`}
+          style={{ left: `${coords.left}px`, top: `${coords.top}px` }}
         >
           {label}
         </span>

@@ -2,7 +2,7 @@
 // Filter bar: Search · status Tabs · "New task". Grouped by status. Uses
 // CommanderRow (§4.4). States: loading / empty / empty-after-filter / error.
 
-import { useEffect, useMemo, useState, useCallback } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
@@ -10,19 +10,42 @@ import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { statusMeta } from "../components/primitives/StatusPill.jsx";
 import { CommanderRow } from "../components/CommanderRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { ErrorState } from "../components/ErrorState.jsx";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { navigateHash } from "../lib/navigation.js";
+import { hasRunError } from "../lib/display.js";
 
-const STATUS_ORDER = ["in_progress", "in_review", "todo", "done"];
+// The visible groups in Commander. `in_progress` (the worker-lifecycle
+// transient) is absorbed into Todo and shown via the per-row LivePulse;
+// `blocked` is synthesized from unmet deps, last-run errors, or a stuck
+// worker. See groupKeyFor below.
+const GROUPS = [
+  { key: "in_review", label: "In review", color: "var(--accent)",       icon: "◉" },
+  { key: "todo",      label: "Todo",      color: "var(--status-todo)",  icon: "○" },
+  { key: "blocked",   label: "Blocked",   color: "var(--status-error)", icon: "▲" },
+  { key: "done",      label: "Done",      color: "var(--status-done)",  icon: "●" },
+];
+
+function groupKeyFor(task) {
+  if (task.status === "in_review") return "in_review";
+  if (task.status === "done") return "done";
+  const unmetDeps = Array.isArray(task.blocked_by)
+    && task.blocked_by.some((d) => d.status !== "done");
+  const runErrored = hasRunError(task);
+  const stuck = task.status === "in_progress" && task.is_locked === false;
+  if (unmetDeps || runErrored || stuck) return "blocked";
+  return "todo";
+}
+
 const TABS = [
-  { value: "all",         label: "All" },
-  { value: "todo",        label: "Todo" },
-  { value: "in_progress", label: "In progress" },
-  { value: "in_review",   label: "In review" },
-  { value: "done",        label: "Done" },
+  { value: "all",       label: "All" },
+  { value: "in_review", label: "In review" },
+  { value: "todo",      label: "Todo" },
+  { value: "blocked",   label: "Blocked" },
+  { value: "done",      label: "Done" },
 ];
 
 export function Commander() {
@@ -31,6 +54,10 @@ export function Commander() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
+  const [selectedTaskId, setSelectedTaskId] = useState(null);
+  const [checkedIds, setCheckedIds] = useState(() => new Set());
+  const [listOwnsFocus, setListOwnsFocus] = useState(false);
+  const searchRef = useRef(null);
 
   const reload = useCallback(() => {
     setError(null);
@@ -47,40 +74,91 @@ export function Commander() {
     if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reload();
   });
 
-  const counts = useMemo(() => {
-    const c = { all: (tasks || []).length };
-    for (const t of tasks || []) c[t.status] = (c[t.status] || 0) + 1;
-    return c;
+  const withGroup = useMemo(() => {
+    return (tasks || []).map((t) => ({ task: t, group: groupKeyFor(t) }));
   }, [tasks]);
 
+  const counts = useMemo(() => {
+    const c = { all: withGroup.length };
+    for (const { group } of withGroup) c[group] = (c[group] || 0) + 1;
+    return c;
+  }, [withGroup]);
+
   const filtered = useMemo(() => {
-    const list = tasks || [];
     const q = query.trim().toLowerCase();
-    return list.filter((t) => {
-      if (statusFilter !== "all" && t.status !== statusFilter) return false;
+    return withGroup.filter(({ task, group }) => {
+      if (statusFilter !== "all" && group !== statusFilter) return false;
       if (!q) return true;
       return (
-        t.title?.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        t.id?.toLowerCase().includes(q) ||
-        t.executor_agent?.toLowerCase().includes(q) ||
-        t.reviewer_agent?.toLowerCase().includes(q)
+        task.title?.toLowerCase().includes(q) ||
+        task.instructions?.toLowerCase().includes(q) ||
+        task.id?.toLowerCase().includes(q) ||
+        task.executor_agent?.toLowerCase().includes(q) ||
+        task.reviewer_agent?.toLowerCase().includes(q)
       );
     });
-  }, [tasks, statusFilter, query]);
+  }, [withGroup, statusFilter, query]);
 
   const grouped = useMemo(() => {
-    return STATUS_ORDER
-      .map((status) => ({
-        status,
-        meta: statusMeta(status),
-        tasks: filtered.filter((t) => t.status === status),
+    return GROUPS
+      .map((g) => ({
+        status: g.key,
+        meta: { label: g.label, color: g.color, icon: g.icon },
+        tasks: filtered.filter((entry) => entry.group === g.key).map((entry) => entry.task),
       }))
       .filter((g) => g.tasks.length > 0);
   }, [filtered]);
+  const orderedTasks = useMemo(() => grouped.flatMap((group) => group.tasks), [grouped]);
+
+  useEffect(() => {
+    if (orderedTasks.length === 0) {
+      setSelectedTaskId(null);
+      return;
+    }
+    if (!selectedTaskId || !orderedTasks.some((task) => task.id === selectedTaskId)) {
+      setSelectedTaskId(orderedTasks[0].id);
+    }
+  }, [orderedTasks, selectedTaskId]);
+
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+    j: (event) => {
+      if (!listOwnsFocus || orderedTasks.length === 0) return;
+      event.preventDefault();
+      const currentIndex = Math.max(0, orderedTasks.findIndex((task) => task.id === selectedTaskId));
+      const next = orderedTasks[(currentIndex + 1) % orderedTasks.length];
+      if (next) setSelectedTaskId(next.id);
+    },
+    k: (event) => {
+      if (!listOwnsFocus || orderedTasks.length === 0) return;
+      event.preventDefault();
+      const currentIndex = Math.max(0, orderedTasks.findIndex((task) => task.id === selectedTaskId));
+      const next = orderedTasks[(currentIndex - 1 + orderedTasks.length) % orderedTasks.length];
+      if (next) setSelectedTaskId(next.id);
+    },
+    Enter: (event) => {
+      if (!listOwnsFocus || !selectedTaskId) return;
+      event.preventDefault();
+      navigateHash(`#/tasks/${selectedTaskId}`);
+    },
+    x: (event) => {
+      if (!listOwnsFocus || !selectedTaskId) return;
+      event.preventDefault();
+      setCheckedIds((current) => {
+        const next = new Set(current);
+        if (next.has(selectedTaskId)) next.delete(selectedTaskId);
+        else next.add(selectedTaskId);
+        return next;
+      });
+    },
+  });
 
   const headerActions = (
-    <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/tasks/new"; }}>
+    <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
       New task
     </Button>
   );
@@ -99,6 +177,7 @@ export function Commander() {
             placeholder="Search tasks…"
             shortcut="/"
             ariaLabel="Search tasks"
+            inputRef={searchRef}
           />
           <div class="filter-divider" />
           <Tabs
@@ -125,14 +204,21 @@ export function Commander() {
               title="No tasks yet"
               body="Create your first task to start orchestrating agents."
               cta={
-                <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/tasks/new"; }}>
+                <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                   Create your first task
                 </Button>
               }
             />
           )
         ) : (
-          <div class="commander-list wl-hide-scrollbar">
+          <div
+            class="commander-list wl-hide-scrollbar"
+            tabIndex={0}
+            onFocus={() => setListOwnsFocus(true)}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setListOwnsFocus(false);
+            }}
+          >
             {grouped.map((group) => (
               <div key={group.status} class="commander-group">
                 <div class="commander-group-header">
@@ -141,7 +227,23 @@ export function Commander() {
                   <span class="group-count">{group.tasks.length}</span>
                 </div>
                 {group.tasks.map((task) => (
-                  <CommanderRow key={task.id} task={task} agents={agents} />
+                  <CommanderRow
+                    key={task.id}
+                    task={task}
+                    agents={agents}
+                    selected={task.id === selectedTaskId}
+                    checked={checkedIds.has(task.id)}
+                    onSelect={() => setSelectedTaskId(task.id)}
+                    onToggleCheck={(nextChecked) => {
+                      setCheckedIds((current) => {
+                        const next = new Set(current);
+                        if (nextChecked) next.add(task.id);
+                        else next.delete(task.id);
+                        return next;
+                      });
+                    }}
+                    onOpen={() => navigateHash(`#/tasks/${task.id}`)}
+                  />
                 ))}
               </div>
             ))}

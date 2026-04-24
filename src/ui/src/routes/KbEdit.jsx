@@ -19,6 +19,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
+import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 export function KbEdit({ slug, onSaved, onDeleted }) {
   const isNew = slug === "new";
@@ -44,6 +45,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
   }, [slug, isNew]);
 
   const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
 
   function parseTags(raw) {
     return raw.split(",").map((t) => t.trim()).filter(Boolean);
@@ -103,7 +105,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
   return (
     <>
       <header class="pane-detail-head">
-        <div style={{ minWidth: 0 }}>
+        <div class="pane-detail-head-titles">
           <div class="all-caps">{isNew ? "Create entry" : "Knowledge"}</div>
           <h2>{title || "(untitled)"}</h2>
         </div>
@@ -195,6 +197,24 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
         }
       >
         <p>This removes the entry permanently.</p>
+      </Modal>
+
+      <Modal
+        open={guard.promptOpen}
+        onClose={guard.keepEditing}
+        title="You have unsaved changes"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
+            <Button variant="destructive" onClick={guard.discardAndLeave}>Discard</Button>
+            <Button variant="primary" loading={formSave.saving} onClick={() => guard.saveAndLeave().catch(() => {})}>
+              Save & leave
+            </Button>
+          </>
+        }
+      >
+        <p>Your changes have not been saved.</p>
       </Modal>
     </>
   );

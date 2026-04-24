@@ -22,13 +22,23 @@ export function registerSkillRoutes(app, { dataDir, db }) {
   const skillsDir = () => join(dataDir, "skills");
 
   app.get("/api/skills", (_req, res) => {
-    const skills = loadSkills(skillsDir()).map((s) => ({
-      name: s.name,
-      display_name: s.display_name,
-      trigger: s.trigger,
-      enabled: s.enabled,
-      priority: s.priority,
-    }));
+    const agents = db
+      ? db.prepare("SELECT skills_allowlist FROM agents").all().map((row) => {
+        try { return JSON.parse(row.skills_allowlist || "[]"); } catch { return []; }
+      })
+      : [];
+    const openAllowlistCount = agents.filter((list) => list.length === 0).length;
+    const skills = loadSkills(skillsDir()).map((s) => {
+      const explicitCount = agents.filter((list) => list.includes(s.name)).length;
+      return {
+        name: s.name,
+        display_name: s.display_name,
+        trigger: s.trigger,
+        enabled: s.enabled,
+        priority: s.priority,
+        used_by_count: explicitCount + openAllowlistCount,
+      };
+    });
     res.json({ skills });
   });
 

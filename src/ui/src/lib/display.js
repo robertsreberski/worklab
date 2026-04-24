@@ -51,3 +51,15 @@ export function shortDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
+
+// §5.3 — true when the task's most recent run errored. Used by Commander
+// (to put the row in the Blocked group) and TaskDetail (error chip on hero).
+export function hasRunError(task) {
+  if (!task) return false;
+  if (task.last_run?.status === "error") return true;
+  if (Array.isArray(task.runs) && task.runs.length) {
+    const last = task.runs[task.runs.length - 1];
+    if (last?.status === "error") return true;
+  }
+  return false;
+}

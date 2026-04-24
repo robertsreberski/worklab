@@ -1,6 +1,7 @@
 // §6.4 TaskEdit — create/edit one task.
-// Sticky header with breadcrumb + Cancel + primary. Centered form 720px.
-// FormSections: Core · Assignment. No Advanced twist-open (empty in baseline).
+// Sticky header with breadcrumb + Cancel + primary + ⌘S hint.
+// Two-column body: left (title · instructions · dependencies),
+// right rail (status grid · executor · reviewer · tags).
 // ⌘S saves. Esc navigates back (unsaved-guard modal if dirty).
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -15,32 +16,36 @@ import { Button } from "../components/primitives/Button.jsx";
 import { IconButton } from "../components/primitives/IconButton.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
-import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
+import { Kbd } from "../components/primitives/Kbd.jsx";
+import { Tooltip } from "../components/primitives/Tooltip.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
-import { FormSection } from "../components/FormSection.jsx";
-import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 
-const PRIORITY_OPTIONS = [
-  { value: 0, label: "None" },
-  { value: 1, label: "P1" },
-  { value: 2, label: "P2" },
-  { value: 3, label: "P3" },
+// Status grid in the right rail. "blocked" is derived (deps + errors + stuck)
+// and cannot be set directly — render the button disabled with a tooltip.
+const STATUS_OPTIONS = [
+  { value: "todo",       label: "Todo",       icon: "○", color: "var(--status-todo)" },
+  { value: "blocked",    label: "Blocked",    icon: "▲", color: "var(--status-error)", disabled: true,
+    disabledHint: "Blocked is derived from dependencies, last-run errors, or a stuck worker — set those instead." },
+  { value: "in_review",  label: "In review",  icon: "◉", color: "var(--accent)" },
+  { value: "done",       label: "Done",       icon: "●", color: "var(--status-done)" },
 ];
 
 function emptyDraft() {
   return {
     title: "",
-    description: "",
     instructions: "",
     executor_agent: null,
     reviewer_agent: null,
-    priority: 0,
+    status: "todo",
     tags: [],
+    blocked_by_ids: [],
   };
 }
 
@@ -48,14 +53,16 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
   const [agents, setAgents] = useState([]);
+  const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(mode === "edit");
   const [notFound, setNotFound] = useState(false);
-  const [leaveModal, setLeaveModal] = useState(null); // pending destination
   const [tagDraft, setTagDraft] = useState("");
+  const [dependencyDraft, setDependencyDraft] = useState("");
   const formRef = useRef(null);
 
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listTasks().then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
   }, []);
 
   useEffect(() => {
@@ -66,12 +73,12 @@ export function TaskEdit({ mode = "create", id = null }) {
         if (!data?.task) { setNotFound(true); return; }
         const initial = {
           title: data.task.title || "",
-          description: data.task.description || "",
           instructions: data.task.instructions || "",
           executor_agent: data.task.executor_agent || null,
           reviewer_agent: data.task.reviewer_agent || null,
-          priority: data.task.priority || 0,
+          status: data.task.status || "todo",
           tags: data.task.tags || [],
+          blocked_by_ids: data.task.dependency_ids || [],
         };
         setDraft(initial);
         setBaseline(initial);
@@ -84,12 +91,12 @@ export function TaskEdit({ mode = "create", id = null }) {
     if (mode === "create") {
       const r = await api.createTask(patch);
       pushToast("Task created", { variant: "success" });
-      window.location.hash = `#/tasks/${r.task.id}`;
+      return r.task.id;
     } else {
       await api.patchTask(id, patch);
       pushToast("Saved.", { variant: "success" });
       setBaseline(draft);
-      window.location.hash = `#/tasks/${id}`;
+      return id;
     }
   });
 
@@ -99,39 +106,37 @@ export function TaskEdit({ mode = "create", id = null }) {
     setDraft((d) => ({ ...d, ...patch }));
   }
 
-  function save() {
+  async function save({ navigateOnSuccess = true } = {}) {
     const payload = {
       title: draft.title.trim(),
-      description: draft.description,
       instructions: draft.instructions,
       executor_agent: draft.executor_agent,
       reviewer_agent: draft.reviewer_agent,
-      priority: Number(draft.priority) || 0,
+      status: draft.status === "blocked" ? baseline.status || "todo" : draft.status,
       tags: draft.tags,
+      blocked_by_ids: draft.blocked_by_ids || [],
     };
     if (!payload.title) {
       pushToast("Title is required", { variant: "error" });
-      return;
+      throw new Error("Title is required");
     }
-    formSave.save(payload).catch(() => {});
+    const savedId = await formSave.save(payload);
+    if (navigateOnSuccess && savedId) {
+      navigateHash(`#/tasks/${savedId}`);
+    }
+    return savedId;
   }
 
-  function navigateAway(hash) {
-    if (isDirty) {
-      setLeaveModal(hash);
-    } else {
-      window.location.hash = hash;
-    }
-  }
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => save({ navigateOnSuccess: false }) });
 
   function cancel() {
-    if (mode === "edit" && id) navigateAway(`#/tasks/${id}`);
-    else navigateAway("#/tasks");
+    if (mode === "edit" && id) guard.requestNavigation(`#/tasks/${id}`);
+    else guard.requestNavigation("#/tasks");
   }
 
   useGlobalShortcuts({
-    cmds: (e) => { e.preventDefault(); save(); },
-    cmdenter: (e) => { e.preventDefault(); save(); },
+    cmds: (e) => { e.preventDefault(); save().catch(() => {}); },
+    cmdenter: (e) => { e.preventDefault(); save().catch(() => {}); },
     Escape: () => cancel(),
   });
 
@@ -147,13 +152,39 @@ export function TaskEdit({ mode = "create", id = null }) {
     update({ tags: draft.tags.filter((x) => x !== t) });
   }
 
-  const title = mode === "create" ? "New task" : "Edit task";
+  const selectedDependencyMap = useMemo(
+    () => new Map(tasks.map((task) => [task.id, task])),
+    [tasks],
+  );
+
+  const dependencyOptions = useMemo(() => {
+    return tasks
+      .filter((task) => task.id !== id && !draft.blocked_by_ids.includes(task.id))
+      .map((task) => ({
+        value: task.id,
+        label: task.title,
+        description: `${task.status.replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
+      }));
+  }, [draft.blocked_by_ids, id, tasks]);
+
+  function addDependency(taskId) {
+    if (!taskId || draft.blocked_by_ids.includes(taskId)) return;
+    update({ blocked_by_ids: [...draft.blocked_by_ids, taskId] });
+    setDependencyDraft("");
+  }
+
+  function removeDependency(taskId) {
+    update({ blocked_by_ids: draft.blocked_by_ids.filter((entry) => entry !== taskId) });
+  }
+
+  const heading = mode === "create" ? "New task" : "Edit task";
+  const idDisplay = mode === "edit" && id ? `#${String(id).slice(-6).toUpperCase()}` : null;
 
   return (
-    <AppShell route="tasks" title={title}>
+    <AppShell route="tasks" title="Tasks">
       <div class="task-edit">
-        <header class="task-edit-head">
-          <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", minWidth: 0 }}>
+        <header class="task-edit-head" aria-label={heading}>
+          <div class="task-edit-head-left">
             <IconButton
               icon={<Icon name="chevron-left" size={14} />}
               aria-label="Back"
@@ -161,15 +192,18 @@ export function TaskEdit({ mode = "create", id = null }) {
             />
             <Breadcrumb items={[
               { label: "Tasks", href: "#/tasks" },
-              ...(mode === "edit" ? [{ label: `#${String(id).slice(-6)}`, href: `#/tasks/${id}` }] : []),
+              ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${id}` }] : []),
               { label: mode === "create" ? "New" : "Edit" },
             ]} />
           </div>
-          <div class="toolbar">
+          <div class="toolbar task-edit-toolbar">
+            <span class="task-edit-shortcut" aria-hidden="true">
+              <Kbd>⌘</Kbd><Kbd>S</Kbd> save
+            </span>
             <Button variant="ghost" onClick={cancel}>Cancel</Button>
             <Button
               variant={isDirty || mode === "create" ? "primary" : "secondary"}
-              onClick={save}
+              onClick={() => save().catch(() => {})}
               loading={formSave.saving}
               disabled={!draft.title.trim()}
             >
@@ -180,24 +214,35 @@ export function TaskEdit({ mode = "create", id = null }) {
         <form
           ref={formRef}
           class="task-edit-body"
-          onSubmit={(e) => { e.preventDefault(); save(); }}
+          onSubmit={(e) => { e.preventDefault(); save().catch(() => {}); }}
         >
           {notFound && (
             <Banner variant="error" title="Task not found" detail="It may have been deleted." />
           )}
           {loading && <LoadingState caption="Loading task…" />}
           {!loading && !notFound && (
-            <>
-              {formSave.error && (
-                <Banner
-                  variant="error"
-                  title="Save failed"
-                  detail={formSave.error}
-                  actions={<Button size="sm" variant="secondary" onClick={save}>Retry</Button>}
-                />
-              )}
+            <div class="task-edit-grid">
+              {/* Left column — identity & instructions & deps */}
+              <div class="task-edit-main">
+                <div class="task-edit-eyebrow-block">
+                  <div class="all-caps task-edit-eyebrow">
+                    {mode === "create" ? "New task" : "Editing task"}
+                  </div>
+                  <h2 class="task-edit-title">
+                    {idDisplay && <span class="mono task-edit-title-id">{idDisplay}</span>}
+                    {draft.title || <span class="task-edit-title-placeholder">Untitled task</span>}
+                  </h2>
+                </div>
 
-              <FormSection kicker="Core" title="Task definition" description="What the executor agent should do and why.">
+                {formSave.error && (
+                  <Banner
+                    variant="error"
+                    title="Save failed"
+                    detail={formSave.error}
+                    actions={<Button size="sm" variant="secondary" onClick={() => save().catch(() => {})}>Retry</Button>}
+                  />
+                )}
+
                 <FormField label="Title" required>
                   <Input
                     placeholder="Short, actionable title"
@@ -206,24 +251,13 @@ export function TaskEdit({ mode = "create", id = null }) {
                     autoFocus={mode === "create"}
                   />
                 </FormField>
-                <FormField
-                  label="Description"
-                  hint="Human-readable context. Supports Markdown."
-                >
-                  <Textarea
-                    rows={5}
-                    autoGrow
-                    placeholder="What problem are we solving? Why does it matter?"
-                    value={draft.description}
-                    onInput={(e) => update({ description: e.target.value })}
-                  />
-                </FormField>
+
                 <FormField
                   label="Instructions"
-                  hint="Passed verbatim to the executor agent."
+                  hint="Passed verbatim to the executor agent. Markdown supported."
                 >
                   <Textarea
-                    rows={8}
+                    rows={10}
                     monospace
                     autoGrow
                     placeholder="Precise instructions the executor agent should follow."
@@ -231,86 +265,128 @@ export function TaskEdit({ mode = "create", id = null }) {
                     onInput={(e) => update({ instructions: e.target.value })}
                   />
                 </FormField>
-              </FormSection>
 
-              <FormSection kicker="Assignment" title="Who runs it">
-                <FormGrid columns={2}>
-                  <FormField label="Executor" hint="The agent that runs the work.">
-                    <AgentPicker
-                      value={draft.executor_agent}
-                      onChange={(name) => update({ executor_agent: name })}
-                      agents={agents}
-                      placeholder="Pick an executor"
+                <FormField
+                  label="Depends on"
+                  hint="Optional blockers. A task cannot run until every dependency is done."
+                >
+                  <div class="dependency-picker">
+                    {draft.blocked_by_ids.length > 0 && (
+                      <div class="dependency-chip-list">
+                        {draft.blocked_by_ids.map((dependencyId) => {
+                          const dependency = selectedDependencyMap.get(dependencyId);
+                          const label = dependency?.title || dependencyId;
+                          return (
+                            <Chip key={dependencyId} variant="tag" onRemove={() => removeDependency(dependencyId)}>
+                              {label}
+                            </Chip>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <Select
+                      value={dependencyDraft}
+                      onChange={addDependency}
+                      options={dependencyOptions}
+                      placeholder="Link another task…"
+                      ariaLabel="Add dependency"
+                      searchable
                     />
-                  </FormField>
-                  <FormField label="Reviewer" hint="Optional agent that verifies the result.">
-                    <AgentPicker
-                      value={draft.reviewer_agent}
-                      onChange={(name) => update({ reviewer_agent: name })}
-                      agents={agents}
-                      placeholder="Pick a reviewer"
+                  </div>
+                </FormField>
+              </div>
+
+              {/* Right rail — assignment & status */}
+              <aside class="task-edit-rail">
+                <FormField label="Status">
+                  <div class="status-grid">
+                    {STATUS_OPTIONS.map((opt) => {
+                      const active = draft.status === opt.value;
+                      const btn = (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          class={`status-grid-btn ${active ? "active" : ""}`}
+                          style={{ "--status-color": opt.color }}
+                          aria-pressed={active}
+                          disabled={opt.disabled}
+                          onClick={() => !opt.disabled && update({ status: opt.value })}
+                        >
+                          <span class="status-grid-icon" aria-hidden="true">{opt.icon}</span>
+                          <span class="status-grid-label">{opt.label}</span>
+                        </button>
+                      );
+                      return opt.disabled ? (
+                        <Tooltip key={opt.value} label={opt.disabledHint} placement="top">
+                          {btn}
+                        </Tooltip>
+                      ) : btn;
+                    })}
+                  </div>
+                </FormField>
+
+                <FormField label="Executor" hint="Required to run.">
+                  <AgentPicker
+                    value={draft.executor_agent}
+                    onChange={(name) => update({ executor_agent: name })}
+                    agents={agents}
+                    placeholder="Pick an executor"
+                  />
+                </FormField>
+
+                <FormField label="Reviewer" hint="Optional verifier.">
+                  <AgentPicker
+                    value={draft.reviewer_agent}
+                    onChange={(name) => update({ reviewer_agent: name })}
+                    agents={agents}
+                    placeholder="Pick a reviewer"
+                  />
+                </FormField>
+
+                <FormField label="Tags" hint="Press Enter to add.">
+                  <div class="tag-input-row">
+                    {(draft.tags || []).map((t) => (
+                      <Chip key={t} variant="tag" onRemove={() => removeTag(t)}>{t}</Chip>
+                    ))}
+                    <Input
+                      size="sm"
+                      placeholder="Add tag…"
+                      value={tagDraft}
+                      onInput={(e) => setTagDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === ",") {
+                          e.preventDefault();
+                          commitTagDraft();
+                        } else if (e.key === "Backspace" && !tagDraft && draft.tags.length) {
+                          removeTag(draft.tags[draft.tags.length - 1]);
+                        }
+                      }}
+                      onBlur={commitTagDraft}
                     />
-                  </FormField>
-                  <FormField label="Priority">
-                    <RadioGroup
-                      ariaLabel="Priority"
-                      value={draft.priority}
-                      onChange={(v) => update({ priority: v })}
-                      options={PRIORITY_OPTIONS}
-                    />
-                  </FormField>
-                  <FormField label="Tags" hint="Press Enter to add a tag.">
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-2)", alignItems: "center" }}>
-                      {(draft.tags || []).map((t) => (
-                        <Chip key={t} variant="tag" onRemove={() => removeTag(t)}>{t}</Chip>
-                      ))}
-                      <Input
-                        size="sm"
-                        placeholder="Add tag…"
-                        value={tagDraft}
-                        onInput={(e) => setTagDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === ",") {
-                            e.preventDefault();
-                            commitTagDraft();
-                          } else if (e.key === "Backspace" && !tagDraft && draft.tags.length) {
-                            removeTag(draft.tags[draft.tags.length - 1]);
-                          }
-                        }}
-                        onBlur={commitTagDraft}
-                      />
-                    </div>
-                  </FormField>
-                </FormGrid>
-              </FormSection>
-            </>
+                  </div>
+                </FormField>
+              </aside>
+            </div>
           )}
         </form>
       </div>
-
       {/* Unsaved-changes guard */}
       <Modal
-        open={!!leaveModal}
-        onClose={() => setLeaveModal(null)}
+        open={guard.promptOpen}
+        onClose={guard.keepEditing}
         title="You have unsaved changes"
         size="sm"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setLeaveModal(null)}>Keep editing</Button>
+            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
             <Button
               variant="destructive"
-              onClick={() => { const h = leaveModal; setLeaveModal(null); window.location.hash = h; }}
+              onClick={guard.discardAndLeave}
             >Discard</Button>
             <Button
               variant="primary"
               loading={formSave.saving}
-              onClick={async () => {
-                try {
-                  await save();
-                  const h = leaveModal; setLeaveModal(null);
-                  if (h) window.location.hash = h;
-                } catch { /* handled in save */ }
-              }}
+              onClick={() => guard.saveAndLeave().catch(() => {})}
             >Save & leave</Button>
           </>
         }

@@ -2,7 +2,7 @@
 // Exposes only the transitions in the §5.1 table for the current state.
 // Disabled transitions are hidden (not greyed-out) to reduce cognitive load.
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
 import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
 import { Icon } from "./Icon.jsx";
 
@@ -29,12 +29,17 @@ export function StatusMenu({
   class: className = "",
 }) {
   const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
   const ref = useRef(null);
+  const triggerRef = useRef(null);
+  const listId = useId();
+  const choices = useMemo(() => allowedTransitions(status), [status]);
+
   useEffect(() => {
     if (!open) return;
     const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
     document.addEventListener("pointerdown", close);
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onKey = (e) => { if (e.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", close);
@@ -42,46 +47,94 @@ export function StatusMenu({
     };
   }, [open]);
 
-  const choices = allowedTransitions(status);
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [status, open]);
+
+  function choose(index) {
+    const transition = choices[index];
+    if (!transition) return;
+    setOpen(false);
+    onChoose?.(transition);
+    triggerRef.current?.focus();
+  }
+
+  function move(delta) {
+    if (!choices.length) return;
+    setActiveIndex((current) => (current + delta + choices.length) % choices.length);
+  }
+
+  function onTriggerKeyDown(event) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (!open) setOpen(true);
+      else move(1);
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!open) setOpen(true);
+      else move(-1);
+      return;
+    }
+    if (event.key === "Home" && open) {
+      event.preventDefault();
+      setActiveIndex(0);
+      return;
+    }
+    if (event.key === "End" && open) {
+      event.preventDefault();
+      setActiveIndex(Math.max(choices.length - 1, 0));
+      return;
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      if (!open) setOpen(true);
+      else choose(activeIndex);
+    }
+  }
 
   return (
-    <div ref={ref} class={`status-menu ${className}`.trim()} style={{ position: "relative", display: "inline-flex" }}>
+    <div ref={ref} class={`status-menu ${className}`.trim()}>
       <button
+        ref={triggerRef}
         type="button"
+        class="status-menu-trigger"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        aria-haspopup="menu"
-        style={{ background: "transparent", border: 0, padding: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}
+        aria-haspopup="listbox"
+        aria-controls={listId}
+        aria-activedescendant={open && choices[activeIndex] ? `${listId}-opt-${activeIndex}` : undefined}
+        role="combobox"
+        onKeyDown={onTriggerKeyDown}
       >
         <StatusPill status={status} />
         <Icon name="chevron-down" size={12} />
       </button>
       {open && choices.length > 0 && (
         <div
-          class="select-menu"
-          role="menu"
-          style={{ right: "auto", left: 0, minWidth: 200, top: "calc(100% + var(--sp-1))" }}
+          class="select-menu status-menu-list"
+          id={listId}
+          role="listbox"
         >
-          {choices.map((t) => {
+          {choices.map((t, index) => {
             const meta = statusMeta(t.to);
             return (
-              <button
+              <div
                 key={`${t.from}-${t.to}`}
-                type="button"
-                class="select-option"
-                role="menuitem"
-                style={{ width: "100%", textAlign: "left", border: 0, background: "transparent", font: "inherit", cursor: "pointer" }}
-                onClick={() => {
-                  setOpen(false);
-                  onChoose?.(t);
-                }}
+                id={`${listId}-opt-${index}`}
+                class="select-option status-menu-option"
+                role="option"
+                aria-selected={index === activeIndex}
+                onMouseEnter={() => setActiveIndex(index)}
+                onClick={() => choose(index)}
               >
                 <span class="status-dot" style={{ "--dot-color": meta.color, "--dot-size": "8px" }} />
                 <span class="select-option-body">
                   <span class="select-option-label">{t.label}</span>
                   <span class="select-option-description">→ {meta.label}</span>
                 </span>
-              </button>
+              </div>
             );
           })}
         </div>

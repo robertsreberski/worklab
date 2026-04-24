@@ -16,7 +16,9 @@ function overlayActive() {
   if (typeof document === "undefined") return false;
   return Boolean(
     document.querySelector(".modal-backdrop") ||
-    document.querySelector(".drawer")
+    document.querySelector(".drawer") ||
+    document.querySelector(".select-menu") ||
+    document.querySelector("[role='menu']")
   );
 }
 

@@ -472,7 +472,7 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 - **trigger** — accent-tinted. Skill trigger modes.
 - **filter** — toggleable pill in a filter bar. Selected = `--accent-soft` fill + `--accent` border.
 
-**Not a chip:** StatusPill, PriorityChip, ToolToken. These are their own primitives.
+**Not a chip:** StatusPill, ToolToken. These are their own primitives.
 
 **Anatomy** — 20–22px height, `--sp-2` horizontal padding, 12px label, optional 12px leading icon.
 
@@ -506,15 +506,12 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 
 **Rule:** `pulse` is true only while a run for the associated entity is actively streaming events (`run.status === "running"`), not merely because the task sits in `in_progress` or `in_review`. This keeps the "loud when real-time" semantic of §1.1 truthful: an in-review task whose reviewer has not yet started is quiet.
 
-### 3.13 PriorityChip
+### 3.13 PriorityChip — REMOVED
 
-**Purpose** — Compact indicator of task priority.
-
-**Anatomy** — 16px square or pill, `--text-xs` label.
-
-**Values** — 0 = hidden (default priority shows nothing), 1 = "P1" grey, 2 = "P2" amber, 3 = "P3" red-amber.
-
-**Rule:** No decorative priority shown for priority 0 — the absence communicates default. Don't ship a grey "P0" chip.
+Priority is no longer a task concept. The chip, the field on TaskEdit, the
+KV row on TaskDetail, the column in `tasks`/`schedules`, and the related
+filter behaviour are all gone (schema v5 migration in `src/core/db.js`).
+Tasks have no inherent priority — agents decide. Do not reintroduce.
 
 ### 3.14 LivePulse
 
@@ -676,7 +673,7 @@ Composites live under `src/ui/src/components/` (not `primitives/`). Each composi
 1. `checkbox` — 16px (multi-select).
 2. `id` — 64px, mono 11px, `--text-muted`.
 3. `dot` — 12px StatusDot with pulse when live.
-4. `title cluster` — flexible, `min-width: 0`. Row 1 is title (13/500, truncate) plus at most one compact meta chip. Blocked-by (`Blocked by N`, lock glyph) wins over priority (`P1` / `P2` / `P3`) when both apply — blocking is more actionable than severity. Row 2 is `live-line` only when live: ToolToken + short timestamp, 12/mono/muted, `wl-tick-in` on change.
+4. `title cluster` — flexible, `min-width: 0`. Row 1 is title (13/500, truncate) plus at most one compact meta chip — `Stuck — reset` (worker died), `Error` (last run errored), or `Needs executor` (no executor assigned). Priority is removed from the model, so no priority chip exists. The `Blocked by N` chip lives in its own grid cell to the right of the title (cell 5), not inline. Row 2 is `live-line` only when live: ToolToken + short timestamp, 12/mono/muted, `wl-tick-in` on change.
 5. `agents` — 80px, two overlapping 20px AgentAvatars (executor, reviewer).
 6. `pill` — 104px, StatusPill (`max-width: 104px`).
 7. `age` — 56px, mono 11px, `--text-muted`, right-aligned.
@@ -915,9 +912,16 @@ Patterns are the reusable interaction and state rules that cut across screens.
   any ──human_move──▶ any  (backend allows; UI restricts — see below)
 ```
 
-**Rule:** The four-state task model (`todo`, `in_progress`, `in_review`, `done`) is the baseline for this design system. Red error affordances in the current product describe run failure or field/action error; they do **not** imply a fifth task state.
+**Rule:** The four-state task model (`todo`, `in_progress`, `in_review`, `done`) is the baseline state machine. Red error affordances in the current product describe run failure or field/action error; they do **not** imply a fifth task state in the database.
 
-**[Target] Prototype extension** — `ds-prototype` introduces a fifth task-level blocked/error state. If product adopts it, name it `blocked` in schema/UI and treat it as an explicit state-machine expansion. Do not infer it from `task.error_text`, retry count, or the most recent run.
+**Visible groups in Commander** — the UI groups by *user mental model*, not by raw status:
+
+- **Todo** — `status === "todo"` OR healthy `status === "in_progress"`. A row that is currently being run by a worker shows a `LivePulse` indicator; it does NOT live in its own "Running" group. The user's stated mental model: a task is either waiting/running, blocked, in review, or done.
+- **Blocked** — synthesised. Includes any task with unmet `blocked_by` deps, OR `last_run.status === "error"`, OR stuck (`status === "in_progress" && is_locked === false`). Row chips disambiguate: `Blocked by N`, `Error`, `Stuck — reset`.
+- **In review** — `status === "in_review"`.
+- **Done** — `status === "done"`.
+
+There is no separate "blocked" *status* in the database. Group membership is computed at render time by `groupKeyFor(task)` in `src/ui/src/routes/Commander.jsx`.
 
 **UI transition policy** — The UI **must** expose the following transitions. This list is intentionally shorter than the backend's full matrix: we choose to keep the happy path linear while exposing escape hatches for recovery.
 
@@ -1123,13 +1127,13 @@ Every route has a blueprint.
 **Primary action** — "New task" (in header).
 
 **Layout**
-- Filter bar: SearchField (`[/]`) · status Tabs (All · Todo · In progress · In review · Done) · header right action ("New task").
-- Group headers (sticky, one per status) with count badge.
+- Filter bar: SearchField (`[/]`) · status Tabs (All · In review · Todo · Blocked · Done) · header right action ("New task").
+- Group headers (one per visible group) — render inline at the top of their group, NOT sticky. Sticky positioning was overlapping rows during scroll.
 - Commander rows (4.4).
 
-**[Target] Extension** — If product adopts an explicit task-level blocked state, add a **Blocked** tab. Do not add an **Error** tab for tasks while task status remains four-state.
+**Group derivation** — see §5.1. The four visible groups (In review · Todo · Blocked · Done) come from `groupKeyFor(task)`. Tasks with `status === "in_progress"` appear inside Todo with a `LivePulse` indicator on the row; "in_progress" is treated as a transient worker-lifecycle state, not a sticky user-visible status. Tasks with unmet deps, last-run errors, or stuck workers land in Blocked.
 
-**Inventory** — SearchField, Tabs, StatusPill, StatusDot, PriorityChip, AgentAvatar, ToolToken, LivePulse, Commander row grid, EmptyState, LoadingState.
+**Inventory** — SearchField, Tabs, StatusPill, StatusDot, AgentAvatar, ToolToken, LivePulse, Commander row grid, EmptyState, LoadingState.
 
 **Data contract**
 - Fetches `GET /api/tasks` with optional `?status=` filter.
@@ -1400,7 +1404,7 @@ A running list of user-reported bugs and the document's response. Each entry lin
 | Task stuck in `in_progress` with no UI to recover | Status menu (§5.1) exposes every allowed transition including `in_progress → todo`. Stuck-task Banner (§5.2) detects `is_locked === false` and offers Reset / Retry. |
 | Error chip shown despite successful run | §5.3: error chip binds to `last_run.status === 'error'`, not to `task.error_text`. Paired backend fix (§9.3) clears `error_text` on a successful `run_completed`. |
 | Live logs missing on TaskDetail | LiveRunPanel (in §6.3) + live streaming contract (§5.5) specify cinematic event reveal via `wl-tick-in` per new row. |
-| Blocked-by dependencies not visible | Commander row (§4.4) surfaces a compact `Blocked by N` chip in the title cluster (precedence over priority). TaskDetail rail (§6.3) has a Dependencies card [Target], gated on the task-graph backend. |
+| Blocked-by dependencies not visible | Commander row (§4.4) surfaces a compact `Blocked by N` chip in its own grid cell, and the row moves into the synthesized **Blocked** group (§6.2). TaskDetail rail (§6.3) has a Dependencies card. |
 | Keyboard shortcuts not discoverable | `?` opens a drawer listing every shortcut (§5.9). No hidden shortcuts. |
 | Long task text silently drops Markdown | Markdown (§4.17) clamps body by rendered height and offers "Show more"; full Markdown is never dropped. |
 | No inline affordance for action failures | Banner (§4.20) is the canonical inline message. Stuck-task (§5.2), save-error (§5.6), and mid-flow failures (§5.13) all resolve through it. |

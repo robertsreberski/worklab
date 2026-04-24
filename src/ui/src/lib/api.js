@@ -68,4 +68,11 @@ export const api = {
   patchProviderModel: (providerId, modelId, patch) => request("PATCH", `/providers/${providerId}/models/${modelId}`, patch),
   listAvailableModels: () => request("GET", "/models/available"),
   listEmbeddingModels: () => request("GET", "/models/embeddings"),
+  // schedules
+  listSchedules: () => request("GET", "/schedules"),
+  getSchedule: (id) => request("GET", `/schedules/${id}`),
+  createSchedule: (data) => request("POST", "/schedules", data),
+  patchSchedule: (id, patch) => request("PATCH", `/schedules/${id}`, patch),
+  deleteSchedule: (id) => request("DELETE", `/schedules/${id}`),
+  runSchedule: (id) => request("POST", `/schedules/${id}/run`),
 };

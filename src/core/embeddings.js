@@ -450,20 +450,28 @@ export async function search({ db, dataDir, query, kind = "all", agent = null, l
   });
 
   const modelRef = getEmbeddingModel(db);
-  const queryEmbedding = modelRef
-    ? await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl })
-    : { vector: null, error: null };
-  if (queryEmbedding.vector) {
-    const rows = db.prepare(`
-      SELECT * FROM embeddings e
-      WHERE e.vector IS NOT NULL AND e.model = ?${filter}
-    `).all(modelRef, ...params);
-    for (const row of rows) {
-      const sim = cosineSimilarity(queryEmbedding.vector, bufferToFloatArray(row.vector));
-      if (sim <= 0) continue;
-      const existing = scores.get(row.id) || { row, fts: 0 };
-      existing.vector = sim;
-      scores.set(row.id, existing);
+  // Only do vector search if we have an embedding model configured AND
+  // FTS returned some candidate IDs to narrow the scope.  This avoids the
+  // O(n) full-table-vector scan on large datasets by only computing cosine
+  // similarity for FTS-candidate chunks rather than every chunk in the DB.
+  const ftsIds = [...scores.keys()];
+  if (modelRef && ftsIds.length) {
+    const queryEmbedding = await generateEmbedding({ db, dataDir, modelRef, text: query, fetchImpl });
+    if (queryEmbedding.vector) {
+      const idList = ftsIds.map(() => "?").join(",");
+      const vecRows = db.prepare(`
+        SELECT id, vector FROM embeddings
+        WHERE id IN (${idList})
+      `).all(...ftsIds);
+      for (const row of vecRows) {
+        const sim = cosineSimilarity(queryEmbedding.vector, bufferToFloatArray(row.vector));
+        if (sim <= 0) continue;
+        const existing = scores.get(row.id) || { row: db.prepare(`
+          SELECT * FROM embeddings WHERE id = ?
+        `).get(row.id), fts: 0 };
+        existing.vector = sim;
+        scores.set(row.id, existing);
+      }
     }
   }
 

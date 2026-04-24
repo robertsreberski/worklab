@@ -25,10 +25,10 @@ export function LiveRunPanel({ run, events = [], isStreaming = false }) {
   return (
     <section class="card card-spacious task-live-panel">
       {isStreaming && <ShimmerBar height={2} />}
-      <header class="task-live-header" style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+      <header class="task-live-header">
+        <span class="task-live-header-info">
           {isStreaming ? <LivePulse size={10} /> : null}
-          <span style={{ fontWeight: 600 }}>{isStreaming ? "Live run" : "Latest run"}</span>
+          <span class="task-live-header-label">{isStreaming ? "Live run" : "Latest run"}</span>
         </span>
         <StatusPill status={runStatus} size="sm" />
       </header>

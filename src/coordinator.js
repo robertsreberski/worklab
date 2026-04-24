@@ -13,6 +13,7 @@ import { seedDataFromTemplate } from "./core/first-boot.js";
 import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";
+import { createScheduleManager } from "./coordinator/schedule-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 
 export async function startCoordinator({ config = loadConfig() } = {}) {
@@ -41,8 +42,21 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     runNow: (...args) => consolidationHolder.current.runNow(...args),
     isActive: (...args) => consolidationHolder.current.isActive(...args),
   };
+  const scheduleManagerHolder = { current: null };
+  const scheduleManagerProxy = {
+    refresh: (...args) => scheduleManagerHolder.current.refresh(...args),
+    tick: (...args) => scheduleManagerHolder.current.tick(...args),
+  };
   const events = new EventEmitter();
-  const { app, broker } = createServer({ db, logger, watcher: watcherProxy, dataDir: config.dataDir, consolidation: consolidationProxy, events });
+  const { app, broker } = createServer({
+    db,
+    logger,
+    watcher: watcherProxy,
+    dataDir: config.dataDir,
+    consolidation: consolidationProxy,
+    scheduleManager: scheduleManagerProxy,
+    events,
+  });
 
   watcherHolder.current = createTaskWatcher({
     db, broker, spawn: spawnWorker, workerBinary, logger,
@@ -53,6 +67,8 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
   });
   consolidationHolder.current.start();
+  scheduleManagerHolder.current = createScheduleManager({ db, broker, logger });
+  scheduleManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
 
   const uiDist = join(config.repoRoot, "src/ui/dist");
@@ -89,6 +105,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
 
     try { await watcherHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
+    try { await scheduleManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "schedule manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
@@ -106,5 +123,13 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   process.on("SIGTERM", shutdown);
   process.on("SIGINT", shutdown);
 
-  return { http, db, config, watcher: watcherHolder.current, consolidation: consolidationHolder.current, searchIndexer };
+  return {
+    http,
+    db,
+    config,
+    watcher: watcherHolder.current,
+    consolidation: consolidationHolder.current,
+    scheduleManager: scheduleManagerHolder.current,
+    searchIndexer,
+  };
 }

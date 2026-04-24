@@ -48,7 +48,19 @@ function validateModelForAgent({ db, dataDir, model }) {
 
 export function registerAgentRoutes(app, { db, broker, consolidation, dataDir }) {
   app.get("/api/agents", (_req, res) => {
-    const rows = db.prepare("SELECT * FROM agents ORDER BY name").all();
+    const since = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    const rows = db.prepare(`
+      SELECT
+        a.*,
+        MAX(r.started_at) AS last_run_at,
+        COUNT(CASE WHEN r.started_at >= ? THEN 1 END) AS run_count_30d,
+        AVG(CASE WHEN r.started_at >= ? THEN l.duration_ms END) AS avg_run_duration_ms
+      FROM agents a
+      LEFT JOIN task_runs r ON r.agent_name = a.name
+      LEFT JOIN agent_logs l ON l.task_run_id = r.id
+      GROUP BY a.name
+      ORDER BY a.name
+    `).all(since, since);
     res.json({ agents: rows.map(rowToAgent) });
   });
 

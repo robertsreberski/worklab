@@ -1,51 +1,55 @@
-// §6.8 Providers — provider configuration and model discovery.
-// Type selector is a RadioGroup segmented (§6.8 rule) — not the prior flex-pill grid.
-
-import { useEffect, useState, useCallback } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { Switch } from "../components/primitives/Switch.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
+import { PaneLayout } from "../components/PaneLayout.jsx";
+import { PaneRow } from "../components/PaneRow.jsx";
+import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
-import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { Chip } from "../components/primitives/Chip.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { Card } from "../components/Card.jsx";
+import { Switch } from "../components/primitives/Switch.jsx";
+import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
+import { Banner } from "../components/Banner.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
-import { FormSection } from "../components/FormSection.jsx";
-import { Banner } from "../components/Banner.jsx";
-import { EmptyState } from "../components/EmptyState.jsx";
+import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
+import { LoadingState } from "../components/LoadingState.jsx";
+import { Card } from "../components/Card.jsx";
+import { Chip } from "../components/primitives/Chip.jsx";
+import { Modal } from "../components/Modal.jsx";
+import { Icon } from "../components/Icon.jsx";
 import { pushToast } from "../lib/toast.js";
+import { useFormSave } from "../lib/useFormSave.js";
+import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { useSSE } from "../lib/useSSE.js";
 
 const PROVIDER_TYPE_OPTIONS = [
-  { value: "ollama",        label: "Ollama",     helper: "Local / LAN" },
-  { value: "lmstudio",      label: "LM Studio",  helper: "Local / LAN" },
-  { value: "vllm",          label: "vLLM",       helper: "Self-hosted" },
-  { value: "openai_compat", label: "OpenAI-compatible", helper: "Custom gateway" },
-  { value: "groq",          label: "Groq",       helper: "Hosted" },
-  { value: "openrouter",    label: "OpenRouter", helper: "Hosted" },
-  { value: "together",      label: "Together AI", helper: "Hosted" },
-  { value: "fireworks",     label: "Fireworks AI", helper: "Hosted" },
-  { value: "deepseek",      label: "DeepSeek",   helper: "Hosted" },
+  { value: "ollama", label: "Ollama" },
+  { value: "lmstudio", label: "LM Studio" },
+  { value: "vllm", label: "vLLM" },
+  { value: "openai_compat", label: "OpenAI-compatible" },
+  { value: "groq", label: "Groq" },
+  { value: "openrouter", label: "OpenRouter" },
+  { value: "together", label: "Together AI" },
+  { value: "fireworks", label: "Fireworks AI" },
+  { value: "deepseek", label: "DeepSeek" },
 ];
 
 const PRESETS = {
-  ollama:        { name: "Ollama (local)", base_url: "http://localhost:11434", trust_public_url: false, api_key_hint: "No API key needed for most local setups." },
-  lmstudio:      { name: "LM Studio",      base_url: "http://localhost:1234",  trust_public_url: false, api_key_hint: "Usually no API key." },
-  vllm:          { name: "vLLM",           base_url: "http://localhost:8000",  trust_public_url: false, api_key_hint: "Often fronted by an internal gateway." },
-  openai_compat: { name: "Custom gateway", base_url: "",                        trust_public_url: false, api_key_hint: "Any OpenAI-compatible host." },
-  groq:          { name: "Groq",           base_url: "https://api.groq.com/openai", trust_public_url: true, api_key_hint: "API key required." },
-  openrouter:    { name: "OpenRouter",     base_url: "https://openrouter.ai/api",   trust_public_url: true, api_key_hint: "API key required." },
-  together:      { name: "Together AI",    base_url: "https://api.together.xyz",    trust_public_url: true, api_key_hint: "API key required." },
-  fireworks:     { name: "Fireworks AI",   base_url: "https://api.fireworks.ai/inference", trust_public_url: true, api_key_hint: "API key required." },
-  deepseek:      { name: "DeepSeek",       base_url: "https://api.deepseek.com",    trust_public_url: true, api_key_hint: "API key required." },
+  ollama: { name: "Ollama (local)", base_url: "http://localhost:11434", trust_public_url: false, api_key_hint: "No API key needed for most local setups." },
+  lmstudio: { name: "LM Studio", base_url: "http://localhost:1234", trust_public_url: false, api_key_hint: "Usually no API key." },
+  vllm: { name: "vLLM", base_url: "http://localhost:8000", trust_public_url: false, api_key_hint: "Often fronted by an internal gateway." },
+  openai_compat: { name: "Custom gateway", base_url: "", trust_public_url: false, api_key_hint: "Any OpenAI-compatible host." },
+  groq: { name: "Groq", base_url: "https://api.groq.com/openai", trust_public_url: true, api_key_hint: "API key required." },
+  openrouter: { name: "OpenRouter", base_url: "https://openrouter.ai/api", trust_public_url: true, api_key_hint: "API key required." },
+  together: { name: "Together AI", base_url: "https://api.together.xyz", trust_public_url: true, api_key_hint: "API key required." },
+  fireworks: { name: "Fireworks AI", base_url: "https://api.fireworks.ai/inference", trust_public_url: true, api_key_hint: "API key required." },
+  deepseek: { name: "DeepSeek", base_url: "https://api.deepseek.com", trust_public_url: true, api_key_hint: "API key required." },
 };
 
-const emptyForm = {
+const EMPTY_FORM = {
   name: PRESETS.ollama.name,
   provider_type: "ollama",
   base_url: PRESETS.ollama.base_url,
@@ -54,8 +58,14 @@ const emptyForm = {
   enabled: true,
 };
 
-function optionForProviderType(value) {
-  return PROVIDER_TYPE_OPTIONS.find((o) => o.value === value) || { value, label: `Unsupported (${value})`, helper: "Unsupported" };
+function providerTypeLabel(value) {
+  return PROVIDER_TYPE_OPTIONS.find((option) => option.value === value)?.label || value;
+}
+
+function providerIcon(value) {
+  if (value === "ollama" || value === "lmstudio" || value === "vllm") return "database";
+  if (value === "groq" || value === "fireworks" || value === "together") return "zap";
+  return "terminal";
 }
 
 function applyPreset(form, providerType) {
@@ -70,232 +80,402 @@ function applyPreset(form, providerType) {
   };
 }
 
-function Capability({ on, label, offLabel }) {
-  return (
-    <Chip variant={on ? "accent" : "ghost"}>
-      {on ? label : (offLabel || `no ${label}`)}
-    </Chip>
-  );
+function Capability({ on, label }) {
+  return <Chip variant={on ? "accent" : "ghost"}>{on ? label : `no ${label}`}</Chip>;
 }
 
-export function Providers() {
-  const [providers, setProviders] = useState([]);
-  const [models, setModels] = useState({});
-  const [form, setForm] = useState(emptyForm);
-  const [error, setError] = useState(null);
-  const [status, setStatus] = useState({});
-  const [showNew, setShowNew] = useState(false);
-  const preset = PRESETS[form.provider_type] || PRESETS.openai_compat;
+function ProviderEdit({ providerId, onSaved, onDeleted }) {
+  const isNew = providerId === "new";
+  const [provider, setProvider] = useState(isNew ? EMPTY_FORM : null);
+  const [baseline, setBaseline] = useState(isNew ? EMPTY_FORM : null);
+  const [models, setModels] = useState([]);
+  const [status, setStatus] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    const res = await api.listProviders();
-    setProviders(res.providers || []);
-    const pairs = await Promise.all((res.providers || []).map(async (p) => {
-      try { const m = await api.listProviderModels(p.id); return [p.id, m.models || []]; }
-      catch { return [p.id, []]; }
-    }));
-    setModels(Object.fromEntries(pairs));
+  const loadModels = useCallback(async (id) => {
+    const response = await api.listProviderModels(id);
+    setModels(response.models || []);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
-
-  async function create() {
-    setError(null);
-    try {
-      await api.createProvider({ ...form, api_key: form.api_key || undefined });
-      setForm(emptyForm);
-      setShowNew(false);
-      pushToast("Provider created", { variant: "success" });
-      await load();
-    } catch (err) {
-      setError(err.message || String(err));
+  useEffect(() => {
+    let cancelled = false;
+    setStatus(null);
+    if (isNew) {
+      setProvider(EMPTY_FORM);
+      setBaseline(EMPTY_FORM);
+      setModels([]);
+      return () => { cancelled = true; };
     }
-  }
+    setProvider(null);
+    api.getProvider(providerId)
+      .then((response) => {
+        if (cancelled) return;
+        const next = { ...response.provider, api_key: "" };
+        setProvider(next);
+        setBaseline(next);
+      })
+      .catch(() => { if (!cancelled) setProvider({ notFound: true }); });
+    loadModels(providerId).catch(() => { if (!cancelled) setModels([]); });
+    return () => { cancelled = true; };
+  }, [isNew, loadModels, providerId]);
 
-  async function patch(provider, p) {
-    await api.patchProvider(provider.id, p);
-    await load();
-  }
-
-  async function test(provider) {
-    setError(null);
-    setStatus((s) => ({ ...s, [provider.id]: { ...(s[provider.id] || {}), testing: true } }));
-    try {
-      const result = await api.testProvider(provider.id);
-      setStatus((s) => ({ ...s, [provider.id]: { testing: false, test: result } }));
-    } catch (err) {
-      setStatus((s) => ({ ...s, [provider.id]: { testing: false, test: { ok: false, error: err.message } } }));
-    }
-  }
-
-  async function discover(provider) {
-    setError(null);
-    setStatus((s) => ({ ...s, [provider.id]: { ...(s[provider.id] || {}), discovering: true } }));
-    try {
-      const result = await api.discoverProviderModels(provider.id);
-      setStatus((s) => ({ ...s, [provider.id]: { discovering: false, discovery: { count: (result.models || []).length } } }));
-      await load();
-    } catch (err) {
-      setStatus((s) => ({ ...s, [provider.id]: { discovering: false, discovery: { error: err.message } } }));
-    }
-  }
-
-  async function remove(provider) {
-    try { await api.deleteProvider(provider.id); pushToast("Provider deleted", { variant: "success" }); await load(); }
-    catch (err) { setError(`${provider.name}: ${err.message}`); }
-  }
-
-  const headerActions = (
-    <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => setShowNew((v) => !v)}>
-      {showNew ? "Hide form" : "New provider"}
-    </Button>
+  const isDirty = useMemo(
+    () => (baseline ? JSON.stringify(provider) !== JSON.stringify(baseline) : true),
+    [baseline, provider],
   );
 
+  const formSave = useFormSave(async () => {
+    const payload = {
+      name: provider.name,
+      provider_type: provider.provider_type,
+      base_url: provider.base_url,
+      api_key: provider.api_key || undefined,
+      trust_public_url: !!provider.trust_public_url,
+      enabled: !!provider.enabled,
+    };
+    if (isNew) {
+      const response = await api.createProvider(payload);
+      pushToast("Provider created", { variant: "success" });
+      onSaved?.(response.provider.id);
+      return response.provider.id;
+    }
+    const response = await api.patchProvider(providerId, payload);
+    pushToast("Saved.", { variant: "success" });
+    const next = { ...response.provider, api_key: "" };
+    setProvider(next);
+    setBaseline(next);
+    onSaved?.(providerId);
+    return providerId;
+  });
+
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
+
+  useGlobalShortcuts({
+    cmds: (event) => {
+      event.preventDefault();
+      formSave.save().catch(() => {});
+    },
+  });
+
+  if (!provider) return <LoadingState caption="Loading provider…" />;
+  if (provider.notFound) {
+    return (
+      <div class="pane-empty">
+        <h3>Provider not found</h3>
+        <p>This provider may have been deleted.</p>
+      </div>
+    );
+  }
+
+  const preset = PRESETS[provider.provider_type] || PRESETS.openai_compat;
+
+  async function removeProvider() {
+    try {
+      await api.deleteProvider(providerId);
+      pushToast("Provider deleted", { variant: "success" });
+      onDeleted?.();
+    } catch (error) {
+      pushToast(`Delete failed: ${error.message}`, { variant: "error" });
+    }
+  }
+
+  async function testProviderConnection() {
+    if (isNew) return;
+    setStatus({ kind: "testing" });
+    try {
+      const result = await api.testProvider(providerId);
+      setStatus({ kind: "test", result });
+    } catch (error) {
+      setStatus({ kind: "error", message: error.message });
+    }
+  }
+
+  async function discoverProviderModels() {
+    if (isNew) return;
+    setStatus({ kind: "discovering" });
+    try {
+      const result = await api.discoverProviderModels(providerId);
+      setModels(result.models || []);
+      setStatus({ kind: "discovered", count: (result.models || []).length });
+    } catch (error) {
+      setStatus({ kind: "error", message: error.message });
+    }
+  }
+
   return (
-    <AppShell route="providers" title="Providers" headerActions={headerActions}>
-      <div class="page-wrap">
-        {error && <Banner variant="error" title="Action failed" detail={error} onDismiss={() => setError(null)} />}
+    <>
+      <header class="pane-detail-head">
+        <div class="pane-detail-head-titles">
+          <div class="all-caps">{isNew ? "Create provider" : "Provider"}</div>
+          <h2>{isNew ? "New provider" : provider.name}</h2>
+        </div>
+        <div class="toolbar">
+          {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
+          {!isNew && (
+            <Button variant="secondary" size="sm" onClick={testProviderConnection} loading={status?.kind === "testing"}>
+              Test
+            </Button>
+          )}
+          {!isNew && (
+            <Button variant="secondary" size="sm" onClick={discoverProviderModels} loading={status?.kind === "discovering"}>
+              Discover
+            </Button>
+          )}
+          {!isNew && (
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>
+              Delete
+            </Button>
+          )}
+          <Button
+            variant={isDirty || isNew ? "primary" : "secondary"}
+            loading={formSave.saving}
+            onClick={() => formSave.save().catch(() => {})}
+            disabled={!provider.name || !provider.base_url}
+          >
+            {isNew ? "Create" : "Save"}
+          </Button>
+        </div>
+      </header>
 
-        {showNew && (
-          <Card kicker="Create" title="New provider">
-            <FormSection title="">
-              <FormField label="Type" hint={PROVIDER_TYPE_OPTIONS.find((o) => o.value === form.provider_type)?.helper}>
-                <RadioGroup
-                  ariaLabel="Provider type"
-                  value={form.provider_type}
-                  onChange={(v) => setForm((c) => applyPreset(c, v))}
-                  options={PROVIDER_TYPE_OPTIONS}
-                />
-              </FormField>
-              <FormGrid columns={2}>
-                <FormField label="Name" required>
-                  <Input value={form.name} onInput={(e) => setForm({ ...form, name: e.target.value })} />
-                </FormField>
-                <FormField label="Base URL" required>
-                  <Input
-                    value={form.base_url}
-                    placeholder={preset.base_url || "https://..."}
-                    onInput={(e) => setForm({ ...form, base_url: e.target.value })}
-                  />
-                </FormField>
-                <FormField label="API key" hint={preset.api_key_hint} class="span-2">
-                  <Input
-                    type="password"
-                    autocomplete="new-password"
-                    value={form.api_key}
-                    onInput={(e) => setForm({ ...form, api_key: e.target.value })}
-                  />
-                </FormField>
-                <FormField switchInside>
-                  <Switch
-                    checked={form.trust_public_url}
-                    onChange={(v) => setForm({ ...form, trust_public_url: v })}
-                    label="Trust public HTTPS URL"
-                    description="Required for hosted providers that enforce HTTPS."
-                  />
-                </FormField>
-                <FormField switchInside>
-                  <Switch
-                    checked={form.enabled}
-                    onChange={(v) => setForm({ ...form, enabled: v })}
-                    label="Show in model pickers"
-                    description="Disable to hide all this provider's models without removing them."
-                  />
-                </FormField>
-              </FormGrid>
-              <div class="form-actions">
-                <Button variant="ghost" onClick={() => setShowNew(false)}>Cancel</Button>
-                <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={create} disabled={!form.name || !form.base_url}>
-                  Create provider
-                </Button>
-              </div>
-            </FormSection>
-          </Card>
+      <div class="pane-detail-body">
+        {formSave.error && (
+          <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
-
-        {providers.length === 0 && !showNew && (
-          <EmptyState
-            icon={<Icon name="terminal" size={48} />}
-            title="No providers yet"
-            body="Add a provider to use local or hosted models."
-            cta={<Button variant="primary" onClick={() => setShowNew(true)}>Add first provider</Button>}
+        {status?.kind === "test" && (
+          <Banner
+            variant={status.result.ok ? "success" : "error"}
+            title={status.result.ok ? "Provider reachable" : "Provider unreachable"}
+            detail={status.result.ok ? `HTTP ${status.result.status} in ${status.result.duration_ms ?? 0}ms.` : (status.result.error || "Connection failed.")}
           />
         )}
+        {status?.kind === "discovered" && (
+          <Banner variant="success" title="Discovery complete" detail={`Found ${status.count} model${status.count === 1 ? "" : "s"}.`} />
+        )}
+        {status?.kind === "error" && (
+          <Banner variant="error" title="Action failed" detail={status.message} />
+        )}
 
-        {providers.map((provider) => {
-          const s = status[provider.id] || {};
-          return (
-            <Card key={provider.id} title={provider.name}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "var(--sp-3)", flexWrap: "wrap" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-                    {optionForProviderType(provider.provider_type).label} · {provider.base_url} · {provider.has_api_key ? "API key saved" : "no API key"}
-                  </div>
-                  <div style={{ marginTop: "var(--sp-1)" }}>
-                    <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
-                  </div>
-                  {s.test && (
-                    <div style={{ marginTop: "var(--sp-2)", color: s.test.ok ? "var(--status-done)" : "var(--status-error)", fontSize: "var(--text-sm)" }}>
-                      {s.test.ok
-                        ? `Reachable (${s.test.status}) in ${s.test.duration_ms ?? 0}ms`
-                        : `Unreachable: ${s.test.error || `HTTP ${s.test.status}`}`}
-                    </div>
-                  )}
-                  {s.discovery && (
-                    <div style={{ marginTop: "var(--sp-2)", color: s.discovery.error ? "var(--status-error)" : "var(--status-done)", fontSize: "var(--text-sm)" }}>
-                      {s.discovery.error ? `Discovery failed: ${s.discovery.error}` : `Discovered ${s.discovery.count} model${s.discovery.count === 1 ? "" : "s"}.`}
-                    </div>
-                  )}
-                </div>
-                <div class="toolbar">
-                  <Button size="sm" variant="secondary" onClick={() => patch(provider, { enabled: !provider.enabled })}>
-                    {provider.enabled ? "Disable" : "Enable"}
-                  </Button>
-                  <Button size="sm" variant="secondary" iconLeft={<Icon name="check-circle" size={12} />} onClick={() => test(provider)} loading={s.testing}>
-                    Test
-                  </Button>
-                  <Button size="sm" variant="secondary" iconLeft={<Icon name="refresh-cw" size={12} />} onClick={() => discover(provider)} loading={s.discovering}>
-                    Discover
-                  </Button>
-                  <ConfirmButton class="sm" onConfirm={() => remove(provider)}>Delete</ConfirmButton>
-                </div>
-              </div>
-              <div style={{ marginTop: "var(--sp-4)", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "var(--sp-2)" }}>
-                {(models[provider.id] || []).map((model) => {
-                  const caps = model.capabilities || {};
-                  const runnable = caps.runnable_for_agent !== false;
+        <FormSection kicker="Identity" title="Provider settings">
+          <FormField label="Type">
+            <RadioGroup
+              ariaLabel="Provider type"
+              value={provider.provider_type}
+              onChange={(value) => setProvider((current) => applyPreset(current, value))}
+              options={PROVIDER_TYPE_OPTIONS}
+            />
+          </FormField>
+          <FormGrid columns={2}>
+            <FormField label="Name" required>
+              <Input value={provider.name} onInput={(event) => setProvider({ ...provider, name: event.target.value })} />
+            </FormField>
+            <FormField label="Base URL" required>
+              <Input value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
+            </FormField>
+            <FormField label="API key" hint={preset.api_key_hint} class="span-2">
+              <Input type="password" autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
+            </FormField>
+            <FormField switchInside>
+              <Switch
+                checked={!!provider.trust_public_url}
+                onChange={(value) => setProvider({ ...provider, trust_public_url: value })}
+                label="Trust public HTTPS URL"
+                description="Required for hosted providers that enforce HTTPS."
+              />
+            </FormField>
+            <FormField switchInside>
+              <Switch
+                checked={!!provider.enabled}
+                onChange={(value) => setProvider({ ...provider, enabled: value })}
+                label="Show in model pickers"
+                description="Disable to hide all this provider's models without removing them."
+              />
+            </FormField>
+          </FormGrid>
+        </FormSection>
+
+        {!isNew && (
+          <FormSection kicker="Models" title="Discovered models">
+            {(models || []).length === 0 ? (
+              <div class="field-hint">No models discovered yet.</div>
+            ) : (
+              <div class="provider-model-grid">
+                {models.map((model) => {
+                  const capabilities = model.capabilities || {};
                   return (
-                    <div key={model.id} class="card card-inset" style={{ padding: "var(--sp-3)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "var(--sp-2)" }}>
-                        <div style={{ minWidth: 0 }}>
-                          <strong style={{ fontSize: "var(--text-sm)" }}>{model.display_name || model.model_name}</strong>
-                          <div style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)" }}>{model.model_name}</div>
-                          <div style={{ marginTop: "var(--sp-1)", display: "flex", flexWrap: "wrap", gap: "var(--sp-1)" }}>
-                            <Capability on={runnable} label="chat" />
-                            <Capability on={caps.tool_use} label="tools" />
-                            <Capability on={caps.reasoning} label={caps.reasoning_mode === "toggle" ? "thinking" : "reasoning"} />
-                            <Capability on={caps.vision} label="vision" />
-                            <Capability on={caps.json_mode} label="json" />
+                    <div key={model.id} class="card card-inset provider-model-card">
+                      <div class="provider-model-row">
+                        <div class="provider-model-info">
+                          <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
+                          <div class="mono muted provider-model-id">{model.model_name}</div>
+                          <div class="provider-model-caps">
+                            <Capability on={capabilities.runnable_for_agent !== false} label="chat" />
+                            <Capability on={capabilities.tool_use} label="tools" />
+                            <Capability on={capabilities.reasoning} label={capabilities.reasoning_mode === "toggle" ? "thinking" : "reasoning"} />
+                            <Capability on={capabilities.vision} label="vision" />
                           </div>
                         </div>
                         <Switch
                           checked={!!model.enabled}
-                          disabled={!model.enabled && !runnable}
-                          onChange={() => api.patchProviderModel(provider.id, model.id, { enabled: !model.enabled }).then(load)}
-                          label={!model.enabled && !runnable ? "Not runnable" : (model.enabled ? "Enabled" : "Disabled")}
+                          onChange={() => {
+                            api.patchProviderModel(providerId, model.id, { enabled: !model.enabled })
+                              .then(() => loadModels(providerId))
+                              .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
+                          }}
+                          label={model.enabled ? "Enabled" : "Disabled"}
                         />
                       </div>
                     </div>
                   );
                 })}
-                {(models[provider.id] || []).length === 0 && (
-                  <div style={{ color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>No models discovered yet.</div>
-                )}
               </div>
-            </Card>
-          );
-        })}
+            )}
+          </FormSection>
+        )}
       </div>
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={`Delete "${provider.name}"?`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setDeleteOpen(false); removeProvider(); }}>Delete</Button>
+          </>
+        }
+      >
+        <p>This removes the provider and its discovered models.</p>
+      </Modal>
+
+      <Modal
+        open={guard.promptOpen}
+        onClose={guard.keepEditing}
+        title="You have unsaved changes"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
+            <Button variant="destructive" onClick={guard.discardAndLeave}>Discard</Button>
+            <Button variant="primary" loading={formSave.saving} onClick={() => guard.saveAndLeave().catch(() => {})}>
+              Save & leave
+            </Button>
+          </>
+        }
+      >
+        <p>Your changes have not been saved.</p>
+      </Modal>
+    </>
+  );
+}
+
+export function Providers({ selectedId = null }) {
+  const [providers, setProviders] = useState([]);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef(null);
+
+  const reload = useCallback(() => {
+    api.listProviders().then((response) => setProviders(response.providers || [])).catch(() => setProviders([]));
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+  useSSE("global", (event) => {
+    if (event.type?.startsWith("provider_")) reload();
+  });
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+  });
+
+  const filtered = useMemo(() => {
+    const normalized = query.trim().toLowerCase();
+    if (!normalized) return providers;
+    return providers.filter((provider) => (
+      provider.name?.toLowerCase().includes(normalized) ||
+      provider.base_url?.toLowerCase().includes(normalized) ||
+      provider.provider_type?.toLowerCase().includes(normalized)
+    ));
+  }, [providers, query]);
+
+  const listHeader = (
+    <>
+      <SearchField value={query} onInput={(event) => setQuery(event.target.value)} placeholder="Search providers…" inputRef={searchRef} />
+      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => navigateHash("#/providers/new")}>
+        New provider
+      </Button>
+    </>
+  );
+
+  const listBody = filtered.length === 0 ? (
+    query ? (
+      <EmptyStateFiltered body="No providers match." onClearFilters={() => setQuery("")} />
+    ) : (
+      <EmptyState
+        title="No providers yet"
+        body="Add a provider to use local or hosted models."
+        cta={<Button variant="primary" onClick={() => navigateHash("#/providers/new")}>New provider</Button>}
+      />
+    )
+  ) : (
+    filtered.map((provider) => (
+      <PaneRow
+        key={provider.id}
+        href={`#/providers/${provider.id}`}
+        active={provider.id === selectedId}
+        onClick={(event) => {
+          event?.preventDefault?.();
+          navigateHash(`#/providers/${provider.id}`);
+        }}
+        leading={<Icon name={providerIcon(provider.provider_type)} size={16} />}
+        title={provider.name}
+        sub={providerTypeLabel(provider.provider_type)}
+        trailing={(
+          <span class="pane-row-summary">
+            <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
+            <span>{provider.model_count || 0} models</span>
+          </span>
+        )}
+      />
+    ))
+  );
+
+  const detail = selectedId ? (
+    <ProviderEdit
+      key={selectedId}
+      providerId={selectedId}
+      onSaved={(id) => {
+        reload();
+        if (selectedId === "new" && id) navigateHash(`#/providers/${id}`);
+      }}
+      onDeleted={() => {
+        reload();
+        navigateHash("#/providers");
+      }}
+    />
+  ) : (
+    <div class="pane-empty">
+      <Icon name="terminal" size={28} />
+      <h3>Select a provider</h3>
+      <p>Choose a provider from the list to edit it, or create a new one.</p>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => navigateHash("#/providers/new")}>
+        New provider
+      </Button>
+    </div>
+  );
+
+  return (
+    <AppShell route="providers" title="Providers">
+      <PaneLayout
+        listHeader={listHeader}
+        listBody={listBody}
+        detail={detail}
+        hasSelection={!!selectedId}
+        onBack={() => navigateHash("#/providers")}
+        backLabel="All providers"
+      />
     </AppShell>
   );
 }

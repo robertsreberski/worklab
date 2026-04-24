@@ -23,14 +23,14 @@ export function Breadcrumb({ items = [], class: className = "" }) {
         }
         if (item.label === "…") {
           return (
-            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}>
+            <span key={i} class="breadcrumb-item">
               <span class="breadcrumb-current">…</span>
               {sep}
             </span>
           );
         }
         return (
-          <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-1)" }}>
+          <span key={i} class="breadcrumb-item">
             {item.href ? <a href={item.href}>{item.label}</a> : <span>{item.label}</span>}
             {sep}
           </span>

@@ -4,7 +4,7 @@ export function ShimmerBar({ height = 2, class: className = "" }) {
   return (
     <div
       class={`shimmer-bar ${className}`.trim()}
-      style={{ height: `${height}px`, borderRadius: `${height}px` }}
+      style={{ "--shimmer-h": `${height}px` }}
       aria-hidden="true"
     />
   );

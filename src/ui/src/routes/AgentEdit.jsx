@@ -26,6 +26,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -109,6 +110,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   }, [name, isNew]);
 
   const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
 
   const formSave = useFormSave(async () => {
     const payload = {
@@ -202,9 +204,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   return (
     <>
       <header class="pane-detail-head">
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", minWidth: 0 }}>
+        <div class="pane-detail-head-copy">
           {!isNew && <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} />}
-          <div style={{ minWidth: 0 }}>
+          <div class="pane-detail-head-titles">
             <div class="all-caps">{isNew ? "Create agent" : "Agent"}</div>
             <h2>{title}</h2>
           </div>
@@ -269,7 +271,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               hint={reasoningMode === "none" ? "This model does not support reasoning effort" : undefined}
             >
               {reasoningMode === "none" ? (
-                <span class="muted" style={{ fontSize: "var(--text-sm)" }}>This model does not support adjustable reasoning.</span>
+                <span class="form-field-empty-hint">This model does not support adjustable reasoning.</span>
               ) : reasoningMode === "toggle" ? (
                 <RadioGroup
                   ariaLabel="Thinking"
@@ -293,7 +295,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               )}
             </FormField>
           </FormGrid>
-          <div class="field-hint" style={{ marginTop: "var(--sp-3)" }}>
+          <div class="field-hint field-hint-spaced">
             {selectedModel?.capabilities?.tool_use === false
               ? "This model does not support tool use."
               : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
@@ -320,7 +322,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             {skills.length === 0 ? (
               <div class="field-hint">No skills defined yet.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+              <div class="checkbox-stack">
                 {skills.map((s) => (
                   <Checkbox
                     key={s.name}
@@ -336,7 +338,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             {mcpServers.length === 0 ? (
               <div class="field-hint">No user MCP servers registered.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+              <div class="checkbox-stack">
                 {mcpServers.map((m) => (
                   <Checkbox
                     key={m}
@@ -350,7 +352,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           </FormField>
           <FormField label="Built-in tools" hint={supportsToolUse ? "Empty = all." : "This model cannot call built-in tools."}>
             {supportsToolUse && (
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+              <div class="checkbox-stack">
                 {visibleTools.map((t) => (
                   <Checkbox
                     key={t}
@@ -379,6 +381,24 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         }
       >
         <p>This removes the agent. Tasks currently assigned to it will keep the reference but won't be runnable until reassigned.</p>
+      </Modal>
+
+      <Modal
+        open={guard.promptOpen}
+        onClose={guard.keepEditing}
+        title="You have unsaved changes"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
+            <Button variant="destructive" onClick={guard.discardAndLeave}>Discard</Button>
+            <Button variant="primary" loading={formSave.saving} onClick={() => guard.saveAndLeave().catch(() => {})}>
+              Save & leave
+            </Button>
+          </>
+        }
+      >
+        <p>Your changes have not been saved.</p>
       </Modal>
     </>
   );

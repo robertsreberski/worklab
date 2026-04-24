@@ -12,6 +12,9 @@ let baseUrl;
 let dataDir;
 let workspaceDir;
 let taskId;
+let blockerTaskId;
+let blockedTaskId;
+let scheduleId;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -56,11 +59,13 @@ async function requestJson(path, { method = "GET", body, ok = [200] } = {}) {
 async function createTask(title, patch = {}) {
   const { task } = await requestJson("/api/tasks", {
     method: "POST",
-    body: { title, description: `${title} description` },
+    body: { title, description: `${title} description`, ...patch },
     ok: [201],
   });
-  if (Object.keys(patch).length > 0) {
-    await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: patch, ok: [200] });
+  const patchBody = { ...patch };
+  delete patchBody.blocked_by_ids;
+  if (Object.keys(patchBody).length > 0) {
+    await requestJson(`/api/tasks/${task.id}`, { method: "PATCH", body: patchBody, ok: [200] });
   }
   return task.id;
 }
@@ -128,6 +133,20 @@ test.beforeAll(async () => {
 
   taskId = await createTask("UI regression task");
   await createTask("In progress task", { status: "in_progress" });
+  blockerTaskId = await createTask("Dependency blocker");
+  blockedTaskId = await createTask("Blocked detail task", { blocked_by_ids: [blockerTaskId] });
+  const schedule = await requestJson("/api/schedules", {
+    method: "POST",
+    body: {
+      title: "Regression schedule",
+      description: "Ensures schedules route renders.",
+      cadence: { type: "daily", hour: 9, minute: 15 },
+      enabled: true,
+    },
+    ok: [201],
+  });
+  scheduleId = schedule.schedule.id;
+  await requestJson(`/api/schedules/${scheduleId}/run`, { method: "POST", ok: [201] });
 
   await ensureKbEntry({
     slug: "welcome",
@@ -198,6 +217,19 @@ test("task detail renders two-column layout", async ({ page }) => {
   await expect(page.locator(".card-title", { hasText: "Details" })).toBeVisible();
 });
 
+test("task detail shows linked dependencies when the graph exists", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${blockedTaskId}`);
+  await expect(page.locator(".card-title", { hasText: "Dependencies" })).toBeVisible();
+  await expect(page.locator(".blocked-link", { hasText: "Dependency blocker" })).toBeVisible();
+});
+
+test("schedules route mounts the pane editor with upcoming and recent sections", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/schedules/${scheduleId}`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression schedule" })).toBeVisible();
+  await expect(page.locator(".card-title", { hasText: "Upcoming fires" })).toBeVisible();
+  await expect(page.locator(".card-title", { hasText: "Recent spawned tasks" })).toBeVisible();
+});
+
 test("mobile routes stay usable without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
 
@@ -212,6 +244,8 @@ test("mobile routes stay usable without horizontal overflow", async ({ page }) =
     { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
     { hash: "#/providers", ready: () => page.locator('h1.app-title', { hasText: "Providers" }) },
     { hash: "#/activity", ready: () => page.locator('h1.app-title', { hasText: "Activity" }) },
+    { hash: "#/schedules", ready: () => page.locator('h1.app-title', { hasText: "Schedules" }) },
+    { hash: `#/schedules/${scheduleId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression schedule" }) },
     { hash: "#/settings", ready: () => page.locator('h1.app-title', { hasText: "Settings" }) },
   ];
 

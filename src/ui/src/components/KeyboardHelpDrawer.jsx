@@ -33,17 +33,17 @@ const SHORTCUTS = [
 export function KeyboardHelpDrawer({ open, onClose }) {
   return (
     <Drawer open={open} onClose={onClose} title="Keyboard shortcuts">
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-5)" }}>
+      <div class="kbd-help-stack">
         {SHORTCUTS.map((section) => (
-          <section key={section.title}>
-            <h3 class="all-caps" style={{ margin: 0, marginBottom: "var(--sp-2)" }}>{section.title}</h3>
-            <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "var(--sp-2) var(--sp-4)" }}>
-              {section.rows.map((row) => (
+          <section key={section.title} class="kbd-help-section">
+            <h3 class="all-caps kbd-help-title">{section.title}</h3>
+            <dl class="kbd-help-grid">
+              {section.rows.map((row, idx) => (
                 <>
-                  <dt style={{ display: "inline-flex", gap: "var(--sp-1)" }}>
+                  <dt key={`k-${idx}`} class="kbd-help-keys">
                     {row.keys.map((k, i) => <Kbd key={i}>{k}</Kbd>)}
                   </dt>
-                  <dd style={{ margin: 0, color: "var(--text-muted)" }}>{row.label}</dd>
+                  <dd key={`v-${idx}`} class="kbd-help-label">{row.label}</dd>
                 </>
               ))}
             </dl>

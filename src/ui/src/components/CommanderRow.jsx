@@ -1,6 +1,8 @@
 // §4.4 CommanderRow — the canonical dense task row.
-// Grid: 16 · 64 · 12 · 1fr · 80 · 104 · 56. Blocked-by wins over priority.
+// 8-cell grid (matches DS prototype VariationA):
+//   checkbox · id · dot · title+live · deps-chip · executor→reviewer · status-pill · age
 // Error chip policy (§5.3): derived from last_run.status === 'error'.
+// "Stuck" chip: status==="in_progress" && is_locked===false (§5.2).
 
 import { useMemo } from "preact/hooks";
 import { useRunStream } from "../lib/useRunStream.js";
@@ -11,8 +13,8 @@ import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
 import { StatusDot } from "./primitives/StatusDot.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { ToolToken } from "./primitives/ToolToken.jsx";
-import { PriorityChip } from "./primitives/PriorityChip.jsx";
-import { agentDisplayName } from "../lib/display.js";
+import { Checkbox } from "./primitives/Checkbox.jsx";
+import { agentDisplayName, hasRunError } from "../lib/display.js";
 
 function formatAge(value) {
   if (!value) return "";
@@ -41,18 +43,15 @@ function runningRunIdFromTask(task) {
   return live?.id || null;
 }
 
-// §5.3 error-chip policy: only derived from last_run.status === 'error'.
-function hasRunError(task) {
-  if (!task) return false;
-  if (task.last_run?.status === "error") return true;
-  if (Array.isArray(task.runs) && task.runs.length) {
-    const last = task.runs[task.runs.length - 1];
-    if (last?.status === "error") return true;
-  }
-  return false;
-}
-
-export function CommanderRow({ task, agents = [], selected = false, onClick }) {
+export function CommanderRow({
+  task,
+  agents = [],
+  selected = false,
+  checked = false,
+  onSelect,
+  onToggleCheck,
+  onOpen,
+}) {
   const runningRunId = runningRunIdFromTask(task);
   const isStreaming = !!runningRunId;
   const { events } = useRunStream(runningRunId, { subscribe: isStreaming });
@@ -66,18 +65,63 @@ export function CommanderRow({ task, agents = [], selected = false, onClick }) {
   const executorLabel = agentDisplayName(agents, task.executor_agent, "Unassigned");
   const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
 
-  const blockedCount = Array.isArray(task.blocked_by) ? task.blocked_by.length : 0;
+  const blockedCount = Array.isArray(task.blocked_by)
+    ? task.blocked_by.filter((dependency) => dependency.status !== "done").length
+    : 0;
   const runError = hasRunError(task);
+  const stuck = task.status === "in_progress" && task.is_locked === false;
   const needsExecutor = !task.executor_agent && task.status !== "done";
 
+  // Title-row chip — disambiguates the reason a task lives in Blocked or
+  // warns the user a worker is missing. Order: stuck > error > needs-executor.
+  // Blocked-by gets its own grid cell (.commander-cell-deps).
+  let metaChip = null;
+  if (stuck) {
+    metaChip = (
+      <span class="chip chip-error">
+        <Icon name="alert-triangle" size={10} /> Stuck — reset
+      </span>
+    );
+  } else if (runError) {
+    metaChip = (
+      <span class="chip chip-error">
+        <Icon name="alert-triangle" size={10} /> Error
+      </span>
+    );
+  } else if (needsExecutor) {
+    metaChip = <span class="chip chip-warn">Needs executor</span>;
+  }
+
+  const depsChip = blockedCount > 0 ? (
+    <span class="blocked-chip">
+      <Icon name="lock" size={10} /> Blocked by {blockedCount}
+    </span>
+  ) : null;
+
   return (
-    <a
-      href={`#/tasks/${task.id}`}
+    <div
       class={`commander-row ${selected ? "selected" : ""} ${isStreaming && event ? "running" : ""}`}
-      onClick={onClick}
+      role="button"
+      tabIndex={-1}
+      onClick={() => {
+        onSelect?.();
+        onOpen?.();
+      }}
+      onMouseEnter={() => onSelect?.()}
     >
-      <div class="commander-cell-checkbox">
-        <span class="commander-checkbox" aria-hidden="true" />
+      <div
+        class="commander-cell-checkbox"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <Checkbox
+          checked={checked}
+          onChange={(nextChecked, event) => {
+            event?.stopPropagation?.();
+            onSelect?.();
+            onToggleCheck?.(nextChecked);
+          }}
+          label={<span class="sr-only">Select task {task.title}</span>}
+        />
       </div>
       <span class="commander-cell-id">{taskIdDisplay(task.id)}</span>
       <span class="commander-cell-status">
@@ -90,22 +134,7 @@ export function CommanderRow({ task, agents = [], selected = false, onClick }) {
       <div class="commander-cell-title">
         <div class="commander-cell-title-row">
           <span class="commander-title">{task.title}</span>
-          {/* §4.4: blocked-by wins over priority */}
-          {blockedCount > 0 ? (
-            <span class="blocked-chip">
-              <Icon name="lock" size={10} /> Blocked by {blockedCount}
-            </span>
-          ) : (
-            <PriorityChip priority={task.priority} />
-          )}
-          {runError && (
-            <span class="chip chip-error">
-              <Icon name="alert-triangle" size={10} /> Error
-            </span>
-          )}
-          {needsExecutor && (
-            <span class="chip chip-warn">Needs executor</span>
-          )}
+          {metaChip}
         </div>
         {isStreaming && event && (
           <div class="commander-live-line" key={`${task.id}-${event.ts || event.t || 0}`}>
@@ -113,6 +142,7 @@ export function CommanderRow({ task, agents = [], selected = false, onClick }) {
           </div>
         )}
       </div>
+      <div class="commander-cell-deps">{depsChip}</div>
       <div class="commander-cell-assignees">
         <AgentAvatar
           name={task.executor_agent}
@@ -121,18 +151,21 @@ export function CommanderRow({ task, agents = [], selected = false, onClick }) {
           title={`Executor: ${executorLabel}`}
         />
         {task.reviewer_agent && (
-          <AgentAvatar
-            name={task.reviewer_agent}
-            label={reviewerLabel}
-            size={20}
-            title={`Reviewer: ${reviewerLabel}`}
-          />
+          <>
+            <Icon name="arrow-right" size={10} class="commander-cell-arrow" />
+            <AgentAvatar
+              name={task.reviewer_agent}
+              label={reviewerLabel}
+              size={20}
+              title={`Reviewer: ${reviewerLabel}`}
+            />
+          </>
         )}
       </div>
       <div class="commander-cell-pill">
         <StatusPill status={task.status} size="sm" />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
-    </a>
+    </div>
   );
 }

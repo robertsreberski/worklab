@@ -1,5 +1,5 @@
 // §6.7 Knowledge — pane layout with filter Tabs.
-import { useEffect, useState, useCallback, useMemo } from "preact/hooks";
+import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
@@ -11,6 +11,8 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { KbEdit } from "./KbEdit.jsx";
+import { navigateHash } from "../lib/navigation.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 const CATEGORY_TABS = [
   { value: "all",       label: "All" },
@@ -41,6 +43,7 @@ export function Knowledge({ selectedSlug = null }) {
   const [entries, setEntries] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
+  const searchRef = useRef(null);
 
   const reload = useCallback(() => {
     api.listKb().then((r) => setEntries(r.entries || [])).catch(() => setEntries([]));
@@ -48,6 +51,13 @@ export function Knowledge({ selectedSlug = null }) {
 
   useEffect(() => { reload(); }, [reload]);
   useSSE("global", (evt) => { if (evt.type?.startsWith("kb_")) reload(); });
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,9 +81,9 @@ export function Knowledge({ selectedSlug = null }) {
 
   const listHeader = (
     <>
-      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search knowledge…" />
+      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search knowledge…" inputRef={searchRef} />
       <Tabs ariaLabel="Filter by category" value={category} onChange={setCategory} tabs={CATEGORY_TABS} />
-      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>
+      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>
     </>
   );
 
@@ -84,7 +94,7 @@ export function Knowledge({ selectedSlug = null }) {
       <EmptyState
         title="No entries yet"
         body="Knowledge entries are shared context for humans and agents. Pin entries to include them in agent context."
-        cta={<Button variant="primary" onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>}
       />
     )
   ) : (
@@ -95,6 +105,10 @@ export function Knowledge({ selectedSlug = null }) {
           key={e.slug}
           href={`#/knowledge/${e.slug}`}
           active={e.slug === selectedSlug}
+          onClick={(event) => {
+            event?.preventDefault?.();
+            navigateHash(`#/knowledge/${e.slug}`);
+          }}
           leading={e.pinned ? <Icon name="pin" size={12} /> : null}
           title={e.title}
           sub={cat ? <span class="kb-category-badge" data-category={cat}>{cat}</span> : null}
@@ -112,17 +126,24 @@ export function Knowledge({ selectedSlug = null }) {
       onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
     />
   ) : (
-    <div class="pane-empty">
-      <Icon name="book" size={28} />
-      <h3>Select an entry</h3>
-      <p>Knowledge entries are shared context for humans and agents.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>
-    </div>
+      <div class="pane-empty">
+        <Icon name="book" size={28} />
+        <h3>Select an entry</h3>
+        <p>Knowledge entries are shared context for humans and agents.</p>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>
+      </div>
   );
 
   return (
     <AppShell route="knowledge" title="Knowledge">
-      <PaneLayout listHeader={listHeader} listBody={listBody} detail={detail} hasSelection={!!selectedSlug} />
+      <PaneLayout
+        listHeader={listHeader}
+        listBody={listBody}
+        detail={detail}
+        hasSelection={!!selectedSlug}
+        onBack={() => navigateHash("#/knowledge")}
+        backLabel="All entries"
+      />
     </AppShell>
   );
 }

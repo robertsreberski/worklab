@@ -27,7 +27,11 @@ export function FormField({
           {required && <span class="form-field-required" aria-hidden="true">*</span>}
           {helpTooltip && (
             <Tooltip label={helpTooltip}>
-              <span class="icon-button sm" aria-label="Help" style={{ width: "18px", height: "18px" }}>?</span>
+              <span
+                class="form-field-help"
+                role="img"
+                aria-label={`Help: ${typeof label === "string" ? label : "field"}`}
+              >?</span>
             </Tooltip>
           )}
         </label>

@@ -8,8 +8,22 @@ function rowToTask(row) {
   return {
     ...row,
     tags: JSON.parse(row.tags || "[]"),
-    priority: row.priority ?? 0,
     retry_count: row.retry_count ?? 0,
+    source_schedule_id: row.source_schedule_id || null,
+  };
+}
+
+function compactTaskSummary(row) {
+  const task = rowToTask(row);
+  if (!task) return null;
+  return {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    updated_at: task.updated_at,
+    executor_agent: task.executor_agent,
+    reviewer_agent: task.reviewer_agent,
+    source_schedule_id: task.source_schedule_id,
   };
 }
 
@@ -34,6 +48,85 @@ function attachDerivedRunFields(db, task) {
     running_run_id: runningRow?.id || null,
     last_run: lastRow ? { id: lastRow.id, status: lastRow.status, ended_at: lastRow.ended_at } : null,
   };
+}
+
+function directDependencyRows(db, taskId) {
+  return db.prepare(`
+    SELECT t.*
+    FROM task_dependencies d
+    JOIN tasks t ON t.id = d.depends_on_task_id
+    WHERE d.task_id = ?
+    ORDER BY t.updated_at DESC, t.rowid DESC
+  `).all(taskId);
+}
+
+function directDependentRows(db, taskId) {
+  return db.prepare(`
+    SELECT t.*
+    FROM task_dependencies d
+    JOIN tasks t ON t.id = d.task_id
+    WHERE d.depends_on_task_id = ?
+    ORDER BY t.updated_at DESC, t.rowid DESC
+  `).all(taskId);
+}
+
+function attachTaskGraph(db, task) {
+  if (!task) return task;
+  const dependencyRows = directDependencyRows(db, task.id);
+  const dependentRows = directDependentRows(db, task.id);
+  return {
+    ...task,
+    dependency_ids: dependencyRows.map((row) => row.id),
+    blocked_by: dependencyRows.map(compactTaskSummary),
+    blocks: dependentRows.map(compactTaskSummary),
+  };
+}
+
+function enrichTask(db, task) {
+  return attachTaskGraph(db, attachDerivedRunFields(db, task));
+}
+
+function normaliseDependencyIds(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((entry) => typeof entry === "string" && entry.trim().length > 0))];
+}
+
+function pathExists(db, startId, targetId, seen = new Set()) {
+  if (startId === targetId) return true;
+  if (seen.has(startId)) return false;
+  seen.add(startId);
+  const rows = db.prepare("SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?").all(startId);
+  for (const row of rows) {
+    if (pathExists(db, row.depends_on_task_id, targetId, seen)) return true;
+  }
+  return false;
+}
+
+function validateDependencyIds(db, taskId, dependencyIds) {
+  const ids = normaliseDependencyIds(dependencyIds);
+  for (const dependencyId of ids) {
+    if (taskId && dependencyId === taskId) {
+      throw Object.assign(new Error("a task cannot depend on itself"), { code: "validation" });
+    }
+    const row = db.prepare("SELECT id FROM tasks WHERE id = ?").get(dependencyId);
+    if (!row) {
+      throw Object.assign(new Error(`dependency task not found: ${dependencyId}`), { code: "validation" });
+    }
+    if (taskId && pathExists(db, dependencyId, taskId)) {
+      throw Object.assign(new Error("dependency would create a cycle"), { code: "validation" });
+    }
+  }
+  return ids;
+}
+
+function replaceTaskDependencies(db, taskId, dependencyIds) {
+  const insert = db.prepare("INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)");
+  const tx = db.transaction((ids) => {
+    db.prepare("DELETE FROM task_dependencies WHERE task_id = ?").run(taskId);
+    const now = Date.now();
+    for (const dependencyId of ids) insert.run(taskId, dependencyId, now);
+  });
+  tx(dependencyIds);
 }
 
 function rowToRun(row) {
@@ -107,23 +200,37 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
-    const tasks = rows.map(rowToTask).map((t) => attachDerivedRunFields(db, t));
+    const tasks = rows.map(rowToTask).map((t) => enrichTask(db, t));
     res.json({ tasks });
   });
 
   app.post("/api/tasks", (req, res) => {
-    const { title, description = "", instructions = "", executor_agent = null, reviewer_agent = null, priority = 0, tags = [] } = req.body || {};
+    const {
+      title,
+      instructions = "",
+      executor_agent = null,
+      reviewer_agent = null,
+      tags = [],
+      blocked_by_ids = [],
+    } = req.body || {};
     if (!title || typeof title !== "string") {
       return res.status(400).json({ error: { code: "validation", message: "title is required" } });
+    }
+    let dependencyIds = [];
+    try {
+      dependencyIds = validateDependencyIds(db, null, blocked_by_ids);
+    } catch (error) {
+      return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
     const id = newTaskId();
     const now = Date.now();
     db.prepare(`
-      INSERT INTO tasks (id, title, description, instructions, executor_agent, reviewer_agent, priority, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, description, instructions, executor_agent, reviewer_agent, priority, JSON.stringify(tags), now, now);
+      INSERT INTO tasks (id, title, instructions, executor_agent, reviewer_agent, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, title, instructions, executor_agent, reviewer_agent, JSON.stringify(tags), now, now);
+    replaceTaskDependencies(db, id, dependencyIds);
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-    const task = rowToTask(row);
+    const task = enrichTask(db, rowToTask(row));
     broker.broadcast("global", { type: "task_created", id });
     res.status(201).json({ task });
   });
@@ -135,14 +242,14 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(req.params.id);
     const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
-    const task = attachDerivedRunFields(db, rowToTask(row));
+    const task = enrichTask(db, rowToTask(row));
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
     task.is_locked = watcher?.isActive ? !!watcher.isActive(req.params.id) : null;
     res.json({ task, comments, runs });
   });
 
-  const PATCHABLE = ["title", "description", "instructions", "executor_agent", "reviewer_agent", "priority", "tags"];
+  const PATCHABLE = ["title", "instructions", "executor_agent", "reviewer_agent", "tags"];
 
   app.patch("/api/tasks/:id", (req, res) => {
     const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
@@ -178,18 +285,31 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       }
     }
 
-    if (fields.length === 0) {
-      return res.json({ task: rowToTask(existing) });
+    if ("blocked_by_ids" in req.body) {
+      try {
+        const dependencyIds = validateDependencyIds(db, req.params.id, req.body.blocked_by_ids);
+        replaceTaskDependencies(db, req.params.id, dependencyIds);
+      } catch (error) {
+        return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
+      }
+      fields.push("updated_at = ?");
+      values.push(Date.now());
     }
 
-    fields.push("updated_at = ?");
-    values.push(Date.now());
+    if (fields.length === 0) {
+      return res.json({ task: enrichTask(db, rowToTask(existing)) });
+    }
+
+    if (!fields.includes("updated_at = ?")) {
+      fields.push("updated_at = ?");
+      values.push(Date.now());
+    }
     values.push(req.params.id);
     db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
     broker.broadcast("global", { type: "task_updated", id: req.params.id });
-    res.json({ task: rowToTask(row) });
+    res.json({ task: enrichTask(db, rowToTask(row)) });
   });
 
   app.delete("/api/tasks/:id", (req, res) => {

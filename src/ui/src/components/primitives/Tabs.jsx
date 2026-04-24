@@ -1,4 +1,6 @@
 // §3.24 Tabs / TabGroup — sibling view switcher.
+// Pass `tab.panelId` to wire `aria-controls` for assistive tech; if the caller
+// renders a matching <div role="tabpanel" id={panelId}> they get full a11y.
 
 import { Badge } from "./Badge.jsx";
 
@@ -35,6 +37,7 @@ export function Tabs({
             class="tab"
             role="tab"
             aria-selected={selected}
+            aria-controls={t.panelId}
             tabIndex={selected ? 0 : -1}
             disabled={t.disabled}
             onClick={() => !t.disabled && onChange?.(t.value)}

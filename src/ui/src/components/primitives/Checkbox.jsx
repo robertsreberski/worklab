@@ -38,9 +38,9 @@ export function Checkbox({
       <span class={`checkbox-box ${indeterminate ? "checkbox-box-indeterminate" : ""}`}>
         {(checked || indeterminate) && <Icon name="check" size={12} strokeWidth={2.5} />}
       </span>
-      <span>
-        {label && <span>{label}</span>}
-        {description && <span class="muted" style={{ fontSize: "var(--text-sm)", display: "block", marginTop: "2px" }}>{description}</span>}
+      <span class="checkbox-copy">
+        {label && <span class="checkbox-label">{label}</span>}
+        {description && <span class="checkbox-description">{description}</span>}
         {children}
       </span>
     </label>

@@ -131,7 +131,7 @@ export function Settings() {
               />
             </FormField>
             {indexStatus && (
-              <div style={{ fontSize: "var(--text-sm)", color: indexStatus.errors ? "var(--status-progress)" : "var(--text-muted)" }}>
+              <div class={`settings-index-status ${indexStatus.errors ? "has-errors" : ""}`}>
                 Search index: {indexStatus.total} chunks · {indexStatus.vectorized} vectorized · {indexStatus.errors} errors · {indexStatus.model || "—"}
                 {indexStatus.model && !indexStatus.ready && ` · paused (${indexStatus.reason || "provider not configured"})`}
               </div>

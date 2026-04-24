@@ -32,7 +32,7 @@ export function AgentPicker({
   }
 
   const unassignedAvatar = (
-    <span class="agent-avatar unassigned" style={{ "--agent-avatar-size": "20px" }} aria-hidden="true">
+    <span class="agent-avatar unassigned agent-avatar-sm" aria-hidden="true">
       <span>?</span>
     </span>
   );
