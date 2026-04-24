@@ -93,6 +93,15 @@ export function createTaskWatcher({
     if (task.status !== "todo") {
       throw new Error(`task already ${task.status}`);
     }
+    const openBlocker = db.prepare(`
+      SELECT t.id, t.title
+      FROM task_dependencies d
+      JOIN tasks t ON t.id = d.depends_on_task_id
+      WHERE d.task_id = ? AND t.status <> 'done'
+      ORDER BY t.updated_at DESC
+      LIMIT 1
+    `).get(taskId);
+    if (openBlocker) throw new Error(`task is blocked by "${openBlocker.title}"`);
     if (!task.executor_agent) throw new Error("no executor assigned");
     if (active.has(taskId)) throw new Error("task already running");
 

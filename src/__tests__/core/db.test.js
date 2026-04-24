@@ -14,7 +14,7 @@ describe("openDb + runMigrations", () => {
       expect.arrayContaining([
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
         "custom_providers", "custom_models", "embeddings", "settings",
-        "agent_consolidations",
+        "agent_consolidations", "task_dependencies", "schedules", "schedule_spawns",
       ]),
     );
   });
@@ -44,7 +44,63 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("3");
+    expect(row.value).toBe("5");
+  });
+
+  it("v5 migration drops priority + description from tasks/schedules", () => {
+    const db = openDb(":memory:");
+    // Seed a v4-shape tasks + schedules table with priority + description.
+    db.exec(`
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        instructions TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'todo',
+        executor_agent TEXT,
+        reviewer_agent TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        tags TEXT NOT NULL DEFAULT '[]',
+        error_text TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        source_schedule_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+      CREATE TABLE schedules (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        instructions TEXT NOT NULL DEFAULT '',
+        executor_agent TEXT,
+        reviewer_agent TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        tags TEXT NOT NULL DEFAULT '[]',
+        cadence_json TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        next_fire_at INTEGER,
+        last_fired_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    const now = Date.now();
+    db.prepare(
+      "INSERT INTO tasks (id, title, description, instructions, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run("t1", "keep me", "drop me", "stay", 2, now, now);
+    db.prepare(
+      "INSERT INTO schedules (id, title, description, instructions, priority, cadence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("s1", "sched", "drop sched desc", "stay", 1, "{}", now, now);
+    runMigrations(db);
+    const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((r) => r.name);
+    const schedCols = db.prepare("PRAGMA table_info(schedules)").all().map((r) => r.name);
+    expect(taskCols).not.toContain("priority");
+    expect(taskCols).not.toContain("description");
+    expect(schedCols).not.toContain("priority");
+    expect(schedCols).not.toContain("description");
+    const taskRow = db.prepare("SELECT id, title, instructions FROM tasks WHERE id='t1'").get();
+    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay" });
   });
 
   it("allows taskless consolidation runs", () => {

@@ -1,5 +1,5 @@
 // §4.10 Modal — blocking action. Backdrop + focus trap + Escape closes.
-import { useRef } from "preact/hooks";
+import { useId, useRef } from "preact/hooks";
 import { IconButton } from "./primitives/IconButton.jsx";
 import { Icon } from "./Icon.jsx";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
@@ -16,6 +16,8 @@ export function Modal({
   ariaLabelledBy,
 }) {
   const ref = useRef(null);
+  const titleId = useId();
+  const labelledBy = title ? (ariaLabelledBy || titleId) : undefined;
   useFocusTrap(ref, { active: !!open, onEscape: onClose });
 
   if (!open) return null;
@@ -32,11 +34,11 @@ export function Modal({
         class={`modal ${size} ${className}`.trim()}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={ariaLabelledBy}
+        aria-labelledby={labelledBy}
       >
         {title && (
           <header class="modal-head">
-            <h2 id={ariaLabelledBy}>{title}</h2>
+            <h2 id={labelledBy}>{title}</h2>
             <IconButton
               icon={<Icon name="x" size={14} />}
               aria-label="Close"

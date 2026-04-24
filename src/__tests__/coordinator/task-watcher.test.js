@@ -95,6 +95,19 @@ describe("task-watcher", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  it("rejects run_requested when the task has an open blocker", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const blockerId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { executor: "coder" });
+    db.prepare(
+      "INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
+    ).run(taskId, blockerId, Date.now());
+
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn: vi.fn(), workerBinary: "/fake" });
+    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/blocked by/i);
+  });
+
   it("rejects run_requested when task already in_progress", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

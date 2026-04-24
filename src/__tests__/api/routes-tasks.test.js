@@ -16,7 +16,7 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.id).toMatch(/^[a-zA-Z0-9]{21}$/);
     expect(res.body.task.title).toBe("do thing");
     expect(res.body.task.status).toBe("todo");
-    expect(res.body.task.priority).toBe(0);
+    expect(res.body.task.priority).toBeUndefined();
   });
 
   it("rejects missing title", async () => {
@@ -30,6 +30,18 @@ describe("POST /api/tasks", () => {
     await agent.post("/api/tasks").send({ title: "b" });
     const res = await agent.get("/api/tasks").expect(200);
     expect(res.body.tasks.map(t => t.title).sort()).toEqual(["a", "b"]);
+  });
+
+  it("stores dependency ids and exposes compact blockers", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Blocked task",
+      blocked_by_ids: [blocker.id],
+    }).expect(201);
+    expect(task.dependency_ids).toEqual([blocker.id]);
+    expect(task.blocked_by).toHaveLength(1);
+    expect(task.blocked_by[0]).toMatchObject({ id: blocker.id, title: "Blocker" });
   });
 
   it("broadcasts task_created", async () => {
@@ -54,6 +66,22 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.task.id).toBe(task.id);
     expect(res.body.comments).toEqual([]);
     expect(res.body.runs).toEqual([]);
+  });
+
+  it("includes blockers and reverse links in task detail", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
+    const { body: { task: blocked } } = await agent.post("/api/tasks").send({
+      title: "Blocked task",
+      blocked_by_ids: [blocker.id],
+    }).expect(201);
+
+    const blockerDetail = await agent.get(`/api/tasks/${blocker.id}`).expect(200);
+    const blockedDetail = await agent.get(`/api/tasks/${blocked.id}`).expect(200);
+
+    expect(blockedDetail.body.task.dependency_ids).toEqual([blocker.id]);
+    expect(blockedDetail.body.task.blocked_by[0]).toMatchObject({ id: blocker.id, title: "Blocker" });
+    expect(blockerDetail.body.task.blocks[0]).toMatchObject({ id: blocked.id, title: "Blocked task" });
   });
 
   it("orders runs newest first when timestamps match", async () => {
@@ -117,12 +145,12 @@ describe("GET /api/tasks/:id", () => {
 });
 
 describe("PATCH /api/tasks/:id", () => {
-  it("updates title, description, instructions", async () => {
+  it("updates title and instructions", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "orig" });
-    const res = await agent.patch(`/api/tasks/${task.id}`).send({ title: "new", description: "desc" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ title: "new", instructions: "do this" });
     expect(res.body.task.title).toBe("new");
-    expect(res.body.task.description).toBe("desc");
+    expect(res.body.task.instructions).toBe("do this");
   });
 
   it("PATCH broadcasts task_updated", async () => {
@@ -132,6 +160,17 @@ describe("PATCH /api/tasks/:id", () => {
     broker.broadcast = (ch, p) => { if (ch === "global" && p.type === "task_updated") got = p; };
     await agent.patch(`/api/tasks/${task.id}`).send({ title: "b" });
     expect(got).toEqual({ type: "task_updated", id: task.id });
+  });
+
+  it("rejects dependency cycles", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: a } } = await agent.post("/api/tasks").send({ title: "A" }).expect(201);
+    const { body: { task: b } } = await agent.post("/api/tasks").send({
+      title: "B",
+      blocked_by_ids: [a.id],
+    }).expect(201);
+
+    await agent.patch(`/api/tasks/${a.id}`).send({ blocked_by_ids: [b.id] }).expect(400);
   });
 });
 

@@ -1,5 +1,5 @@
 // §6.6 Skills — pane layout.
-import { useEffect, useState, useCallback, useMemo } from "preact/hooks";
+import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
@@ -12,16 +12,26 @@ import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { SkillEdit } from "./SkillEdit.jsx";
 import { skillDisplayName } from "../lib/display.js";
+import { navigateHash } from "../lib/navigation.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 export function Skills({ selectedName = null }) {
   const [skills, setSkills] = useState([]);
   const [query, setQuery] = useState("");
+  const searchRef = useRef(null);
 
   const reload = useCallback(() => {
     api.listSkills().then((r) => setSkills(r.skills || [])).catch(() => setSkills([]));
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -35,8 +45,8 @@ export function Skills({ selectedName = null }) {
 
   const listHeader = (
     <>
-      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search skills…" />
-      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { window.location.hash = "#/skills/new"; }}>
+      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search skills…" inputRef={searchRef} />
+      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { navigateHash("#/skills/new"); }}>
         New skill
       </Button>
     </>
@@ -49,7 +59,7 @@ export function Skills({ selectedName = null }) {
       <EmptyState
         title="No skills yet"
         body="Skills are reusable playbooks agents apply when their trigger matches."
-        cta={<Button variant="primary" onClick={() => { window.location.hash = "#/skills/new"; }}>New skill</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/skills/new"); }}>New skill</Button>}
       />
     )
   ) : (
@@ -60,10 +70,19 @@ export function Skills({ selectedName = null }) {
           key={s.name}
           href={`#/skills/${s.name}`}
           active={s.name === selectedName}
+          onClick={(event) => {
+            event?.preventDefault?.();
+            navigateHash(`#/skills/${s.name}`);
+          }}
           leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
           title={skillDisplayName(s)}
           sub={s.trigger || "No trigger defined"}
-          trailing={always ? <Chip variant="trigger">always</Chip> : null}
+          trailing={(
+            <span class="pane-row-summary">
+              {always && <Chip variant="trigger">always</Chip>}
+              <span>used by {s.used_by_count || 0}</span>
+            </span>
+          )}
         />
       );
     })
@@ -77,17 +96,24 @@ export function Skills({ selectedName = null }) {
       onDeleted={() => { reload(); window.location.hash = "#/skills"; }}
     />
   ) : (
-    <div class="pane-empty">
-      <Icon name="sparkles" size={28} />
-      <h3>Select a skill</h3>
-      <p>Skills are reusable playbooks agents apply when their trigger matches.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/skills/new"; }}>New skill</Button>
-    </div>
+      <div class="pane-empty">
+        <Icon name="sparkles" size={28} />
+        <h3>Select a skill</h3>
+        <p>Skills are reusable playbooks agents apply when their trigger matches.</p>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/skills/new"); }}>New skill</Button>
+      </div>
   );
 
   return (
     <AppShell route="skills" title="Skills">
-      <PaneLayout listHeader={listHeader} listBody={listBody} detail={detail} hasSelection={!!selectedName} />
+      <PaneLayout
+        listHeader={listHeader}
+        listBody={listBody}
+        detail={detail}
+        hasSelection={!!selectedName}
+        onBack={() => navigateHash("#/skills")}
+        backLabel="All skills"
+      />
     </AppShell>
   );
 }

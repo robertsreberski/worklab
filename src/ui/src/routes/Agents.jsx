@@ -1,7 +1,7 @@
 // §6.5 Agents — pane layout. Primary action: New agent.
 // PaneRow: avatar · name · sub (model) · status dot (pulse if recent activity).
 
-import { useEffect, useState, useCallback, useMemo } from "preact/hooks";
+import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
@@ -16,15 +16,26 @@ import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentEdit } from "./AgentEdit.jsx";
 import { humanizeSlug, modelDisplayName } from "../lib/display.js";
+import { navigateHash } from "../lib/navigation.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 function agentIsActive(agent) {
   if (!agent.lastRunAt) return false;
   return Date.now() - Number(agent.lastRunAt) < 10 * 60_000;
 }
 
+function formatAvgDuration(value) {
+  if (!value) return "— avg";
+  const ms = Number(value);
+  if (ms < 1000) return `${Math.round(ms)}ms avg`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s avg`;
+  return `${Math.round(ms / 60_000)}m avg`;
+}
+
 export function Agents({ selectedName = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
+  const searchRef = useRef(null);
 
   const reload = useCallback(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
@@ -32,6 +43,13 @@ export function Agents({ selectedName = null }) {
 
   useEffect(() => { reload(); }, [reload]);
   useSSE("global", (evt) => { if (evt.type?.startsWith("agent_")) reload(); });
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+  });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -51,12 +69,13 @@ export function Agents({ selectedName = null }) {
         onInput={(e) => setQuery(e.target.value)}
         placeholder="Search agents…"
         ariaLabel="Search agents"
+        inputRef={searchRef}
       />
       <Button
         variant="primary"
         size="sm"
         iconLeft={<Icon name="plus" size={12} />}
-        onClick={() => { window.location.hash = "#/agents/new"; }}
+        onClick={() => { navigateHash("#/agents/new"); }}
       >
         New agent
       </Button>
@@ -70,20 +89,30 @@ export function Agents({ selectedName = null }) {
       <EmptyState
         title="No agents yet"
         body="Create your first agent to start orchestrating work."
-        cta={<Button variant="primary" onClick={() => { window.location.hash = "#/agents/new"; }}>New agent</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>}
       />
     )
   ) : (
     filtered.map((a) => {
       const isActive = agentIsActive(a);
-      const trailing = isActive
-        ? <LivePulse size={8} color="var(--status-done)" />
-        : <StatusDot status={a.enabled ? "enabled" : "disabled"} size={8} />;
+      const trailing = (
+        <span class="pane-row-summary">
+          {isActive
+            ? <LivePulse size={8} color="var(--status-done)" />
+            : <StatusDot status={a.enabled ? "enabled" : "disabled"} size={8} />}
+          <span>{a.run_count_30d || 0} runs</span>
+          <span>{formatAvgDuration(a.avg_run_duration_ms)}</span>
+        </span>
+      );
       return (
         <PaneRow
           key={a.name}
           href={`#/agents/${a.name}`}
           active={a.name === selectedName}
+          onClick={(event) => {
+            event?.preventDefault?.();
+            navigateHash(`#/agents/${a.name}`);
+          }}
           leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
           title={a.display_name || humanizeSlug(a.name)}
           sub={modelDisplayName(a.model)}
@@ -107,12 +136,12 @@ export function Agents({ selectedName = null }) {
       }}
     />
   ) : (
-    <div class="pane-empty">
-      <Icon name="user" size={28} />
-      <h3>Select an agent</h3>
-      <p>Pick an agent from the list to view or edit. Or create a new one.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/agents/new"; }}>New agent</Button>
-    </div>
+      <div class="pane-empty">
+        <Icon name="user" size={28} />
+        <h3>Select an agent</h3>
+        <p>Pick an agent from the list to view or edit. Or create a new one.</p>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>
+      </div>
   );
 
   return (
@@ -122,6 +151,8 @@ export function Agents({ selectedName = null }) {
         listBody={listBody}
         detail={detail}
         hasSelection={!!selectedName}
+        onBack={() => navigateHash("#/agents")}
+        backLabel="All agents"
       />
     </AppShell>
   );

@@ -17,14 +17,13 @@ export function ToastHost() {
           onMouseEnter={() => pauseToast(t.id)}
           onMouseLeave={() => resumeToast(t.id)}
         >
-          <div style={{ display: "flex", gap: "var(--sp-2)", alignItems: "flex-start" }}>
-            <span class="toast-message" style={{ flex: 1 }}>{t.message}</span>
+          <div class="toast-row">
+            <span class="toast-message">{t.message}</span>
             <button
               type="button"
-              class="icon-button sm"
+              class="toast-dismiss"
               aria-label="Dismiss notification"
               onClick={() => dismissToast(t.id)}
-              style={{ width: 18, height: 18 }}
             >×</button>
           </div>
         </div>

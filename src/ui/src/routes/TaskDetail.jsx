@@ -24,6 +24,7 @@ import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { Card } from "../components/Card.jsx";
+import { Chip } from "../components/primitives/Chip.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { KeyValueList } from "../components/KeyValueList.jsx";
 import { Metric } from "../components/Metric.jsx";
@@ -33,7 +34,9 @@ import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
+import { navigateHash } from "../lib/navigation.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 function formatDuration(ms) {
@@ -70,14 +73,14 @@ function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
   const log = run?.log || {};
   return (
     <details open={expanded} onToggle={(e) => onToggle?.(run.id, e.currentTarget.open)} class="run-card">
-      <summary style={{ cursor: "pointer", listStyle: "none" }}>
+      <summary class="run-card-summary">
         <div class="run-summary">
           <div class="run-summary-main">
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
+            <div class="run-summary-status">
               <StatusPill status={run.status} size="sm" />
               <span class="run-summary-title">{formatDate(run.started_at) || "Run"}</span>
             </div>
-            <div class="muted" style={{ fontSize: "var(--text-sm)" }}>
+            <div class="run-summary-meta">
               {run.mode} · {agentLabel || run.agent_name}
               {formatDuration(runDuration(run)) && ` · ${formatDuration(runDuration(run))}`}
               {log.cost_usd != null && ` · ${formatCost(log.cost_usd)}`}
@@ -89,9 +92,9 @@ function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
           </div>
         </div>
       </summary>
-      <div style={{ marginTop: "var(--sp-3)" }}>
+      <div class="run-card-events">
         {loading ? (
-          <div class="muted" style={{ fontSize: "var(--text-sm)" }}>Loading events…</div>
+          <div class="run-card-events-loading">Loading events…</div>
         ) : (
           <EventTimeline events={events} streaming={run.status === "running"} />
         )}
@@ -196,6 +199,17 @@ export function TaskDetail({ id, runParam = null }) {
 
   const executorLabel = task ? agentDisplayName(agents, task.executor_agent, "Unassigned") : "";
   const reviewerLabel = task ? agentDisplayName(agents, task.reviewer_agent, null) : null;
+  const unresolvedBlockedBy = useMemo(
+    () => (task?.blocked_by || []).filter((entry) => entry.status !== "done"),
+    [task],
+  );
+  const agentOptions = useMemo(
+    () => [
+      { value: "", label: "Unassigned" },
+      ...agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name })),
+    ],
+    [agents],
+  );
 
   function toggleRun(runId, open) {
     setHighlightedRunId(runId);
@@ -221,7 +235,7 @@ export function TaskDetail({ id, runParam = null }) {
     try {
       await api.deleteTask(id);
       pushToast("Task deleted", { variant: "success" });
-      window.location.hash = "#/tasks";
+      navigateHash("#/tasks");
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
     }
@@ -288,8 +302,23 @@ export function TaskDetail({ id, runParam = null }) {
     else applyStatusTransition(t);
   }
 
+  async function updateAssignee(role, value) {
+    try {
+      await api.patchTask(id, { [role]: value || null });
+      pushToast("Assignment updated", { variant: "success" });
+      reload();
+    } catch (error) {
+      pushToast(`Assignment failed: ${error.message}`, { variant: "error" });
+    }
+  }
+
   // §6.3 primary action cluster per status
-  const canRun = task?.executor_agent && task.status === "todo";
+  const canRun = task?.executor_agent && task.status === "todo" && unresolvedBlockedBy.length === 0;
+  const runDisabledReason = !task?.executor_agent
+    ? "Assign an executor to run"
+    : unresolvedBlockedBy.length > 0
+      ? `Blocked by ${unresolvedBlockedBy.map((entry) => entry.title).join(", ")}`
+      : undefined;
   const primaryAction = (() => {
     if (!task) return null;
     if (runningRun) {
@@ -313,7 +342,7 @@ export function TaskDetail({ id, runParam = null }) {
           iconLeft={<Icon name="play" size={13} />}
           onClick={runNow}
           disabled={!canRun}
-          title={canRun ? undefined : "Assign an executor to run"}
+          title={runDisabledReason}
         >
           Run now
         </Button>
@@ -344,7 +373,7 @@ export function TaskDetail({ id, runParam = null }) {
   const headerActions = task && (
     <>
       {primaryAction}
-      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { window.location.hash = `#/tasks/${id}/edit`; }}>
+      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
         Edit
       </Button>
       <Button variant="destructive" iconLeft={<Icon name="trash" size={13} />} onClick={() => setDeleteOpen(true)}>
@@ -357,44 +386,52 @@ export function TaskDetail({ id, runParam = null }) {
   useGlobalShortcuts({
     cmdenter: (e) => {
       e.preventDefault();
-      if (primaryAction && !runningRun && task?.status === "todo" && canRun) runNow();
+      const activeTag = document.activeElement?.tagName?.toLowerCase?.() || "";
+      if ((activeTag === "textarea" || activeTag === "input") && newComment.trim()) {
+        addComment();
+        return;
+      }
+      if (runningRun) cancelRun();
+      else if (showStuckBanner) retryStuck();
+      else if (task?.status === "todo" && canRun) runNow();
       else if (task?.status === "in_review") applyStatusTransition({ from: "in_review", to: "done" });
+      else if (task?.status === "done") applyStatusTransition({ from: "done", to: "todo" });
     },
-    "e": () => { window.location.hash = `#/tasks/${id}/edit`; },
-    "E": () => { window.location.hash = `#/tasks/${id}/edit`; },
+    "e": () => { navigateHash(`#/tasks/${id}/edit`); },
+    "E": () => { navigateHash(`#/tasks/${id}/edit`); },
   });
 
   if (!data) {
     return (
-      <AppShell route="tasks" title="Loading…">
+      <AppShell route="tasks" title="Tasks">
         <div class="page-wrap"><LoadingState caption="Loading task…" /></div>
       </AppShell>
     );
   }
   if (data.notFound) {
     return (
-      <AppShell route="tasks" title="Not found">
+      <AppShell route="tasks" title="Tasks">
         <div class="page-wrap">
-          <EmptyState
-            title="Task not found"
-            body="This task may have been deleted."
-            cta={<Button variant="primary" onClick={() => { window.location.hash = "#/tasks"; }}>Back to tasks</Button>}
-          />
+            <EmptyState
+              title="Task not found"
+              body="This task may have been deleted."
+              cta={<Button variant="primary" onClick={() => { navigateHash("#/tasks"); }}>Back to tasks</Button>}
+            />
         </div>
       </AppShell>
     );
   }
 
   return (
-    <AppShell route="tasks" title={task.title} headerActions={headerActions}>
+    <AppShell route="tasks" title="Tasks" headerActions={headerActions}>
       <div class="task-detail">
         <div class="task-detail-main">
           <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: `#${String(task.id).slice(-6)}` }]} />
 
           <section class="task-hero">
             <div class="task-hero-top">
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", minWidth: 0, flex: 1 }}>
-                <div style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+              <div class="task-hero-stack">
+                <div class="task-hero-status-row">
                   {runningRun && <LivePulse size={10} />}
                   <StatusMenu status={task.status} onChoose={onStatusChoose} />
                   {hasLastRunError && (
@@ -402,15 +439,23 @@ export function TaskDetail({ id, runParam = null }) {
                       <Icon name="alert-triangle" size={10} /> Error
                     </span>
                   )}
-                  {Number(task.priority) > 0 && <span class="chip chip-warn">P{task.priority}</span>}
+                  {showStuckBanner && (
+                    <span class="chip chip-error">
+                      <Icon name="alert-triangle" size={10} /> Stuck — reset
+                    </span>
+                  )}
                 </div>
                 <h1 class="task-hero-title title-display">{task.title}</h1>
-                <div class="task-hero-meta">
-                  <span>Created {formatDate(task.created_at)}</span>
-                  {task.updated_at && <><span>·</span><span>Updated {formatDate(task.updated_at)}</span></>}
-                </div>
               </div>
             </div>
+            {task.instructions && (
+              <div class="task-hero-instructions">
+                <div class="all-caps task-hero-instructions-kicker">
+                  <Icon name="terminal" size={10} /> Instructions to agent
+                </div>
+                <pre class="task-hero-instructions-body">{task.instructions}</pre>
+              </div>
+            )}
           </section>
 
           {showStuckBanner && (
@@ -432,22 +477,6 @@ export function TaskDetail({ id, runParam = null }) {
             <Banner variant="error" title="Run error" detail={runError} onDismiss={() => setRunError(null)} />
           )}
 
-          {(task.description || task.instructions) && (
-            <Card variant="spacious" kicker="Brief" title="Overview">
-              {task.description && (
-                <div style={{ marginBottom: task.instructions ? "var(--sp-4)" : 0 }}>
-                  <MarkdownContent content={task.description} />
-                </div>
-              )}
-              {task.instructions && (
-                <>
-                  <div class="section-kicker" style={{ marginTop: "var(--sp-3)" }}>Instructions</div>
-                  <pre class="code-panel" style={{ marginTop: "var(--sp-1)" }}>{task.instructions}</pre>
-                </>
-              )}
-            </Card>
-          )}
-
           {runningRun ? (
             <LiveRunPanel
               run={runningRun}
@@ -455,7 +484,7 @@ export function TaskDetail({ id, runParam = null }) {
               isStreaming
             />
           ) : latestRun ? (
-            <Card variant="spacious" kicker="Latest run" title={formatDate(latestRun.started_at)}>
+            <Card variant="spacious" kicker={runningRun ? "Current run" : "Latest run"} title={formatDate(latestRun.started_at)}>
               <RunCard
                 run={latestRun}
                 expanded={expandedRunIds.has(latestRun.id)}
@@ -468,7 +497,7 @@ export function TaskDetail({ id, runParam = null }) {
 
           <Card kicker="Activity" title="Timeline">
             {visibleActivity.length === 0 ? (
-              <div class="muted" style={{ fontSize: "var(--text-sm)" }}>No activity yet.</div>
+              <div class="activity-empty">No activity yet.</div>
             ) : (
               <div class="activity-feed">
                 {visibleActivity.map((item) => (
@@ -477,8 +506,8 @@ export function TaskDetail({ id, runParam = null }) {
                       {item.type === "comment" && <><Icon name="message-circle" size={12} /><span>{item.author?.display_name || item.author?.id || "Someone"} commented</span></>}
                       {item.type === "run_started" && <><Icon name="play" size={12} /><span>Run started by {agentDisplayName(agents, item.agent, item.agent)}</span></>}
                       {item.type === "run_completed" && <><Icon name="check-circle" size={12} /><span>Run completed</span></>}
-                      {item.type === "run_failed" && <><Icon name="alert-triangle" size={12} style={{ color: "var(--status-error)" }} /><span>Run failed</span></>}
-                      <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-subtle)" }}>{formatDate(item.at)}</span>
+                      {item.type === "run_failed" && <><Icon name="alert-triangle" size={12} class="activity-item-icon-error" /><span>Run failed</span></>}
+                      <span class="activity-item-time">{formatDate(item.at)}</span>
                     </div>
                     {item.type === "comment" && item.body && (
                       <div class="activity-item-body"><MarkdownContent content={item.body} maxHeight={200} /></div>
@@ -493,8 +522,8 @@ export function TaskDetail({ id, runParam = null }) {
               </div>
             )}
 
-            <div style={{ marginTop: "var(--sp-4)" }}>
-              <form onSubmit={addComment} style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+            <div class="activity-composer">
+              <form onSubmit={addComment} class="activity-composer-form">
                 <Textarea
                   rows={3}
                   autoGrow
@@ -502,7 +531,7 @@ export function TaskDetail({ id, runParam = null }) {
                   value={newComment}
                   onInput={(e) => setNewComment(e.target.value)}
                 />
-                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div class="activity-composer-actions">
                   <Button type="submit" variant="primary" disabled={!newComment.trim()}>Post</Button>
                 </div>
               </form>
@@ -510,11 +539,8 @@ export function TaskDetail({ id, runParam = null }) {
           </Card>
 
           {runs.length > 1 && (
-            <details class="card">
-              <summary style={{ cursor: "pointer", fontSize: "var(--text-base)", fontWeight: 500, padding: "var(--sp-1) 0" }}>
-                Previous runs ({runs.length - 1})
-              </summary>
-              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", marginTop: "var(--sp-3)" }}>
+            <Card collapsible={{ summary: "Previous runs", count: runs.length - 1 }}>
+              <div class="runs-expander-list">
                 {runs.slice(1, 8).map((run) => (
                   <RunCard
                     key={run.id}
@@ -526,16 +552,13 @@ export function TaskDetail({ id, runParam = null }) {
                   />
                 ))}
               </div>
-            </details>
+            </Card>
           )}
 
           {comments.length > 0 && (
-            <details class="card">
-              <summary style={{ cursor: "pointer", fontSize: "var(--text-base)", fontWeight: 500, padding: "var(--sp-1) 0" }}>
-                All comments ({comments.length})
-              </summary>
-              <div style={{ marginTop: "var(--sp-3)" }}><CommentList comments={comments} /></div>
-            </details>
+            <Card collapsible={{ summary: "All comments", count: comments.length }}>
+              <CommentList comments={comments} />
+            </Card>
           )}
         </div>
 
@@ -544,23 +567,37 @@ export function TaskDetail({ id, runParam = null }) {
             <div class="rail-row">
               <span class="label">Executor</span>
               <span class="value">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                <span class="rail-row-avatar">
                   <AgentAvatar name={task.executor_agent} label={executorLabel} size={20} role="executor" />
                   <span>{executorLabel}</span>
                 </span>
+                <Select
+                  value={task.executor_agent || ""}
+                  onChange={(value) => updateAssignee("executor_agent", value)}
+                  options={agentOptions}
+                  placeholder="Assign executor"
+                  ariaLabel="Reassign executor"
+                  searchable
+                />
               </span>
             </div>
-            {task.reviewer_agent && (
-              <div class="rail-row">
-                <span class="label">Reviewer</span>
-                <span class="value">
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
-                    <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} role="reviewer" />
-                    <span>{reviewerLabel}</span>
-                  </span>
+            <div class="rail-row">
+              <span class="label">Reviewer</span>
+              <span class="value">
+                <span class="rail-row-avatar">
+                  <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} role="reviewer" />
+                  <span>{reviewerLabel || "Unassigned"}</span>
                 </span>
-              </div>
-            )}
+                <Select
+                  value={task.reviewer_agent || ""}
+                  onChange={(value) => updateAssignee("reviewer_agent", value)}
+                  options={agentOptions}
+                  placeholder="Assign reviewer"
+                  ariaLabel="Reassign reviewer"
+                  searchable
+                />
+              </span>
+            </div>
           </Card>
 
           <Card variant="spacious" title="Details">
@@ -568,7 +605,7 @@ export function TaskDetail({ id, runParam = null }) {
               ["Created", formatDate(task.created_at) || "—"],
               ["Updated", formatDate(task.updated_at) || "—"],
               ["Completed", formatDate(task.completed_at) || "—"],
-              ["Priority", Number(task.priority) > 0 ? `P${task.priority}` : "—"],
+              ["Schedule", task.source_schedule_id ? <a href={`#/schedules/${task.source_schedule_id}`}>Open schedule</a> : "—"],
               ["ID", task.id],
             ]} />
           </Card>
@@ -580,7 +617,7 @@ export function TaskDetail({ id, runParam = null }) {
                 <Metric label="Turns" value={latestRun.log.num_turns ?? "—"} />
                 <Metric label="Tokens in" value={formatTokens(latestRun.log.input_tokens) || "—"} />
                 <Metric label="Tokens out" value={formatTokens(latestRun.log.output_tokens) || "—"} />
-                <div style={{ gridColumn: "span 2" }}>
+                <div class="metric-span-2">
                   <Metric label="Cost" value={formatCost(latestRun.log.cost_usd) || "$0"} />
                 </div>
               </div>
@@ -589,25 +626,52 @@ export function TaskDetail({ id, runParam = null }) {
 
           {(task.tags || []).length > 0 && (
             <Card variant="spacious" title="Tags">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-1)" }}>
+              <div class="task-tags">
                 {(task.tags || []).map((t) => (
-                  <span key={t} class="tag">{t}</span>
+                  <Chip key={t} variant="tag">{t}</Chip>
                 ))}
               </div>
             </Card>
           )}
 
+          {((task.blocked_by || []).length > 0 || (task.blocks || []).length > 0) && (
+            <Card variant="spacious" title="Dependencies">
+              {(task.blocked_by || []).length > 0 && (
+                <div class="dependency-group">
+                  <div class="all-caps">Blocked by</div>
+                  {(task.blocked_by || []).map((dependency) => (
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
+                      <span class="truncate">{dependency.title}</span>
+                      <StatusPill status={dependency.status} size="sm" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {(task.blocks || []).length > 0 && (
+                <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
+                  <div class="all-caps">Blocks</div>
+                  {(task.blocks || []).map((dependency) => (
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
+                      <span class="truncate">{dependency.title}</span>
+                      <StatusPill status={dependency.status} size="sm" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
+
           <Card variant="spacious" title="Actions">
-            <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+            <div class="task-actions-stack">
               <Button
                 variant="secondary"
                 iconLeft={<Icon name="copy" size={13} />}
                 onClick={async () => {
                   try {
-                    const copy = { title: `Copy of ${task.title}`, description: task.description, instructions: task.instructions, executor_agent: task.executor_agent, reviewer_agent: task.reviewer_agent, priority: task.priority, tags: task.tags };
+                    const copy = { title: `Copy of ${task.title}`, instructions: task.instructions, executor_agent: task.executor_agent, reviewer_agent: task.reviewer_agent, tags: task.tags };
                     const r = await api.createTask(copy);
                     pushToast("Task duplicated", { variant: "success" });
-                    window.location.hash = `#/tasks/${r.task.id}`;
+                    navigateHash(`#/tasks/${r.task.id}`);
                   } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
                 }}
               >Duplicate</Button>

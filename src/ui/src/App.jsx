@@ -9,6 +9,7 @@ import { Knowledge } from "./routes/Knowledge.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
 import { Schedules } from "./routes/Schedules.jsx";
+import { consumeAllowedHash, getNavigationGuard, normalizeHash } from "./lib/navigation.js";
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -29,7 +30,26 @@ export function App() {
   const [{ route, rest, query }, setRoute] = useState(parseHash());
 
   useEffect(() => {
-    const handler = () => setRoute(parseHash());
+    let currentHash = normalizeHash(window.location.hash);
+
+    const handler = () => {
+      const nextHash = normalizeHash(window.location.hash);
+      if (consumeAllowedHash(nextHash)) {
+        currentHash = nextHash;
+        setRoute(parseHash());
+        return;
+      }
+      const guard = getNavigationGuard();
+      if (guard?.isDirty?.() && nextHash !== currentHash) {
+        guard.requestPrompt?.(nextHash);
+        if (window.location.hash !== currentHash) {
+          window.location.hash = currentHash;
+        }
+        return;
+      }
+      currentHash = nextHash;
+      setRoute(parseHash());
+    };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
@@ -55,7 +75,7 @@ export function App() {
   } else if (route === "settings") {
     body = <Settings />;
   } else if (route === "schedules") {
-    body = <Schedules />;
+    body = <Schedules selectedId={rest[0] || null} />;
   } else {
     body = <Commander />;
   }

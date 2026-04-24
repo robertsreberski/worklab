@@ -2,12 +2,16 @@
 // Collapses to single-pane with back button below 860px.
 
 import { useEffect, useState } from "preact/hooks";
+import { Button } from "./primitives/Button.jsx";
+import { Icon } from "./Icon.jsx";
 
 export function PaneLayout({
   listHeader,
   listBody,
   detail,
   hasSelection = false,
+  onBack,
+  backLabel = "Back",
   class: className = "",
 }) {
   const [compactView, setCompactView] = useState(
@@ -26,7 +30,23 @@ export function PaneLayout({
     // Single-pane mode: show list, or detail if selected
     return (
       <div class={`two-pane two-pane-compact ${className}`.trim()}>
-        {hasSelection ? detail : (
+        {hasSelection ? (
+          <div class="pane-detail pane-detail-compact">
+            {onBack && (
+              <div class="pane-mobile-back">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  iconLeft={<Icon name="chevron-left" size={13} />}
+                  onClick={onBack}
+                >
+                  {backLabel}
+                </Button>
+              </div>
+            )}
+            {detail}
+          </div>
+        ) : (
           <div class="pane-list">
             <div class="pane-list-head">{listHeader}</div>
             <div class="pane-list-body">{listBody}</div>

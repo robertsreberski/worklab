@@ -19,6 +19,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
+import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
 
@@ -41,6 +42,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   }, [name, isNew]);
 
   const isDirty = useMemo(() => baseline ? JSON.stringify(skill) !== JSON.stringify(baseline) : true, [skill, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
 
   const formSave = useFormSave(async () => {
     const payload = {
@@ -88,7 +90,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   return (
     <>
       <header class="pane-detail-head">
-        <div style={{ minWidth: 0 }}>
+        <div class="pane-detail-head-titles">
           <div class="all-caps">{isNew ? "Create skill" : "Skill"}</div>
           <h2>{title}</h2>
         </div>
@@ -183,6 +185,24 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
         }
       >
         <p>This removes the skill permanently.</p>
+      </Modal>
+
+      <Modal
+        open={guard.promptOpen}
+        onClose={guard.keepEditing}
+        title="You have unsaved changes"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>
+            <Button variant="destructive" onClick={guard.discardAndLeave}>Discard</Button>
+            <Button variant="primary" loading={formSave.saving} onClick={() => guard.saveAndLeave().catch(() => {})}>
+              Save & leave
+            </Button>
+          </>
+        }
+      >
+        <p>Your changes have not been saved.</p>
       </Modal>
     </>
   );

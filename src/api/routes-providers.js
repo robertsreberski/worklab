@@ -31,7 +31,16 @@ function modelRunStatus(provider, model, capabilities = model.capabilities) {
 
 export function registerProviderRoutes(app, { db, dataDir, broker }) {
   app.get("/api/providers", (_req, res) => {
-    res.json({ providers: listProviders({ db, dataDir }) });
+    const providers = listProviders({ db, dataDir }).map((provider) => {
+      const summary = db.prepare(
+        "SELECT COUNT(*) AS model_count FROM custom_models WHERE provider_id = ?",
+      ).get(provider.id);
+      return {
+        ...provider,
+        model_count: summary?.model_count || 0,
+      };
+    });
+    res.json({ providers });
   });
 
   app.get("/api/providers/:id", (req, res) => {
