@@ -1,7 +1,7 @@
 # Worklab UI Design System
 
-> **Status:** Schema v1. Prescriptive — every rule is meant to be executed, not debated.
-> **Scope:** The full UI at `src/ui/`. Backend changes called out where a UI rule cannot hold without one.
+> **Status:** Schema v2. Prescriptive — every rule is meant to be executed, not debated.
+> **Scope:** Stable design-system foundations for Worklab plus target-product blueprints derived from `src/ui/` and `ds-prototype/`. Current route/API truth and backend prerequisites are called out explicitly.
 > **Audience:** Whoever builds, reviews, or extends the Worklab interface.
 
 ---
@@ -9,6 +9,13 @@
 ## 0. How to read this document
 
 This is a schema, not a report. Each primitive, composite, pattern and screen is specified with enough detail that an engineer can implement it without guessing. When a rule requires a judgment call, the rule itself makes the call and states the *why* in one line — that's how we stay decisive. If something here contradicts a current CSS rule, the document wins.
+
+This document uses three explicit markers. Any rule without a marker applies to the current shipped baseline.
+- **[Current]** — matches the shipped product; source of truth in `src/ui`, `src/core`, and `src/api`.
+- **[Target]** — preferred future behavior, prototype-driven; not assumed to exist yet. Never ship [Target] rules ahead of the backend that supports them.
+- **[Requires backend]** — UI behavior that depends on a schema, API, scheduler, or coordinator change. Each has a matching entry in §9.3.
+
+Foundations (sections 1–4) apply to both tracks unless called out. Patterns and screens call out track-specific behavior inline.
 
 Three verbs have precise meaning:
 - **must** — non-negotiable. Violating it is a bug.
@@ -28,7 +35,7 @@ Seven rules. They cascade: if two rules conflict, the earlier one wins.
 ### 1.1 Calm by default, loud when real-time
 Idle surfaces are quiet — no gradients, no animation, no glow. The moment a surface represents *work in flight* (a running task, a streaming log, a subscribing event source), it earns motion: a pulsing dot, a shimmer bar, a tool-token ticking in. This is the only place motion lives. Static screens do not animate anything the user did not trigger.
 
-**How it shows up:** `StatusDot` only pulses when `status === "in_progress"` or `"in_review"`. `ShimmerBar` only mounts while a run is streaming. Hover transforms are 120ms and limited to color/opacity, never transform.
+**How it shows up:** `StatusDot` and `LivePulse` pulse only while a run is actively streaming (`run.status === "running"`), not merely because a task sits in `in_progress` or `in_review`. `ShimmerBar` only mounts while a run is streaming. Hover changes are 120ms and limited to color/opacity. Press feedback may darken or inset, but never translates the element.
 
 ### 1.2 Status is a first-class citizen
 Every task, run, agent, provider, skill and KB entry has exactly one canonical state the user can read in under a second. State lives in color (semantic tokens) and a one-word label (pill). It never lives in icons alone, never in a sentence, never in a timestamp gap.
@@ -41,7 +48,7 @@ Each surface has one obvious button the user reaches for. Secondary actions are 
 **How it shows up:** Commander's primary is "New task". TaskEdit's primary is "Save". TaskDetail's primary is "Run now" (or "Cancel run" while a run is live). Any screen with two primaries fails review.
 
 ### 1.4 Density is a contract
-Commander is dense: 44px rows, 10.5px mono IDs, 13px titles. TaskDetail is spacious: 24px hero padding, 16px card padding, 14px body. These are not stylistic choices, they are contracts. Mixing densities within one screen is a bug.
+Commander is dense: 44px rows, 11px mono IDs, 13px titles. TaskDetail is spacious: 24px hero padding, 16px card padding, 14px body. These are not stylistic choices, they are contracts. Mixing densities within one screen is a bug.
 
 **How it shows up:** The Commander row grid and spacing never appears outside Commander. The two-pane list is dense-medium (36px rows). Cards in TaskDetail right rail use spacious internal padding.
 
@@ -75,7 +82,7 @@ Worklab is dark-only. No light-mode branch exists or is planned. The palette is 
 | `--bg` | Viewport background. The deepest layer. | `#08090a` |
 | `--surface` | Default raised surface for cards, panels, rows. | `#0f1114` |
 | `--surface-elevated` | Hover / active row, selected list row, primary button hover. | `#151820` |
-| `--surface-sunken` | Code blocks, tool output, inset fields. | `#0a0b0f` |
+| `--surface-sunken` | Code blocks, tool output, inset fields and controls. | `#0a0b0f` |
 | `--border` | Default hairline border. 1px only. | `rgba(255,255,255,0.08)` |
 | `--border-strong` | Separators between sections, card outlines on hover. | `rgba(255,255,255,0.14)` |
 | `--border-focus` | Focus-visible ring and active form-field border. | `rgba(159,184,255,0.5)` |
@@ -84,7 +91,7 @@ Worklab is dark-only. No light-mode branch exists or is planned. The palette is 
 - `--bg` is the viewport only. No other element uses it.
 - `--surface` is the default for any container that holds content. All cards, list rows (unselected), panels use `--surface`.
 - `--surface-elevated` marks interactive state only: hover, selection. Never static decoration.
-- `--surface-sunken` marks "read-only output" only: log blocks, code blocks, tool output. Its presence signals "you cannot type here".
+- `--surface-sunken` marks inset content: code/log output and embedded controls. If a control is editable, border/focus treatment must carry the interactivity. Never use it as decorative chrome.
 - Borders use `--border` by default. `--border-strong` appears only between major sections or on floating surfaces (menus, toasts).
 
 #### 2.1.2 Text tokens
@@ -122,7 +129,7 @@ Every state has exactly one color. Pills and dots use the same palette — the d
 | `--status-progress` | "In progress" / "Running" | Yellow-amber. Alive, attention. |
 | `--status-review` | "In review" | Lavender. Waiting for a verdict. |
 | `--status-done` | "Done" / "Complete" | Green. Settled. |
-| `--status-error` | "Error" / "Failed" / "Blocked" | Red-pink. Broken. Requires a human. |
+| `--status-error` | "Error" / "Failed" / "Blocked" (target-only task state) | Red-pink. Broken. Requires a human. |
 | `--status-muted` | "Disabled" / "Cancelled" / "Archived" | Grey. Off. |
 
 Each status token ships in three tints for backgrounds:
@@ -130,13 +137,13 @@ Each status token ships in three tints for backgrounds:
 - `--status-*-bg-20` — pill hover / active row background.
 - `--status-*-border` — pill border at 35% alpha.
 
-Status tints are the only acceptable non-neutral backgrounds in the UI.
+Status tints are the default non-neutral backgrounds for state. `--accent-soft` is the only other sanctioned tint and only for selection, active navigation, and active filter state.
 
 #### 2.1.5 Agent avatar hues
 
 Agent avatars get a deterministic hue from `hash(name) % 360` in HSL with `S=45%, L=55%` on the colored chip and `S=25%, L=20%` on the matching background. Initial letters use `--text` at `L=95%`. The function lives in `AgentAvatar.jsx` and must not be duplicated.
 
-**Rule:** Avatar hue derives from `agent.name` only. Never from role. Executor and reviewer of the same name share the same hue, but their role is conveyed by a sub-chip (E / R) not by hue.
+**Rule:** Avatar hue derives from stable agent identity only: `agent.name` today, or a persisted `color` field if one is ever added. Never derive from `display_name` or role. Executor and reviewer of the same agent share the same hue; role is conveyed by label or placement, not by color.
 
 #### 2.1.6 Contrast reference
 
@@ -269,7 +276,7 @@ Motion is a safety-critical part of the design, not decoration. Its job is to ma
 
 #### 2.6.3 Keyframes
 
-Six named keyframes. No other `@keyframes` may be defined.
+Six named keyframes. No other `@keyframes` may be defined. Hover, focus, and press transitions use CSS `transition` — not keyframes — and draw durations from §2.6.1 (`--dur-snap` is the default for hover/press, `--dur-std` for menu/drawer entry).
 
 | Name | Duration | Role |
 |---|---|---|
@@ -309,7 +316,7 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 **Sizes** — `sm: 28px`, `md: 32px`, `lg: 40px` height. Horizontal padding `--sp-3 / --sp-4 / --sp-5`.
 
 **States**
-- default, hover (lift `--accent-hover` or `--surface-elevated`), active (pressed 1px translate-y), focus-visible (2px `--accent` outline, 2px offset), disabled (60% opacity, not-allowed cursor), loading (spinner replaces label, width is preserved).
+- default, hover (lift `--accent-hover` or `--surface-elevated`), active (pressed state darkens/insets; no translate), focus-visible (2px `--accent` outline, 2px offset), disabled (60% opacity, not-allowed cursor), loading (spinner replaces label, width is preserved).
 
 **Do / Don't**
 - Do pair a destructive action with a confirmation step unless the op is cheap to undo.
@@ -429,7 +436,7 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 
 **States** — default off / on / hover (track brighter) / focus-visible (2px `--accent` outline on the track, outside) / disabled (50% opacity).
 
-**Do / Don't** — Do pair with a description when the label alone isn't enough. Don't use switches for "choose one of two" (use Segmented); use them only when off vs on has a meaningful default.
+**Do / Don't** — Do pair with a description when the label alone isn't enough. Don't use switches for "choose one of two" (use Radio group); use them only when off vs on has a meaningful default.
 
 **A11y** — `role="switch"`, `aria-checked`. Entire area is clickable; space toggles.
 
@@ -475,11 +482,13 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 
 **Purpose** — The sole visual carrier of state (principle 1.2).
 
-**Anatomy** — Pill shape: 22px height, `--sp-3` padding, `--radius-pill`. Leading dot or icon (12px) · label (11px/500, slight tracking).
+**Anatomy** — Pill shape: 22px height, `--sp-3` padding, `--radius-pill`. Leading dot or icon (12px) · label (11px/500, no tracking).
 
-**Props** — `status: "todo" | "in_progress" | "in_review" | "done" | "error" | "cancelled" | "disabled"`, `label?` (override default from `statusMeta()`), `size: "sm" | "md" = "md"`.
+**Props** — `status: "todo" | "in_progress" | "in_review" | "done" | "running" | "complete" | "failed" | "cancelled" | "disabled" | "error"`, `label?` (override default from `statusMeta()`), `size: "sm" | "md" = "md"`.
 
-**Width** — `max-width: 140px` on the pill. The pill must never overflow its grid cell. If the label truncates, a tooltip shows the full label on hover. **This fixes the current Commander overlap bug.**
+**Status coverage** — The primitive paints both task-level states (`todo / in_progress / in_review / done`) and run-level states (`running / complete / failed / cancelled`), plus `disabled` for agents/providers and `error` where an entity exposes a generic failure affordance. Per §5.4 the host surface decides which state source it is painting — the primitive is shared, the data is not conflated.
+
+**Width** — The pill fits its container and truncates its label at the container's width; a Tooltip (§3.19) surfaces the full label on hover/focus. The host cell — Commander row, card header, list row — is responsible for reserving a width that fits the expected labels. The Commander row (§4.4) reserves 104px, which fits every current label. **This fixes the current Commander overlap bug: width is driven by the cell, not the pill.**
 
 **Do / Don't**
 - Do use exactly one pill per row/panel. Don't stack pills.
@@ -495,7 +504,7 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 
 **Props** — `status`, `pulse: bool = false`, `size: number = 8`.
 
-**Rule:** `pulse` is true only while `status ∈ {in_progress, in_review}`. Elsewhere it is false.
+**Rule:** `pulse` is true only while a run for the associated entity is actively streaming events (`run.status === "running"`), not merely because the task sits in `in_progress` or `in_review`. This keeps the "loud when real-time" semantic of §1.1 truthful: an in-review task whose reviewer has not yet started is quiet.
 
 ### 3.13 PriorityChip
 
@@ -549,7 +558,7 @@ Every primitive has exactly one file under `src/ui/src/components/primitives/`. 
 
 **Props** — `name` (drives hue and initials), `label`, `size`, `title`, `compact`, `role?: "executor" | "reviewer"`.
 
-**Rule:** When both roles share a view, role is shown as a tiny 12px sub-chip in the bottom-right corner (`E` or `R`), not as a color change.
+**Rule:** The role sub-chip (`E` for executor, `R` for reviewer) appears only in task-context views where both roles are visible at once — Commander row (when space allows), TaskDetail hero, TaskDetail rail's Agents card. In agent-listing contexts (Agents pane, AgentEdit) no sub-chip appears; the row copy carries role if needed. Role is never conveyed by hue change.
 
 **Unassigned** — Dashed border, no fill, "?" initial at `--text-subtle`.
 
@@ -659,7 +668,7 @@ Composites live under `src/ui/src/components/` (not `primitives/`). Each composi
 
 ### 4.4 Commander row
 
-**The canonical dense row.** Specified here so the column contract is unambiguous — **this is the fix for the current status-pill overflow**.
+**The canonical dense row.** Specified here so the column contract is unambiguous and stays resilient at laptop widths — **this is the fix for the current status-pill overflow without turning the row into a dashboard**.
 
 **Purpose** — Represent one task in the Commander list.
 
@@ -667,17 +676,14 @@ Composites live under `src/ui/src/components/` (not `primitives/`). Each composi
 1. `checkbox` — 16px (multi-select).
 2. `id` — 64px, mono 11px, `--text-muted`.
 3. `dot` — 12px StatusDot with pulse when live.
-4. `title` — flexible, 13/500, `min-width: 0` (truncate).
-5. `live-line` — below title, only when live: ToolToken + "+Xs" timestamp, 12/mono/muted, `wl-tick-in` on change.
-6. `priority` — 40px, PriorityChip if priority > 0.
-7. `blocked-by` — auto, small lock glyph + "blocked by N". **New primitive use** — currently missing.
-8. `agents` — 80px, two overlapping 20px AgentAvatars (executor, reviewer).
-9. `pill` — 120px, StatusPill (`max-width: 120px`).
-10. `age` — 64px, mono 11px, `--text-muted`, right-aligned.
+4. `title cluster` — flexible, `min-width: 0`. Row 1 is title (13/500, truncate) plus at most one compact meta chip. Blocked-by (`Blocked by N`, lock glyph) wins over priority (`P1` / `P2` / `P3`) when both apply — blocking is more actionable than severity. Row 2 is `live-line` only when live: ToolToken + short timestamp, 12/mono/muted, `wl-tick-in` on change.
+5. `agents` — 80px, two overlapping 20px AgentAvatars (executor, reviewer).
+6. `pill` — 104px, StatusPill (`max-width: 104px`).
+7. `age` — 56px, mono 11px, `--text-muted`, right-aligned.
 
 **Grid**
 ```
-grid-template-columns: 16px 64px 12px minmax(0, 1fr) 40px auto 80px 120px 64px;
+grid-template-columns: 16px 64px 12px minmax(0, 1fr) 80px 104px 56px;
 column-gap: --sp-3;
 ```
 **Height:** 44px idle, 56px while live (to accommodate live-line). Single-row transition uses `transition: min-height var(--dur-std) var(--ease-snap)`.
@@ -685,7 +691,7 @@ column-gap: --sp-3;
 **States**
 - default, hover (background → `--surface-elevated`), selected (multi-select) — accent left border 2px, live (dot pulses, live-line animates).
 
-**Rule:** `StatusPill` has `max-width: 120px` AND the grid column reserves 120px AND the pill is the penultimate cell. It cannot bleed into the `age` cell because `age` has its own 64px column. **This fixes the overlap bug.**
+**Rule:** The load-bearing columns are title, agents, status, age. Priority/dependency context is supplementary and collapses before those columns do. `StatusPill` has `max-width: 104px` and the grid reserves that width, so it cannot bleed into `age`.
 
 ### 4.5 Pane layout
 
@@ -809,7 +815,7 @@ column-gap: --sp-3;
 **Anatomy**
 - Rail: 12px column containing a dot (phase / tool / text / thinking / error have distinct glyphs), and a 1px vertical line connecting to the next row.
 - Gutter: `--sp-3`.
-- Content: flexible column. Top line is the event header (type label + mono timestamp +duration). Below is the body.
+- Content: flexible column. Top line is the event header — type label, mono timestamp (relative, e.g. `+12s`), and optional duration. Below is the body.
 
 **Body typography — unified**
 - Text content (assistant messages, thinking): sans, `--text-base`, `--text`, `line-height: 1.5`.
@@ -838,8 +844,8 @@ column-gap: --sp-3;
 
 **Rendering policy**
 - Parse and render GFM-lite: headings h1–h3, paragraphs, bulleted/numbered lists, inline code, code blocks, links, bold, italic, blockquote, tables.
-- Long content (>5000 chars) wraps in `Expandable` with "Show more" button rather than silently dropping Markdown. **This fixes the current silent-raw fallback.**
-- Sanitize: HTML is stripped; only the ten above elements are allowed. Unknown tags escape through.
+- Long content wraps in `Expandable` based on rendered height, not character count. Default closed state is `max-height: 320px` or roughly 16 lines of prose; beyond that the body shows "Show more". **This fixes the current silent-raw fallback without penalizing short code-heavy text.**
+- Sanitize: raw HTML is stripped; only the elements listed above are allowed. Unknown tags render as escaped text rather than executing.
 
 **Typography**
 - h1: `--text-xl`, weight 600. Only at the top of a body.
@@ -870,6 +876,27 @@ column-gap: --sp-3;
 
 **Used in** — AdvancedMeta, Run summary metadata, Provider detail.
 
+### 4.20 Banner
+
+**Purpose** — Surface a single important in-context message without disrupting flow: stuck-task warning, save failure inline in the editor, mid-flow action failure. Banners sit inside a screen; Toasts (§4.9) sit outside it.
+
+**Anatomy** — Full-width strip inside the screen's content column. `--sp-3` vertical padding, `--sp-4` horizontal, 1px left border in the kind's status color, tinted background. Leading icon (kind-specific, 16px) · body (title 13/500 + optional detail 12/muted, stacked) · trailing actions (at most two: a primary Button sm and/or a close IconButton).
+
+**Variants**
+- **warn** — `--status-review-bg-10` background, `--status-review` accent. Used for stuck-task banner (§5.2) and unsaved-changes reminders.
+- **error** — `--status-error-bg-10` background, `--status-error` accent. Used for inline save-error (§5.6) and mid-flow action failures (§5.13).
+- **info** — `--accent-soft` background, `--accent` accent. Used for one-time coach marks; never for important state.
+
+**States** — default, action-pending (primary button shows spinner), dismissed (animates out with `wl-float-in` reverse).
+
+**Do / Don't**
+- Do anchor the banner to the surface whose state it describes. Stuck-task banner goes inside TaskDetail, not at page top.
+- Do keep copy to one sentence plus at most two actions.
+- Don't stack banners. If multiple conditions apply, collapse into a single "N issues" banner with a "Show all" expander.
+- Don't use a Banner for a *successful* action result — that's a Toast.
+
+**A11y** — `role="status"` for warn/info, `role="alert"` for error. The close IconButton has `aria-label="Dismiss"`. Primary action is focusable via Tab; Escape dismisses a non-critical banner but never an error banner.
+
 ---
 
 ## 5. Patterns
@@ -878,7 +905,7 @@ Patterns are the reusable interaction and state rules that cut across screens.
 
 ### 5.1 Task status state machine
 
-**Backend truth (from `src/core/state-machine.js`):**
+**[Current] Backend truth (from `src/core/state-machine.js`):**
 
 ```
   todo ──run_requested──▶ in_progress
@@ -888,12 +915,16 @@ Patterns are the reusable interaction and state rules that cut across screens.
   any ──human_move──▶ any  (backend allows; UI restricts — see below)
 ```
 
+**Rule:** The four-state task model (`todo`, `in_progress`, `in_review`, `done`) is the baseline for this design system. Red error affordances in the current product describe run failure or field/action error; they do **not** imply a fifth task state.
+
+**[Target] Prototype extension** — `ds-prototype` introduces a fifth task-level blocked/error state. If product adopts it, name it `blocked` in schema/UI and treat it as an explicit state-machine expansion. Do not infer it from `task.error_text`, retry count, or the most recent run.
+
 **UI transition policy** — The UI **must** expose the following transitions. This list is intentionally shorter than the backend's full matrix: we choose to keep the happy path linear while exposing escape hatches for recovery.
 
 | From | To | UI control | Location | Confirm |
 |---|---|---|---|---|
 | todo | in_progress | "Run now" | TaskDetail toolbar, Commander row menu | — |
-| todo | done | "Mark done" | TaskDetail status menu | — (no side effects) |
+| todo | done | "Mark done" | TaskDetail status menu | — (server sets `completed_at`) |
 | in_progress | todo | "Reset to todo" | TaskDetail status menu | yes — modal "Reset to todo? Active run will be cancelled." |
 | in_progress | in_review | (automatic on run completion) | — | — |
 | in_progress | done | "Mark done" | TaskDetail status menu | yes — modal "Mark done without review?" |
@@ -912,16 +943,18 @@ Patterns are the reusable interaction and state rules that cut across screens.
 
 A task is **stuck** when `status === "in_progress"` but no active worker exists (coordinator crashed, worker PID dead).
 
-**Detection** — TaskDetail's data layer calls `GET /api/tasks/:id` and compares `last_run.end_at` (if present and recent) + `coordinator.active[task_id]` (new field; see "Backend requirements" below). If `status === "in_progress"` and no active entry, surface a banner:
+**Detection** — Driven solely by the `is_locked` boolean on the task-detail response. A task is stuck iff `task.status === "in_progress" && task.is_locked === false`. We do **not** infer "stuck" from timestamps or `last_run.end_at`, because inference produces false positives while a worker is alive but temporarily quiet. Until `is_locked` ships, the banner is not shown — the force-unlock affordance is held back rather than risking wrong diagnoses.
 
-> ⚠︎ This task shows as running but no worker is active. Force unlock to retry.
-> **[Force unlock]**
+**Presentation** — A Banner (§4.20, warn variant) mounted at the top of TaskDetail's main column, below the hero:
 
-**Action** — "Force unlock" does two things:
-1. PATCH `/api/tasks/:id` with `{status: "todo"}`.
-2. Toast on success. Re-enables "Run now".
+> ⚠︎ This task shows as running but no worker is active.
+> **[Reset]** **[Retry]**
 
-**Backend requirement** — `GET /api/tasks/:id` must return the *live* `coordinator.active` state for the task. Currently this state is in-memory only. We add a derived field `is_locked: boolean` to the API response that reflects whether the coordinator is actively tracking a worker for this task ID. **This is the one backend change this design system calls for.**
+**Actions**
+- **Reset** — PATCH `/api/tasks/:id` with `{status: "todo"}`, toast on success, re-enables "Run now".
+- **Retry** — same reset, then immediately `POST /api/tasks/:id/run`. One click for the common "I just want it to run again" case.
+
+**[Requires backend]** — `GET /api/tasks/:id` must return a derived `is_locked: boolean` sourced from `coordinator.active.has(taskId)`. Tracked in §9.3.
 
 ### 5.3 Task error-chip policy
 
@@ -938,6 +971,7 @@ Runs and tasks have separate state machines. The UI reflects this cleanly:
 - **Task status** lives in StatusPill at the top of surfaces (row, detail hero, rail).
 - **Run status** lives inside the Live Run Panel and in RunCard summary rows.
 - Never conflate: a run may be `error` while its task is `in_progress` (the coordinator re-tries). A task may be `done` while no run is currently active.
+- If a target-product `blocked` task state ever ships, it is still distinct from run error. A blocked task is a task-level decision, not a summary of the latest run.
 
 **Rule:** StatusPill takes `task.status`. RunCard chip takes `run.status`. They are not the same component and not the same color source.
 
@@ -948,10 +982,10 @@ Runs and tasks have separate state machines. The UI reflects this cleanly:
 **Pipeline**
 1. `useRunStream(runId)` fetches `/api/runs/:id` initial events, subscribes to `/api/runs/:id/stream` (EventSource).
 2. Returns `{ events, done, loading, error }`.
-3. Commander row consumes: takes last N events (N=6), pipes through `useLiveTicker(events, { intervalMs: 2200 })`, renders the current tick as `ToolToken compact` in the row's live-line.
+3. Commander row consumes: takes the last 6 events, cycles them through `useLiveTicker(events, { intervalMs: 2200 })`, and renders the current tick as `ToolToken compact` in the row's live-line. When a new event arrives, the ticker advances to it immediately — the row always prefers showing the freshest activity over finishing the cycle.
 4. TaskDetail LiveRunPanel consumes: full event list, renders `EventRow` per event, with `wl-tick-in` on newly-arriving rows. **Cinematic reveal is restored** — each new streaming event animates in; it does not batch-render on completion.
 
-**Running-run-id source** — The API response for a task **must** include `running_run_id: string | null`. Currently Commander references this field but the backend doesn't compute it. Backend fix: compute `running_run_id = last_run where status === 'running'`.
+**[Requires backend] Running-run-id source** — The API response for a task **should** include `running_run_id: string | null` on list/detail responses if Commander owns live per-row stream previews. Today Commander references this field but the backend does not compute it. Preferred backend fix: compute `running_run_id = latest run where status === 'running'`.
 
 **Completion** — Once `done === true`, the LivePulse disappears, `ShimmerBar` unmounts, the live-line in Commander collapses (56→44 height, 200ms transition), and the row looks idle.
 
@@ -970,17 +1004,21 @@ AgentEdit, SkillEdit, KbEdit, ProviderEdit.
 
 **Structure** — Full-page form. Sticky header (24px height, `--surface` with `--border` bottom) containing Back IconButton · Breadcrumb · spacer · "Cancel" ghost · "Create task" primary.
 
-**Fields (visible by default)**
+**Fields (baseline, visible by default)**
 1. Title — required, Input, autofocus.
 2. Description — Textarea, sans, autogrow.
-3. Instructions — Textarea, mono, autogrow. Collapsed under "Advanced" by default if value is empty.
-4. Executor — Select-menu (agent picker), required if not draft.
+3. Instructions — Textarea, mono, autogrow.
+4. Executor — Select-menu (agent picker), optional at creation. Required before `Run now` is enabled on TaskDetail; the absence is a soft constraint at capture time, a hard constraint at execution time.
 5. Reviewer — Select-menu (agent picker), optional.
 6. Priority — Radio group: 0 / 1 / 2 / 3.
 7. Tags — Tag input (comma-separated typed, rendered as chips).
-8. Depends on — Select-menu (task picker), multi-select.
 
-**Advanced (twist-open)** — Custom system prompt, environment overrides.
+**[Target] Extension fields**
+8. Depends on — Select-menu (task picker), multi-select, only once the task graph ships.
+
+**Advanced (twist-open)** — Reserved for fields the task model truly owns. Do not invent per-task system prompts or environment overrides ahead of backend/runtime support.
+
+**Scope rule** — TaskEdit edits one task. There is no draft task state. Recurring templates do not live here; they live in Schedules.
 
 **Primary action** — "Create task" (new) or "Save" (edit). Ctrl/Cmd-S triggers.
 
@@ -1001,17 +1039,21 @@ AgentEdit, SkillEdit, KbEdit, ProviderEdit.
 | Key | Action |
 |---|---|
 | `N` | New task (route to `#/tasks/new`). |
-| `/` | Focus search on current list. |
+| `/` | Focus search on the current list when no text input or composer is already focused. |
 | `?` | Open keyboard-help drawer. |
-| `Esc` | Close drawer/modal/menu; clear current search if focused; blur. |
+| `Esc` | Close the innermost dismissible surface; if no overlay is open and search is focused, clear it, then blur. |
 | `⌘ S / Ctrl S` | Save the current editor. |
-| `⌘ K` | Open global quick-jump (Phase 3). |
-| `⌘ Enter` | Primary action of current screen (Run now, Save, Create). |
-| `j / k` | Move selection in Commander (down/up). |
-| `Enter` | Open selected row. |
+| `⌘ Enter` | Submit the focused composer/editor if one is active; otherwise trigger the primary action of the current screen. |
+| `j / k` | Move selection in Commander when the Commander list owns focus. |
+| `Enter` | Open selected row in Commander. |
 | `x` | Toggle row checkbox in Commander (multi-select). |
 
 The help drawer (`?`) lists every shortcut grouped by scope. All shortcuts are discoverable from there — **no hidden shortcuts**.
+
+**Scope precedence**
+- Global shortcuts are disabled while a modal or menu owns focus, except `Esc`.
+- Text-entry surfaces win over list shortcuts. `j/k`, `x`, and `/` never fire from inside inputs, textareas, selects, or the comment composer.
+- `⌘K` is reserved for a future quick-jump palette. It is not active until that feature ships.
 
 ### 5.10 Confirmation
 
@@ -1062,14 +1104,13 @@ Every route has a blueprint.
 **Purpose** — Persistent chrome: navigation rail, page header, content area, toast region.
 
 **Layout**
-- Rail — 240px fixed, `--surface`, `--border` right. Contains: logo/brand · nav list · footer with live task count (globally).
+- Rail — 240px fixed, `--surface`, `--border` right. Contains: logo/brand · nav list · quiet footer (version/build or secondary links only). No ambient live counts in global chrome.
 - Header — 56px height, sticky, `--surface`, `--border` bottom. Contains: breadcrumb/title · optional headerMeta · primary action (New task on Commander, Save on edit screens).
 - Main — scroll container.
 - Toast region — fixed bottom-right.
 
 **Data contract**
-- On mount, subscribes to `/api/events/stream` for global updates.
-- `useTaskCounts()` polls every 30s for rail footer (live count: "2 running").
+- On mount, subscribe to a global SSE channel for app-wide updates when the backend exposes one. Until then, each route manages its own live updates; the run-level `/api/runs/:id/stream` channel remains authoritative for run events. [Requires backend]
 
 **Responsive** — Below 860px: rail collapses to a 56px bottom bar with icons.
 
@@ -1082,16 +1123,18 @@ Every route has a blueprint.
 **Primary action** — "New task" (in header).
 
 **Layout**
-- Filter bar: SearchField (`[/]`) · status Tabs (All · Todo · Running · Review · Done · Error) · header right action ("New task").
+- Filter bar: SearchField (`[/]`) · status Tabs (All · Todo · In progress · In review · Done) · header right action ("New task").
 - Group headers (sticky, one per status) with count badge.
 - Commander rows (4.4).
+
+**[Target] Extension** — If product adopts an explicit task-level blocked state, add a **Blocked** tab. Do not add an **Error** tab for tasks while task status remains four-state.
 
 **Inventory** — SearchField, Tabs, StatusPill, StatusDot, PriorityChip, AgentAvatar, ToolToken, LivePulse, Commander row grid, EmptyState, LoadingState.
 
 **Data contract**
 - Fetches `GET /api/tasks` with optional `?status=` filter.
-- Subscribes to `/api/events/stream` for `task_updated` events; live-upserts rows.
-- Per running row: `useRunStream(task.running_run_id)` pipes events into ToolToken.
+- Live updates: subscribe to a global `task_updated` SSE channel when available and live-upsert rows. Until that channel exists, refetch on window focus and optimistically upsert local mutations so user-initiated changes reflect immediately without a round-trip. [Requires backend]
+- Per running row: prefer `task.running_run_id` for `useRunStream(...)`; until that field exists, derive the active run from the task's `runs` payload (latest run where status === "running").
 
 **States** — default / loading (LoadingState) / empty (EmptyState "Create your first task") / empty-after-filter / error (ErrorState).
 
@@ -1099,7 +1142,7 @@ Every route has a blueprint.
 
 **Responsive**
 - 1440: columns as specified in 4.4.
-- 1024: `priority` column hides if empty; `id` column narrows to 48px.
+- 1024: optional inline meta chips collapse first; title, agents, status, and age remain intact.
 - 860: Commander switches to a two-line card per task: title + status on line 1, agents + age on line 2.
 
 ### 6.3 TaskDetail `/#/tasks/:id`
@@ -1107,11 +1150,13 @@ Every route has a blueprint.
 **Purpose** — Deep view of one task: see its definition, watch runs live, read and write comments, manage state and agents.
 
 **Primary action** — Context-dependent:
-- `todo` → "Run now" (primary, accent).
-- `in_progress` → "Cancel run" (destructive-ghost).
+- `todo` → "Run now" (primary, accent). Disabled with a tooltip ("Assign an executor to run") until an executor is set.
+- `in_progress` and actively streaming (`is_locked === true`) → "Cancel run" (destructive-ghost).
+- `in_progress` and stuck (`is_locked === false`) → "Retry" (primary). The stuck-task Banner (§5.2) remains the authoritative signal, but the toolbar mirrors it so the user can act from either location.
 - `in_review` → "Approve" (primary) · "Send back" (secondary).
 - `done` → "Reopen" (secondary).
-- `error` → "Retry" (primary).
+
+**[Target] Extension** — If a task-level `blocked` state ships, its primary action is "Retry" or "Resolve blocker", but that is not part of the current four-state baseline.
 
 **Layout** — Two-column, 1fr + 340px.
 
@@ -1119,42 +1164,41 @@ Every route has a blueprint.
 1. Breadcrumb: Tasks › #abc.
 2. Hero: StatusPill · title (20/600) · meta line (mono 12 muted) with created-ago · primary action cluster.
 3. `is_locked` banner (when detected — see 5.2).
-4. Description (Markdown) in card-spacious.
-5. Instructions (Markdown, mono) in card-inset, collapsible if long.
-6. LiveRunPanel — only when a run is running. Header: "Live run" kicker + LivePulse + agent + model + metric row (turns, tokens, cost, duration). Body: `EventRow` timeline with cinematic reveal (5.5). `ShimmerBar` at top.
-7. Runs history — list of past runs as RunCards (collapsible, summary row + expanded EventRow timeline).
-8. Activity — unified feed merging runs, handoffs, and comments on a single dot-rail timeline. **This fixes the fragmented-activity issue.**
-9. Comment composer.
+4. Overview card — description first, instructions second. Instructions are collapsible if long and visually inset from prose.
+5. Current run card — `LiveRunPanel` when a run is active. When idle, show the latest run summary collapsed by default.
+6. Activity — unified feed merging comments and run milestones (run started · run completed · review requested · review approved/rejected · handoffs) on a single timeline. Composed client-side from the `comments` and `runs` arrays in the task-detail response; we do not need a separate backend endpoint for this. Full per-event streams live in the current-run card and in the Previous runs expander below — Activity is the narrative summary, not the raw log. Default to the newest 12 items with "Show older".
+7. Comment composer.
+8. Previous runs — collapsed expander below Activity. Default closed; opened only when the user needs historical depth.
 
 **Right rail (340px, stacked cards)**
 1. Agents — Executor avatar + name + role chip. Reviewer avatar + name + role chip. "Reassign" link on hover opens a Select-menu picker for each.
-2. Dependencies — "Blocked by" list of linked tasks with StatusDot + id + title; "Blocks" list of children. **New, currently missing.**
-3. Timeline — KeyValueList: Created / Updated / Completed / Time in state.
-4. Latest run — KeyValueList + Metric grid (duration · turns · tokens · cost).
-5. Tags — Chip list (editable inline).
-6. Actions — Buttons: Duplicate · Archive · Delete.
+2. Details — KeyValueList: Created / Updated / Completed / Time in state, plus latest run metrics.
+3. Tags — Chip list (editable inline).
+4. Dependencies — "Blocked by" and "Blocks" lists, only once the task graph ships.
+5. Actions — Buttons: Duplicate · Delete.
 
 **Data contract**
 - `GET /api/tasks/:id` on mount.
 - Subscribe `task_updated` on SSE channel; re-fetch on event.
-- `running_run_id` drives LiveRunPanel mount.
+- `running_run_id` should drive LiveRunPanel mount when available; otherwise derive the current run from the returned `runs` payload.
 - For each completed run shown: `useRunStream(run.id, { subscribe: false })` lazily on expand.
+- Activity feed may be composed client-side from `comments + runs` on the current backend. Richer handoff/system items are additive, not required for the first pass.
 
 **States** — loading / error / idle / live (LiveRunPanel present) / done (no LiveRunPanel, Reopen visible) / error-chip when `last_run.status === 'error'` (5.3).
 
-**Keyboard** — `⌘Enter` triggers primary action. `E` opens edit. `⌘K` opens status menu.
+**Keyboard** — `⌘Enter` triggers primary action. `E` opens edit.
 
 **Responsive**
-- 1024: rail collapses to 280px, Metric grid becomes 2 columns.
-- 860: rail moves below main column as a second scrollable block; tabs appear at top of left column ("Overview · Runs · Comments · Details").
+- 1024: rail narrows to 280px. The Details KeyValueList remains single-column (label / value). Agents card stacks executor and reviewer if the row would otherwise clip.
+- 860: rail moves below the main column as a second scrollable block; tabs appear at the top of the left column ("Overview · Runs · Comments · Details").
 
 ### 6.4 TaskEdit `/#/tasks/new` and `/#/tasks/:id/edit`
 
-**Purpose** — Create a task (new) or edit its metadata (edit).
+**Purpose** — Create a task (new) or edit one task's metadata (edit). This screen is for task definition, not for recurring template management.
 
 **Primary action** — "Create task" (new) / "Save" (edit).
 
-**Layout** — Sticky header + centered content, 720px max-width. FormSection for Core (title/description/instructions), for Assignment (executor/reviewer/priority/tags/deps), and Advanced (twist-open).
+**Layout** — Sticky header + centered content, 720px max-width. FormSections for Core (title · description · instructions) and Assignment (executor · reviewer · priority · tags). The Advanced twist-open is hidden whenever the task model has no advanced fields — on the current baseline it is always hidden. It reappears only if a future schema adds per-task overrides (e.g., custom system prompt, environment). Do not ship an empty twist-open.
 
 **Data contract**
 - New: `POST /api/tasks` on submit, redirect to `#/tasks/<newId>`.
@@ -1163,6 +1207,8 @@ Every route has a blueprint.
 **States** — idle · dirty (Save becomes primary) · saving (Save shows spinner, form disabled) · error (inline banner).
 
 **Keyboard** — `⌘S` saves. `Esc` navigates back, with unsaved-changes guard.
+
+**[Target] Extension** — Once the task graph ships, TaskEdit may add a dependency picker. Recurring templates still live in Schedules, not here.
 
 ### 6.5 Agents `/#/agents/:name?` + AgentEdit
 
@@ -1232,6 +1278,24 @@ Every route has a blueprint.
 
 **Rule:** Every switch is rendered via the fixed Switch primitive (3.7) — no more description-wrapping-under-track. **This fixes the current settings misalignment.**
 
+### 6.11 Schedules `/#/schedules` [Target]
+
+**Purpose** — Manage recurring task templates. A schedule is a template plus cadence; each fire spawns a normal task instance.
+
+**Primary action** — "New schedule".
+
+**Layout** — Two-pane view. Left: dense schedule list with title, cadence chip, next fire, enable/pause state, and compact recent-run sparkline. Right: schedule detail with header, cadence editor, assignment, task template body, upcoming fires, and recent spawned tasks.
+
+**Data contract**
+- `GET /api/schedules` list with summary fields: `id`, `title`, `enabled`, `next_fire_at`, cadence summary, 30-day run summary.
+- `GET /api/schedules/:id` detail with task template fields, agent assignment, recent spawned tasks, and upcoming fires.
+- `POST /api/schedules`, `PATCH /api/schedules/:id`, `DELETE /api/schedules/:id`.
+- `POST /api/schedules/:id/run` for manual spawn.
+
+**States** — loading / empty / empty-after-filter / paused / enabled / error.
+
+**Rule:** Schedule editing lives here, not in TaskEdit. TaskEdit may later offer "Convert to schedule template", but the lifecycle and editor live on the Schedules route.
+
 ---
 
 ## 7. Accessibility & responsive
@@ -1275,7 +1339,7 @@ All pairs meet at least WCAG AA at their used size. The token palette is tuned s
 | Breakpoint | Screens affected | Changes |
 |---|---|---|
 | 1440 (default) | All | Base layout. |
-| 1024 (laptop) | Commander, TaskDetail | Commander `priority` column hides if empty; TaskDetail rail narrows to 280px. |
+| 1024 (laptop) | Commander, TaskDetail | Commander's inline meta chip in the title cluster (priority / blocked-by) collapses; title, agents, status, and age remain intact. TaskDetail rail narrows to 280px. |
 | 860 (tablet) | All | Pane layouts become single-pane with back-nav. Commander row → two-line card. FormGrid → 1 column. |
 | 390 (mobile) | All | Minimal density. Rail → bottom bar. All horizontal overflow forbidden. |
 
@@ -1329,16 +1393,17 @@ A running list of user-reported bugs and the document's response. Each entry lin
 
 | Defect | Design response |
 |---|---|
-| Status pill overlaps Commander row content | Commander row (4.4) locks the grid column at 120px; StatusPill (3.11) enforces `max-width: 120px`. No overflow possible. |
-| SwitchField label / description run into each other | Switch (3.7) replaces `margin-top: 2px` on the track with `align-self: start`. Track anchors to label x-height regardless of description wrap. |
-| Model selector looks different from AgentPicker | Select primitive (3.6) unifies both. SelectField and AgentPicker are both replaced by `Select variant="menu"` with role-specific `leadingSlot`. Trigger height is 32px everywhere. |
-| Log rendering is inconsistent / weird | EventRow (4.15) defines a single typography contract for every event type. All monospaced content is `--text-sm` (12px). Markdown code blocks and ToolCallBlock output share one `pre` style (4.17). |
-| Task stuck in `in_progress` with no UI to recover | Status menu (5.1) exposes all valid transitions, including `in_progress → todo`. Force-unlock banner (5.2) detects stuck state and offers a one-click fix. |
-| Error chip shown despite successful run | Rule 5.3: error chip binds to `last_run.status === 'error'`, not to `task.error_text`. Backend fix: clear `error_text` on successful run_completed. |
-| Live logs missing on TaskDetail | LiveRunPanel (in 6.3) + live streaming contract (5.5) specify cinematic event reveal via `wl-tick-in` per new row. |
-| Blocked-by dependencies not visible | Commander row (4.4) row 7 is "blocked-by" chip. TaskDetail rail (6.3) has a Dependencies card. |
-| Keyboard shortcuts not discoverable | `?` opens a drawer listing every shortcut (5.9). All shortcuts are documented. |
-| Long task text silently drops Markdown | Markdown (4.17) wraps long content in an Expandable "Show more" instead of rendering raw. |
+| Status pill overlaps Commander row content | Commander row (§4.4) reserves a 104px column for the pill; StatusPill (§3.11) is container-width-driven and truncates cleanly at the cell boundary. Overflow is structurally impossible. |
+| SwitchField label / description run into each other | Switch (§3.7) replaces `margin-top: 2px` on the track with `align-self: start`. Track anchors to label x-height regardless of description wrap. |
+| Model selector looks different from AgentPicker | Select primitive (§3.6) unifies both. SelectField and AgentPicker are both replaced by `Select variant="menu"` with a role-specific `leadingSlot`. Trigger is 32px everywhere. |
+| Log rendering is inconsistent / weird | EventRow (§4.15) defines a single typography contract for every event type. All monospaced content is `--text-sm` (12px). Markdown code blocks and ToolCallBlock output share one `pre` style (§4.17). |
+| Task stuck in `in_progress` with no UI to recover | Status menu (§5.1) exposes every allowed transition including `in_progress → todo`. Stuck-task Banner (§5.2) detects `is_locked === false` and offers Reset / Retry. |
+| Error chip shown despite successful run | §5.3: error chip binds to `last_run.status === 'error'`, not to `task.error_text`. Paired backend fix (§9.3) clears `error_text` on a successful `run_completed`. |
+| Live logs missing on TaskDetail | LiveRunPanel (in §6.3) + live streaming contract (§5.5) specify cinematic event reveal via `wl-tick-in` per new row. |
+| Blocked-by dependencies not visible | Commander row (§4.4) surfaces a compact `Blocked by N` chip in the title cluster (precedence over priority). TaskDetail rail (§6.3) has a Dependencies card [Target], gated on the task-graph backend. |
+| Keyboard shortcuts not discoverable | `?` opens a drawer listing every shortcut (§5.9). No hidden shortcuts. |
+| Long task text silently drops Markdown | Markdown (§4.17) clamps body by rendered height and offers "Show more"; full Markdown is never dropped. |
+| No inline affordance for action failures | Banner (§4.20) is the canonical inline message. Stuck-task (§5.2), save-error (§5.6), and mid-flow failures (§5.13) all resolve through it. |
 
 ### 9.2 Migration notes
 
@@ -1347,60 +1412,67 @@ When the implementation phase begins, here is the file-level map from rules → 
 | Rule | Current file(s) to update |
 |---|---|
 | Unified Select primitive | Merge `SelectField.jsx` + `AgentPicker.jsx` → `primitives/Select.jsx`. Update `AgentEdit.jsx`, `TaskEdit.jsx`, `Providers.jsx`, `Settings.jsx`, `Knowledge.jsx`, `Skills.jsx`. |
-| Switch alignment | `SwitchField.jsx` — change track `margin-top` to `align-self`. `styles.css` 710-774. |
-| Commander pill overflow | `styles.css` 946 — lock col widths; `StatusPill.jsx` — add `max-width`. |
-| EventRow typography | `AgentEventTimeline.jsx`, `EventTimeline.jsx`, `ToolCallBlock.jsx`, `Markdown.jsx` — all content typography routes through the same mono/sans scale. Remove 10.5/11.5/12.5 occurrences in `styles.css`. |
-| Status menu on TaskDetail | New `StatusMenu.jsx` composite in `components/`, wired into `TaskDetail.jsx` hero. Mount Select-menu off the StatusPill. |
-| Force-unlock banner | `TaskDetail.jsx` — new banner block + handler. Requires backend `is_locked` field on `GET /api/tasks/:id`. |
-| Error-chip policy | `TaskDetail.jsx`, `Commander.jsx` — derive error chip from `last_run.status`, not `task.error_text`. |
-| Live event reveal on TaskDetail | Replace inline `EventTimeline` with new `LiveRunPanel.jsx` that accepts `{ run, events, isStreaming }` and reveals events one-by-one via cursor state + `wl-tick-in`. |
-| Dependencies card | `TaskDetail.jsx` rail — new card reading `task.dependsOn` and `task.blocks`. Requires backend to include these arrays on `GET /api/tasks/:id`. |
-| Blocked-by chip on Commander row | `Commander.jsx` row — new cell reading `task.dependsOn.length`. |
-| FormField / FormSection / FormGrid promotion | New `components/FormField.jsx`, `FormSection.jsx`, `FormGrid.jsx`. All `AgentEdit / SkillEdit / KbEdit / TaskEdit / Settings / Providers` migrate. |
+| Switch alignment | `SwitchField.jsx` — change track `margin-top` to `align-self: start`. Remove the 2px offset in `styles.css` §710–774. |
+| Commander row simplification | `Commander.jsx`, `StatusPill.jsx`, `styles.css` — lock the 7-column row contract and collapse the supplementary meta chip (priority/blocked-by) before core columns. |
+| EventRow typography | `AgentEventTimeline.jsx`, `EventTimeline.jsx`, `ToolCallBlock.jsx`, `Markdown.jsx` — route content typography through the same mono/sans scale. Remove all 10.5 / 11.5 / 12.5 px occurrences from `styles.css`. |
+| Status menu on TaskDetail | New `StatusMenu.jsx` composite in `components/`, wired into the `TaskDetail.jsx` hero. Hangs off the StatusPill using the Select-menu variant. |
+| Stuck-task Banner | `TaskDetail.jsx` — mount a warn Banner (§4.20) when `is_locked === false && status === "in_progress"`. Actions: Reset, Retry. |
+| Error-chip policy | `TaskDetail.jsx`, `Commander.jsx` — derive error chip from `last_run.status === 'error'`, not from `task.error_text`. |
+| TaskDetail consolidation | `TaskDetail.jsx`, `EventTimeline.jsx`, new `LiveRunPanel.jsx` — unify Overview + Current run + Activity; keep Previous runs as a collapsed expander below. |
+| Activity feed composition | `TaskDetail.jsx` — client-side merge of `comments[]` and `runs[]` milestone events into a single timeline per §6.3. No new API endpoint. |
+| Live-reveal on TaskDetail | New `LiveRunPanel.jsx` that accepts `{ run, events, isStreaming }` and animates each incoming event via `wl-tick-in`; replaces the bulk-render path in `EventTimeline`. |
+| Markdown Expandable | `Markdown.jsx` — render full Markdown for every length; clamp body to `max-height: 320px` by default with a "Show more" toggle. Remove the current character-based silent fallback. |
+| Banner composite | New `components/Banner.jsx` per §4.20. Consumed by stuck-task, save-error, and mid-flow action failures. |
+| Dependencies UI [Target] | `TaskDetail.jsx`, `TaskEdit.jsx`, `Commander.jsx` — only after the task graph ships (§9.3). Do not mount placeholder UI before relations land. |
+| FormField / FormSection / FormGrid promotion | New `components/FormField.jsx`, `FormSection.jsx`, `FormGrid.jsx`. `AgentEdit`, `SkillEdit`, `KbEdit`, `TaskEdit`, `Settings`, `Providers` all migrate. |
 | Breadcrumb extraction | New `primitives/Breadcrumb.jsx`. `TaskDetail.jsx`, `TaskEdit.jsx`, `AgentEdit.jsx`, etc. use it. |
 | Keyboard help drawer | New `components/KeyboardHelpDrawer.jsx`. Triggered on `?` globally. |
-| Reduced-motion support | `styles.css` — add `@media (prefers-reduced-motion)` block. |
-| 390px overflow pass | Playwright regression test `ui-regressions.spec.js` already exists; update assertions to match new layouts. |
+| Schedules route [Target] | New `routes/Schedules.jsx` plus schedule editor / detail composites and matching API routes. |
+| Reduced-motion support | `styles.css` — add `@media (prefers-reduced-motion: reduce)` block implementing §2.6.3 and §7.6. |
+| 390px overflow pass | `ui-regressions.spec.js` — update selectors to match the new Commander row, LiveRunPanel, and Banner. Ensure zero horizontal overflow at 390, 860, 1024, 1440. |
 
-### 9.3 Backend changes this document requires
+### 9.3 Backend and data changes this document requires
 
-All UI rules hold on the current backend **except three**:
+**Current-baseline improvements**
 
-1. **`running_run_id` on task responses.** `GET /api/tasks/:id` and `GET /api/tasks` must include a derived field `running_run_id: string | null` computed from the latest run with `status === 'running'`. The UI already references it; the backend must compute it.
-
-2. **`is_locked` on task responses.** For force-unlock detection, `GET /api/tasks/:id` must include `is_locked: boolean` sourced from `coordinator.active.has(taskId)`. Only needed on the detail endpoint, not list.
-
+1. **`running_run_id` on task responses.** `GET /api/tasks/:id` and `GET /api/tasks` should include a derived field `running_run_id: string | null` if Commander owns per-row live stream previews.
+2. **`is_locked` on task detail responses.** For force-unlock detection, `GET /api/tasks/:id` should include `is_locked: boolean` sourced from `coordinator.active.has(taskId)`.
 3. **Clear `error_text` on successful `run_completed`.** `state-machine.js` currently clears `error_text` only on `review_rejected`. Add it to `run_completed` too so a successful run wipes prior error state.
 
-### 9.4 Open questions for the user
+**[Target] Product extensions**
 
-Items the designer couldn't resolve from the audit alone. Each has a proposed default but wants confirmation before the implementation phase begins.
+4. **Task graph.** Dependencies require relation storage plus task-summary arrays on task responses (`blocked_by`, `blocks`, or equivalent). Commander only needs compact counts/linked titles; TaskDetail needs linked task summaries.
+5. **Schedules.** Schedules require a dedicated entity, cadence parser/storage, `next_fire_at`, `enabled`, recent-fire history, and a link from spawned tasks back to their schedule.
+6. **Blocked task state, if adopted.** If product ships a task-level blocked/error state, add it explicitly to schema and state machine as `blocked`. Do not derive it from run failure text.
 
-1. **Status transition policy.** The doc proposes the matrix in 5.1 (linear happy path + escape hatches). Alternative: allow every transition (true to the backend). The proposed policy favors clarity over flexibility. **Confirm the matrix or ask to open more transitions.**
+**Explicit non-requirement**
 
-2. **Density on Commander at 1024px.** The doc keeps density the same and hides the priority column when empty. Alternative: switch to "comfortable" mode at 1024 (48px rows). **Proposed default: keep dense.**
+- Archive is intentionally **not** a required backend change in this document until archive lifecycle and retrieval semantics are designed.
 
-3. **Markdown rendering on very long content.** The doc proposes Expandable at 5000+ chars; current behaviour silently drops Markdown. **Confirm Expandable, or prefer a hard length limit.**
+### 9.4 Locked decisions
 
-4. **Archiving tasks.** The doc says "Archive" belongs in the Actions card of TaskDetail. Archiving is not implemented in the backend today. **Confirm we want to add it (requires schema: `archived_at`) or drop it from the doc.**
+The following decisions are now part of the schema:
 
-5. **Reduced-motion scope.** The doc proposes a full reduced-motion branch. Alternative: honour it only on `wl-pulse` and `wl-shimmer`, skip the rest. **Proposed default: honour all.**
+1. The document is a split spec: stable foundations plus explicit current/target/backend markers where behavior diverges.
+2. The baseline task model remains four-state. Prototype blocked/error behavior is treated as a future explicit `blocked` state, not as implied current truth.
+3. Commander stays dense, but the row contract is simplified. Title, agents, status, and age are protected; supplementary chips collapse first.
+4. Markdown expands by rendered height, not raw character count.
+5. Reduced-motion support applies to the full motion system, not just pulse/shimmer.
+6. Avatar hue derives from stable agent identity (`name` today), never from editable display labels.
+7. Two-pane editors keep modal unsaved-change guards.
+8. Global rail chrome stays quiet; live task counts belong on task surfaces, not in the app shell footer.
+9. Archive is removed from the baseline task spec until lifecycle semantics are defined.
 
-6. **Agent avatar hue stability.** The doc says hue derives from `agent.name` alone. Renaming an agent changes its color. Alternative: persist a `color` field per agent. **Proposed default: derive. If renames are rare, this is simpler.**
-
-7. **Two-pane behaviour with unsaved changes.** If you click a different agent in the list while the right pane has unsaved changes, the doc says the unsaved-changes modal fires. Alternative: auto-save, alternative: silent discard. **Proposed default: modal guard.**
-
-8. **Global status counts in the rail footer.** The doc proposes a live count of running tasks in the rail. Alternative: no footer; live counts visible only on Commander. **Proposed default: include the footer for ambient awareness.**
-
-### 9.5 What's explicitly out of scope for v1
+### 9.5 What's explicitly out of scope for v1 / current shipped implementation
 
 - Light mode.
 - Syntax highlighting in CodeBlock.
 - `⌘K` quick-jump palette (Phase 3).
-- Archived tasks as a separate list view.
+- Archive lifecycle and archived-task views.
 - Mobile polish below 390px.
 - Internationalization of labels.
 - Saved filter/view presets on Commander.
+- Shipping the Schedules route in the current app without its dedicated backend model.
 
 ---
 
