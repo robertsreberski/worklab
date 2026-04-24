@@ -17,11 +17,16 @@ export function nextStatus(current, event) {
       if (current !== "in_progress") {
         return unchanged([{ type: "error", message: `cannot complete from ${current}` }]);
       }
+      // §9.3 #3: a successful run wipes prior error state so the error chip
+      // (§5.3) stops showing on a task that just succeeded.
       return change(
         "in_review",
-        event.reviewerAgent
-          ? [{ type: "spawn_reviewer", agentName: event.reviewerAgent }]
-          : [],
+        [
+          { type: "clear_error_text" },
+          ...(event.reviewerAgent
+            ? [{ type: "spawn_reviewer", agentName: event.reviewerAgent }]
+            : []),
+        ],
       );
     case "run_failed": {
       if (current !== "in_progress") {

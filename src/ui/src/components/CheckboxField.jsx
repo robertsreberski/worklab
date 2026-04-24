@@ -1,3 +1,4 @@
+// CheckboxField — compat wrapper over the new Checkbox primitive (§3.8).
 import { Icon } from "./Icon.jsx";
 
 export function CheckboxField({
@@ -11,8 +12,9 @@ export function CheckboxField({
   ...props
 }) {
   const body = children || label;
+  // Preserve old `.choice-label.custom-check` classes so existing CSS still hits.
   return (
-    <label class={`choice-label custom-check ${className}`}>
+    <label class={`choice-label custom-check ${className}`.trim()}>
       <input
         {...props}
         class="custom-check-input"

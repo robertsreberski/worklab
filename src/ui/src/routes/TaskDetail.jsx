@@ -1,19 +1,39 @@
-import { useEffect, useState, useCallback } from "preact/hooks";
+// §6.3 TaskDetail — deep view of one task.
+// Two-column layout. Hero with StatusMenu + primary action cluster. Stuck-task
+// Banner (§5.2). LiveRunPanel while streaming. Activity feed. Previous runs.
+// Rail: Agents, Details (KeyValueList), Tags, Actions.
+// Error chip (§5.3) derived from last_run.status === 'error'.
+
+import { useEffect, useMemo, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { pushToast } from "../lib/toast.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { agentDisplayName } from "../lib/display.js";
+import { selectHighlightedRunId } from "./taskDetailRuns.js";
+
 import { AppShell } from "../components/AppShell.jsx";
+import { Breadcrumb } from "../components/primitives/Breadcrumb.jsx";
+import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { LivePulse } from "../components/primitives/LivePulse.jsx";
+import { Button } from "../components/primitives/Button.jsx";
+import { Icon } from "../components/Icon.jsx";
+import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { AgentAvatar } from "../components/AgentAvatar.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { LivePulse } from "../components/primitives/LivePulse.jsx";
-import { ShimmerBar } from "../components/primitives/ShimmerBar.jsx";
-import { selectHighlightedRunId } from "./taskDetailRuns.js";
-import { agentDisplayName } from "../lib/display.js";
+import { Card } from "../components/Card.jsx";
+import { Banner } from "../components/Banner.jsx";
+import { KeyValueList } from "../components/KeyValueList.jsx";
+import { Metric } from "../components/Metric.jsx";
+import { LoadingState } from "../components/LoadingState.jsx";
+import { EmptyState } from "../components/EmptyState.jsx";
+import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
+import { StatusMenu } from "../components/StatusMenu.jsx";
+import { Modal } from "../components/Modal.jsx";
+import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MarkdownContent } from "../components/Markdown.jsx";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 function formatDuration(ms) {
@@ -48,25 +68,16 @@ function runDuration(run) {
 function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
   const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
   const log = run?.log || {};
-
-  function handleToggle(e) {
-    onToggle?.(run.id, e.currentTarget.open);
-  }
-
   return (
-    <details
-      open={expanded}
-      onToggle={handleToggle}
-      class="run-card"
-    >
+    <details open={expanded} onToggle={(e) => onToggle?.(run.id, e.currentTarget.open)} class="run-card">
       <summary style={{ cursor: "pointer", listStyle: "none" }}>
         <div class="run-summary">
           <div class="run-summary-main">
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-2)" }}>
               <StatusPill status={run.status} size="sm" />
               <span class="run-summary-title">{formatDate(run.started_at) || "Run"}</span>
             </div>
-            <div class="muted" style={{ fontSize: 11.5 }}>
+            <div class="muted" style={{ fontSize: "var(--text-sm)" }}>
               {run.mode} · {agentLabel || run.agent_name}
               {formatDuration(runDuration(run)) && ` · ${formatDuration(runDuration(run))}`}
               {log.cost_usd != null && ` · ${formatCost(log.cost_usd)}`}
@@ -78,15 +89,52 @@ function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
           </div>
         </div>
       </summary>
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: "var(--sp-3)" }}>
         {loading ? (
-          <div class="muted" style={{ fontSize: 12 }}>Loading events...</div>
+          <div class="muted" style={{ fontSize: "var(--text-sm)" }}>Loading events…</div>
         ) : (
           <EventTimeline events={events} streaming={run.status === "running"} />
         )}
       </div>
     </details>
   );
+}
+
+// §6.3 Activity feed: client-side merge of comments[] and runs[] milestones.
+function buildActivity({ comments = [], runs = [] }) {
+  const items = [];
+  for (const c of comments) {
+    items.push({
+      type: "comment",
+      at: c.created_at || 0,
+      author: c.author,
+      body: c.body || c.content || "",
+      id: `c-${c.id || c.created_at}`,
+    });
+  }
+  for (const r of runs) {
+    if (r.started_at) {
+      items.push({
+        type: "run_started",
+        at: r.started_at,
+        agent: r.agent_name,
+        runId: r.id,
+        id: `rs-${r.id}`,
+      });
+    }
+    if (r.ended_at) {
+      items.push({
+        type: r.status === "error" ? "run_failed" : "run_completed",
+        at: r.ended_at,
+        agent: r.agent_name,
+        runId: r.id,
+        status: r.status,
+        id: `re-${r.id}`,
+      });
+    }
+  }
+  items.sort((a, b) => (b.at || 0) - (a.at || 0));
+  return items;
 }
 
 export function TaskDetail({ id, runParam = null }) {
@@ -96,6 +144,9 @@ export function TaskDetail({ id, runParam = null }) {
   const [highlightedRunId, setHighlightedRunId] = useState(runParam);
   const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [runError, setRunError] = useState(null);
+  const [statusModal, setStatusModal] = useState(null); // pending transition
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [showOlderActivity, setShowOlderActivity] = useState(false);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -105,7 +156,6 @@ export function TaskDetail({ id, runParam = null }) {
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
   }, []);
-
   useEffect(() => {
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
@@ -126,34 +176,26 @@ export function TaskDetail({ id, runParam = null }) {
     if (next !== highlightedRunId) setHighlightedRunId(next);
   }, [data, highlightedRunId]);
 
-  if (!data) {
-    return (
-      <AppShell route="tasks" title="Loading...">
-        <div class="page-wrap"><div style={{ color: "var(--muted)" }}>Loading task...</div></div>
-      </AppShell>
-    );
-  }
-  if (data.notFound) {
-    return (
-      <AppShell route="tasks" title="Not found">
-        <div class="page-wrap">
-          <div class="empty-state">
-            <h3>Task not found</h3>
-            <p>This task may have been deleted.</p>
-            <a href="#/tasks" class="button primary">Back to tasks</a>
-          </div>
-        </div>
-      </AppShell>
-    );
-  }
-
-  const { task, comments = [] } = data;
-  const runs = data.runs || [];
+  const task = data?.task;
+  const runs = data?.runs || [];
+  const comments = data?.comments || [];
   const latestRun = runs[0] || null;
   const runningRun = runs.find((r) => r.status === "running") || null;
+  const lastFinishedRun = runs.find((r) => r.status && r.status !== "running") || null;
+  const hasLastRunError = lastFinishedRun?.status === "error";
+  // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
+  // NOT render the banner (prevents false positives).
+  const showStuckBanner =
+    task?.status === "in_progress" && task?.is_locked === false;
 
-  const executorLabel = agentDisplayName(agents, task.executor_agent, "Unassigned");
-  const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
+  const activity = useMemo(
+    () => buildActivity({ comments, runs }),
+    [comments, runs]
+  );
+  const visibleActivity = showOlderActivity ? activity : activity.slice(0, 12);
+
+  const executorLabel = task ? agentDisplayName(agents, task.executor_agent, "Unassigned") : "";
+  const reviewerLabel = task ? agentDisplayName(agents, task.reviewer_agent, null) : null;
 
   function toggleRun(runId, open) {
     setHighlightedRunId(runId);
@@ -165,7 +207,7 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   async function addComment(e) {
-    e.preventDefault();
+    e?.preventDefault?.();
     if (!newComment.trim()) return;
     try {
       await api.addComment(id, newComment.trim());
@@ -178,6 +220,7 @@ export function TaskDetail({ id, runParam = null }) {
   async function destroy() {
     try {
       await api.deleteTask(id);
+      pushToast("Task deleted", { variant: "success" });
       window.location.hash = "#/tasks";
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
@@ -191,168 +234,318 @@ export function TaskDetail({ id, runParam = null }) {
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
       reload();
+      pushToast("Run started", { variant: "success" });
     } catch (err) {
       setRunError(err.message);
+      pushToast(`Run failed: ${err.message}`, { variant: "error" });
     }
   }
 
   async function cancelRun() {
+    try { await api.cancelTask(id); pushToast("Run cancelled", { variant: "info" }); }
+    catch (err) { setRunError(err.message); pushToast(`Cancel failed: ${err.message}`, { variant: "error" }); }
+  }
+
+  async function resetToTodo() {
     try {
-      await api.cancelTask(id);
+      await api.patchTask(id, { status: "todo" });
+      reload();
+      pushToast("Reset to Todo", { variant: "success" });
     } catch (err) {
-      setRunError(err.message);
+      pushToast(`Reset failed: ${err.message}`, { variant: "error" });
     }
   }
 
-  const canRun = task.executor_agent
-    && (task.status === "todo" || task.status === "in_progress")
-    && !runningRun;
+  async function retryStuck() {
+    try {
+      await api.patchTask(id, { status: "todo" });
+      const r = await api.runTask(id);
+      setHighlightedRunId(r.runId);
+      setExpandedRunIds((s) => new Set([...s, r.runId]));
+      reload();
+      pushToast("Run retried", { variant: "success" });
+    } catch (err) {
+      pushToast(`Retry failed: ${err.message}`, { variant: "error" });
+    }
+  }
 
-  const headerActions = (
-    <>
-      {runningRun ? (
-        <button class="button danger" onClick={cancelRun}>
-          <Icon name="stop" size={13} />
+  async function applyStatusTransition(t) {
+    try {
+      if (t.to === "in_progress" && t.from === "todo") {
+        await runNow();
+        return;
+      }
+      await api.patchTask(id, { status: t.to });
+      reload();
+      pushToast(`Status → ${t.to}`, { variant: "success" });
+    } catch (err) {
+      pushToast(`Status change failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  function onStatusChoose(t) {
+    if (t.confirm) setStatusModal(t);
+    else applyStatusTransition(t);
+  }
+
+  // §6.3 primary action cluster per status
+  const canRun = task?.executor_agent && task.status === "todo";
+  const primaryAction = (() => {
+    if (!task) return null;
+    if (runningRun) {
+      return (
+        <Button variant="destructive" iconLeft={<Icon name="stop" size={13} />} onClick={cancelRun}>
           Cancel run
-        </button>
-      ) : (
-        <button class="button primary" onClick={runNow} disabled={!canRun}>
-          <Icon name="play" size={13} />
+        </Button>
+      );
+    }
+    if (showStuckBanner) {
+      return (
+        <Button variant="primary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={retryStuck}>
+          Retry
+        </Button>
+      );
+    }
+    if (task.status === "todo") {
+      return (
+        <Button
+          variant="primary"
+          iconLeft={<Icon name="play" size={13} />}
+          onClick={runNow}
+          disabled={!canRun}
+          title={canRun ? undefined : "Assign an executor to run"}
+        >
           Run now
-        </button>
-      )}
-      <a class="button ghost" href={`#/tasks/${id}/edit`}>
-        <Icon name="settings" size={13} />
+        </Button>
+      );
+    }
+    if (task.status === "in_review") {
+      return (
+        <>
+          <Button variant="primary" onClick={() => applyStatusTransition({ from: "in_review", to: "done" })}>
+            Approve
+          </Button>
+          <Button variant="secondary" onClick={() => applyStatusTransition({ from: "in_review", to: "in_progress" })}>
+            Send back
+          </Button>
+        </>
+      );
+    }
+    if (task.status === "done") {
+      return (
+        <Button variant="secondary" onClick={() => applyStatusTransition({ from: "done", to: "todo" })}>
+          Reopen
+        </Button>
+      );
+    }
+    return null;
+  })();
+
+  const headerActions = task && (
+    <>
+      {primaryAction}
+      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { window.location.hash = `#/tasks/${id}/edit`; }}>
         Edit
-      </a>
-      <ConfirmButton class="button danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>
+      </Button>
+      <Button variant="destructive" iconLeft={<Icon name="trash" size={13} />} onClick={() => setDeleteOpen(true)}>
+        Delete
+      </Button>
     </>
   );
+
+  // §5.9 keyboard: ⌘Enter triggers primary, E opens edit
+  useGlobalShortcuts({
+    cmdenter: (e) => {
+      e.preventDefault();
+      if (primaryAction && !runningRun && task?.status === "todo" && canRun) runNow();
+      else if (task?.status === "in_review") applyStatusTransition({ from: "in_review", to: "done" });
+    },
+    "e": () => { window.location.hash = `#/tasks/${id}/edit`; },
+    "E": () => { window.location.hash = `#/tasks/${id}/edit`; },
+  });
+
+  if (!data) {
+    return (
+      <AppShell route="tasks" title="Loading…">
+        <div class="page-wrap"><LoadingState caption="Loading task…" /></div>
+      </AppShell>
+    );
+  }
+  if (data.notFound) {
+    return (
+      <AppShell route="tasks" title="Not found">
+        <div class="page-wrap">
+          <EmptyState
+            title="Task not found"
+            body="This task may have been deleted."
+            cta={<Button variant="primary" onClick={() => { window.location.hash = "#/tasks"; }}>Back to tasks</Button>}
+          />
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell route="tasks" title={task.title} headerActions={headerActions}>
       <div class="task-detail">
         <div class="task-detail-main">
-          <div class="task-breadcrumb">
-            <a href="#/tasks">Tasks</a>
-            <span class="sep">/</span>
-            <span>{task.id}</span>
-          </div>
+          <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: `#${String(task.id).slice(-6)}` }]} />
 
           <section class="task-hero">
             <div class="task-hero-top">
-              <h1 class="task-hero-title">{task.title}</h1>
-            </div>
-            <div class="task-hero-meta">
-              <StatusPill status={task.status} />
-              {task.error_text && (
-                <span class="chip chip-error">
-                  <Icon name="alert-triangle" size={10} />
-                  Error
-                </span>
-              )}
-              {Number(task.priority) > 0 && (
-                <span class="chip chip-warn">P{task.priority}</span>
-              )}
-              {task.retry_count > 0 && (
-                <span class="chip">{task.retry_count} retries</span>
-              )}
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", minWidth: 0, flex: 1 }}>
+                <div style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                  {runningRun && <LivePulse size={10} />}
+                  <StatusMenu status={task.status} onChoose={onStatusChoose} />
+                  {hasLastRunError && (
+                    <span class="chip chip-error">
+                      <Icon name="alert-triangle" size={10} /> Error
+                    </span>
+                  )}
+                  {Number(task.priority) > 0 && <span class="chip chip-warn">P{task.priority}</span>}
+                </div>
+                <h1 class="task-hero-title title-display">{task.title}</h1>
+                <div class="task-hero-meta">
+                  <span>Created {formatDate(task.created_at)}</span>
+                  {task.updated_at && <><span>·</span><span>Updated {formatDate(task.updated_at)}</span></>}
+                </div>
+              </div>
             </div>
           </section>
 
-          {runError && <div class="form-error">{runError}</div>}
-          {task.error_text && <div class="form-error">{task.error_text}</div>}
+          {showStuckBanner && (
+            <Banner
+              variant="warn"
+              title="This task shows as running but no worker is active."
+              detail={runError || undefined}
+              actions={
+                <>
+                  <Button variant="secondary" size="sm" onClick={resetToTodo}>Reset</Button>
+                  <Button variant="primary"  size="sm" onClick={retryStuck}>Retry</Button>
+                </>
+              }
+              dismissible={false}
+            />
+          )}
+
+          {runError && (
+            <Banner variant="error" title="Run error" detail={runError} onDismiss={() => setRunError(null)} />
+          )}
 
           {(task.description || task.instructions) && (
-            <section class="surface-panel">
-              <div class="section-kicker">Brief</div>
+            <Card variant="spacious" kicker="Brief" title="Overview">
               {task.description && (
-                <div class="task-description" style={{ marginBottom: task.instructions ? 16 : 0 }}>
-                  {task.description}
+                <div style={{ marginBottom: task.instructions ? "var(--sp-4)" : 0 }}>
+                  <MarkdownContent content={task.description} />
                 </div>
               )}
               {task.instructions && (
                 <>
-                  <div class="section-kicker" style={{ marginTop: 12 }}>Instructions</div>
-                  <pre class="code-panel" style={{ marginTop: 4 }}>{task.instructions}</pre>
+                  <div class="section-kicker" style={{ marginTop: "var(--sp-3)" }}>Instructions</div>
+                  <pre class="code-panel" style={{ marginTop: "var(--sp-1)" }}>{task.instructions}</pre>
                 </>
               )}
-            </section>
+            </Card>
           )}
 
-          {runningRun && (
-            <section class="surface-panel">
-              <div class="task-live-header">
-                <LivePulse color="var(--yellow)" size={7} />
-                <span>Running</span>
-                <span class="muted">·</span>
-                <span class="muted">{agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}</span>
-              </div>
-              <ShimmerBar height={2} />
-              <div style={{ marginTop: 10 }}>
-                <RunCard
-                  run={runningRun}
-                  expanded
-                  subscribe
-                  onToggle={toggleRun}
-                  agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
-                />
-              </div>
-            </section>
-          )}
+          {runningRun ? (
+            <LiveRunPanel
+              run={runningRun}
+              events={[]}
+              isStreaming
+            />
+          ) : latestRun ? (
+            <Card variant="spacious" kicker="Latest run" title={formatDate(latestRun.started_at)}>
+              <RunCard
+                run={latestRun}
+                expanded={expandedRunIds.has(latestRun.id)}
+                onToggle={toggleRun}
+                subscribe={latestRun.status === "running" && expandedRunIds.has(latestRun.id)}
+                agentLabel={agentDisplayName(agents, latestRun.agent_name, latestRun.agent_name)}
+              />
+            </Card>
+          ) : null}
 
-          <section class="surface-panel">
-            <div class="section-kicker">Runs</div>
-            <h3 style={{ margin: "0 0 8px" }}>Execution log</h3>
-            {runs.length === 0 ? (
-              <div class="muted" style={{ fontSize: 12 }}>No runs yet.</div>
+          <Card kicker="Activity" title="Timeline">
+            {visibleActivity.length === 0 ? (
+              <div class="muted" style={{ fontSize: "var(--text-sm)" }}>No activity yet.</div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {runs.slice(0, 8).map((run) => (
+              <div class="activity-feed">
+                {visibleActivity.map((item) => (
+                  <div key={item.id} class="activity-item">
+                    <div class="activity-item-head">
+                      {item.type === "comment" && <><Icon name="message-circle" size={12} /><span>{item.author?.display_name || item.author?.id || "Someone"} commented</span></>}
+                      {item.type === "run_started" && <><Icon name="play" size={12} /><span>Run started by {agentDisplayName(agents, item.agent, item.agent)}</span></>}
+                      {item.type === "run_completed" && <><Icon name="check-circle" size={12} /><span>Run completed</span></>}
+                      {item.type === "run_failed" && <><Icon name="alert-triangle" size={12} style={{ color: "var(--status-error)" }} /><span>Run failed</span></>}
+                      <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontSize: "var(--text-xs)", color: "var(--text-subtle)" }}>{formatDate(item.at)}</span>
+                    </div>
+                    {item.type === "comment" && item.body && (
+                      <div class="activity-item-body"><MarkdownContent content={item.body} maxHeight={200} /></div>
+                    )}
+                  </div>
+                ))}
+                {!showOlderActivity && activity.length > 12 && (
+                  <Button variant="ghost" size="sm" onClick={() => setShowOlderActivity(true)}>
+                    Show older ({activity.length - 12})
+                  </Button>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: "var(--sp-4)" }}>
+              <form onSubmit={addComment} style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+                <Textarea
+                  rows={3}
+                  autoGrow
+                  placeholder="Add a comment…"
+                  value={newComment}
+                  onInput={(e) => setNewComment(e.target.value)}
+                />
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <Button type="submit" variant="primary" disabled={!newComment.trim()}>Post</Button>
+                </div>
+              </form>
+            </div>
+          </Card>
+
+          {runs.length > 1 && (
+            <details class="card">
+              <summary style={{ cursor: "pointer", fontSize: "var(--text-base)", fontWeight: 500, padding: "var(--sp-1) 0" }}>
+                Previous runs ({runs.length - 1})
+              </summary>
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)", marginTop: "var(--sp-3)" }}>
+                {runs.slice(1, 8).map((run) => (
                   <RunCard
                     key={run.id}
                     run={run}
                     expanded={expandedRunIds.has(run.id)}
                     onToggle={toggleRun}
-                    subscribe={run.status === "running" && expandedRunIds.has(run.id)}
+                    subscribe={false}
                     agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
                   />
                 ))}
-                {runs.length > 8 && <div class="muted" style={{ fontSize: 12 }}>Showing latest 8 runs.</div>}
               </div>
-            )}
-          </section>
+            </details>
+          )}
 
-          <section class="surface-panel">
-            <div class="section-kicker">Activity</div>
-            <h3 style={{ margin: "0 0 8px" }}>Comments</h3>
-            <CommentList comments={comments} />
-            <form onSubmit={addComment} style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
-              <textarea
-                class="form-input"
-                rows="3"
-                placeholder="Add a comment..."
-                value={newComment}
-                onInput={(e) => setNewComment(e.target.value)}
-                style={{ fontFamily: "var(--sans)", fontSize: 13 }}
-              />
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <button type="submit" class="button primary" disabled={!newComment.trim()}>
-                  Post
-                </button>
-              </div>
-            </form>
-          </section>
+          {comments.length > 0 && (
+            <details class="card">
+              <summary style={{ cursor: "pointer", fontSize: "var(--text-base)", fontWeight: 500, padding: "var(--sp-1) 0" }}>
+                All comments ({comments.length})
+              </summary>
+              <div style={{ marginTop: "var(--sp-3)" }}><CommentList comments={comments} /></div>
+            </details>
+          )}
         </div>
 
         <aside class="task-detail-rail">
-          <div class="rail-card">
-            <h4>Agents</h4>
+          <Card variant="spacious" title="Agents">
             <div class="rail-row">
               <span class="label">Executor</span>
               <span class="value">
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                  <AgentAvatar name={task.executor_agent} label={executorLabel} size={20} />
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                  <AgentAvatar name={task.executor_agent} label={executorLabel} size={20} role="executor" />
                   <span>{executorLabel}</span>
                 </span>
               </span>
@@ -361,73 +554,104 @@ export function TaskDetail({ id, runParam = null }) {
               <div class="rail-row">
                 <span class="label">Reviewer</span>
                 <span class="value">
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                    <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} />
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-2)" }}>
+                    <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} role="reviewer" />
                     <span>{reviewerLabel}</span>
                   </span>
                 </span>
               </div>
             )}
-          </div>
+          </Card>
 
-          <div class="rail-card">
-            <h4>Timeline</h4>
-            <div class="rail-row">
-              <span class="label">Created</span>
-              <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.created_at)}</span>
-            </div>
-            <div class="rail-row">
-              <span class="label">Updated</span>
-              <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.updated_at)}</span>
-            </div>
-            {task.completed_at && (
-              <div class="rail-row">
-                <span class="label">Completed</span>
-                <span class="value mono" style={{ fontSize: 11 }}>{formatDate(task.completed_at)}</span>
-              </div>
-            )}
-          </div>
+          <Card variant="spacious" title="Details">
+            <KeyValueList entries={[
+              ["Created", formatDate(task.created_at) || "—"],
+              ["Updated", formatDate(task.updated_at) || "—"],
+              ["Completed", formatDate(task.completed_at) || "—"],
+              ["Priority", Number(task.priority) > 0 ? `P${task.priority}` : "—"],
+              ["ID", task.id],
+            ]} />
+          </Card>
 
-          {latestRun && latestRun.log && (
-            <div class="rail-card">
-              <h4>Latest run</h4>
+          {latestRun?.log && (
+            <Card variant="spacious" title="Latest run">
               <div class="metric-grid">
-                <div class="metric">
-                  <div class="label">Duration</div>
-                  <div class="value">{formatDuration(runDuration(latestRun)) || "—"}</div>
-                </div>
-                <div class="metric">
-                  <div class="label">Turns</div>
-                  <div class="value">{latestRun.log.num_turns ?? "—"}</div>
-                </div>
-                <div class="metric">
-                  <div class="label">Tokens in</div>
-                  <div class="value">{formatTokens(latestRun.log.input_tokens) || "—"}</div>
-                </div>
-                <div class="metric">
-                  <div class="label">Tokens out</div>
-                  <div class="value">{formatTokens(latestRun.log.output_tokens) || "—"}</div>
-                </div>
-                <div class="metric" style={{ gridColumn: "span 2" }}>
-                  <div class="label">Cost</div>
-                  <div class="value">{formatCost(latestRun.log.cost_usd) || "$0"}</div>
+                <Metric label="Duration" value={formatDuration(runDuration(latestRun)) || "—"} />
+                <Metric label="Turns" value={latestRun.log.num_turns ?? "—"} />
+                <Metric label="Tokens in" value={formatTokens(latestRun.log.input_tokens) || "—"} />
+                <Metric label="Tokens out" value={formatTokens(latestRun.log.output_tokens) || "—"} />
+                <div style={{ gridColumn: "span 2" }}>
+                  <Metric label="Cost" value={formatCost(latestRun.log.cost_usd) || "$0"} />
                 </div>
               </div>
-            </div>
+            </Card>
           )}
 
           {(task.tags || []).length > 0 && (
-            <div class="rail-card">
-              <h4>Tags</h4>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            <Card variant="spacious" title="Tags">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--sp-1)" }}>
                 {(task.tags || []).map((t) => (
                   <span key={t} class="tag">{t}</span>
                 ))}
               </div>
-            </div>
+            </Card>
           )}
+
+          <Card variant="spacious" title="Actions">
+            <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-2)" }}>
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="copy" size={13} />}
+                onClick={async () => {
+                  try {
+                    const copy = { title: `Copy of ${task.title}`, description: task.description, instructions: task.instructions, executor_agent: task.executor_agent, reviewer_agent: task.reviewer_agent, priority: task.priority, tags: task.tags };
+                    const r = await api.createTask(copy);
+                    pushToast("Task duplicated", { variant: "success" });
+                    window.location.hash = `#/tasks/${r.task.id}`;
+                  } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
+                }}
+              >Duplicate</Button>
+              <ConfirmButton onConfirm={destroy} class="sm">Delete task</ConfirmButton>
+            </div>
+          </Card>
         </aside>
       </div>
+
+      {/* Status-transition confirm modal */}
+      <Modal
+        open={!!statusModal}
+        onClose={() => setStatusModal(null)}
+        title="Confirm status change"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setStatusModal(null)}>Cancel</Button>
+            <Button variant="primary" onClick={() => {
+              const t = statusModal;
+              setStatusModal(null);
+              applyStatusTransition(t);
+            }}>Confirm</Button>
+          </>
+        }
+      >
+        <p>{statusModal?.confirm || ""}</p>
+      </Modal>
+
+      {/* Delete task modal */}
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title="Delete task?"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setDeleteOpen(false); destroy(); }}>Delete</Button>
+          </>
+        }
+      >
+        <p>This permanently removes the task and its runs. This action cannot be undone.</p>
+      </Modal>
     </AppShell>
   );
 }

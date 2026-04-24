@@ -8,7 +8,7 @@ import { Skills } from "./routes/Skills.jsx";
 import { Knowledge } from "./routes/Knowledge.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
-import { ToastHost } from "./components/Toast.jsx";
+import { Schedules } from "./routes/Schedules.jsx";
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -25,10 +25,6 @@ function parseHash() {
   return { route, rest, query };
 }
 
-function goTo(path) {
-  window.location.hash = path;
-}
-
 export function App() {
   const [{ route, rest, query }, setRoute] = useState(parseHash());
 
@@ -38,21 +34,7 @@ export function App() {
     return () => window.removeEventListener("hashchange", handler);
   }, []);
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    function onKey(e) {
-      const target = e.target;
-      const tag = target?.tagName?.toLowerCase?.() || "";
-      const editable = target?.isContentEditable || tag === "input" || tag === "textarea" || tag === "select";
-      if (editable || e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key === "n" || e.key === "N") {
-        e.preventDefault();
-        goTo("#/tasks/new");
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // Global keyboard shortcuts now live in AppShell via useGlobalShortcuts.
 
   let body;
   if (route === "tasks") {
@@ -72,14 +54,11 @@ export function App() {
     body = <Activity />;
   } else if (route === "settings") {
     body = <Settings />;
+  } else if (route === "schedules") {
+    body = <Schedules />;
   } else {
     body = <Commander />;
   }
 
-  return (
-    <>
-      {body}
-      <ToastHost />
-    </>
-  );
+  return <>{body}</>;
 }
