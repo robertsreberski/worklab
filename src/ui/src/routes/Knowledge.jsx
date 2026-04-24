@@ -1,17 +1,23 @@
+// §6.7 Knowledge — pane layout with filter Tabs.
 import { useEffect, useState, useCallback, useMemo } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { SearchField } from "../components/SearchField.jsx";
+import { SearchField } from "../components/primitives/SearchField.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
+import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { PaneLayout } from "../components/PaneLayout.jsx";
+import { PaneRow } from "../components/PaneRow.jsx";
+import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { KbEdit } from "./KbEdit.jsx";
 
 const CATEGORY_TABS = [
-  { id: "all", label: "All" },
-  { id: "reference", label: "Reference" },
-  { id: "howto", label: "How-to" },
-  { id: "policy", label: "Policy" },
-  { id: "pinned", label: "Pinned" },
+  { value: "all",       label: "All" },
+  { value: "reference", label: "Reference" },
+  { value: "howto",     label: "How-to" },
+  { value: "policy",    label: "Policy" },
+  { value: "pinned",    label: "Pinned" },
 ];
 
 function categoryToken(category) {
@@ -29,30 +35,6 @@ function formatAge(value) {
   const days = Math.floor(ms / 86_400_000);
   if (days < 7) return `${days}d`;
   return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function KbRow({ entry, active }) {
-  const cat = categoryToken(entry.category);
-  return (
-    <a
-      href={`#/knowledge/${entry.slug}`}
-      class={`pane-row ${active ? "active" : ""}`}
-    >
-      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {entry.pinned && <Icon name="pin" size={11} />}
-      </span>
-      <div class="pane-row-main">
-        <div class="pane-row-title">{entry.title}</div>
-        <div class="pane-row-sub">
-          {cat && <span class="kb-category-badge" data-category={cat}>{cat}</span>}
-          {(entry.tags || []).slice(0, 3).map((t) => (
-            <span key={t} class="tag" style={{ marginLeft: 4 }}>{t}</span>
-          ))}
-        </div>
-      </div>
-      <div class="pane-row-meta">{formatAge(entry.updated_at)}</div>
-    </a>
-  );
 }
 
 export function Knowledge({ selectedSlug = null }) {
@@ -85,77 +67,62 @@ export function Knowledge({ selectedSlug = null }) {
     });
   }, [entries, query, category]);
 
-  const headerMeta = (
+  const hasFilter = query.trim() || category !== "all";
+
+  const listHeader = (
     <>
-      <span>{entries.length} entries</span>
-      <span class="dot">·</span>
-      <span>{entries.filter((e) => e.pinned).length} pinned</span>
+      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search knowledge…" />
+      <Tabs ariaLabel="Filter by category" value={category} onChange={setCategory} tabs={CATEGORY_TABS} />
+      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>
     </>
   );
 
+  const listBody = filtered.length === 0 ? (
+    hasFilter ? (
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setCategory("all"); }} />
+    ) : (
+      <EmptyState
+        title="No entries yet"
+        body="Knowledge entries are shared context for humans and agents. Pin entries to include them in agent context."
+        cta={<Button variant="primary" onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>}
+      />
+    )
+  ) : (
+    filtered.map((e) => {
+      const cat = categoryToken(e.category);
+      return (
+        <PaneRow
+          key={e.slug}
+          href={`#/knowledge/${e.slug}`}
+          active={e.slug === selectedSlug}
+          leading={e.pinned ? <Icon name="pin" size={12} /> : null}
+          title={e.title}
+          sub={cat ? <span class="kb-category-badge" data-category={cat}>{cat}</span> : null}
+          trailing={formatAge(e.updated_at)}
+        />
+      );
+    })
+  );
+
+  const detail = selectedSlug ? (
+    <KbEdit
+      key={selectedSlug}
+      slug={selectedSlug}
+      onSaved={(slug) => { reload(); if (selectedSlug === "new") window.location.hash = `#/knowledge/${slug}`; }}
+      onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
+    />
+  ) : (
+    <div class="pane-empty">
+      <Icon name="book" size={28} />
+      <h3>Select an entry</h3>
+      <p>Knowledge entries are shared context for humans and agents.</p>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { window.location.hash = "#/knowledge/new"; }}>New entry</Button>
+    </div>
+  );
+
   return (
-    <AppShell route="knowledge" title="Knowledge" headerMeta={headerMeta}>
-      <div class="two-pane">
-        <aside class="pane-list">
-          <div class="pane-list-head">
-            <SearchField
-              value={query}
-              onInput={(e) => setQuery(e.target.value)}
-              placeholder="Search knowledge..."
-            />
-            <div class="pane-list-tabs">
-              {CATEGORY_TABS.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  class={`filter-pill ${category === t.id ? "active" : ""}`}
-                  onClick={() => setCategory(t.id)}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-            <a href="#/knowledge/new" class="button primary small" style={{ justifyContent: "center" }}>
-              <Icon name="plus" size={12} />
-              New entry
-            </a>
-          </div>
-          <div class="pane-list-body wl-hide-scrollbar">
-            {filtered.length === 0 && (
-              <div class="pane-empty">{query || category !== "all" ? "No entries match." : "No entries yet."}</div>
-            )}
-            {filtered.map((e) => (
-              <KbRow key={e.slug} entry={e} active={e.slug === selectedSlug} />
-            ))}
-          </div>
-        </aside>
-        <section class="pane-detail">
-          {selectedSlug ? (
-            <KbEdit
-              key={selectedSlug}
-              slug={selectedSlug}
-              onSaved={(slug) => {
-                reload();
-                if (selectedSlug === "new") window.location.hash = `#/knowledge/${slug}`;
-              }}
-              onDeleted={() => {
-                reload();
-                window.location.hash = "#/knowledge";
-              }}
-            />
-          ) : (
-            <div class="pane-empty">
-              <Icon name="book" size={28} />
-              <h3>Select an entry</h3>
-              <p>Knowledge entries are shared context for humans and agents. Pin entries to include them in agent context.</p>
-              <a href="#/knowledge/new" class="button primary">
-                <Icon name="plus" size={13} />
-                New entry
-              </a>
-            </div>
-          )}
-        </section>
-      </div>
+    <AppShell route="knowledge" title="Knowledge">
+      <PaneLayout listHeader={listHeader} listBody={listBody} detail={detail} hasSelection={!!selectedSlug} />
     </AppShell>
   );
 }

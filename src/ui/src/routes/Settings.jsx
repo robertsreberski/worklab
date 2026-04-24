@@ -1,21 +1,33 @@
-import { useEffect, useState } from "preact/hooks";
+// §6.10 Settings — FormSections stacked. Switches use the new primitive (fixed alignment).
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { SwitchField } from "../components/SwitchField.jsx";
-import { SelectField } from "../components/SelectField.jsx";
+import { Switch } from "../components/primitives/Switch.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Input } from "../components/primitives/Input.jsx";
+import { Button } from "../components/primitives/Button.jsx";
+import { FormSection } from "../components/FormSection.jsx";
+import { FormGrid } from "../components/FormGrid.jsx";
+import { FormField } from "../components/FormField.jsx";
+import { Banner } from "../components/Banner.jsx";
+import { LoadingState } from "../components/LoadingState.jsx";
 
 export function Settings() {
   const [settings, setSettings] = useState(null);
+  const [baseline, setBaseline] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
 
   useEffect(() => {
-    api.getSettings().then((r) => setSettings(r.settings));
+    api.getSettings().then((r) => { setSettings(r.settings); setBaseline(r.settings); });
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
   }, []);
+
+  const isDirty = useMemo(() => baseline ? JSON.stringify(settings) !== JSON.stringify(baseline) : false, [settings, baseline]);
 
   const formSave = useFormSave(async () => {
     await api.patchSettings({
@@ -27,13 +39,18 @@ export function Settings() {
       kb_pinned_limit: Number(settings.kb_pinned_limit),
       default_embedding_model: settings.default_embedding_model,
     });
-    pushToast("Settings saved", { variant: "success", ttl: 2500 });
+    pushToast("Saved.", { variant: "success" });
+    setBaseline(settings);
+  });
+
+  useGlobalShortcuts({
+    cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
   });
 
   if (!settings) {
     return (
       <AppShell route="settings" title="Settings">
-        <div class="page-wrap"><div style={{ color: "var(--muted)" }}>Loading...</div></div>
+        <div class="page-wrap"><LoadingState caption="Loading settings…" /></div>
       </AppShell>
     );
   }
@@ -52,113 +69,74 @@ export function Settings() {
   ];
 
   const headerActions = (
-    <button
-      class="button primary"
+    <Button
+      variant={isDirty ? "primary" : "secondary"}
+      loading={formSave.saving}
       onClick={() => formSave.save().catch(() => {})}
-      disabled={formSave.saving}
     >
-      {formSave.saving ? "Saving..." : "Save"}
-    </button>
+      Save
+    </Button>
   );
 
   return (
     <AppShell route="settings" title="Settings" headerActions={headerActions}>
       <div class="page-wrap">
-        {formSave.error && <div class="form-error">Save failed: {formSave.error}</div>}
+        {formSave.error && (
+          <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
+        )}
 
         <div class="settings-sections">
-          <section class="settings-section">
-            <h3>Consolidation</h3>
-            <p>Nightly memory consolidation refreshes agent journal summaries.</p>
-            <div class="form-grid">
-              <div class="field">
-                <label class="field-label">Hour (0–23)</label>
-                <input
-                  class="form-input"
-                  type="number"
-                  min="0"
-                  max="23"
-                  value={settings.consolidation_hour}
-                  onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })}
+          <FormSection kicker="Memory" title="Consolidation" description="Nightly memory consolidation refreshes agent journal summaries.">
+            <FormGrid columns={2}>
+              <FormField label="Hour (0–23)">
+                <Input type="number" min="0" max="23" value={settings.consolidation_hour} onInput={(e) => setSettings({ ...settings, consolidation_hour: e.target.value })} />
+              </FormField>
+              <FormField switchInside>
+                <Switch
+                  checked={!!settings.consolidation_enabled}
+                  onChange={(next) => setSettings({ ...settings, consolidation_enabled: next })}
+                  label="Enabled"
+                  description="Run the scheduled consolidation job each night."
                 />
-              </div>
-              <div class="field">
-                <SwitchField
-                  checked={settings.consolidation_enabled}
-                  onChange={(e) => setSettings({ ...settings, consolidation_enabled: e.target.checked })}
-                >
-                  Enabled
-                </SwitchField>
-              </div>
-              <div class="field">
-                <label class="field-label">Journal tail lines</label>
-                <input
-                  class="form-input"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  value={settings.journal_tail_lines}
-                  onInput={(e) => setSettings({ ...settings, journal_tail_lines: e.target.value })}
-                />
-              </div>
-              <div class="field">
-                <label class="field-label">Pinned KB limit</label>
-                <input
-                  class="form-input"
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={settings.kb_pinned_limit}
-                  onInput={(e) => setSettings({ ...settings, kb_pinned_limit: e.target.value })}
-                />
-              </div>
-            </div>
-          </section>
+              </FormField>
+              <FormField label="Journal tail lines">
+                <Input type="number" min="0" max="1000" value={settings.journal_tail_lines} onInput={(e) => setSettings({ ...settings, journal_tail_lines: e.target.value })} />
+              </FormField>
+              <FormField label="Pinned KB limit">
+                <Input type="number" min="0" max="100" value={settings.kb_pinned_limit} onInput={(e) => setSettings({ ...settings, kb_pinned_limit: e.target.value })} />
+              </FormField>
+            </FormGrid>
+          </FormSection>
 
-          <section class="settings-section">
-            <h3>Execution</h3>
-            <p>Limits for worker subprocesses.</p>
-            <div class="form-grid">
-              <div class="field">
-                <label class="field-label">Worker timeout (ms)</label>
-                <input
-                  class="form-input"
-                  type="number"
-                  value={settings.worker_timeout_ms}
-                  onInput={(e) => setSettings({ ...settings, worker_timeout_ms: e.target.value })}
-                />
-              </div>
-              <div class="field">
-                <label class="field-label">Cancel grace (ms)</label>
-                <input
-                  class="form-input"
-                  type="number"
-                  value={settings.cancel_grace_ms}
-                  onInput={(e) => setSettings({ ...settings, cancel_grace_ms: e.target.value })}
-                />
-              </div>
-            </div>
-          </section>
+          <FormSection kicker="Runtime" title="Execution" description="Limits for worker subprocesses.">
+            <FormGrid columns={2}>
+              <FormField label="Worker timeout (ms)">
+                <Input type="number" value={settings.worker_timeout_ms} onInput={(e) => setSettings({ ...settings, worker_timeout_ms: e.target.value })} />
+              </FormField>
+              <FormField label="Cancel grace (ms)">
+                <Input type="number" value={settings.cancel_grace_ms} onInput={(e) => setSettings({ ...settings, cancel_grace_ms: e.target.value })} />
+              </FormField>
+            </FormGrid>
+          </FormSection>
 
-          <section class="settings-section">
-            <h3>Search & embeddings</h3>
-            <p>Controls which embedding model is used to index knowledge and journals.</p>
-            <div class="field">
-              <label class="field-label">Embedding model</label>
-              <SelectField
+          <FormSection kicker="Search" title="Embeddings" description="Controls which embedding model is used to index knowledge and journals.">
+            <FormField
+              label="Embedding model"
+              hint='Disabled skips vectorization. Run "Discover" on a provider to surface more models.'
+            >
+              <Select
                 value={currentEmbedding}
                 options={embeddingOptions}
                 onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
               />
-              <span class="field-hint">Disabled skips vectorization. Run "Discover" on a provider to surface more models.</span>
-            </div>
+            </FormField>
             {indexStatus && (
-              <div style={{ fontSize: 12, color: indexStatus.errors ? "var(--yellow)" : "var(--muted)" }}>
+              <div style={{ fontSize: "var(--text-sm)", color: indexStatus.errors ? "var(--status-progress)" : "var(--text-muted)" }}>
                 Search index: {indexStatus.total} chunks · {indexStatus.vectorized} vectorized · {indexStatus.errors} errors · {indexStatus.model || "—"}
                 {indexStatus.model && !indexStatus.ready && ` · paused (${indexStatus.reason || "provider not configured"})`}
               </div>
             )}
-          </section>
+          </FormSection>
         </div>
       </div>
     </AppShell>

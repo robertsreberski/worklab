@@ -1,3 +1,8 @@
+// SwitchField — compat wrapper over the new Switch primitive (§3.7).
+// The new primitive fixes the alignment bug (track anchored to label x-height).
+// New code should import `Switch` from `primitives/Switch.jsx` directly.
+import { Switch } from "./primitives/Switch.jsx";
+
 export function SwitchField({
   checked,
   onChange,
@@ -6,26 +11,25 @@ export function SwitchField({
   description,
   disabled = false,
   class: className = "",
-  ...props
 }) {
-  const body = children || label;
   return (
-    <label class={`switch-field ${className}`}>
-      <input
-        {...props}
-        class="switch-field-input"
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={onChange}
-      />
-      <span class="switch-field-track" aria-hidden="true">
-        <span class="switch-field-thumb" />
-      </span>
-      <span class="switch-field-copy">
-        <span class="switch-field-label">{body}</span>
-        {description && <span class="switch-field-description">{description}</span>}
-      </span>
-    </label>
+    <Switch
+      checked={!!checked}
+      onChange={(nextChecked, event) => {
+        // Preserve prior API: onChange receives the raw event.
+        onChange?.(event ?? { target: { checked: nextChecked } });
+      }}
+      label={label || children}
+      description={description}
+      disabled={disabled}
+      class={className}
+    >
+      {!label && children ? (
+        <>
+          <span class="switch-label">{children}</span>
+          {description && <span class="switch-description">{description}</span>}
+        </>
+      ) : null}
+    </Switch>
   );
 }

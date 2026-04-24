@@ -186,7 +186,7 @@ test("agents two-pane: clicking a list row selects inline editor via URL", async
 
 test("task edit is reachable via #/tasks/new and shows a full-page form", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/new`);
-  await expect(page.locator(".task-edit-head h2").first()).toBeVisible();
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
   await expect(page.locator('input[placeholder*="actionable"]')).toBeVisible();
 });
 
@@ -194,8 +194,8 @@ test("task detail renders two-column layout", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).toBeVisible();
-  await expect(page.locator(".rail-card h4", { hasText: "Agents" })).toBeVisible();
-  await expect(page.locator(".rail-card h4", { hasText: "Timeline" })).toBeVisible();
+  await expect(page.locator(".card-title", { hasText: "Agents" })).toBeVisible();
+  await expect(page.locator(".card-title", { hasText: "Details" })).toBeVisible();
 });
 
 test("mobile routes stay usable without horizontal overflow", async ({ page }) => {

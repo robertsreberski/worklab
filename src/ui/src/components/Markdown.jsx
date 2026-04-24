@@ -1,10 +1,15 @@
+// §4.17 Markdown — GFM-lite, sanitized, clamps by rendered height (not char count).
+// Full Markdown always renders; long bodies clamp to 320px with "Show more".
+
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+
 export function renderMarkdown(md) {
   if (!md) return "";
 
   const codeBlocks = [];
   const text = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, __, code) => {
     const index = codeBlocks.length;
-    codeBlocks.push(`<pre class="doc-code">${escapeHtml(code.trimEnd())}</pre>`);
+    codeBlocks.push(`<pre class="doc-code"><code>${escapeHtml(code.trimEnd())}</code></pre>`);
     return `\x00CODE${index}\x00`;
   });
 
@@ -20,10 +25,7 @@ export function renderMarkdown(md) {
       continue;
     }
 
-    if (line.trim() === "") {
-      i += 1;
-      continue;
-    }
+    if (line.trim() === "") { i += 1; continue; }
 
     if (/^---+$/.test(line.trim())) {
       out.push("<hr/>");
@@ -31,7 +33,7 @@ export function renderMarkdown(md) {
       continue;
     }
 
-    const headingMatch = line.match(/^(#{1,4})\s+(.+)$/);
+    const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
       out.push(`<h${level}>${renderInline(headingMatch[2])}</h${level}>`);
@@ -84,7 +86,7 @@ export function renderMarkdown(md) {
     while (
       i < lines.length &&
       lines[i].trim() !== "" &&
-      !/^#{1,4}\s|^\s*[-*]\s|^\s*\d+\.\s|^>|^---+$|^\x00CODE/.test(lines[i]) &&
+      !/^#{1,3}\s|^\s*[-*]\s|^\s*\d+\.\s|^>|^---+$|^\x00CODE/.test(lines[i]) &&
       !lines[i].includes("|")
     ) {
       paragraphLines.push(lines[i]);
@@ -102,8 +104,53 @@ export function renderMarkdown(md) {
   return out.join("");
 }
 
-export function MarkdownContent({ content = "", className = "doc-content" }) {
-  return <div class={className} dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }} />;
+// MarkdownContent: renders with a rendered-height clamp (320px) and a
+// "Show more" expander. Replaces the character-length fallback entirely.
+export function MarkdownContent({
+  content = "",
+  className = "markdown doc-content",
+  maxHeight = 320,
+  expandable = true,
+}) {
+  const ref = useRef(null);
+  const [needsClamp, setNeedsClamp] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!expandable) return;
+    if (!ref.current) return;
+    const el = ref.current;
+    // measure natural height
+    el.style.maxHeight = "none";
+    const h = el.scrollHeight;
+    setNeedsClamp(h > maxHeight);
+  }, [content, expandable, maxHeight]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    if (!expandable) return;
+    ref.current.style.maxHeight = expanded || !needsClamp ? "none" : `${maxHeight}px`;
+  }, [expanded, needsClamp, expandable, maxHeight]);
+
+  return (
+    <>
+      <div
+        ref={ref}
+        class={`${className}${needsClamp && !expanded ? " markdown-expandable clamped" : ""}`}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+      />
+      {expandable && needsClamp && (
+        <button
+          type="button"
+          class="markdown-show-more"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </>
+  );
 }
 
 function escapeHtml(text) {
@@ -128,7 +175,7 @@ function renderInline(text) {
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     .replace(/\*(.+?)\*/g, "<em>$1</em>")
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
-      `<a href="${safeHref(url)}" target="_blank" rel="noopener">${label}</a>`);
+      `<a href="${safeHref(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
 }
 
 function renderTable(lines) {

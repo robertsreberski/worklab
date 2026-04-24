@@ -1,12 +1,23 @@
-import { useEffect, useState } from "preact/hooks";
+// §6.6 SkillEdit — metadata (display name, priority, enabled) · trigger · body.
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
-import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { SelectField } from "../components/SelectField.jsx";
-import { SwitchField } from "../components/SwitchField.jsx";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { Button } from "../components/primitives/Button.jsx";
+import { Input } from "../components/primitives/Input.jsx";
+import { Textarea } from "../components/primitives/Textarea.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Switch } from "../components/primitives/Switch.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
+import { FormSection } from "../components/FormSection.jsx";
+import { FormGrid } from "../components/FormGrid.jsx";
+import { FormField } from "../components/FormField.jsx";
+import { Banner } from "../components/Banner.jsx";
+import { Modal } from "../components/Modal.jsx";
+import { LoadingState } from "../components/LoadingState.jsx";
+import { Icon } from "../components/Icon.jsx";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
@@ -14,17 +25,22 @@ const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: t
 export function SkillEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [skill, setSkill] = useState(isNew ? emptySkill : null);
+  const [baseline, setBaseline] = useState(null);
   const [usage, setUsage] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!isNew) {
-      api.getSkill(name).then(r => setSkill(r.skill)).catch(() => setSkill({ notFound: true }));
+      api.getSkill(name).then(r => { setSkill(r.skill); setBaseline(r.skill); }).catch(() => setSkill({ notFound: true }));
       api.skillUsage(name).then(setUsage).catch(() => {});
     } else {
       setSkill(emptySkill);
+      setBaseline(emptySkill);
       setUsage(null);
     }
   }, [name, isNew]);
+
+  const isDirty = useMemo(() => baseline ? JSON.stringify(skill) !== JSON.stringify(baseline) : true, [skill, baseline]);
 
   const formSave = useFormSave(async () => {
     const payload = {
@@ -34,14 +50,22 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
     if (!skill.meta.priority) delete payload.meta.priority;
     if (isNew) {
       const res = await api.createSkill({ ...payload });
+      pushToast("Skill created", { variant: "success" });
+      setBaseline(skill);
       onSaved?.(res.skill.name);
     } else {
       await api.patchSkill(name, payload);
+      pushToast("Saved.", { variant: "success" });
+      setBaseline(skill);
       onSaved?.(name);
     }
   });
 
-  if (!skill) return <div class="pane-empty">Loading skill...</div>;
+  useGlobalShortcuts({
+    cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+  });
+
+  if (!skill) return <LoadingState caption="Loading skill…" />;
   if (skill.notFound) return (
     <div class="pane-empty">
       <h3>Skill not found</h3>
@@ -52,6 +76,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   async function destroy() {
     try {
       await api.deleteSkill(name);
+      pushToast("Skill deleted", { variant: "success" });
       onDeleted?.();
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
@@ -64,39 +89,39 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
     <>
       <header class="pane-detail-head">
         <div style={{ minWidth: 0 }}>
-          <div class="eyebrow">{isNew ? "Create skill" : "Skill"}</div>
+          <div class="all-caps">{isNew ? "Create skill" : "Skill"}</div>
           <h2>{title}</h2>
         </div>
         <div class="toolbar">
           <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />
-          {!isNew && <ConfirmButton class="button danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-          <button
-            class="button primary"
+          {!isNew && (
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>Delete</Button>
+          )}
+          <Button
+            variant={isDirty || isNew ? "primary" : "secondary"}
+            loading={formSave.saving}
+            disabled={!(skill.meta.display_name || skill.name)}
             onClick={() => formSave.save().catch(() => {})}
-            disabled={formSave.saving || !(skill.meta.display_name || skill.name)}
           >
-            {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
-          </button>
+            {isNew ? "Create" : "Save"}
+          </Button>
         </div>
       </header>
       <div class="pane-detail-body">
-        {formSave.error && <div class="form-error">Save failed: {formSave.error}</div>}
+        {formSave.error && (
+          <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
+        )}
 
-        <section class="surface-panel">
-          <div class="section-kicker">Metadata</div>
-          <h3>Activation</h3>
-          <div class="form-grid">
-            <div class="field span-2">
-              <label class="field-label">Display name</label>
-              <input
-                class="form-input"
+        <FormSection kicker="Metadata" title="Activation">
+          <FormGrid columns={2}>
+            <FormField label="Display name" required class="span-2">
+              <Input
                 value={skill.meta.display_name || (isNew ? "" : humanizeSlug(skill.name))}
                 onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, display_name: e.target.value } })}
               />
-            </div>
-            <div class="field">
-              <label class="field-label">Priority</label>
-              <SelectField
+            </FormField>
+            <FormField label="Priority">
+              <Select
                 value={skill.meta.priority || ""}
                 options={[
                   { value: "", label: "On demand" },
@@ -104,56 +129,61 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
                 ]}
                 onChange={(v) => setSkill({ ...skill, meta: { ...skill.meta, priority: v || undefined } })}
               />
-            </div>
-            <div class="field">
-              <SwitchField
+            </FormField>
+            <FormField switchInside>
+              <Switch
                 checked={skill.meta.enabled !== false}
-                onChange={(e) => setSkill({ ...skill, meta: { ...skill.meta, enabled: e.target.checked } })}
+                onChange={(next) => setSkill({ ...skill, meta: { ...skill.meta, enabled: next } })}
+                label="Available to agents"
                 description="Unavailable skills stay saved but are not offered to agents."
-              >
-                Available to agents
-              </SwitchField>
-            </div>
-            <div class="field span-2">
-              <label class="field-label">Trigger</label>
-              <input
-                class="form-input"
+              />
+            </FormField>
+            <FormField label="Trigger" class="span-2">
+              <Input
                 placeholder="When should this skill activate?"
                 value={skill.meta.trigger || ""}
                 onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })}
               />
-            </div>
-          </div>
+            </FormField>
+          </FormGrid>
           <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : skill.name }]} />
-        </section>
+        </FormSection>
 
-        <section class="surface-panel">
-          <div class="section-kicker">Playbook</div>
-          <h3>Body (Markdown)</h3>
-          <div class="field">
-            <textarea
-              class="form-input mono-input"
-              rows="22"
-              value={skill.body}
-              onInput={(e) => setSkill({ ...skill, body: e.target.value })}
-            />
-          </div>
-        </section>
+        <FormSection kicker="Playbook" title="Body (Markdown)">
+          <Textarea
+            rows={22}
+            monospace
+            autoGrow
+            value={skill.body}
+            onInput={(e) => setSkill({ ...skill, body: e.target.value })}
+          />
+        </FormSection>
 
         {!isNew && usage && usage.explicit?.length > 0 && (
-          <section class="surface-panel">
-            <div class="section-kicker">References</div>
-            <h3>Used by agents</h3>
-            <ul style={{ margin: 0, paddingLeft: 18 }}>
+          <FormSection kicker="References" title="Used by agents">
+            <ul class="usage-list">
               {usage.explicit.map((a) => (
-                <li key={a.name}>
-                  <a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a>
-                </li>
+                <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
               ))}
             </ul>
-          </section>
+          </FormSection>
         )}
       </div>
+
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={`Delete "${title}"?`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setDeleteOpen(false); destroy(); }}>Delete</Button>
+          </>
+        }
+      >
+        <p>This removes the skill permanently.</p>
+      </Modal>
     </>
   );
 }

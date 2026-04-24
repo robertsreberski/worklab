@@ -1,16 +1,31 @@
-import { useEffect, useState } from "preact/hooks";
+// §6.5 AgentEdit — form for one agent. Inline two-pane detail.
+// Model selector uses unified Select (§3.6). Reasoning effort: RadioGroup when
+// 3–5 options, Select otherwise. If `reasoningMode === 'none'`, renders muted
+// placeholder (§6.5 rule).
+
+import { useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { ConfirmButton } from "../components/ConfirmButton.jsx";
-import { CheckboxField } from "../components/CheckboxField.jsx";
-import { SelectField } from "../components/SelectField.jsx";
-import { SwitchField } from "../components/SwitchField.jsx";
+import { Checkbox } from "../components/primitives/Checkbox.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Switch } from "../components/primitives/Switch.jsx";
+import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { Button } from "../components/primitives/Button.jsx";
+import { Input } from "../components/primitives/Input.jsx";
+import { Textarea } from "../components/primitives/Textarea.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { modelDisplayName } from "../lib/display.js";
+import { FormSection } from "../components/FormSection.jsx";
+import { FormGrid } from "../components/FormGrid.jsx";
+import { FormField } from "../components/FormField.jsx";
+import { Banner } from "../components/Banner.jsx";
+import { Modal } from "../components/Modal.jsx";
+import { LoadingState } from "../components/LoadingState.jsx";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -65,11 +80,13 @@ function supportedBuiltinTools(option) {
 export function AgentEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
+  const [baseline, setBaseline] = useState(null);
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
   const [consolidating, setConsolidating] = useState(false);
   const [notice, setNotice] = useState(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const allModels = flattenModels(modelGroups);
   const selectedModel = allModels.find((m) => m.value === agent?.model) || null;
@@ -84,11 +101,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     api.getMcpConfig().then(r => setMcpServers(Object.keys(r.mcpServers || {}))).catch(() => setMcpServers([]));
     api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     if (!isNew) {
-      api.getAgent(name).then(r => setAgent(r.agent)).catch(() => setAgent({ notFound: true }));
+      api.getAgent(name).then(r => { setAgent(r.agent); setBaseline(r.agent); }).catch(() => setAgent({ notFound: true }));
     } else {
       setAgent(emptyAgent);
+      setBaseline(emptyAgent);
     }
   }, [name, isNew]);
+
+  const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
 
   const formSave = useFormSave(async () => {
     const payload = {
@@ -101,14 +121,22 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     };
     if (isNew) {
       const res = await api.createAgent(payload);
+      pushToast("Agent created", { variant: "success" });
+      setBaseline(agent);
       onSaved?.(res.agent.name);
     } else {
       await api.patchAgent(name, payload);
+      pushToast("Saved.", { variant: "success" });
+      setBaseline(agent);
       onSaved?.(name);
     }
   });
 
-  if (!agent) return <div class="pane-empty">Loading agent...</div>;
+  useGlobalShortcuts({
+    cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+  });
+
+  if (!agent) return <LoadingState caption="Loading agent…" />;
   if (agent.notFound) return (
     <div class="pane-empty">
       <h3>Agent not found</h3>
@@ -127,6 +155,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     }]),
   ];
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
+  const useRadioForEffort = reasoningMode === "effort" && reasoningLevels.length >= 3 && reasoningLevels.length <= 5;
 
   function toggleList(list, value) {
     return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
@@ -148,6 +177,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   async function destroy() {
     try {
       await api.deleteAgent(name);
+      pushToast("Agent deleted", { variant: "success" });
       onDeleted?.();
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
@@ -172,177 +202,184 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   return (
     <>
       <header class="pane-detail-head">
-        <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--sp-3)", minWidth: 0 }}>
           {!isNew && <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} />}
           <div style={{ minWidth: 0 }}>
-            <div class="eyebrow">{isNew ? "Create agent" : "Agent"}</div>
+            <div class="all-caps">{isNew ? "Create agent" : "Agent"}</div>
             <h2>{title}</h2>
           </div>
         </div>
         <div class="toolbar">
           <StatusPill status={agent.enabled ? "enabled" : "disabled"} />
           {!isNew && (
-            <button class="button ghost" onClick={consolidateNow} disabled={consolidating}>
-              <Icon name="refresh-cw" size={13} />
-              {consolidating ? "Starting..." : "Consolidate"}
-            </button>
+            <Button variant="ghost" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={consolidateNow} loading={consolidating}>
+              Consolidate
+            </Button>
           )}
-          {!isNew && <ConfirmButton class="button danger" onConfirm={destroy} confirmLabel="Click again to delete">Delete</ConfirmButton>}
-          <button
-            class="button primary"
+          {!isNew && (
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>Delete</Button>
+          )}
+          <Button
+            variant={isDirty || isNew ? "primary" : "secondary"}
             onClick={() => formSave.save().catch(() => {})}
-            disabled={formSave.saving || !agent.display_name}
+            loading={formSave.saving}
+            disabled={!agent.display_name}
           >
-            {formSave.saving ? "Saving..." : (isNew ? "Create" : "Save")}
-          </button>
+            {isNew ? "Create" : "Save"}
+          </Button>
         </div>
       </header>
       <div class="pane-detail-body">
-        {formSave.error && <div class="form-error">Save failed: {formSave.error}</div>}
-        {notice && <div class="surface-panel compact" style={{ color: "var(--muted)" }}>{notice}</div>}
+        {formSave.error && (
+          <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
+        )}
+        {notice && <Banner variant="info" detail={notice} />}
 
-        <section class="surface-panel">
-          <div class="section-kicker">Identity</div>
-          <h3>Profile</h3>
-          <div class="form-grid">
-            <div class="field">
-              <label class="field-label">Display name</label>
-              <input
-                class="form-input"
-                value={agent.display_name}
-                onInput={(e) => setAgent({ ...agent, display_name: e.target.value })}
-              />
-            </div>
-            <div class="field">
-              <SwitchField
+        <FormSection kicker="Identity" title="Profile">
+          <FormGrid columns={2}>
+            <FormField label="Display name" required>
+              <Input value={agent.display_name} onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
+            </FormField>
+            <FormField switchInside>
+              <Switch
                 checked={agent.enabled}
-                onChange={(e) => setAgent({ ...agent, enabled: e.target.checked })}
+                onChange={(next) => setAgent({ ...agent, enabled: next })}
+                label="Available for assignment"
                 description="Unavailable agents stay configured but cannot be selected."
-              >
-                Available for assignment
-              </SwitchField>
-            </div>
-            <div class="field span-2">
-              <label class="field-label">Description</label>
-              <input
-                class="form-input"
-                value={agent.description || ""}
-                onInput={(e) => setAgent({ ...agent, description: e.target.value })}
               />
-            </div>
-          </div>
+            </FormField>
+            <FormField label="Description" class="span-2">
+              <Input value={agent.description || ""} onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
+            </FormField>
+          </FormGrid>
           <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : agent.name }]} />
-        </section>
+        </FormSection>
 
-        <section class="surface-panel">
-          <div class="section-kicker">Runtime</div>
-          <h3>Model & reasoning</h3>
-          <div class="form-grid">
-            <div class="field">
-              <label class="field-label">Model</label>
-              <SelectField value={agent.model} options={modelOptions} onChange={setModel} />
-            </div>
-            <div class="field">
-              <label class="field-label">Advanced reference</label>
-              <input class="form-input mono-input" value={agent.model} readOnly />
-            </div>
-            <div class="field">
+        <FormSection kicker="Runtime" title="Model & reasoning">
+          <FormGrid columns={2}>
+            <FormField label="Model" required>
+              <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
+            </FormField>
+            <FormField label="Advanced reference" hint="Saved model value used at runtime.">
+              <Input value={agent.model} readOnly class="mono-input" />
+            </FormField>
+            <FormField
+              label={reasoningMode === "toggle" ? "Thinking" : "Effort"}
+              class="span-2"
+              hint={reasoningMode === "none" ? "This model does not support reasoning effort" : undefined}
+            >
               {reasoningMode === "none" ? (
-                <>
-                  <label class="field-label">Effort</label>
-                  <div class="field-hint">This model does not support adjustable reasoning.</div>
-                </>
+                <span class="muted" style={{ fontSize: "var(--text-sm)" }}>This model does not support adjustable reasoning.</span>
               ) : reasoningMode === "toggle" ? (
-                <>
-                  <label class="field-label">Thinking</label>
-                  <SelectField
-                    value={normalizedEffort === "low" ? "off" : "on"}
-                    options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]}
-                    onChange={(v) => setAgent({ ...agent, effort: v === "off" ? "low" : "medium" })}
-                  />
-                </>
+                <RadioGroup
+                  ariaLabel="Thinking"
+                  value={normalizedEffort === "low" ? "off" : "on"}
+                  onChange={(v) => setAgent({ ...agent, effort: v === "off" ? "low" : "medium" })}
+                  options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]}
+                />
+              ) : useRadioForEffort ? (
+                <RadioGroup
+                  ariaLabel="Reasoning effort"
+                  value={normalizedEffort}
+                  onChange={(v) => setAgent({ ...agent, effort: v })}
+                  options={effortOptions}
+                />
               ) : (
-                <>
-                  <label class="field-label">Effort</label>
-                  <SelectField
-                    value={normalizedEffort}
-                    options={effortOptions}
-                    onChange={(v) => setAgent({ ...agent, effort: v })}
-                  />
-                </>
+                <Select
+                  value={normalizedEffort}
+                  options={effortOptions}
+                  onChange={(v) => setAgent({ ...agent, effort: v })}
+                />
               )}
-            </div>
-            <div class="field span-2">
-              <div class="field-hint">
-                {selectedModel?.capabilities?.tool_use === false
-                  ? "This model does not support tool use."
-                  : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
-                {selectedModel?.capabilities?.reasoning
-                  ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
-                  : " · Reasoning: unavailable"}
-              </div>
-            </div>
+            </FormField>
+          </FormGrid>
+          <div class="field-hint" style={{ marginTop: "var(--sp-3)" }}>
+            {selectedModel?.capabilities?.tool_use === false
+              ? "This model does not support tool use."
+              : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
+            {selectedModel?.capabilities?.reasoning
+              ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
+              : " · Reasoning: unavailable"}
           </div>
-        </section>
+        </FormSection>
 
-        <section class="surface-panel">
-          <div class="section-kicker">Behavior</div>
-          <h3>Instructions</h3>
-          <div class="field">
-            <label class="field-label">System prompt role</label>
-            <textarea
-              class="form-input mono-input"
-              rows="10"
+        <FormSection kicker="Behavior" title="Instructions">
+          <FormField label="System prompt role">
+            <Textarea
+              rows={10}
+              monospace
+              autoGrow
               value={agent.instructions}
               onInput={(e) => setAgent({ ...agent, instructions: e.target.value })}
             />
-          </div>
-        </section>
+          </FormField>
+        </FormSection>
 
-        <section class="surface-panel">
-          <div class="section-kicker">Capabilities</div>
-          <h3>Allowlists</h3>
-          <div class="field">
-            <label class="field-label">Skills (empty = all enabled)</label>
-            {skills.length === 0 && <div class="field-hint">No skills defined yet.</div>}
-            {skills.map((s) => (
-              <CheckboxField
-                key={s.name}
-                checked={agent.skills_allowlist.includes(s.name)}
-                onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
-              >
-                {s.display_name || s.name}
-              </CheckboxField>
-            ))}
-          </div>
-          <div class="field">
-            <label class="field-label">MCP servers (empty = all registered)</label>
-            {mcpServers.length === 0 && <div class="field-hint">No user MCP servers registered.</div>}
-            {mcpServers.map((m) => (
-              <CheckboxField
-                key={m}
-                checked={agent.mcp_allowlist.includes(m)}
-                onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })}
-              >
-                {m}
-              </CheckboxField>
-            ))}
-          </div>
-          <div class="field">
-            <label class="field-label">Built-in tools (empty = all)</label>
-            {!supportsToolUse && <div class="field-hint">This model cannot call built-in tools.</div>}
-            {supportsToolUse && visibleTools.map((t) => (
-              <CheckboxField
-                key={t}
-                checked={agent.builtin_allowlist.includes(t)}
-                onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })}
-              >
-                {t}
-              </CheckboxField>
-            ))}
-          </div>
-        </section>
+        <FormSection kicker="Capabilities" title="Allowlists">
+          <FormField label="Skills" hint="Empty = all enabled.">
+            {skills.length === 0 ? (
+              <div class="field-hint">No skills defined yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+                {skills.map((s) => (
+                  <Checkbox
+                    key={s.name}
+                    checked={agent.skills_allowlist.includes(s.name)}
+                    onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
+                    label={s.display_name || s.name}
+                  />
+                ))}
+              </div>
+            )}
+          </FormField>
+          <FormField label="MCP servers" hint="Empty = all registered.">
+            {mcpServers.length === 0 ? (
+              <div class="field-hint">No user MCP servers registered.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+                {mcpServers.map((m) => (
+                  <Checkbox
+                    key={m}
+                    checked={agent.mcp_allowlist.includes(m)}
+                    onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })}
+                    label={m}
+                  />
+                ))}
+              </div>
+            )}
+          </FormField>
+          <FormField label="Built-in tools" hint={supportsToolUse ? "Empty = all." : "This model cannot call built-in tools."}>
+            {supportsToolUse && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "var(--sp-1)" }}>
+                {visibleTools.map((t) => (
+                  <Checkbox
+                    key={t}
+                    checked={agent.builtin_allowlist.includes(t)}
+                    onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })}
+                    label={t}
+                  />
+                ))}
+              </div>
+            )}
+          </FormField>
+        </FormSection>
       </div>
+
+      {/* Delete modal */}
+      <Modal
+        open={deleteOpen}
+        onClose={() => setDeleteOpen(false)}
+        title={`Delete "${agent.display_name || agent.name}"?`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => { setDeleteOpen(false); destroy(); }}>Delete</Button>
+          </>
+        }
+      >
+        <p>This removes the agent. Tasks currently assigned to it will keep the reference but won't be runnable until reassigned.</p>
+      </Modal>
     </>
   );
 }

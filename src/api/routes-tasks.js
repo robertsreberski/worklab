@@ -13,6 +13,29 @@ function rowToTask(row) {
   };
 }
 
+// §9.3 derived fields.
+// `running_run_id` — latest task_runs row where status='running', or null.
+// `last_run` — latest completed run summary (id, status, ended_at) for §5.3
+//              error-chip policy.
+function attachDerivedRunFields(db, task) {
+  if (!task) return task;
+  const runningRow = db.prepare(
+    `SELECT id FROM task_runs
+     WHERE task_id = ? AND status = 'running'
+     ORDER BY started_at DESC LIMIT 1`
+  ).get(task.id);
+  const lastRow = db.prepare(
+    `SELECT id, status, ended_at FROM task_runs
+     WHERE task_id = ? AND status <> 'running'
+     ORDER BY started_at DESC LIMIT 1`
+  ).get(task.id);
+  return {
+    ...task,
+    running_run_id: runningRow?.id || null,
+    last_run: lastRow ? { id: lastRow.id, status: lastRow.status, ended_at: lastRow.ended_at } : null,
+  };
+}
+
 function rowToRun(row) {
   if (!row) return null;
   const {
@@ -84,7 +107,8 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
-    res.json({ tasks: rows.map(rowToTask) });
+    const tasks = rows.map(rowToTask).map((t) => attachDerivedRunFields(db, t));
+    res.json({ tasks });
   });
 
   app.post("/api/tasks", (req, res) => {
@@ -111,7 +135,11 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(req.params.id);
     const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
-    res.json({ task: rowToTask(row), comments, runs });
+    const task = attachDerivedRunFields(db, rowToTask(row));
+    // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
+    // the watcher isn't wired so the UI can't falsely flag a stuck task.
+    task.is_locked = watcher?.isActive ? !!watcher.isActive(req.params.id) : null;
+    res.json({ task, comments, runs });
   });
 
   const PATCHABLE = ["title", "description", "instructions", "executor_agent", "reviewer_agent", "priority", "tags"];
