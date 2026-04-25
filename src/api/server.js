@@ -14,7 +14,7 @@ import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 import { registerScheduleRoutes } from "./routes-schedules.js";
 
-export function createServer({ db, logger, watcher, dataDir, consolidation, scheduleManager, events }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, scheduleManager, events }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -30,7 +30,7 @@ export function createServer({ db, logger, watcher, dataDir, consolidation, sche
   registerRunRoutes(app, { db, broker });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });
   if (dataDir) registerSkillRoutes(app, { dataDir, db });
-  if (dataDir) registerMcpRoutes(app, { dataDir });
+  if (dataDir) registerMcpRoutes(app, { dataDir, repoRoot });
   if (dataDir) registerKbRoutes(app, { dataDir, broker, db });
   if (dataDir) registerProviderRoutes(app, { db, dataDir, broker });
   if (dataDir) registerModelRoutes(app, { db, dataDir });

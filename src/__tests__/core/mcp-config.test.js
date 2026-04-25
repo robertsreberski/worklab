@@ -2,19 +2,20 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadMcpConfig, pickMcpServers, getBuiltinMcpServers } from "../../core/mcp-config.js";
+import { loadMcpConfig, pickMcpServers, getBuiltinMcpServers, getAvailableMcpServers } from "../../core/mcp-config.js";
+
+const dirs = [];
+afterEach(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); dirs.length = 0; });
+
+function mk(contents) {
+  const d = mkdtempSync(join(tmpdir(), "worklab-mcp-"));
+  dirs.push(d);
+  mkdirSync(join(d, "config"));
+  writeFileSync(join(d, "config", "mcp.json"), JSON.stringify(contents));
+  return d;
+}
 
 describe("loadMcpConfig", () => {
-  const dirs = [];
-  afterEach(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); dirs.length = 0; });
-  function mk(contents) {
-    const d = mkdtempSync(join(tmpdir(), "worklab-mcp-"));
-    dirs.push(d);
-    mkdirSync(join(d, "config"));
-    writeFileSync(join(d, "config", "mcp.json"), JSON.stringify(contents));
-    return d;
-  }
-
   it("returns {} if mcp.json missing", () => {
     const d = mkdtempSync(join(tmpdir(), "worklab-mcp-empty-")); dirs.push(d);
     expect(loadMcpConfig(d)).toEqual({});
@@ -62,5 +63,18 @@ describe("getBuiltinMcpServers", () => {
   it("returns worklab entry with absolute launcher path", () => {
     const r = getBuiltinMcpServers("/repo/root");
     expect(r.worklab.command).toBe("/repo/root/src/mcp/launch-worklab-mcp.sh");
+  });
+});
+
+describe("getAvailableMcpServers", () => {
+  it("filters unavailable user stdio commands while keeping built-ins", () => {
+    const d = mk({ mcpServers: {
+      missing: { command: "/definitely/not/worklab-mcp" },
+      node: { command: process.execPath },
+    } });
+    const available = getAvailableMcpServers(d, { repoRoot: process.cwd() });
+    expect(available.worklab).toBeTruthy();
+    expect(available.node.command).toBe(process.execPath);
+    expect(available.missing).toBeUndefined();
   });
 });

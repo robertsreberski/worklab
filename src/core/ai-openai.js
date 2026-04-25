@@ -89,7 +89,10 @@ export async function generateOpenAIResponse(systemPrompt, options = {}) {
       name: "Worklab",
       instructions: systemPrompt,
       model,
-      tools: getOpenAITools(options.allowedTools),
+      tools: getOpenAITools(options.allowedTools, {
+        skillNames: (options.skills || []).map((s) => s.name),
+        dataDir: options.dataDir,
+      }),
       mcpServers,
       modelSettings: {
         maxTokens: options.maxTokens || 16384,

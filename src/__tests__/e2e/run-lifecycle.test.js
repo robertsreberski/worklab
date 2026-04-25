@@ -15,8 +15,11 @@ const fakeBinary = resolve(__dirname, "../helpers/fake-worker.js");
 
 describe("e2e: full run lifecycle via fake worker", () => {
   let http, baseUrl, tmp, db;
+  let savedAnthropicKey;
 
   beforeAll(async () => {
+    savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
     tmp = mkdtempSync(join(tmpdir(), "worklab-e2e-run-"));
     db = openDb(join(tmp, "test.db"));
     runMigrations(db);
@@ -60,6 +63,8 @@ describe("e2e: full run lifecycle via fake worker", () => {
     await new Promise(r => http.close(r));
     db.close();
     rmSync(tmp, { recursive: true, force: true });
+    if (savedAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = savedAnthropicKey;
   });
 
   it("create agent → create task → run → auto-flip to done (no reviewer) → final comment posted", async () => {

@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadMcpConfig } from "../core/mcp-config.js";
+import { getMcpServerStatuses, loadMcpConfig } from "../core/mcp-config.js";
 
-export function registerMcpRoutes(app, { dataDir }) {
+export function registerMcpRoutes(app, { dataDir, repoRoot = process.cwd() }) {
   const mcpPath = () => join(dataDir, "config", "mcp.json");
 
   app.get("/api/mcp", (_req, res) => {
@@ -14,6 +14,11 @@ export function registerMcpRoutes(app, { dataDir }) {
     } catch (err) {
       res.status(500).json({ error: { code: "parse_error", message: err.message } });
     }
+  });
+
+  app.get("/api/mcp/status", (_req, res) => {
+    const status = getMcpServerStatuses(dataDir, { repoRoot });
+    res.json(status);
   });
 
   app.put("/api/mcp", (req, res) => {

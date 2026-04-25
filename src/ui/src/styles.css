@@ -634,6 +634,7 @@ select,
   color: var(--text);
   padding: var(--sp-1) 0;
 }
+.checkbox[aria-disabled="true"] { opacity: 0.55; cursor: not-allowed; }
 .checkbox-input {
   position: absolute;
   opacity: 0;

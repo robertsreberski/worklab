@@ -1,11 +1,40 @@
-import { describe, it, expect, vi } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
 
+const ENV_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "PATH"];
+const savedEnv = {};
+const tempDirs = [];
+
 describe("agents CRUD", () => {
+  beforeEach(() => {
+    for (const key of ENV_KEYS) {
+      savedEnv[key] = process.env[key];
+    }
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+    process.env.OPENAI_API_KEY = "test-openai-key";
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "test-claude-code-token";
+    process.env.CODEX_API_KEY = "test-codex-key";
+    const binDir = mkdtempSync(join(tmpdir(), "worklab-agent-bin-"));
+    tempDirs.push(binDir);
+    writeFileSync(join(binDir, "claude"), "#!/bin/sh\necho '2.1.0 (Claude Code)'\n");
+    writeFileSync(join(binDir, "codex"), "#!/bin/sh\necho 'codex-cli 0.125.0'\n");
+    chmodSync(join(binDir, "claude"), 0o755);
+    chmodSync(join(binDir, "codex"), 0o755);
+    process.env.PATH = `${binDir}:${savedEnv.PATH || ""}`;
+  });
+
+  afterEach(() => {
+    for (const key of ENV_KEYS) {
+      if (savedEnv[key] === undefined) delete process.env[key];
+      else process.env[key] = savedEnv[key];
+    }
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
   it("GET /api/agents returns []", async () => {
     const { agent } = makeTestServer();
     const res = await agent.get("/api/agents").expect(200);
@@ -98,6 +127,46 @@ describe("agents CRUD", () => {
       model: "codex:gpt-5.4",
     }).expect(201);
     expect(codex.body.agent.sdk).toBe("codex");
+  });
+
+  it("POST rejects unavailable built-in providers", async () => {
+    delete process.env.OPENAI_API_KEY;
+    const { agent } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "openai-missing",
+      display_name: "OpenAI Missing",
+      model: "openai:gpt-5.4",
+    }).expect(400);
+    expect(res.body.error.code).toBe("invalid_model");
+    expect(res.body.error.message).toMatch(/OPENAI_API_KEY/);
+  });
+
+  it("POST rejects disabled skills and unavailable MCP allowlist entries", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-availability-"));
+    tempDirs.push(dataDir);
+    mkdirSync(join(dataDir, "skills", "off"), { recursive: true });
+    writeFileSync(join(dataDir, "skills", "off", "SKILL.md"), "---\nname: off\nenabled: false\ntrigger: off\n---\nbody");
+    mkdirSync(join(dataDir, "config"), { recursive: true });
+    writeFileSync(join(dataDir, "config", "mcp.json"), JSON.stringify({
+      mcpServers: { missing: { command: "/definitely/not/worklab-mcp" } },
+    }));
+
+    const { agent } = makeTestServer({ dataDir });
+    const disabledSkill = await agent.post("/api/agents").send({
+      name: "skill-test",
+      display_name: "Skill Test",
+      model: "claude:claude-sonnet-4-6",
+      skills_allowlist: ["off"],
+    }).expect(400);
+    expect(disabledSkill.body.error.code).toBe("unavailable_selection");
+
+    const missingMcp = await agent.post("/api/agents").send({
+      name: "mcp-test",
+      display_name: "MCP Test",
+      model: "claude:claude-sonnet-4-6",
+      mcp_allowlist: ["missing"],
+    }).expect(400);
+    expect(missingMcp.body.error.code).toBe("unavailable_selection");
   });
 
   it("POST rejects known non-runnable custom models", async () => {

@@ -53,6 +53,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     logger,
     watcher: watcherProxy,
     dataDir: config.dataDir,
+    repoRoot: config.repoRoot,
     consolidation: consolidationProxy,
     scheduleManager: scheduleManagerProxy,
     events,
