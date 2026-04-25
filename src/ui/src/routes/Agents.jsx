@@ -96,7 +96,7 @@ export function Agents({ selectedName = null }) {
     filtered.map((a) => {
       const isActive = agentIsActive(a);
       const trailing = (
-        <span class="pane-row-summary">
+        <span class="pane-row-summary pane-row-summary-metrics">
           {isActive
             ? <LivePulse size={8} color="var(--status-done)" />
             : <StatusDot status={a.enabled ? "enabled" : "disabled"} size={8} />}
@@ -109,13 +109,24 @@ export function Agents({ selectedName = null }) {
           key={a.name}
           href={`#/agents/${a.name}`}
           active={a.name === selectedName}
+          class="agent-pane-row"
           onClick={(event) => {
             event?.preventDefault?.();
             navigateHash(`#/agents/${a.name}`);
           }}
           leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
           title={a.display_name || humanizeSlug(a.name)}
-          sub={modelDisplayName(a.model)}
+          sub={(
+            <span class="pane-row-subline">
+              <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
+              {a.effort && (
+                <>
+                  <span class="pane-row-dot">·</span>
+                  <span>{a.effort} effort</span>
+                </>
+              )}
+            </span>
+          )}
           trailing={trailing}
         />
       );

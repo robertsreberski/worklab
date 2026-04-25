@@ -87,13 +87,32 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   }
 
   const title = isNew ? "New skill" : skillDisplayName(skill);
+  const slugLabel = isNew ? "Slug after create" : skill.name;
+  const priorityLabel = skill.meta.priority === "always" ? "Always inline" : "On demand";
+  const usageCount = usage?.explicit?.length || 0;
 
   return (
     <>
-      <header class="pane-detail-head">
-        <div class="pane-detail-head-titles">
-          <div class="all-caps">{isNew ? "Create skill" : "Skill"}</div>
-          <h2>{title}</h2>
+      <header class="pane-detail-head skill-detail-head">
+        <div class="pane-detail-head-copy">
+          <div class="pane-detail-icon skill-detail-icon" aria-hidden="true">
+            <Icon name="sparkles" size={16} />
+          </div>
+          <div class="pane-detail-head-titles">
+            <div class="all-caps">{isNew ? "Create skill" : "Skill"}</div>
+            <h2>{title}</h2>
+            <div class="pane-detail-subline">
+              <span class="pane-row-mono">{slugLabel}</span>
+              <span class="pane-row-dot">·</span>
+              <span>{priorityLabel}</span>
+              {!isNew && (
+                <>
+                  <span class="pane-row-dot">·</span>
+                  <span>{usageCount} explicit agent{usageCount === 1 ? "" : "s"}</span>
+                </>
+              )}
+            </div>
+          </div>
         </div>
         <div class="toolbar">
           {!isNew && <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />}

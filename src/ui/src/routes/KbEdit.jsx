@@ -102,13 +102,25 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     : categoryKey.includes("policy") ? "policy"
     : categoryKey.includes("ref") ? "reference"
     : null;
+  const tagCount = parseTags(entry.tags || "").length;
+  const slugLabel = isNew ? "Slug after create" : slug;
 
   return (
     <>
-      <header class="pane-detail-head">
-        <div class="pane-detail-head-titles">
-          <div class="all-caps">{isNew ? "Create entry" : "Knowledge"}</div>
-          <h2>{title || "(untitled)"}</h2>
+      <header class="pane-detail-head knowledge-detail-head">
+        <div class="pane-detail-head-copy">
+          <div class={`pane-detail-icon knowledge-detail-icon ${entry.pinned ? "pinned" : ""}`.trim()} aria-hidden="true">
+            <Icon name={entry.pinned ? "pin" : "book"} size={16} />
+          </div>
+          <div class="pane-detail-head-titles">
+            <div class="all-caps">{isNew ? "Create entry" : "Knowledge"}</div>
+            <h2>{title || "(untitled)"}</h2>
+            <div class="pane-detail-subline">
+              <span class="pane-row-mono">{slugLabel}</span>
+              <span class="pane-row-dot">·</span>
+              <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
+            </div>
+          </div>
         </div>
         <div class="toolbar">
           {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
