@@ -374,4 +374,39 @@ describe("POST /api/tasks/:id/cancel", () => {
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     await agent.post(`/api/tasks/${task.id}/cancel`).expect(404);
   });
+
+  it("reconciles stale running runs when no live worker", async () => {
+    const { agent, db, broker } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r" }),
+        cancel: () => false,
+        shutdown: async () => {},
+        isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      `UPDATE tasks SET status = 'in_progress', updated_at = ? WHERE id = ?`,
+    ).run(Date.now(), task.id);
+    db.prepare(
+      `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
+       VALUES ('stale1', ?, 'execute', 'claude', 'running', ?)`,
+    ).run(task.id, Date.now() - 1000);
+
+    const events = [];
+    broker.broadcast = (ch, p) => events.push({ ch, p });
+
+    await agent.post(`/api/tasks/${task.id}/cancel`).expect(204);
+
+    const run = db.prepare("SELECT status, error_text FROM task_runs WHERE id = 'stale1'").get();
+    expect(run.status).toBe("error");
+    expect(run.error_text).toBe("worker exited");
+
+    const t = db.prepare("SELECT status, error_text FROM tasks WHERE id = ?").get(task.id);
+    expect(t.status).toBe("todo");
+    expect(t.error_text).toBe("Previous run did not finish");
+
+    expect(events.some((e) => e.p?.type === "run_ended")).toBe(true);
+    expect(events.some((e) => e.p?.type === "task_updated")).toBe(true);
+  });
 });

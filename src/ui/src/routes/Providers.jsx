@@ -7,7 +7,7 @@ import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
-import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
@@ -211,21 +211,6 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         </div>
         <div class="toolbar">
           {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
-          {!isNew && (
-            <Button variant="secondary" size="sm" onClick={testProviderConnection} loading={status?.kind === "testing"}>
-              Test
-            </Button>
-          )}
-          {!isNew && (
-            <Button variant="secondary" size="sm" onClick={discoverProviderModels} loading={status?.kind === "discovering"}>
-              Discover
-            </Button>
-          )}
-          {!isNew && (
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>
-              Delete
-            </Button>
-          )}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             loading={formSave.saving}
@@ -257,12 +242,15 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 
         <FormSection kicker="Identity" title="Provider settings">
           <FormField label="Type">
-            <RadioGroup
-              ariaLabel="Provider type"
-              value={provider.provider_type}
-              onChange={(value) => setProvider((current) => applyPreset(current, value))}
-              options={PROVIDER_TYPE_OPTIONS}
-            />
+            <div class="provider-type-select">
+              <Select
+                variant="native"
+                value={provider.provider_type}
+                onChange={(value) => setProvider((current) => applyPreset(current, value))}
+                options={PROVIDER_TYPE_OPTIONS}
+                ariaLabel="Provider type"
+              />
+            </div>
           </FormField>
           <FormGrid columns={2}>
             <FormField label="Name" required>
@@ -296,7 +284,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         {!isNew && (
           <FormSection kicker="Models" title="Discovered models">
             {(models || []).length === 0 ? (
-              <div class="field-hint">No models discovered yet.</div>
+              <div class="field-hint">Save the provider, then run Discover to load models.</div>
             ) : (
               <div class="provider-model-grid">
                 {models.map((model) => {
@@ -330,6 +318,32 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
               </div>
             )}
           </FormSection>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 3 }}>
+            <Button
+              variant="secondary"
+              onClick={testProviderConnection}
+              loading={status?.kind === "testing"}
+            >
+              Test connection
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={discoverProviderModels}
+              loading={status?.kind === "discovering"}
+            >
+              Discover models
+            </Button>
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete provider
+            </Button>
+          </Card>
         )}
       </div>
 

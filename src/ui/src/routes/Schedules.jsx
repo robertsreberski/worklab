@@ -242,16 +242,6 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
         </div>
         <div class="toolbar">
           {!isNew && <StatusPill status={form.enabled ? "enabled" : "disabled"} size="sm" />}
-          {!isNew && (
-            <Button variant="secondary" size="sm" iconLeft={<Icon name="play" size={13} />} onClick={spawnNow}>
-              Spawn task
-            </Button>
-          )}
-          {!isNew && (
-            <Button variant="destructive" size="sm" iconLeft={<Icon name="trash" size={13} />} onClick={() => setDeleteOpen(true)}>
-              Delete
-            </Button>
-          )}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             loading={formSave.saving}
@@ -323,7 +313,7 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
         </FormSection>
 
         <FormSection kicker="Template" title="What gets spawned">
-          <FormField label="Instructions" class="span-2" hint="Passed verbatim into each spawned task.">
+          <FormField label="Instructions" class="span-2" hint="Used as the instructions for each spawned task.">
             <Textarea rows={8} autoGrow monospace value={form.instructions} onInput={(event) => update({ instructions: event.target.value })} />
           </FormField>
         </FormSection>
@@ -398,6 +388,23 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
                   ))}
                 </div>
               )}
+            </Card>
+
+            <Card collapsible={{ summary: "More actions", count: 2 }}>
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="play" size={13} />}
+                onClick={spawnNow}
+              >
+                Spawn task
+              </Button>
+              <Button
+                variant="destructive"
+                iconLeft={<Icon name="trash" size={13} />}
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete schedule
+              </Button>
             </Card>
           </>
         )}
@@ -510,7 +517,7 @@ export function Schedules({ selectedId = null }) {
       <EmptyState
         icon={<Icon name="calendar" size={48} />}
         title="No schedules yet"
-        body="Create your first recurring task template."
+        body="Create recurring task templates for work that should repeat."
         cta={<Button variant="primary" onClick={() => navigateHash("#/schedules/new")}>Create schedule</Button>}
       />
     )

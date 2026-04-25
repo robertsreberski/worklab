@@ -88,7 +88,7 @@ export function Agents({ selectedName = null }) {
     ) : (
       <EmptyState
         title="No agents yet"
-        body="Create your first agent to start orchestrating work."
+        body="Create agents for the roles you want to assign to tasks."
         cta={<Button variant="primary" onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>}
       />
     )
@@ -139,7 +139,7 @@ export function Agents({ selectedName = null }) {
       <div class="pane-empty">
         <Icon name="user" size={28} />
         <h3>Select an agent</h3>
-        <p>Pick an agent from the list to view or edit. Or create a new one.</p>
+        <p>Open an agent to edit its model, instructions, and tools.</p>
       <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>
       </div>
   );

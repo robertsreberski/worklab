@@ -13,6 +13,37 @@ export function createTaskWatcher({
 }) {
   const active = new Map();
 
+  // Boot-time reconciliation: any task_runs still marked `running` cannot have
+  // a live worker at this point — the coordinator just started and `active` is
+  // empty. Mark them as errored so the UI stops showing a ghost active run and
+  // Cancel continues to work. Reset in_progress tasks back to todo.
+  {
+    const now = Date.now();
+    const reconcile = db.transaction(() => {
+      const stale = db.prepare(
+        `SELECT id, task_id FROM task_runs WHERE status = 'running'`
+      ).all();
+      if (stale.length === 0) return 0;
+      const markRun = db.prepare(
+        `UPDATE task_runs SET status = 'error', ended_at = ?, error_text = ?
+         WHERE id = ?`
+      );
+      const resetTask = db.prepare(
+        `UPDATE tasks SET status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END,
+                          error_text = COALESCE(error_text, ?),
+                          updated_at = ?
+         WHERE id = ?`
+      );
+      for (const row of stale) {
+        markRun.run(now, "coordinator restarted", row.id);
+        resetTask.run("Previous run did not finish", now, row.task_id);
+      }
+      return stale.length;
+    });
+    const count = reconcile();
+    if (count > 0) logger?.warn?.({ count }, "reconciled stale running runs at boot");
+  }
+
   /**
    * Apply a list of side effects to the DB and post derived system comments.
    * Does NOT handle spawn_executor / spawn_reviewer — those require spawn
