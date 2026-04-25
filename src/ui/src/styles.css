@@ -3,9 +3,9 @@
 /* ============================================================
  * Worklab UI — styles.css
  *
- * Source of truth: docs/ui-design-system.md (Schema v2).
- * Every primitive/composite class here is specified in that document.
- * Values come from tokens in §2.1–§2.6 only; no raw hex outside :root.
+ * UI design docs were removed as obsolete. Keep this file and the JSX/tests
+ * as the current source of truth until a generated design reference exists.
+ * Values should come from tokens only; avoid raw hex outside :root.
  *
  * Sections
  *   1.  Tokens (§2.1–§2.5)
