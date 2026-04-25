@@ -166,8 +166,8 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
 
     const tasks = [];
     const seenTasks = new Set();
-    for (const row of db.prepare("SELECT id, title, description, instructions, status FROM tasks").all()) {
-      if (matches(row.title) || matches(row.description) || matches(row.instructions)) {
+    for (const row of db.prepare("SELECT id, title, instructions, status FROM tasks").all()) {
+      if (matches(row.title) || matches(row.instructions)) {
         if (!seenTasks.has(row.id)) {
           seenTasks.add(row.id);
           tasks.push({ id: row.id, title: row.title, status: row.status, via: "body" });

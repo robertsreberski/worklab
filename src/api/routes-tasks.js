@@ -357,8 +357,34 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
 
   app.post("/api/tasks/:id/cancel", (req, res) => {
     if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
-    const cancelled = watcher.cancel(req.params.id);
-    if (!cancelled) return res.status(404).json({ error: { code: "not_running", message: "no active run" } });
+    const taskId = req.params.id;
+    const cancelled = watcher.cancel(taskId);
+    if (cancelled) return res.status(204).end();
+
+    // No live worker — check for a stale `running` row left behind by a crashed
+    // worker or coordinator restart. If found, reconcile so the UI can move on.
+    const staleRun = db.prepare(
+      `SELECT id FROM task_runs WHERE task_id = ? AND status = 'running'
+       ORDER BY started_at DESC LIMIT 1`
+    ).get(taskId);
+    if (!staleRun) return res.status(404).json({ error: { code: "not_running", message: "no active run" } });
+
+    const now = Date.now();
+    db.transaction(() => {
+      db.prepare(
+        `UPDATE task_runs SET status = 'error', ended_at = ?, error_text = ?
+         WHERE id = ?`
+      ).run(now, "worker exited", staleRun.id);
+      db.prepare(
+        `UPDATE tasks SET status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END,
+                          error_text = COALESCE(error_text, ?),
+                          updated_at = ?
+         WHERE id = ?`
+      ).run("Previous run did not finish", now, taskId);
+    })();
+
+    broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId });
+    broker.broadcast("global", { type: "task_updated", id: taskId });
     res.status(204).end();
   });
 }

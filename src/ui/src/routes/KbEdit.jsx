@@ -17,6 +17,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { Card } from "../components/Card.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -112,7 +113,6 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
         <div class="toolbar">
           {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
           {categoryAttr && <span class="kb-category-badge" data-category={categoryAttr}>{entry.category}</span>}
-          {!isNew && <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>Delete</Button>}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             loading={formSave.saving}
@@ -181,6 +181,18 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
               </FormField>
             )}
           </FormSection>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }}>
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete entry
+            </Button>
+          </Card>
         )}
       </div>
 

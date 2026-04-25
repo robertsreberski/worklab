@@ -270,6 +270,33 @@ describe("kb REST routes", () => {
     expect(getRes.body.entry.meta.created_at).toBe(originalCreatedAt);
   });
 
+  // ── GET /api/kb/:slug/usage ────────────────────────────────────────────────
+
+  it("GET /api/kb/:slug/usage scans task titles and instructions", async () => {
+    const { agent } = mkServer();
+    await agent
+      .post("/api/kb")
+      .send({ slug: "search-guide", title: "Search Guide", body: "Use this for search work." })
+      .expect(201);
+    const taskRes = await agent
+      .post("/api/tasks")
+      .send({
+        title: "Use Search Guide",
+        instructions: "Follow search-guide before changing the index.",
+      })
+      .expect(201);
+
+    const res = await agent.get("/api/kb/search-guide/usage").expect(200);
+    expect(res.body.tasks).toEqual([
+      {
+        id: taskRes.body.task.id,
+        title: "Use Search Guide",
+        status: "todo",
+        via: "body",
+      },
+    ]);
+  });
+
   // ── DELETE /api/kb/:slug ────────────────────────────────────────────────────
 
   it("DELETE /api/kb/:slug returns 204", async () => {

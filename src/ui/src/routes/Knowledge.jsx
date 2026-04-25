@@ -30,13 +30,23 @@ function categoryToken(category) {
   return null;
 }
 
-function formatAge(value) {
+export function formatKnowledgeAge(value, now = Date.now()) {
   if (!value) return "";
-  const ms = Date.now() - Number(value);
+  const timestamp = knowledgeTimestamp(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const ms = now - timestamp;
   if (ms < 86_400_000) return "today";
   const days = Math.floor(ms / 86_400_000);
   if (days < 7) return `${days}d`;
-  return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+export function knowledgeTimestamp(value) {
+  if (!value) return NaN;
+  if (typeof value === "number") return value;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  return Date.parse(value);
 }
 
 export function Knowledge({ selectedSlug = null }) {
@@ -67,13 +77,15 @@ export function Knowledge({ selectedSlug = null }) {
     if (q) {
       list = list.filter((e) =>
         e.title?.toLowerCase().includes(q) ||
+        e.slug?.toLowerCase().includes(q) ||
         e.category?.toLowerCase().includes(q) ||
+        e.body?.toLowerCase().includes(q) ||
         (e.tags || []).some((t) => t.toLowerCase().includes(q))
       );
     }
     return [...list].sort((a, b) => {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-      return (Number(b.updated_at) || 0) - (Number(a.updated_at) || 0);
+      return (knowledgeTimestamp(b.updated_at) || 0) - (knowledgeTimestamp(a.updated_at) || 0);
     });
   }, [entries, query, category]);
 
@@ -93,7 +105,7 @@ export function Knowledge({ selectedSlug = null }) {
     ) : (
       <EmptyState
         title="No entries yet"
-        body="Knowledge entries are shared context for humans and agents. Pin entries to include them in agent context."
+        body="Save reusable context here so agents and teammates can find it later."
         cta={<Button variant="primary" onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>}
       />
     )
@@ -112,7 +124,7 @@ export function Knowledge({ selectedSlug = null }) {
           leading={e.pinned ? <Icon name="pin" size={12} /> : null}
           title={e.title}
           sub={cat ? <span class="kb-category-badge" data-category={cat}>{cat}</span> : null}
-          trailing={formatAge(e.updated_at)}
+          trailing={formatKnowledgeAge(e.updated_at)}
         />
       );
     })
@@ -129,7 +141,7 @@ export function Knowledge({ selectedSlug = null }) {
       <div class="pane-empty">
         <Icon name="book" size={28} />
         <h3>Select an entry</h3>
-        <p>Knowledge entries are shared context for humans and agents.</p>
+        <p>Open an entry to read, edit, or see where it is used.</p>
       <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>
       </div>
   );

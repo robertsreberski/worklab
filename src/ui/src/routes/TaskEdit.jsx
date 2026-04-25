@@ -254,13 +254,13 @@ export function TaskEdit({ mode = "create", id = null }) {
 
                 <FormField
                   label="Instructions"
-                  hint="Passed verbatim to the executor agent. Markdown supported."
+                  hint="Sent to the executor. Markdown supported."
                 >
                   <Textarea
                     rows={10}
                     monospace
                     autoGrow
-                    placeholder="Precise instructions the executor agent should follow."
+                    placeholder="What should the executor do?"
                     value={draft.instructions}
                     onInput={(e) => update({ instructions: e.target.value })}
                   />

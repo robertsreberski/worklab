@@ -45,7 +45,7 @@ export function AppShell({ route, title, headerMeta, headerActions, children }) 
           <span class="brand-mark" aria-hidden="true">W</span>
           <span class="brand-copy">
             <strong>Worklab</strong>
-            <span>Command Center</span>
+            <span>Local agents</span>
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary navigation">

@@ -167,8 +167,10 @@ export function Commander() {
 
   const hasFilter = statusFilter !== "all" || !!query.trim();
 
+  const headerMeta = tasks ? <span>{counts.all || 0} tasks</span> : null;
+
   return (
-    <AppShell route="tasks" title="Tasks" headerActions={headerActions}>
+    <AppShell route="tasks" title="Tasks" headerMeta={headerMeta} headerActions={headerActions}>
       <div class="commander">
         <div class="commander-filter">
           <SearchField
@@ -185,6 +187,7 @@ export function Commander() {
             value={statusFilter}
             onChange={setStatusFilter}
             tabs={tabsWithCounts}
+            class="tabs-pills"
           />
         </div>
         {error && tasks?.length === 0 ? (
@@ -202,10 +205,10 @@ export function Commander() {
             <EmptyState
               icon={<Icon name="layout-list" size={48} />}
               title="No tasks yet"
-              body="Create your first task to start orchestrating agents."
+              body="Create a task, assign an executor, and run it when ready."
               cta={
                 <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
-                  Create your first task
+                  Create task
                 </Button>
               }
             />

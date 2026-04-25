@@ -17,6 +17,16 @@ import { modelDisplayName } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
 function fmtTime(ts) { return ts ? new Date(ts).toLocaleString() : "-"; }
+function fmtDuration(value) {
+  if (value == null) return "";
+  const ms = Number(value);
+  if (!Number.isFinite(ms)) return "";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return seconds ? `${minutes}m ${seconds}s` : `${minutes}m`;
+}
 function fmtAge(value) {
   if (!value) return "";
   const ms = Date.now() - Number(value);
@@ -139,7 +149,7 @@ export function Activity() {
                     <div class="activity-meta">
                       {item.mode} · {item.agent_name}
                       {item.model && ` · ${modelDisplayName(item.model)}`}
-                      {item.duration_ms != null && ` · ${item.duration_ms}ms`}
+                      {item.duration_ms != null && ` · ${fmtDuration(item.duration_ms)}`}
                       {item.input_tokens != null && ` · ${item.input_tokens} in / ${item.output_tokens ?? 0} out`}
                       {item.cost_usd != null && ` · ${fmtCost(item.cost_usd)}`}
                     </div>

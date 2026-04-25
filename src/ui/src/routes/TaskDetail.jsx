@@ -1,7 +1,7 @@
 // §6.3 TaskDetail — deep view of one task.
 // Two-column layout. Hero with StatusMenu + primary action cluster. Stuck-task
 // Banner (§5.2). LiveRunPanel while streaming. Activity feed. Previous runs.
-// Rail: Agents, Details (KeyValueList), Tags, Actions.
+// Rail: Agents, Context, Tags, Actions.
 // Error chip (§5.3) derived from last_run.status === 'error'.
 
 import { useEffect, useMemo, useState, useCallback } from "preact/hooks";
@@ -20,75 +20,178 @@ import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
-import { CommentList } from "../components/CommentList.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
-import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Banner } from "../components/Banner.jsx";
-import { KeyValueList } from "../components/KeyValueList.jsx";
-import { Metric } from "../components/Metric.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
-import { Select } from "../components/primitives/Select.jsx";
+import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { navigateHash } from "../lib/navigation.js";
+import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
-function formatDuration(ms) {
-  if (ms == null) return null;
-  const v = Number(ms);
-  if (!Number.isFinite(v)) return null;
-  if (v < 1000) return `${v}ms`;
-  if (v < 60_000) return `${(v / 1000).toFixed(1)}s`;
-  const m = Math.floor(v / 60_000);
-  const s = Math.round((v % 60_000) / 1000);
-  return `${m}m ${s}s`;
-}
-function formatTokens(n) {
-  if (n == null) return null;
-  const v = Number(n);
-  if (!Number.isFinite(v)) return null;
-  if (v >= 1000) return `${(v / 1000).toFixed(1)}k`;
-  return String(v);
-}
-function formatCost(v) {
-  if (v == null) return null;
-  const c = Number(v);
-  if (!Number.isFinite(c)) return null;
-  return `$${c.toFixed(4)}`;
-}
-function runDuration(run) {
-  if (run?.log?.duration_ms != null) return run.log.duration_ms;
-  if (run?.ended_at && run?.started_at) return run.ended_at - run.started_at;
-  return null;
+
+function formatActivityTime(value) {
+  if (!value) return "";
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const ms = Date.now() - timestamp;
+  if (ms < 60_000) return "now";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h`;
+  if (ms < 86_400_000 * 7) return `${Math.floor(ms / 86_400_000)}d`;
+  return new Date(timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
-  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
-  const log = run?.log || {};
+function RunMetric({ label, value }) {
+  const key = String(label || "").toLowerCase().replace(/\s+/g, "-");
   return (
-    <details open={expanded} onToggle={(e) => onToggle?.(run.id, e.currentTarget.open)} class="run-card">
+    <span class={`run-metric run-metric-${key}`}>
+      <span class="run-metric-label">{label}</span>
+      <span class="run-metric-value">{value}</span>
+    </span>
+  );
+}
+
+function commentAuthorLabel(item) {
+  if (item.author?.display_name) return item.author.display_name;
+  if (item.author?.id) return item.author.id;
+  if (item.authorId) return item.authorId;
+  if (item.authorType === "agent") return "Agent";
+  if (item.authorType === "system") return "System";
+  return "You";
+}
+
+function ContextRow({ icon, label, value, href }) {
+  const content = href ? <a href={href}>{value}</a> : value;
+  return (
+    <div class="task-context-row">
+      <span class="task-context-icon"><Icon name={icon} size={13} /></span>
+      <span class="task-context-copy">
+        <span class="task-context-label">{label}</span>
+        <span class="task-context-value">{content}</span>
+      </span>
+    </div>
+  );
+}
+
+function TaskContextCard({ task }) {
+  const items = [
+    task.updated_at ? { icon: "clock", label: "Updated", value: formatDate(task.updated_at) } : null,
+    task.created_at ? { icon: "calendar", label: "Created", value: formatDate(task.created_at) } : null,
+    task.completed_at ? { icon: "check-circle", label: "Completed", value: formatDate(task.completed_at) } : null,
+    task.source_schedule_id
+      ? {
+          icon: "link",
+          label: "Schedule",
+          value: "Open schedule",
+          href: `#/schedules/${task.source_schedule_id}`,
+        }
+      : null,
+  ].filter(Boolean);
+
+  if (items.length === 0) return null;
+
+  return (
+    <Card variant="spacious" title="Context" class="task-context-card">
+      <div class="task-context-list">
+        {items.map((item) => <ContextRow key={item.label} {...item} />)}
+      </div>
+    </Card>
+  );
+}
+
+function ActivityRailDot({ item, agentLabel }) {
+  const tone = item.type === "run" ? item.run?.status : item.authorType;
+  const runAgent = item.run?.agent_name;
+  const commentAgent = item.authorType === "agent" ? item.authorId || item.author?.id : null;
+  if (item.type === "run" && runAgent) {
+    return (
+      <span class={`activity-feed-dot avatar run ${tone || ""}`}>
+        <AgentAvatar name={runAgent} label={agentLabel || runAgent} size={20} compact />
+      </span>
+    );
+  }
+  if (commentAgent) {
+    return (
+      <span class={`activity-feed-dot avatar comment agent`}>
+        <AgentAvatar name={commentAgent} label={commentAuthorLabel(item)} size={20} compact />
+      </span>
+    );
+  }
+  const icon = item.type === "run" ? "zap" : "message-circle";
+  return (
+    <span class={`activity-feed-dot ${item.type} ${tone || ""}`}>
+      {item.authorType === "human" ? <span class="activity-feed-human-mark">@</span> : <Icon name={icon} size={12} />}
+    </span>
+  );
+}
+
+function AgentRailRow({ role, value, onChange, agents }) {
+  const unassigned = !value;
+  const roleLabel = role === "executor" ? "Executor" : "Reviewer";
+  const caption = role === "executor"
+    ? (unassigned ? "Required to run" : "Primary runner")
+    : (unassigned ? "Optional" : "Review path");
+  return (
+    <div class={`rail-agent-row${unassigned ? " unassigned" : ""}`}>
+      <div class="rail-agent-row-head">
+        <div>
+          <div class="rail-agent-row-kicker">{roleLabel}</div>
+        </div>
+        <span class="rail-agent-row-caption">{caption}</span>
+      </div>
+      <AgentPicker
+        class="rail-agent-picker"
+        value={value || null}
+        onChange={onChange}
+        agents={agents}
+        placeholder={`Assign ${roleLabel.toLowerCase()}`}
+        role={roleLabel}
+        ariaLabel={`Reassign ${roleLabel.toLowerCase()}`}
+        allowClear
+      />
+    </div>
+  );
+}
+
+function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }) {
+  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
+  const metrics = runMetricItems(run);
+  const startedAt = formatDate(run.started_at);
+  const shortStartedAt = formatActivityTime(run.started_at);
+  const owner = agentLabel || run.agent_name;
+  const title = owner ? `${owner} run` : "Agent run";
+  const meta = [formatMode(run.mode), shortStartedAt].filter(Boolean).join(" · ");
+  return (
+    <details
+      open={expanded}
+      onToggle={(e) => onToggle?.(run.id, e.currentTarget.open)}
+      class={`run-card${expanded ? " expanded" : ""}${highlighted ? " highlighted" : ""}`}
+    >
       <summary class="run-card-summary">
         <div class="run-summary">
           <div class="run-summary-main">
             <div class="run-summary-status">
               <StatusPill status={run.status} size="sm" />
-              <span class="run-summary-title">{formatDate(run.started_at) || "Run"}</span>
+              <span class="run-summary-title">{title}</span>
             </div>
-            <div class="run-summary-meta">
-              {run.mode} · {agentLabel || run.agent_name}
-              {formatDuration(runDuration(run)) && ` · ${formatDuration(runDuration(run))}`}
-              {log.cost_usd != null && ` · ${formatCost(log.cost_usd)}`}
-              {log.num_turns != null && ` · ${log.num_turns} turns`}
-            </div>
+            {meta && <div class="run-summary-meta" title={startedAt || undefined}>{meta}</div>}
           </div>
+          {metrics.length > 0 && (
+            <div class="run-summary-metrics" aria-label="Run metrics">
+              {metrics.map(([label, value]) => <RunMetric key={label} label={label} value={value} />)}
+            </div>
+          )}
           <div class="run-summary-side">
-            <span>{expanded ? "Hide" : "Open"}</span>
+            <span>{expanded ? "Collapse" : "Details"}</span>
+            <Icon name="chevron-down" size={14} class="run-summary-chevron" />
           </div>
         </div>
       </summary>
@@ -104,6 +207,7 @@ function RunCard({ run, expanded, onToggle, agentLabel, subscribe }) {
 }
 
 // §6.3 Activity feed: client-side merge of comments[] and runs[] milestones.
+// One entry per run (not two) — sort by ended_at when present, else started_at.
 function buildActivity({ comments = [], runs = [] }) {
   const items = [];
   for (const c of comments) {
@@ -111,30 +215,19 @@ function buildActivity({ comments = [], runs = [] }) {
       type: "comment",
       at: c.created_at || 0,
       author: c.author,
+      authorType: c.author_type || c.author?.type || "human",
+      authorId: c.author_id || c.author?.id || null,
       body: c.body || c.content || "",
       id: `c-${c.id || c.created_at}`,
     });
   }
   for (const r of runs) {
-    if (r.started_at) {
-      items.push({
-        type: "run_started",
-        at: r.started_at,
-        agent: r.agent_name,
-        runId: r.id,
-        id: `rs-${r.id}`,
-      });
-    }
-    if (r.ended_at) {
-      items.push({
-        type: r.status === "error" ? "run_failed" : "run_completed",
-        at: r.ended_at,
-        agent: r.agent_name,
-        runId: r.id,
-        status: r.status,
-        id: `re-${r.id}`,
-      });
-    }
+    items.push({
+      type: "run",
+      at: r.ended_at || r.started_at || 0,
+      run: r,
+      id: `r-${r.id}`,
+    });
   }
   items.sort((a, b) => (b.at || 0) - (a.at || 0));
   return items;
@@ -149,7 +242,9 @@ export function TaskDetail({ id, runParam = null }) {
   const [runError, setRunError] = useState(null);
   const [statusModal, setStatusModal] = useState(null); // pending transition
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [commentSaving, setCommentSaving] = useState(false);
   const [showOlderActivity, setShowOlderActivity] = useState(false);
+  const [instructionsExpanded, setInstructionsExpanded] = useState(false);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -179,10 +274,17 @@ export function TaskDetail({ id, runParam = null }) {
     if (next !== highlightedRunId) setHighlightedRunId(next);
   }, [data, highlightedRunId]);
 
+  useEffect(() => {
+    if (!highlightedRunId) return;
+    setExpandedRunIds((current) => {
+      if (current.has(highlightedRunId)) return current;
+      return new Set([...current, highlightedRunId]);
+    });
+  }, [highlightedRunId]);
+
   const task = data?.task;
   const runs = data?.runs || [];
   const comments = data?.comments || [];
-  const latestRun = runs[0] || null;
   const runningRun = runs.find((r) => r.status === "running") || null;
   const lastFinishedRun = runs.find((r) => r.status && r.status !== "running") || null;
   const hasLastRunError = lastFinishedRun?.status === "error";
@@ -196,23 +298,20 @@ export function TaskDetail({ id, runParam = null }) {
     [comments, runs]
   );
   const visibleActivity = showOlderActivity ? activity : activity.slice(0, 12);
+  const displayActivity = useMemo(
+    () => runningRun
+      ? visibleActivity.filter((item) => !(item.type === "run" && item.run?.id === runningRun.id))
+      : visibleActivity,
+    [runningRun, visibleActivity],
+  );
 
-  const executorLabel = task ? agentDisplayName(agents, task.executor_agent, "Unassigned") : "";
-  const reviewerLabel = task ? agentDisplayName(agents, task.reviewer_agent, null) : null;
   const unresolvedBlockedBy = useMemo(
     () => (task?.blocked_by || []).filter((entry) => entry.status !== "done"),
     [task],
   );
-  const agentOptions = useMemo(
-    () => [
-      { value: "", label: "Unassigned" },
-      ...agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name })),
-    ],
-    [agents],
-  );
 
   function toggleRun(runId, open) {
-    setHighlightedRunId(runId);
+    setHighlightedRunId((current) => (open ? runId : current === runId ? null : current));
     setExpandedRunIds((s) => {
       const n = new Set(s);
       if (open) n.add(runId); else n.delete(runId);
@@ -222,12 +321,16 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function addComment(e) {
     e?.preventDefault?.();
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || commentSaving) return;
+    setCommentSaving(true);
     try {
       await api.addComment(id, newComment.trim());
       setNewComment("");
+      reload();
     } catch (err) {
       pushToast(`Could not post comment: ${err.message}`, { variant: "error" });
+    } finally {
+      setCommentSaving(false);
     }
   }
 
@@ -324,7 +427,7 @@ export function TaskDetail({ id, runParam = null }) {
     if (runningRun) {
       return (
         <Button variant="destructive" iconLeft={<Icon name="stop" size={13} />} onClick={cancelRun}>
-          Cancel run
+          Cancel
         </Button>
       );
     }
@@ -344,7 +447,7 @@ export function TaskDetail({ id, runParam = null }) {
           disabled={!canRun}
           title={runDisabledReason}
         >
-          Run now
+          Run
         </Button>
       );
     }
@@ -355,7 +458,7 @@ export function TaskDetail({ id, runParam = null }) {
             Approve
           </Button>
           <Button variant="secondary" onClick={() => applyStatusTransition({ from: "in_review", to: "in_progress" })}>
-            Send back
+            Request changes
           </Button>
         </>
       );
@@ -375,9 +478,6 @@ export function TaskDetail({ id, runParam = null }) {
       {primaryAction}
       <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
         Edit
-      </Button>
-      <Button variant="destructive" iconLeft={<Icon name="trash" size={13} />} onClick={() => setDeleteOpen(true)}>
-        Delete
       </Button>
     </>
   );
@@ -449,11 +549,37 @@ export function TaskDetail({ id, runParam = null }) {
               </div>
             </div>
             {task.instructions && (
-              <div class="task-hero-instructions">
-                <div class="all-caps task-hero-instructions-kicker">
-                  <Icon name="terminal" size={10} /> Instructions to agent
+              <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>
+                <div class="task-hero-instructions-head">
+                  <div class="all-caps task-hero-instructions-kicker">
+                    <Icon name="terminal" size={10} /> Instructions to agent
+                  </div>
+                  <button
+                    type="button"
+                    class="task-hero-instructions-copy"
+                    aria-label="Copy instructions"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(task.instructions || "");
+                        pushToast("Copied", { variant: "success" });
+                      } catch {
+                        pushToast("Copy failed", { variant: "error" });
+                      }
+                    }}
+                  >
+                    <Icon name="copy" size={12} />
+                  </button>
                 </div>
                 <pre class="task-hero-instructions-body">{task.instructions}</pre>
+                {(task.instructions || "").length > 400 && (
+                  <button
+                    type="button"
+                    class="task-hero-instructions-toggle"
+                    onClick={() => setInstructionsExpanded((v) => !v)}
+                  >
+                    {instructionsExpanded ? "Show less" : "Show full"}
+                  </button>
+                )}
               </div>
             )}
           </section>
@@ -480,149 +606,103 @@ export function TaskDetail({ id, runParam = null }) {
           {runningRun ? (
             <LiveRunPanel
               run={runningRun}
-              events={[]}
               isStreaming
+              agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
             />
-          ) : latestRun ? (
-            <Card variant="spacious" kicker={runningRun ? "Current run" : "Latest run"} title={formatDate(latestRun.started_at)}>
-              <RunCard
-                run={latestRun}
-                expanded={expandedRunIds.has(latestRun.id)}
-                onToggle={toggleRun}
-                subscribe={latestRun.status === "running" && expandedRunIds.has(latestRun.id)}
-                agentLabel={agentDisplayName(agents, latestRun.agent_name, latestRun.agent_name)}
-              />
-            </Card>
           ) : null}
 
-          <Card kicker="Activity" title="Timeline">
-            {visibleActivity.length === 0 ? (
-              <div class="activity-empty">No activity yet.</div>
-            ) : (
+          <Card
+            title="Activity"
+            class="activity-card"
+          >
+            <div class="activity-composer">
+              <form onSubmit={addComment} class="activity-composer-form">
+                <Textarea
+                  rows={1}
+                  autoGrow
+                  class="activity-composer-input"
+                  placeholder="Add a comment or instruction…"
+                  value={newComment}
+                  onInput={(e) => setNewComment(e.target.value)}
+                />
+                <div class="activity-composer-actions">
+                  <span class="activity-composer-shortcut">Cmd Enter</span>
+                  <Button type="submit" variant="primary" disabled={!newComment.trim() || commentSaving}>
+                    {commentSaving ? "Posting…" : "Post"}
+                  </Button>
+                </div>
+              </form>
+            </div>
+
+            {displayActivity.length > 0 ? (
               <div class="activity-feed">
-                {visibleActivity.map((item) => (
-                  <div key={item.id} class="activity-item">
-                    <div class="activity-item-head">
-                      {item.type === "comment" && <><Icon name="message-circle" size={12} /><span>{item.author?.display_name || item.author?.id || "Someone"} commented</span></>}
-                      {item.type === "run_started" && <><Icon name="play" size={12} /><span>Run started by {agentDisplayName(agents, item.agent, item.agent)}</span></>}
-                      {item.type === "run_completed" && <><Icon name="check-circle" size={12} /><span>Run completed</span></>}
-                      {item.type === "run_failed" && <><Icon name="alert-triangle" size={12} class="activity-item-icon-error" /><span>Run failed</span></>}
-                      <span class="activity-item-time">{formatDate(item.at)}</span>
+                {displayActivity.map((item) => {
+                  if (item.type === "run") {
+                    const run = item.run;
+                    return (
+                      <div key={item.id} class="activity-feed-entry run">
+                        <div class="activity-feed-rail">
+                          <ActivityRailDot item={item} agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)} />
+                        </div>
+                        <div class="activity-feed-content">
+                          <RunCard
+                            run={run}
+                            expanded={expandedRunIds.has(run.id)}
+                            highlighted={highlightedRunId === run.id}
+                            onToggle={toggleRun}
+                            subscribe={run.status === "running"}
+                            agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div key={item.id} class={`activity-feed-entry comment ${item.authorType || "human"}`}>
+                      <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
+                      <div class="activity-feed-content activity-item">
+                        <div class="activity-item-head">
+                          <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>
+                          <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
+                        </div>
+                        {item.body && (
+                          <div class="activity-item-body"><MarkdownContent content={item.body} maxHeight={200} /></div>
+                        )}
+                      </div>
                     </div>
-                    {item.type === "comment" && item.body && (
-                      <div class="activity-item-body"><MarkdownContent content={item.body} maxHeight={200} /></div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
                 {!showOlderActivity && activity.length > 12 && (
                   <Button variant="ghost" size="sm" onClick={() => setShowOlderActivity(true)}>
                     Show older ({activity.length - 12})
                   </Button>
                 )}
               </div>
+            ) : (
+              <div class="activity-empty">{runningRun ? "No comments or completed runs yet." : "No activity yet."}</div>
             )}
-
-            <div class="activity-composer">
-              <form onSubmit={addComment} class="activity-composer-form">
-                <Textarea
-                  rows={3}
-                  autoGrow
-                  placeholder="Add a comment…"
-                  value={newComment}
-                  onInput={(e) => setNewComment(e.target.value)}
-                />
-                <div class="activity-composer-actions">
-                  <Button type="submit" variant="primary" disabled={!newComment.trim()}>Post</Button>
-                </div>
-              </form>
-            </div>
           </Card>
-
-          {runs.length > 1 && (
-            <Card collapsible={{ summary: "Previous runs", count: runs.length - 1 }}>
-              <div class="runs-expander-list">
-                {runs.slice(1, 8).map((run) => (
-                  <RunCard
-                    key={run.id}
-                    run={run}
-                    expanded={expandedRunIds.has(run.id)}
-                    onToggle={toggleRun}
-                    subscribe={false}
-                    agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
-                  />
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {comments.length > 0 && (
-            <Card collapsible={{ summary: "All comments", count: comments.length }}>
-              <CommentList comments={comments} />
-            </Card>
-          )}
         </div>
 
         <aside class="task-detail-rail">
-          <Card variant="spacious" title="Agents">
-            <div class="rail-row">
-              <span class="label">Executor</span>
-              <span class="value">
-                <span class="rail-row-avatar">
-                  <AgentAvatar name={task.executor_agent} label={executorLabel} size={20} role="executor" />
-                  <span>{executorLabel}</span>
-                </span>
-                <Select
-                  value={task.executor_agent || ""}
-                  onChange={(value) => updateAssignee("executor_agent", value)}
-                  options={agentOptions}
-                  placeholder="Assign executor"
-                  ariaLabel="Reassign executor"
-                  searchable
-                />
-              </span>
-            </div>
-            <div class="rail-row">
-              <span class="label">Reviewer</span>
-              <span class="value">
-                <span class="rail-row-avatar">
-                  <AgentAvatar name={task.reviewer_agent} label={reviewerLabel} size={20} role="reviewer" />
-                  <span>{reviewerLabel || "Unassigned"}</span>
-                </span>
-                <Select
-                  value={task.reviewer_agent || ""}
-                  onChange={(value) => updateAssignee("reviewer_agent", value)}
-                  options={agentOptions}
-                  placeholder="Assign reviewer"
-                  ariaLabel="Reassign reviewer"
-                  searchable
-                />
-              </span>
+          <Card title="Agents" class="rail-agents-card">
+            <div class="rail-agents-stack">
+              <AgentRailRow
+                role="executor"
+                value={task.executor_agent || ""}
+                onChange={(value) => updateAssignee("executor_agent", value)}
+                agents={agents}
+              />
+              <AgentRailRow
+                role="reviewer"
+                value={task.reviewer_agent || ""}
+                onChange={(value) => updateAssignee("reviewer_agent", value)}
+                agents={agents}
+              />
             </div>
           </Card>
 
-          <Card variant="spacious" title="Details">
-            <KeyValueList entries={[
-              ["Created", formatDate(task.created_at) || "—"],
-              ["Updated", formatDate(task.updated_at) || "—"],
-              ["Completed", formatDate(task.completed_at) || "—"],
-              ["Schedule", task.source_schedule_id ? <a href={`#/schedules/${task.source_schedule_id}`}>Open schedule</a> : "—"],
-              ["ID", task.id],
-            ]} />
-          </Card>
-
-          {latestRun?.log && (
-            <Card variant="spacious" title="Latest run">
-              <div class="metric-grid">
-                <Metric label="Duration" value={formatDuration(runDuration(latestRun)) || "—"} />
-                <Metric label="Turns" value={latestRun.log.num_turns ?? "—"} />
-                <Metric label="Tokens in" value={formatTokens(latestRun.log.input_tokens) || "—"} />
-                <Metric label="Tokens out" value={formatTokens(latestRun.log.output_tokens) || "—"} />
-                <div class="metric-span-2">
-                  <Metric label="Cost" value={formatCost(latestRun.log.cost_usd) || "$0"} />
-                </div>
-              </div>
-            </Card>
-          )}
+          <TaskContextCard task={task} />
 
           {(task.tags || []).length > 0 && (
             <Card variant="spacious" title="Tags">
@@ -661,8 +741,22 @@ export function TaskDetail({ id, runParam = null }) {
             </Card>
           )}
 
-          <Card variant="spacious" title="Actions">
+          <Card collapsible={{ summary: "More actions", count: 3 }}>
             <div class="task-actions-stack">
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="database" size={13} />}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(task.id);
+                    pushToast("Task ID copied", { variant: "success" });
+                  } catch {
+                    pushToast("Copy failed", { variant: "error" });
+                  }
+                }}
+              >
+                Copy task ID
+              </Button>
               <Button
                 variant="secondary"
                 iconLeft={<Icon name="copy" size={13} />}
@@ -675,7 +769,13 @@ export function TaskDetail({ id, runParam = null }) {
                   } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
                 }}
               >Duplicate</Button>
-              <ConfirmButton onConfirm={destroy} class="sm">Delete task</ConfirmButton>
+              <Button
+                variant="destructive"
+                iconLeft={<Icon name="trash" size={13} />}
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete task
+              </Button>
             </div>
           </Card>
         </aside>

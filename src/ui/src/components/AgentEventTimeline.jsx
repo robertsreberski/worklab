@@ -179,6 +179,7 @@ function ThinkingBlock({ text, streaming }) {
       onClick={() => setExpanded((current) => !current)}
       aria-expanded={expanded}
     >
+      <span class="agentlog-thinking-glyph" aria-hidden="true">✦</span>
       <span class="agentlog-thinking-text">{text || ""}</span>
       {streaming && <span class="agentlog-thinking-cursor" aria-hidden="true" />}
     </button>

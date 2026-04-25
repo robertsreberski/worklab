@@ -8,7 +8,6 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
@@ -26,6 +25,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { Card } from "../components/Card.jsx";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
@@ -212,15 +212,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           </div>
         </div>
         <div class="toolbar">
-          <StatusPill status={agent.enabled ? "enabled" : "disabled"} />
-          {!isNew && (
-            <Button variant="ghost" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={consolidateNow} loading={consolidating}>
-              Consolidate
-            </Button>
-          )}
-          {!isNew && (
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>Delete</Button>
-          )}
+          {!isNew && <StatusPill status={agent.enabled ? "enabled" : "disabled"} />}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             onClick={() => formSave.save().catch(() => {})}
@@ -365,6 +357,26 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             )}
           </FormField>
         </FormSection>
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 2 }}>
+            <Button
+              variant="secondary"
+              iconLeft={<Icon name="refresh-cw" size={13} />}
+              onClick={consolidateNow}
+              loading={consolidating}
+            >
+              Consolidate memory
+            </Button>
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete agent
+            </Button>
+          </Card>
+        )}
       </div>
 
       {/* Delete modal */}

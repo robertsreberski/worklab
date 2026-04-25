@@ -150,6 +150,37 @@ describe("task-watcher", () => {
     expect(comments.some((c) => c.body.includes("timeout"))).toBe(true);
   });
 
+  it("reconciles stale running runs at boot", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { executor: "coder" });
+    const now = Date.now();
+    db.prepare(
+      "UPDATE tasks SET status = 'in_progress', updated_at = ? WHERE id = ?",
+    ).run(now, taskId);
+    db.prepare(
+      `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
+       VALUES ('stale1', ?, 'execute', 'coder', 'running', ?)`,
+    ).run(taskId, now - 1000);
+
+    const warn = vi.fn();
+    createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn: vi.fn(),
+      workerBinary: "/fake",
+      logger: { warn, info: vi.fn() },
+    });
+
+    const run = db.prepare("SELECT status, error_text FROM task_runs WHERE id = 'stale1'").get();
+    expect(run.status).toBe("error");
+    expect(run.error_text).toBe("coordinator restarted");
+    const task = db.prepare("SELECT status, error_text FROM tasks WHERE id = ?").get(taskId);
+    expect(task.status).toBe("todo");
+    expect(task.error_text).toBe("Previous run did not finish");
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("cancel() signals the active worker for that task", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

@@ -1,6 +1,6 @@
 // §4.4 CommanderRow — the canonical dense task row.
-// 8-cell grid (matches DS prototype VariationA):
-//   checkbox · id · dot · title+live · deps-chip · executor→reviewer · status-pill · age
+// Dense grid (matches DS prototype VariationA):
+//   checkbox · id · title+live · deps-chip · executor→reviewer · status-pill · age
 // Error chip policy (§5.3): derived from last_run.status === 'error'.
 // "Stuck" chip: status==="in_progress" && is_locked===false (§5.2).
 
@@ -10,7 +10,6 @@ import { useLiveTicker } from "../lib/useLiveTicker.js";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
 import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
-import { StatusDot } from "./primitives/StatusDot.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
@@ -124,15 +123,9 @@ export function CommanderRow({
         />
       </div>
       <span class="commander-cell-id">{taskIdDisplay(task.id)}</span>
-      <span class="commander-cell-status">
-        {isStreaming ? (
-          <LivePulse color={meta.color} size={10} />
-        ) : (
-          <StatusDot status={task.status} size={8} />
-        )}
-      </span>
       <div class="commander-cell-title">
         <div class="commander-cell-title-row">
+          {isStreaming && <LivePulse color={meta.color} size={10} />}
           <span class="commander-title">{task.title}</span>
           {metaChip}
         </div>

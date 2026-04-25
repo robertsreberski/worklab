@@ -17,6 +17,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { Card } from "../components/Card.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -95,10 +96,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           <h2>{title}</h2>
         </div>
         <div class="toolbar">
-          <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />
-          {!isNew && (
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)} iconLeft={<Icon name="trash" size={13} />}>Delete</Button>
-          )}
+          {!isNew && <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             loading={formSave.saving}
@@ -169,6 +167,18 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
               ))}
             </ul>
           </FormSection>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }}>
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete skill
+            </Button>
+          </Card>
         )}
       </div>
 
