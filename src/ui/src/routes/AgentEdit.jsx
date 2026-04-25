@@ -84,6 +84,14 @@ function modelGroupLabel(group) {
   return `${group.label} (unavailable)`;
 }
 
+function optionUnavailable(option) {
+  return !option || option.disabled === true || option.available === false;
+}
+
+function normalizedNames(list) {
+  return Array.isArray(list) ? list.filter((name) => typeof name === "string" && name.trim()) : [];
+}
+
 export function AgentEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
@@ -102,10 +110,13 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
   const visibleTools = supportedBuiltinTools(selectedModel);
   const supportsToolUse = visibleTools.length > 0;
+  const modelChanged = !!baseline && agent?.model !== baseline.model;
+  const selectedModelUnavailable = optionUnavailable(selectedModel);
+  const modelSaveBlocked = (isNew || modelChanged) && selectedModelUnavailable;
 
   useEffect(() => {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
-    api.getMcpConfig().then(r => setMcpServers(Object.keys(r.mcpServers || {}))).catch(() => setMcpServers([]));
+    api.getMcpStatus().then(r => setMcpServers(r.servers || [])).catch(() => setMcpServers([]));
     api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     if (!isNew) {
       api.getAgent(name).then(r => { setAgent(r.agent); setBaseline(r.agent); }).catch(() => setAgent({ notFound: true }));
@@ -119,10 +130,15 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
 
   const formSave = useFormSave(async () => {
+    if (modelSaveBlocked) throw new Error(selectedModel?.unavailable_reason || "Selected model is unavailable");
+    const enabledSkillNames = new Set(skills.filter((s) => s.enabled !== false).map((s) => s.name));
+    const availableMcpNames = new Set(mcpServers.filter((s) => s.available !== false).map((s) => s.name));
     const payload = {
       ...agent,
       name: isNew ? undefined : agent.name,
       effort: normalizedEffort,
+      skills_allowlist: normalizedNames(agent.skills_allowlist).filter((skill) => enabledSkillNames.has(skill)),
+      mcp_allowlist: normalizedNames(agent.mcp_allowlist).filter((server) => availableMcpNames.has(server)),
       builtin_allowlist: supportsToolUse
         ? agent.builtin_allowlist.filter((t) => visibleTools.includes(t))
         : [],
@@ -158,14 +174,17 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       options: (group.models || []).map((m) => ({
         value: m.value,
         label: m.label || m.value,
+        disabled: group.available === false || m.available === false || m.disabled === true,
         description: group.available === false
           ? (group.unavailable_reason || "Unavailable")
-          : (m.description || undefined),
+          : (m.available === false || m.disabled === true)
+            ? (m.unavailable_reason || "Unavailable")
+            : (m.description || undefined),
       })),
     })),
     ...(allModels.some((m) => m.value === agent.model) ? [] : [{
       label: "Saved value",
-      options: [{ value: agent.model, label: `${agent.model} (unavailable)` }],
+      options: [{ value: agent.model, label: `${agent.model} (unavailable)`, disabled: true, description: "Saved model is not in the current catalogue." }],
     }]),
   ];
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
@@ -179,6 +198,10 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   function setModel(model) {
     const opt = allModels.find((item) => item.value === model) || null;
+    if (optionUnavailable(opt)) {
+      pushToast(opt?.unavailable_reason || "Model is unavailable", { variant: "error" });
+      return;
+    }
     setAgent({
       ...agent,
       model,
@@ -238,7 +261,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             variant={isDirty || isNew ? "primary" : "secondary"}
             onClick={() => formSave.save().catch(() => {})}
             loading={formSave.saving}
-            disabled={!agent.display_name}
+            disabled={!agent.display_name || modelSaveBlocked}
           >
             {isNew ? "Create" : "Save"}
           </Button>
@@ -247,6 +270,13 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       <div class="pane-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
+        )}
+        {modelSaveBlocked && (
+          <Banner
+            variant="error"
+            title="Selected model unavailable"
+            detail={selectedModel?.unavailable_reason || "Choose an available model before saving."}
+          />
         )}
         {notice && <Banner variant="info" detail={notice} />}
 
@@ -310,7 +340,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           </FormGrid>
           <div class="field-hint field-hint-spaced">
             {visibleTools.length === 0
-              ? "No Worklab built-in tools are exposed for this runtime."
+              ? (selectedModel?.native_tools_note || "No Worklab built-in tools are exposed for this runtime.")
               : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
             {selectedModel?.capabilities?.reasoning
               ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
@@ -336,30 +366,40 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               <div class="field-hint">No skills defined yet.</div>
             ) : (
               <div class="checkbox-stack">
-                {skills.map((s) => (
-                  <Checkbox
-                    key={s.name}
-                    checked={agent.skills_allowlist.includes(s.name)}
-                    onChange={() => setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
-                    label={s.display_name || s.name}
-                  />
-                ))}
+                {skills.map((s) => {
+                  const available = s.enabled !== false;
+                  return (
+                    <Checkbox
+                      key={s.name}
+                      checked={agent.skills_allowlist.includes(s.name)}
+                      disabled={!available}
+                      description={available ? (s.trigger || undefined) : "Disabled skill"}
+                      onChange={() => available && setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
+                      label={s.display_name || s.name}
+                    />
+                  );
+                })}
               </div>
             )}
           </FormField>
-          <FormField label="MCP servers" hint="Empty = all registered.">
+          <FormField label="MCP servers" hint="Empty = all available registered servers.">
             {mcpServers.length === 0 ? (
-              <div class="field-hint">No user MCP servers registered.</div>
+              <div class="field-hint">No MCP servers registered.</div>
             ) : (
               <div class="checkbox-stack">
-                {mcpServers.map((m) => (
-                  <Checkbox
-                    key={m}
-                    checked={agent.mcp_allowlist.includes(m)}
-                    onChange={() => setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m) })}
-                    label={m}
-                  />
-                ))}
+                {mcpServers.map((m) => {
+                  const available = m.available !== false;
+                  return (
+                    <Checkbox
+                      key={m.name}
+                      checked={agent.mcp_allowlist.includes(m.name)}
+                      disabled={!available}
+                      description={available ? (m.source === "builtin" ? "Built in" : m.transport || "Registered") : (m.unavailable_reason || "Unavailable")}
+                      onChange={() => available && setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m.name) })}
+                      label={m.name}
+                    />
+                  );
+                })}
               </div>
             )}
           </FormField>

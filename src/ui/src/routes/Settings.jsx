@@ -64,7 +64,12 @@ export function Settings() {
       : []),
     ...embeddingGroups.map((g) => ({
       label: g.available === false ? `${g.label} (credentials not set)` : g.label,
-      options: (g.models || []).map((m) => ({ value: m.value, label: m.label || m.value })),
+      options: (g.models || []).map((m) => ({
+        value: m.value,
+        label: m.label || m.value,
+        description: g.available === false ? (g.unavailable_reason || "Unavailable") : (m.description || undefined),
+        disabled: g.available === false || m.available === false || m.disabled === true,
+      })),
     })),
   ];
 

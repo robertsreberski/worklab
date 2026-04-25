@@ -43,4 +43,22 @@ describe("mcp config", () => {
     const { agent } = mkServer();
     await agent.put("/api/mcp").send({ mcpServers: { bad: { type: "http", url: "https://example.com" } } }).expect(400);
   });
+
+  it("GET /api/mcp/status includes built-in and user availability", async () => {
+    const { agent } = mkServer();
+    await agent.put("/api/mcp").send({
+      mcpServers: {
+        node_tools: { command: process.execPath, args: ["server.js"] },
+      },
+    }).expect(200);
+
+    const res = await agent.get("/api/mcp/status").expect(200);
+    const names = res.body.servers.map((server) => server.name);
+    expect(names).toContain("worklab");
+    expect(names).toContain("node_tools");
+    expect(res.body.servers.find((server) => server.name === "worklab")).toMatchObject({
+      source: "builtin",
+      available: true,
+    });
+  });
 });

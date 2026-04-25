@@ -22,6 +22,93 @@ const MODEL_SHORT_LABELS = {
   "gpt-5.4": "GPT-5.4",
 };
 
+const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+const OPENAI_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+
+function runtimeMetadata({
+  runtimeKind,
+  supportsMcp,
+  supportsSkills,
+  supportsWorklabTools,
+  nativeToolsNote,
+  mcpMode,
+  skillsMode = "prompt-index",
+} = {}) {
+  return {
+    runtime_kind: runtimeKind,
+    supports_mcp: !!supportsMcp,
+    supports_skills: !!supportsSkills,
+    supports_worklab_tools: !!supportsWorklabTools,
+    native_tools_note: nativeToolsNote || null,
+    mcp_mode: mcpMode || null,
+    skills_mode: skillsMode,
+  };
+}
+
+function claudeReasoningCapabilities(model, runtime = "sdk") {
+  const common = {
+    tool_use: true,
+    vision: true,
+    json_mode: true,
+    ...runtimeMetadata({
+      runtimeKind: runtime,
+      supportsMcp: true,
+      supportsSkills: true,
+      supportsWorklabTools: runtime === "sdk",
+      nativeToolsNote: runtime === "cli"
+        ? "Claude Code uses native CLI tools; Worklab maps this allowlist to Claude Code tool flags."
+        : null,
+      mcpMode: runtime === "cli" ? "per-run-json" : "sdk",
+    }),
+  };
+  if (model.includes("haiku")) {
+    return {
+      ...common,
+      reasoning: false,
+      reasoning_mode: "none",
+    };
+  }
+  return {
+    ...common,
+    reasoning: true,
+    reasoning_mode: "effort",
+    reasoning_levels: model.includes("opus") ? CLAUDE_REASONING_LEVELS : CLAUDE_REASONING_LEVELS.filter((level) => level !== "xhigh"),
+    reasoning_disable_supported: true,
+  };
+}
+
+function openaiReasoningCapabilities(model, runtime = "sdk") {
+  const common = {
+    tool_use: true,
+    vision: true,
+    json_mode: true,
+    ...runtimeMetadata({
+      runtimeKind: runtime,
+      supportsMcp: true,
+      supportsSkills: true,
+      supportsWorklabTools: runtime === "sdk",
+      nativeToolsNote: runtime === "cli"
+        ? "Codex uses native CLI tools. Worklab can pass MCP config and effort, but Codex does not expose a per-tool built-in allowlist for exec."
+        : null,
+      mcpMode: runtime === "cli" ? "inline-config" : "sdk",
+    }),
+  };
+  if (model.endsWith("-nano")) {
+    return {
+      ...common,
+      reasoning: false,
+      reasoning_mode: "none",
+    };
+  }
+  return {
+    ...common,
+    reasoning: true,
+    reasoning_mode: "effort",
+    reasoning_levels: OPENAI_REASONING_LEVELS,
+    reasoning_disable_supported: true,
+  };
+}
+
 const BUILTIN_MODEL_GROUPS = [
   {
     id: "claude",
@@ -33,13 +120,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Fast",
         sdk: "claude",
         model: "claude-haiku-4-5-20251001",
-        capabilities: {
-          tool_use: true,
-          reasoning: false,
-          reasoning_mode: "none",
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: claudeReasoningCapabilities("claude-haiku-4-5-20251001"),
       },
       {
         value: "claude:claude-sonnet-4-6",
@@ -47,15 +128,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Balanced",
         sdk: "claude",
         model: "claude-sonnet-4-6",
-        capabilities: {
-          tool_use: true,
-          reasoning: true,
-          reasoning_mode: "effort",
-          reasoning_levels: ["low", "medium", "high", "max"],
-          reasoning_disable_supported: true,
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: claudeReasoningCapabilities("claude-sonnet-4-6"),
       },
       {
         value: "claude:claude-opus-4-7",
@@ -63,15 +136,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Most capable",
         sdk: "claude",
         model: "claude-opus-4-7",
-        capabilities: {
-          tool_use: true,
-          reasoning: true,
-          reasoning_mode: "effort",
-          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
-          reasoning_disable_supported: true,
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: claudeReasoningCapabilities("claude-opus-4-7"),
       },
     ],
   },
@@ -85,13 +150,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Fast",
         sdk: "openai",
         model: "gpt-5.4-nano",
-        capabilities: {
-          tool_use: true,
-          reasoning: false,
-          reasoning_mode: "none",
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: openaiReasoningCapabilities("gpt-5.4-nano"),
       },
       {
         value: "openai:gpt-5.4-mini",
@@ -99,15 +158,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Balanced",
         sdk: "openai",
         model: "gpt-5.4-mini",
-        capabilities: {
-          tool_use: true,
-          reasoning: true,
-          reasoning_mode: "effort",
-          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
-          reasoning_disable_supported: true,
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: openaiReasoningCapabilities("gpt-5.4-mini"),
       },
       {
         value: "openai:gpt-5.4",
@@ -115,15 +166,7 @@ const BUILTIN_MODEL_GROUPS = [
         description: "Most capable",
         sdk: "openai",
         model: "gpt-5.4",
-        capabilities: {
-          tool_use: true,
-          reasoning: true,
-          reasoning_mode: "effort",
-          reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
-          reasoning_disable_supported: true,
-          vision: true,
-          json_mode: true,
-        },
+        capabilities: openaiReasoningCapabilities("gpt-5.4"),
       },
     ],
   },
@@ -140,13 +183,11 @@ const CLI_MODEL_GROUPS = [
       sdk: "claude-code",
       model,
       capabilities: {
-        tool_use: true,
-        reasoning: false,
-        reasoning_mode: "none",
+        ...claudeReasoningCapabilities(model, "cli"),
         runtime: "cli",
       },
-      builtin_tools: [],
-      supports_builtin_tools: false,
+      builtin_tools: [...WORKLAB_BUILTIN_TOOLS],
+      supports_builtin_tools: true,
     })),
   },
   {
@@ -159,11 +200,7 @@ const CLI_MODEL_GROUPS = [
       sdk: "codex",
       model,
       capabilities: {
-        tool_use: true,
-        reasoning: true,
-        reasoning_mode: "effort",
-        reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
-        reasoning_disable_supported: true,
+        ...openaiReasoningCapabilities(model, "cli"),
         runtime: "cli",
       },
       builtin_tools: [],
@@ -196,6 +233,10 @@ export function getBuiltinModelGroups() {
 
 export function getBuiltinModels() {
   return getBuiltinModelGroups().flatMap((group) => group.models);
+}
+
+export function getBuiltinModelByReference(reference) {
+  return getBuiltinModels().find((model) => model.value === reference) || null;
 }
 
 function requireModelPart(value, message) {

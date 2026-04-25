@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
-import { loadMcpConfig, getBuiltinMcpServers, pickMcpServers } from "./core/mcp-config.js";
+import { getAvailableMcpServers, pickMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
 import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
@@ -70,8 +70,7 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
   const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
 
-  const userMcpServers = loadMcpConfig(config.dataDir);
-  const allMcpServers = { ...getBuiltinMcpServers(config.repoRoot), ...userMcpServers };
+  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
   const mcpAllowlist = JSON.parse(agent.mcp_allowlist || "[]");
   const mcpServers = pickMcpServers(allMcpServers, mcpAllowlist.length === 0 ? [] : ["worklab", ...mcpAllowlist]);
 

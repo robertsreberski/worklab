@@ -26,6 +26,7 @@ function normalizeCliEvent(raw) {
 
 function textFromEvent(raw) {
   if (typeof raw?.text === "string") return raw.text;
+  if (typeof raw?.item?.text === "string") return raw.item.text;
   if (typeof raw?.result === "string") return raw.result;
   if (typeof raw?.final_output === "string") return raw.final_output;
   if (typeof raw?.message?.content === "string") return raw.message.content;
@@ -35,22 +36,94 @@ function textFromEvent(raw) {
   return "";
 }
 
-export function buildCliCommand({ sdk, model, effort, cwd, schemaPath, systemPrompt, prompt }) {
+function hasEntries(value) {
+  return value && typeof value === "object" && Object.keys(value).length > 0;
+}
+
+function shellList(values = []) {
+  return values.filter(Boolean).join(" ");
+}
+
+function tomlValue(value) {
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (Array.isArray(value)) return `[${value.map(tomlValue).join(", ")}]`;
+  return JSON.stringify(value);
+}
+
+function codexMcpConfigArgs(mcpServers = {}) {
+  const args = [];
+  for (const [name, cfg] of Object.entries(mcpServers)) {
+    if (!/^[A-Za-z0-9_-]+$/.test(name)) continue;
+    const prefix = `mcp_servers.${name}`;
+    if (cfg.command) {
+      args.push("--config", `${prefix}.command=${tomlValue(cfg.command)}`);
+      if (Array.isArray(cfg.args) && cfg.args.length) args.push("--config", `${prefix}.args=${tomlValue(cfg.args)}`);
+      if (cfg.env && typeof cfg.env === "object") {
+        for (const [key, value] of Object.entries(cfg.env)) {
+          if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+            args.push("--config", `${prefix}.env.${key}=${tomlValue(String(value))}`);
+          }
+        }
+      }
+    } else if (cfg.url) {
+      args.push("--config", `${prefix}.url=${tomlValue(cfg.url)}`);
+      const headers = cfg.headers || {};
+      for (const [key, value] of Object.entries(headers)) {
+        if (/^[A-Za-z0-9_-]+$/.test(key)) {
+          args.push("--config", `${prefix}.http_headers.${key}=${tomlValue(String(value))}`);
+        }
+      }
+    }
+    args.push("--config", `${prefix}.enabled=true`);
+    args.push("--config", `${prefix}.required=false`);
+  }
+  return args;
+}
+
+export function buildCliCommand({
+  sdk,
+  model,
+  effort,
+  cwd,
+  schemaPath,
+  systemPrompt,
+  prompt,
+  mcpConfigPath,
+  mcpServers,
+  allowedTools,
+  disallowedTools,
+  permissionMode,
+  maxTurns,
+}) {
   if (sdk === "claude-code") {
-    return {
-      command: "claude",
-      args: [
-        "-p",
-        "--output-format", "stream-json",
-        "--verbose",
-        "--json-schema", schemaPath,
-        "--model", model,
-        "--append-system-prompt", systemPrompt,
-        "--no-session-persistence",
-        prompt,
-      ],
-      cwd,
-    };
+    const args = [
+      "-p",
+      "--output-format", "stream-json",
+      "--verbose",
+      "--json-schema", schemaPath,
+      "--model", model,
+      "--append-system-prompt", systemPrompt,
+      "--no-session-persistence",
+    ];
+    if (effort) args.push("--effort", effort);
+    if (permissionMode) args.push("--permission-mode", permissionMode);
+    if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) args.push("--max-turns", String(Number(maxTurns)));
+    if (Array.isArray(allowedTools) && allowedTools.length) {
+      args.push("--tools", allowedTools.join(","));
+    }
+    const autoAllowed = [
+      ...(Array.isArray(allowedTools) ? allowedTools : []),
+      ...Object.keys(mcpServers || {}).map((name) => `mcp__${name}__*`),
+    ];
+    if (autoAllowed.length) args.push("--allowedTools", shellList(autoAllowed));
+    if (Array.isArray(disallowedTools) && disallowedTools.length) {
+      args.push("--disallowedTools", shellList(disallowedTools));
+    }
+    if (mcpConfigPath) args.push("--mcp-config", mcpConfigPath, "--strict-mcp-config");
+    args.push(prompt);
+    return { command: "claude", args, cwd };
   }
 
   const args = [
@@ -60,8 +133,13 @@ export function buildCliCommand({ sdk, model, effort, cwd, schemaPath, systemPro
     "--model", model,
     "--cd", cwd,
     "--ephemeral",
+    "--skip-git-repo-check",
   ];
+  if (permissionMode === "bypassPermissions") args.push("--dangerously-bypass-approvals-and-sandbox");
+  else if (permissionMode === "acceptEdits" || permissionMode === "auto") args.push("--full-auto");
+  else if (permissionMode === "plan") args.push("--sandbox", "read-only");
   if (effort) args.push("--config", `model_reasoning_effort=${effort}`);
+  if (hasEntries(mcpServers)) args.push(...codexMcpConfigArgs(mcpServers));
   args.push(prompt);
   return { command: "codex", args, cwd };
 }
@@ -73,6 +151,11 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const dir = mkdtempSync(join(tmpdir(), "worklab-cli-"));
   const schemaPath = join(dir, "worklab-result.schema.json");
   writeFileSync(schemaPath, JSON.stringify(WORKLAB_RESULT_JSON_SCHEMA));
+  const mcpServers = options.mcpServers || {};
+  const mcpConfigPath = hasEntries(mcpServers) && resolved.sdk === "claude-code"
+    ? join(dir, "mcp.json")
+    : null;
+  if (mcpConfigPath) writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }, null, 2));
   const commandSpec = buildCliCommand({
     sdk: resolved.sdk,
     model: resolved.model,
@@ -81,6 +164,12 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     schemaPath,
     systemPrompt,
     prompt,
+    mcpConfigPath,
+    mcpServers,
+    allowedTools: options.allowedTools,
+    disallowedTools: options.disallowedTools,
+    permissionMode: options.permissionMode,
+    maxTurns: options.maxTurns,
   });
 
   const events = [];

@@ -106,12 +106,20 @@ async function teardownHarness(ctx) {
 
 describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
   let ctx;
+  let savedAnthropicKey;
+
+  beforeEach(() => {
+    savedAnthropicKey = process.env.ANTHROPIC_API_KEY;
+    process.env.ANTHROPIC_API_KEY = "test-anthropic-key";
+  });
 
   afterEach(async () => {
     if (ctx) {
       await teardownHarness(ctx);
       ctx = null;
     }
+    if (savedAnthropicKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+    else process.env.ANTHROPIC_API_KEY = savedAnthropicKey;
   });
 
   it("APPROVE path: task → review → done, with owner + reviewer + system comments", async () => {

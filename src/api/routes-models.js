@@ -8,6 +8,25 @@ const OPENAI_EMBEDDING_MODELS = [
   { model: "text-embedding-ada-002", label: "text-embedding-ada-002", description: "Legacy, 1536 dims" },
 ];
 
+function runtimeModelMetadata(model, group, availability) {
+  const groupAvailable = availability?.available !== false;
+  const unavailableReason = groupAvailable ? null : (availability?.reason || "Provider unavailable");
+  const capabilities = model.capabilities || {};
+  return {
+    ...model,
+    runtime_kind: capabilities.runtime_kind || availability?.runtime_kind || group.runtime_kind || "sdk",
+    available: groupAvailable,
+    disabled: !groupAvailable,
+    unavailable_reason: unavailableReason,
+    supports_skills: capabilities.supports_skills !== false,
+    supports_mcp: capabilities.supports_mcp !== false,
+    supports_worklab_tools: capabilities.supports_worklab_tools !== false && model.supports_builtin_tools !== false,
+    native_tools_note: capabilities.native_tools_note || model.native_tools_note || null,
+    mcp_mode: capabilities.mcp_mode || null,
+    skills_mode: capabilities.skills_mode || "prompt-index",
+  };
+}
+
 export function registerModelRoutes(app, { db, dataDir }) {
   app.get("/api/models/available", (_req, res) => {
     const groups = getBuiltinModelGroups();
@@ -17,7 +36,12 @@ export function registerModelRoutes(app, { db, dataDir }) {
       if (avail) {
         group.available = avail.available;
         group.unavailable_reason = avail.reason;
+        group.disabled = !avail.available;
+        group.runtime_kind = avail.runtime_kind;
+        group.version = avail.version || null;
+        group.auth = avail.auth || null;
       }
+      group.models = (group.models || []).map((model) => runtimeModelMetadata(model, group, avail));
     }
 
     for (const provider of listProviders({ db, dataDir, enabledOnly: true })) {
@@ -30,13 +54,23 @@ export function registerModelRoutes(app, { db, dataDir }) {
           label: model.display_name || model.model_name,
           description: `${provider.name} / ${model.model_name}`,
           sdk: "vercel",
+          runtime_kind: "sdk",
           provider_id: provider.id,
           provider_name: provider.name,
           provider_type: provider.provider_type,
           model_name: model.model_name,
           capabilities,
+          available: true,
+          disabled: false,
+          unavailable_reason: null,
           builtin_tools: capabilities.builtin_tools,
           supports_builtin_tools: capabilities.supports_builtin_tools,
+          supports_skills: true,
+          supports_mcp: true,
+          supports_worklab_tools: capabilities.supports_builtin_tools,
+          native_tools_note: null,
+          mcp_mode: "sdk",
+          skills_mode: "read-skill-tool",
           pricing: model.pricing,
         }];
       });
@@ -46,7 +80,9 @@ export function registerModelRoutes(app, { db, dataDir }) {
           label: provider.name,
           provider_type: provider.provider_type,
           available: true,
+          disabled: false,
           unavailable_reason: null,
+          runtime_kind: "sdk",
           models,
         });
       }
@@ -62,10 +98,14 @@ export function registerModelRoutes(app, { db, dataDir }) {
       label: "OpenAI",
       available: availability.openai.available,
       unavailable_reason: availability.openai.reason,
+      disabled: !availability.openai.available,
       models: OPENAI_EMBEDDING_MODELS.map((m) => ({
         value: `openai:${m.model}`,
         label: m.label,
-        description: m.description,
+        description: availability.openai.available ? m.description : (availability.openai.reason || m.description),
+        available: availability.openai.available,
+        disabled: !availability.openai.available,
+        unavailable_reason: availability.openai.reason,
       })),
     }];
 
@@ -81,11 +121,15 @@ export function registerModelRoutes(app, { db, dataDir }) {
         label: provider.name,
         provider_type: provider.provider_type,
         available: true,
+        disabled: false,
         unavailable_reason: null,
         models: embeddingModels.map((m) => ({
           value: `vercel:${provider.id}:${m.model_name}`,
           label: m.display_name || m.model_name,
           description: `${provider.name} / ${m.model_name}`,
+          available: true,
+          disabled: false,
+          unavailable_reason: null,
         })),
       });
     }

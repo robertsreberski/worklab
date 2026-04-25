@@ -48,6 +48,7 @@ export const api = {
   skillUsage: (name) => request("GET", `/skills/${name}/usage`),
   // mcp
   getMcpConfig: () => request("GET", "/mcp"),
+  getMcpStatus: () => request("GET", "/mcp/status"),
   putMcpConfig: (data) => request("PUT", "/mcp", data),
   // kb
   listKb: (query) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`),

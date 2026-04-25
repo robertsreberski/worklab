@@ -36,6 +36,34 @@ describe("CLI provider adapters", () => {
     ]));
   });
 
+  it("maps Claude Code MCP, effort, permissions, and tool allowlists to CLI flags", () => {
+    const cmd = buildCliCommand({
+      sdk: "claude-code",
+      model: "claude-sonnet-4-6",
+      effort: "high",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+      mcpConfigPath: "/tmp/mcp.json",
+      mcpServers: { worklab: { command: "/bin/sh" } },
+      allowedTools: ["Read", "Bash"],
+      disallowedTools: ["WebSearch"],
+      permissionMode: "bypassPermissions",
+      maxTurns: 12,
+    });
+    expect(cmd.args).toEqual(expect.arrayContaining([
+      "--effort", "high",
+      "--permission-mode", "bypassPermissions",
+      "--max-turns", "12",
+      "--tools", "Read,Bash",
+      "--allowedTools", "Read Bash mcp__worklab__*",
+      "--disallowedTools", "WebSearch",
+      "--mcp-config", "/tmp/mcp.json",
+      "--strict-mcp-config",
+    ]));
+  });
+
   it("generates Codex exec JSON command with schema, cwd, and effort", () => {
     const cmd = buildCliCommand({
       sdk: "codex",
@@ -55,8 +83,30 @@ describe("CLI provider adapters", () => {
       "--model", "gpt-5.4",
       "--cd", "/repo",
       "--ephemeral",
+      "--skip-git-repo-check",
       "--config", "model_reasoning_effort=high",
       "do work",
+    ]));
+  });
+
+  it("maps Codex permissions and MCP servers to exec flags/config overrides", () => {
+    const cmd = buildCliCommand({
+      sdk: "codex",
+      model: "gpt-5.4",
+      effort: "medium",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+      permissionMode: "bypassPermissions",
+      mcpServers: { worklab: { command: "/bin/sh", args: ["-lc", "node server.js"], env: { WORKLAB_RUN_ID: "run_1" } } },
+    });
+    expect(cmd.args).toEqual(expect.arrayContaining([
+      "--dangerously-bypass-approvals-and-sandbox",
+      "--config", "mcp_servers.worklab.command=\"/bin/sh\"",
+      "--config", "mcp_servers.worklab.args=[\"-lc\", \"node server.js\"]",
+      "--config", "mcp_servers.worklab.env.WORKLAB_RUN_ID=\"run_1\"",
+      "--config", "mcp_servers.worklab.enabled=true",
     ]));
   });
 });
