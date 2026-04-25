@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
-import { legacyRunStatusToProcessStatus, legacyStatusToStage, processStatusToLegacyStatus, stageToLegacyStatus } from "./state-machine.js";
+import { legacyRunStatusToProcessStatus, processStatusToLegacyStatus, STAGES } from "./state-machine.js";
 
 let singleton = null;
 
@@ -27,6 +27,24 @@ function getColumn(db, table, column) {
 
 function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
+}
+
+function normalizeMigratedTaskStage({ stage, status } = {}) {
+  if (stage === "draft") return "plan";
+  if (stage === "verify" || stage === "qa") return "review";
+  if (STAGES.includes(stage)) return stage;
+  switch (status) {
+    case "in_review":
+      return "review";
+    case "done":
+      return "done";
+    case "blocked":
+      return "blocked";
+    case "todo":
+    case "in_progress":
+    default:
+      return "execute";
+  }
 }
 
 function ensureNullableTaskRunsTaskId(db) {
@@ -78,13 +96,17 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "delegated_to_agent", "delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "owner_agent", "owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
-  addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
+  addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'plan'");
   addColumnIfMissing(db, "tasks", "stage_reason", "stage_reason TEXT");
   addColumnIfMissing(db, "tasks", "join_policy", "join_policy TEXT NOT NULL DEFAULT 'all_required'");
   addColumnIfMissing(db, "tasks", "subtask_order", "subtask_order INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "required", "required INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "tasks", "pending_actions_json", "pending_actions_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "tasks", "blocking_issues_json", "blocking_issues_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "tasks", "plan_body", "plan_body TEXT NOT NULL DEFAULT ''");
+  addColumnIfMissing(db, "tasks", "plan_updated_at", "plan_updated_at INTEGER");
+  addColumnIfMissing(db, "tasks", "plan_updated_by", "plan_updated_by TEXT");
+  addColumnIfMissing(db, "tasks", "plan_source_run_id", "plan_source_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL");
 
   addColumnIfMissing(db, "task_runs", "parent_run_id", "parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "task_runs", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
@@ -100,16 +122,23 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
 }
 
-function syncWorkflowCompatibility(db) {
-  const taskRows = db.prepare("SELECT id, status, stage, executor_agent FROM tasks").all();
-  const updateTask = db.prepare("UPDATE tasks SET stage = ?, status = ?, owner_agent = COALESCE(owner_agent, ?), root_task_id = COALESCE(root_task_id, id) WHERE id = ?");
-  const taskTx = db.transaction(() => {
-    for (const row of taskRows) {
-      const stage = row.stage && row.stage !== "execute" ? row.stage : legacyStatusToStage(row.status);
-      updateTask.run(stage, stageToLegacyStatus(stage), row.executor_agent || null, row.id);
-    }
-  });
-  taskTx();
+function normalizeWorkflowState(db) {
+  if (tableExists(db, "tasks")) {
+    const columns = db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name);
+    const select = [
+      "id",
+      columns.includes("status") ? "status" : "NULL AS status",
+      columns.includes("stage") ? "stage" : "NULL AS stage",
+    ].join(", ");
+    const taskRows = db.prepare(`SELECT ${select} FROM tasks`).all();
+    const updateTask = db.prepare("UPDATE tasks SET stage = ?, root_task_id = COALESCE(root_task_id, id) WHERE id = ?");
+    const taskTx = db.transaction(() => {
+      for (const row of taskRows) {
+        updateTask.run(normalizeMigratedTaskStage(row), row.id);
+      }
+    });
+    taskTx();
+  }
 
   const runRows = db.prepare("SELECT id, status, process_status, mode, stage FROM task_runs").all();
   const updateRun = db.prepare("UPDATE task_runs SET process_status = ?, status = ?, stage = ? WHERE id = ?");
@@ -135,12 +164,50 @@ function resetLegacyEmbeddings(db) {
   `);
 }
 
-// Schema v5 — drop priority + description from tasks and schedules.
-// SQLite doesn't reliably support `ALTER TABLE DROP COLUMN`, so rebuild the
-// table inside a single transaction. Only runs when the legacy columns are
-// still present.
-function dropPriorityAndDescription(db) {
-  const tasksHasLegacy = hasColumn(db, "tasks", "priority") || hasColumn(db, "tasks", "description");
+// SQLite doesn't reliably support `ALTER TABLE DROP COLUMN`, so any schema
+// cleanup that removes columns rebuilds the table inside a single transaction.
+function rebuildTaskAndScheduleWorkflowTables(db) {
+  const taskColumns = tableExists(db, "tasks")
+    ? db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name)
+    : [];
+  const taskColumn = (name, fallback = "NULL") => taskColumns.includes(name) ? name : fallback;
+  const ownerExpression = taskColumns.includes("owner_agent") && taskColumns.includes("executor_agent")
+    ? "COALESCE(owner_agent, executor_agent)"
+    : taskColumn("owner_agent", taskColumn("executor_agent"));
+  const stageExpression = (() => {
+    if (taskColumns.includes("stage") && taskColumns.includes("status")) {
+      return `CASE
+          WHEN stage = 'draft' THEN 'plan'
+          WHEN stage IN ('verify', 'qa') THEN 'review'
+          WHEN stage IN ('plan', 'execute', 'review', 'awaiting_children', 'awaiting_user', 'blocked', 'done') THEN stage
+          WHEN status = 'in_review' THEN 'review'
+          WHEN status = 'done' THEN 'done'
+          WHEN status = 'blocked' THEN 'blocked'
+          ELSE 'execute'
+        END`;
+    }
+    if (taskColumns.includes("stage")) {
+      return `CASE
+          WHEN stage = 'draft' THEN 'plan'
+          WHEN stage IN ('verify', 'qa') THEN 'review'
+          WHEN stage IN ('plan', 'execute', 'review', 'awaiting_children', 'awaiting_user', 'blocked', 'done') THEN stage
+          ELSE 'execute'
+        END`;
+    }
+    if (taskColumns.includes("status")) {
+      return `CASE
+          WHEN status = 'in_review' THEN 'review'
+          WHEN status = 'done' THEN 'done'
+          WHEN status = 'blocked' THEN 'blocked'
+          ELSE 'execute'
+        END`;
+    }
+    return "'execute'";
+  })();
+  const tasksHasLegacy = taskColumns.includes("priority")
+    || taskColumns.includes("description")
+    || taskColumns.includes("status")
+    || taskColumns.includes("executor_agent");
   if (tasksHasLegacy) {
     db.exec(`
       PRAGMA foreign_keys = OFF;
@@ -155,15 +222,17 @@ function dropPriorityAndDescription(db) {
         client_request_id TEXT,
         title TEXT NOT NULL,
         instructions TEXT NOT NULL DEFAULT '',
-        status TEXT NOT NULL DEFAULT 'todo',
-        stage TEXT NOT NULL DEFAULT 'execute',
+        stage TEXT NOT NULL DEFAULT 'plan',
         stage_reason TEXT,
         join_policy TEXT NOT NULL DEFAULT 'all_required',
         subtask_order INTEGER NOT NULL DEFAULT 0,
         required INTEGER NOT NULL DEFAULT 1,
         pending_actions_json TEXT NOT NULL DEFAULT '[]',
         blocking_issues_json TEXT NOT NULL DEFAULT '[]',
-        executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+        plan_body TEXT NOT NULL DEFAULT '',
+        plan_updated_at INTEGER,
+        plan_updated_by TEXT,
+        plan_source_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
         reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         tags TEXT NOT NULL DEFAULT '[]',
         error_text TEXT,
@@ -175,19 +244,38 @@ function dropPriorityAndDescription(db) {
       );
       INSERT INTO tasks__new (
         id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
-        client_request_id, title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
-        pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
+        client_request_id, title, instructions, stage, stage_reason, join_policy, subtask_order, required,
+        pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
+        plan_source_run_id, reviewer_agent, tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       )
       SELECT
-        id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
-        client_request_id, title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
-        pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
+        id,
+        COALESCE(root_task_id, id),
+        parent_task_id,
+        delegated_by_run_id,
+        delegated_to_agent,
+        ${ownerExpression},
+        client_request_id,
+        title,
+        instructions,
+        ${stageExpression},
+        stage_reason,
+        join_policy,
+        subtask_order,
+        required,
+        pending_actions_json,
+        blocking_issues_json,
+        ${taskColumn("plan_body", "''")},
+        ${taskColumn("plan_updated_at")},
+        ${taskColumn("plan_updated_by")},
+        ${taskColumn("plan_source_run_id")},
+        reviewer_agent,
+        tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
-      CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at DESC);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
@@ -198,8 +286,16 @@ function dropPriorityAndDescription(db) {
     `);
   }
 
+  const scheduleColumns = tableExists(db, "schedules")
+    ? db.prepare("PRAGMA table_info(schedules)").all().map((row) => row.name)
+    : [];
+  const scheduleOwnerExpression = scheduleColumns.includes("owner_agent") && scheduleColumns.includes("executor_agent")
+    ? "COALESCE(owner_agent, executor_agent)"
+    : (scheduleColumns.includes("owner_agent") ? "owner_agent" : (scheduleColumns.includes("executor_agent") ? "executor_agent" : "NULL"));
   const schedulesHasLegacy = tableExists(db, "schedules")
-    && (hasColumn(db, "schedules", "priority") || hasColumn(db, "schedules", "description"));
+    && (scheduleColumns.includes("priority")
+      || scheduleColumns.includes("description")
+      || scheduleColumns.includes("executor_agent"));
   if (schedulesHasLegacy) {
     db.exec(`
       PRAGMA foreign_keys = OFF;
@@ -208,7 +304,7 @@ function dropPriorityAndDescription(db) {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         instructions TEXT NOT NULL DEFAULT '',
-        executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+        owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         tags TEXT NOT NULL DEFAULT '[]',
         cadence_json TEXT NOT NULL DEFAULT '{}',
@@ -219,11 +315,11 @@ function dropPriorityAndDescription(db) {
         updated_at INTEGER NOT NULL
       );
       INSERT INTO schedules__new (
-        id, title, instructions, executor_agent, reviewer_agent, tags,
+        id, title, instructions, owner_agent, reviewer_agent, tags,
         cadence_json, enabled, next_fire_at, last_fired_at, created_at, updated_at
       )
       SELECT
-        id, title, instructions, executor_agent, reviewer_agent, tags,
+        id, title, instructions, ${scheduleOwnerExpression}, reviewer_agent, tags,
         cadence_json, enabled, next_fire_at, last_fired_at, created_at, updated_at
       FROM schedules;
       DROP TABLE schedules;
@@ -236,6 +332,12 @@ function dropPriorityAndDescription(db) {
 }
 
 export function runMigrations(db) {
+  // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
+  // creates an index on stage, so add the column before executing the full
+  // schema block.
+  if (tableExists(db, "tasks")) {
+    addColumnIfMissing(db, "tasks", "stage", "stage TEXT");
+  }
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
@@ -258,7 +360,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
-  db.exec("CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', cadence_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+  db.exec("CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', cadence_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_fire ON schedules(enabled, next_fire_at)");
   db.exec("CREATE TABLE IF NOT EXISTS schedule_spawns (id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, trigger_type TEXT NOT NULL DEFAULT 'manual', fired_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_schedule_spawns_schedule ON schedule_spawns(schedule_id, fired_at DESC)");
@@ -266,10 +368,10 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_enabled ON custom_models(enabled, provider_id)");
   resetLegacyEmbeddings(db);
-  syncWorkflowCompatibility(db);
-  dropPriorityAndDescription(db);
+  normalizeWorkflowState(db);
+  rebuildTaskAndScheduleWorkflowTables(db);
   db.exec(SCHEMA_SQL);
-  syncWorkflowCompatibility(db);
+  normalizeWorkflowState(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

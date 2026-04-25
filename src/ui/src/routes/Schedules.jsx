@@ -31,7 +31,7 @@ import { useSSE } from "../lib/useSSE.js";
 const DEFAULT_FORM = {
   title: "",
   instructions: "",
-  executor_agent: null,
+  owner_agent: null,
   reviewer_agent: null,
   tags: [],
   enabled: true,
@@ -118,7 +118,7 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
         const next = {
           title: response.schedule.title || "",
           instructions: response.schedule.instructions || "",
-          executor_agent: response.schedule.executor_agent || null,
+          owner_agent: response.schedule.owner_agent || null,
           reviewer_agent: response.schedule.reviewer_agent || null,
           tags: response.schedule.tags || [],
           enabled: response.schedule.enabled !== false,
@@ -160,7 +160,7 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
     const next = {
       title: response.schedule.title || "",
       instructions: response.schedule.instructions || "",
-      executor_agent: response.schedule.executor_agent || null,
+      owner_agent: response.schedule.owner_agent || null,
       reviewer_agent: response.schedule.reviewer_agent || null,
       tags: response.schedule.tags || [],
       enabled: response.schedule.enabled !== false,
@@ -320,12 +320,12 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
 
         <FormSection kicker="Assignment" title="Who owns the spawned work">
           <FormGrid columns={2}>
-            <FormField label="Executor">
+            <FormField label="Owner">
               <AgentPicker
-                value={form.executor_agent}
-                onChange={(value) => update({ executor_agent: value })}
+                value={form.owner_agent}
+                onChange={(value) => update({ owner_agent: value })}
                 agents={agents}
-                placeholder="Pick an executor"
+                placeholder="Pick an owner"
               />
             </FormField>
             <FormField label="Reviewer">
@@ -382,7 +382,7 @@ function ScheduleEdit({ scheduleId, agents, onSaved, onDeleted }) {
                       <span class="truncate">{task.title}</span>
                       <span class="schedule-list-row-meta">
                         <span class="soft-meta">{task.trigger_type}</span>
-                        <StatusPill status={task.status} size="sm" />
+                        <StatusPill status={task.stage || "plan"} size="sm" />
                       </span>
                     </a>
                   ))}

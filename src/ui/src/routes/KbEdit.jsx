@@ -175,7 +175,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
                   {usage.tasks.map((t) => (
                     <li key={t.id}>
                       <a href={`#/tasks/${t.id}`}>{t.title}</a>{" "}
-                      <StatusPill status={t.status} size="sm" />
+                      <StatusPill status={t.stage || "plan"} size="sm" />
                     </li>
                   ))}
                 </ul>

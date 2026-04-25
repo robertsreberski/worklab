@@ -1,10 +1,7 @@
 export const STAGES = [
-  "draft",
   "plan",
   "execute",
   "review",
-  "verify",
-  "qa",
   "awaiting_children",
   "awaiting_user",
   "blocked",
@@ -42,46 +39,9 @@ export const FAILURE_KINDS = [
   "provider_unavailable",
 ];
 
-// Compatibility surface for older callers/tests while the UI and API migrate
-// to stage/process_status. These values are not canonical workflow state.
-export const STATUSES = ["todo", "in_progress", "in_review", "done", "blocked"];
-
-export function legacyStatusToStage(status) {
-  switch (status) {
-    case "todo":
-    case "in_progress":
-      return "execute";
-    case "in_review":
-      return "review";
-    case "done":
-      return "done";
-    case "blocked":
-      return "blocked";
-    default:
-      return STAGES.includes(status) ? status : "execute";
-  }
-}
-
-export function stageToLegacyStatus(stage, { running = false } = {}) {
-  if (running) return "in_progress";
-  switch (stage) {
-    case "review":
-    case "verify":
-    case "qa":
-      return "in_review";
-    case "done":
-      return "done";
-    case "blocked":
-    case "awaiting_user":
-    case "awaiting_children":
-      return "blocked";
-    case "draft":
-    case "plan":
-    case "execute":
-    default:
-      return "todo";
-  }
-}
+// Default failure threshold before a task auto-escalates to `blocked`.
+// Override per-event via `event.maxFailures` from the watcher.
+export const DEFAULT_MAX_FAILURES = 3;
 
 export function legacyRunStatusToProcessStatus(status) {
   switch (status) {
@@ -122,19 +82,27 @@ export function processStatusToLegacyStatus(status) {
 }
 
 function unchanged(stage, sideEffects = []) {
-  return { stage, status: stageToLegacyStatus(stage), sideEffects };
+  return { stage, sideEffects };
 }
 
 function change(stage, sideEffects = []) {
-  return { stage, status: stageToLegacyStatus(stage), sideEffects };
+  return { stage, sideEffects };
 }
 
 function canStartRun(stage) {
-  return ["draft", "plan", "execute", "review", "verify", "qa"].includes(stage);
+  return ["plan", "execute", "review"].includes(stage);
 }
 
+// Side-effects emitted whenever a transition logically resets the user-facing
+// "outstanding work" arrays (pending actions, blocking issues). The watcher's
+// applyTx writes the JSON columns; UI consumers see them clear immediately.
+const RESET_USER_ARRAYS = [
+  { type: "clear_pending_actions" },
+  { type: "clear_blocking_issues" },
+];
+
 export function nextStage(currentStage, event) {
-  const current = legacyStatusToStage(currentStage);
+  const current = currentStage;
 
   switch (event.type) {
     case "run_requested": {
@@ -154,31 +122,17 @@ export function nextStage(currentStage, event) {
     case "run_succeeded": {
       const result = event.result || {};
       const decision = result.decision || "advance";
-      if (decision === "delegate") {
-        return change("awaiting_children", [
-          { type: "clear_error_text" },
-          { type: "set_stage_reason", reason: "waiting for delegated subtasks" },
-          { type: "create_subtasks", subtasks: result.subtasks || [] },
-        ]);
-      }
-      if (decision === "pause") {
-        return change("awaiting_user", [
-          { type: "set_stage_reason", reason: result.summary || "awaiting user action" },
-          { type: "set_pending_actions", pendingActions: result.pending_actions || [] },
-        ]);
-      }
-      if (decision === "block") {
-        return change("blocked", [
-          { type: "set_error_text", message: result.summary || "agent blocked" },
-          { type: "set_stage_reason", reason: result.summary || "agent blocked" },
-          { type: "set_blocking_issues", blockingIssues: result.blocking_issues || [] },
-        ]);
-      }
-      if (event.stage === "review" || current === "review") {
-        if (decision === "approve" || decision === "advance") {
+
+      // Review-stage runs must explicitly approve or reject. "advance" is the
+      // worker's parse-failure fallback; if a reviewer falls back to it we
+      // refuse to silently approve.
+      if (event.stage === "review") {
+        if (decision === "approve") {
           return change("done", [
             { type: "clear_error_text" },
             { type: "clear_stage_reason" },
+            ...RESET_USER_ARRAYS,
+            { type: "reset_failure_count" },
             { type: "set_completed_at" },
             { type: "post_review_verdict", verdict: "APPROVE", notes: result.summary || "" },
           ]);
@@ -187,38 +141,126 @@ export function nextStage(currentStage, event) {
           return change("execute", [
             { type: "clear_completed_at" },
             { type: "clear_error_text" },
+            ...RESET_USER_ARRAYS,
             { type: "set_stage_reason", reason: "review requested changes" },
             { type: "post_review_comment", notes: result.details || result.summary || "" },
           ]);
         }
+        return unchanged(current, [
+          { type: "error", message: `review must return approve or reject (got "${decision}")` },
+        ]);
       }
-      return change(event.nextStage || "review", [
+
+      // Non-review stages: branch on decision.
+      if (decision === "delegate") {
+        if (!Array.isArray(result.subtasks) || result.subtasks.length === 0) {
+          return unchanged(current, [
+            { type: "error", message: "delegate requires at least one subtask" },
+          ]);
+        }
+        return change("awaiting_children", [
+          { type: "clear_error_text" },
+          ...RESET_USER_ARRAYS,
+          { type: "reset_failure_count" },
+          { type: "set_stage_reason", reason: "waiting for delegated subtasks" },
+          { type: "create_subtasks", subtasks: result.subtasks },
+        ]);
+      }
+
+      if (decision === "pause") {
+        return change("awaiting_user", [
+          { type: "clear_error_text" },
+          { type: "clear_blocking_issues" },
+          { type: "reset_failure_count" },
+          { type: "set_stage_reason", reason: result.summary || "awaiting user action" },
+          { type: "set_pending_actions", pendingActions: result.pending_actions || [] },
+        ]);
+      }
+
+      if (decision === "block") {
+        return change("blocked", [
+          { type: "clear_pending_actions" },
+          { type: "set_error_text", message: result.summary || "agent blocked" },
+          { type: "set_stage_reason", reason: result.summary || "agent blocked" },
+          { type: "set_blocking_issues", blockingIssues: result.blocking_issues || [] },
+        ]);
+      }
+
+      if (decision !== "advance" && decision !== "approve") {
+        return unchanged(current, [
+          { type: "error", message: `unknown decision: ${decision}` },
+        ]);
+      }
+
+      // Plan advance means the owner has finished planning and the task is
+      // ready for actual work.
+      if (event.stage === "plan") {
+        return change("execute", [
+          { type: "clear_error_text" },
+          { type: "clear_stage_reason" },
+          ...RESET_USER_ARRAYS,
+          { type: "reset_failure_count" },
+        ]);
+      }
+
+      // Execute advance means work is complete. If a reviewer is assigned,
+      // hand off; otherwise this run is the final word.
+      if (event.reviewerAgent) {
+        return change("review", [
+          { type: "clear_error_text" },
+          { type: "clear_stage_reason" },
+          ...RESET_USER_ARRAYS,
+          { type: "spawn_reviewer", agentName: event.reviewerAgent },
+        ]);
+      }
+      return change("done", [
         { type: "clear_error_text" },
         { type: "clear_stage_reason" },
-        ...(event.reviewerAgent ? [{ type: "spawn_reviewer", agentName: event.reviewerAgent }] : []),
+        ...RESET_USER_ARRAYS,
+        { type: "reset_failure_count" },
+        { type: "set_completed_at" },
       ]);
     }
 
     case "run_failed": {
       const message = event.message || "run failed";
       const retryStage = event.retryStage || current;
-      return change(retryStage, [
+      const failureCount = (event.failureCount ?? 0) + 1;
+      const maxFailures = event.maxFailures ?? DEFAULT_MAX_FAILURES;
+      const baseEffects = [
         { type: "post_error_comment", message },
         { type: "set_error_text", message },
         { type: "set_stage_reason", reason: event.failureKind || "run_failed" },
-      ]);
+        { type: "set_failure_count", count: failureCount },
+      ];
+      if (failureCount >= maxFailures) {
+        return change("blocked", [
+          ...baseEffects,
+          {
+            type: "set_blocking_issues",
+            blockingIssues: [`Reached max failures (${failureCount}). Last error: ${message}`],
+          },
+        ]);
+      }
+      return change(retryStage, baseEffects);
     }
 
     case "run_cancelled": {
+      // User-initiated cancellation. Treat distinctly from failure: do not
+      // increment failure_count, do not write error_text. Leave a system
+      // comment trail and a stage_reason so the UI can render an amber chip.
       const message = event.message || "Run cancelled.";
       return change(event.retryStage || current, [
-        { type: "post_error_comment", message },
-        { type: "set_error_text", message },
+        { type: "clear_error_text" },
         { type: "set_stage_reason", reason: "cancelled" },
+        { type: "post_cancellation_comment", message },
       ]);
     }
 
     case "run_abandoned": {
+      // Worker died / coordinator restarted. This IS a failure path, but it
+      // does not count toward the user-visible retry budget — the run never
+      // really executed. Surface error_text so the user knows to re-run.
       const message = event.message || "Previous run did not finish";
       return change(event.retryStage || current, [
         { type: "post_error_comment", message },
@@ -233,75 +275,48 @@ export function nextStage(currentStage, event) {
       }
       return change("execute", [
         { type: "clear_error_text" },
+        ...RESET_USER_ARRAYS,
         { type: "set_stage_reason", reason: "required children completed" },
       ]);
 
     case "child_blocked":
       if (current !== "awaiting_children") return unchanged(current);
       return change("blocked", [
+        { type: "clear_pending_actions" },
         { type: "set_error_text", message: event.message || "required child blocked" },
         { type: "set_stage_reason", reason: "required_child_blocked" },
+        { type: "set_blocking_issues", blockingIssues: [event.message || "required child blocked"] },
       ]);
 
     case "human_move": {
-      const target = legacyStatusToStage(event.target);
+      const target = event.target;
       if (!STAGES.includes(target)) {
         return unchanged(current, [{ type: "error", message: `invalid target ${event.target}` }]);
       }
       const sideEffects = [{ type: "set_stage_reason", reason: event.reason || null }];
-      if (target === "done") sideEffects.push({ type: "set_completed_at" });
+      if (target === "done") {
+        sideEffects.push({ type: "set_completed_at" });
+        sideEffects.push(...RESET_USER_ARRAYS);
+        sideEffects.push({ type: "reset_failure_count" });
+      } else {
+        // Moving to anything other than done: clear arrays whose semantics
+        // belong to states the user is leaving behind.
+        if (current === "awaiting_user" && target !== "awaiting_user") {
+          sideEffects.push({ type: "clear_pending_actions" });
+        }
+        if ((current === "blocked" || current === "awaiting_children") && target !== "blocked" && target !== "awaiting_children") {
+          sideEffects.push({ type: "clear_blocking_issues" });
+        }
+      }
       if (current === "done" && target !== "done") sideEffects.push({ type: "clear_completed_at" });
       if (target !== "blocked") sideEffects.push({ type: "clear_error_text" });
+      // Manually moving back into a runnable stage clears the failure budget;
+      // the user is explicitly choosing to retry.
+      if (canStartRun(target)) sideEffects.push({ type: "reset_failure_count" });
       return change(target, sideEffects);
     }
 
     default:
       return unchanged(current, [{ type: "error", message: `unknown event ${event.type}` }]);
   }
-}
-
-export function nextStatus(current, event) {
-  const stage = legacyStatusToStage(current);
-  if (event.type === "review_approved") {
-    return nextStage(stage, {
-      type: "run_succeeded",
-      stage: "review",
-      result: { decision: "approve", summary: event.notes || "" },
-    });
-  }
-  if (event.type === "review_rejected") {
-    return nextStage(stage, {
-      type: "run_succeeded",
-      stage: "review",
-      result: { decision: "reject", summary: event.notes || "" },
-    });
-  }
-  if (event.type === "run_completed") {
-    return nextStage(stage, {
-      type: "run_succeeded",
-      stage,
-      reviewerAgent: event.reviewerAgent,
-      result: { decision: "advance" },
-    });
-  }
-  if (event.type === "run_failed") {
-    return nextStage(stage, event);
-  }
-  if (event.type === "run_requested") {
-    const result = nextStage(stage, {
-      type: "run_requested",
-      stage,
-      mode: stage === "review" ? "review" : "execute",
-      agentName: event.executorAgent,
-    });
-    return {
-      ...result,
-      sideEffects: result.sideEffects.map((sideEffect) => (
-        sideEffect.type === "spawn_worker"
-          ? { type: "spawn_executor", agentName: sideEffect.agentName }
-          : sideEffect
-      )),
-    };
-  }
-  return nextStage(stage, event);
 }

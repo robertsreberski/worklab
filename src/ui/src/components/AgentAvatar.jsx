@@ -1,6 +1,6 @@
 // §3.17 AgentAvatar — identity-driven avatar.
 // Hue derives from stable `agent.name` only (§2.1.5). Never from display_name.
-// Role sub-chip (E/R) appears only in task-context views when `role` is set.
+// Role sub-chip (O/R) appears only in task-context views when `role` is set.
 
 function hashHue(value = "") {
   let hash = 0;
@@ -27,7 +27,7 @@ export function AgentAvatar({
   size = 24,
   title,
   compact = false,
-  role, // "executor" | "reviewer" | undefined — renders a small E/R sub-chip.
+  role, // "owner" | "reviewer" | undefined — renders a small O/R sub-chip.
   class: className = "",
 }) {
   const display = label || name || "Unassigned";
@@ -47,7 +47,7 @@ export function AgentAvatar({
       <span>{unassigned ? "?" : initials(display)}</span>
       {role && (
         <span class="agent-avatar-role-chip" aria-hidden="true">
-          {role === "executor" ? "E" : role === "reviewer" ? "R" : ""}
+          {role === "owner" ? "O" : role === "reviewer" ? "R" : ""}
         </span>
       )}
     </span>

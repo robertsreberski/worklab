@@ -130,14 +130,15 @@ export function createTaskFromSchedule({ db, schedule, broker, triggerType = "ma
   const spawnId = newScheduleSpawnId();
   db.prepare(`
     INSERT INTO tasks (
-      id, title, instructions, status, executor_agent, reviewer_agent,
+      id, root_task_id, title, instructions, stage, owner_agent, reviewer_agent,
       tags, source_schedule_id, created_at, updated_at
-    ) VALUES (?, ?, ?, 'todo', ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, 'plan', ?, ?, ?, ?, ?, ?)
   `).run(
+    taskId,
     taskId,
     schedule.title,
     schedule.instructions || "",
-    schedule.executor_agent || null,
+    schedule.owner_agent || null,
     schedule.reviewer_agent || null,
     JSON.stringify(schedule.tags || []),
     schedule.id,
@@ -153,7 +154,7 @@ export function createTaskFromSchedule({ db, schedule, broker, triggerType = "ma
   return {
     id: taskId,
     title: schedule.title,
-    status: "todo",
+    stage: "plan",
     created_at: now,
     source_schedule_id: schedule.id,
   };

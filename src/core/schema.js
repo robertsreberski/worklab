@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 9;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -35,15 +35,17 @@ CREATE TABLE IF NOT EXISTS tasks (
   client_request_id TEXT,
   title TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL DEFAULT 'todo',
-  stage TEXT NOT NULL DEFAULT 'execute',
+  stage TEXT NOT NULL DEFAULT 'plan',
   stage_reason TEXT,
   join_policy TEXT NOT NULL DEFAULT 'all_required',
   subtask_order INTEGER NOT NULL DEFAULT 0,
   required INTEGER NOT NULL DEFAULT 1,
   pending_actions_json TEXT NOT NULL DEFAULT '[]',
   blocking_issues_json TEXT NOT NULL DEFAULT '[]',
-  executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  plan_body TEXT NOT NULL DEFAULT '',
+  plan_updated_at INTEGER,
+  plan_updated_by TEXT,
+  plan_source_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
   reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   tags TEXT NOT NULL DEFAULT '[]',
   error_text TEXT,
@@ -53,7 +55,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at INTEGER NOT NULL,
   completed_at INTEGER
 );
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS task_dependencies (
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -197,7 +199,7 @@ CREATE TABLE IF NOT EXISTS schedules (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
-  executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   tags TEXT NOT NULL DEFAULT '[]',
   cadence_json TEXT NOT NULL DEFAULT '{}',

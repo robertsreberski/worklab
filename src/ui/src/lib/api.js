@@ -16,6 +16,7 @@ export const api = {
   getTask: (id) => request("GET", `/tasks/${id}`),
   createTask: (data) => request("POST", "/tasks", data),
   patchTask: (id, patch) => request("PATCH", `/tasks/${id}`, patch),
+  createSubtask: (id, data) => request("POST", `/tasks/${id}/subtasks`, data),
   deleteTask: (id) => request("DELETE", `/tasks/${id}`),
   addComment: (id, body) => request("POST", `/tasks/${id}/comments`, { body }),
   runTask: (id) => request("POST", `/tasks/${id}/run`),

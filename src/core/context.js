@@ -2,7 +2,9 @@ import { buildSkillIndex } from "./skills.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
-const RESULT_DIRECTIVE = `Return a structured Worklab result as JSON when you finish:
+const PLAN_DIRECTIVE = `Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Do not do implementation work during planning.
+
+Return a structured Worklab result as JSON when you finish:
 
 {
   "schema": "worklab.v2",
@@ -15,9 +17,26 @@ const RESULT_DIRECTIVE = `Return a structured Worklab result as JSON when you fi
   "subtasks": []
 }
 
-Use decision "advance" when your stage work is complete, "block" when you cannot continue, "pause" when explicit human input is required, and "delegate" when bounded subtasks should be created.`;
+Use decision "advance" when the plan is ready and the task should move to work, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 
-const REVIEW_DIRECTIVE = `Review the executor's work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
+const WORK_DIRECTIVE = `Do the task work requested by the instructions.
+
+Return a structured Worklab result as JSON when you finish:
+
+{
+  "schema": "worklab.v2",
+  "decision": "advance",
+  "summary": "Short outcome.",
+  "details": "Optional implementation notes.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+
+Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
+
+const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 
@@ -29,15 +48,15 @@ function formatDuration(ms) {
   return `${(n / 1000).toFixed(1)}s`;
 }
 
-function formatExecutorOutput(execution) {
+function formatWorkOutput(execution) {
   const { finalText, agentName, numTurns, durationMs } = execution || {};
   const safeAgentName = agentName ?? "unknown";
   const safeNumTurns = numTurns ?? 0;
   const safeDurationMs = durationMs ?? 0;
-  const header = `## Executor output (by ${safeAgentName}, ${safeNumTurns} turns, ${formatDuration(safeDurationMs)})`;
+  const header = `## Work output (by ${safeAgentName}, ${safeNumTurns} turns, ${formatDuration(safeDurationMs)})`;
   const body = finalText && String(finalText).trim()
     ? String(finalText).trim()
-    : "_The executor produced no final text._";
+    : "_The owner produced no final text._";
   return `${header}\n\n${body}\n`;
 }
 
@@ -113,7 +132,7 @@ function buildTaskBody(task, comments) {
   ].filter(Boolean).join("\n");
 }
 
-export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, priorRuns }) {
+function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, priorRuns }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));
   parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
@@ -123,7 +142,18 @@ export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalT
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
   parts.push(CADENCE);
-  parts.push(RESULT_DIRECTIVE);
+  return parts;
+}
+
+export function buildPlanSystemPrompt(input) {
+  const parts = buildBasePrompt(input);
+  parts.push(PLAN_DIRECTIVE);
+  return parts.filter(Boolean).join("\n");
+}
+
+export function buildExecuteSystemPrompt(input) {
+  const parts = buildBasePrompt(input);
+  parts.push(WORK_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }
 
@@ -137,7 +167,7 @@ export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTa
   parts.push(section("Memory", memory || ""));
   parts.push(section("Recent journal", journalTail || ""));
   parts.push(section("Task", buildTaskBody(task, comments)));
-  parts.push(formatExecutorOutput(execution || {}));
+  parts.push(formatWorkOutput(execution || {}));
   parts.push(REVIEW_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }

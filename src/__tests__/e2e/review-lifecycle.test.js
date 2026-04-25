@@ -1,13 +1,13 @@
 // src/__tests__/e2e/review-lifecycle.test.js
 //
 // End-to-end test of the reviewer loop: HTTP → task-watcher → fake worker
-// (execute mode → review mode) → DB → agent comments → task status transition.
+// (execute mode → review mode) → DB → agent comments → task stage transition.
 //
 // Two scenarios:
 //   A) APPROVE path — reviewer approves, task transitions to `done`.
 //   B) REJECT  path — reviewer rejects, task returns to retryable `execute`.
 //
-// NOTE: Verification that pinned KB reaches the reviewer/executor system prompt
+// NOTE: Verification that pinned KB reaches the reviewer/owner system prompt
 // is covered by context.test.js (direct builder tests) and a worker-side
 // integration check deferred to T14 / Phase 4. The fake worker never receives
 // a system prompt from the coordinator (it's a pure stub), so we cannot assert
@@ -114,7 +114,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     }
   });
 
-  it("APPROVE path: task → in_review → done, with executor + reviewer + system comments", async () => {
+  it("APPROVE path: task → review → done, with owner + reviewer + system comments", async () => {
     const runIdRef = { execute: null, review: null };
     ctx = await setupHarness({
       executeEvents: [
@@ -138,7 +138,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e approve", executor_agent: "exec", reviewer_agent: "reviewer" }),
+      body: JSON.stringify({ title: "e2e approve", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute" }),
     });
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();
@@ -149,11 +149,11 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const finalResp = await pollTaskUntil(
       ctx.baseUrl,
       task.id,
-      (tr) => tr.task.status === "done",
+      (tr) => tr.task.stage === "done",
       { timeoutMs: 5000, stepMs: 100 },
     );
 
-    expect(finalResp.task.status).toBe("done");
+    expect(finalResp.task.stage).toBe("done");
     expect(finalResp.task.completed_at).not.toBeNull();
 
     // task_runs: exactly 2 rows — execute (complete) + review (complete).
@@ -164,7 +164,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(runs[0]).toMatchObject({ mode: "execute", status: "complete", agent_name: "exec" });
     expect(runs[1]).toMatchObject({ mode: "review", status: "complete", agent_name: "reviewer" });
 
-    // Comments: executor agent (exec, "all good"), reviewer agent (reviewer, contains "Looks good"),
+    // Comments: owner agent (exec, "all good"), reviewer agent (reviewer, contains "Looks good"),
     // system ("VERDICT: APPROVE").
     const comments = finalResp.comments;
     const execComments = comments.filter((c) => c.author_type === "agent" && c.author_id === "exec");
@@ -202,7 +202,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e reject", executor_agent: "exec", reviewer_agent: "reviewer" }),
+      body: JSON.stringify({ title: "e2e reject", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute" }),
     });
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();
@@ -219,7 +219,6 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     );
 
     expect(finalResp.task.stage).toBe("execute");
-    expect(finalResp.task.status).toBe("todo");
     // Reducer's clear_error_text side effect on review_rejected clears error_text.
     expect(finalResp.task.error_text).toBeNull();
 

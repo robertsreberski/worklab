@@ -5,6 +5,9 @@ function validateScheduleInput(body = {}) {
   if (!body.title || typeof body.title !== "string" || !body.title.trim()) {
     throw Object.assign(new Error("title is required"), { status: 400, code: "validation" });
   }
+  if ("executor_agent" in body) {
+    throw Object.assign(new Error("executor_agent is not supported; use owner_agent"), { status: 400, code: "validation" });
+  }
 }
 
 function listSummary(db, schedule) {
@@ -13,7 +16,7 @@ function listSummary(db, schedule) {
     "SELECT COUNT(*) AS count FROM schedule_spawns WHERE schedule_id = ? AND fired_at >= ?",
   ).get(schedule.id, windowStart)?.count || 0;
   const recentTasks = db.prepare(`
-    SELECT t.id, t.status, t.title, t.created_at
+    SELECT t.id, t.stage, t.title, t.created_at
     FROM schedule_spawns s
     JOIN tasks t ON t.id = s.task_id
     WHERE s.schedule_id = ?
@@ -37,7 +40,7 @@ function detailPayload(db, schedule) {
     SELECT
       t.id,
       t.title,
-      t.status,
+      t.stage,
       t.created_at,
       t.updated_at,
       s.trigger_type,
@@ -75,14 +78,14 @@ export function registerScheduleRoutes(app, { db, broker, scheduleManager }) {
       const next_fire_at = enabled ? nextFireAt(cadence, now) : null;
       db.prepare(`
         INSERT INTO schedules (
-          id, title, instructions, executor_agent, reviewer_agent,
+          id, title, instructions, owner_agent, reviewer_agent,
           tags, cadence_json, enabled, next_fire_at, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id,
         req.body.title.trim(),
         req.body.instructions || "",
-        req.body.executor_agent || null,
+        req.body.owner_agent || null,
         req.body.reviewer_agent || null,
         JSON.stringify(req.body.tags || []),
         JSON.stringify(cadence),
@@ -123,13 +126,13 @@ export function registerScheduleRoutes(app, { db, broker, scheduleManager }) {
       const nextFire = enabled ? nextFireAt(next.cadence, now) : null;
       db.prepare(`
         UPDATE schedules
-        SET title = ?, instructions = ?, executor_agent = ?, reviewer_agent = ?,
+        SET title = ?, instructions = ?, owner_agent = ?, reviewer_agent = ?,
             tags = ?, cadence_json = ?, enabled = ?, next_fire_at = ?, updated_at = ?
         WHERE id = ?
       `).run(
         String(next.title).trim(),
         next.instructions || "",
-        next.executor_agent || null,
+        next.owner_agent || null,
         next.reviewer_agent || null,
         JSON.stringify(next.tags || []),
         JSON.stringify(next.cadence || {}),

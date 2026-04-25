@@ -1,23 +1,28 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
-import { nextStage, STATUSES, STAGES, legacyStatusToStage, stageToLegacyStatus, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+import { nextStage, STAGES, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
+import { resumeWaitingParents } from "../core/task-joins.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 
 function rowToTask(row) {
   if (!row) return null;
-  const stage = row.stage || legacyStatusToStage(row.status);
+  const stage = row.stage || "plan";
   return {
     ...row,
     stage,
-    status: row.status || stageToLegacyStatus(stage),
     tags: JSON.parse(row.tags || "[]"),
     retry_count: row.retry_count ?? 0,
     source_schedule_id: row.source_schedule_id || null,
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,
-    owner_agent: row.owner_agent || row.executor_agent || null,
+    owner_agent: row.owner_agent || null,
     delegated_to_agent: row.delegated_to_agent || null,
     delegated_by_run_id: row.delegated_by_run_id || null,
+    plan_body: row.plan_body || "",
+    plan_updated_at: row.plan_updated_at || null,
+    plan_updated_by: row.plan_updated_by || null,
+    plan_source_run_id: row.plan_source_run_id || null,
     required: row.required !== 0,
     pending_actions: JSON.parse(row.pending_actions_json || "[]"),
     blocking_issues: JSON.parse(row.blocking_issues_json || "[]"),
@@ -30,11 +35,9 @@ function compactTaskSummary(row) {
   return {
     id: task.id,
     title: task.title,
-    status: task.status,
     stage: task.stage,
     updated_at: task.updated_at,
     owner_agent: task.owner_agent,
-    executor_agent: task.executor_agent,
     reviewer_agent: task.reviewer_agent,
     source_schedule_id: task.source_schedule_id,
   };
@@ -65,7 +68,8 @@ function attachDerivedRunFields(db, task) {
     : null;
   const runningEvents = runningLog ? parseEvents(runningLog.events) : [];
   const lastRow = db.prepare(
-    `SELECT id, status, process_status, failure_kind, ended_at FROM task_runs
+    `SELECT id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
+     FROM task_runs
      WHERE task_id = ? AND status <> 'running'
      ORDER BY started_at DESC LIMIT 1`
   ).get(task.id);
@@ -80,7 +84,6 @@ function attachDerivedRunFields(db, task) {
       event_count: runningEvents.length,
       last_event: runningEvents[runningEvents.length - 1] || null,
     } : null,
-    status: runningRow ? "in_progress" : task.status,
     last_run: lastRow ? {
       id: lastRow.id,
       status: lastRow.status,
@@ -89,6 +92,9 @@ function attachDerivedRunFields(db, task) {
         : (lastRow.process_status || legacyRunStatusToProcessStatus(lastRow.status)),
       failure_kind: lastRow.failure_kind || null,
       ended_at: lastRow.ended_at,
+      stage: lastRow.stage || (lastRow.mode === "review" ? "review" : "execute"),
+      decision: lastRow.decision || null,
+      summary: lastRow.summary || null,
     } : null,
   };
 }
@@ -195,6 +201,22 @@ function replaceTaskDependencies(db, taskId, dependencyIds) {
   tx(dependencyIds);
 }
 
+function applyRouteSideEffects(db, broker, taskId, sideEffects, currentStage, newStage) {
+  const tx = db.transaction(() => {
+    applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage);
+  });
+  tx();
+  broker.broadcast("global", { type: "task_updated", id: taskId });
+}
+
+function nullableAgentName(value, fallback = null) {
+  if (value === undefined) return fallback;
+  if (value === null) return null;
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 function rowToRun(row) {
   if (!row) return null;
   const {
@@ -263,16 +285,20 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     const where = [];
     const params = [];
     if (req.query.status) {
-      where.push("status = ?");
-      params.push(req.query.status);
+      return res.status(400).json({
+        error: { code: "validation", message: "status is not supported; use stage" },
+      });
     }
     if (req.query.stage) {
+      if (!STAGES.includes(req.query.stage)) {
+        return res.status(400).json({ error: { code: "validation", message: `invalid stage: ${req.query.stage}` } });
+      }
       where.push("stage = ?");
       params.push(req.query.stage);
     }
     if (req.query.agent) {
-      where.push("(owner_agent = ? OR executor_agent = ? OR reviewer_agent = ?)");
-      params.push(req.query.agent, req.query.agent, req.query.agent);
+      where.push("(owner_agent = ? OR reviewer_agent = ?)");
+      params.push(req.query.agent, req.query.agent);
     }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
@@ -281,13 +307,22 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
   });
 
   app.post("/api/tasks", (req, res) => {
+    if ("executor_agent" in (req.body || {})) {
+      return res.status(400).json({
+        error: { code: "validation", message: "executor_agent is not supported; use owner_agent" },
+      });
+    }
+    if ("status" in (req.body || {})) {
+      return res.status(400).json({
+        error: { code: "validation", message: "status is not supported; use stage" },
+      });
+    }
     const {
       title,
       instructions = "",
-      executor_agent = null,
       reviewer_agent = null,
       owner_agent = null,
-      stage = "execute",
+      stage = "plan",
       tags = [],
       blocked_by_ids = [],
       client_request_id = null,
@@ -300,6 +335,9 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     if (!title || typeof title !== "string") {
       return res.status(400).json({ error: { code: "validation", message: "title is required" } });
     }
+    if (!STAGES.includes(stage)) {
+      return res.status(400).json({ error: { code: "validation", message: `invalid stage: ${stage}` } });
+    }
     let dependencyIds = [];
     try {
       dependencyIds = validateDependencyIds(db, null, blocked_by_ids);
@@ -310,9 +348,9 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     const now = Date.now();
     const insertTask = db.prepare(`
       INSERT INTO tasks
-        (id, root_task_id, client_request_id, title, instructions, status, stage, owner_agent,
-         executor_agent, reviewer_agent, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
+         reviewer_agent, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     try {
       insertTask.run(
@@ -321,10 +359,8 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
         requestId,
         title,
         instructions,
-        stageToLegacyStatus(stage),
         stage,
-        owner_agent || executor_agent,
-        executor_agent,
+        owner_agent,
         reviewer_agent,
         JSON.stringify(tags),
         now,
@@ -358,14 +394,25 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     res.json({ task, comments, runs });
   });
 
-  const PATCHABLE = ["title", "instructions", "executor_agent", "reviewer_agent", "owner_agent", "tags"];
+  const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "tags"];
 
   app.patch("/api/tasks/:id", (req, res) => {
     const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+    if ("executor_agent" in (req.body || {})) {
+      return res.status(400).json({
+        error: { code: "validation", message: "executor_agent is not supported; use owner_agent" },
+      });
+    }
+    if ("status" in (req.body || {})) {
+      return res.status(400).json({
+        error: { code: "validation", message: "status is not supported; use stage" },
+      });
+    }
 
     const fields = [];
     const values = [];
+    let stageTransition = null;
 
     // Non-status fields
     for (const k of PATCHABLE) {
@@ -375,30 +422,34 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       }
     }
 
-    // Stage handling via state machine. `status` remains accepted as a legacy
-    // input alias and is translated into a workflow stage.
-    if ("status" in req.body || "stage" in req.body) {
-      const requested = "stage" in req.body ? req.body.stage : req.body.status;
-      if (!STAGES.includes(requested) && !STATUSES.includes(requested)) {
+    if ("plan_body" in req.body) {
+      if (req.body.plan_body != null && typeof req.body.plan_body !== "string") {
+        return res.status(400).json({ error: { code: "validation", message: "plan_body must be a string" } });
+      }
+      const now = Date.now();
+      fields.push("plan_body = ?");
+      values.push(req.body.plan_body || "");
+      fields.push("plan_updated_at = ?");
+      values.push(now);
+      fields.push("plan_updated_by = ?");
+      values.push("human");
+      fields.push("plan_source_run_id = ?");
+      values.push(null);
+    }
+
+    if ("stage" in req.body) {
+      const requested = req.body.stage;
+      if (!STAGES.includes(requested)) {
         return res.status(400).json({ error: { code: "validation", message: "invalid stage" } });
       }
-      const currentStage = existing.stage || legacyStatusToStage(existing.status);
+      const currentStage = taskStage(existing);
       const result = nextStage(currentStage, { type: "human_move", target: requested });
       if (result.sideEffects.some(se => se.type === "error")) {
         return res.status(400).json({
           error: { code: "invalid_transition", message: result.sideEffects.find(se => se.type === "error").message },
         });
       }
-      fields.push("stage = ?");
-      values.push(result.stage);
-      fields.push("status = ?");
-      values.push(stageToLegacyStatus(result.stage));
-      for (const se of result.sideEffects) {
-        if (se.type === "set_completed_at") { fields.push("completed_at = ?"); values.push(Date.now()); }
-        if (se.type === "clear_completed_at") { fields.push("completed_at = ?"); values.push(null); }
-        if (se.type === "clear_error_text") { fields.push("error_text = ?"); values.push(null); }
-        if (se.type === "set_stage_reason") { fields.push("stage_reason = ?"); values.push(se.reason || null); }
-      }
+      stageTransition = { currentStage, result };
     }
 
     if ("blocked_by_ids" in req.body) {
@@ -412,20 +463,119 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       values.push(Date.now());
     }
 
-    if (fields.length === 0) {
+    if (fields.length === 0 && !stageTransition) {
       return res.json({ task: enrichTask(db, rowToTask(existing)) });
     }
 
-    if (!fields.includes("updated_at = ?")) {
-      fields.push("updated_at = ?");
-      values.push(Date.now());
+    if (fields.length > 0) {
+      if (!fields.includes("updated_at = ?")) {
+        fields.push("updated_at = ?");
+        values.push(Date.now());
+      }
+      values.push(req.params.id);
+      db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+      broker.broadcast("global", { type: "task_updated", id: req.params.id });
     }
-    values.push(req.params.id);
-    db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+
+    if (stageTransition) {
+      applyRouteSideEffects(
+        db,
+        broker,
+        req.params.id,
+        stageTransition.result.sideEffects,
+        stageTransition.currentStage,
+        stageTransition.result.stage,
+      );
+      if (stageTransition.result.stage === "done" || stageTransition.result.stage === "blocked") {
+        resumeWaitingParents({
+          db,
+          childTaskId: req.params.id,
+          applySideEffects: (taskId, sideEffects, currentStage, newStage) => {
+            applyRouteSideEffects(db, broker, taskId, sideEffects, currentStage, newStage);
+          },
+        });
+      }
+    }
 
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
-    broker.broadcast("global", { type: "task_updated", id: req.params.id });
     res.json({ task: enrichTask(db, rowToTask(row)) });
+  });
+
+  app.post("/api/tasks/:id/subtasks", (req, res) => {
+    const parent = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
+    if (!parent) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+
+    const body = req.body || {};
+    const title = typeof body.title === "string" ? body.title.trim() : "";
+    if (!title) {
+      return res.status(400).json({ error: { code: "validation", message: "title is required" } });
+    }
+    const instructions = typeof body.instructions === "string" ? body.instructions : "";
+    const ownerAgent = nullableAgentName(body.owner_agent, parent.owner_agent || null);
+    const reviewerAgent = nullableAgentName(body.reviewer_agent, parent.reviewer_agent || null);
+    const required = body.required === false ? 0 : 1;
+    const now = Date.now();
+    const childId = newTaskId();
+    const rootTaskId = parent.root_task_id || parent.id;
+    const orderRow = db.prepare("SELECT COALESCE(MAX(subtask_order), -1) AS max_order FROM tasks WHERE parent_task_id = ?").get(parent.id);
+    const subtaskOrder = Number(orderRow?.max_order ?? -1) + 1;
+    const shouldWait = required === 1 && !["done", "blocked"].includes(taskStage(parent));
+
+    try {
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO tasks
+            (id, root_task_id, parent_task_id, owner_agent, reviewer_agent,
+             title, instructions, stage, join_policy, subtask_order, required,
+             tags, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'plan', 'all_required', ?, ?, ?, ?, ?)
+        `).run(
+          childId,
+          rootTaskId,
+          parent.id,
+          ownerAgent,
+          reviewerAgent,
+          title,
+          instructions,
+          subtaskOrder,
+          required,
+          JSON.stringify([]),
+          now,
+          now,
+        );
+        db.prepare(`
+          INSERT INTO task_edges
+            (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
+          VALUES (?, ?, 'subtask', ?, NULL, ?)
+        `).run(parent.id, childId, required, now);
+        if (shouldWait) {
+          db.prepare(`
+            UPDATE tasks
+            SET stage = 'awaiting_children',
+                stage_reason = 'waiting for manual subtasks',
+                error_text = NULL,
+                completed_at = NULL,
+                pending_actions_json = '[]',
+                blocking_issues_json = '[]',
+                updated_at = ?
+            WHERE id = ?
+          `).run(now, parent.id);
+        } else {
+          db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, parent.id);
+        }
+      })();
+    } catch (error) {
+      if (String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
+        return res.status(400).json({ error: { code: "validation", message: error.message } });
+      }
+      throw error;
+    }
+
+    const child = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(childId)));
+    const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)));
+    broker.broadcast("global", { type: "task_created", id: childId });
+    broker.broadcast("global", { type: "task_updated", id: parent.id });
+    res.status(201).json({ task: child, parent: updatedParent });
   });
 
   app.delete("/api/tasks/:id", (req, res) => {
@@ -505,12 +655,11 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       const retryStage = staleRun.stage || "execute";
       db.prepare(
         `UPDATE tasks SET stage = CASE WHEN stage = 'done' THEN stage ELSE ? END,
-                          status = CASE WHEN stage = 'done' THEN 'done' ELSE ? END,
                           error_text = COALESCE(error_text, ?),
                           stage_reason = COALESCE(stage_reason, 'abandoned'),
                           updated_at = ?
          WHERE id = ?`
-      ).run(retryStage, stageToLegacyStatus(retryStage), "Previous run did not finish", now, taskId);
+      ).run(retryStage, "Previous run did not finish", now, taskId);
     })();
 
     broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId });

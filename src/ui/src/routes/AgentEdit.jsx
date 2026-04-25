@@ -75,8 +75,13 @@ function normalizeEffort(option, effort) {
 }
 function supportedBuiltinTools(option) {
   if (option?.capabilities?.tool_use === false) return [];
-  if (Array.isArray(option?.builtin_tools) && option.builtin_tools.length) return option.builtin_tools;
+  if (Array.isArray(option?.builtin_tools)) return option.builtin_tools;
   return BUILTIN_TOOLS;
+}
+
+function modelGroupLabel(group) {
+  if (group.available !== false) return group.label;
+  return `${group.label} (unavailable)`;
 }
 
 export function AgentEdit({ name, onSaved, onDeleted }) {
@@ -149,8 +154,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   const modelOptions = [
     ...modelGroups.map((group) => ({
-      label: group.available === false ? `${group.label} (credentials not set)` : group.label,
-      options: (group.models || []).map((m) => ({ value: m.value, label: m.label || m.value })),
+      label: modelGroupLabel(group),
+      options: (group.models || []).map((m) => ({
+        value: m.value,
+        label: m.label || m.value,
+        description: group.available === false
+          ? (group.unavailable_reason || "Unavailable")
+          : (m.description || undefined),
+      })),
     })),
     ...(allModels.some((m) => m.value === agent.model) ? [] : [{
       label: "Saved value",
@@ -298,8 +309,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             </FormField>
           </FormGrid>
           <div class="field-hint field-hint-spaced">
-            {selectedModel?.capabilities?.tool_use === false
-              ? "This model does not support tool use."
+            {visibleTools.length === 0
+              ? "No Worklab built-in tools are exposed for this runtime."
               : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
             {selectedModel?.capabilities?.reasoning
               ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
@@ -352,7 +363,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               </div>
             )}
           </FormField>
-          <FormField label="Built-in tools" hint={supportsToolUse ? "Empty = all." : "This model cannot call built-in tools."}>
+          <FormField label="Built-in tools" hint={supportsToolUse ? "Empty = all." : "This runtime cannot call Worklab built-in tools."}>
             {supportsToolUse && (
               <div class="checkbox-stack">
                 {visibleTools.map((t) => (

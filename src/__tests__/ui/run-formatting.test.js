@@ -7,7 +7,7 @@ describe("run formatting helpers", () => {
     expect(formatDuration(127_000)).toBe("2m 7s");
     expect(formatTokens(3300)).toBe("3.3k");
     expect(formatCost(0.0188)).toBe("$0.0188");
-    expect(formatMode("in_review")).toBe("In Review");
+    expect(formatMode("review")).toBe("Review");
   });
 
   it("builds compact metric items from a run", () => {

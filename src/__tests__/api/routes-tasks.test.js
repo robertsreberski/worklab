@@ -15,15 +15,25 @@ describe("POST /api/tasks", () => {
     const res = await agent.post("/api/tasks").send({ title: "do thing" }).expect(201);
     expect(res.body.task.id).toMatch(/^[a-zA-Z0-9]{21}$/);
     expect(res.body.task.title).toBe("do thing");
-    expect(res.body.task.status).toBe("todo");
-    expect(res.body.task.stage).toBe("execute");
+    expect(res.body.task.status).toBeUndefined();
+    expect(res.body.task.stage).toBe("plan");
     expect(res.body.task.root_task_id).toBe(res.body.task.id);
+    expect(res.body.task.plan_body).toBe("");
+    expect(res.body.task.plan_updated_at).toBeNull();
+    expect(res.body.task.plan_updated_by).toBeNull();
+    expect(res.body.task.plan_source_run_id).toBeNull();
     expect(res.body.task.priority).toBeUndefined();
   });
 
   it("rejects missing title", async () => {
     const { agent } = makeTestServer();
     await agent.post("/api/tasks").send({}).expect(400);
+  });
+
+  it("rejects legacy status and executor fields", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/tasks").send({ title: "old", status: "todo" }).expect(400);
+    await agent.post("/api/tasks").send({ title: "old", executor_agent: "coder" }).expect(400);
   });
 
   it("returns new task in GET list", async () => {
@@ -190,6 +200,16 @@ describe("PATCH /api/tasks/:id", () => {
     expect(res.body.task.instructions).toBe("do this");
   });
 
+  it("updates editable plan text and records human metadata", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "orig" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ plan_body: "## Plan\n\nDo the thing." }).expect(200);
+    expect(res.body.task.plan_body).toBe("## Plan\n\nDo the thing.");
+    expect(res.body.task.plan_updated_at).toBeTruthy();
+    expect(res.body.task.plan_updated_by).toBe("human");
+    expect(res.body.task.plan_source_run_id).toBeNull();
+  });
+
   it("PATCH broadcasts task_updated", async () => {
     const { agent, broker } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "a" });
@@ -197,6 +217,30 @@ describe("PATCH /api/tasks/:id", () => {
     broker.broadcast = (ch, p) => { if (ch === "global" && p.type === "task_updated") got = p; };
     await agent.patch(`/api/tasks/${task.id}`).send({ title: "b" });
     expect(got).toEqual({ type: "task_updated", id: task.id });
+  });
+
+  it("stores owner assignment", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("coder", "Coder", "claude", "claude:claude-sonnet-4-6", now, now);
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "owned",
+      owner_agent: "coder",
+    }).expect(201);
+    expect(task.owner_agent).toBe("coder");
+    expect(task.executor_agent).toBeUndefined();
+
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ owner_agent: null }).expect(200);
+    expect(res.body.task.owner_agent).toBeNull();
+    expect(res.body.task.executor_agent).toBeUndefined();
+  });
+
+  it("rejects legacy status and executor fields", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ status: "done" }).expect(400);
+    await agent.patch(`/api/tasks/${task.id}`).send({ executor_agent: "coder" }).expect(400);
   });
 
   it("rejects dependency cycles", async () => {
@@ -217,7 +261,7 @@ describe("PATCH /api/tasks/:id stage", () => {
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "review" });
     expect(res.body.task.stage).toBe("review");
-    expect(res.body.task.status).toBe("in_review");
+    expect(res.body.task.status).toBeUndefined();
     expect(res.body.task.running_run_id).toBeNull();
   });
 
@@ -241,6 +285,68 @@ describe("PATCH /api/tasks/:id stage", () => {
     await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" });
     const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "execute" });
     expect(res.body.task.completed_at).toBeNull();
+  });
+});
+
+describe("POST /api/tasks/:id/subtasks", () => {
+  it("creates a manual required subtask in plan and moves parent to awaiting_children", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("owner", "Owner", "claude", "claude:claude-sonnet-4-6", now, now);
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({
+      title: "Parent",
+      owner_agent: "owner",
+    }).expect(201);
+
+    const res = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    expect(res.body.task).toMatchObject({
+      title: "Child",
+      parent_task_id: parent.id,
+      root_task_id: parent.id,
+      owner_agent: "owner",
+      stage: "plan",
+      required: true,
+    });
+    expect(res.body.parent).toMatchObject({ id: parent.id, stage: "awaiting_children", stage_reason: "waiting for manual subtasks" });
+    const edge = db.prepare("SELECT required, created_by_run_id FROM task_edges WHERE parent_task_id = ? AND child_task_id = ?").get(parent.id, res.body.task.id);
+    expect(edge).toMatchObject({ required: 1, created_by_run_id: null });
+  });
+
+  it("optional manual subtasks do not make the parent wait", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
+
+    const res = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Optional", required: false }).expect(201);
+
+    expect(res.body.task.required).toBe(false);
+    expect(res.body.parent.stage).toBe("execute");
+  });
+
+  it("human finishing a required child resumes the waiting parent", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
+    const { body: { task: child } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    await agent.patch(`/api/tasks/${child.id}`).send({ stage: "done" }).expect(200);
+
+    const parentRow = db.prepare("SELECT stage, stage_reason FROM tasks WHERE id = ?").get(parent.id);
+    expect(parentRow).toMatchObject({ stage: "execute", stage_reason: "required children completed" });
+  });
+
+  it("human blocking a required child blocks the waiting parent", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
+    const { body: { task: child } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    await agent.patch(`/api/tasks/${child.id}`).send({ stage: "blocked" }).expect(200);
+
+    const parentRow = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent.id);
+    expect(parentRow.stage).toBe("blocked");
+    expect(parentRow.error_text).toBe("Required child blocked: Child");
+    expect(parentRow.stage_reason).toBe("required_child_blocked");
+    expect(JSON.parse(parentRow.blocking_issues_json)).toEqual(["Required child blocked: Child"]);
   });
 });
 
@@ -339,14 +445,14 @@ describe("GET /api/tasks with filters", () => {
     expect(res.body.tasks[0].id).toBe(b.id);
   });
 
-  it("filters by agent (executor OR reviewer match)", async () => {
+  it("filters by agent (owner OR reviewer match)", async () => {
     const { agent, db } = makeTestServer();
     const now = Date.now();
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("alice", "Alice", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: t1 } } = await agent.post("/api/tasks").send({ title: "x" });
     const { body: { task: t2 } } = await agent.post("/api/tasks").send({ title: "y" });
-    await agent.patch(`/api/tasks/${t1.id}`).send({ executor_agent: "alice" });
+    await agent.patch(`/api/tasks/${t1.id}`).send({ owner_agent: "alice" });
     await agent.patch(`/api/tasks/${t2.id}`).send({ reviewer_agent: "alice" });
     await agent.post("/api/tasks").send({ title: "unrelated" });
     const res = await agent.get("/api/tasks?agent=alice").expect(200);
@@ -359,7 +465,7 @@ describe("GET /api/tasks with filters", () => {
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("bob", "Bob", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: t } } = await agent.post("/api/tasks").send({ title: "t" });
-    await agent.patch(`/api/tasks/${t.id}`).send({ executor_agent: "bob", stage: "review" });
+    await agent.patch(`/api/tasks/${t.id}`).send({ owner_agent: "bob", stage: "review" });
     await agent.post("/api/tasks").send({ title: "other" });
     const res = await agent.get("/api/tasks?stage=review&agent=bob").expect(200);
     expect(res.body.tasks.length).toBe(1);
@@ -382,16 +488,16 @@ describe("POST /api/tasks/:id/run", () => {
     expect(calls).toEqual([task.id]);
   });
 
-  it("returns 400 when watcher throws (e.g., no executor)", async () => {
+  it("returns 400 when watcher throws (e.g., no owner)", async () => {
     const { agent } = makeTestServer({
       watcher: {
-        handleRunRequested: async () => { throw new Error("no executor assigned"); },
+        handleRunRequested: async () => { throw new Error("no owner assigned"); },
         cancel: () => true, shutdown: async () => {}, isActive: () => false,
       },
     });
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     const res = await agent.post(`/api/tasks/${task.id}/run`).expect(400);
-    expect(res.body.error.message).toMatch(/no executor/);
+    expect(res.body.error.message).toMatch(/no owner/);
   });
 });
 
@@ -435,7 +541,7 @@ describe("POST /api/tasks/:id/cancel", () => {
     });
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     db.prepare(
-      `UPDATE tasks SET status = 'in_progress', stage = 'execute', updated_at = ? WHERE id = ?`,
+      `UPDATE tasks SET stage = 'execute', updated_at = ? WHERE id = ?`,
     ).run(Date.now(), task.id);
     db.prepare(
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
@@ -453,8 +559,7 @@ describe("POST /api/tasks/:id/cancel", () => {
     expect(run.failure_kind).toBe("abandoned");
     expect(run.error_text).toBe("worker exited");
 
-    const t = db.prepare("SELECT status, stage, stage_reason, error_text FROM tasks WHERE id = ?").get(task.id);
-    expect(t.status).toBe("todo");
+    const t = db.prepare("SELECT stage, stage_reason, error_text FROM tasks WHERE id = ?").get(task.id);
     expect(t.stage).toBe("execute");
     expect(t.stage_reason).toBe("abandoned");
     expect(t.error_text).toBe("Previous run did not finish");

@@ -1,5 +1,5 @@
 // §6.2 Commander — primary working surface.
-// Filter bar: Search · status Tabs · "New task". Grouped by status. Uses
+// Filter bar: Search · stage Tabs · "New task". Grouped by stage. Uses
 // CommanderRow (§4.4). States: loading / empty / empty-after-filter / error.
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
@@ -29,12 +29,12 @@ const GROUPS = [
 ];
 
 function groupKeyFor(task) {
-  const stage = task.stage || (task.status === "in_review" ? "review" : task.status === "done" ? "done" : "execute");
-  if (["review", "verify", "qa", "awaiting_children", "awaiting_user", "blocked", "done", "plan"].includes(stage)) {
-    return stage === "verify" || stage === "qa" ? "review" : stage;
+  const stage = task.stage || "plan";
+  if (["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"].includes(stage)) {
+    return stage;
   }
   const unmetDeps = Array.isArray(task.blocked_by)
-    && task.blocked_by.some((d) => d.status !== "done");
+    && task.blocked_by.some((d) => (d.stage || "plan") !== "done");
   const runErrored = hasRunError(task);
   const stuck = task.running_run_id && task.is_locked === false;
   if (unmetDeps || runErrored || stuck) return "blocked";
@@ -47,6 +47,7 @@ const TABS = [
   { value: "execute", label: "Execute" },
   { value: "review", label: "Review" },
   { value: "awaiting_children", label: "Waiting" },
+  { value: "awaiting_user", label: "Needs input" },
   { value: "blocked", label: "Blocked" },
   { value: "done", label: "Done" },
 ];
@@ -96,7 +97,7 @@ export function Commander() {
         task.title?.toLowerCase().includes(q) ||
         task.instructions?.toLowerCase().includes(q) ||
         task.id?.toLowerCase().includes(q) ||
-        task.executor_agent?.toLowerCase().includes(q) ||
+        task.owner_agent?.toLowerCase().includes(q) ||
         task.reviewer_agent?.toLowerCase().includes(q)
       );
     });
@@ -186,7 +187,7 @@ export function Commander() {
           />
           <div class="filter-divider" />
           <Tabs
-            ariaLabel="Filter by status"
+            ariaLabel="Filter by stage"
             value={statusFilter}
             onChange={setStatusFilter}
             tabs={tabsWithCounts}
@@ -201,14 +202,14 @@ export function Commander() {
           hasFilter ? (
             <EmptyStateFiltered
               title="No tasks match your filter"
-              body="Try a different status or clear your search."
+              body="Try a different stage or clear your search."
               onClearFilters={() => { setStatusFilter("all"); setQuery(""); }}
             />
           ) : (
             <EmptyState
               icon={<Icon name="layout-list" size={48} />}
               title="No tasks yet"
-              body="Create a task, assign an executor, and run it when ready."
+              body="Create a task, assign an owner, and run it when ready."
               cta={
                 <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                   Create task

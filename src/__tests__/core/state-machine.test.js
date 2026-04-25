@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
   legacyRunStatusToProcessStatus,
-  legacyStatusToStage,
   nextStage,
   processStatusToLegacyStatus,
-  stageToLegacyStatus,
 } from "../../core/state-machine.js";
 
 describe("workflow stage reducer", () => {
@@ -12,6 +10,16 @@ describe("workflow stage reducer", () => {
     const r = nextStage("execute", { type: "run_requested", stage: "execute", mode: "execute", agentName: "coder" });
     expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "spawn_worker", stage: "execute", mode: "execute", agentName: "coder" });
+  });
+
+  it("plan advance moves to execute", () => {
+    const r = nextStage("plan", {
+      type: "run_succeeded",
+      stage: "plan",
+      result: { decision: "advance" },
+    });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "reset_failure_count" });
   });
 
   it("rejects run_requested without an assigned agent", () => {
@@ -92,26 +100,114 @@ describe("workflow stage reducer", () => {
     expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "clear_completed_at" });
   });
+
+  it("execute advance with no reviewer goes straight to done with completed_at set", () => {
+    const r = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      reviewerAgent: null,
+      result: { decision: "advance" },
+    });
+    expect(r.stage).toBe("done");
+    expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+    expect(r.sideEffects).not.toContainEqual({ type: "spawn_reviewer", agentName: expect.anything() });
+  });
+
+  it("review must explicitly approve or reject; advance is rejected as an error", () => {
+    const r = nextStage("review", {
+      type: "run_succeeded",
+      stage: "review",
+      result: { decision: "advance" },
+    });
+    expect(r.stage).toBe("review");
+    expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("review must return") });
+  });
+
+  it("delegate with empty subtasks is rejected — prevents the parent from waiting on nothing", () => {
+    const r = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "delegate", subtasks: [] },
+    });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("at least one subtask") });
+  });
+
+  it("run_cancelled keeps the stage but does not write error_text or bump failure count", () => {
+    const r = nextStage("execute", { type: "run_cancelled", retryStage: "execute", message: "user cancel" });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled" });
+    expect(r.sideEffects).toContainEqual({ type: "post_cancellation_comment", message: "user cancel" });
+    // crucially: no set_failure_count on cancel
+    expect(r.sideEffects.some((sideEffect) => sideEffect.type === "set_failure_count")).toBe(false);
+  });
+
+  it("run_abandoned is treated as a non-retry-counting failure with error_text", () => {
+    const r = nextStage("execute", { type: "run_abandoned", retryStage: "execute" });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: expect.any(String) });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "abandoned" });
+    expect(r.sideEffects.some((sideEffect) => sideEffect.type === "set_failure_count")).toBe(false);
+  });
+
+  it("run_failed escalates to blocked when failure_count crosses the configured threshold", () => {
+    const r = nextStage("execute", {
+      type: "run_failed",
+      message: "still broken",
+      failureKind: "spawn",
+      failureCount: 2,
+      maxFailures: 3,
+    });
+    expect(r.stage).toBe("blocked");
+    expect(r.sideEffects).toContainEqual({ type: "set_failure_count", count: 3 });
+    expect(r.sideEffects.find((sideEffect) => sideEffect.type === "set_blocking_issues").blockingIssues[0]).toMatch(/Reached max failures/);
+  });
+
+  it("run_failed below threshold stays retryable and increments the failure count", () => {
+    const r = nextStage("execute", {
+      type: "run_failed",
+      message: "first fail",
+      failureCount: 0,
+      maxFailures: 3,
+    });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "set_failure_count", count: 1 });
+  });
+
+  it("human_move out of awaiting_user clears pending_actions; out of blocked clears blocking_issues", () => {
+    const fromPaused = nextStage("awaiting_user", { type: "human_move", target: "execute" });
+    expect(fromPaused.sideEffects).toContainEqual({ type: "clear_pending_actions" });
+    expect(fromPaused.sideEffects).toContainEqual({ type: "reset_failure_count" });
+
+    const fromBlocked = nextStage("blocked", { type: "human_move", target: "execute" });
+    expect(fromBlocked.sideEffects).toContainEqual({ type: "clear_blocking_issues" });
+    expect(fromBlocked.sideEffects).toContainEqual({ type: "clear_error_text" });
+  });
+
+  it("delegate clears prior pending/blocking arrays when the parent enters awaiting_children", () => {
+    const r = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "delegate", subtasks: [{ title: "x" }] },
+    });
+    expect(r.sideEffects).toContainEqual({ type: "clear_pending_actions" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_blocking_issues" });
+  });
+
+  it("review approve clears pending/blocking arrays alongside completed_at", () => {
+    const r = nextStage("review", {
+      type: "run_succeeded",
+      stage: "review",
+      result: { decision: "approve", summary: "ok" },
+    });
+    expect(r.sideEffects).toContainEqual({ type: "clear_pending_actions" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_blocking_issues" });
+    expect(r.sideEffects).toContainEqual({ type: "reset_failure_count" });
+  });
 });
 
-describe("legacy compatibility mapping", () => {
-  it.each([
-    ["todo", "execute"],
-    ["in_progress", "execute"],
-    ["in_review", "review"],
-    ["done", "done"],
-    ["blocked", "blocked"],
-  ])("maps legacy task status %s to stage %s", (status, stage) => {
-    expect(legacyStatusToStage(status)).toBe(stage);
-  });
-
-  it("maps stages to legacy statuses without claiming active work", () => {
-    expect(stageToLegacyStatus("execute")).toBe("todo");
-    expect(stageToLegacyStatus("execute", { running: true })).toBe("in_progress");
-    expect(stageToLegacyStatus("review")).toBe("in_review");
-    expect(stageToLegacyStatus("done")).toBe("done");
-  });
-
+describe("run process status compatibility mapping", () => {
   it("maps run process status to legacy run status", () => {
     expect(legacyRunStatusToProcessStatus("complete")).toBe("succeeded");
     expect(legacyRunStatusToProcessStatus("error")).toBe("failed");

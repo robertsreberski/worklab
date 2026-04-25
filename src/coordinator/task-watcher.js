@@ -1,43 +1,38 @@
 import {
+  DEFAULT_MAX_FAILURES,
   legacyRunStatusToProcessStatus,
-  legacyStatusToStage,
   nextStage,
   processStatusToLegacyStatus,
-  stageToLegacyStatus,
 } from "../core/state-machine.js";
 import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
 import { synthesizeWorklabResult } from "../core/worklab-result.js";
 import { parseModelReference } from "../core/ai.js";
-
-function parseJsonArray(value) {
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function taskStage(task) {
-  return task?.stage || legacyStatusToStage(task?.status);
-}
+import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
+import { resumeWaitingParents } from "../core/task-joins.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
 }
 
 function agentForStage(task, stage) {
-  if (stage === "review") return task.reviewer_agent || task.owner_agent || task.executor_agent;
-  return task.owner_agent || task.executor_agent;
+  if (stage === "review") return task.reviewer_agent;
+  return task.owner_agent;
 }
 
 function modeForStage(stage) {
+  if (stage === "plan") return "plan";
   return stage === "review" ? "review" : "execute";
 }
 
 function buildFallbackResult({ stage, mode, res }) {
   if (stage === "review" || mode === "review") {
+    // Worker's reviewResultFromText handles the verdict-line parse already; if
+    // we still don't have a worklab_result here it means the reviewer emitted
+    // neither valid JSON nor a usable VERDICT line. Returning null causes
+    // handleSuccessfulExit to escalate via handleFailedExit (failure_kind
+    // "invalid_result"). DO NOT synthesise an "advance" here — that would
+    // silently approve the reviewer's broken output.
     const verdictEvent = Array.isArray(res.events)
       ? res.events.find((event) => event?.type === "verdict")
       : null;
@@ -59,6 +54,37 @@ function buildFallbackResult({ stage, mode, res }) {
   });
 }
 
+// In-memory cycle check across a freshly-delegated batch of subtasks. Each
+// subtask references siblings by title (or by external task id, which we
+// ignore for the within-batch cycle check). DFS with three-color marks.
+function detectSubtaskCycles(subtasks) {
+  const titleToIndex = new Map();
+  subtasks.forEach((subtask, index) => {
+    const title = (subtask?.title || "").trim();
+    if (title) titleToIndex.set(title, index);
+  });
+  const graph = subtasks.map((subtask) => {
+    const deps = Array.isArray(subtask?.depends_on) ? subtask.depends_on : [];
+    return deps
+      .map((dep) => titleToIndex.get((dep || "").trim()))
+      .filter((index) => typeof index === "number");
+  });
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = new Array(subtasks.length).fill(WHITE);
+  function visit(i) {
+    if (color[i] === GRAY) return true;
+    if (color[i] === BLACK) return false;
+    color[i] = GRAY;
+    for (const j of graph[i]) if (visit(j)) return true;
+    color[i] = BLACK;
+    return false;
+  }
+  for (let i = 0; i < subtasks.length; i += 1) {
+    if (color[i] === WHITE && visit(i)) return true;
+  }
+  return false;
+}
+
 export function createTaskWatcher({
   db,
   broker,
@@ -68,6 +94,7 @@ export function createTaskWatcher({
   repoRoot,
   dataDir,
   workspace,
+  maxFailures = DEFAULT_MAX_FAILURES,
 }) {
   const active = new Map();
 
@@ -76,7 +103,7 @@ export function createTaskWatcher({
     const reconcile = db.transaction(() => {
       const stale = db.prepare(
         `SELECT id, task_id, stage FROM task_runs
-         WHERE status = 'running'`,
+         WHERE process_status = 'running' OR status = 'running'`,
       ).all();
       if (stale.length === 0) return 0;
       const markRun = db.prepare(
@@ -87,17 +114,16 @@ export function createTaskWatcher({
       );
       const markTask = db.prepare(
         `UPDATE tasks
-         SET stage = CASE WHEN stage = 'done' THEN stage ELSE COALESCE(?, stage, 'execute') END,
-             status = CASE WHEN stage = 'done' THEN 'done' ELSE ? END,
+         SET stage = CASE WHEN stage = 'done' THEN stage ELSE COALESCE(?, stage, 'plan') END,
              error_text = COALESCE(error_text, ?),
              stage_reason = COALESCE(stage_reason, 'abandoned'),
              updated_at = ?
          WHERE id = ?`,
       );
       for (const row of stale) {
-        const retryStage = row.stage || "execute";
+        const retryStage = row.stage || "plan";
         markRun.run(now, "coordinator restarted", row.id);
-        markTask.run(retryStage, stageToLegacyStatus(retryStage), "Previous run did not finish", now, row.task_id);
+        markTask.run(retryStage, "Previous run did not finish", now, row.task_id);
       }
       return stale.length;
     });
@@ -105,96 +131,32 @@ export function createTaskWatcher({
     if (count > 0) logger?.warn?.({ count }, "reconciled stale running runs at boot");
   }
 
+  // Apply a list of side-effects to the DB inside a single transaction, plus
+  // associated task-comments. spawn_worker / spawn_reviewer / create_subtasks
+  // are owned by the caller (they need spawn machinery / DB writes outside
+  // this transaction) and are handled as no-ops here.
   const applyTx = db.transaction((taskId, sideEffects, currentStage, newStage, options = {}) => {
-    const now = Date.now();
-    const fields = [];
-    const values = [];
-    const running = !!options.running;
-
-    if (currentStage !== newStage) {
-      fields.push("stage = ?");
-      values.push(newStage);
-    }
-    fields.push("status = ?");
-    values.push(stageToLegacyStatus(newStage, { running }));
-
-    for (const sideEffect of sideEffects) {
-      switch (sideEffect.type) {
-        case "set_completed_at":
-          fields.push("completed_at = ?");
-          values.push(now);
-          break;
-        case "clear_completed_at":
-          fields.push("completed_at = ?");
-          values.push(null);
-          break;
-        case "clear_error_text":
-          fields.push("error_text = ?");
-          values.push(null);
-          break;
-        case "set_error_text":
-          fields.push("error_text = ?");
-          values.push(sideEffect.message || "run failed");
-          break;
-        case "set_stage_reason":
-          fields.push("stage_reason = ?");
-          values.push(sideEffect.reason || null);
-          break;
-        case "clear_stage_reason":
-          fields.push("stage_reason = ?");
-          values.push(null);
-          break;
-        case "set_pending_actions":
-          fields.push("pending_actions_json = ?");
-          values.push(JSON.stringify(sideEffect.pendingActions || []));
-          break;
-        case "set_blocking_issues":
-          fields.push("blocking_issues_json = ?");
-          values.push(JSON.stringify(sideEffect.blockingIssues || []));
-          break;
-        case "post_error_comment":
-          db.prepare(
-            `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-             VALUES (?, ?, 'system', ?, ?)`,
-          ).run(newCommentId(), taskId, `ERROR: ${sideEffect.message || "run failed"}`, now);
-          break;
-        case "post_review_comment": {
-          const body = sideEffect.notes && sideEffect.notes.trim().length > 0
-            ? sideEffect.notes
-            : "Review rejected.";
-          db.prepare(
-            `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-             VALUES (?, ?, 'system', ?, ?)`,
-          ).run(newCommentId(), taskId, body, now);
-          break;
-        }
-        case "post_review_verdict":
-          db.prepare(
-            `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-             VALUES (?, ?, 'system', ?, ?)`,
-          ).run(newCommentId(), taskId, `VERDICT: ${sideEffect.verdict}`, now);
-          break;
-        case "spawn_worker":
-        case "spawn_reviewer":
-        case "create_subtasks":
-          break;
-        case "error":
-          logger?.warn?.({ taskId, message: sideEffect.message }, "state machine emitted error side effect");
-          break;
-        default:
-          logger?.warn?.({ taskId, type: sideEffect.type }, "unknown side effect type");
-      }
-    }
-
-    fields.push("updated_at = ?");
-    values.push(now);
-    values.push(taskId);
-    db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage, { logger });
   });
 
   function applySideEffects(taskId, sideEffects, currentStage, newStage, options = {}) {
     applyTx(taskId, sideEffects, currentStage, newStage, options);
     broker.broadcast("global", { type: "task_updated", id: taskId });
+  }
+
+  function annotateTaskFailure(taskId, { message, failureKind = "spawn", retryStage }) {
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    if (!task) return;
+    const stage = retryStage || taskStage(task);
+    const next = nextStage(taskStage(task), {
+      type: "run_failed",
+      retryStage: stage,
+      failureKind,
+      message,
+      failureCount: task.retry_count || 0,
+      maxFailures,
+    });
+    applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage);
   }
 
   function assertAgentRunnable(agentName) {
@@ -213,7 +175,7 @@ export function createTaskWatcher({
       SELECT t.id, t.title
       FROM task_dependencies d
       JOIN tasks t ON t.id = d.depends_on_task_id
-      WHERE d.task_id = ? AND COALESCE(t.stage, CASE t.status WHEN 'done' THEN 'done' ELSE 'execute' END) <> 'done'
+      WHERE d.task_id = ? AND COALESCE(t.stage, 'plan') <> 'done'
       ORDER BY t.updated_at DESC
       LIMIT 1
     `).get(taskId);
@@ -280,7 +242,7 @@ export function createTaskWatcher({
 
     const mode = options.mode || modeForStage(stage);
     const agentName = options.agentName || agentForStage(task, stage);
-    if (!agentName) throw new Error(mode === "review" ? "no reviewer assigned" : "no executor assigned");
+    if (!agentName) throw new Error(mode === "review" ? "no reviewer assigned" : "no owner assigned");
 
     const result = nextStage(stage, { type: "run_requested", stage, mode, agentName });
     const errorSideEffect = result.sideEffects.find((sideEffect) => sideEffect.type === "error");
@@ -294,11 +256,13 @@ export function createTaskWatcher({
   function spawnReviewer(taskId, reviewerAgent, priorRunId) {
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     if (!task) return null;
-    const stage = "review";
-    db.prepare(
-      "UPDATE tasks SET stage = 'review', status = 'in_progress', updated_at = ? WHERE id = ?",
-    ).run(Date.now(), taskId);
-    return spawnRun({ task: { ...task, stage }, stage, mode: "review", agentName: reviewerAgent, parentRunId: priorRunId });
+    return spawnRun({
+      task: { ...task, stage: "review" },
+      stage: "review",
+      mode: "review",
+      agentName: reviewerAgent,
+      parentRunId: priorRunId,
+    });
   }
 
   function postAgentFinalComment(taskId, agentName, finalText) {
@@ -319,30 +283,71 @@ export function createTaskWatcher({
     ).run(result.decision || null, result.summary || null, result.details || null, JSON.stringify(result), runId);
   }
 
+  function planBodyFromRun(result, finalText) {
+    for (const candidate of [result?.details, finalText, result?.summary]) {
+      if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
+    }
+    return "";
+  }
+
+  function persistPlanBody(taskId, runId, agentName, result, finalText) {
+    const body = planBodyFromRun(result, finalText);
+    if (!body) return;
+    const now = Date.now();
+    db.prepare(`
+      UPDATE tasks
+      SET plan_body = ?, plan_updated_at = ?, plan_updated_by = ?, plan_source_run_id = ?, updated_at = ?
+      WHERE id = ?
+    `).run(body, now, agentName || "agent", runId, now, taskId);
+  }
+
+  function postSystemComment(taskId, body) {
+    db.prepare(
+      `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+       VALUES (?, ?, 'system', ?, ?)`,
+    ).run(newCommentId(), taskId, body, Date.now());
+  }
+
   function createDelegatedSubtasks(parentTask, runId, subtasks) {
     if (!Array.isArray(subtasks) || subtasks.length === 0) return [];
+
+    if (detectSubtaskCycles(subtasks)) {
+      postSystemComment(parentTask.id, "Delegation rejected: subtasks form a dependency cycle.");
+      return [];
+    }
+
     const created = [];
     const byTitle = new Map();
     const rootTaskId = parentTask.root_task_id || parentTask.id;
     const now = Date.now();
+    const warnings = [];
 
     const tx = db.transaction(() => {
+      // Supersede prior delegation: drop old subtask edges so
+      // maybeResumeWaitingParents only tracks the current round.
+      db.prepare(
+        "DELETE FROM task_edges WHERE parent_task_id = ? AND edge_type = 'subtask'",
+      ).run(parentTask.id);
+
       for (let index = 0; index < subtasks.length; index += 1) {
         const subtask = subtasks[index] || {};
         if (!subtask.title || typeof subtask.title !== "string") continue;
-        const suggested = subtask.suggested_agent || parentTask.owner_agent || parentTask.executor_agent;
+        const suggested = subtask.suggested_agent || parentTask.owner_agent;
         const agentExists = suggested
           ? db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested)
           : null;
-        const agentName = agentExists?.name || parentTask.owner_agent || parentTask.executor_agent;
+        const agentName = agentExists?.name || parentTask.owner_agent;
+        if (subtask.suggested_agent && !agentExists) {
+          warnings.push(`Subtask "${subtask.title.trim()}": suggested agent "${subtask.suggested_agent}" not found or disabled — falling back to "${agentName || "(none)"}".`);
+        }
         const childId = newTaskId();
         const required = subtask.required === false ? 0 : 1;
         db.prepare(`
           INSERT INTO tasks
             (id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
-             owner_agent, title, instructions, status, stage, join_policy, subtask_order,
-             required, executor_agent, reviewer_agent, tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'todo', 'execute', 'all_required', ?, ?, ?, ?, ?, ?, ?)
+             owner_agent, title, instructions, stage, join_policy, subtask_order,
+             required, reviewer_agent, tags, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'execute', 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
           rootTaskId,
@@ -354,7 +359,6 @@ export function createTaskWatcher({
           subtask.instructions || "",
           index,
           required,
-          agentName,
           parentTask.reviewer_agent || null,
           JSON.stringify(["delegated"]),
           now,
@@ -374,8 +378,18 @@ export function createTaskWatcher({
         const child = created[index];
         if (!child) continue;
         for (const dep of subtask.depends_on || []) {
-          const depId = byTitle.get(dep) || (created.find((entry) => entry.id === dep)?.id);
-          if (!depId || depId === child.id) continue;
+          const trimmed = (dep || "").trim?.() || dep;
+          let depId = byTitle.get(trimmed);
+          if (!depId) {
+            // Allow referring to an existing task by id (sibling created in
+            // this batch already covered above; this handles cross-batch).
+            const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(trimmed);
+            if (existing) depId = existing.id;
+          }
+          if (!depId || depId === child.id) {
+            warnings.push(`Subtask "${subtask.title || "?"}": depends_on "${dep}" did not resolve and was dropped.`);
+            continue;
+          }
           db.prepare(`
             INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_task_id, created_at)
             VALUES (?, ?, ?)
@@ -384,6 +398,10 @@ export function createTaskWatcher({
       }
     });
     tx();
+
+    if (warnings.length > 0) {
+      postSystemComment(parentTask.id, `Delegation warnings:\n- ${warnings.join("\n- ")}`);
+    }
 
     for (const child of created) broker.broadcast("global", { type: "task_created", id: child.id });
     return created;
@@ -396,48 +414,26 @@ export function createTaskWatcher({
       setTimeout(() => {
         handleRunRequested(child.id).catch((err) => {
           logger?.warn?.({ err, childId: child.id }, "delegated child auto-run failed");
+          annotateTaskFailure(child.id, { message: `Auto-start failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
         });
       }, 0);
     }
   }
 
   function maybeResumeWaitingParents(childTaskId) {
-    const parents = db.prepare(`
-      SELECT p.*
-      FROM task_edges e
-      JOIN tasks p ON p.id = e.parent_task_id
-      WHERE e.child_task_id = ? AND e.edge_type = 'subtask'
-    `).all(childTaskId);
-
-    for (const parent of parents) {
-      if (taskStage(parent) !== "awaiting_children") continue;
-      const requiredChildren = db.prepare(`
-        SELECT c.id, c.title, c.stage, c.status
-        FROM task_edges e
-        JOIN tasks c ON c.id = e.child_task_id
-        WHERE e.parent_task_id = ? AND e.edge_type = 'subtask' AND e.required = 1
-      `).all(parent.id);
-
-      const blocked = requiredChildren.find((child) => taskStage(child) === "blocked");
-      if (blocked) {
-        const sm = nextStage("awaiting_children", {
-          type: "child_blocked",
-          message: `Required child blocked: ${blocked.title}`,
-        });
-        applySideEffects(parent.id, sm.sideEffects, "awaiting_children", sm.stage);
-        continue;
-      }
-
-      if (requiredChildren.every((child) => taskStage(child) === "done")) {
-        const sm = nextStage("awaiting_children", { type: "children_completed" });
-        applySideEffects(parent.id, sm.sideEffects, "awaiting_children", sm.stage);
+    resumeWaitingParents({
+      db,
+      childTaskId,
+      applySideEffects,
+      onParentReady: (parentId) => {
         setTimeout(() => {
-          handleRunRequested(parent.id).catch((err) => {
-            logger?.warn?.({ err, parentTaskId: parent.id }, "parent resume run failed");
+          handleRunRequested(parentId).catch((err) => {
+            logger?.warn?.({ err, parentTaskId: parentId }, "parent resume run failed");
+            annotateTaskFailure(parentId, { message: `Parent resume failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
           });
         }, 0);
-      }
-    }
+      },
+    });
   }
 
   function handleSuccessfulExit(taskId, runId, res, task, run) {
@@ -463,16 +459,23 @@ export function createTaskWatcher({
       type: "run_succeeded",
       stage,
       result,
-      reviewerAgent: task.reviewer_agent,
-      nextStage: stage === "review" ? "done" : (task.parent_task_id && !task.reviewer_agent ? "done" : "review"),
+      reviewerAgent: stage === "review" ? null : (task.reviewer_agent || null),
     });
     const errorSideEffect = next.sideEffects.find((sideEffect) => sideEffect.type === "error");
     if (errorSideEffect) {
       logger?.error?.({ taskId, runId, message: errorSideEffect.message }, "illegal transition on run exit");
+      annotateTaskFailure(taskId, {
+        message: errorSideEffect.message,
+        failureKind: "invalid_result",
+        retryStage: stage,
+      });
       return;
     }
 
-    applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage);
+    if (stage === "plan") persistPlanBody(taskId, runId, agentName, result, res.finalText);
+
+    const willSpawnReviewer = next.sideEffects.some((sideEffect) => sideEffect.type === "spawn_reviewer");
+    applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage, { running: willSpawnReviewer });
 
     const delegated = next.sideEffects.find((sideEffect) => sideEffect.type === "create_subtasks");
     if (delegated) {
@@ -481,7 +484,18 @@ export function createTaskWatcher({
     }
 
     const reviewer = next.sideEffects.find((sideEffect) => sideEffect.type === "spawn_reviewer");
-    if (reviewer) spawnReviewer(taskId, reviewer.agentName, runId);
+    if (reviewer) {
+      try {
+        spawnReviewer(taskId, reviewer.agentName, runId);
+      } catch (err) {
+        logger?.error?.({ err, taskId, agent: reviewer.agentName }, "spawn_reviewer failed");
+        annotateTaskFailure(taskId, {
+          message: `Failed to spawn reviewer "${reviewer.agentName}": ${err.message}`,
+          failureKind: "spawn",
+          retryStage: "review",
+        });
+      }
+    }
 
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
   }
@@ -500,6 +514,8 @@ export function createTaskWatcher({
       retryStage: stage,
       failureKind,
       message: res.error || (processStatus === "cancelled" ? "Run cancelled." : "run failed"),
+      failureCount: task.retry_count || 0,
+      maxFailures,
     });
     applySideEffects(taskId, sm.sideEffects, taskStage(task), sm.stage);
     db.prepare(
@@ -507,7 +523,11 @@ export function createTaskWatcher({
        SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, ?)
        WHERE id = ?`,
     ).run(failureKind, stage, runId);
-    if (sm.stage === "blocked") maybeResumeWaitingParents(taskId);
+    // Wake parents on every child terminal-ish exit. maybeResumeWaitingParents
+    // is idempotent and per-child only fires when the child is `blocked` or
+    // all required children are `done`, so this is safe even when the child
+    // remains at `execute` after a cancel.
+    maybeResumeWaitingParents(taskId);
   }
 
   function onWorkerExit(taskId, runId, res) {

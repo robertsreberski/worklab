@@ -13,9 +13,8 @@ docs are generated from the v2 workflow.
 
 ## Current Direction
 
-- Agents can run through SDK-backed providers today.
-- The next workflow model should also support Claude Code and Codex CLI as
-  first-class providers.
+- Agents can run through SDK-backed providers and local Claude Code/Codex CLI
+  runtimes today.
 - Tasks should support autonomous agent planning, subtask creation, subagent
   delegation, parent/child joins, structured results, and recoverable errors.
 

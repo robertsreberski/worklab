@@ -18,7 +18,7 @@ let blockerTaskId;
 let blockedTaskId;
 let completedTaskId;
 let desktopReadyTaskId;
-let desktopNeedsExecutorTaskId;
+let desktopNeedsOwnerTaskId;
 let desktopReviewTaskId;
 let desktopDoneTaskId;
 let desktopBlockerTaskId;
@@ -180,52 +180,59 @@ test.beforeAll(async () => {
   seedDb.close();
 
   taskId = await createTask("UI regression task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
     reviewer_agent: "reviewer-agent",
+    stage: "execute",
   });
   completedTaskId = await createTask("Completed detail task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
+    stage: "execute",
   });
   await requestJson(`/api/tasks/${completedTaskId}`, {
     method: "PATCH",
-    body: { status: "done" },
+    body: { stage: "done" },
     ok: [200],
   });
-  await createTask("In progress task", { status: "in_progress" });
-  runningTaskId = await createTask("Running detail task", { status: "in_progress" });
+  await createTask("Running task", { stage: "execute" });
+  runningTaskId = await createTask("Running detail task", { stage: "execute", owner_agent: "regression-agent" });
   blockerTaskId = await createTask("Dependency blocker");
   blockedTaskId = await createTask("Blocked detail task", { blocked_by_ids: [blockerTaskId] });
   desktopReadyTaskId = await createTask("Desktop ready task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
     reviewer_agent: "reviewer-agent",
+    stage: "execute",
   });
-  desktopNeedsExecutorTaskId = await createTask("Desktop needs executor task");
+  desktopNeedsOwnerTaskId = await createTask("Desktop needs owner task");
   desktopReviewTaskId = await createTask("Desktop review task", {
-    status: "in_review",
-    executor_agent: "regression-agent",
+    stage: "review",
+    owner_agent: "regression-agent",
     reviewer_agent: "reviewer-agent",
   });
   desktopDoneTaskId = await createTask("Desktop done task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
+    stage: "execute",
   });
   await requestJson(`/api/tasks/${desktopDoneTaskId}`, {
     method: "PATCH",
-    body: { status: "done" },
+    body: { stage: "done" },
     ok: [200],
   });
   desktopBlockerTaskId = await createTask("Desktop blocker task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
+    stage: "execute",
   });
   desktopBlockedTaskId = await createTask("Desktop blocked task", {
     blocked_by_ids: [desktopBlockerTaskId],
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
+    stage: "execute",
   });
   desktopRunningTaskId = await createTask("Desktop running task", {
-    status: "in_progress",
-    executor_agent: "regression-agent",
+    stage: "execute",
+    owner_agent: "regression-agent",
   });
   desktopErroredTaskId = await createTask("Desktop errored task", {
-    executor_agent: "regression-agent",
+    owner_agent: "regression-agent",
+    stage: "execute",
   });
   const schedule = await requestJson("/api/schedules", {
     method: "POST",
@@ -391,12 +398,12 @@ test("desktop task list keeps every task state legible without clipped controls"
     { width: 1024, height: 768, label: "laptop-1024" },
   ];
   const stateRows = [
-    { title: "Desktop ready task", text: "Todo" },
-    { title: "Desktop needs executor task", text: "Needs executor" },
-    { title: "Desktop review task", text: "In review" },
+    { title: "Desktop ready task", text: "Execute" },
+    { title: "Desktop needs owner task", text: "Needs owner" },
+    { title: "Desktop review task", text: "Review" },
     { title: "Desktop done task", text: "Done" },
     { title: "Desktop blocked task", text: "Blocked by 1" },
-    { title: "Desktop running task", text: "In progress" },
+    { title: "Desktop running task", text: "Running" },
     { title: "Desktop running task", text: "Desktop running event" },
     { title: "Desktop errored task", text: "Error" },
   ];
@@ -406,7 +413,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    for (const label of ["In review", "Todo", "Blocked", "Done"]) {
+    for (const label of ["Review", "Execute", "Blocked", "Done"]) {
       await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
     }
     for (const row of stateRows) {
@@ -541,22 +548,23 @@ test("desktop task detail states keep actions and context obvious without clippe
       label: "ready",
       id: desktopReadyTaskId,
       title: "Desktop ready task",
-      status: "Todo",
-      actions: [{ label: "Run", enabled: true }],
+      status: "Execute",
+      actions: [{ label: "Run work", enabled: true }],
     },
     {
-      label: "needs-executor",
-      id: desktopNeedsExecutorTaskId,
-      title: "Desktop needs executor task",
-      status: "Todo",
-      actions: [{ label: "Run", enabled: false }],
+      label: "needs-owner",
+      id: desktopNeedsOwnerTaskId,
+      title: "Desktop needs owner task",
+      status: "Plan",
+      actions: [{ label: "Run plan", enabled: false }],
     },
     {
       label: "review",
       id: desktopReviewTaskId,
       title: "Desktop review task",
-      status: "In review",
+      status: "Review",
       actions: [
+        { label: "Run review", enabled: true },
         { label: "Approve", enabled: true },
         { label: "Request changes", enabled: true },
       ],
@@ -573,15 +581,15 @@ test("desktop task detail states keep actions and context obvious without clippe
       label: "blocked",
       id: desktopBlockedTaskId,
       title: "Desktop blocked task",
-      status: "Todo",
-      actions: [{ label: "Run", enabled: false }],
+      status: "Execute",
+      actions: [{ label: "Run work", enabled: false }],
       contextText: "Dependencies",
     },
     {
       label: "running",
       id: desktopRunningTaskId,
       title: "Desktop running task",
-      status: "In progress",
+      status: "Running",
       actions: [{ label: "Cancel", enabled: true }],
       contextText: "Desktop running event",
     },
@@ -589,8 +597,8 @@ test("desktop task detail states keep actions and context obvious without clippe
       label: "error",
       id: desktopErroredTaskId,
       title: "Desktop errored task",
-      status: "Todo",
-      actions: [{ label: "Run", enabled: true }],
+      status: "Execute",
+      actions: [{ label: "Run work", enabled: true }],
       contextText: "Error",
     },
   ];

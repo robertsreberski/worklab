@@ -1,7 +1,7 @@
 // §6.4 TaskEdit — create/edit one task.
 // Sticky header with breadcrumb + Cancel + primary + ⌘S hint.
 // Two-column body: left (title · instructions · dependencies),
-// right rail (status grid · executor · reviewer · tags).
+// right rail (stage grid · owner · reviewer · tags).
 // ⌘S saves. Esc navigates back (unsaved-guard modal if dirty).
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -27,13 +27,12 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 
-// Status grid in the right rail. "blocked" is derived (deps + errors + stuck)
-// and cannot be set directly — render the button disabled with a tooltip.
+// Stage grid in the right rail.
 const STATUS_OPTIONS = [
-  { value: "draft", label: "Draft", icon: "○", color: "var(--status-muted)" },
   { value: "plan", label: "Plan", icon: "◉", color: "var(--accent)" },
   { value: "execute", label: "Execute", icon: "○", color: "var(--status-todo)" },
   { value: "review", label: "Review", icon: "◉", color: "var(--status-review)" },
+  { value: "awaiting_children", label: "Waiting", icon: "◐", color: "var(--status-progress)" },
   { value: "awaiting_user", label: "Needs input", icon: "▲", color: "var(--status-error)" },
   { value: "blocked", label: "Blocked", icon: "▲", color: "var(--status-error)" },
   { value: "done", label: "Done", icon: "●", color: "var(--status-done)" },
@@ -43,9 +42,9 @@ function emptyDraft() {
   return {
     title: "",
     instructions: "",
-    executor_agent: null,
+    owner_agent: null,
     reviewer_agent: null,
-    stage: "execute",
+    stage: "plan",
     tags: [],
     blocked_by_ids: [],
   };
@@ -82,9 +81,9 @@ export function TaskEdit({ mode = "create", id = null }) {
         const initial = {
           title: data.task.title || "",
           instructions: data.task.instructions || "",
-          executor_agent: data.task.executor_agent || null,
+          owner_agent: data.task.owner_agent || null,
           reviewer_agent: data.task.reviewer_agent || null,
-          stage: data.task.stage || (data.task.status === "in_review" ? "review" : data.task.status === "done" ? "done" : "execute"),
+          stage: data.task.stage || "plan",
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -118,9 +117,9 @@ export function TaskEdit({ mode = "create", id = null }) {
     const payload = {
       title: draft.title.trim(),
       instructions: draft.instructions,
-      executor_agent: draft.executor_agent,
+      owner_agent: draft.owner_agent,
       reviewer_agent: draft.reviewer_agent,
-      stage: draft.stage || "execute",
+      stage: draft.stage || "plan",
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
@@ -173,7 +172,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       .map((task) => ({
         value: task.id,
         label: task.title,
-        description: `${(task.stage || task.status).replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
+        description: `${(task.stage || "plan").replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
       }));
   }, [draft.blocked_by_ids, id, tasks]);
 
@@ -264,13 +263,13 @@ export function TaskEdit({ mode = "create", id = null }) {
 
                 <FormField
                   label="Instructions"
-                  hint="Sent to the executor. Markdown supported."
+                  hint="Sent to the owner. Markdown supported."
                 >
                   <Textarea
                     rows={10}
                     monospace
                     autoGrow
-                    placeholder="What should the executor do?"
+                    placeholder="What should the owner do?"
                     value={draft.instructions}
                     onInput={(e) => update({ instructions: e.target.value })}
                   />
@@ -306,9 +305,9 @@ export function TaskEdit({ mode = "create", id = null }) {
                 </FormField>
               </div>
 
-              {/* Right rail — assignment & status */}
+              {/* Right rail — assignment & stage */}
               <aside class="task-edit-rail">
-                <FormField label="Status">
+                <FormField label="Stage">
                   <div class="status-grid">
                     {STATUS_OPTIONS.map((opt) => {
                       const active = draft.stage === opt.value;
@@ -335,12 +334,12 @@ export function TaskEdit({ mode = "create", id = null }) {
                   </div>
                 </FormField>
 
-                <FormField label="Executor" hint="Required to run.">
+                <FormField label="Owner" hint="Required to run.">
                   <AgentPicker
-                    value={draft.executor_agent}
-                    onChange={(name) => update({ executor_agent: name })}
+                    value={draft.owner_agent}
+                    onChange={(name) => update({ owner_agent: name })}
                     agents={agents}
-                    placeholder="Pick an executor"
+                    placeholder="Pick an owner"
                   />
                 </FormField>
 

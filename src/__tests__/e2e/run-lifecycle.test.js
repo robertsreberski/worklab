@@ -62,7 +62,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  it("create agent → create task → run → auto-flip to in_review → final comment posted", async () => {
+  it("create agent → create task → run → auto-flip to done (no reviewer) → final comment posted", async () => {
     // Create agent
     let res = await fetch(`${baseUrl}/api/agents`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -70,10 +70,10 @@ describe("e2e: full run lifecycle via fake worker", () => {
     });
     expect(res.status).toBe(201);
 
-    // Create task with executor
+    // Create task with owner in execute stage
     res = await fetch(`${baseUrl}/api/tasks`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e run", executor_agent: "e2e-coder" }),
+      body: JSON.stringify({ title: "e2e run", owner_agent: "e2e-coder", stage: "execute" }),
     });
     expect(res.status).toBe(201);
     const { task } = await res.json();
@@ -83,14 +83,17 @@ describe("e2e: full run lifecycle via fake worker", () => {
     expect(res.status).toBe(200);
     const { runId } = await res.json();
 
-    // Wait up to 5s for task to reach in_review
+    // Wait up to 5s for the task to reach a terminal state. With no reviewer
+    // assigned, the owner's "advance" decision lands the task in "done"
+    // immediately rather than parking it in review indefinitely.
     let finalTask;
     for (let i = 0; i < 50; i++) {
       await new Promise(r => setTimeout(r, 100));
       const tr = await fetch(`${baseUrl}/api/tasks/${task.id}`).then(r => r.json());
-      if (tr.task.status === "in_review") { finalTask = tr; break; }
+      if (tr.task.stage === "done") { finalTask = tr; break; }
     }
-    expect(finalTask?.task.status).toBe("in_review");
+    expect(finalTask?.task.stage).toBe("done");
+    expect(finalTask?.task.completed_at).toBeTruthy();
 
     // Agent comment posted with the final text
     const agentComments = finalTask.comments.filter(c => c.author_type === "agent");

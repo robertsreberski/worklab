@@ -45,10 +45,10 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("7");
+    expect(row.value).toBe("9");
   });
 
-  it("v5 migration drops priority + description from tasks/schedules", () => {
+  it("migration drops legacy task/schedule workflow columns", () => {
     const db = openDb(":memory:");
     // Seed a v4-shape tasks + schedules table with priority + description.
     db.exec(`
@@ -88,21 +88,26 @@ describe("openDb + runMigrations", () => {
     `);
     const now = Date.now();
     db.prepare(
-      "INSERT INTO tasks (id, title, description, instructions, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
-    ).run("t1", "keep me", "drop me", "stay", 2, now, now);
+      "INSERT INTO tasks (id, title, description, instructions, status, executor_agent, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("t1", "keep me", "drop me", "stay", "todo", "legacy-owner", 2, now, now);
     db.prepare(
-      "INSERT INTO schedules (id, title, description, instructions, priority, cadence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).run("s1", "sched", "drop sched desc", "stay", 1, "{}", now, now);
+      "INSERT INTO schedules (id, title, description, instructions, executor_agent, priority, cadence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("s1", "sched", "drop sched desc", "stay", "legacy-owner", 1, "{}", now, now);
     runMigrations(db);
     const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((r) => r.name);
     const schedCols = db.prepare("PRAGMA table_info(schedules)").all().map((r) => r.name);
     expect(taskCols).not.toContain("priority");
     expect(taskCols).not.toContain("description");
+    expect(taskCols).not.toContain("status");
+    expect(taskCols).not.toContain("executor_agent");
     expect(schedCols).not.toContain("priority");
     expect(schedCols).not.toContain("description");
-    const taskRow = db.prepare("SELECT id, title, instructions, stage, status, root_task_id FROM tasks WHERE id='t1'").get();
-    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay", stage: "execute", status: "todo", root_task_id: "t1" });
-    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id"]));
+    expect(schedCols).not.toContain("executor_agent");
+    const taskRow = db.prepare("SELECT id, title, instructions, stage, owner_agent, root_task_id FROM tasks WHERE id='t1'").get();
+    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay", stage: "execute", owner_agent: "legacy-owner", root_task_id: "t1" });
+    const scheduleRow = db.prepare("SELECT id, owner_agent FROM schedules WHERE id='s1'").get();
+    expect(scheduleRow).toMatchObject({ id: "s1", owner_agent: "legacy-owner" });
+    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body"]));
   });
 
   it("allows taskless consolidation runs", () => {

@@ -21,48 +21,47 @@ function seedAgent(db, name = "coder") {
   ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
-function seedTask(db, { executor = null, reviewer = null } = {}) {
+function seedTask(db, { owner = null, reviewer = null } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
     `INSERT INTO tasks
-      (id, root_task_id, title, status, stage, owner_agent, executor_agent, reviewer_agent, created_at, updated_at)
-     VALUES (?, ?, ?, 'todo', 'execute', ?, ?, ?, ?, ?)`,
-  ).run(id, id, "t", executor, executor, reviewer, now, now);
+      (id, root_task_id, title, stage, owner_agent, reviewer_agent, created_at, updated_at)
+     VALUES (?, ?, ?, 'execute', ?, ?, ?, ?)`,
+  ).run(id, id, "t", owner, reviewer, now, now);
   return id;
 }
 
 describe("task-watcher", () => {
-  it("handleRunRequested on todo task with executor spawns worker and flips to in_progress", async () => {
+  it("handleRunRequested on execute task with owner and reviewer spawns work, then advances to review", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
     const broker = stubBroker();
-    let resolveDone;
-    const spawn = vi.fn(() => ({
-      pid: 12345,
-      done: new Promise((r) => {
-        resolveDone = r;
-      }),
-      cancel: vi.fn(),
-    }));
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((r) => { resolveDone = r; });
+      resolvers.push(resolveDone);
+      return { pid: 12345, done, cancel: vi.fn() };
+    });
     const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
     await watcher.handleRunRequested(taskId);
     expect(spawn).toHaveBeenCalledTimes(1);
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    expect(task.status).toBe("in_progress");
     expect(task.stage).toBe("execute");
-    resolveDone({ exitCode: 0, status: "complete" });
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded" });
     await new Promise((r) => setTimeout(r, 20));
     const after = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    expect(after.status).toBe("in_review");
     expect(after.stage).toBe("review");
+    expect(spawn).toHaveBeenCalledTimes(2);
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     const broadcastRunCounts = [];
     const broker = {
       subscribe: () => {},
@@ -89,21 +88,21 @@ describe("task-watcher", () => {
     expect(broadcastRunCounts).toEqual([1]);
   });
 
-  it("rejects run_requested on task without executor", async () => {
+  it("rejects run_requested on task without owner", async () => {
     const db = makeTestDb();
     const taskId = seedTask(db);
     const broker = stubBroker();
     const spawn = vi.fn();
     const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
-    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/no executor/i);
+    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/no owner/i);
     expect(spawn).not.toHaveBeenCalled();
   });
 
   it("rejects run_requested when the task has an open blocker", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const blockerId = seedTask(db, { executor: "coder" });
-    const taskId = seedTask(db, { executor: "coder" });
+    const blockerId = seedTask(db, { owner: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     db.prepare(
       "INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
     ).run(taskId, blockerId, Date.now());
@@ -112,11 +111,11 @@ describe("task-watcher", () => {
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/blocked by/i);
   });
 
-  it("manual in_progress status does not fake an active worker", async () => {
+  it("manual execute stage does not fake an active worker", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
-    db.prepare("UPDATE tasks SET status='in_progress' WHERE id=?").run(taskId);
+    const taskId = seedTask(db, { owner: "coder" });
+    db.prepare("UPDATE tasks SET stage='execute' WHERE id=?").run(taskId);
     const handle = { pid: 1, done: new Promise(() => {}), cancel: vi.fn() };
     const watcher = createTaskWatcher({
       db,
@@ -130,7 +129,7 @@ describe("task-watcher", () => {
   it("failed worker keeps task retryable in execute with error_text and error comment", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     const broker = stubBroker();
     let resolveDone;
     const spawn = vi.fn(() => ({
@@ -146,7 +145,6 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
-    expect(task.status).toBe("todo");
     expect(task.error_text).toBe("timeout");
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ?")
@@ -157,10 +155,10 @@ describe("task-watcher", () => {
   it("reconciles stale running runs at boot", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     const now = Date.now();
     db.prepare(
-      "UPDATE tasks SET status = 'in_progress', stage = 'execute', updated_at = ? WHERE id = ?",
+      "UPDATE tasks SET stage = 'execute', updated_at = ? WHERE id = ?",
     ).run(now, taskId);
     db.prepare(
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
@@ -181,8 +179,7 @@ describe("task-watcher", () => {
     expect(run.process_status).toBe("abandoned");
     expect(run.failure_kind).toBe("abandoned");
     expect(run.error_text).toBe("coordinator restarted");
-    const task = db.prepare("SELECT status, stage, stage_reason, error_text FROM tasks WHERE id = ?").get(taskId);
-    expect(task.status).toBe("todo");
+    const task = db.prepare("SELECT stage, stage_reason, error_text FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
     expect(task.stage_reason).toBe("abandoned");
     expect(task.error_text).toBe("Previous run did not finish");
@@ -192,7 +189,7 @@ describe("task-watcher", () => {
   it("cancel() signals the active worker for that task", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     const cancelFn = vi.fn();
     const spawn = vi.fn(() => ({
       pid: 1,
@@ -213,7 +210,7 @@ describe("task-watcher", () => {
   it("final text posted as an agent comment on clean completion", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    const taskId = seedTask(db, { executor: "coder" });
+    const taskId = seedTask(db, { owner: "coder" });
     let resolveDone;
     const spawn = vi.fn(() => ({
       pid: 1,

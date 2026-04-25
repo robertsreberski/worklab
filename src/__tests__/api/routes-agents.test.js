@@ -83,6 +83,23 @@ describe("agents CRUD", () => {
     expect(rejected.body.error.code).toBe("invalid_model");
   });
 
+  it("accepts local CLI model references", async () => {
+    const { agent } = makeTestServer();
+    const claude = await agent.post("/api/agents").send({
+      name: "claude-cli",
+      display_name: "Claude CLI",
+      model: "claude-code:claude-sonnet-4-6",
+    }).expect(201);
+    expect(claude.body.agent.sdk).toBe("claude-code");
+
+    const codex = await agent.post("/api/agents").send({
+      name: "codex-cli",
+      display_name: "Codex CLI",
+      model: "codex:gpt-5.4",
+    }).expect(201);
+    expect(codex.body.agent.sdk).toBe("codex");
+  });
+
   it("POST rejects known non-runnable custom models", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-model-"));
     try {

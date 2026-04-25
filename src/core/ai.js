@@ -13,6 +13,15 @@ export const BUILTIN_OPENAI_MODELS = [
 export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 
+const MODEL_SHORT_LABELS = {
+  "claude-haiku-4-5-20251001": "Haiku 4.5",
+  "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-opus-4-7": "Opus 4.7",
+  "gpt-5.4-nano": "GPT-5.4 Nano",
+  "gpt-5.4-mini": "GPT-5.4 Mini",
+  "gpt-5.4": "GPT-5.4",
+};
+
 const BUILTIN_MODEL_GROUPS = [
   {
     id: "claude",
@@ -120,7 +129,56 @@ const BUILTIN_MODEL_GROUPS = [
   },
 ];
 
+const CLI_MODEL_GROUPS = [
+  {
+    id: "claude-code",
+    label: "Claude Code CLI",
+    models: BUILTIN_CLAUDE_MODELS.map((model) => ({
+      value: `claude-code:${model}`,
+      label: `Claude Code ${MODEL_SHORT_LABELS[model] || model}`,
+      description: "Runs through the local `claude` command",
+      sdk: "claude-code",
+      model,
+      capabilities: {
+        tool_use: true,
+        reasoning: false,
+        reasoning_mode: "none",
+        runtime: "cli",
+      },
+      builtin_tools: [],
+      supports_builtin_tools: false,
+    })),
+  },
+  {
+    id: "codex",
+    label: "Codex CLI",
+    models: BUILTIN_OPENAI_MODELS.map((model) => ({
+      value: `codex:${model}`,
+      label: `Codex ${MODEL_SHORT_LABELS[model] || model}`,
+      description: "Runs through the local `codex exec` command",
+      sdk: "codex",
+      model,
+      capabilities: {
+        tool_use: true,
+        reasoning: true,
+        reasoning_mode: "effort",
+        reasoning_levels: ["low", "medium", "high", "xhigh", "max"],
+        reasoning_disable_supported: true,
+        runtime: "cli",
+      },
+      builtin_tools: [],
+      supports_builtin_tools: false,
+    })),
+  },
+];
+
 function withBuiltinToolMetadata(model) {
+  if (Array.isArray(model?.builtin_tools)) {
+    return {
+      ...model,
+      supports_builtin_tools: model.builtin_tools.length > 0,
+    };
+  }
   const supportsBuiltinTools = model?.capabilities?.tool_use !== false;
   return {
     ...model,
@@ -130,7 +188,7 @@ function withBuiltinToolMetadata(model) {
 }
 
 export function getBuiltinModelGroups() {
-  return BUILTIN_MODEL_GROUPS.map((group) => ({
+  return [...BUILTIN_MODEL_GROUPS, ...CLI_MODEL_GROUPS].map((group) => ({
     ...group,
     models: group.models.map(withBuiltinToolMetadata),
   }));

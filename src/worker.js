@@ -4,7 +4,7 @@ import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
 import { loadMcpConfig, getBuiltinMcpServers, pickMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
-import { buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt } from "./core/context.js";
+import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
@@ -144,7 +144,7 @@ async function main() {
     emit({ type: "error", message: "missing required args/env" });
     process.exit(1);
   }
-  if (mode !== "execute" && mode !== "review" && mode !== "consolidate") {
+  if (mode !== "plan" && mode !== "execute" && mode !== "review" && mode !== "consolidate") {
     emit({ type: "error", message: `mode ${mode} not implemented` });
     process.exit(1);
   }
@@ -214,12 +214,13 @@ async function main() {
   const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
   const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
 
-  // ── Execute mode ────────────────────────────────────────────────────────────
-  if (mode === "execute") {
+  // ── Plan / execute modes ────────────────────────────────────────────────────
+  if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
-    const systemPrompt = buildExecuteSystemPrompt({
-      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, priorRuns,
-    });
+    const promptInput = { agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, priorRuns };
+    const systemPrompt = mode === "plan"
+      ? buildPlanSystemPrompt(promptInput)
+      : buildExecuteSystemPrompt(promptInput);
 
     try {
       const result = await generateResponse(systemPrompt, {
@@ -228,7 +229,7 @@ async function main() {
         db,
         dataDir: config.dataDir,
         skills,
-        messages: [{ role: "user", content: `Work on task "${task.title}".` }],
+        messages: [{ role: "user", content: `${mode === "plan" ? "Plan" : "Work on"} task "${task.title}".` }],
         cwd: config.workspace,
         mcpServers,
         allowedTools,
@@ -247,7 +248,7 @@ async function main() {
         process.exit(1);
       }
       const parsedResult = resultFromTextOrFallback(result.text, {
-        stage: task.stage || "execute",
+        stage: task.stage || mode,
         decision: "advance",
         summary: result.text ? String(result.text).trim().slice(0, 500) : "Run completed",
       });
