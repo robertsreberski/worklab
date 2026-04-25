@@ -1,9 +1,15 @@
+import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+
 export function registerRunRoutes(app, { db, broker }) {
   app.get("/api/runs/:id", (req, res) => {
     const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
+    const processStatus = row.status !== "running" && row.process_status === "running"
+      ? legacyRunStatusToProcessStatus(row.status)
+      : row.process_status;
     const run = {
       ...row,
+      process_status: processStatus,
       artifact_paths: JSON.parse(row.artifact_paths_json || "[]"),
       result: row.result_json ? JSON.parse(row.result_json) : null,
     };

@@ -66,7 +66,7 @@ export function normalizeWorklabEvents(events = []) {
 }
 
 export function EventTimeline({ events, streaming = false }) {
-  if (!events.length) return <div class="meta">No events yet.</div>;
+  if (!events.length) return <div class="meta">{streaming ? "Waiting for first agent event..." : "No events yet."}</div>;
   return (
     <AgentEventTimeline
       events={normalizeWorklabEvents(events)}

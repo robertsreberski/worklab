@@ -8,7 +8,71 @@ const STATUS_GLYPH = {
   error: "✕",
 };
 
+function previewValue(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.replace(/\s+/g, " ").trim();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+export function normalizeToolTokenEvent(event) {
+  if (!event) return null;
+  if (event.type === "sdk_event") return normalizeToolTokenEvent(event.event);
+
+  const content = event.message?.content || event.content;
+  if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {
+    for (let index = content.length - 1; index >= 0; index -= 1) {
+      const next = normalizeToolTokenEvent(content[index]);
+      if (next) return next;
+    }
+  }
+
+  if (event.type === "tool_use") {
+    return {
+      ...event,
+      name: event.name || event.tool || "tool",
+      arg: previewValue(event.input ?? event.arguments ?? event.arg),
+    };
+  }
+  if (event.type === "tool_result") {
+    const output = previewValue(event.output ?? event.content ?? event.result);
+    return {
+      type: "text",
+      text: output ? `Tool result: ${output}` : "Tool result",
+    };
+  }
+  if (event.type === "thinking") {
+    return { ...event, text: event.text || event.thinking || "" };
+  }
+  if (event.type === "runtime_warning") {
+    return {
+      type: "text",
+      text: `Warning: ${event.message || event.warning_kind || "runtime warning"}`,
+    };
+  }
+  if (event.type === "started") return { type: "text", text: "Run started" };
+  if (event.type === "error") return { type: "text", text: `Error: ${event.message || "run failed"}` };
+  if (event.type === "final") {
+    return {
+      type: "text",
+      text: event.worklab_result?.summary || event.text || "Completed",
+    };
+  }
+  if (event.type === "verdict") {
+    return {
+      type: "text",
+      text: event.verdict ? `Verdict: ${event.verdict}` : "Review verdict",
+    };
+  }
+  if (event.type === "cli_event" && event.raw) return normalizeToolTokenEvent(event.raw);
+  return event;
+}
+
 export function ToolToken({ event, compact = false }) {
+  event = normalizeToolTokenEvent(event);
   if (!event) return null;
   const cls = `tool-token${compact ? " compact" : ""}`;
   const status = event.status;

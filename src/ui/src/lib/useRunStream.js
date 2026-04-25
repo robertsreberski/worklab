@@ -1,6 +1,36 @@
 // src/ui/src/lib/useRunStream.js
 import { useEffect, useRef, useState } from "preact/hooks";
 
+function eventKey(event) {
+  if (!event) return null;
+  if (event._event_seq != null) return `seq:${event._event_seq}`;
+  if (event.id != null) return `id:${event.id}`;
+  try {
+    return `json:${JSON.stringify(event)}`;
+  } catch {
+    return null;
+  }
+}
+
+export function mergeRunEvents(current = [], incoming = []) {
+  const merged = [];
+  const positions = new Map();
+  for (const event of [...(current || []), ...(incoming || [])]) {
+    if (!event) continue;
+    const key = eventKey(event);
+    if (key && positions.has(key)) {
+      merged[positions.get(key)] = event;
+      continue;
+    }
+    if (key) positions.set(key, merged.length);
+    merged.push(event);
+  }
+  return merged.sort((a, b) => {
+    if (a?._event_seq == null || b?._event_seq == null) return 0;
+    return Number(a._event_seq) - Number(b._event_seq);
+  });
+}
+
 export function useRunStream(runId, { subscribe = true } = {}) {
   const [events, setEvents] = useState([]);
   const [done, setDone] = useState(false);
@@ -8,25 +38,33 @@ export function useRunStream(runId, { subscribe = true } = {}) {
   const esRef = useRef(null);
 
   useEffect(() => {
-    if (!runId) return;
+    if (!runId) {
+      setEvents([]);
+      setDone(false);
+      setLoading(false);
+      return;
+    }
     setEvents([]); setDone(false); setLoading(true);
+    const controller = new AbortController();
+    let cancelled = false;
     // Preload any already-recorded events (run may have ended before we connected)
-    fetch(`/api/runs/${runId}`).then(r => r.ok ? r.json() : null).then(data => {
-      if (data?.log?.events?.length) setEvents(data.log.events);
+    fetch(`/api/runs/${runId}`, { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
+      if (cancelled) return;
+      if (data?.log?.events?.length) setEvents((prev) => mergeRunEvents(prev, data.log.events));
       if (data?.run?.status && data.run.status !== "running") setDone(true);
-    }).catch(() => {}).finally(() => setLoading(false));
-    if (!subscribe) return () => {};
+    }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
+    if (!subscribe) return () => { cancelled = true; controller.abort(); };
     const es = new EventSource(`/api/runs/${runId}/stream`);
     esRef.current = es;
     es.onmessage = (e) => {
       try {
         const payload = JSON.parse(e.data);
         if (payload.type === "done") { setDone(true); es.close(); return; }
-        setEvents(prev => [...prev, payload]);
+        setEvents(prev => mergeRunEvents(prev, [payload]));
       } catch {}
     };
     es.onerror = () => { es.close(); };
-    return () => { es.close(); };
+    return () => { cancelled = true; controller.abort(); es.close(); };
   }, [runId, subscribe]);
 
   return { events, done, loading };

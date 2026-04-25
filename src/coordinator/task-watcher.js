@@ -76,7 +76,7 @@ export function createTaskWatcher({
     const reconcile = db.transaction(() => {
       const stale = db.prepare(
         `SELECT id, task_id, stage FROM task_runs
-         WHERE process_status = 'running' OR status = 'running'`,
+         WHERE status = 'running'`,
       ).all();
       if (stale.length === 0) return 0;
       const markRun = db.prepare(

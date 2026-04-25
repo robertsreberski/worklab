@@ -45,7 +45,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("6");
+    expect(row.value).toBe("7");
   });
 
   it("v5 migration drops priority + description from tasks/schedules", () => {
@@ -102,7 +102,7 @@ describe("openDb + runMigrations", () => {
     expect(schedCols).not.toContain("description");
     const taskRow = db.prepare("SELECT id, title, instructions, stage, status, root_task_id FROM tasks WHERE id='t1'").get();
     expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay", stage: "execute", status: "todo", root_task_id: "t1" });
-    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json"]));
+    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id"]));
   });
 
   it("allows taskless consolidation runs", () => {

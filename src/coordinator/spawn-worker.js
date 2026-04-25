@@ -29,6 +29,17 @@ export function spawnWorker({
   let finalized = false;
   let exitFallbackTimer = null;
   const startedAt = Date.now();
+  const logId = newAgentLogId();
+
+  db.prepare(
+    `INSERT INTO agent_logs
+      (id, task_run_id, events, status, created_at)
+     VALUES (?, ?, '[]', 'running', ?)`,
+  ).run(logId, runId, startedAt);
+
+  function persistEvents() {
+    db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?").run(JSON.stringify(events), logId);
+  }
 
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
@@ -40,11 +51,13 @@ export function spawnWorker({
       logger?.warn?.({ line, err: err.message }, "worker emitted malformed stdout");
       return;
     }
-    events.push(parsed);
-    broker.broadcast(runId, parsed);
-    if (parsed.type === "final") finalPayload = parsed;
-    if (parsed.type === "error") errorMessage = parsed.message;
-    if (parsed.type === "worklab_result_error") resultError = parsed.message || "invalid worklab_result";
+    const event = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
+    events.push(event);
+    persistEvents();
+    broker.broadcast(runId, event);
+    if (event.type === "final") finalPayload = event;
+    if (event.type === "error") errorMessage = event.message;
+    if (event.type === "worklab_result_error") resultError = event.message || "invalid worklab_result";
   });
 
   child.stderr.on("data", (chunk) => {
@@ -101,12 +114,12 @@ export function spawnWorker({
       );
 
       db.prepare(
-        `INSERT INTO agent_logs
-          (id, task_run_id, events, model, effort, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `UPDATE agent_logs
+         SET events = ?, model = ?, effort = ?, input_tokens = ?,
+             output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
+             cost_usd = ?, duration_ms = ?, num_turns = ?, status = ?
+         WHERE id = ?`,
       ).run(
-        newAgentLogId(),
-        runId,
         JSON.stringify(events),
         finalPayload?.model || null,
         finalPayload?.effort || null,
@@ -118,7 +131,7 @@ export function spawnWorker({
         finalPayload?.durationMs ?? durationMs,
         finalPayload?.numTurns ?? null,
         status,
-        Date.now(),
+        logId,
       );
 
       broker.broadcast(runId, { type: "done", exitCode: code });

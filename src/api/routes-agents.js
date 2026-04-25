@@ -172,7 +172,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.delete("/api/agents/:name", (req, res) => {
     const running = db.prepare(
       `SELECT id FROM task_runs
-       WHERE agent_name = ? AND (process_status = 'running' OR status = 'running')
+       WHERE agent_name = ? AND status = 'running'
        LIMIT 1`,
     ).get(req.params.name);
     if (running || consolidation?.isActive?.(req.params.name)) {

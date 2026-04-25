@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
+import { normalizeToolTokenEvent } from "../../ui/src/components/primitives/ToolToken.jsx";
+import { mergeRunEvents } from "../../ui/src/lib/useRunStream.js";
 
 describe("worklab event timeline normalization", () => {
   it("compacts final result payloads after visible assistant text", () => {
@@ -46,5 +48,46 @@ describe("worklab event timeline normalization", () => {
       type: "final",
       text: "Only final text.\n\nin 1 / out 2",
     });
+  });
+});
+
+describe("run event merging", () => {
+  it("deduplicates hydrated and streamed events by sequence", () => {
+    const merged = mergeRunEvents(
+      [{ type: "text", text: "two", _event_seq: 2 }],
+      [
+        { type: "text", text: "one", _event_seq: 1 },
+        { type: "text", text: "two updated", _event_seq: 2 },
+      ],
+    );
+
+    expect(merged).toEqual([
+      { type: "text", text: "one", _event_seq: 1 },
+      { type: "text", text: "two updated", _event_seq: 2 },
+    ]);
+  });
+});
+
+describe("compact run event labels", () => {
+  it("unwraps sdk assistant text for list-row display", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "Checking files" }] },
+        },
+      }),
+    ).toEqual({ type: "text", text: "Checking files" });
+  });
+
+  it("uses final worklab result summary when present", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "final",
+        text: "long final text",
+        worklab_result: { summary: "Short outcome" },
+      }),
+    ).toEqual({ type: "text", text: "Short outcome" });
   });
 });

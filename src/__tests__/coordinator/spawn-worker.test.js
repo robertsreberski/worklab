@@ -58,11 +58,49 @@ describe("spawnWorker", () => {
     expect(types).toContain("started");
     expect(types).toContain("sdk_event");
     expect(types).toContain("final");
+    expect(broker.broadcasts.find(b => b.ch === runId && b.p.type === "started").p._event_seq).toBe(1);
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log).toBeTruthy();
     expect(log.status).toBe("complete");
     expect(log.input_tokens).toBe(5);
-    expect(JSON.parse(log.events).length).toBe(3);
+    const events = JSON.parse(log.events);
+    expect(events.length).toBe(3);
+    expect(events.map((event) => event._event_seq)).toEqual([1, 2, 3]);
+  });
+
+  it("persists running events before the worker exits", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "started", runId },
+        { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "text", text: "mid-run" }] } }, delayMs: 50 },
+      ],
+      exitCode: 0,
+      exitAfterMs: 500,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+    });
+
+    let runningLog = null;
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      runningLog = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
+      if (JSON.parse(runningLog?.events || "[]").length >= 2) break;
+    }
+
+    expect(runningLog.status).toBe("running");
+    expect(JSON.parse(runningLog.events).map((event) => event._event_seq)).toEqual([1, 2]);
+
+    await handle.done;
+    const rows = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").all(runId);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].status).toBe("complete");
   });
 
   it("records error status on nonzero exit", async () => {
