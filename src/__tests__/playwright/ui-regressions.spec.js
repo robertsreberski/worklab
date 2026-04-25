@@ -17,6 +17,14 @@ let runningTaskId;
 let blockerTaskId;
 let blockedTaskId;
 let completedTaskId;
+let desktopReadyTaskId;
+let desktopNeedsExecutorTaskId;
+let desktopReviewTaskId;
+let desktopDoneTaskId;
+let desktopBlockerTaskId;
+let desktopBlockedTaskId;
+let desktopRunningTaskId;
+let desktopErroredTaskId;
 let scheduleId;
 let scheduledTaskId;
 let providerId;
@@ -117,6 +125,26 @@ async function expectNoHorizontalOverflow(page, label = "") {
   expect(data.scrollWidth, `${label}: scrollWidth=${data.scrollWidth}`).toBeLessThanOrEqual(data.innerWidth);
 }
 
+async function expectNoCriticalHorizontalClipping(page, selector, label = "") {
+  const clipped = await page.evaluate((targetSelector) => {
+    return [...document.querySelectorAll(targetSelector)]
+      .filter((el) => {
+        const style = window.getComputedStyle(el);
+        return style.display !== "none"
+          && style.visibility !== "hidden"
+          && Math.ceil(el.scrollWidth) > Math.ceil(el.clientWidth) + 1;
+      })
+      .map((el) => ({
+        className: typeof el.className === "string" ? el.className : el.getAttribute("class") || "",
+        text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 100),
+        clientWidth: Math.ceil(el.clientWidth),
+        scrollWidth: Math.ceil(el.scrollWidth),
+      }))
+      .slice(0, 8);
+  }, selector);
+  expect(clipped, `${label}: critical UI clipped`).toEqual([]);
+}
+
 test.beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), "worklab-ui-data-"));
   workspaceDir = mkdtempSync(join(tmpdir(), "worklab-ui-workspace-"));
@@ -167,6 +195,38 @@ test.beforeAll(async () => {
   runningTaskId = await createTask("Running detail task", { status: "in_progress" });
   blockerTaskId = await createTask("Dependency blocker");
   blockedTaskId = await createTask("Blocked detail task", { blocked_by_ids: [blockerTaskId] });
+  desktopReadyTaskId = await createTask("Desktop ready task", {
+    executor_agent: "regression-agent",
+    reviewer_agent: "reviewer-agent",
+  });
+  desktopNeedsExecutorTaskId = await createTask("Desktop needs executor task");
+  desktopReviewTaskId = await createTask("Desktop review task", {
+    status: "in_review",
+    executor_agent: "regression-agent",
+    reviewer_agent: "reviewer-agent",
+  });
+  desktopDoneTaskId = await createTask("Desktop done task", {
+    executor_agent: "regression-agent",
+  });
+  await requestJson(`/api/tasks/${desktopDoneTaskId}`, {
+    method: "PATCH",
+    body: { status: "done" },
+    ok: [200],
+  });
+  desktopBlockerTaskId = await createTask("Desktop blocker task", {
+    executor_agent: "regression-agent",
+  });
+  desktopBlockedTaskId = await createTask("Desktop blocked task", {
+    blocked_by_ids: [desktopBlockerTaskId],
+    executor_agent: "regression-agent",
+  });
+  desktopRunningTaskId = await createTask("Desktop running task", {
+    status: "in_progress",
+    executor_agent: "regression-agent",
+  });
+  desktopErroredTaskId = await createTask("Desktop errored task", {
+    executor_agent: "regression-agent",
+  });
   const schedule = await requestJson("/api/schedules", {
     method: "POST",
     body: {
@@ -250,6 +310,33 @@ test.beforeAll(async () => {
     JSON.stringify([{ type: "text", text: "Existing streamed event", ts: now - 5_000 }]),
     now - 5_000,
   );
+  db.prepare(
+    `INSERT INTO task_runs
+      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
+     VALUES (?, ?, 'execute', 'regression-agent', ?, 'running', ?, NULL, NULL, NULL)`,
+  ).run("run-desktop-running-existing", desktopRunningTaskId, process.pid, now - 9_000);
+  db.prepare(
+    `INSERT INTO agent_logs
+      (id, task_run_id, events, model, effort, input_tokens, output_tokens,
+       cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, num_turns, status, created_at)
+     VALUES (?, ?, ?, 'test-model', 'medium', 40, 20, 0, 0, 0.001, NULL, 1, 'running', ?)`,
+  ).run(
+    "log-desktop-running-existing",
+    "run-desktop-running-existing",
+    JSON.stringify([{ type: "text", text: "Desktop running event", ts: now - 4_000 }]),
+    now - 4_000,
+  );
+  db.prepare(
+    `INSERT INTO task_runs
+      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
+     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'error', ?, ?, 1, ?)`,
+  ).run(
+    "run-desktop-error-existing",
+    desktopErroredTaskId,
+    now - 14_000,
+    now - 11_000,
+    "Seeded desktop failure",
+  );
   db.close();
 
   await ensureKbEntry({
@@ -296,6 +383,78 @@ test("commander lists tasks grouped by status", async ({ page }) => {
   expect(rowStyles.color).not.toBe("rgb(0, 0, 238)");
   const commanderFont = await page.locator(".commander").evaluate((node) => getComputedStyle(node).fontFamily);
   expect(commanderFont).toContain("Manrope");
+});
+
+test("desktop task list keeps every task state legible without clipped controls", async ({ page }) => {
+  const viewports = [
+    { width: 1440, height: 900, label: "desktop-1440" },
+    { width: 1024, height: 768, label: "laptop-1024" },
+  ];
+  const stateRows = [
+    { title: "Desktop ready task", text: "Todo" },
+    { title: "Desktop needs executor task", text: "Needs executor" },
+    { title: "Desktop review task", text: "In review" },
+    { title: "Desktop done task", text: "Done" },
+    { title: "Desktop blocked task", text: "Blocked by 1" },
+    { title: "Desktop running task", text: "In progress" },
+    { title: "Desktop running task", text: "Desktop running event" },
+    { title: "Desktop errored task", text: "Error" },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/#/tasks`);
+    await expect(page.locator(".commander-row").first()).toBeVisible();
+
+    for (const label of ["In review", "Todo", "Blocked", "Done"]) {
+      await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
+    }
+    for (const row of stateRows) {
+      await expect(page.locator(".commander-row", { hasText: row.title })).toContainText(row.text);
+    }
+
+    const stateDotMetrics = await page.evaluate(() => {
+      const cells = [...document.querySelectorAll(".commander-row .commander-cell-state")];
+      const dots = [...document.querySelectorAll(".commander-state-dot, .commander-cell-state .live-pulse")];
+      return {
+        visibleCells: cells.filter((cell) => getComputedStyle(cell).display !== "none").length,
+        dotCount: dots.length,
+        minDotSize: Math.min(...dots.map((dot) => Math.round(dot.getBoundingClientRect().width))),
+      };
+    });
+    expect(stateDotMetrics.visibleCells).toBeGreaterThanOrEqual(stateRows.length);
+    expect(stateDotMetrics.dotCount).toBeGreaterThanOrEqual(stateRows.length);
+    expect(stateDotMetrics.minDotSize).toBeGreaterThanOrEqual(7);
+
+    await expectNoHorizontalOverflow(page, `${viewport.label} task list states`);
+    await expectNoCriticalHorizontalClipping(
+      page,
+      [
+        ".commander-group-header",
+        ".commander-title",
+        ".status-pill-label",
+        ".blocked-chip",
+        ".chip",
+        ".commander-cell-age",
+        ".tab",
+        ".app-header .button",
+      ].join(", "),
+      `${viewport.label} task list states`,
+    );
+
+    const metrics = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll(".commander-row")]
+        .map((row) => Math.round(row.getBoundingClientRect().height));
+      return {
+        rowCount: rows.length,
+        rowHeightMin: Math.min(...rows),
+        rowHeightMax: Math.max(...rows),
+      };
+    });
+    expect(metrics.rowCount).toBeGreaterThanOrEqual(stateRows.length);
+    expect(metrics.rowHeightMin).toBeGreaterThanOrEqual(44);
+    expect(metrics.rowHeightMax).toBeLessThanOrEqual(72);
+  }
 });
 
 test("knowledge entry loads via the two-pane URL", async ({ page }) => {
@@ -352,6 +511,116 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await page.locator(".activity-composer textarea").fill("Fresh comment from regression test.");
   await page.locator(".activity-composer button", { hasText: "Post" }).click();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Fresh comment from regression test.");
+});
+
+test("desktop task detail states keep actions and context obvious without clipped controls", async ({ page }) => {
+  const viewports = [
+    { width: 1440, height: 900, label: "desktop-1440" },
+    { width: 1024, height: 768, label: "laptop-1024" },
+  ];
+  const states = [
+    {
+      label: "ready",
+      id: desktopReadyTaskId,
+      title: "Desktop ready task",
+      status: "Todo",
+      actions: [{ label: "Run", enabled: true }],
+    },
+    {
+      label: "needs-executor",
+      id: desktopNeedsExecutorTaskId,
+      title: "Desktop needs executor task",
+      status: "Todo",
+      actions: [{ label: "Run", enabled: false }],
+    },
+    {
+      label: "review",
+      id: desktopReviewTaskId,
+      title: "Desktop review task",
+      status: "In review",
+      actions: [
+        { label: "Approve", enabled: true },
+        { label: "Request changes", enabled: true },
+      ],
+    },
+    {
+      label: "done",
+      id: desktopDoneTaskId,
+      title: "Desktop done task",
+      status: "Done",
+      actions: [{ label: "Reopen", enabled: true }],
+      contextText: "Completed",
+    },
+    {
+      label: "blocked",
+      id: desktopBlockedTaskId,
+      title: "Desktop blocked task",
+      status: "Todo",
+      actions: [{ label: "Run", enabled: false }],
+      contextText: "Dependencies",
+    },
+    {
+      label: "running",
+      id: desktopRunningTaskId,
+      title: "Desktop running task",
+      status: "In progress",
+      actions: [{ label: "Cancel", enabled: true }],
+      contextText: "Desktop running event",
+    },
+    {
+      label: "error",
+      id: desktopErroredTaskId,
+      title: "Desktop errored task",
+      status: "Todo",
+      actions: [{ label: "Run", enabled: true }],
+      contextText: "Error",
+    },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const state of states) {
+      await page.goto(`${baseUrl}/#/tasks/${state.id}`);
+      await expect(page.locator(".task-hero-title", { hasText: state.title })).toBeVisible();
+      await expect(page.locator(".status-menu-trigger")).toContainText(state.status);
+      await expect(page.locator(".card-title", { hasText: "Activity" })).toBeVisible();
+      await expect(page.locator(".card-title", { hasText: "Agents" })).toBeVisible();
+      await expect(page.locator(".card-title", { hasText: "Context" })).toBeVisible();
+      await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
+
+      for (const action of state.actions) {
+        const button = page.locator(".app-header .button", { hasText: action.label }).first();
+        await expect(button).toBeVisible();
+        if (action.enabled) await expect(button).toBeEnabled();
+        else await expect(button).toBeDisabled();
+      }
+      if (state.contextText) await expect(page.locator(".task-detail")).toContainText(state.contextText);
+
+      const columnCount = await page.locator(".task-detail").evaluate((node) => {
+        return getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length;
+      });
+      expect(columnCount, `${viewport.label} ${state.label} should stay two-column`).toBe(2);
+      await expectNoHorizontalOverflow(page, `${viewport.label} task detail ${state.label}`);
+      await expectNoCriticalHorizontalClipping(
+        page,
+        [
+          ".task-hero-status-row .status-pill-label",
+          ".task-hero-status-row .chip",
+          ".app-header .button",
+          ".activity-composer-actions .button",
+          ".card-title",
+          ".task-context-label",
+          ".task-context-value",
+          ".rail-agent-picker .select-trigger",
+          ".blocked-link .status-pill-label",
+          ".run-summary-title",
+          ".run-metric-label",
+          ".run-metric-value",
+        ].join(", "),
+        `${viewport.label} task detail ${state.label}`,
+      );
+    }
+  }
 });
 
 test("task detail context only shows completion and schedule when present", async ({ page }) => {
@@ -472,12 +741,14 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   const metrics = await page.evaluate(() => {
     const row = document.querySelector(".commander-row");
     const id = row?.querySelector(".commander-cell-id");
+    const state = row?.querySelector(".commander-cell-state");
     const filter = document.querySelector(".commander-filter");
     const pill = row?.querySelector(".status-pill");
     return {
       rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
       filterHeight: filter ? Math.round(filter.getBoundingClientRect().height) : 0,
       idDisplay: id ? getComputedStyle(id).display : "",
+      stateDisplay: state ? getComputedStyle(state).display : "",
       pillVisible: pill ? getComputedStyle(pill).display !== "none" : false,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
@@ -485,6 +756,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
 
   expect(metrics.overflow).toBeLessThanOrEqual(0);
   expect(metrics.idDisplay).toBe("none");
+  expect(metrics.stateDisplay).toBe("none");
   expect(metrics.pillVisible).toBe(true);
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
   expect(metrics.rowHeight).toBeLessThanOrEqual(88);
@@ -503,6 +775,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const composer = document.querySelector(".activity-composer-form");
     const input = document.querySelector(".activity-composer-input");
     const shortcut = document.querySelector(".activity-composer-shortcut");
+    const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
+    const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
+    const line = rail ? getComputedStyle(rail, "::after") : null;
     return {
       activityBeforeAgents: activity && agents
         ? activity.getBoundingClientRect().top < agents.getBoundingClientRect().top
@@ -514,6 +789,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       composerHeight: composer ? Math.round(composer.getBoundingClientRect().height) : 0,
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
       shortcutDisplay: shortcut ? getComputedStyle(shortcut).display : "",
+      railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
+      dotWidth: dot ? Math.round(parseFloat(getComputedStyle(dot).getPropertyValue("--activity-dot-size")) || dot.getBoundingClientRect().width) : 0,
+      lineWidth: line ? Math.round(parseFloat(line.width)) : 0,
     };
   });
 
@@ -523,6 +801,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.composerHeight).toBeLessThanOrEqual(64);
   expect(beforeFocus.inputHeight).toBeLessThanOrEqual(48);
   expect(beforeFocus.shortcutDisplay).toBe("none");
+  expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
+  expect(beforeFocus.dotWidth).toBeLessThanOrEqual(20);
+  expect(beforeFocus.lineWidth).toBe(1);
 
   await page.locator(".activity-composer textarea").focus();
   const afterFocus = await page.evaluate(() => {

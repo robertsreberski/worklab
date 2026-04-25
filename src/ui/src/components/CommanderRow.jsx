@@ -123,9 +123,13 @@ export function CommanderRow({
         />
       </div>
       <span class="commander-cell-id">{taskIdDisplay(task.id)}</span>
+      <span class="commander-cell-state" aria-hidden="true">
+        {isStreaming
+          ? <LivePulse color={meta.color} size={8} />
+          : <span class="commander-state-dot" style={{ "--dot-color": meta.color }} />}
+      </span>
       <div class="commander-cell-title">
         <div class="commander-cell-title-row">
-          {isStreaming && <LivePulse color={meta.color} size={10} />}
           <span class="commander-title">{task.title}</span>
           {metaChip}
         </div>
