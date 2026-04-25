@@ -30,11 +30,13 @@ import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 // Status grid in the right rail. "blocked" is derived (deps + errors + stuck)
 // and cannot be set directly — render the button disabled with a tooltip.
 const STATUS_OPTIONS = [
-  { value: "todo",       label: "Todo",       icon: "○", color: "var(--status-todo)" },
-  { value: "blocked",    label: "Blocked",    icon: "▲", color: "var(--status-error)", disabled: true,
-    disabledHint: "Blocked is derived from dependencies, last-run errors, or a stuck worker — set those instead." },
-  { value: "in_review",  label: "In review",  icon: "◉", color: "var(--accent)" },
-  { value: "done",       label: "Done",       icon: "●", color: "var(--status-done)" },
+  { value: "draft", label: "Draft", icon: "○", color: "var(--status-muted)" },
+  { value: "plan", label: "Plan", icon: "◉", color: "var(--accent)" },
+  { value: "execute", label: "Execute", icon: "○", color: "var(--status-todo)" },
+  { value: "review", label: "Review", icon: "◉", color: "var(--status-review)" },
+  { value: "awaiting_user", label: "Needs input", icon: "▲", color: "var(--status-error)" },
+  { value: "blocked", label: "Blocked", icon: "▲", color: "var(--status-error)" },
+  { value: "done", label: "Done", icon: "●", color: "var(--status-done)" },
 ];
 
 function emptyDraft() {
@@ -43,7 +45,7 @@ function emptyDraft() {
     instructions: "",
     executor_agent: null,
     reviewer_agent: null,
-    status: "todo",
+    stage: "execute",
     tags: [],
     blocked_by_ids: [],
   };
@@ -76,7 +78,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           instructions: data.task.instructions || "",
           executor_agent: data.task.executor_agent || null,
           reviewer_agent: data.task.reviewer_agent || null,
-          status: data.task.status || "todo",
+          stage: data.task.stage || (data.task.status === "in_review" ? "review" : data.task.status === "done" ? "done" : "execute"),
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -112,7 +114,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       instructions: draft.instructions,
       executor_agent: draft.executor_agent,
       reviewer_agent: draft.reviewer_agent,
-      status: draft.status === "blocked" ? baseline.status || "todo" : draft.status,
+      stage: draft.stage || "execute",
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
@@ -163,7 +165,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       .map((task) => ({
         value: task.id,
         label: task.title,
-        description: `${task.status.replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
+        description: `${(task.stage || task.status).replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
       }));
   }, [draft.blocked_by_ids, id, tasks]);
 
@@ -301,7 +303,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                 <FormField label="Status">
                   <div class="status-grid">
                     {STATUS_OPTIONS.map((opt) => {
-                      const active = draft.status === opt.value;
+                      const active = draft.stage === opt.value;
                       const btn = (
                         <button
                           key={opt.value}
@@ -310,7 +312,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                           style={{ "--status-color": opt.color }}
                           aria-pressed={active}
                           disabled={opt.disabled}
-                          onClick={() => !opt.disabled && update({ status: opt.value })}
+                          onClick={() => !opt.disabled && update({ stage: opt.value })}
                         >
                           <span class="status-grid-icon" aria-hidden="true">{opt.icon}</span>
                           <span class="status-grid-label">{opt.label}</span>

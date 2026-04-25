@@ -25,8 +25,10 @@ function seedTask(db, { executor = null, reviewer = null } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
-    "INSERT INTO tasks (id, title, status, executor_agent, reviewer_agent, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).run(id, "t", "todo", executor, reviewer, now, now);
+    `INSERT INTO tasks
+      (id, root_task_id, title, status, stage, owner_agent, executor_agent, reviewer_agent, created_at, updated_at)
+     VALUES (?, ?, ?, 'todo', 'execute', ?, ?, ?, ?, ?)`,
+  ).run(id, id, "t", executor, executor, reviewer, now, now);
   return id;
 }
 
@@ -49,10 +51,12 @@ describe("task-watcher", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.status).toBe("in_progress");
+    expect(task.stage).toBe("execute");
     resolveDone({ exitCode: 0, status: "complete" });
     await new Promise((r) => setTimeout(r, 20));
     const after = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(after.status).toBe("in_review");
+    expect(after.stage).toBe("review");
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {
@@ -108,23 +112,22 @@ describe("task-watcher", () => {
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/blocked by/i);
   });
 
-  it("rejects run_requested when task already in_progress", async () => {
+  it("manual in_progress status does not fake an active worker", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db, { executor: "coder" });
     db.prepare("UPDATE tasks SET status='in_progress' WHERE id=?").run(taskId);
+    const handle = { pid: 1, done: new Promise(() => {}), cancel: vi.fn() };
     const watcher = createTaskWatcher({
       db,
       broker: stubBroker(),
-      spawn: vi.fn(),
+      spawn: vi.fn(() => handle),
       workerBinary: "/fake",
     });
-    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/already/i);
+    await expect(watcher.handleRunRequested(taskId)).resolves.toMatchObject({ runId: expect.any(String) });
   });
 
-  it("failed worker keeps task in_progress with error_text and error comment", async () => {
-    // Per spec §5.10 and T6: run_failed routes through the reducer which
-    // keeps the task in in_progress, sets error_text, and posts an ERROR comment.
+  it("failed worker keeps task retryable in execute with error_text and error comment", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     const taskId = seedTask(db, { executor: "coder" });
@@ -142,7 +145,8 @@ describe("task-watcher", () => {
     resolveDone({ exitCode: 1, status: "error", error: "timeout" });
     await new Promise((r) => setTimeout(r, 20));
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    expect(task.status).toBe("in_progress");
+    expect(task.stage).toBe("execute");
+    expect(task.status).toBe("todo");
     expect(task.error_text).toBe("timeout");
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ?")
@@ -156,7 +160,7 @@ describe("task-watcher", () => {
     const taskId = seedTask(db, { executor: "coder" });
     const now = Date.now();
     db.prepare(
-      "UPDATE tasks SET status = 'in_progress', updated_at = ? WHERE id = ?",
+      "UPDATE tasks SET status = 'in_progress', stage = 'execute', updated_at = ? WHERE id = ?",
     ).run(now, taskId);
     db.prepare(
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
@@ -172,11 +176,15 @@ describe("task-watcher", () => {
       logger: { warn, info: vi.fn() },
     });
 
-    const run = db.prepare("SELECT status, error_text FROM task_runs WHERE id = 'stale1'").get();
+    const run = db.prepare("SELECT status, process_status, failure_kind, error_text FROM task_runs WHERE id = 'stale1'").get();
     expect(run.status).toBe("error");
+    expect(run.process_status).toBe("abandoned");
+    expect(run.failure_kind).toBe("abandoned");
     expect(run.error_text).toBe("coordinator restarted");
-    const task = db.prepare("SELECT status, error_text FROM tasks WHERE id = ?").get(taskId);
+    const task = db.prepare("SELECT status, stage, stage_reason, error_text FROM tasks WHERE id = ?").get(taskId);
     expect(task.status).toBe("todo");
+    expect(task.stage).toBe("execute");
+    expect(task.stage_reason).toBe("abandoned");
     expect(task.error_text).toBe("Previous run did not finish");
     expect(warn).toHaveBeenCalled();
   });

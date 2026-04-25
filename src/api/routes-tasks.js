@@ -1,15 +1,26 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
-import { nextStatus, STATUSES } from "../core/state-machine.js";
+import { nextStage, STATUSES, STAGES, legacyStatusToStage, stageToLegacyStatus, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 
 function rowToTask(row) {
   if (!row) return null;
+  const stage = row.stage || legacyStatusToStage(row.status);
   return {
     ...row,
+    stage,
+    status: row.status || stageToLegacyStatus(stage),
     tags: JSON.parse(row.tags || "[]"),
     retry_count: row.retry_count ?? 0,
     source_schedule_id: row.source_schedule_id || null,
+    root_task_id: row.root_task_id || row.id,
+    parent_task_id: row.parent_task_id || null,
+    owner_agent: row.owner_agent || row.executor_agent || null,
+    delegated_to_agent: row.delegated_to_agent || null,
+    delegated_by_run_id: row.delegated_by_run_id || null,
+    required: row.required !== 0,
+    pending_actions: JSON.parse(row.pending_actions_json || "[]"),
+    blocking_issues: JSON.parse(row.blocking_issues_json || "[]"),
   };
 }
 
@@ -20,7 +31,9 @@ function compactTaskSummary(row) {
     id: task.id,
     title: task.title,
     status: task.status,
+    stage: task.stage,
     updated_at: task.updated_at,
+    owner_agent: task.owner_agent,
     executor_agent: task.executor_agent,
     reviewer_agent: task.reviewer_agent,
     source_schedule_id: task.source_schedule_id,
@@ -35,18 +48,25 @@ function attachDerivedRunFields(db, task) {
   if (!task) return task;
   const runningRow = db.prepare(
     `SELECT id FROM task_runs
-     WHERE task_id = ? AND status = 'running'
+     WHERE task_id = ? AND (process_status = 'running' OR status = 'running')
      ORDER BY started_at DESC LIMIT 1`
   ).get(task.id);
   const lastRow = db.prepare(
-    `SELECT id, status, ended_at FROM task_runs
-     WHERE task_id = ? AND status <> 'running'
+    `SELECT id, status, process_status, failure_kind, ended_at FROM task_runs
+     WHERE task_id = ? AND COALESCE(process_status, status) <> 'running'
      ORDER BY started_at DESC LIMIT 1`
   ).get(task.id);
   return {
     ...task,
     running_run_id: runningRow?.id || null,
-    last_run: lastRow ? { id: lastRow.id, status: lastRow.status, ended_at: lastRow.ended_at } : null,
+    status: runningRow ? "in_progress" : task.status,
+    last_run: lastRow ? {
+      id: lastRow.id,
+      status: lastRow.status,
+      process_status: lastRow.process_status || legacyRunStatusToProcessStatus(lastRow.status),
+      failure_kind: lastRow.failure_kind || null,
+      ended_at: lastRow.ended_at,
+    } : null,
   };
 }
 
@@ -74,11 +94,27 @@ function attachTaskGraph(db, task) {
   if (!task) return task;
   const dependencyRows = directDependencyRows(db, task.id);
   const dependentRows = directDependentRows(db, task.id);
+  const childRows = db.prepare(`
+    SELECT t.*, e.required AS edge_required, e.edge_type
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
+    ORDER BY t.subtask_order ASC, t.created_at ASC
+  `).all(task.id);
+  const parentRow = task.parent_task_id
+    ? db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.parent_task_id)
+    : null;
   return {
     ...task,
     dependency_ids: dependencyRows.map((row) => row.id),
     blocked_by: dependencyRows.map(compactTaskSummary),
     blocks: dependentRows.map(compactTaskSummary),
+    parent: compactTaskSummary(parentRow),
+    children: childRows.map((row) => ({
+      ...compactTaskSummary(row),
+      edge_type: row.edge_type,
+      required: row.edge_required !== 0,
+    })),
   };
 }
 
@@ -148,6 +184,10 @@ function rowToRun(row) {
   const hasLog = Boolean(log_id);
   return {
     ...run,
+    process_status: run.process_status || legacyRunStatusToProcessStatus(run.status),
+    stage: run.stage || (run.mode === "review" ? "review" : "execute"),
+    artifact_paths: JSON.parse(run.artifact_paths_json || "[]"),
+    result: run.result_json ? JSON.parse(run.result_json) : null,
     log: hasLog ? {
       id: log_id,
       model: log_model,
@@ -194,9 +234,13 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       where.push("status = ?");
       params.push(req.query.status);
     }
+    if (req.query.stage) {
+      where.push("stage = ?");
+      params.push(req.query.stage);
+    }
     if (req.query.agent) {
-      where.push("(executor_agent = ? OR reviewer_agent = ?)");
-      params.push(req.query.agent, req.query.agent);
+      where.push("(owner_agent = ? OR executor_agent = ? OR reviewer_agent = ?)");
+      params.push(req.query.agent, req.query.agent, req.query.agent);
     }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
@@ -210,6 +254,8 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       instructions = "",
       executor_agent = null,
       reviewer_agent = null,
+      owner_agent = null,
+      stage = "execute",
       tags = [],
       blocked_by_ids = [],
     } = req.body || {};
@@ -225,9 +271,24 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     const id = newTaskId();
     const now = Date.now();
     db.prepare(`
-      INSERT INTO tasks (id, title, instructions, executor_agent, reviewer_agent, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, title, instructions, executor_agent, reviewer_agent, JSON.stringify(tags), now, now);
+      INSERT INTO tasks
+        (id, root_task_id, title, instructions, status, stage, owner_agent,
+         executor_agent, reviewer_agent, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      id,
+      title,
+      instructions,
+      stageToLegacyStatus(stage),
+      stage,
+      owner_agent || executor_agent,
+      executor_agent,
+      reviewer_agent,
+      JSON.stringify(tags),
+      now,
+      now,
+    );
     replaceTaskDependencies(db, id, dependencyIds);
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
     const task = enrichTask(db, rowToTask(row));
@@ -249,7 +310,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     res.json({ task, comments, runs });
   });
 
-  const PATCHABLE = ["title", "instructions", "executor_agent", "reviewer_agent", "tags"];
+  const PATCHABLE = ["title", "instructions", "executor_agent", "reviewer_agent", "owner_agent", "tags"];
 
   app.patch("/api/tasks/:id", (req, res) => {
     const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
@@ -266,22 +327,29 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       }
     }
 
-    // Status handling via state machine
-    if ("status" in req.body) {
-      if (!STATUSES.includes(req.body.status)) {
-        return res.status(400).json({ error: { code: "validation", message: "invalid status" } });
+    // Stage handling via state machine. `status` remains accepted as a legacy
+    // input alias and is translated into a workflow stage.
+    if ("status" in req.body || "stage" in req.body) {
+      const requested = "stage" in req.body ? req.body.stage : req.body.status;
+      if (!STAGES.includes(requested) && !STATUSES.includes(requested)) {
+        return res.status(400).json({ error: { code: "validation", message: "invalid stage" } });
       }
-      const result = nextStatus(existing.status, { type: "human_move", target: req.body.status });
+      const currentStage = existing.stage || legacyStatusToStage(existing.status);
+      const result = nextStage(currentStage, { type: "human_move", target: requested });
       if (result.sideEffects.some(se => se.type === "error")) {
         return res.status(400).json({
           error: { code: "invalid_transition", message: result.sideEffects.find(se => se.type === "error").message },
         });
       }
+      fields.push("stage = ?");
+      values.push(result.stage);
       fields.push("status = ?");
-      values.push(result.status);
+      values.push(stageToLegacyStatus(result.stage));
       for (const se of result.sideEffects) {
         if (se.type === "set_completed_at") { fields.push("completed_at = ?"); values.push(Date.now()); }
         if (se.type === "clear_completed_at") { fields.push("completed_at = ?"); values.push(null); }
+        if (se.type === "clear_error_text") { fields.push("error_text = ?"); values.push(null); }
+        if (se.type === "set_stage_reason") { fields.push("stage_reason = ?"); values.push(se.reason || null); }
       }
     }
 
@@ -313,6 +381,14 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
   });
 
   app.delete("/api/tasks/:id", (req, res) => {
+    const running = db.prepare(
+      `SELECT id FROM task_runs
+       WHERE task_id = ? AND (process_status = 'running' OR status = 'running')
+       LIMIT 1`,
+    ).get(req.params.id);
+    if (running || watcher?.isActive?.(req.params.id)) {
+      return res.status(409).json({ error: { code: "task_running", message: "cancel the active run before deleting this task" } });
+    }
     const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
     if (r.changes === 0) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     broker.broadcast("global", { type: "task_deleted", id: req.params.id });
@@ -364,7 +440,8 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     // No live worker — check for a stale `running` row left behind by a crashed
     // worker or coordinator restart. If found, reconcile so the UI can move on.
     const staleRun = db.prepare(
-      `SELECT id FROM task_runs WHERE task_id = ? AND status = 'running'
+      `SELECT id, stage FROM task_runs
+       WHERE task_id = ? AND (process_status = 'running' OR status = 'running')
        ORDER BY started_at DESC LIMIT 1`
     ).get(taskId);
     if (!staleRun) return res.status(404).json({ error: { code: "not_running", message: "no active run" } });
@@ -372,15 +449,20 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
     const now = Date.now();
     db.transaction(() => {
       db.prepare(
-        `UPDATE task_runs SET status = 'error', ended_at = ?, error_text = ?
+        `UPDATE task_runs
+         SET status = 'error', process_status = 'abandoned', ended_at = ?,
+             failure_kind = 'abandoned', error_text = ?
          WHERE id = ?`
       ).run(now, "worker exited", staleRun.id);
+      const retryStage = staleRun.stage || "execute";
       db.prepare(
-        `UPDATE tasks SET status = CASE WHEN status = 'in_progress' THEN 'todo' ELSE status END,
+        `UPDATE tasks SET stage = CASE WHEN stage = 'done' THEN stage ELSE ? END,
+                          status = CASE WHEN stage = 'done' THEN 'done' ELSE ? END,
                           error_text = COALESCE(error_text, ?),
+                          stage_reason = COALESCE(stage_reason, 'abandoned'),
                           updated_at = ?
          WHERE id = ?`
-      ).run("Previous run did not finish", now, taskId);
+      ).run(retryStage, stageToLegacyStatus(retryStage), "Previous run did not finish", now, taskId);
     })();
 
     broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId });

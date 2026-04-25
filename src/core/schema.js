@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -27,9 +27,21 @@ CREATE TABLE IF NOT EXISTS agents (
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  delegated_by_run_id TEXT,
+  delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   title TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'todo',
+  stage TEXT NOT NULL DEFAULT 'execute',
+  stage_reason TEXT,
+  join_policy TEXT NOT NULL DEFAULT 'all_required',
+  subtask_order INTEGER NOT NULL DEFAULT 0,
+  required INTEGER NOT NULL DEFAULT 1,
+  pending_actions_json TEXT NOT NULL DEFAULT '[]',
+  blocking_issues_json TEXT NOT NULL DEFAULT '[]',
   executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   tags TEXT NOT NULL DEFAULT '[]',
@@ -51,6 +63,18 @@ CREATE TABLE IF NOT EXISTS task_dependencies (
 CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id);
 CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id);
 
+CREATE TABLE IF NOT EXISTS task_edges (
+  parent_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  child_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  edge_type TEXT NOT NULL DEFAULT 'subtask',
+  required INTEGER NOT NULL DEFAULT 1,
+  created_by_run_id TEXT,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (parent_task_id, child_task_id, edge_type)
+);
+CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type);
+CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type);
+
 CREATE TABLE IF NOT EXISTS task_comments (
   id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -64,14 +88,26 @@ CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, created_a
 CREATE TABLE IF NOT EXISTS task_runs (
   id TEXT PRIMARY KEY,
   task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
   mode TEXT NOT NULL,
+  stage TEXT NOT NULL DEFAULT 'execute',
   agent_name TEXT NOT NULL,
+  provider_kind TEXT,
   worker_pid INTEGER,
   status TEXT NOT NULL DEFAULT 'running',
+  process_status TEXT NOT NULL DEFAULT 'running',
+  decision TEXT,
+  failure_kind TEXT,
+  retry_stage TEXT,
   started_at INTEGER NOT NULL,
   ended_at INTEGER,
   exit_code INTEGER,
-  error_text TEXT
+  error_text TEXT,
+  summary TEXT,
+  details TEXT,
+  raw_output_path TEXT,
+  artifact_paths_json TEXT NOT NULL DEFAULT '[]',
+  result_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 

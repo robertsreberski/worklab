@@ -42,16 +42,16 @@ describe("e2e smoke", () => {
     const { tasks } = await res.json();
     expect(tasks.some((t) => t.id === task.id)).toBe(true);
 
-    // move through columns
-    for (const status of ["in_progress", "in_review", "done"]) {
+    // move through workflow stages
+    for (const stage of ["plan", "execute", "review", "done"]) {
       res = await fetch(`${baseUrl}/api/tasks/${task.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ stage }),
       });
       expect(res.status).toBe(200);
       const { task: updated } = await res.json();
-      expect(updated.status).toBe(status);
+      expect(updated.stage).toBe(stage);
     }
 
     // verify completed_at set

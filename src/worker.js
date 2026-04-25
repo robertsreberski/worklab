@@ -9,11 +9,42 @@ import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
+import { parseWorklabResultFromText, synthesizeWorklabResult } from "./core/worklab-result.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
+function resultFromTextOrFallback(text, fallback) {
+  const parsed = parseWorklabResultFromText(text, fallback);
+  if (parsed.ok) return { result: parsed.result, error: null };
+  return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
+}
+
+function reviewResultFromText(text) {
+  const parsed = parseWorklabResultFromText(text, { stage: "review" });
+  if (parsed.ok) return { result: parsed.result, verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null, notes: parsed.result.details || parsed.result.summary || "", error: null };
+
+  const { verdict, notes } = parseVerdict(text);
+  if (verdict === "APPROVE") {
+    return {
+      result: synthesizeWorklabResult({ stage: "review", decision: "approve", summary: notes || "Approved", details: text || "" }),
+      verdict,
+      notes,
+      error: parsed.error,
+    };
+  }
+  if (verdict === "REJECT") {
+    return {
+      result: synthesizeWorklabResult({ stage: "review", decision: "reject", summary: notes || "Rejected", details: text || "" }),
+      verdict,
+      notes,
+      error: parsed.error,
+    };
+  }
+  return { result: null, verdict: null, notes: "", error: parsed.error };
 }
 
 /**
@@ -215,9 +246,18 @@ async function main() {
         emit({ type: "error", message: result.error });
         process.exit(1);
       }
+      const parsedResult = resultFromTextOrFallback(result.text, {
+        stage: task.stage || "execute",
+        decision: "advance",
+        summary: result.text ? String(result.text).trim().slice(0, 500) : "Run completed",
+      });
+      if (parsedResult.error) {
+        emit({ type: "runtime_warning", warning_kind: "unstructured_result_fallback", message: parsedResult.error });
+      }
       emit({
         type: "final",
         text: result.text,
+        worklab_result: parsedResult.result,
         usage: result.usage,
         durationMs: result.durationMs,
         numTurns: result.numTurns,
@@ -281,9 +321,17 @@ async function main() {
         emit({ type: "error", message: result.error });
         process.exit(1);
       }
+      const parsedReview = reviewResultFromText(result.text);
+      if (parsedReview.error) {
+        emit({ type: "runtime_warning", warning_kind: "review_result_parse", message: parsedReview.error });
+      }
+      if (!parsedReview.result) {
+        emit({ type: "worklab_result_error", message: "Reviewer did not return a valid worklab_result or verdict" });
+      }
       emit({
         type: "final",
         text: result.text,
+        worklab_result: parsedReview.result,
         usage: result.usage,
         durationMs: result.durationMs,
         numTurns: result.numTurns,
@@ -291,14 +339,9 @@ async function main() {
         effort: result.effort,
       });
 
-      // Always emit verdict (null is valid — lets coordinator distinguish "parse failed").
-      const { verdict, notes } = parseVerdict(result.text);
-      emit({ type: "verdict", verdict, notes });
-
-      // Exit code: 2 on null (parse failed), 0 on APPROVE/REJECT.
-      if (verdict === null) {
-        process.exit(2);
-      }
+      // Always emit verdict (null is valid); process exit now reflects runtime
+      // success only, while coordinator handles invalid semantic output.
+      emit({ type: "verdict", verdict: parsedReview.verdict, notes: parsedReview.notes });
       process.exit(0);
     } catch (err) {
       emit({ type: "error", message: err.message || String(err) });

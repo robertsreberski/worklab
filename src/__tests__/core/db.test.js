@@ -15,6 +15,7 @@ describe("openDb + runMigrations", () => {
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
         "custom_providers", "custom_models", "embeddings", "settings",
         "agent_consolidations", "task_dependencies", "schedules", "schedule_spawns",
+        "task_edges",
       ]),
     );
   });
@@ -44,7 +45,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("5");
+    expect(row.value).toBe("6");
   });
 
   it("v5 migration drops priority + description from tasks/schedules", () => {
@@ -99,8 +100,9 @@ describe("openDb + runMigrations", () => {
     expect(taskCols).not.toContain("description");
     expect(schedCols).not.toContain("priority");
     expect(schedCols).not.toContain("description");
-    const taskRow = db.prepare("SELECT id, title, instructions FROM tasks WHERE id='t1'").get();
-    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay" });
+    const taskRow = db.prepare("SELECT id, title, instructions, stage, status, root_task_id FROM tasks WHERE id='t1'").get();
+    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay", stage: "execute", status: "todo", root_task_id: "t1" });
+    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json"]));
   });
 
   it("allows taskless consolidation runs", () => {

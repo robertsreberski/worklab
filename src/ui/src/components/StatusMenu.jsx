@@ -9,14 +9,24 @@ import { Icon } from "./Icon.jsx";
 // Per §5.1 table. Each entry is { from, to, label, confirm?: string }.
 // confirm is the modal message string (caller wires the Modal).
 const TRANSITIONS = [
-  { from: "todo",         to: "in_progress", label: "Run now" },
-  { from: "todo",         to: "done",        label: "Mark done" },
-  { from: "in_progress",  to: "todo",        label: "Reset to todo", confirm: "Reset to todo? Active run will be cancelled." },
-  { from: "in_progress",  to: "done",        label: "Mark done",     confirm: "Mark done without review?" },
-  { from: "in_review",    to: "in_progress", label: "Send back" },
-  { from: "in_review",    to: "done",        label: "Approve" },
-  { from: "in_review",    to: "todo",        label: "Reset to todo", confirm: "Reset to todo? Current review will be discarded." },
-  { from: "done",         to: "todo",        label: "Reopen" },
+  { from: "draft",             to: "plan",        label: "Plan" },
+  { from: "draft",             to: "execute",     label: "Ready to execute" },
+  { from: "plan",              to: "execute",     label: "Execute" },
+  { from: "execute",           to: "done",        label: "Mark done", confirm: "Mark done without a run or review?" },
+  { from: "review",            to: "done",        label: "Approve" },
+  { from: "review",            to: "execute",     label: "Request changes" },
+  { from: "verify",            to: "qa",          label: "Send to QA" },
+  { from: "verify",            to: "execute",     label: "Send back" },
+  { from: "qa",                to: "done",        label: "Accept" },
+  { from: "qa",                to: "execute",     label: "Send back" },
+  { from: "awaiting_children", to: "execute",     label: "Resume manually", confirm: "Resume before all children are done?" },
+  { from: "awaiting_user",     to: "execute",     label: "Resume" },
+  { from: "blocked",           to: "execute",     label: "Retry" },
+  { from: "done",              to: "execute",     label: "Reopen" },
+  // Legacy aliases while older API clients still send status.
+  { from: "todo",              to: "execute",     label: "Ready to execute" },
+  { from: "in_review",         to: "done",        label: "Approve" },
+  { from: "in_review",         to: "execute",     label: "Request changes" },
 ];
 
 export function allowedTransitions(status) {

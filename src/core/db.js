@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
+import { legacyRunStatusToProcessStatus, legacyStatusToStage, processStatusToLegacyStatus, stageToLegacyStatus } from "./state-machine.js";
 
 let singleton = null;
 
@@ -37,24 +38,90 @@ function ensureNullableTaskRunsTaskId(db) {
     CREATE TABLE IF NOT EXISTS task_runs_new (
       id TEXT PRIMARY KEY,
       task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+      parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
       mode TEXT NOT NULL,
+      stage TEXT NOT NULL DEFAULT 'execute',
       agent_name TEXT NOT NULL,
+      provider_kind TEXT,
       worker_pid INTEGER,
       status TEXT NOT NULL DEFAULT 'running',
+      process_status TEXT NOT NULL DEFAULT 'running',
+      decision TEXT,
+      failure_kind TEXT,
+      retry_stage TEXT,
       started_at INTEGER NOT NULL,
       ended_at INTEGER,
       exit_code INTEGER,
-      error_text TEXT
+      error_text TEXT,
+      summary TEXT,
+      details TEXT,
+      raw_output_path TEXT,
+      artifact_paths_json TEXT NOT NULL DEFAULT '[]',
+      result_json TEXT
     );
     INSERT INTO task_runs_new
-      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
-    SELECT id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text
+      (id, task_id, mode, stage, agent_name, worker_pid, status, process_status, started_at, ended_at, exit_code, error_text)
+    SELECT id, task_id, mode, CASE WHEN mode = 'review' THEN 'review' ELSE 'execute' END,
+           agent_name, worker_pid, status, status, started_at, ended_at, exit_code, error_text
     FROM task_runs;
     DROP TABLE task_runs;
     ALTER TABLE task_runs_new RENAME TO task_runs;
     CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
     PRAGMA foreign_keys = ON;
   `);
+}
+
+function ensureWorkflowColumns(db) {
+  addColumnIfMissing(db, "tasks", "root_task_id", "root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "parent_task_id", "parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "delegated_by_run_id", "delegated_by_run_id TEXT");
+  addColumnIfMissing(db, "tasks", "delegated_to_agent", "delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "owner_agent", "owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
+  addColumnIfMissing(db, "tasks", "stage_reason", "stage_reason TEXT");
+  addColumnIfMissing(db, "tasks", "join_policy", "join_policy TEXT NOT NULL DEFAULT 'all_required'");
+  addColumnIfMissing(db, "tasks", "subtask_order", "subtask_order INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "required", "required INTEGER NOT NULL DEFAULT 1");
+  addColumnIfMissing(db, "tasks", "pending_actions_json", "pending_actions_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "tasks", "blocking_issues_json", "blocking_issues_json TEXT NOT NULL DEFAULT '[]'");
+
+  addColumnIfMissing(db, "task_runs", "parent_run_id", "parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "task_runs", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
+  addColumnIfMissing(db, "task_runs", "provider_kind", "provider_kind TEXT");
+  addColumnIfMissing(db, "task_runs", "process_status", "process_status TEXT NOT NULL DEFAULT 'running'");
+  addColumnIfMissing(db, "task_runs", "decision", "decision TEXT");
+  addColumnIfMissing(db, "task_runs", "failure_kind", "failure_kind TEXT");
+  addColumnIfMissing(db, "task_runs", "retry_stage", "retry_stage TEXT");
+  addColumnIfMissing(db, "task_runs", "summary", "summary TEXT");
+  addColumnIfMissing(db, "task_runs", "details", "details TEXT");
+  addColumnIfMissing(db, "task_runs", "raw_output_path", "raw_output_path TEXT");
+  addColumnIfMissing(db, "task_runs", "artifact_paths_json", "artifact_paths_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
+}
+
+function syncWorkflowCompatibility(db) {
+  const taskRows = db.prepare("SELECT id, status, stage, executor_agent FROM tasks").all();
+  const updateTask = db.prepare("UPDATE tasks SET stage = ?, status = ?, owner_agent = COALESCE(owner_agent, ?), root_task_id = COALESCE(root_task_id, id) WHERE id = ?");
+  const taskTx = db.transaction(() => {
+    for (const row of taskRows) {
+      const stage = row.stage && row.stage !== "execute" ? row.stage : legacyStatusToStage(row.status);
+      updateTask.run(stage, stageToLegacyStatus(stage), row.executor_agent || null, row.id);
+    }
+  });
+  taskTx();
+
+  const runRows = db.prepare("SELECT id, status, process_status, mode, stage FROM task_runs").all();
+  const updateRun = db.prepare("UPDATE task_runs SET process_status = ?, status = ?, stage = ? WHERE id = ?");
+  const runTx = db.transaction(() => {
+    for (const row of runRows) {
+      const processStatus = row.process_status && row.process_status !== "running"
+        ? row.process_status
+        : legacyRunStatusToProcessStatus(row.status);
+      const stage = row.stage && row.stage !== "execute" ? row.stage : (row.mode === "review" ? "review" : "execute");
+      updateRun.run(processStatus, processStatusToLegacyStatus(processStatus), stage, row.id);
+    }
+  });
+  runTx();
 }
 
 function resetLegacyEmbeddings(db) {
@@ -79,9 +146,21 @@ function dropPriorityAndDescription(db) {
       BEGIN;
       CREATE TABLE tasks__new (
         id TEXT PRIMARY KEY,
+        root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+        delegated_by_run_id TEXT,
+        delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+        owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         title TEXT NOT NULL,
         instructions TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'todo',
+        stage TEXT NOT NULL DEFAULT 'execute',
+        stage_reason TEXT,
+        join_policy TEXT NOT NULL DEFAULT 'all_required',
+        subtask_order INTEGER NOT NULL DEFAULT 0,
+        required INTEGER NOT NULL DEFAULT 1,
+        pending_actions_json TEXT NOT NULL DEFAULT '[]',
+        blocking_issues_json TEXT NOT NULL DEFAULT '[]',
         executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         tags TEXT NOT NULL DEFAULT '[]',
@@ -93,16 +172,23 @@ function dropPriorityAndDescription(db) {
         completed_at INTEGER
       );
       INSERT INTO tasks__new (
-        id, title, instructions, status, executor_agent, reviewer_agent, tags,
+        id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
+        title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
+        pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       )
       SELECT
-        id, title, instructions, status, executor_agent, reviewer_agent, tags,
+        id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
+        title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
+        pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
+      CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_source_schedule ON tasks(source_schedule_id, created_at DESC);
       COMMIT;
       PRAGMA foreign_keys = ON;
@@ -149,6 +235,7 @@ function dropPriorityAndDescription(db) {
 export function runMigrations(db) {
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
+  ensureWorkflowColumns(db);
   addColumnIfMissing(db, "tasks", "source_schedule_id", "source_schedule_id TEXT");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
@@ -156,9 +243,16 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "custom_models", "pricing_json", "pricing_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "discovered_at", "discovered_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_source_schedule ON tasks(source_schedule_id, created_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC)");
   db.exec("CREATE TABLE IF NOT EXISTS task_dependencies (task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, PRIMARY KEY (task_id, depends_on_task_id))");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_dependencies_task ON task_dependencies(task_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_dependencies_depends_on ON task_dependencies(depends_on_task_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS task_edges (parent_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, child_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, edge_type TEXT NOT NULL DEFAULT 'subtask', required INTEGER NOT NULL DEFAULT 1, created_by_run_id TEXT, created_at INTEGER NOT NULL, PRIMARY KEY (parent_task_id, child_task_id, edge_type))");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
   db.exec("CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', executor_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', cadence_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_fire ON schedules(enabled, next_fire_at)");
   db.exec("CREATE TABLE IF NOT EXISTS schedule_spawns (id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, trigger_type TEXT NOT NULL DEFAULT 'manual', fired_at INTEGER NOT NULL)");
@@ -167,8 +261,10 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_enabled ON custom_models(enabled, provider_id)");
   resetLegacyEmbeddings(db);
+  syncWorkflowCompatibility(db);
   dropPriorityAndDescription(db);
   db.exec(SCHEMA_SQL);
+  syncWorkflowCompatibility(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

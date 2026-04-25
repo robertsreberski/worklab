@@ -1,7 +1,16 @@
 export const TASK_STATUS_LABELS = {
   todo: "To do",
+  draft: "Draft",
+  plan: "Plan",
+  execute: "Execute",
   in_progress: "In progress",
   in_review: "In review",
+  review: "Review",
+  verify: "Verify",
+  qa: "QA",
+  awaiting_children: "Waiting",
+  awaiting_user: "Needs input",
+  blocked: "Blocked",
   done: "Done",
 };
 
@@ -11,9 +20,12 @@ export const STATUS_TONES = {
   in_review: "blue",
   done: "green",
   running: "yellow",
+  queued: "muted",
+  succeeded: "green",
   complete: "green",
   error: "red",
   failed: "red",
+  abandoned: "red",
   cancelled: "muted",
   disabled: "muted",
   enabled: "green",
@@ -56,10 +68,10 @@ export function shortDate(value) {
 // (to put the row in the Blocked group) and TaskDetail (error chip on hero).
 export function hasRunError(task) {
   if (!task) return false;
-  if (task.last_run?.status === "error") return true;
+  if (task.last_run?.status === "error" || task.last_run?.process_status === "failed" || task.last_run?.process_status === "abandoned") return true;
   if (Array.isArray(task.runs) && task.runs.length) {
     const last = task.runs[task.runs.length - 1];
-    if (last?.status === "error") return true;
+    if (last?.status === "error" || last?.process_status === "failed" || last?.process_status === "abandoned") return true;
   }
   return false;
 }

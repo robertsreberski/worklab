@@ -1,136 +1,121 @@
 import { describe, it, expect } from "vitest";
-import { nextStatus } from "../../core/state-machine.js";
+import {
+  legacyRunStatusToProcessStatus,
+  legacyStatusToStage,
+  nextStage,
+  processStatusToLegacyStatus,
+  stageToLegacyStatus,
+} from "../../core/state-machine.js";
 
-describe("nextStatus", () => {
-  it("todo + run_requested → in_progress, spawn_executor", () => {
-    const r = nextStatus("todo", { type: "run_requested", executorAgent: "coder" });
-    expect(r.status).toBe("in_progress");
-    expect(r.sideEffects).toContainEqual({ type: "spawn_executor", agentName: "coder" });
+describe("workflow stage reducer", () => {
+  it("starts a runnable stage without changing the workflow stage", () => {
+    const r = nextStage("execute", { type: "run_requested", stage: "execute", mode: "execute", agentName: "coder" });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "spawn_worker", stage: "execute", mode: "execute", agentName: "coder" });
   });
 
-  it("todo + run_requested without executor → 'error' side effect, status unchanged", () => {
-    const r = nextStatus("todo", { type: "run_requested", executorAgent: null });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("no executor") });
+  it("rejects run_requested without an assigned agent", () => {
+    const r = nextStage("execute", { type: "run_requested", stage: "execute", mode: "execute", agentName: null });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("no agent") });
   });
-});
 
-describe("in_progress transitions", () => {
-  it("run_completed with reviewer → in_review, spawn_reviewer", () => {
-    const r = nextStatus("in_progress", { type: "run_completed", reviewerAgent: "checker" });
-    expect(r.status).toBe("in_review");
+  it("execute advance moves to review and can spawn a reviewer", () => {
+    const r = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      reviewerAgent: "checker",
+      result: { decision: "advance" },
+    });
+    expect(r.stage).toBe("review");
     expect(r.sideEffects).toContainEqual({ type: "spawn_reviewer", agentName: "checker" });
   });
 
-  it("run_completed without reviewer → in_review, no spawn", () => {
-    const r = nextStatus("in_progress", { type: "run_completed", reviewerAgent: null });
-    expect(r.status).toBe("in_review");
-    expect(r.sideEffects.some(s => s.type === "spawn_reviewer")).toBe(false);
-  });
-
-  it("run_failed → stays in_progress, posts error comment, red badge, sets error text", () => {
-    const r = nextStatus("in_progress", { type: "run_failed", message: "timeout" });
-    expect(r.status).toBe("in_progress");
+  it("execute failure remains retryable in execute with failure context", () => {
+    const r = nextStage("execute", { type: "run_failed", message: "timeout", failureKind: "timeout" });
+    expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "timeout" });
-    expect(r.sideEffects).toContainEqual({ type: "mark_badge_red" });
     expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: "timeout" });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "timeout" });
   });
-});
 
-describe("in_review transitions", () => {
-  it("review_approved → done, set_completed_at", () => {
-    const r = nextStatus("in_review", { type: "review_approved" });
-    expect(r.status).toBe("done");
+  it("review approve reaches done", () => {
+    const r = nextStage("review", {
+      type: "run_succeeded",
+      stage: "review",
+      result: { decision: "approve", summary: "ok" },
+    });
+    expect(r.stage).toBe("done");
     expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+    expect(r.sideEffects).toContainEqual({ type: "post_review_verdict", verdict: "APPROVE", notes: "ok" });
   });
 
-  it("review_rejected → in_progress, post comment, clear error", () => {
-    const r = nextStatus("in_review", { type: "review_rejected", notes: "not ok" });
-    expect(r.status).toBe("in_progress");
-    expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "not ok" });
-    expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
-  });
-});
-
-describe("human_move transitions", () => {
-  it.each([
-    ["todo", "in_progress"],
-    ["in_progress", "todo"],
-    ["in_progress", "in_review"],
-    ["in_review", "done"],
-    ["in_review", "in_progress"],
-    ["done", "todo"],
-    ["done", "in_progress"],
-    ["done", "in_review"],
-  ])("%s → %s via human_move is allowed", (from, to) => {
-    const r = nextStatus(from, { type: "human_move", target: to });
-    expect(r.status).toBe(to);
+  it("review reject routes back to execute", () => {
+    const r = nextStage("review", {
+      type: "run_succeeded",
+      stage: "review",
+      result: { decision: "reject", summary: "not ok", details: "fix tests" },
+    });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "fix tests" });
   });
 
-  it("rejects invalid target", () => {
-    const r = nextStatus("todo", { type: "human_move", target: "mystery" });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects.some(s => s.type === "error")).toBe(true);
+  it("delegate creates subtasks and waits for children", () => {
+    const subtasks = [{ title: "child", instructions: "do it" }];
+    const r = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "delegate", subtasks },
+    });
+    expect(r.stage).toBe("awaiting_children");
+    expect(r.sideEffects).toContainEqual({ type: "create_subtasks", subtasks });
   });
 
-  it("sets completed_at on human_move → done", () => {
-    const r = nextStatus("in_review", { type: "human_move", target: "done" });
-    expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+  it("pause and block produce user-action stages", () => {
+    expect(nextStage("execute", {
+      type: "run_succeeded",
+      result: { decision: "pause", summary: "need approval", pending_actions: ["approve"] },
+    }).stage).toBe("awaiting_user");
+    expect(nextStage("execute", {
+      type: "run_succeeded",
+      result: { decision: "block", summary: "missing key", blocking_issues: ["OPENAI_API_KEY"] },
+    }).stage).toBe("blocked");
   });
 
-  it("clears completed_at on human_move from done → anywhere else", () => {
-    const r = nextStatus("done", { type: "human_move", target: "todo" });
+  it("required children completion resumes execute; blocked child blocks parent", () => {
+    expect(nextStage("awaiting_children", { type: "children_completed" }).stage).toBe("execute");
+    expect(nextStage("awaiting_children", { type: "child_blocked", message: "child blocked" }).stage).toBe("blocked");
+  });
+
+  it("human moves are stage based and clear completed_at when reopening", () => {
+    const r = nextStage("done", { type: "human_move", target: "execute" });
+    expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "clear_completed_at" });
   });
 });
 
-describe("transition coverage", () => {
-  it("rejects run_requested from invalid states with error", () => {
-    for (const s of ["in_review", "done"]) {
-      const r = nextStatus(s, { type: "run_requested", executorAgent: "x" });
-      expect(r.status).toBe(s);
-      expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
-    }
+describe("legacy compatibility mapping", () => {
+  it.each([
+    ["todo", "execute"],
+    ["in_progress", "execute"],
+    ["in_review", "review"],
+    ["done", "done"],
+    ["blocked", "blocked"],
+  ])("maps legacy task status %s to stage %s", (status, stage) => {
+    expect(legacyStatusToStage(status)).toBe(stage);
   });
 
-  it("unknown event type yields error", () => {
-    const r = nextStatus("todo", { type: "bogus" });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects[0].type).toBe("error");
+  it("maps stages to legacy statuses without claiming active work", () => {
+    expect(stageToLegacyStatus("execute")).toBe("todo");
+    expect(stageToLegacyStatus("execute", { running: true })).toBe("in_progress");
+    expect(stageToLegacyStatus("review")).toBe("in_review");
+    expect(stageToLegacyStatus("done")).toBe("done");
   });
 
-  it("run_completed from non-in_progress state → error", () => {
-    const r = nextStatus("todo", { type: "run_completed", reviewerAgent: null });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
-  });
-
-  it("run_failed from non-in_progress state → error", () => {
-    const r = nextStatus("todo", { type: "run_failed", message: "oops" });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
-  });
-
-  it("review_approved from non-in_review state → error", () => {
-    const r = nextStatus("todo", { type: "review_approved" });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
-  });
-
-  it("review_rejected from non-in_review state → error", () => {
-    const r = nextStatus("todo", { type: "review_rejected", notes: "nope" });
-    expect(r.status).toBe("todo");
-    expect(r.sideEffects.some(se => se.type === "error")).toBe(true);
-  });
-
-  it("run_failed without message falls back to default message", () => {
-    const r = nextStatus("in_progress", { type: "run_failed" });
-    expect(r.sideEffects).toContainEqual({ type: "post_error_comment", message: "run failed" });
-    expect(r.sideEffects).toContainEqual({ type: "set_error_text", message: "run failed" });
-  });
-
-  it("review_rejected without notes defaults to empty string", () => {
-    const r = nextStatus("in_review", { type: "review_rejected" });
-    expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "" });
+  it("maps run process status to legacy run status", () => {
+    expect(legacyRunStatusToProcessStatus("complete")).toBe("succeeded");
+    expect(legacyRunStatusToProcessStatus("error")).toBe("failed");
+    expect(processStatusToLegacyStatus("succeeded")).toBe("complete");
+    expect(processStatusToLegacyStatus("failed")).toBe("error");
   });
 });
