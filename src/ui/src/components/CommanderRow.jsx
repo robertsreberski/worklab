@@ -38,7 +38,7 @@ function runningRunIdFromTask(task) {
   if (task.running_run_id) return task.running_run_id;
   const runs = task.runs;
   if (!Array.isArray(runs)) return null;
-  const live = runs.find((r) => r.status === "running");
+  const live = runs.find((r) => (r.process_status || r.status) === "running");
   return live?.id || null;
 }
 
@@ -59,17 +59,18 @@ export function CommanderRow({
     return (events || []).slice(-6);
   }, [events, isStreaming]);
   const event = useLiveTicker(recentEvents, { running: isStreaming, intervalMs: 2200 });
-  const meta = statusMeta(task.status);
+  const displayStage = task.stage || task.status;
+  const meta = statusMeta(task.running_run_id ? "running" : displayStage);
 
   const executorLabel = agentDisplayName(agents, task.executor_agent, "Unassigned");
   const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
 
   const blockedCount = Array.isArray(task.blocked_by)
-    ? task.blocked_by.filter((dependency) => dependency.status !== "done").length
+    ? task.blocked_by.filter((dependency) => (dependency.stage || dependency.status) !== "done").length
     : 0;
   const runError = hasRunError(task);
-  const stuck = task.status === "in_progress" && task.is_locked === false;
-  const needsExecutor = !task.executor_agent && task.status !== "done";
+  const stuck = task.running_run_id && task.is_locked === false;
+  const needsExecutor = !task.executor_agent && displayStage !== "done";
 
   // Title-row chip — disambiguates the reason a task lives in Blocked or
   // warns the user a worker is missing. Order: stuck > error > needs-executor.
@@ -160,7 +161,7 @@ export function CommanderRow({
         )}
       </div>
       <div class="commander-cell-pill">
-        <StatusPill status={task.status} size="sm" />
+        <StatusPill status={task.running_run_id ? "running" : displayStage} size="sm" />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
     </div>

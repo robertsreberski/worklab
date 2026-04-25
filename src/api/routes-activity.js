@@ -15,8 +15,8 @@ export function registerActivityRoutes(app, { db }) {
       params.push(req.query.agent);
     }
     if (req.query.status) {
-      filters.push("r.status = ?");
-      params.push(req.query.status);
+      filters.push("(r.status = ? OR r.process_status = ?)");
+      params.push(req.query.status, req.query.status);
     }
     if (from) {
       filters.push("r.started_at >= ?");

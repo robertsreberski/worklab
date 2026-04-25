@@ -18,34 +18,37 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { hasRunError } from "../lib/display.js";
 
-// The visible groups in Commander. `in_progress` (the worker-lifecycle
-// transient) is absorbed into Todo and shown via the per-row LivePulse;
-// `blocked` is synthesized from unmet deps, last-run errors, or a stuck
-// worker. See groupKeyFor below.
 const GROUPS = [
-  { key: "in_review", label: "In review", color: "var(--accent)",       icon: "◉" },
-  { key: "todo",      label: "Todo",      color: "var(--status-todo)",  icon: "○" },
-  { key: "blocked",   label: "Blocked",   color: "var(--status-error)", icon: "▲" },
-  { key: "done",      label: "Done",      color: "var(--status-done)",  icon: "●" },
+  { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
+  { key: "execute",         label: "Execute",     color: "var(--status-todo)",     icon: "○" },
+  { key: "review",          label: "Review",      color: "var(--status-review)",   icon: "◉" },
+  { key: "awaiting_children", label: "Waiting",   color: "var(--status-progress)", icon: "◐" },
+  { key: "awaiting_user",   label: "Needs input", color: "var(--status-error)",    icon: "▲" },
+  { key: "blocked",         label: "Blocked",     color: "var(--status-error)",    icon: "▲" },
+  { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "●" },
 ];
 
 function groupKeyFor(task) {
-  if (task.status === "in_review") return "in_review";
-  if (task.status === "done") return "done";
+  const stage = task.stage || (task.status === "in_review" ? "review" : task.status === "done" ? "done" : "execute");
+  if (["review", "verify", "qa", "awaiting_children", "awaiting_user", "blocked", "done", "plan"].includes(stage)) {
+    return stage === "verify" || stage === "qa" ? "review" : stage;
+  }
   const unmetDeps = Array.isArray(task.blocked_by)
     && task.blocked_by.some((d) => d.status !== "done");
   const runErrored = hasRunError(task);
-  const stuck = task.status === "in_progress" && task.is_locked === false;
+  const stuck = task.running_run_id && task.is_locked === false;
   if (unmetDeps || runErrored || stuck) return "blocked";
-  return "todo";
+  return "execute";
 }
 
 const TABS = [
-  { value: "all",       label: "All" },
-  { value: "in_review", label: "In review" },
-  { value: "todo",      label: "Todo" },
-  { value: "blocked",   label: "Blocked" },
-  { value: "done",      label: "Done" },
+  { value: "all", label: "All" },
+  { value: "plan", label: "Plan" },
+  { value: "execute", label: "Execute" },
+  { value: "review", label: "Review" },
+  { value: "awaiting_children", label: "Waiting" },
+  { value: "blocked", label: "Blocked" },
+  { value: "done", label: "Done" },
 ];
 
 export function Commander() {

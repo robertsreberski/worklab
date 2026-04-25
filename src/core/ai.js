@@ -10,7 +10,7 @@ export const BUILTIN_OPENAI_MODELS = [
   "gpt-5.4",
 ];
 
-export const VALID_MODEL_SDKS = ["claude", "openai", "vercel"];
+export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 
 const BUILTIN_MODEL_GROUPS = [
@@ -167,7 +167,7 @@ export function parseModelReference(value) {
   }
   const sdk = value.slice(0, i);
   const model = requireModelPart(value.slice(i + 1), "model id required");
-  if (sdk !== "claude" && sdk !== "openai") {
+  if (sdk !== "claude" && sdk !== "openai" && sdk !== "claude-code" && sdk !== "codex") {
     throw new Error(`unknown sdk: ${sdk}`);
   }
   if (["haiku", "sonnet", "opus"].includes(model)) {
@@ -202,6 +202,10 @@ export async function generateResponse(systemPrompt, options) {
   if (resolved.sdk === "vercel") {
     const { generateVercelResponse } = await import("./ai-vercel.js");
     return generateVercelResponse(systemPrompt, { ...options, model: resolved });
+  }
+  if (resolved.sdk === "claude-code" || resolved.sdk === "codex") {
+    const { generateCliResponse } = await import("./ai-cli.js");
+    return generateCliResponse(systemPrompt, { ...options, model: resolved });
   }
   throw new Error(`unsupported sdk: ${resolved.sdk}`);
 }

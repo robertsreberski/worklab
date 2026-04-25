@@ -53,7 +53,14 @@ async function initMcpServers(mcpConfig = {}) {
     await server.connect();
     return server;
   }));
-  return settled.filter((r) => r.status === "fulfilled").map((r) => r.value);
+  return {
+    servers: settled.filter((r) => r.status === "fulfilled").map((r) => r.value),
+    warnings: settled
+      .map((result, index) => result.status === "rejected"
+        ? { type: "runtime_warning", warning_kind: "mcp_init_failed", server: entries[index]?.[0], message: result.reason?.message || String(result.reason) }
+        : null)
+      .filter(Boolean),
+  };
 }
 
 async function closeMcpServers(servers) {
@@ -72,7 +79,12 @@ export async function generateOpenAIResponse(systemPrompt, options = {}) {
   let mcpServers = [];
 
   try {
-    mcpServers = await initMcpServers(options.mcpServers || {});
+    const mcpInit = await initMcpServers(options.mcpServers || {});
+    mcpServers = mcpInit.servers;
+    for (const warning of mcpInit.warnings) {
+      events.push(warning);
+      options.onEvent?.(warning);
+    }
     const agent = new Agent({
       name: "Worklab",
       instructions: systemPrompt,

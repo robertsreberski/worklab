@@ -2,7 +2,22 @@ import { buildSkillIndex } from "./skills.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
-const REVIEW_DIRECTIVE = "Review the executor's work against the task instructions. Respond with a final message whose first line is either `VERDICT: APPROVE` or `VERDICT: REJECT`. If REJECT, follow with bullet-pointed notes the executor can act on.";
+const RESULT_DIRECTIVE = `Return a structured Worklab result as JSON when you finish:
+
+{
+  "schema": "worklab.v2",
+  "decision": "advance",
+  "summary": "Short outcome.",
+  "details": "Optional implementation notes.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+
+Use decision "advance" when your stage work is complete, "block" when you cannot continue, "pause" when explicit human input is required, and "delegate" when bounded subtasks should be created.`;
+
+const REVIEW_DIRECTIVE = `Review the executor's work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 
@@ -91,8 +106,9 @@ function formatPriorRuns(priorRuns) {
 function buildTaskBody(task, comments) {
   return [
     `**Title:** ${task.title}`,
-    task.description ? `\n**Description:**\n${task.description}` : "",
     task.instructions ? `\n**Instructions:**\n${task.instructions}` : "",
+    task.stage ? `\n**Workflow stage:** ${task.stage}` : "",
+    task.stage_reason ? `\n**Stage reason:** ${task.stage_reason}` : "",
     comments?.length ? `\n**Comments:**\n${formatComments(comments)}` : "",
   ].filter(Boolean).join("\n");
 }
@@ -107,6 +123,7 @@ export function buildExecuteSystemPrompt({ agent, task, skills, memory, journalT
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
   parts.push(CADENCE);
+  parts.push(RESULT_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }
 

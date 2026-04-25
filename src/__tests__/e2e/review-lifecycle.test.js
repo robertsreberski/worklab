@@ -5,7 +5,7 @@
 //
 // Two scenarios:
 //   A) APPROVE path — reviewer approves, task transitions to `done`.
-//   B) REJECT  path — reviewer rejects, task returns to `in_progress`.
+//   B) REJECT  path — reviewer rejects, task returns to retryable `execute`.
 //
 // NOTE: Verification that pinned KB reaches the reviewer/executor system prompt
 // is covered by context.test.js (direct builder tests) and a worker-side
@@ -180,7 +180,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(systemComments.some((c) => c.body === "VERDICT: APPROVE")).toBe(true);
   }, 15000);
 
-  it("REJECT path: task → in_review → in_progress, with reviewer + system rejection comments", async () => {
+  it("REJECT path: task → review → execute, with reviewer + system rejection comments", async () => {
     const rejectionNotes = "- fix X\n- fix Y";
     ctx = await setupHarness({
       executeEvents: [
@@ -210,15 +210,16 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const runRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(runRes.status).toBe(200);
 
-    // First wait until we've reached in_review, then wait for the reviewer to bounce it back.
+    // Wait for the reviewer to bounce it back to the retryable execute stage.
     const finalResp = await pollTaskUntil(
       ctx.baseUrl,
       task.id,
-      (tr) => tr.task.status === "in_progress" && tr.comments.some((c) => c.author_type === "system" && c.body.includes("fix X")),
+      (tr) => tr.task.stage === "execute" && tr.comments.some((c) => c.author_type === "system" && c.body.includes("fix X")),
       { timeoutMs: 5000, stepMs: 100 },
     );
 
-    expect(finalResp.task.status).toBe("in_progress");
+    expect(finalResp.task.stage).toBe("execute");
+    expect(finalResp.task.status).toBe("todo");
     // Reducer's clear_error_text side effect on review_rejected clears error_text.
     expect(finalResp.task.error_text).toBeNull();
 

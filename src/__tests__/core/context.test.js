@@ -3,17 +3,18 @@ import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildReviewSy
 
 describe("buildExecuteSystemPrompt", () => {
   const baseAgent = { name: "coder", instructions: "you are a coder" };
-  const baseTask = { id: "t1", title: "demo", description: "desc", instructions: "do things" };
+  const baseTask = { id: "t1", title: "demo", stage: "execute", instructions: "do things" };
 
   it("contains agent instructions", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("you are a coder");
   });
 
-  it("contains task title, description, instructions", () => {
+  it("contains task title, stage, and instructions", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("demo");
-    expect(p).toContain("desc");
+    expect(p).toContain("Workflow stage");
+    expect(p).toContain("execute");
     expect(p).toContain("do things");
   });
 
@@ -84,9 +85,10 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("**Final output:**\nTried a first pass fix.");
   });
 
-  it("ends with the cadence instruction", () => {
+  it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
-    expect(p.trim().endsWith("if anything rolls up.")).toBe(true);
+    expect(p).toContain("Journal as you work");
+    expect(p.trim().endsWith('and "delegate" when bounded subtasks should be created.')).toBe(true);
   });
 
   it("omits empty sections cleanly (no doubled headers)", () => {
@@ -106,7 +108,7 @@ describe("buildExecuteSystemPrompt", () => {
 
 describe("buildReviewSystemPrompt", () => {
   const baseAgent = { name: "reviewer", instructions: "you are a reviewer" };
-  const baseTask = { id: "t1", title: "demo", description: "desc", instructions: "do things" };
+  const baseTask = { id: "t1", title: "demo", stage: "review", instructions: "do things" };
   const baseExecution = {
     finalText: "I implemented the feature.",
     events: [],
@@ -141,7 +143,7 @@ describe("buildReviewSystemPrompt", () => {
     const journalIdx = p.indexOf("- j1");
     const taskIdx = p.indexOf("**Title:** demo");
     const execIdx = p.indexOf("## Executor output");
-    const directiveIdx = p.indexOf("VERDICT: APPROVE");
+    const directiveIdx = p.indexOf('decision "approve" or "reject"');
     expect(roleIdx).toBeGreaterThanOrEqual(0);
     expect(kbIdx).toBeGreaterThan(roleIdx);
     expect(skillIdx).toBeGreaterThan(kbIdx);
@@ -241,7 +243,7 @@ describe("buildReviewSystemPrompt", () => {
     }
   });
 
-  it("ends with the review directive (exact spec wording)", () => {
+  it("ends with the structured review directive", () => {
     const p = buildReviewSystemPrompt({
       agent: baseAgent,
       task: baseTask,
@@ -252,7 +254,7 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: baseExecution,
     });
-    const directive = "Review the executor's work against the task instructions. Respond with a final message whose first line is either `VERDICT: APPROVE` or `VERDICT: REJECT`. If REJECT, follow with bullet-pointed notes the executor can act on.";
+    const directive = 'Review the executor\'s work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.';
     expect(p.trim().endsWith(directive)).toBe(true);
   });
 

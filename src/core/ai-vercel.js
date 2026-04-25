@@ -49,8 +49,18 @@ async function initMcpTools(mcpConfig, reservedNames) {
   const clients = [];
   const tools = {};
   const settled = await Promise.allSettled(Object.entries(mcpConfig || {}).map(([name, cfg]) => connectMcpClient(name, cfg)));
-  for (const result of settled) {
-    if (result.status !== "fulfilled") continue;
+  const entries = Object.entries(mcpConfig || {});
+  const warnings = [];
+  for (const [index, result] of settled.entries()) {
+    if (result.status !== "fulfilled") {
+      warnings.push({
+        type: "runtime_warning",
+        warning_kind: "mcp_init_failed",
+        server: entries[index]?.[0],
+        message: result.reason?.message || String(result.reason),
+      });
+      continue;
+    }
     const connected = result.value;
     clients.push(connected);
     let listed;
@@ -71,7 +81,7 @@ async function initMcpTools(mcpConfig, reservedNames) {
       });
     }
   }
-  return { clients, tools };
+  return { clients, tools, warnings };
 }
 
 async function closeMcpClients(clients) {
@@ -152,8 +162,12 @@ export async function generateVercelResponse(systemPrompt, options = {}) {
         skillNames: (options.skills || []).map((s) => s.name),
         dataDir: options.dataDir,
       });
-      const { clients, tools: mcpTools } = await initMcpTools(options.mcpServers || {}, new Set(Object.keys(builtIns)));
+      const { clients, tools: mcpTools, warnings } = await initMcpTools(options.mcpServers || {}, new Set(Object.keys(builtIns)));
       mcpClients = clients;
+      for (const warning of warnings || []) {
+        events.push(warning);
+        options.onEvent?.(warning);
+      }
       tools = { ...builtIns, ...mcpTools };
     }
 

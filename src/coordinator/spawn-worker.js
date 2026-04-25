@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { newAgentLogId } from "../core/ids.js";
+import { processStatusToLegacyStatus } from "../core/state-machine.js";
 
 export function spawnWorker({
   binary,
@@ -21,8 +22,12 @@ export function spawnWorker({
   const events = [];
   let finalPayload = null;
   let errorMessage = null;
+  let resultError = null;
+  let exitCode = null;
   let cancelRequested = false;
   let sigkillTimer = null;
+  let finalized = false;
+  let exitFallbackTimer = null;
   const startedAt = Date.now();
 
   const rl = createInterface({ input: child.stdout });
@@ -39,6 +44,7 @@ export function spawnWorker({
     broker.broadcast(runId, parsed);
     if (parsed.type === "final") finalPayload = parsed;
     if (parsed.type === "error") errorMessage = parsed.message;
+    if (parsed.type === "worklab_result_error") resultError = parsed.message || "invalid worklab_result";
   });
 
   child.stderr.on("data", (chunk) => {
@@ -55,19 +61,44 @@ export function spawnWorker({
   }
 
   const done = new Promise((resolve) => {
-    child.on("exit", (code) => {
+    function finalize(code) {
+      if (finalized) return;
+      finalized = true;
+      if (exitFallbackTimer) {
+        clearTimeout(exitFallbackTimer);
+        exitFallbackTimer = null;
+      }
       if (sigkillTimer) {
         clearTimeout(sigkillTimer);
         sigkillTimer = null;
       }
       const durationMs = Date.now() - startedAt;
-      let status = "complete";
-      if (cancelRequested || code === 130) status = "cancelled";
-      else if (code !== 0) status = "error";
+      let processStatus = "succeeded";
+      if (cancelRequested || code === 130) processStatus = "cancelled";
+      else if (code !== 0 || resultError) processStatus = "failed";
+      const status = processStatusToLegacyStatus(processStatus);
+      const failureKind = resultError ? "invalid_result" : (processStatus === "failed" ? "spawn" : null);
+      const result = finalPayload?.worklab_result || null;
 
       db.prepare(
-        `UPDATE task_runs SET status = ?, ended_at = ?, exit_code = ?, error_text = ? WHERE id = ?`,
-      ).run(status, Date.now(), code, errorMessage, runId);
+        `UPDATE task_runs
+         SET status = ?, process_status = ?, ended_at = ?, exit_code = ?,
+             error_text = ?, decision = ?, failure_kind = ?, summary = ?,
+             details = ?, result_json = ?
+         WHERE id = ?`,
+      ).run(
+        status,
+        processStatus,
+        Date.now(),
+        code,
+        errorMessage || resultError,
+        result?.decision || null,
+        failureKind,
+        result?.summary || null,
+        result?.details || null,
+        result ? JSON.stringify(result) : null,
+        runId,
+      );
 
       db.prepare(
         `INSERT INTO agent_logs
@@ -96,10 +127,24 @@ export function spawnWorker({
         exitCode: code,
         events,
         finalText: finalPayload?.text || null,
+        worklabResult: result,
         usage: finalPayload?.usage || {},
-        error: errorMessage,
+        error: errorMessage || resultError,
+        resultError,
         status,
+        processStatus,
       });
+    }
+
+    child.on("exit", (code) => {
+      exitCode = code;
+      // Prefer close so stdout/stderr buffers have drained. The fallback keeps
+      // tests and unusual child behavior from hanging forever if close is lost.
+      exitFallbackTimer = setTimeout(() => finalize(exitCode), 250);
+    });
+
+    child.on("close", (code) => {
+      finalize(code ?? exitCode);
     });
   });
 

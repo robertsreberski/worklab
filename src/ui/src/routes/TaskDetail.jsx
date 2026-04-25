@@ -108,7 +108,7 @@ function TaskContextCard({ task }) {
 }
 
 function ActivityRailDot({ item, agentLabel }) {
-  const tone = item.type === "run" ? item.run?.status : item.authorType;
+  const tone = item.type === "run" ? (item.run?.process_status || item.run?.status) : item.authorType;
   const runAgent = item.run?.agent_name;
   const commentAgent = item.authorType === "agent" ? item.authorId || item.author?.id : null;
   if (item.type === "run" && runAgent) {
@@ -179,7 +179,7 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
         <div class="run-summary">
           <div class="run-summary-main">
             <div class="run-summary-status">
-              <StatusPill status={run.status} size="sm" />
+              <StatusPill status={run.process_status || run.status} size="sm" />
               <span class="run-summary-title">{title}</span>
             </div>
             {meta && <div class="run-summary-meta" title={startedAt || undefined}>{meta}</div>}
@@ -199,7 +199,7 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
         {loading ? (
           <div class="run-card-events-loading">Loading events…</div>
         ) : (
-          <EventTimeline events={events} streaming={run.status === "running"} />
+          <EventTimeline events={events} streaming={(run.process_status || run.status) === "running"} />
         )}
       </div>
     </details>
@@ -285,13 +285,15 @@ export function TaskDetail({ id, runParam = null }) {
   const task = data?.task;
   const runs = data?.runs || [];
   const comments = data?.comments || [];
-  const runningRun = runs.find((r) => r.status === "running") || null;
-  const lastFinishedRun = runs.find((r) => r.status && r.status !== "running") || null;
-  const hasLastRunError = lastFinishedRun?.status === "error";
+  const stage = task?.stage || (task?.status === "in_review" ? "review" : task?.status === "done" ? "done" : "execute");
+  const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
+  const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
+  const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
+  const hasLastRunError = lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned";
   // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
   // NOT render the banner (prevents false positives).
   const showStuckBanner =
-    task?.status === "in_progress" && task?.is_locked === false;
+    task?.running_run_id && task?.is_locked === false;
 
   const activity = useMemo(
     () => buildActivity({ comments, runs }),
@@ -306,7 +308,7 @@ export function TaskDetail({ id, runParam = null }) {
   );
 
   const unresolvedBlockedBy = useMemo(
-    () => (task?.blocked_by || []).filter((entry) => entry.status !== "done"),
+    () => (task?.blocked_by || []).filter((entry) => (entry.stage || entry.status) !== "done"),
     [task],
   );
 
@@ -365,7 +367,7 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function resetToTodo() {
     try {
-      await api.patchTask(id, { status: "todo" });
+      await api.patchTask(id, { stage: "execute" });
       reload();
       pushToast("Reset to Todo", { variant: "success" });
     } catch (err) {
@@ -375,7 +377,7 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function retryStuck() {
     try {
-      await api.patchTask(id, { status: "todo" });
+      await api.patchTask(id, { stage: "execute" });
       const r = await api.runTask(id);
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
@@ -388,13 +390,13 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function applyStatusTransition(t) {
     try {
-      if (t.to === "in_progress" && t.from === "todo") {
+      if ((t.to === "execute" || t.to === "plan") && runningRun) {
         await runNow();
         return;
       }
-      await api.patchTask(id, { status: t.to });
+      await api.patchTask(id, { stage: t.to });
       reload();
-      pushToast(`Status → ${t.to}`, { variant: "success" });
+      pushToast(`Stage → ${t.to}`, { variant: "success" });
     } catch (err) {
       pushToast(`Status change failed: ${err.message}`, { variant: "error" });
     }
@@ -416,7 +418,9 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   // §6.3 primary action cluster per status
-  const canRun = task?.executor_agent && task.status === "todo" && unresolvedBlockedBy.length === 0;
+  const runnableStages = ["draft", "plan", "execute", "verify", "qa"];
+  const selectedAgent = stage === "review" ? (task?.reviewer_agent || task?.owner_agent || task?.executor_agent) : (task?.owner_agent || task?.executor_agent);
+  const canRun = selectedAgent && (runnableStages.includes(stage) || stage === "review") && unresolvedBlockedBy.length === 0;
   const runDisabledReason = !task?.executor_agent
     ? "Assign an executor to run"
     : unresolvedBlockedBy.length > 0
@@ -438,7 +442,24 @@ export function TaskDetail({ id, runParam = null }) {
         </Button>
       );
     }
-    if (task.status === "todo") {
+    if (stage === "review" && !runningRun) {
+      return (
+        <>
+          {canRun && (
+            <Button variant="primary" iconLeft={<Icon name="play" size={13} />} onClick={runNow}>
+              Run review
+            </Button>
+          )}
+          <Button variant="secondary" onClick={() => applyStatusTransition({ from: "review", to: "done" })}>
+            Approve
+          </Button>
+          <Button variant="secondary" onClick={() => applyStatusTransition({ from: "review", to: "execute" })}>
+            Request changes
+          </Button>
+        </>
+      );
+    }
+    if (runnableStages.includes(stage)) {
       return (
         <Button
           variant="primary"
@@ -451,21 +472,9 @@ export function TaskDetail({ id, runParam = null }) {
         </Button>
       );
     }
-    if (task.status === "in_review") {
+    if (stage === "done") {
       return (
-        <>
-          <Button variant="primary" onClick={() => applyStatusTransition({ from: "in_review", to: "done" })}>
-            Approve
-          </Button>
-          <Button variant="secondary" onClick={() => applyStatusTransition({ from: "in_review", to: "in_progress" })}>
-            Request changes
-          </Button>
-        </>
-      );
-    }
-    if (task.status === "done") {
-      return (
-        <Button variant="secondary" onClick={() => applyStatusTransition({ from: "done", to: "todo" })}>
+        <Button variant="secondary" onClick={() => applyStatusTransition({ from: "done", to: "execute" })}>
           Reopen
         </Button>
       );
@@ -493,9 +502,9 @@ export function TaskDetail({ id, runParam = null }) {
       }
       if (runningRun) cancelRun();
       else if (showStuckBanner) retryStuck();
-      else if (task?.status === "todo" && canRun) runNow();
-      else if (task?.status === "in_review") applyStatusTransition({ from: "in_review", to: "done" });
-      else if (task?.status === "done") applyStatusTransition({ from: "done", to: "todo" });
+      else if (canRun) runNow();
+      else if (stage === "review") applyStatusTransition({ from: "review", to: "done" });
+      else if (stage === "done") applyStatusTransition({ from: "done", to: "execute" });
     },
     "e": () => { navigateHash(`#/tasks/${id}/edit`); },
     "E": () => { navigateHash(`#/tasks/${id}/edit`); },
@@ -533,7 +542,7 @@ export function TaskDetail({ id, runParam = null }) {
               <div class="task-hero-stack">
                 <div class="task-hero-status-row">
                   {runningRun && <LivePulse size={10} />}
-                  <StatusMenu status={task.status} onChoose={onStatusChoose} />
+                  <StatusMenu status={stage} onChoose={onStatusChoose} />
                   {hasLastRunError && (
                     <span class="chip chip-error">
                       <Icon name="alert-triangle" size={10} /> Error
@@ -650,7 +659,7 @@ export function TaskDetail({ id, runParam = null }) {
                             expanded={expandedRunIds.has(run.id)}
                             highlighted={highlightedRunId === run.id}
                             onToggle={toggleRun}
-                            subscribe={run.status === "running"}
+                            subscribe={(run.process_status || run.status) === "running"}
                             agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)}
                           />
                         </div>

@@ -170,6 +170,14 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   });
 
   app.delete("/api/agents/:name", (req, res) => {
+    const running = db.prepare(
+      `SELECT id FROM task_runs
+       WHERE agent_name = ? AND (process_status = 'running' OR status = 'running')
+       LIMIT 1`,
+    ).get(req.params.name);
+    if (running || consolidation?.isActive?.(req.params.name)) {
+      return res.status(409).json({ error: { code: "agent_running", message: "wait for active runs to finish before deleting this agent" } });
+    }
     const r = db.prepare("DELETE FROM agents WHERE name = ?").run(req.params.name);
     if (r.changes === 0) {
       return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });

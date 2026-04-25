@@ -16,6 +16,8 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.id).toMatch(/^[a-zA-Z0-9]{21}$/);
     expect(res.body.task.title).toBe("do thing");
     expect(res.body.task.status).toBe("todo");
+    expect(res.body.task.stage).toBe("execute");
+    expect(res.body.task.root_task_id).toBe(res.body.task.id);
     expect(res.body.task.priority).toBeUndefined();
   });
 
@@ -174,33 +176,35 @@ describe("PATCH /api/tasks/:id", () => {
   });
 });
 
-describe("PATCH /api/tasks/:id status", () => {
-  it("human_move todo → in_progress when allowed", async () => {
+describe("PATCH /api/tasks/:id stage", () => {
+  it("human_move changes workflow stage without faking an active worker", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
-    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "in_progress" });
-    expect(res.body.task.status).toBe("in_progress");
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "review" });
+    expect(res.body.task.stage).toBe("review");
+    expect(res.body.task.status).toBe("in_review");
+    expect(res.body.task.running_run_id).toBeNull();
   });
 
-  it("invalid status value returns 400", async () => {
+  it("invalid stage value returns 400", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
-    await agent.patch(`/api/tasks/${task.id}`).send({ status: "bogus" }).expect(400);
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "bogus" }).expect(400);
   });
 
-  it("setting status=done sets completed_at", async () => {
+  it("setting stage=done sets completed_at", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
-    await agent.patch(`/api/tasks/${task.id}`).send({ status: "in_review" });
-    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "done" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "review" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" });
     expect(res.body.task.completed_at).toBeTruthy();
   });
 
-  it("moving done → todo clears completed_at", async () => {
+  it("moving done → execute clears completed_at", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
-    await agent.patch(`/api/tasks/${task.id}`).send({ status: "done" });
-    const res = await agent.patch(`/api/tasks/${task.id}`).send({ status: "todo" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" });
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "execute" });
     expect(res.body.task.completed_at).toBeNull();
   });
 });
@@ -218,6 +222,16 @@ describe("DELETE /api/tasks/:id", () => {
   it("returns 404 for missing", async () => {
     const { agent } = makeTestServer();
     await agent.delete("/api/tasks/missing").expect(404);
+  });
+
+  it("rejects deleting a task with a running run", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, status, process_status) VALUES (?, ?, 'execute', 'execute', 'alpha', ?, 'running', 'running')",
+    ).run("active-run", task.id, Date.now());
+    const res = await agent.delete(`/api/tasks/${task.id}`).expect(409);
+    expect(res.body.error.code).toBe("task_running");
   });
 });
 
@@ -280,12 +294,12 @@ describe("GET /api/tasks/:id/runs", () => {
 });
 
 describe("GET /api/tasks with filters", () => {
-  it("filters by status", async () => {
+  it("filters by stage", async () => {
     const { agent } = makeTestServer();
     await agent.post("/api/tasks").send({ title: "a" });
     const { body: { task: b } } = await agent.post("/api/tasks").send({ title: "b" });
-    await agent.patch(`/api/tasks/${b.id}`).send({ status: "in_progress" });
-    const res = await agent.get("/api/tasks?status=in_progress").expect(200);
+    await agent.patch(`/api/tasks/${b.id}`).send({ stage: "review" });
+    const res = await agent.get("/api/tasks?stage=review").expect(200);
     expect(res.body.tasks.length).toBe(1);
     expect(res.body.tasks[0].id).toBe(b.id);
   });
@@ -310,9 +324,9 @@ describe("GET /api/tasks with filters", () => {
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("bob", "Bob", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: t } } = await agent.post("/api/tasks").send({ title: "t" });
-    await agent.patch(`/api/tasks/${t.id}`).send({ executor_agent: "bob", status: "in_progress" });
+    await agent.patch(`/api/tasks/${t.id}`).send({ executor_agent: "bob", stage: "review" });
     await agent.post("/api/tasks").send({ title: "other" });
-    const res = await agent.get("/api/tasks?status=in_progress&agent=bob").expect(200);
+    const res = await agent.get("/api/tasks?stage=review&agent=bob").expect(200);
     expect(res.body.tasks.length).toBe(1);
     expect(res.body.tasks[0].id).toBe(t.id);
   });
@@ -386,7 +400,7 @@ describe("POST /api/tasks/:id/cancel", () => {
     });
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     db.prepare(
-      `UPDATE tasks SET status = 'in_progress', updated_at = ? WHERE id = ?`,
+      `UPDATE tasks SET status = 'in_progress', stage = 'execute', updated_at = ? WHERE id = ?`,
     ).run(Date.now(), task.id);
     db.prepare(
       `INSERT INTO task_runs (id, task_id, mode, agent_name, status, started_at)
@@ -398,12 +412,16 @@ describe("POST /api/tasks/:id/cancel", () => {
 
     await agent.post(`/api/tasks/${task.id}/cancel`).expect(204);
 
-    const run = db.prepare("SELECT status, error_text FROM task_runs WHERE id = 'stale1'").get();
+    const run = db.prepare("SELECT status, process_status, failure_kind, error_text FROM task_runs WHERE id = 'stale1'").get();
     expect(run.status).toBe("error");
+    expect(run.process_status).toBe("abandoned");
+    expect(run.failure_kind).toBe("abandoned");
     expect(run.error_text).toBe("worker exited");
 
-    const t = db.prepare("SELECT status, error_text FROM tasks WHERE id = ?").get(task.id);
+    const t = db.prepare("SELECT status, stage, stage_reason, error_text FROM tasks WHERE id = ?").get(task.id);
     expect(t.status).toBe("todo");
+    expect(t.stage).toBe("execute");
+    expect(t.stage_reason).toBe("abandoned");
     expect(t.error_text).toBe("Previous run did not finish");
 
     expect(events.some((e) => e.p?.type === "run_ended")).toBe(true);

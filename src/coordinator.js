@@ -60,7 +60,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
 
   watcherHolder.current = createTaskWatcher({
     db, broker, spawn: spawnWorker, workerBinary, logger,
-    repoRoot: config.repoRoot, dataDir: config.dataDir,
+    repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
   });
   consolidationHolder.current = createConsolidationManager({
     db, broker, spawn: spawnWorker, workerBinary, logger,
