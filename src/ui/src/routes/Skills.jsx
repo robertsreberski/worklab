@@ -70,15 +70,20 @@ export function Skills({ selectedName = null }) {
           key={s.name}
           href={`#/skills/${s.name}`}
           active={s.name === selectedName}
+          class="skill-pane-row"
           onClick={(event) => {
             event?.preventDefault?.();
             navigateHash(`#/skills/${s.name}`);
           }}
           leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
           title={skillDisplayName(s)}
-          sub={s.trigger || "No trigger defined"}
+          sub={(
+            <span class="pane-row-subline">
+              <span>{s.trigger || "No trigger defined"}</span>
+            </span>
+          )}
           trailing={(
-            <span class="pane-row-summary">
+            <span class="pane-row-summary pane-row-summary-metrics">
               {always && <Chip variant="trigger">always</Chip>}
               <span>used by {s.used_by_count || 0}</span>
             </span>

@@ -26,6 +26,7 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
@@ -158,6 +159,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   ];
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
   const useRadioForEffort = reasoningMode === "effort" && reasoningLevels.length >= 3 && reasoningLevels.length <= 5;
+  const headerModelLabel = modelDisplayName(agent.model, modelOptions);
+  const headerSlug = isNew ? "Slug after create" : agent.name;
 
   function toggleList(list, value) {
     return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
@@ -203,12 +206,19 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   return (
     <>
-      <header class="pane-detail-head">
+      <header class="pane-detail-head agent-detail-head">
         <div class="pane-detail-head-copy">
           {!isNew && <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} />}
           <div class="pane-detail-head-titles">
             <div class="all-caps">{isNew ? "Create agent" : "Agent"}</div>
             <h2>{title}</h2>
+            <div class="pane-detail-subline">
+              <span class="pane-row-mono">{headerSlug}</span>
+              <span class="pane-row-dot">·</span>
+              <span>{headerModelLabel}</span>
+              <span class="pane-row-dot">·</span>
+              <span>{normalizedEffort} effort</span>
+            </div>
           </div>
         </div>
         <div class="toolbar">

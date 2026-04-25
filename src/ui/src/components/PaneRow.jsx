@@ -1,4 +1,4 @@
-// §4.6 PaneRow — 36px row in a Pane list.
+// §4.6 PaneRow — compact identity row in a Pane list.
 
 export function PaneRow({
   href,
@@ -14,7 +14,7 @@ export function PaneRow({
   const cls = `pane-row ${active ? "active" : ""} ${disabled ? "disabled" : ""} ${className}`.trim();
   const body = (
     <>
-      {leading && <div>{leading}</div>}
+      {leading && <div class="pane-row-leading">{leading}</div>}
       <div class="pane-row-main">
         {title && <div class="pane-row-title">{title}</div>}
         {sub && <div class="pane-row-sub">{sub}</div>}

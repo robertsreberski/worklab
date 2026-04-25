@@ -686,6 +686,127 @@ test("destructive pane actions stay behind disclosure", async ({ page }) => {
   }
 });
 
+test("agents skills and knowledge panes keep polished rows and detail headers legible", async ({ page }) => {
+  const routes = [
+    {
+      hash: "#/agents/regression-agent",
+      title: "Regression Agent",
+      rowText: "Regression Agent",
+      detailText: "regression-agent",
+    },
+    {
+      hash: `#/skills/${skillName}`,
+      title: "Regression Skill",
+      rowText: "Regression Skill",
+      detailText: "On demand",
+    },
+    {
+      hash: "#/knowledge/mobile-layout-reference",
+      title: "Mobile layout reference",
+      rowText: "Mobile layout reference",
+      detailText: "mobile-layout-reference",
+    },
+  ];
+
+  for (const viewport of [
+    { width: 1440, height: 900, label: "desktop-1440" },
+    { width: 1024, height: 768, label: "laptop-1024" },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    for (const route of routes) {
+      await page.goto(`${baseUrl}/${route.hash}`);
+      await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
+      await expect(page.locator(".pane-detail-subline", { hasText: route.detailText })).toBeVisible();
+      await expect(page.locator(".pane-row.active", { hasText: route.rowText })).toBeVisible();
+      await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+
+      const paneMetrics = await page.evaluate(() => {
+        const row = document.querySelector(".pane-row.active");
+        const detailHead = document.querySelector(".pane-detail-head");
+        const body = document.querySelector(".pane-detail-body");
+        const list = document.querySelector(".pane-list");
+        return {
+          rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
+          headHeight: detailHead ? Math.round(detailHead.getBoundingClientRect().height) : 0,
+          bodyWidth: body ? Math.round(body.getBoundingClientRect().width) : 0,
+          listWidth: list ? Math.round(list.getBoundingClientRect().width) : 0,
+        };
+      });
+      expect(paneMetrics.rowHeight, `${viewport.label} ${route.hash} row height`).toBeGreaterThanOrEqual(56);
+      expect(paneMetrics.headHeight, `${viewport.label} ${route.hash} head height`).toBeGreaterThanOrEqual(68);
+      expect(paneMetrics.bodyWidth, `${viewport.label} ${route.hash} body width`).toBeGreaterThan(0);
+      expect(paneMetrics.listWidth, `${viewport.label} ${route.hash} list width`).toBeGreaterThanOrEqual(300);
+
+      await expectNoHorizontalOverflow(page, `${viewport.label} ${route.hash} polished panes`);
+      await expectNoCriticalHorizontalClipping(
+        page,
+        [
+          ".pane-detail-head h2",
+          ".pane-detail-subline",
+          ".pane-detail-head .button",
+          ".pane-list-head .button",
+          ".pane-row-title",
+          ".pane-row-meta",
+          ".kb-category-badge",
+          ".chip",
+        ].join(", "),
+        `${viewport.label} ${route.hash} polished panes`,
+      );
+    }
+  }
+});
+
+test("mobile agents skills and knowledge panes preserve compact premium detail structure", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routes = [
+    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents" },
+    { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills" },
+    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "All entries" },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
+    await expect(page.locator(".pane-detail-subline")).toBeVisible();
+    await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+
+    const mobileMetrics = await page.evaluate(() => {
+      const head = document.querySelector(".pane-detail-head");
+      const toolbar = document.querySelector(".pane-detail-head .toolbar");
+      const formSection = document.querySelector(".pane-detail-body > .form-section");
+      const icon = document.querySelector(".pane-detail-icon, .agent-avatar");
+      return {
+        headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
+        toolbarTop: toolbar ? Math.round(toolbar.getBoundingClientRect().top) : 0,
+        headTop: head ? Math.round(head.getBoundingClientRect().top) : 0,
+        sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
+        iconWidth: icon ? Math.round(icon.getBoundingClientRect().width) : 0,
+      };
+    });
+    expect(mobileMetrics.headWidth).toBeLessThanOrEqual(390);
+    expect(mobileMetrics.toolbarTop).toBeGreaterThanOrEqual(mobileMetrics.headTop);
+    expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
+    expect(mobileMetrics.iconWidth).toBeGreaterThanOrEqual(28);
+
+    await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
+    await expectNoCriticalHorizontalClipping(
+      page,
+      [
+        ".pane-mobile-back .button",
+        ".pane-detail-head h2",
+        ".pane-detail-subline",
+        ".pane-detail-head .button",
+        ".form-section-title",
+        ".form-field-label",
+        ".kb-category-badge",
+        ".chip",
+      ].join(", "),
+      `mobile polished pane ${route.hash}`,
+    );
+  }
+});
+
 // Responsive breakpoints from ui-design-system.md §7.5. Spec mandates no
 // horizontal overflow on any route at any of these four widths.
 const RESPONSIVE_VIEWPORTS = [

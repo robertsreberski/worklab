@@ -117,14 +117,28 @@ export function Knowledge({ selectedSlug = null }) {
           key={e.slug}
           href={`#/knowledge/${e.slug}`}
           active={e.slug === selectedSlug}
+          class="knowledge-pane-row"
           onClick={(event) => {
             event?.preventDefault?.();
             navigateHash(`#/knowledge/${e.slug}`);
           }}
-          leading={e.pinned ? <Icon name="pin" size={12} /> : null}
+          leading={(
+            <span class={`knowledge-row-leading ${e.pinned ? "pinned" : ""}`.trim()}>
+              <Icon name={e.pinned ? "pin" : "book"} size={12} />
+            </span>
+          )}
           title={e.title}
-          sub={cat ? <span class="kb-category-badge" data-category={cat}>{cat}</span> : null}
-          trailing={formatKnowledgeAge(e.updated_at)}
+          sub={(
+            <span class="knowledge-row-sub">
+              {cat && <span class="kb-category-badge" data-category={cat}>{cat}</span>}
+              <span class="pane-row-mono">{e.slug}</span>
+            </span>
+          )}
+          trailing={(
+            <span class="pane-row-summary pane-row-summary-metrics">
+              <span>{formatKnowledgeAge(e.updated_at)}</span>
+            </span>
+          )}
         />
       );
     })
