@@ -5,7 +5,7 @@
 // "Stuck" chip: status==="in_progress" && is_locked===false (§5.2).
 
 import { useMemo } from "preact/hooks";
-import { useRunStream } from "../lib/useRunStream.js";
+import { mergeRunEvents, useRunStream } from "../lib/useRunStream.js";
 import { useLiveTicker } from "../lib/useLiveTicker.js";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
@@ -56,8 +56,9 @@ export function CommanderRow({
   const { events } = useRunStream(runningRunId, { subscribe: isStreaming });
   const recentEvents = useMemo(() => {
     if (!isStreaming) return [];
-    return (events || []).slice(-6);
-  }, [events, isStreaming]);
+    const initial = task.running_run?.last_event ? [task.running_run.last_event] : [];
+    return mergeRunEvents(initial, events || []).slice(-6);
+  }, [events, isStreaming, task.running_run?.last_event]);
   const event = useLiveTicker(recentEvents, { running: isStreaming, intervalMs: 2200 });
   const displayStage = task.stage || task.status;
   const meta = statusMeta(task.running_run_id ? "running" : displayStage);

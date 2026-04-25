@@ -34,6 +34,17 @@ describe("POST /api/tasks", () => {
     expect(res.body.tasks.map(t => t.title).sort()).toEqual(["a", "b"]);
   });
 
+  it("deduplicates create retries with the same client request id", async () => {
+    const { agent, db } = makeTestServer();
+    const body = { title: "a", client_request_id: "create-once" };
+
+    const first = await agent.post("/api/tasks").send(body).expect(201);
+    const second = await agent.post("/api/tasks").send(body).expect(200);
+
+    expect(second.body.task.id).toBe(first.body.task.id);
+    expect(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE client_request_id = ?").get("create-once").c).toBe(1);
+  });
+
   it("stores dependency ids and exposes compact blockers", async () => {
     const { agent } = makeTestServer();
     const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
@@ -99,6 +110,30 @@ describe("GET /api/tasks/:id", () => {
     const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
 
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
+  });
+
+  it("includes the latest running event summary on list and detail payloads", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const now = Date.now();
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status) VALUES (?, ?, 'execute', 'alpha', ?, 'running', 'running')",
+    ).run("run-active", task.id, now);
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'running', ?)")
+      .run("log-active", "run-active", JSON.stringify([
+        { type: "text", text: "first", _event_seq: 1 },
+        { type: "text", text: "latest", _event_seq: 2 },
+      ]), now);
+
+    const list = await agent.get("/api/tasks").expect(200);
+    const detail = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(list.body.tasks[0].running_run).toMatchObject({
+      id: "run-active",
+      event_count: 2,
+      last_event: { type: "text", text: "latest", _event_seq: 2 },
+    });
+    expect(detail.body.task.running_run.last_event.text).toBe("latest");
   });
 
   it("embeds compact run log metadata for task detail summaries", async () => {

@@ -77,6 +77,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "delegated_by_run_id", "delegated_by_run_id TEXT");
   addColumnIfMissing(db, "tasks", "delegated_to_agent", "delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "owner_agent", "owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
   addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
   addColumnIfMissing(db, "tasks", "stage_reason", "stage_reason TEXT");
   addColumnIfMissing(db, "tasks", "join_policy", "join_policy TEXT NOT NULL DEFAULT 'all_required'");
@@ -151,6 +152,7 @@ function dropPriorityAndDescription(db) {
         delegated_by_run_id TEXT,
         delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+        client_request_id TEXT,
         title TEXT NOT NULL,
         instructions TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'todo',
@@ -173,19 +175,20 @@ function dropPriorityAndDescription(db) {
       );
       INSERT INTO tasks__new (
         id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
-        title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
+        client_request_id, title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       )
       SELECT
         id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
-        title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
+        client_request_id, title, instructions, status, stage, stage_reason, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, executor_agent, reviewer_agent, tags,
         error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
       CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status, updated_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
       CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC);
@@ -237,12 +240,14 @@ export function runMigrations(db) {
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
   addColumnIfMissing(db, "tasks", "source_schedule_id", "source_schedule_id TEXT");
+  addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "pricing_json", "pricing_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "discovered_at", "discovered_at INTEGER");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_source_schedule ON tasks(source_schedule_id, created_at DESC)");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC)");

@@ -25,7 +25,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
+import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 
 // Status grid in the right rail. "blocked" is derived (deps + errors + stuck)
 // and cannot be set directly — render the button disabled with a tooltip.
@@ -51,6 +51,11 @@ function emptyDraft() {
   };
 }
 
+function newClientRequestId() {
+  if (globalThis.crypto?.randomUUID) return `task-create-${globalThis.crypto.randomUUID()}`;
+  return `task-create-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function TaskEdit({ mode = "create", id = null }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
@@ -61,6 +66,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [tagDraft, setTagDraft] = useState("");
   const [dependencyDraft, setDependencyDraft] = useState("");
   const formRef = useRef(null);
+  const createRequestIdRef = useRef(mode === "create" ? newClientRequestId() : null);
 
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
@@ -118,13 +124,15 @@ export function TaskEdit({ mode = "create", id = null }) {
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
+    if (mode === "create") payload.client_request_id = createRequestIdRef.current;
     if (!payload.title) {
       pushToast("Title is required", { variant: "error" });
       throw new Error("Title is required");
     }
     const savedId = await formSave.save(payload);
+    if (savedId) setBaseline(draft);
     if (navigateOnSuccess && savedId) {
-      navigateHash(`#/tasks/${savedId}`);
+      proceedToHash(`#/tasks/${savedId}`);
     }
     return savedId;
   }

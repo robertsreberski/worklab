@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   delegated_by_run_id TEXT,
   delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
   owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  client_request_id TEXT,
   title TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'todo',

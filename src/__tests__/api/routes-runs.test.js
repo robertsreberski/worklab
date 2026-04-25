@@ -22,6 +22,23 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.run.id).toBe(runId);
     expect(res.body.log.events.length).toBe(1);
   });
+
+  it("returns events for a still-running run", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status) VALUES (?, ?, 'execute', 'a', ?, 'running', 'running')")
+      .run(runId, taskId, now);
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'running', ?)")
+      .run("log-running", runId, JSON.stringify([{ type: "text", text: "still working", _event_seq: 1 }]), now);
+
+    const res = await agent.get(`/api/runs/${runId}`).expect(200);
+
+    expect(res.body.run.process_status).toBe("running");
+    expect(res.body.log.events).toEqual([{ type: "text", text: "still working", _event_seq: 1 }]);
+  });
 });
 
 describe("GET /api/runs/:id/stream", () => {

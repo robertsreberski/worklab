@@ -474,6 +474,24 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
   await expect(page.locator('input[placeholder*="actionable"]')).toBeVisible();
 });
 
+test("creating a task is single-save and does not show a false unsaved warning", async ({ page }) => {
+  const title = `Create once ${Date.now()}`;
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await page.locator('input[placeholder*="actionable"]').fill(title);
+  await page.locator(".task-edit-toolbar .button", { hasText: "Create task" }).evaluate((button) => {
+    button.click();
+    button.click();
+    button.click();
+  });
+
+  await expect(page).toHaveURL(/#\/tasks\/[a-zA-Z0-9]+/);
+  await expect(page.locator(".task-hero-title", { hasText: title })).toBeVisible();
+  await expect(page.locator(".modal", { hasText: "unsaved" })).toHaveCount(0);
+
+  const { tasks } = await requestJson("/api/tasks");
+  expect(tasks.filter((task) => task.title === title)).toHaveLength(1);
+});
+
 test("task detail renders two-column layout", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
