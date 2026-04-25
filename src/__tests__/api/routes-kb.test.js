@@ -291,7 +291,7 @@ describe("kb REST routes", () => {
       {
         id: taskRes.body.task.id,
         title: "Use Search Guide",
-        status: "todo",
+        stage: "plan",
         via: "body",
       },
     ]);

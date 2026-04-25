@@ -138,7 +138,8 @@ Supported runtime paths:
 - OpenAI Agents SDK
 - Vercel AI SDK for custom/local OpenAI-compatible providers
 
-Claude Code and Codex CLI are not first-class agent providers yet.
+Claude Code and Codex CLI were not first-class agent providers at the time of
+this audit; the implementation now exposes them through local CLI model refs.
 
 ## Findings
 
@@ -775,4 +776,3 @@ UI tests:
   supported SDK or CLI provider.
 - Parent agents have autonomy to delegate unless they explicitly pause for
   human input or policy blocks delegation.
-

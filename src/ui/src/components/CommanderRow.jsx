@@ -1,8 +1,8 @@
 // §4.4 CommanderRow — the canonical dense task row.
 // Dense grid (matches DS prototype VariationA):
-//   checkbox · id · title+live · deps-chip · executor→reviewer · status-pill · age
+//   checkbox · id · title+live · deps-chip · owner→reviewer · status-pill · age
 // Error chip policy (§5.3): derived from last_run.status === 'error'.
-// "Stuck" chip: status==="in_progress" && is_locked===false (§5.2).
+// "Stuck" chip: running_run_id && is_locked===false (§5.2).
 
 import { useMemo } from "preact/hooks";
 import { mergeRunEvents, useRunStream } from "../lib/useRunStream.js";
@@ -60,21 +60,23 @@ export function CommanderRow({
     return mergeRunEvents(initial, events || []).slice(-6);
   }, [events, isStreaming, task.running_run?.last_event]);
   const event = useLiveTicker(recentEvents, { running: isStreaming, intervalMs: 2200 });
-  const displayStage = task.stage || task.status;
+  const displayStage = task.stage || "plan";
   const meta = statusMeta(task.running_run_id ? "running" : displayStage);
 
-  const executorLabel = agentDisplayName(agents, task.executor_agent, "Unassigned");
+  const runnerName = task.owner_agent;
+  const runnerRole = "Owner";
+  const runnerLabel = agentDisplayName(agents, runnerName, "Unassigned");
   const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
 
   const blockedCount = Array.isArray(task.blocked_by)
-    ? task.blocked_by.filter((dependency) => (dependency.stage || dependency.status) !== "done").length
+    ? task.blocked_by.filter((dependency) => (dependency.stage || "plan") !== "done").length
     : 0;
   const runError = hasRunError(task);
   const stuck = task.running_run_id && task.is_locked === false;
-  const needsExecutor = !task.executor_agent && displayStage !== "done";
+  const needsOwner = !runnerName && displayStage !== "done";
 
   // Title-row chip — disambiguates the reason a task lives in Blocked or
-  // warns the user a worker is missing. Order: stuck > error > needs-executor.
+  // warns the user an owner is missing. Order: stuck > error > needs-owner.
   // Blocked-by gets its own grid cell (.commander-cell-deps).
   let metaChip = null;
   if (stuck) {
@@ -89,8 +91,8 @@ export function CommanderRow({
         <Icon name="alert-triangle" size={10} /> Error
       </span>
     );
-  } else if (needsExecutor) {
-    metaChip = <span class="chip chip-warn">Needs executor</span>;
+  } else if (needsOwner) {
+    metaChip = <span class="chip chip-warn">Needs owner</span>;
   }
 
   const depsChip = blockedCount > 0 ? (
@@ -144,10 +146,10 @@ export function CommanderRow({
       <div class="commander-cell-deps">{depsChip}</div>
       <div class="commander-cell-assignees">
         <AgentAvatar
-          name={task.executor_agent}
-          label={executorLabel}
+          name={runnerName}
+          label={runnerLabel}
           size={20}
-          title={`Executor: ${executorLabel}`}
+          title={`${runnerRole}: ${runnerLabel}`}
         />
         {task.reviewer_agent && (
           <>
@@ -161,7 +163,10 @@ export function CommanderRow({
           </>
         )}
       </div>
-      <div class="commander-cell-pill">
+      <div
+        class="commander-cell-pill"
+        title={task.stage_reason || undefined}
+      >
         <StatusPill status={task.running_run_id ? "running" : displayStage} size="sm" />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>

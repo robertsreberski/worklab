@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt } from "../../core/context.js";
+import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildPlanSystemPrompt, buildReviewSystemPrompt } from "../../core/context.js";
 
 describe("buildExecuteSystemPrompt", () => {
   const baseAgent = { name: "coder", instructions: "you are a coder" };
@@ -88,7 +88,7 @@ describe("buildExecuteSystemPrompt", () => {
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
-    expect(p.trim().endsWith('and "delegate" when bounded subtasks should be created.')).toBe(true);
+    expect(p.trim().endsWith('and "block" when you cannot continue.')).toBe(true);
   });
 
   it("omits empty sections cleanly (no doubled headers)", () => {
@@ -106,6 +106,23 @@ describe("buildExecuteSystemPrompt", () => {
   });
 });
 
+describe("buildPlanSystemPrompt", () => {
+  it("uses the planning directive without asking for implementation work", () => {
+    const p = buildPlanSystemPrompt({
+      agent: { name: "planner", instructions: "plan carefully" },
+      task: { id: "t1", title: "demo", stage: "plan", instructions: "do things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    expect(p).toContain("Plan this task.");
+    expect(p).toContain("Do not do implementation work during planning.");
+    expect(p).toContain('Use decision "advance" when the plan is ready');
+  });
+});
+
 describe("buildReviewSystemPrompt", () => {
   const baseAgent = { name: "reviewer", instructions: "you are a reviewer" };
   const baseTask = { id: "t1", title: "demo", stage: "review", instructions: "do things" };
@@ -117,7 +134,7 @@ describe("buildReviewSystemPrompt", () => {
     numTurns: 3,
   };
 
-  it("contains role / pinned KB / skill index / memory / journal / task block / executor output / directive in order", () => {
+  it("contains role / pinned KB / skill index / memory / journal / task block / work output / directive in order", () => {
     const skills = [
       { name: "pin", trigger: "always", enabled: true, priority: "always", body: "PIN-BODY" },
       { name: "ref", trigger: "on demand", enabled: true, body: "REF-BODY" },
@@ -142,7 +159,7 @@ describe("buildReviewSystemPrompt", () => {
     const memIdx = p.indexOf("# MEM");
     const journalIdx = p.indexOf("- j1");
     const taskIdx = p.indexOf("**Title:** demo");
-    const execIdx = p.indexOf("## Executor output");
+    const execIdx = p.indexOf("## Work output");
     const directiveIdx = p.indexOf('decision "approve" or "reject"');
     expect(roleIdx).toBeGreaterThanOrEqual(0);
     expect(kbIdx).toBeGreaterThan(roleIdx);
@@ -154,7 +171,7 @@ describe("buildReviewSystemPrompt", () => {
     expect(directiveIdx).toBeGreaterThan(execIdx);
   });
 
-  it("contains the executor finalText verbatim", () => {
+  it("contains the owner finalText verbatim", () => {
     const p = buildReviewSystemPrompt({
       agent: baseAgent,
       task: baseTask,
@@ -168,7 +185,7 @@ describe("buildReviewSystemPrompt", () => {
     expect(p).toContain("Here is my work: foo().");
   });
 
-  it("executor output header reflects agentName, numTurns, durationMs", () => {
+  it("work output header reflects agentName, numTurns, durationMs", () => {
     const p = buildReviewSystemPrompt({
       agent: baseAgent,
       task: baseTask,
@@ -179,7 +196,7 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: { ...baseExecution, agentName: "coder", numTurns: 4, durationMs: 250 },
     });
-    expect(p).toContain("## Executor output (by coder, 4 turns, 250ms)");
+    expect(p).toContain("## Work output (by coder, 4 turns, 250ms)");
   });
 
   it("formats duration <1000ms as `<N>ms`", () => {
@@ -239,7 +256,7 @@ describe("buildReviewSystemPrompt", () => {
         pinnedKb: [],
         execution: { ...baseExecution, finalText: empty },
       });
-      expect(p).toContain("_The executor produced no final text._");
+      expect(p).toContain("_The owner produced no final text._");
     }
   });
 
@@ -254,7 +271,7 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: baseExecution,
     });
-    const directive = 'Review the executor\'s work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.';
+    const directive = 'Review the owner\'s work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.';
     expect(p.trim().endsWith(directive)).toBe(true);
   });
 
@@ -335,9 +352,9 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: null,
     });
-    expect(p).toContain("## Executor output");
+    expect(p).toContain("## Work output");
     expect(p).toContain("(by unknown, 0 turns, 0ms)");
-    expect(p).toContain("_The executor produced no final text._");
+    expect(p).toContain("_The owner produced no final text._");
   });
 
   it("negative durationMs is rendered as 0ms", () => {

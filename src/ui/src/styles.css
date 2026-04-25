@@ -713,6 +713,7 @@ select,
 .chip-error    { color: var(--status-error);    background: var(--status-error-bg-10); border-color: var(--status-error-border); }
 .chip-warn     { color: var(--status-progress); background: var(--status-progress-bg-10); border-color: var(--status-progress-border); }
 .chip-ghost    { color: var(--text-muted);      background: transparent; }
+.chip-muted    { color: var(--text-subtle);     background: var(--surface-sunken); border-color: var(--border); }
 .chip-category { font-family: var(--font-mono); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; height: 20px; }
 .chip-trigger  { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 .chip-filter {
@@ -1859,7 +1860,7 @@ select,
 }
 
 /* §4.4 CommanderRow — dense row (matches DS prototype VariationA):
-   checkbox · id · title+live · deps-chip · executor→reviewer · pill · age */
+   checkbox · id · title+live · deps-chip · owner→reviewer · pill · age */
 .commander-row {
   display: grid;
   grid-template-columns: 16px 58px 14px minmax(0, 1fr) minmax(0, 112px) 80px 104px 56px;
@@ -2124,6 +2125,88 @@ select,
   line-height: 1.55;
   font-size: var(--text-md);
   max-width: 80ch;
+}
+
+.task-plan-card,
+.task-subtasks-card {
+  border-radius: var(--radius-sm);
+}
+.task-plan-card .card-header,
+.task-subtasks-card .card-header {
+  margin-bottom: var(--sp-3);
+}
+.task-plan-meta {
+  margin-bottom: var(--sp-3);
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.task-plan-body {
+  color: var(--text);
+  line-height: 1.58;
+}
+.task-plan-editor {
+  min-height: 180px;
+  font-family: var(--font-mono);
+  line-height: 1.55;
+}
+.task-plan-empty,
+.task-subtasks-empty {
+  padding: var(--sp-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-align: center;
+  background: var(--surface-sunken);
+}
+.task-subtasks-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: 0;
+  margin: 0 0 var(--sp-4);
+}
+.task-subtask-link {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 40px;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+.task-subtask-link:hover {
+  border-color: var(--border-strong);
+  background: var(--surface-elevated);
+}
+.task-subtask-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+.task-subtasks-add {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) auto auto;
+  align-items: center;
+  gap: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.task-subtasks-title,
+.task-subtasks-owner {
+  min-width: 0;
+}
+.task-subtasks-owner .select-trigger {
+  width: 100%;
+}
+.task-subtasks-required {
+  white-space: nowrap;
 }
 
 /* Rail cards (spacious variant) */
@@ -4223,6 +4306,17 @@ select,
   .run-metric-label,
   .run-metric-value {
     font-size: 10px;
+  }
+  .task-subtasks-add {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+  .task-subtask-link {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+  .task-subtask-meta {
+    justify-content: flex-start;
   }
   /* Commander row restacks into a two-line card (§7.5). Line 1 keeps the
      protected cells (check/id/title/pill). Line 2 is a meta strip

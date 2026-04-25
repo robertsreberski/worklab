@@ -30,6 +30,8 @@ import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { Input } from "../components/primitives/Input.jsx";
+import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -133,12 +135,186 @@ function ActivityRailDot({ item, agentLabel }) {
   );
 }
 
-function AgentRailRow({ role, value, onChange, agents }) {
+// §6.3 supplemental — surfaces workflow context that the backend records but
+// the original UI did not render: parent breadcrumb (for delegated children),
+// stage_reason ("why" copy from the agent), pending_actions (when paused),
+// and blocking_issues (when blocked).
+function TaskWorkflowMeta({ task }) {
+  if (!task) return null;
+  const showParent = task.parent && task.parent.id && task.parent.id !== task.id;
+  const stageReason = task.stage_reason;
+  const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
+  const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
+  const showStageReason = stageReason && task.stage !== "execute" && task.stage !== "done";
+  if (!showParent && !showStageReason && pendingActions.length === 0 && blockingIssues.length === 0) {
+    return null;
+  }
+  return (
+    <section class="task-workflow-meta">
+      {showParent && (
+        <a class="task-workflow-parent" href={`#/tasks/${task.parent.id}`}>
+          <Icon name="corner-up-left" size={12} />
+          <span class="task-workflow-parent-label">Parent</span>
+          <span class="truncate">{task.parent.title}</span>
+        </a>
+      )}
+      {showStageReason && (
+        <div class="task-workflow-stage-reason">
+          <Icon name="info" size={12} />
+          <span>{stageReason}</span>
+        </div>
+      )}
+      {pendingActions.length > 0 && (
+        <Card title="Pending actions" class="task-workflow-pending">
+          <ul class="task-workflow-list">
+            {pendingActions.map((action, idx) => <li key={idx}>{action}</li>)}
+          </ul>
+        </Card>
+      )}
+      {blockingIssues.length > 0 && (
+        <Card title="Blocking issues" class="task-workflow-blocking">
+          <ul class="task-workflow-list">
+            {blockingIssues.map((issue, idx) => <li key={idx}>{issue}</li>)}
+          </ul>
+        </Card>
+      )}
+    </section>
+  );
+}
+
+function TaskPlanCard({
+  task,
+  draft,
+  editing,
+  saving,
+  onDraft,
+  onEdit,
+  onCancel,
+  onSave,
+}) {
+  const planBody = task?.plan_body || "";
+  const hasPlan = planBody.trim().length > 0;
+  const meta = [
+    task?.plan_updated_at ? `Updated ${formatDate(task.plan_updated_at)}` : null,
+    task?.plan_updated_by ? `by ${task.plan_updated_by}` : null,
+    task?.plan_source_run_id ? `from run ${String(task.plan_source_run_id).slice(-6)}` : null,
+  ].filter(Boolean).join(" ");
+
+  return (
+    <Card
+      title="Plan"
+      class="task-plan-card"
+      headerRight={
+        editing ? (
+          <>
+            <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
+            <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </>
+        ) : (
+          <Button variant="secondary" size="sm" iconLeft={<Icon name={hasPlan ? "edit-3" : "plus"} size={13} />} onClick={onEdit}>
+            {hasPlan ? "Edit" : "Write"}
+          </Button>
+        )
+      }
+    >
+      {meta && <div class="task-plan-meta">{meta}</div>}
+      {editing ? (
+        <Textarea
+          rows={8}
+          autoGrow
+          class="task-plan-editor"
+          placeholder="Write the task plan…"
+          value={draft}
+          onInput={(event) => onDraft(event.currentTarget.value)}
+        />
+      ) : hasPlan ? (
+        <div class="task-plan-body">
+          <MarkdownContent content={planBody} maxHeight={360} />
+        </div>
+      ) : (
+        <div class="task-plan-empty">No plan yet. Run plan or write one.</div>
+      )}
+    </Card>
+  );
+}
+
+function TaskSubtasksCard({
+  task,
+  agents,
+  title,
+  owner,
+  required,
+  saving,
+  onTitle,
+  onOwner,
+  onRequired,
+  onCreate,
+}) {
+  const children = Array.isArray(task?.children) ? task.children : [];
+  return (
+    <Card title={`Subtasks (${children.length})`} class="task-subtasks-card">
+      {children.length > 0 ? (
+        <ul class="task-subtasks-list">
+          {children.map((child) => (
+            <li key={child.id}>
+              <a href={`#/tasks/${child.id}`} class="task-subtask-link">
+                <span class="truncate">{child.title}</span>
+                <span class="task-subtask-meta">
+                  <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
+                    {child.required === false ? "optional" : "required"}
+                  </Chip>
+                  <StatusPill status={child.stage || "plan"} size="sm" />
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div class="task-subtasks-empty">No subtasks yet.</div>
+      )}
+      <form class="task-subtasks-add" onSubmit={onCreate}>
+        <Input
+          class="task-subtasks-title"
+          placeholder="Subtask title"
+          value={title}
+          onInput={(event) => onTitle(event.currentTarget.value)}
+          disabled={saving}
+        />
+        <AgentPicker
+          class="task-subtasks-owner"
+          value={owner || ""}
+          onChange={onOwner}
+          agents={agents}
+          placeholder="Owner"
+          role="Owner"
+          ariaLabel="Subtask owner"
+          allowClear
+        />
+        <Checkbox
+          class="task-subtasks-required"
+          checked={required}
+          onChange={onRequired}
+          label="Required"
+          disabled={saving}
+        />
+        <Button type="submit" variant="primary" disabled={saving || !title.trim()}>
+          {saving ? "Adding…" : "Add"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+function AgentRailRow({ role, value, onChange, agents, caption: captionOverride }) {
   const unassigned = !value;
-  const roleLabel = role === "executor" ? "Executor" : "Reviewer";
-  const caption = role === "executor"
-    ? (unassigned ? "Required to run" : "Primary runner")
-    : (unassigned ? "Optional" : "Review path");
+  const roleLabel = role === "owner"
+    ? "Owner"
+    : "Reviewer";
+  const caption = captionOverride || (role === "owner"
+    ? (unassigned ? "Required to run plan or work" : "Plans, delegates, and runs work")
+    : (unassigned ? "Optional" : "Runs review"));
   return (
     <div class={`rail-agent-row${unassigned ? " unassigned" : ""}`}>
       <div class="rail-agent-row-head">
@@ -245,6 +421,13 @@ export function TaskDetail({ id, runParam = null }) {
   const [commentSaving, setCommentSaving] = useState(false);
   const [showOlderActivity, setShowOlderActivity] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
+  const [planDraft, setPlanDraft] = useState("");
+  const [planEditing, setPlanEditing] = useState(false);
+  const [planSaving, setPlanSaving] = useState(false);
+  const [subtaskTitle, setSubtaskTitle] = useState("");
+  const [subtaskOwner, setSubtaskOwner] = useState("");
+  const [subtaskRequired, setSubtaskRequired] = useState(true);
+  const [subtaskSaving, setSubtaskSaving] = useState(false);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -258,7 +441,23 @@ export function TaskDetail({ id, runParam = null }) {
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
     setRunError(null);
+    setPlanEditing(false);
+    setPlanDraft("");
+    setSubtaskTitle("");
   }, [id, runParam]);
+
+  useEffect(() => {
+    const currentTask = data?.task;
+    if (!currentTask || planEditing) return;
+    setPlanDraft(currentTask.plan_body || "");
+  }, [data?.task?.id, data?.task?.plan_body, planEditing]);
+
+  useEffect(() => {
+    const currentTask = data?.task;
+    if (!currentTask) return;
+    setSubtaskOwner(currentTask.owner_agent || "");
+    setSubtaskRequired(true);
+  }, [data?.task?.id, data?.task?.owner_agent]);
 
   useSSE("global", (evt) => {
     const taskChanged = evt.id === id;
@@ -285,7 +484,7 @@ export function TaskDetail({ id, runParam = null }) {
   const task = data?.task;
   const runs = data?.runs || [];
   const comments = data?.comments || [];
-  const stage = task?.stage || (task?.status === "in_review" ? "review" : task?.status === "done" ? "done" : "execute");
+  const stage = task?.stage || "plan";
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
@@ -308,7 +507,7 @@ export function TaskDetail({ id, runParam = null }) {
   );
 
   const unresolvedBlockedBy = useMemo(
-    () => (task?.blocked_by || []).filter((entry) => (entry.stage || entry.status) !== "done"),
+    () => (task?.blocked_by || []).filter((entry) => (entry.stage || "plan") !== "done"),
     [task],
   );
 
@@ -333,6 +532,47 @@ export function TaskDetail({ id, runParam = null }) {
       pushToast(`Could not post comment: ${err.message}`, { variant: "error" });
     } finally {
       setCommentSaving(false);
+    }
+  }
+
+  async function savePlan() {
+    setPlanSaving(true);
+    try {
+      await api.patchTask(id, { plan_body: planDraft });
+      setPlanEditing(false);
+      reload();
+      pushToast("Plan saved", { variant: "success" });
+    } catch (err) {
+      pushToast(`Plan save failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setPlanSaving(false);
+    }
+  }
+
+  function cancelPlanEdit() {
+    setPlanDraft(task?.plan_body || "");
+    setPlanEditing(false);
+  }
+
+  async function createManualSubtask(event) {
+    event?.preventDefault?.();
+    const title = subtaskTitle.trim();
+    if (!title || subtaskSaving) return;
+    setSubtaskSaving(true);
+    try {
+      await api.createSubtask(id, {
+        title,
+        owner_agent: subtaskOwner || null,
+        required: subtaskRequired,
+      });
+      setSubtaskTitle("");
+      setSubtaskRequired(true);
+      reload();
+      pushToast("Subtask added", { variant: "success" });
+    } catch (err) {
+      pushToast(`Subtask failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setSubtaskSaving(false);
     }
   }
 
@@ -365,11 +605,11 @@ export function TaskDetail({ id, runParam = null }) {
     catch (err) { setRunError(err.message); pushToast(`Cancel failed: ${err.message}`, { variant: "error" }); }
   }
 
-  async function resetToTodo() {
+  async function resetToExecute() {
     try {
       await api.patchTask(id, { stage: "execute" });
       reload();
-      pushToast("Reset to Todo", { variant: "success" });
+      pushToast("Reset to execute", { variant: "success" });
     } catch (err) {
       pushToast(`Reset failed: ${err.message}`, { variant: "error" });
     }
@@ -398,7 +638,7 @@ export function TaskDetail({ id, runParam = null }) {
       reload();
       pushToast(`Stage → ${t.to}`, { variant: "success" });
     } catch (err) {
-      pushToast(`Status change failed: ${err.message}`, { variant: "error" });
+      pushToast(`Stage change failed: ${err.message}`, { variant: "error" });
     }
   }
 
@@ -417,12 +657,29 @@ export function TaskDetail({ id, runParam = null }) {
     }
   }
 
-  // §6.3 primary action cluster per status
-  const runnableStages = ["draft", "plan", "execute", "verify", "qa"];
-  const selectedAgent = stage === "review" ? (task?.reviewer_agent || task?.owner_agent || task?.executor_agent) : (task?.owner_agent || task?.executor_agent);
-  const canRun = selectedAgent && (runnableStages.includes(stage) || stage === "review") && unresolvedBlockedBy.length === 0;
-  const runDisabledReason = !task?.executor_agent
-    ? "Assign an executor to run"
+  // §6.3 primary action cluster per stage
+  const runnableStages = ["plan", "execute", "review"];
+  const selectedAgent = stage === "review" ? task?.reviewer_agent : task?.owner_agent;
+  const runCopy = {
+    plan: {
+      label: "Run plan",
+      title: "Owner plans the task, may delegate subtasks, then moves it to Execute.",
+      missing: "Assign an owner to run plan",
+    },
+    execute: {
+      label: "Run work",
+      title: "Owner performs the work. It moves to Review when a reviewer is assigned, otherwise Done.",
+      missing: "Assign an owner to run work",
+    },
+    review: {
+      label: "Run review",
+      title: "Reviewer checks the latest work and approves to Done or rejects back to Execute.",
+      missing: "Assign a reviewer to run review",
+    },
+  }[stage];
+  const canRun = selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
+  const runDisabledReason = !selectedAgent
+    ? (runCopy?.missing || "No run action in this stage")
     : unresolvedBlockedBy.length > 0
       ? `Blocked by ${unresolvedBlockedBy.map((entry) => entry.title).join(", ")}`
       : undefined;
@@ -445,11 +702,15 @@ export function TaskDetail({ id, runParam = null }) {
     if (stage === "review" && !runningRun) {
       return (
         <>
-          {canRun && (
-            <Button variant="primary" iconLeft={<Icon name="play" size={13} />} onClick={runNow}>
-              Run review
-            </Button>
-          )}
+          <Button
+            variant="primary"
+            iconLeft={<Icon name="play" size={13} />}
+            onClick={runNow}
+            disabled={!canRun}
+            title={runDisabledReason || runCopy?.title}
+          >
+            {runCopy.label}
+          </Button>
           <Button variant="secondary" onClick={() => applyStatusTransition({ from: "review", to: "done" })}>
             Approve
           </Button>
@@ -466,9 +727,45 @@ export function TaskDetail({ id, runParam = null }) {
           iconLeft={<Icon name="play" size={13} />}
           onClick={runNow}
           disabled={!canRun}
-          title={runDisabledReason}
+          title={runDisabledReason || runCopy?.title}
         >
-          Run
+          {runCopy?.label || "Run"}
+        </Button>
+      );
+    }
+    if (stage === "awaiting_children") {
+      return (
+        <Button
+          variant="secondary"
+          iconLeft={<Icon name="play" size={13} />}
+          onClick={() => applyStatusTransition({ from: "awaiting_children", to: "execute" })}
+          title="Move back to Execute without waiting for every delegated subtask."
+        >
+          Resume work
+        </Button>
+      );
+    }
+    if (stage === "awaiting_user") {
+      return (
+        <Button
+          variant="secondary"
+          iconLeft={<Icon name="play" size={13} />}
+          onClick={() => applyStatusTransition({ from: "awaiting_user", to: "execute" })}
+          title="Move back to Execute after the requested input is handled."
+        >
+          Resume work
+        </Button>
+      );
+    }
+    if (stage === "blocked") {
+      return (
+        <Button
+          variant="secondary"
+          iconLeft={<Icon name="refresh-cw" size={13} />}
+          onClick={() => applyStatusTransition({ from: "blocked", to: "execute" })}
+          title="Clear the blocked state and move back to Execute."
+        >
+          Retry work
         </Button>
       );
     }
@@ -503,7 +800,9 @@ export function TaskDetail({ id, runParam = null }) {
       if (runningRun) cancelRun();
       else if (showStuckBanner) retryStuck();
       else if (canRun) runNow();
-      else if (stage === "review") applyStatusTransition({ from: "review", to: "done" });
+      else if (stage === "awaiting_children" || stage === "awaiting_user" || stage === "blocked") {
+        applyStatusTransition({ from: stage, to: "execute" });
+      }
       else if (stage === "done") applyStatusTransition({ from: "done", to: "execute" });
     },
     "e": () => { navigateHash(`#/tasks/${id}/edit`); },
@@ -561,7 +860,7 @@ export function TaskDetail({ id, runParam = null }) {
               <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>
                 <div class="task-hero-instructions-head">
                   <div class="all-caps task-hero-instructions-kicker">
-                    <Icon name="terminal" size={10} /> Instructions to agent
+                    <Icon name="terminal" size={10} /> Instructions / Request
                   </div>
                   <button
                     type="button"
@@ -593,6 +892,32 @@ export function TaskDetail({ id, runParam = null }) {
             )}
           </section>
 
+          <TaskPlanCard
+            task={task}
+            draft={planDraft}
+            editing={planEditing}
+            saving={planSaving}
+            onDraft={setPlanDraft}
+            onEdit={() => setPlanEditing(true)}
+            onCancel={cancelPlanEdit}
+            onSave={savePlan}
+          />
+
+          <TaskWorkflowMeta task={task} />
+
+          <TaskSubtasksCard
+            task={task}
+            agents={agents}
+            title={subtaskTitle}
+            owner={subtaskOwner}
+            required={subtaskRequired}
+            saving={subtaskSaving}
+            onTitle={setSubtaskTitle}
+            onOwner={(value) => setSubtaskOwner(value || "")}
+            onRequired={setSubtaskRequired}
+            onCreate={createManualSubtask}
+          />
+
           {showStuckBanner && (
             <Banner
               variant="warn"
@@ -600,7 +925,7 @@ export function TaskDetail({ id, runParam = null }) {
               detail={runError || undefined}
               actions={
                 <>
-                  <Button variant="secondary" size="sm" onClick={resetToTodo}>Reset</Button>
+                  <Button variant="secondary" size="sm" onClick={resetToExecute}>Reset</Button>
                   <Button variant="primary"  size="sm" onClick={retryStuck}>Retry</Button>
                 </>
               }
@@ -697,10 +1022,11 @@ export function TaskDetail({ id, runParam = null }) {
           <Card title="Agents" class="rail-agents-card">
             <div class="rail-agents-stack">
               <AgentRailRow
-                role="executor"
-                value={task.executor_agent || ""}
-                onChange={(value) => updateAssignee("executor_agent", value)}
+                role="owner"
+                value={task.owner_agent || ""}
+                onChange={(value) => updateAssignee("owner_agent", value)}
                 agents={agents}
+                caption={task.owner_agent ? "Plans and runs" : undefined}
               />
               <AgentRailRow
                 role="reviewer"
@@ -731,7 +1057,7 @@ export function TaskDetail({ id, runParam = null }) {
                   {(task.blocked_by || []).map((dependency) => (
                     <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
                       <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.status} size="sm" />
+                      <StatusPill status={dependency.stage || "plan"} size="sm" />
                     </a>
                   ))}
                 </div>
@@ -742,7 +1068,7 @@ export function TaskDetail({ id, runParam = null }) {
                   {(task.blocks || []).map((dependency) => (
                     <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
                       <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.status} size="sm" />
+                      <StatusPill status={dependency.stage || "plan"} size="sm" />
                     </a>
                   ))}
                 </div>
@@ -771,7 +1097,7 @@ export function TaskDetail({ id, runParam = null }) {
                 iconLeft={<Icon name="copy" size={13} />}
                 onClick={async () => {
                   try {
-                    const copy = { title: `Copy of ${task.title}`, instructions: task.instructions, executor_agent: task.executor_agent, reviewer_agent: task.reviewer_agent, tags: task.tags };
+                    const copy = { title: `Copy of ${task.title}`, instructions: task.instructions, owner_agent: task.owner_agent, reviewer_agent: task.reviewer_agent, tags: task.tags };
                     const r = await api.createTask(copy);
                     pushToast("Task duplicated", { variant: "success" });
                     navigateHash(`#/tasks/${r.task.id}`);
@@ -790,11 +1116,11 @@ export function TaskDetail({ id, runParam = null }) {
         </aside>
       </div>
 
-      {/* Status-transition confirm modal */}
+      {/* Stage-transition confirm modal */}
       <Modal
         open={!!statusModal}
         onClose={() => setStatusModal(null)}
-        title="Confirm status change"
+        title="Confirm stage change"
         size="sm"
         footer={
           <>

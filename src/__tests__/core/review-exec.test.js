@@ -1,13 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { extractExecutionFromEvents } from "../../core/review-exec.js";
 
-const AGENT_ROW = { agent_name: "executor-bot" };
+const AGENT_ROW = { agent_name: "owner-bot" };
 
 describe("extractExecutionFromEvents", () => {
   it("empty events → safe defaults", () => {
     const result = extractExecutionFromEvents([], AGENT_ROW);
     expect(result).toEqual({
-      agentName: "executor-bot",
+      agentName: "owner-bot",
       finalText: "",
       events: [],
       numTurns: 0,
@@ -23,7 +23,7 @@ describe("extractExecutionFromEvents", () => {
     ];
     const result = extractExecutionFromEvents(events, AGENT_ROW);
     expect(result).toEqual({
-      agentName: "executor-bot",
+      agentName: "owner-bot",
       finalText: "Done!",
       events,
       numTurns: 5,

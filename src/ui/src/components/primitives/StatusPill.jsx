@@ -3,15 +3,9 @@
 // the pill truncates at the container's bounds.
 
 const STATUS_META = {
-  todo:        { label: "Todo",        color: "var(--status-todo)",     icon: "○" },
-  draft:       { label: "Draft",       color: "var(--status-muted)",    icon: "○" },
   plan:        { label: "Plan",        color: "var(--accent)",          icon: "◉" },
   execute:     { label: "Execute",     color: "var(--status-todo)",     icon: "○" },
-  in_progress: { label: "In progress", color: "var(--status-progress)", icon: "◐" },
-  in_review:   { label: "In review",   color: "var(--status-review)",   icon: "◉" },
   review:      { label: "Review",      color: "var(--status-review)",   icon: "◉" },
-  verify:      { label: "Verify",      color: "var(--accent)",          icon: "◇" },
-  qa:          { label: "QA",          color: "var(--accent)",          icon: "◇" },
   awaiting_children: { label: "Waiting", color: "var(--status-progress)", icon: "◐" },
   awaiting_user: { label: "Needs input", color: "var(--status-error)",  icon: "▲" },
   done:        { label: "Done",        color: "var(--status-done)",     icon: "●" },

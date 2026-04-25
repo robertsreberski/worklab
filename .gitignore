@@ -8,3 +8,6 @@ src/ui/dist/
 coverage/
 playwright-report/
 test-results/
+.claude/
+.playwright-cli/
+.playwright-mcp/

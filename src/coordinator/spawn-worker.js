@@ -28,8 +28,16 @@ export function spawnWorker({
   let sigkillTimer = null;
   let finalized = false;
   let exitFallbackTimer = null;
+  let persistTimer = null;
   const startedAt = Date.now();
   const logId = newAgentLogId();
+  // Trailing-edge debounce window for the in-flight events JSON. Long-running
+  // agents emit hundreds of events; rewriting the whole JSON each line is
+  // O(N²) bytes written, which can stall WAL on a small disk. The final UPDATE
+  // in finalize() always writes the canonical events payload, so the worst
+  // case for a crash is losing the last `persistDebounceMs` of events from
+  // the live UI feed — the broker still streams every event in real time.
+  const persistDebounceMs = 250;
 
   db.prepare(
     `INSERT INTO agent_logs
@@ -37,8 +45,17 @@ export function spawnWorker({
      VALUES (?, ?, '[]', 'running', ?)`,
   ).run(logId, runId, startedAt);
 
-  function persistEvents() {
+  function flushEvents() {
     db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?").run(JSON.stringify(events), logId);
+  }
+
+  function schedulePersist() {
+    if (persistTimer || finalized) return;
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      if (finalized) return;
+      flushEvents();
+    }, persistDebounceMs);
   }
 
   const rl = createInterface({ input: child.stdout });
@@ -53,7 +70,7 @@ export function spawnWorker({
     }
     const event = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
     events.push(event);
-    persistEvents();
+    schedulePersist();
     broker.broadcast(runId, event);
     if (event.type === "final") finalPayload = event;
     if (event.type === "error") errorMessage = event.message;
@@ -62,6 +79,14 @@ export function spawnWorker({
 
   child.stderr.on("data", (chunk) => {
     logger?.info?.({ runId, stderr: chunk.toString() }, "worker stderr");
+  });
+
+  // Capture spawn failures (ENOENT on the binary, EACCES, etc). Without this
+  // listener Node would fire 'error' then 'close' with code=null and we would
+  // record a generic "exited 0" for what was really a spawn failure.
+  child.on("error", (err) => {
+    if (!errorMessage) errorMessage = err?.message || String(err);
+    logger?.error?.({ err, runId }, "worker child process error");
   });
 
   function cancel() {
@@ -84,6 +109,10 @@ export function spawnWorker({
       if (sigkillTimer) {
         clearTimeout(sigkillTimer);
         sigkillTimer = null;
+      }
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
       }
       const durationMs = Date.now() - startedAt;
       let processStatus = "succeeded";
