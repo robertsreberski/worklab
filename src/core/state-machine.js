@@ -134,7 +134,6 @@ export function nextStage(currentStage, event) {
             ...RESET_USER_ARRAYS,
             { type: "reset_failure_count" },
             { type: "set_completed_at" },
-            { type: "post_review_verdict", verdict: "APPROVE", notes: result.summary || "" },
           ]);
         }
         if (decision === "reject") {

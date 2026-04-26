@@ -9,7 +9,7 @@ import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
-import { parseWorklabResultFromText, synthesizeWorklabResult } from "./core/worklab-result.js";
+import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult } from "./core/worklab-result.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -21,6 +21,20 @@ function resultFromTextOrFallback(text, fallback) {
   const parsed = parseWorklabResultFromText(text, fallback);
   if (parsed.ok) return { result: parsed.result, error: null };
   return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
+}
+
+function resultFromResponseOrFallback(response, fallback) {
+  if (response?.worklabResult) {
+    const normalized = normalizeWorklabResult(response.worklabResult, fallback);
+    if (normalized.ok) {
+      return {
+        result: normalized.result,
+        error: null,
+        source: response.structuredResultSource || "structured",
+      };
+    }
+  }
+  return resultFromTextOrFallback(response?.text || "", fallback);
 }
 
 function reviewResultFromText(text) {
@@ -45,6 +59,23 @@ function reviewResultFromText(text) {
     };
   }
   return { result: null, verdict: null, notes: "", error: parsed.error };
+}
+
+function reviewResultFromResponse(response) {
+  if (response?.worklabResult) {
+    const normalized = normalizeWorklabResult(response.worklabResult, { stage: "review" });
+    if (normalized.ok) {
+      const result = normalized.result;
+      return {
+        result,
+        verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
+        notes: result.details || result.summary || "",
+        error: null,
+        source: response.structuredResultSource || "structured",
+      };
+    }
+  }
+  return reviewResultFromText(response?.text || "");
 }
 
 /**
@@ -246,7 +277,7 @@ async function main() {
         emit({ type: "error", message: result.error });
         process.exit(1);
       }
-      const parsedResult = resultFromTextOrFallback(result.text, {
+      const parsedResult = resultFromResponseOrFallback(result, {
         stage: task.stage || mode,
         decision: "advance",
         summary: result.text ? String(result.text).trim().slice(0, 500) : "Run completed",
@@ -321,7 +352,7 @@ async function main() {
         emit({ type: "error", message: result.error });
         process.exit(1);
       }
-      const parsedReview = reviewResultFromText(result.text);
+      const parsedReview = reviewResultFromResponse(result);
       if (parsedReview.error) {
         emit({ type: "runtime_warning", warning_kind: "review_result_parse", message: parsedReview.error });
       }

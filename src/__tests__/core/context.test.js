@@ -160,7 +160,7 @@ describe("buildReviewSystemPrompt", () => {
     const journalIdx = p.indexOf("- j1");
     const taskIdx = p.indexOf("**Title:** demo");
     const execIdx = p.indexOf("## Work output");
-    const directiveIdx = p.indexOf('decision "approve" or "reject"');
+    const directiveIdx = p.indexOf("Return a structured Worklab result as JSON");
     expect(roleIdx).toBeGreaterThanOrEqual(0);
     expect(kbIdx).toBeGreaterThan(roleIdx);
     expect(skillIdx).toBeGreaterThan(kbIdx);
@@ -271,7 +271,23 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: baseExecution,
     });
-    const directive = 'Review the owner\'s work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.';
+    const directive = `Review the owner's work against the task instructions.
+
+Return a structured Worklab result as JSON when you finish:
+
+{
+  "schema": "worklab.v2",
+  "stage": "review",
+  "decision": "approve",
+  "summary": "Short outcome.",
+  "details": "Optional review notes.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+
+Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
     expect(p.trim().endsWith(directive)).toBe(true);
   });
 

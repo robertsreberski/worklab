@@ -235,4 +235,90 @@ describe("task-watcher", () => {
     expect(agentComment).toBeTruthy();
     expect(agentComment.body).toBe("I did the thing.");
   });
+
+  it("posts sanitized structured result comments instead of raw fenced JSON", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "File created",
+      details: "Created `/tmp/test.txt`.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `Created it.\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe("File created\n\nCreated `/tmp/test.txt`.");
+  });
+
+  it("deduplicates generated plan body text", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    db.prepare("UPDATE tasks SET stage = 'plan' WHERE id = ?").run(taskId);
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Plan A.\n\nPlan A.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "plan",
+        decision: "advance",
+        summary: "Plan A.",
+        details: "Plan A.\n\nPlan A.",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT plan_body FROM tasks WHERE id = ?").get(taskId);
+    expect(task.plan_body).toBe("Plan A.");
+  });
 });

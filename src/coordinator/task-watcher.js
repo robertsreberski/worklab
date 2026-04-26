@@ -6,7 +6,7 @@ import {
 } from "../core/state-machine.js";
 import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
-import { synthesizeWorklabResult } from "../core/worklab-result.js";
+import { parseWorklabResultFromText, synthesizeWorklabResult } from "../core/worklab-result.js";
 import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
@@ -52,6 +52,49 @@ function buildFallbackResult({ stage, mode, res }) {
     summary: res.finalText ? String(res.finalText).trim().slice(0, 500) : "Run completed",
     details: res.finalText || "",
   });
+}
+
+function collapseDuplicateParagraphs(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const paragraphs = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  if (paragraphs.length <= 1) return raw;
+  const seen = new Set();
+  return paragraphs.filter((paragraph) => {
+    const key = paragraph.replace(/\s+/g, " ");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join("\n\n");
+}
+
+function formatWorklabResultText(result) {
+  if (!result) return "";
+  const summary = typeof result.summary === "string" ? result.summary.trim() : "";
+  const details = typeof result.details === "string" ? result.details.trim() : "";
+  if (summary && details && summary !== details) return `${summary}\n\n${details}`;
+  return details || summary;
+}
+
+function stripStructuredResultBlocks(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const whole = parseWorklabResultFromText(raw);
+  if (whole.ok) return formatWorklabResultText(whole.result);
+  return raw.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, body) => {
+    const parsed = parseWorklabResultFromText(body);
+    return parsed.ok ? "" : match;
+  }).trim();
+}
+
+function sanitizeAgentText(text) {
+  return collapseDuplicateParagraphs(stripStructuredResultBlocks(text));
+}
+
+function agentCommentBody(result, finalText) {
+  const structured = sanitizeAgentText(formatWorklabResultText(result));
+  if (structured) return structured;
+  return sanitizeAgentText(finalText);
 }
 
 // In-memory cycle check across a freshly-delegated batch of subtasks. Each
@@ -280,12 +323,13 @@ export function createTaskWatcher({
     });
   }
 
-  function postAgentFinalComment(taskId, agentName, finalText) {
-    if (!finalText) return;
+  function postAgentFinalComment(taskId, agentName, result, finalText) {
+    const body = agentCommentBody(result, finalText);
+    if (!body) return;
     db.prepare(
       `INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
        VALUES (?, ?, 'agent', ?, ?, ?)`,
-    ).run(newCommentId(), taskId, agentName, finalText, Date.now());
+    ).run(newCommentId(), taskId, agentName, body, Date.now());
   }
 
   function updateRunResult(runId, result) {
@@ -299,8 +343,9 @@ export function createTaskWatcher({
   }
 
   function planBodyFromRun(result, finalText) {
-    for (const candidate of [result?.details, finalText, result?.summary]) {
-      if (typeof candidate === "string" && candidate.trim().length > 0) return candidate.trim();
+    for (const candidate of [result?.details, result?.summary, finalText]) {
+      const body = sanitizeAgentText(candidate);
+      if (body) return body;
     }
     return "";
   }
@@ -464,7 +509,7 @@ export function createTaskWatcher({
     }
 
     updateRunResult(runId, result);
-    postAgentFinalComment(taskId, agentName, res.finalText);
+    postAgentFinalComment(taskId, agentName, result, res.finalText);
 
     const next = nextStage(taskStage(task), {
       type: "run_succeeded",

@@ -4,10 +4,12 @@
 
 import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
+import { StructuredValue } from "./StructuredValue.jsx";
+import { rawJsonText } from "../lib/structuredValue.js";
 
 function inputAsText(input) {
   if (input == null) return "";
-  return typeof input === "string" ? input : JSON.stringify(input, null, 2);
+  return rawJsonText(input);
 }
 
 async function writeClipboard(text) {
@@ -41,7 +43,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   const missing = !toolResult && messageStatus !== "streaming";
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
   const rawOutput = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
-  const outputText = typeof rawOutput === "string" ? rawOutput : (rawOutput == null ? "" : JSON.stringify(rawOutput, null, 2));
+  const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
   const inputText = inputAsText(toolUse?.input);
   const outputIsEmpty = outputText.trim().length === 0;
 
@@ -94,7 +96,11 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
               <span>INPUT</span>
               {inputText && <CopyButton text={inputText} label="Copy tool input" />}
             </div>
-            <pre class="tool-call-pre">{inputText || "(empty)"}</pre>
+            {inputText ? (
+              <StructuredValue value={toolUse?.input} hideRaw class="tool-call-structured" />
+            ) : (
+              <pre class="tool-call-pre">(empty)</pre>
+            )}
           </div>
           {toolResult && (
             <div class="tool-call-section chat-tool-section">
@@ -105,7 +111,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
               {outputIsEmpty && !isError ? (
                 <div class="tool-call-missing-note">Tool returned empty output.</div>
               ) : (
-                <pre class={`tool-call-pre ${isError ? "tool-call-error" : ""}`}>{outputText}</pre>
+                <StructuredValue value={rawOutput} hideRaw class={`tool-call-structured ${isError ? "tool-call-error" : ""}`} />
               )}
             </div>
           )}
