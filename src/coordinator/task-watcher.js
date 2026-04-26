@@ -97,6 +97,21 @@ export function createTaskWatcher({
   maxFailures = DEFAULT_MAX_FAILURES,
 }) {
   const active = new Map();
+  // Tasks for which an auto-start has been scheduled (via setTimeout) but the
+  // worker has not yet been spawned. Prevents duplicate kicks when sibling
+  // children complete in the same tick or a child finishes during a fresh
+  // delegation round.
+  const pendingStarts = new Set();
+
+  function scheduleAutoStart(taskId, onError) {
+    if (active.has(taskId) || pendingStarts.has(taskId)) return;
+    pendingStarts.add(taskId);
+    setTimeout(() => {
+      pendingStarts.delete(taskId);
+      if (active.has(taskId)) return;
+      handleRunRequested(taskId).catch(onError);
+    }, 0);
+  }
 
   {
     const now = Date.now();
@@ -290,15 +305,15 @@ export function createTaskWatcher({
     return "";
   }
 
-  function persistPlanBody(taskId, runId, agentName, result, finalText) {
+  function planBodySideEffect(runId, agentName, result, finalText) {
     const body = planBodyFromRun(result, finalText);
-    if (!body) return;
-    const now = Date.now();
-    db.prepare(`
-      UPDATE tasks
-      SET plan_body = ?, plan_updated_at = ?, plan_updated_by = ?, plan_source_run_id = ?, updated_at = ?
-      WHERE id = ?
-    `).run(body, now, agentName || "agent", runId, now, taskId);
+    if (!body) return null;
+    return {
+      type: "set_plan_body",
+      body,
+      runId,
+      updatedBy: agentName || "agent",
+    };
   }
 
   function postSystemComment(taskId, body) {
@@ -411,12 +426,10 @@ export function createTaskWatcher({
     for (const child of children) {
       const blocker = hasOpenBlocker(child.id);
       if (blocker || !child.agentName) continue;
-      setTimeout(() => {
-        handleRunRequested(child.id).catch((err) => {
-          logger?.warn?.({ err, childId: child.id }, "delegated child auto-run failed");
-          annotateTaskFailure(child.id, { message: `Auto-start failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
-        });
-      }, 0);
+      scheduleAutoStart(child.id, (err) => {
+        logger?.warn?.({ err, childId: child.id }, "delegated child auto-run failed");
+        annotateTaskFailure(child.id, { message: `Auto-start failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
+      });
     }
   }
 
@@ -426,12 +439,10 @@ export function createTaskWatcher({
       childTaskId,
       applySideEffects,
       onParentReady: (parentId) => {
-        setTimeout(() => {
-          handleRunRequested(parentId).catch((err) => {
-            logger?.warn?.({ err, parentTaskId: parentId }, "parent resume run failed");
-            annotateTaskFailure(parentId, { message: `Parent resume failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
-          });
-        }, 0);
+        scheduleAutoStart(parentId, (err) => {
+          logger?.warn?.({ err, parentTaskId: parentId }, "parent resume run failed");
+          annotateTaskFailure(parentId, { message: `Parent resume failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
+        });
       },
     });
   }
@@ -472,10 +483,14 @@ export function createTaskWatcher({
       return;
     }
 
-    if (stage === "plan") persistPlanBody(taskId, runId, agentName, result, res.finalText);
+    let sideEffects = next.sideEffects;
+    if (stage === "plan") {
+      const planSideEffect = planBodySideEffect(runId, agentName, result, res.finalText);
+      if (planSideEffect) sideEffects = [planSideEffect, ...sideEffects];
+    }
 
-    const willSpawnReviewer = next.sideEffects.some((sideEffect) => sideEffect.type === "spawn_reviewer");
-    applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage, { running: willSpawnReviewer });
+    const willSpawnReviewer = sideEffects.some((sideEffect) => sideEffect.type === "spawn_reviewer");
+    applySideEffects(taskId, sideEffects, taskStage(task), next.stage, { running: willSpawnReviewer });
 
     const delegated = next.sideEffects.find((sideEffect) => sideEffect.type === "create_subtasks");
     if (delegated) {

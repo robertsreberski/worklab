@@ -335,6 +335,26 @@ describe("POST /api/tasks/:id/subtasks", () => {
     expect(parentRow).toMatchObject({ stage: "execute", stage_reason: "required children completed" });
   });
 
+  it("required child finishing resumes the parent even when an optional sibling is still in progress", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
+    const { body: { task: required } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Required" }).expect(201);
+    const { body: { task: optional } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Optional", required: false }).expect(201);
+
+    // Sanity: parent is awaiting children after the required subtask was added.
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(parent.id).stage).toBe("awaiting_children");
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(optional.id).stage).toBe("plan");
+
+    // Finish only the required child; optional child is left in plan.
+    await agent.patch(`/api/tasks/${required.id}`).send({ stage: "done" }).expect(200);
+
+    const parentRow = db.prepare("SELECT stage, stage_reason FROM tasks WHERE id = ?").get(parent.id);
+    expect(parentRow.stage).toBe("execute");
+    expect(parentRow.stage_reason).toBe("required children completed");
+    // Optional child untouched.
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(optional.id).stage).toBe("plan");
+  });
+
   it("human blocking a required child blocks the waiting parent", async () => {
     const { agent, db } = makeTestServer();
     const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);

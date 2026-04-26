@@ -2128,6 +2128,66 @@ select,
   max-width: 80ch;
 }
 
+/* §6.3 — workflow metadata block (parent breadcrumb, stage_reason, pending
+ * actions, blocking issues). Sits above .task-plan-card on TaskDetail. */
+.task-workflow-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.task-workflow-parent {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  align-self: flex-start;
+  max-width: 100%;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+.task-workflow-parent:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.task-workflow-parent-label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: var(--text-xs);
+  color: var(--text-subtle);
+}
+.task-workflow-stage-reason {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.task-workflow-pending {
+  border-left: 2px solid var(--status-progress);
+}
+.task-workflow-blocking {
+  border-left: 2px solid var(--status-error);
+}
+.task-workflow-list {
+  list-style: disc;
+  padding-left: var(--sp-5);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.task-workflow-list li::marker {
+  color: var(--text-subtle);
+}
+
 .task-plan-card,
 .task-subtasks-card {
   border-radius: var(--radius-sm);
