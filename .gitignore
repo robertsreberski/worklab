@@ -11,3 +11,4 @@ test-results/
 .claude/
 .playwright-cli/
 .playwright-mcp/
+MEMORY.md
