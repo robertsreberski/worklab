@@ -4,6 +4,12 @@ import { Select } from "./primitives/Select.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { humanizeSlug } from "../lib/display.js";
 
+function normalizeRoleForAvatar(role) {
+  const normalized = String(role || "").trim().toLowerCase();
+  if (normalized === "owner" || normalized === "reviewer") return normalized;
+  return undefined;
+}
+
 export function AgentPicker({
   value,
   onChange,
@@ -36,6 +42,7 @@ export function AgentPicker({
       <span>?</span>
     </span>
   );
+  const avatarRole = normalizeRoleForAvatar(role);
 
   return (
     <Select
@@ -55,7 +62,7 @@ export function AgentPicker({
             <AgentAvatar
               name={opt._agent.name}
               label={opt._agent.display_name || opt._agent.name}
-              role={role}
+              role={avatarRole}
               size={20}
             />
           );
