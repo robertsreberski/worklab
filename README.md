@@ -74,6 +74,28 @@ WORKLAB_PORT=9000 npm run dev:ui
 `worklab start` and `worklab restart` regenerate the host service definition
 with the effective host, port, data directory, workspace, and log level.
 
+## Tailnet Access
+
+By default Worklab binds to `127.0.0.1`, so it is healthy on the host but is not
+reachable through the raw Tailscale IP. Prefer Tailscale Serve for tailnet-only
+access without exposing Worklab on every host interface:
+
+```bash
+worklab start
+tailscale serve --bg --yes --http 7878 7878
+tailscale serve status
+```
+
+Use the MagicDNS URL shown by `tailscale serve status`, for example
+`http://claude-paradise.tail8a9beb.ts.net:7878/`. The raw Tailscale IP may
+return a Tailscale Serve 404 because Serve routes by hostname.
+
+Disable the proxy with:
+
+```bash
+tailscale serve --http=7878 off
+```
+
 ## CLI Service
 
 Install the local `worklab` command from this checkout:
