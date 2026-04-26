@@ -90,6 +90,16 @@ worklab restart --port 9000
 service definition, and start or restart the service. The generated service
 captures the effective host, port, data directory, workspace, and log level.
 
+For tailnet access, keep Worklab bound to localhost and use Tailscale Serve:
+
+```bash
+tailscale serve --bg --yes --http 7878 7878
+tailscale serve status
+```
+
+Verify the MagicDNS URL from `tailscale serve status`; raw Tailscale IP requests
+can return a Tailscale Serve 404 because Serve routes by hostname.
+
 ## Testing Rules
 
 Keep tests isolated from a developer's real `~/.worklab`. Use temporary
