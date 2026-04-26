@@ -1785,6 +1785,7 @@ select,
 }
 .app-header-meta .dot { color: var(--text-subtle); }
 .app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.app-mobile-action-dock { display: none; }
 
 /* §6.2 Commander */
 .commander {
@@ -1802,11 +1803,22 @@ select,
   display: flex;
   align-items: center;
   gap: var(--sp-3);
+  min-width: 0;
   padding: var(--sp-3) var(--sp-6);
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 88%, transparent);
   backdrop-filter: blur(12px);
 }
+.commander-filter .search-field {
+  flex: 0 0 min(220px, 34vw);
+}
+.commander-filter .tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.commander-filter .tabs::-webkit-scrollbar { display: none; }
 .commander-filter .filter-divider { width: 1px; height: 16px; background: var(--border); }
 .commander-header {
   display: flex;
@@ -4107,6 +4119,9 @@ select,
     grid-template-columns: minmax(0, 1fr);
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
+  .app.has-mobile-action-dock {
+    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+  }
   .app-rail {
     position: fixed;
     left: 0;
@@ -4125,28 +4140,35 @@ select,
     backdrop-filter: blur(12px);
     z-index: 30;
     transition: transform var(--dur-std) var(--ease-snap);
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .app-rail::-webkit-scrollbar { display: none; }
   .app-rail .brand-lockup { display: none; }
   .app-nav {
     flex: 1;
     display: flex;
     align-items: stretch;
-    justify-content: space-between;
+    justify-content: flex-start;
     min-width: 0;
     gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
   }
   .app-nav::-webkit-scrollbar { display: none; }
   .app-nav a {
     min-height: 56px;
-    min-width: 0;
+    min-width: 56px;
     padding: var(--sp-1) 0;
-    flex: 1 1 0;
+    flex: 0 0 56px;
     justify-content: center;
     flex-direction: column;
     gap: 2px;
     border-radius: 0;
     border: 0;
     font-size: 10px;
+    scroll-snap-align: center;
   }
   .app-nav a span { display: none; }
   .app-nav a.active span {
@@ -4162,6 +4184,34 @@ select,
     padding: var(--sp-2) var(--sp-3);
     flex-wrap: wrap;
     gap: var(--sp-2);
+  }
+  .app.has-mobile-action-dock .app-header > .toolbar {
+    display: none;
+  }
+  .app.has-mobile-action-dock .app-mobile-action-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    z-index: 31;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    backdrop-filter: blur(14px);
+    overflow-x: auto;
+    scrollbar-width: none;
+    transition: transform var(--dur-std) var(--ease-snap);
+  }
+  .app-mobile-action-dock::-webkit-scrollbar { display: none; }
+  .app-mobile-action-dock .button {
+    flex: 1 0 0;
+    min-width: max-content;
+    min-height: 44px;
+    height: 44px;
+    padding: 0 var(--sp-4);
   }
   .two-pane { grid-template-columns: 1fr; }
   .pane-list { border-right: 0; border-bottom: 1px solid var(--border); }
@@ -4205,6 +4255,10 @@ select,
   .pane-list-head .tabs::-webkit-scrollbar { display: none; }
   .task-edit-body { padding: var(--sp-4) var(--sp-3); }
   .task-detail { padding: var(--sp-4); grid-template-columns: 1fr; }
+  .app.has-mobile-action-dock .task-detail,
+  .app.has-mobile-action-dock .task-edit-body {
+    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+  }
   .task-detail-rail { order: 2; }
   .task-detail-main {
     gap: var(--sp-4);
@@ -4414,13 +4468,18 @@ select,
     padding: var(--sp-2) var(--sp-3);
     flex-wrap: wrap;
     gap: 6px;
+    align-items: stretch;
   }
   .commander-filter .filter-divider { display: none; }
   .commander-filter .tabs {
+    width: 100%;
     max-width: 100%;
     overflow-x: auto;
     scrollbar-width: none;
     gap: var(--sp-2);
+    padding-right: var(--sp-6);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+            mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   }
   .commander-filter .tabs::-webkit-scrollbar { display: none; }
   .commander-filter .tab {
@@ -4439,6 +4498,45 @@ select,
   .provider-type-select { max-width: none; }
   .page-wrap { padding: var(--sp-4); }
   .toolbar { flex-wrap: wrap; }
+  .button,
+  .button.md {
+    min-height: 44px;
+    height: auto;
+  }
+  .input {
+    height: 44px;
+  }
+  .checkbox {
+    min-height: 44px;
+    align-items: center;
+  }
+  .commander-cell-checkbox .checkbox {
+    min-height: 0;
+  }
+  .status-menu-trigger {
+    min-height: 44px;
+    padding: 0 var(--sp-1);
+  }
+  .task-hero-instructions-copy {
+    width: 44px;
+    height: 44px;
+    margin: calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)) 0;
+  }
+  .task-edit-head {
+    min-height: 44px;
+  }
+  .app.has-mobile-action-dock .task-edit-head {
+    padding: var(--sp-2) var(--sp-3);
+  }
+  .app.has-mobile-action-dock .task-edit-toolbar {
+    display: none;
+  }
+  .task-edit-head-left {
+    width: 100%;
+  }
+  .status-grid-btn {
+    min-height: 44px;
+  }
   .modal-backdrop {
     align-items: flex-end;
     padding: 0;
@@ -4473,6 +4571,10 @@ select,
     transform: translateY(100%);
     pointer-events: none;
   }
+  .app:has(input:focus, textarea:focus, select:focus) .app-mobile-action-dock {
+    transform: translateY(calc(100% + 56px));
+    pointer-events: none;
+  }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual
      typography scale, but make the focused control opt out of the zoom. */
@@ -4504,6 +4606,7 @@ select,
     min-height: 44px;
   }
   .tab { min-height: 44px; }
+  .commander-filter .tab { min-height: 44px; }
   .card-collapsible-body,
   .task-actions-stack {
     align-items: stretch;
@@ -4524,7 +4627,10 @@ select,
   .task-hero-title { font-size: var(--text-2xl); }
   .task-detail { padding: var(--sp-3); }
   .commander-header { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
-  .commander-filter { padding: var(--sp-1) var(--sp-3) var(--sp-2); }
+  .commander-filter {
+    padding: 2px var(--sp-3) var(--sp-1);
+    gap: 2px;
+  }
   .commander-group-header { padding: var(--sp-2) var(--sp-3); }
   .commander-group {
     gap: 2px;
@@ -4606,6 +4712,7 @@ select,
   .pane-detail-head,
   .task-edit-head,
   .pane-list-head { padding: var(--sp-3); }
+  .app.has-mobile-action-dock .task-edit-head { padding: var(--sp-2) var(--sp-3); }
   .pane-detail-body,
   .task-edit-body { padding: var(--sp-3); }
   .pane-detail-body > .form-section { padding: var(--sp-3); }
@@ -4617,6 +4724,10 @@ select,
   }
   .task-detail {
     padding-bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+  }
+  .app.has-mobile-action-dock .task-detail,
+  .app.has-mobile-action-dock .task-edit-body {
+    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
   }
   .modal-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
   .modal-body { padding: var(--sp-4); }

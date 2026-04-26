@@ -486,6 +486,7 @@ export function TaskDetail({ id, runParam = null }) {
   const comments = data?.comments || [];
   const stage = task?.stage || "plan";
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
+  const displayedStage = runningRun ? "running" : stage;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned";
@@ -683,7 +684,7 @@ export function TaskDetail({ id, runParam = null }) {
     : unresolvedBlockedBy.length > 0
       ? `Blocked by ${unresolvedBlockedBy.map((entry) => entry.title).join(", ")}`
       : undefined;
-  const primaryAction = (() => {
+  function renderPrimaryAction() {
     if (!task) return null;
     if (runningRun) {
       return (
@@ -777,12 +778,20 @@ export function TaskDetail({ id, runParam = null }) {
       );
     }
     return null;
-  })();
+  }
 
   const headerActions = task && (
     <>
-      {primaryAction}
+      {renderPrimaryAction()}
       <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
+        Edit
+      </Button>
+    </>
+  );
+  const mobileActionDock = task && (
+    <>
+      {renderPrimaryAction()}
+      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
         Edit
       </Button>
     </>
@@ -831,7 +840,7 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   return (
-    <AppShell route="tasks" title="Tasks" headerActions={headerActions}>
+    <AppShell route="tasks" title="Tasks" headerActions={headerActions} mobileActionDock={mobileActionDock}>
       <div class="task-detail">
         <div class="task-detail-main">
           <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: `#${String(task.id).slice(-6)}` }]} />
@@ -841,7 +850,7 @@ export function TaskDetail({ id, runParam = null }) {
               <div class="task-hero-stack">
                 <div class="task-hero-status-row">
                   {runningRun && <LivePulse size={10} />}
-                  <StatusMenu status={stage} onChoose={onStatusChoose} />
+                  <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
                   {hasLastRunError && (
                     <span class="chip chip-error">
                       <Icon name="alert-triangle" size={10} /> Error

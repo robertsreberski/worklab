@@ -30,14 +30,14 @@ const GROUPS = [
 
 function groupKeyFor(task) {
   const stage = task.stage || "plan";
-  if (["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"].includes(stage)) {
-    return stage;
-  }
   const unmetDeps = Array.isArray(task.blocked_by)
     && task.blocked_by.some((d) => (d.stage || "plan") !== "done");
   const runErrored = hasRunError(task);
   const stuck = task.running_run_id && task.is_locked === false;
   if (unmetDeps || runErrored || stuck) return "blocked";
+  if (["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"].includes(stage)) {
+    return stage;
+  }
   return "execute";
 }
 

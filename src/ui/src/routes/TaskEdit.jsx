@@ -188,9 +188,24 @@ export function TaskEdit({ mode = "create", id = null }) {
 
   const heading = mode === "create" ? "New task" : "Edit task";
   const idDisplay = mode === "edit" && id ? `#${String(id).slice(-6).toUpperCase()}` : null;
+  const saveButtonVariant = isDirty || mode === "create" ? "primary" : "secondary";
+  const saveButtonLabel = mode === "create" ? "Create task" : "Save";
+  const mobileActionDock = (
+    <>
+      <Button variant="secondary" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        onClick={() => save().catch(() => {})}
+        loading={formSave.saving}
+        disabled={!draft.title.trim()}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
 
   return (
-    <AppShell route="tasks" title="Tasks">
+    <AppShell route="tasks" title="Tasks" mobileActionDock={mobileActionDock}>
       <div class="task-edit">
         <header class="task-edit-head" aria-label={heading}>
           <div class="task-edit-head-left">
@@ -211,12 +226,12 @@ export function TaskEdit({ mode = "create", id = null }) {
             </span>
             <Button variant="ghost" onClick={cancel}>Cancel</Button>
             <Button
-              variant={isDirty || mode === "create" ? "primary" : "secondary"}
+              variant={saveButtonVariant}
               onClick={() => save().catch(() => {})}
               loading={formSave.saving}
               disabled={!draft.title.trim()}
             >
-              {mode === "create" ? "Create task" : "Save"}
+              {saveButtonLabel}
             </Button>
           </div>
         </header>

@@ -891,12 +891,18 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const state = row?.querySelector(".commander-cell-state");
     const filter = document.querySelector(".commander-filter");
     const pill = row?.querySelector(".status-pill");
+    const navWidths = [...document.querySelectorAll(".app-nav a")]
+      .map((entry) => Math.round(entry.getBoundingClientRect().width));
+    const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
+      .map((entry) => Math.round(entry.getBoundingClientRect().height));
     return {
       rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
       filterHeight: filter ? Math.round(filter.getBoundingClientRect().height) : 0,
       idDisplay: id ? getComputedStyle(id).display : "",
       stateDisplay: state ? getComputedStyle(state).display : "",
       pillVisible: pill ? getComputedStyle(pill).display !== "none" : false,
+      navMinWidth: Math.min(...navWidths),
+      tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
@@ -908,6 +914,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
   expect(metrics.rowHeight).toBeLessThanOrEqual(88);
   expect(metrics.filterHeight).toBeLessThanOrEqual(92);
+  expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
+  expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
 });
 
 test("mobile task detail keeps activity first with a compact premium composer", async ({ page }) => {
@@ -922,6 +930,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const composer = document.querySelector(".activity-composer-form");
     const input = document.querySelector(".activity-composer-input");
     const shortcut = document.querySelector(".activity-composer-shortcut");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const headerToolbar = document.querySelector(".app-header > .toolbar");
+    const nav = document.querySelector(".app-rail");
     const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
     const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
     const line = rail ? getComputedStyle(rail, "::after") : null;
@@ -936,6 +947,14 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       composerHeight: composer ? Math.round(composer.getBoundingClientRect().height) : 0,
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
       shortcutDisplay: shortcut ? getComputedStyle(shortcut).display : "",
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      dockMinButtonHeight: dock
+        ? Math.min(...[...dock.querySelectorAll(".button")].map((button) => Math.round(button.getBoundingClientRect().height)))
+        : 0,
+      dockBottomBeforeNav: dock && nav
+        ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+        : false,
+      headerToolbarDisplay: headerToolbar ? getComputedStyle(headerToolbar).display : "",
       railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
       dotWidth: dot ? Math.round(parseFloat(getComputedStyle(dot).getPropertyValue("--activity-dot-size")) || dot.getBoundingClientRect().width) : 0,
       lineWidth: line ? Math.round(parseFloat(line.width)) : 0,
@@ -948,6 +967,10 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.composerHeight).toBeLessThanOrEqual(64);
   expect(beforeFocus.inputHeight).toBeLessThanOrEqual(48);
   expect(beforeFocus.shortcutDisplay).toBe("none");
+  expect(beforeFocus.dockDisplay).toBe("flex");
+  expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
+  expect(beforeFocus.dockBottomBeforeNav).toBe(true);
+  expect(beforeFocus.headerToolbarDisplay).toBe("none");
   expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
   expect(beforeFocus.dotWidth).toBeLessThanOrEqual(20);
   expect(beforeFocus.lineWidth).toBe(1);
@@ -956,15 +979,63 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   const afterFocus = await page.evaluate(() => {
     const input = document.querySelector(".activity-composer-input");
     const rail = document.querySelector(".app-rail");
+    const dock = document.querySelector(".app-mobile-action-dock");
     return {
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
       railTransform: rail ? getComputedStyle(rail).transform : "",
+      dockTransform: dock ? getComputedStyle(dock).transform : "",
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(afterFocus.inputHeight).toBeGreaterThanOrEqual(84);
   expect(afterFocus.railTransform).not.toBe("none");
+  expect(afterFocus.dockTransform).not.toBe("none");
   expect(afterFocus.overflow).toBeLessThanOrEqual(0);
+});
+
+test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Save" })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const editHead = document.querySelector(".task-edit-head");
+    const toolbar = document.querySelector(".task-edit-toolbar");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const nav = document.querySelector(".app-rail");
+    const grid = document.querySelector(".task-edit-grid");
+    const rail = document.querySelector(".task-edit-rail");
+    const statusButtons = [...document.querySelectorAll(".status-grid-btn")];
+    const dockButtons = [...document.querySelectorAll(".app-mobile-action-dock .button")];
+    const body = document.querySelector(".task-edit-body");
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      editHeadHeight: editHead ? Math.round(editHead.getBoundingClientRect().height) : 0,
+      toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      dockMinButtonHeight: Math.min(...dockButtons.map((button) => Math.round(button.getBoundingClientRect().height))),
+      dockBottomBeforeNav: dock && nav
+        ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+        : false,
+      gridColumns: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
+      railPosition: rail ? getComputedStyle(rail).position : "",
+      statusMinHeight: Math.min(...statusButtons.map((button) => Math.round(button.getBoundingClientRect().height))),
+      bodyPaddingBottom: body ? Math.round(parseFloat(getComputedStyle(body).paddingBottom)) : 0,
+    };
+  });
+
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+  expect(metrics.editHeadHeight).toBeLessThanOrEqual(72);
+  expect(metrics.toolbarDisplay).toBe("none");
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.dockBottomBeforeNav).toBe(true);
+  expect(metrics.gridColumns).toBe(1);
+  expect(metrics.railPosition).toBe("static");
+  expect(metrics.statusMinHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.bodyPaddingBottom).toBeGreaterThanOrEqual(120);
+  await expectNoHorizontalOverflow(page, "mobile task edit action dock");
 });
 
 test("pressing N opens new-task form from the commander", async ({ page }) => {
