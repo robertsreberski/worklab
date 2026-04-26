@@ -21,7 +21,7 @@ export const ROUTES = [
   { id: "settings",  label: "Settings",  icon: "settings" },
 ];
 
-export function AppShell({ route, title, headerMeta, headerActions, children }) {
+export function AppShell({ route, title, headerMeta, headerActions, mobileActionDock, children }) {
   const [helpOpen, setHelpOpen] = useState(false);
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
@@ -30,7 +30,7 @@ export function AppShell({ route, title, headerMeta, headerActions, children }) 
   });
 
   return (
-    <div class="app">
+    <div class={`app ${mobileActionDock ? "has-mobile-action-dock" : ""}`.trim()}>
       <a href="#main" class="skip-link">Skip to main content</a>
       <aside class="app-rail">
         <a
@@ -88,6 +88,11 @@ export function AppShell({ route, title, headerMeta, headerActions, children }) 
         </header>
         <main id="main" class="app-main">{children}</main>
       </div>
+      {mobileActionDock && (
+        <div class="app-mobile-action-dock" aria-label="Page actions">
+          {mobileActionDock}
+        </div>
+      )}
       <ToastHost />
       <KeyboardHelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />
     </div>

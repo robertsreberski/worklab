@@ -95,7 +95,7 @@ function normalizedNames(list) {
 export function AgentEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [agent, setAgent] = useState(isNew ? emptyAgent : null);
-  const [baseline, setBaseline] = useState(null);
+  const [baseline, setBaseline] = useState(isNew ? emptyAgent : null);
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
