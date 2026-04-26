@@ -151,7 +151,7 @@ test.beforeAll(async () => {
   const port = await findFreePort();
   baseUrl = `http://localhost:${port}`;
 
-  serverProcess = spawn(process.execPath, ["src/cli/index.js", "start"], {
+  serverProcess = spawn(process.execPath, ["src/cli/index.js", "serve"], {
     cwd: repoRoot,
     env: {
       ...process.env,

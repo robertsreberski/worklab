@@ -8,8 +8,11 @@
     "worklab": "./src/cli/index.js"
   },
   "scripts": {
-    "start": "npm run build:ui && node src/cli/index.js start",
-    "dev": "node src/cli/index.js start",
+    "start": "npm run build:ui && node src/cli/index.js serve",
+    "dev": "node src/cli/index.js serve",
+    "dev:api": "node src/cli/index.js serve",
+    "dev:ui": "vite --config src/ui/vite.config.js",
+    "install:worklab": "npm link",
     "build:ui": "vite build --config src/ui/vite.config.js",
     "test": "vitest run",
     "test:e2e:ollama": "npm run build:ui && playwright test --config playwright.config.js",

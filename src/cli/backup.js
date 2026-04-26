@@ -4,12 +4,14 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { openDb } from "../core/db.js";
+import { applyConfigArgs } from "./args.js";
 
 function timestamp(date = new Date()) {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "").replace("T", "-");
 }
 
 export async function backup(args = []) {
+  applyConfigArgs(args);
   const outIndex = args.indexOf("--out");
   const outDir = outIndex >= 0 ? args[outIndex + 1] : join(homedir(), "worklab-backups");
   if (!outDir) throw new Error("--out requires a directory");

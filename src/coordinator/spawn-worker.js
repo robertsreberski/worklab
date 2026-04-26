@@ -13,6 +13,7 @@ export function spawnWorker({
   db,
   logger,
   cancelGraceMs = 5000,
+  persistDebounceMs = 250,
 }) {
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
@@ -37,7 +38,6 @@ export function spawnWorker({
   // in finalize() always writes the canonical events payload, so the worst
   // case for a crash is losing the last `persistDebounceMs` of events from
   // the live UI feed — the broker still streams every event in real time.
-  const persistDebounceMs = 250;
 
   db.prepare(
     `INSERT INTO agent_logs

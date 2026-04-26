@@ -2,9 +2,20 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
+import { stopUserService } from "./install-service.js";
+import { applyConfigArgs } from "./args.js";
 
-export async function stop() {
+export async function stop(args = []) {
+  applyConfigArgs(args);
   const config = loadConfig();
+  try {
+    const stopped = await stopUserService();
+    console.log(`stopped ${stopped.platform} service: ${stopped.file}`);
+    return;
+  } catch (err) {
+    console.log(`service stop unavailable; falling back to pid file: ${err.message}`);
+  }
+
   const pidFile = join(config.dataDir, ".coordinator.pid");
   if (!existsSync(pidFile)) {
     console.log("coordinator not running (no pid file)");

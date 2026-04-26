@@ -1,6 +1,57 @@
 import { startCoordinator } from "../coordinator.js";
+import { execFileSync } from "node:child_process";
+import { loadConfig, worklabBaseUrl } from "../core/config.js";
+import { ensureServiceInstalled, startUserService } from "./install-service.js";
+import { applyConfigArgs, hasFlag } from "./args.js";
 
-export async function start() {
-  await startCoordinator();
+export function buildUi(config = loadConfig()) {
+  execFileSync("npm", ["run", "build:ui"], {
+    cwd: config.repoRoot,
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      WORKLAB_DATA_DIR: config.dataDir,
+      WORKLAB_HOST: config.host,
+      WORKLAB_PORT: String(config.port),
+    },
+  });
+}
+
+export async function waitForHealth(config = loadConfig(), { timeoutMs = 15000 } = {}) {
+  const started = Date.now();
+  const url = `${worklabBaseUrl(config)}/api/health`;
+  let lastError = null;
+  while (Date.now() - started < timeoutMs) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return await res.json();
+      lastError = new Error(`HTTP ${res.status}`);
+    } catch (err) {
+      lastError = err;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Worklab service did not become healthy at ${url}: ${lastError?.message || "timeout"}`);
+}
+
+export async function serve(args = []) {
+  applyConfigArgs(args);
+  const config = loadConfig();
+  await startCoordinator({ config });
   // keep process alive
+}
+
+export async function start(args = []) {
+  applyConfigArgs(args);
+  const config = loadConfig();
+  if (hasFlag(args, "--no-build")) {
+    console.log("build: skipped");
+  } else {
+    buildUi(config);
+  }
+  const installed = await ensureServiceInstalled({ config });
+  await startUserService({ config });
+  const health = await waitForHealth(config);
+  console.log(`worklab: running at ${worklabBaseUrl(config)} (${installed.file})`);
+  return health;
 }

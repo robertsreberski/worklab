@@ -13,8 +13,9 @@ import { registerProviderRoutes } from "./routes-providers.js";
 import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 import { registerScheduleRoutes } from "./routes-schedules.js";
+import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, scheduleManager, events }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, scheduleManager, events, config }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -36,6 +37,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerModelRoutes(app, { db, dataDir });
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
   registerScheduleRoutes(app, { db, broker, scheduleManager });
+  if (config) registerAdminMcpRoutes(app, { config, logger });
 
   app.use((err, _req, res, _next) => {
     logger?.error?.({ err }, "unhandled error");

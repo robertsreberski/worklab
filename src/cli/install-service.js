@@ -1,10 +1,61 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { homedir, platform } from "node:os";
+import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
+import { applyConfigArgs } from "./args.js";
 
-export function launchdPlist({ node, cli, cwd, dataDir }) {
+function xmlEscape(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function systemdEscape(value) {
+  return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function serviceEnv({ dataDir, host, port, workspace, logLevel, timezone }) {
+  return {
+    WORKLAB_DATA_DIR: dataDir,
+    WORKLAB_HOST: host,
+    WORKLAB_PORT: port === undefined ? undefined : String(port),
+    WORKLAB_WORKSPACE: workspace,
+    WORKLAB_LOG_LEVEL: logLevel,
+    WORKLAB_TIMEZONE: timezone,
+    PATH: process.env.PATH || "",
+  };
+}
+
+function launchdEnvXml(env) {
+  const entries = Object.entries(env)
+    .filter(([, value]) => value !== undefined && value !== null && String(value).length > 0)
+    .map(([key, value]) => `    <key>${xmlEscape(key)}</key><string>${xmlEscape(value)}</string>`)
+    .join("\n");
+  return entries ? `  <key>EnvironmentVariables</key>\n  <dict>\n${entries}\n  </dict>\n` : "";
+}
+
+function systemdEnvLines(env) {
+  return Object.entries(env)
+    .filter(([, value]) => value !== undefined && value !== null && String(value).length > 0)
+    .map(([key, value]) => `Environment="${key}=${systemdEscape(value)}"`)
+    .join("\n");
+}
+
+export function serviceParams(config = loadConfig()) {
+  const cli = join(config.repoRoot, "src", "cli", "index.js");
+  return {
+    node: process.execPath,
+    cli,
+    cwd: config.repoRoot,
+    dataDir: config.dataDir,
+    env: serviceEnv(config),
+  };
+}
+
+export function launchdPlist({ node, cli, cwd, dataDir, env = serviceEnv({ dataDir }) }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -14,10 +65,10 @@ export function launchdPlist({ node, cli, cwd, dataDir }) {
   <array>
     <string>${node}</string>
     <string>${cli}</string>
-    <string>start</string>
+    <string>serve</string>
   </array>
   <key>WorkingDirectory</key><string>${cwd}</string>
-  <key>RunAtLoad</key><true/>
+${launchdEnvXml(env)}  <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>${join(dataDir, "logs", "worklab.out.log")}</string>
   <key>StandardErrorPath</key><string>${join(dataDir, "logs", "worklab.err.log")}</string>
@@ -26,14 +77,15 @@ export function launchdPlist({ node, cli, cwd, dataDir }) {
 `;
 }
 
-export function systemdUnit({ node, cli, cwd, dataDir }) {
+export function systemdUnit({ node, cli, cwd, dataDir, env = serviceEnv({ dataDir }) }) {
+  const envLines = systemdEnvLines(env);
   return `[Unit]
 Description=Worklab
 
 [Service]
 Type=simple
 WorkingDirectory=${cwd}
-ExecStart=${node} ${cli} start
+${envLines ? `${envLines}\n` : ""}ExecStart=${node} ${cli} serve
 Restart=always
 RestartSec=5
 StandardOutput=append:${join(dataDir, "logs", "worklab.out.log")}
@@ -48,58 +100,124 @@ function dryRun(args) {
   return args.includes("--dry-run");
 }
 
-export async function installService(args = []) {
-  const config = loadConfig();
-  const cli = join(config.repoRoot, "src", "cli", "index.js");
+export function serviceFilePath(p = platform()) {
+  if (p === "darwin") return join(homedir(), "Library", "LaunchAgents", "ai.worklab.plist");
+  if (p === "linux") return join(homedir(), ".config", "systemd", "user", "worklab.service");
+  return null;
+}
+
+export function renderServiceFile(config = loadConfig()) {
+  const params = serviceParams(config);
+  const p = platform();
+  if (p === "darwin") return launchdPlist(params);
+  if (p === "linux") return systemdUnit(params);
+  throw new Error(`service is not supported on ${p}`);
+}
+
+export async function ensureServiceInstalled({ config = loadConfig(), dry = false } = {}) {
   const dataDir = config.dataDir;
   mkdirSync(join(dataDir, "logs"), { recursive: true });
-  const params = { node: process.execPath, cli, cwd: config.repoRoot, dataDir };
+  const params = serviceParams(config);
   const p = platform();
 
   if (p === "darwin") {
     const dir = join(homedir(), "Library", "LaunchAgents");
     const file = join(dir, "ai.worklab.plist");
     const content = launchdPlist(params);
-    if (dryRun(args)) {
-      console.log(content);
-      return;
-    }
+    if (dry) return { platform: p, file, content, installed: false };
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, content);
-    try { execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" }); } catch { /* not loaded */ }
-    execFileSync("launchctl", ["load", "-w", file], { stdio: "inherit" });
-    console.log(`installed launchd service: ${file}`);
-    return;
+    return { platform: p, file, installed: true };
   }
 
   if (p === "linux") {
     const dir = join(homedir(), ".config", "systemd", "user");
     const file = join(dir, "worklab.service");
     const content = systemdUnit(params);
-    if (dryRun(args)) {
-      console.log(content);
-      return;
-    }
+    if (dry) return { platform: p, file, content, installed: false };
     mkdirSync(dir, { recursive: true });
     writeFileSync(file, content);
     execFileSync("systemctl", ["--user", "daemon-reload"], { stdio: "inherit" });
-    execFileSync("systemctl", ["--user", "enable", "--now", "worklab"], { stdio: "inherit" });
-    console.log(`installed systemd user service: ${file}`);
-    return;
+    return { platform: p, file, installed: true };
   }
 
-  throw new Error(`install-service is not supported on ${p}`);
+  throw new Error(`service is not supported on ${p}`);
+}
+
+export async function startUserService({ config = loadConfig() } = {}) {
+  const p = platform();
+  const file = serviceFilePath(p);
+  if (p === "darwin") {
+    try { execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" }); } catch { /* not loaded */ }
+    execFileSync("launchctl", ["load", "-w", file], { stdio: "inherit" });
+    return { platform: p, file };
+  }
+
+  if (p === "linux") {
+    execFileSync("systemctl", ["--user", "enable", "--now", "worklab"], { stdio: "inherit" });
+    return { platform: p, file };
+  }
+
+  throw new Error(`service start is not supported on ${p}`);
+}
+
+export async function restartUserService({ config = loadConfig() } = {}) {
+  const p = platform();
+  const file = serviceFilePath(p);
+  if (p === "darwin") {
+    try { execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" }); } catch { /* not loaded */ }
+    execFileSync("launchctl", ["load", "-w", file], { stdio: "inherit" });
+    return { platform: p, file };
+  }
+  if (p === "linux") {
+    execFileSync("systemctl", ["--user", "restart", "worklab"], { stdio: "inherit" });
+    return { platform: p, file };
+  }
+  throw new Error(`service restart is not supported on ${p}`);
+}
+
+export async function stopUserService() {
+  const p = platform();
+  const file = serviceFilePath(p);
+  if (p === "darwin") {
+    if (!existsSync(file)) throw new Error(`launchd service is not installed: ${file}`);
+    execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" });
+    return { platform: p, file };
+  }
+  if (p === "linux") {
+    execFileSync("systemctl", ["--user", "stop", "worklab"], { stdio: "inherit" });
+    return { platform: p, file };
+  }
+  throw new Error(`service stop is not supported on ${p}`);
+}
+
+export async function installService(args = []) {
+  applyConfigArgs(args);
+  const config = loadConfig();
+  if (dryRun(args)) {
+    console.log(renderServiceFile(config));
+    return;
+  }
+  const installed = await ensureServiceInstalled({ config });
+  await startUserService({ config });
+  console.log(`installed ${installed.platform === "darwin" ? "launchd" : "systemd user"} service: ${installed.file}`);
 }
 
 export async function serviceStatus() {
   const p = platform();
   if (p === "darwin") {
     const file = join(homedir(), "Library", "LaunchAgents", "ai.worklab.plist");
-    return { platform: p, file, installed: existsSync(file) };
+    return { platform: p, file, installed: existsSync(file), scope: `gui/${userInfo().uid}` };
   }
   if (p === "linux") {
     const file = join(homedir(), ".config", "systemd", "user", "worklab.service");
-    return { platform: p, file, installed: existsSync(file) };
+    let active = null;
+    try {
+      active = execFileSync("systemctl", ["--user", "is-active", "worklab"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      active = "inactive";
+    }
+    return { platform: p, file, installed: existsSync(file), active };
   }
   return { platform: p, installed: false };
 }
