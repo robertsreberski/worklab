@@ -34,8 +34,10 @@ import { Input } from "../components/primitives/Input.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
+import { StructuredContent } from "../components/StructuredContent.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
+import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } from "../lib/commentFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 
@@ -193,6 +195,7 @@ function TaskPlanCard({
   onSave,
 }) {
   const planBody = task?.plan_body || "";
+  const displayPlanBody = collapseDuplicateParagraphs(planBody);
   const hasPlan = planBody.trim().length > 0;
   const meta = [
     task?.plan_updated_at ? `Updated ${formatDate(task.plan_updated_at)}` : null,
@@ -231,7 +234,7 @@ function TaskPlanCard({
         />
       ) : hasPlan ? (
         <div class="task-plan-body">
-          <MarkdownContent content={planBody} maxHeight={360} />
+          <MarkdownContent content={displayPlanBody} maxHeight={360} />
         </div>
       ) : (
         <div class="task-plan-empty">No plan yet. Run plan or write one.</div>
@@ -345,6 +348,10 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
   const owner = agentLabel || run.agent_name;
   const title = owner ? `${owner} run` : "Agent run";
   const meta = [formatMode(run.mode), shortStartedAt].filter(Boolean).join(" · ");
+  const processStatus = run.process_status || run.status;
+  const warningLabel = processStatus === "succeeded" && Number(run.log?.num_turns) === 0
+    ? "No final text"
+    : null;
   return (
     <details
       open={expanded}
@@ -355,8 +362,9 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
         <div class="run-summary">
           <div class="run-summary-main">
             <div class="run-summary-status">
-              <StatusPill status={run.process_status || run.status} size="sm" />
+              <StatusPill status={processStatus} size="sm" />
               <span class="run-summary-title">{title}</span>
+              {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
             </div>
             {meta && <div class="run-summary-meta" title={startedAt || undefined}>{meta}</div>}
           </div>
@@ -375,7 +383,7 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
         {loading ? (
           <div class="run-card-events-loading">Loading events…</div>
         ) : (
-          <EventTimeline events={events} streaming={(run.process_status || run.status) === "running"} />
+          <EventTimeline events={events} streaming={processStatus === "running"} />
         )}
       </div>
     </details>
@@ -387,13 +395,14 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
 function buildActivity({ comments = [], runs = [] }) {
   const items = [];
   for (const c of comments) {
+    if (shouldHideComment(c)) continue;
     items.push({
       type: "comment",
       at: c.created_at || 0,
       author: c.author,
       authorType: c.author_type || c.author?.type || "human",
       authorId: c.author_id || c.author?.id || null,
-      body: c.body || c.content || "",
+      body: normalizeCommentText(c.body || c.content || ""),
       id: `c-${c.id || c.created_at}`,
     });
   }
@@ -1009,7 +1018,7 @@ export function TaskDetail({ id, runParam = null }) {
                           <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
                         </div>
                         {item.body && (
-                          <div class="activity-item-body"><MarkdownContent content={item.body} maxHeight={200} /></div>
+                          <div class="activity-item-body"><StructuredContent content={item.body} maxHeight={200} /></div>
                         )}
                       </div>
                     </div>

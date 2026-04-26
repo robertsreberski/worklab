@@ -8,9 +8,10 @@ Return a structured Worklab result as JSON when you finish:
 
 {
   "schema": "worklab.v2",
+  "stage": "plan",
   "decision": "advance",
   "summary": "Short outcome.",
-  "details": "Optional implementation notes.",
+  "details": "Optional planning notes.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
@@ -25,6 +26,7 @@ Return a structured Worklab result as JSON when you finish:
 
 {
   "schema": "worklab.v2",
+  "stage": "execute",
   "decision": "advance",
   "summary": "Short outcome.",
   "details": "Optional implementation notes.",
@@ -36,7 +38,23 @@ Return a structured Worklab result as JSON when you finish:
 
 Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 
-const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions. Return a Worklab JSON result with decision "approve" or "reject". For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
+const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions.
+
+Return a structured Worklab result as JSON when you finish:
+
+{
+  "schema": "worklab.v2",
+  "stage": "review",
+  "decision": "approve",
+  "summary": "Short outcome.",
+  "details": "Optional review notes.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+
+Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 

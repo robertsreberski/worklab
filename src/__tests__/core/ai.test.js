@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseModelReference, resolveModel, isValidModelReference } from "../../core/ai.js";
+import { getBuiltinModelByReference, parseModelReference, resolveModel, isValidModelReference } from "../../core/ai.js";
 
 describe("explicit model references", () => {
   it("parses an exact Claude model reference", () => {
@@ -44,5 +44,36 @@ describe("explicit model references", () => {
     expect(isValidModelReference("vercel:")).toBe(false);
     expect(isValidModelReference("vercel::model")).toBe(false);
     expect(isValidModelReference("vercel:p1:")).toBe(false);
+  });
+
+  it("advertises CLI tool, skill, and MCP support accurately", () => {
+    const claudeCode = getBuiltinModelByReference("claude-code:claude-sonnet-4-6");
+    const codex = getBuiltinModelByReference("codex:gpt-5.4-mini");
+
+    expect(claudeCode).toMatchObject({
+      sdk: "claude-code",
+      supports_builtin_tools: true,
+      capabilities: {
+        supports_mcp: true,
+        supports_skills: true,
+        supports_worklab_tools: false,
+        mcp_mode: "per-run-json",
+        skills_mode: "prompt-index",
+      },
+    });
+    expect(claudeCode.builtin_tools).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
+
+    expect(codex).toMatchObject({
+      sdk: "codex",
+      supports_builtin_tools: false,
+      builtin_tools: [],
+      capabilities: {
+        supports_mcp: true,
+        supports_skills: true,
+        supports_worklab_tools: false,
+        mcp_mode: "inline-config",
+        skills_mode: "prompt-index",
+      },
+    });
   });
 });

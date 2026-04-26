@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { buildCliCommand } from "../../core/ai-cli.js";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildCliCommand, generateCliResponse } from "../../core/ai-cli.js";
 import { parseModelReference } from "../../core/ai.js";
+import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result.js";
+import { buildExecuteSystemPrompt } from "../../core/context.js";
+import { loadSkills } from "../../core/skills.js";
 
 describe("CLI provider adapters", () => {
   it("parses Claude Code and Codex model references", () => {
@@ -14,7 +20,7 @@ describe("CLI provider adapters", () => {
     });
   });
 
-  it("generates Claude Code stream-json command with schema and system prompt", () => {
+  it("generates Claude Code stream-json command with inline schema, system prompt, and prompt separator", () => {
     const cmd = buildCliCommand({
       sdk: "claude-code",
       model: "claude-sonnet-4-6",
@@ -28,12 +34,15 @@ describe("CLI provider adapters", () => {
     expect(cmd.args).toEqual(expect.arrayContaining([
       "-p",
       "--output-format", "stream-json",
-      "--json-schema", "/tmp/schema.json",
       "--model", "claude-sonnet-4-6",
       "--append-system-prompt", "system",
       "--no-session-persistence",
-      "do work",
     ]));
+    const schemaIndex = cmd.args.indexOf("--json-schema");
+    expect(schemaIndex).toBeGreaterThanOrEqual(0);
+    expect(JSON.parse(cmd.args[schemaIndex + 1])).toEqual(WORKLAB_RESULT_JSON_SCHEMA);
+    expect(cmd.args[schemaIndex + 1]).not.toBe("/tmp/schema.json");
+    expect(cmd.args.slice(-2)).toEqual(["--", "do work"]);
   });
 
   it("maps Claude Code MCP, effort, permissions, and tool allowlists to CLI flags", () => {
@@ -62,6 +71,7 @@ describe("CLI provider adapters", () => {
       "--mcp-config", "/tmp/mcp.json",
       "--strict-mcp-config",
     ]));
+    expect(cmd.args.slice(-2)).toEqual(["--", "do work"]);
   });
 
   it("generates Codex exec JSON command with schema, cwd, and effort", () => {
@@ -85,8 +95,8 @@ describe("CLI provider adapters", () => {
       "--ephemeral",
       "--skip-git-repo-check",
       "--config", "model_reasoning_effort=high",
-      "do work",
     ]));
+    expect(cmd.args.at(-1)).toBe("system\n\ndo work");
   });
 
   it("maps Codex permissions and MCP servers to exec flags/config overrides", () => {
@@ -108,5 +118,423 @@ describe("CLI provider adapters", () => {
       "--config", "mcp_servers.worklab.env.WORKLAB_RUN_ID=\"run_1\"",
       "--config", "mcp_servers.worklab.enabled=true",
     ]));
+    expect(cmd.args.at(-1)).toBe("system\n\ndo work");
+  });
+
+  it("treats exit 0 with no CLI output as an adapter error", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    writeFileSync(fakeClaude, "#!/bin/sh\nexit 0\n");
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.text).toBe("");
+      expect(result.error).toBe("claude completed without final output");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("stringifies structured result objects from CLI result events", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    writeFileSync(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ type: "result", result: structured })}'\nexit 0\n`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(JSON.parse(result.text)).toEqual(structured);
+      expect(result.numTurns).toBe(1);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("extracts Claude Code StructuredOutput tool input without requiring final text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "structured ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const event = {
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "out", name: "StructuredOutput", input: structured }] },
+    };
+    writeFileSync(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(event)}'\nexit 0\n`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.text).toBe("");
+      expect(result.worklabResult).toEqual(structured);
+      expect(result.structuredResultSource).toBe("StructuredOutput");
+      expect(result.numTurns).toBe(1);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("deduplicates repeated assistant and result text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    writeFileSync(fakeClaude, `#!/bin/sh
+printf '%s\\n' '${JSON.stringify({ type: "assistant", message: { content: [{ type: "text", text: "Done." }] } })}'
+printf '%s\\n' '${JSON.stringify({ type: "result", result: "Done." })}'
+exit 0
+`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.text).toBe("Done.");
+      expect(result.numTurns).toBe(1);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("formats invalid schema errors without dumping raw JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const err = {
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        code: "invalid_json_schema",
+        message: "Invalid schema for response_format codex_output_schema",
+        param: "text.format.schema",
+      },
+    };
+    writeFileSync(fakeCodex, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify(err)}' >&2\nexit 1\n`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBe("Invalid response schema (text.format.schema): Invalid schema for response_format codex_output_schema");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes a sample skill, tools, and mock MCP config through the Claude Code smoke path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const capturePrefix = join(dir, "capture");
+    const skillsDir = join(dir, "skills");
+    const originalPath = process.env.PATH;
+    const originalCapture = process.env.WORKLAB_FAKE_CLI_CAPTURE;
+    mkdirSync(join(skillsDir, "sample-smoke"), { recursive: true });
+    writeFileSync(join(skillsDir, "sample-smoke", "SKILL.md"), `---
+name: sample-smoke
+trigger: smoke test skill
+priority: always
+---
+SAMPLE_SKILL_BODY: verify this skill reaches the CLI system prompt.
+`);
+    const systemPrompt = buildExecuteSystemPrompt({
+      agent: { name: "smoke-agent", instructions: "You are a smoke-test agent." },
+      task: { id: "task-smoke", title: "Smoke test", stage: "execute", instructions: "Return a structured result." },
+      skills: loadSkills(skillsDir),
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    writeFileSync(fakeClaude, `#!/bin/sh
+capture="$WORKLAB_FAKE_CLI_CAPTURE"
+printf '%s\\n' "$@" > "$capture.args"
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = "--mcp-config" ]; then
+    shift
+    cat "$1" > "$capture.mcp"
+  fi
+  shift
+done
+printf '%s\\n' '${JSON.stringify({ type: "result", result: structured })}'
+exit 0
+`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    process.env.WORKLAB_FAKE_CLI_CAPTURE = capturePrefix;
+    try {
+      const result = await generateCliResponse(systemPrompt, {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+        allowedTools: ["Read", "Bash"],
+        disallowedTools: ["WebSearch"],
+        permissionMode: "bypassPermissions",
+        mcpServers: {
+          mock: {
+            command: "/bin/sh",
+            args: ["-lc", "node mock-mcp.js"],
+            env: { WORKLAB_RUN_ID: "run_1" },
+          },
+        },
+      });
+      const argsText = readFileSync(`${capturePrefix}.args`, "utf8");
+      const args = argsText.trim().split("\n");
+      const mcpConfig = JSON.parse(readFileSync(`${capturePrefix}.mcp`, "utf8"));
+      expect(result.error).toBeNull();
+      expect(argsText).toContain("SAMPLE_SKILL_BODY");
+      expect(args).toEqual(expect.arrayContaining([
+        "--tools",
+        "Read,Bash",
+        "--allowedTools",
+        "Read Bash mcp__mock__*",
+        "--disallowedTools",
+        "WebSearch",
+        "--mcp-config",
+        "--strict-mcp-config",
+      ]));
+      expect(args.slice(-2)).toEqual(["--", "do work"]);
+      expect(mcpConfig).toEqual({
+        mcpServers: {
+          mock: {
+            command: "/bin/sh",
+            args: ["-lc", "node mock-mcp.js"],
+            env: { WORKLAB_RUN_ID: "run_1" },
+          },
+        },
+      });
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalCapture == null) delete process.env.WORKLAB_FAKE_CLI_CAPTURE;
+      else process.env.WORKLAB_FAKE_CLI_CAPTURE = originalCapture;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes a sample skill and mock MCP config through the Codex smoke path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const capturePrefix = join(dir, "capture");
+    const skillsDir = join(dir, "skills");
+    const originalPath = process.env.PATH;
+    const originalCapture = process.env.WORKLAB_FAKE_CLI_CAPTURE;
+    mkdirSync(join(skillsDir, "sample-codex-smoke"), { recursive: true });
+    writeFileSync(join(skillsDir, "sample-codex-smoke", "SKILL.md"), `---
+name: sample-codex-smoke
+trigger: codex smoke test skill
+priority: always
+---
+SAMPLE_CODEX_SKILL_BODY: verify this skill reaches the Codex prompt.
+`);
+    const systemPrompt = buildExecuteSystemPrompt({
+      agent: { name: "codex-smoke-agent", instructions: "You are a Codex smoke-test agent." },
+      task: { id: "task-codex-smoke", title: "Codex smoke test", stage: "execute", instructions: "Return a structured result." },
+      skills: loadSkills(skillsDir),
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    writeFileSync(fakeCodex, `#!/bin/sh
+capture="$WORKLAB_FAKE_CLI_CAPTURE"
+printf '%s\\n' "$@" > "$capture.args"
+printf '%s\\n' '${JSON.stringify({ type: "result", result: structured })}'
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    process.env.WORKLAB_FAKE_CLI_CAPTURE = capturePrefix;
+    try {
+      const result = await generateCliResponse(systemPrompt, {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+        permissionMode: "plan",
+        mcpServers: {
+          mock: {
+            command: "/bin/sh",
+            args: ["-lc", "node mock-mcp.js"],
+            env: { WORKLAB_RUN_ID: "run_1" },
+          },
+        },
+      });
+      const argsText = readFileSync(`${capturePrefix}.args`, "utf8");
+      const args = argsText.trim().split("\n");
+      expect(result.error).toBeNull();
+      expect(argsText).toContain("SAMPLE_CODEX_SKILL_BODY");
+      expect(argsText).toContain("do work");
+      expect(args).toEqual(expect.arrayContaining([
+        "exec",
+        "--json",
+        "--sandbox",
+        "read-only",
+        "--config",
+        "mcp_servers.mock.command=\"/bin/sh\"",
+        "mcp_servers.mock.args=[\"-lc\", \"node mock-mcp.js\"]",
+        "mcp_servers.mock.env.WORKLAB_RUN_ID=\"run_1\"",
+        "mcp_servers.mock.enabled=true",
+        "mcp_servers.mock.required=false",
+      ]));
+    } finally {
+      process.env.PATH = originalPath;
+      if (originalCapture == null) delete process.env.WORKLAB_FAKE_CLI_CAPTURE;
+      else process.env.WORKLAB_FAKE_CLI_CAPTURE = originalCapture;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes Codex MCP tool events from item streams", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const events = [
+      {
+        type: "item.started",
+        item: {
+          id: "item_tool",
+          type: "mcp_tool_call",
+          server: "sample",
+          tool: "sample_echo",
+          arguments: { text: "smoke" },
+          status: "in_progress",
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "item_tool",
+          type: "mcp_tool_call",
+          server: "sample",
+          tool: "sample_echo",
+          arguments: { text: "smoke" },
+          result: { content: [{ type: "text", text: "{\"echoed\":\"smoke\"}" }] },
+          status: "completed",
+        },
+      },
+      { type: "item.completed", item: { id: "item_msg", type: "agent_message", text: JSON.stringify(structured) } },
+    ];
+    writeFileSync(fakeCodex, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.events[0]).toEqual({
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "item_tool",
+            name: "mcp__sample__sample_echo",
+            input: { text: "smoke" },
+          }],
+        },
+      });
+      expect(result.events[1]).toMatchObject({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "item_tool",
+            is_error: false,
+          }],
+        },
+      });
+      expect(result.events[2]).toMatchObject({
+        type: "assistant",
+        message: { content: [{ type: "text", text: JSON.stringify(structured) }] },
+      });
+      expect(JSON.parse(result.text)).toEqual(structured);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

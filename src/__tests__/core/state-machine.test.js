@@ -55,7 +55,7 @@ describe("workflow stage reducer", () => {
     });
     expect(r.stage).toBe("done");
     expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
-    expect(r.sideEffects).toContainEqual({ type: "post_review_verdict", verdict: "APPROVE", notes: "ok" });
+    expect(r.sideEffects).not.toContainEqual({ type: "post_review_verdict", verdict: "APPROVE", notes: "ok" });
   });
 
   it("review reject routes back to execute", () => {

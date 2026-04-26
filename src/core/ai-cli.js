@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { WORKLAB_RESULT_JSON_SCHEMA } from "./worklab-result.js";
+import { WORKLAB_RESULT_JSON_SCHEMA, extractWorklabResult } from "./worklab-result.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -15,6 +15,46 @@ function normalizeCliEvent(raw) {
   if (!raw || typeof raw !== "object") return { type: "cli_event", raw };
   if (raw.type === "assistant" || raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
   if (raw.type === "message" && raw.message) return { type: "assistant", message: raw.message };
+  if (raw.type === "item.completed" && raw.item?.type === "agent_message" && typeof raw.item.text === "string") {
+    return { type: "assistant", message: { content: [{ type: "text", text: raw.item.text }] } };
+  }
+  if ((raw.type === "item.started" || raw.type === "item.completed") && raw.item?.type === "mcp_tool_call") {
+    const item = raw.item;
+    const id = item.id || `${item.server || "mcp"}:${item.tool || "tool"}`;
+    const name = item.server && item.tool ? `mcp__${item.server}__${item.tool}` : item.tool || "mcp_tool_call";
+    if (raw.type === "item.started") {
+      return { type: "assistant", message: { content: [{ type: "tool_use", id, name, input: item.arguments || {} }] } };
+    }
+    return {
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: id,
+          content: item.error || item.result?.content || item.result || "",
+          is_error: !!item.error,
+        }],
+      },
+    };
+  }
+  if ((raw.type === "item.started" || raw.type === "item.completed") && raw.item?.type === "command_execution") {
+    const item = raw.item;
+    const id = item.id || item.command || "command_execution";
+    if (raw.type === "item.started") {
+      return { type: "assistant", message: { content: [{ type: "tool_use", id, name: "command_execution", input: { command: item.command } }] } };
+    }
+    return {
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: id,
+          content: item.aggregated_output || "",
+          is_error: typeof item.exit_code === "number" && item.exit_code !== 0,
+        }],
+      },
+    };
+  }
   if (raw.type === "tool_call") {
     return { type: "assistant", message: { content: [{ type: "tool_use", id: raw.id, name: raw.name, input: raw.input || raw.arguments }] } };
   }
@@ -27,13 +67,65 @@ function normalizeCliEvent(raw) {
 function textFromEvent(raw) {
   if (typeof raw?.text === "string") return raw.text;
   if (typeof raw?.item?.text === "string") return raw.item.text;
-  if (typeof raw?.result === "string") return raw.result;
-  if (typeof raw?.final_output === "string") return raw.final_output;
+  if (raw?.type === "result" && raw.result != null) {
+    return typeof raw.result === "string" ? raw.result : JSON.stringify(raw.result);
+  }
+  if (raw?.final_output != null) {
+    return typeof raw.final_output === "string" ? raw.final_output : JSON.stringify(raw.final_output);
+  }
   if (typeof raw?.message?.content === "string") return raw.message.content;
   if (Array.isArray(raw?.message?.content)) {
     return raw.message.content.filter((part) => part?.type === "text").map((part) => part.text).join("");
   }
   return "";
+}
+
+function inferStructuredResultSource(raw) {
+  if (raw?.type === "result" && raw.result != null) return "result";
+  if (raw?.final_output != null) return "final_output";
+  const blocks = raw?.message?.content || raw?.content;
+  if (Array.isArray(blocks) && blocks.some((block) => block?.type === "tool_use" && block?.name === "StructuredOutput")) {
+    return "StructuredOutput";
+  }
+  if (raw?.type === "tool_call" && raw.name === "StructuredOutput") return "StructuredOutput";
+  if (raw?.item?.type === "agent_message") return "agent_message";
+  return "event";
+}
+
+function pushUniqueText(texts, text) {
+  const value = typeof text === "string" ? text.trim() : "";
+  if (!value) return;
+  if (texts.some((existing) => existing.trim() === value)) return;
+  texts.push(value);
+}
+
+function parseJsonError(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed?.error || parsed;
+  } catch {
+    return null;
+  }
+}
+
+function formatCliError(message, command) {
+  const raw = String(message || "").trim();
+  const parsed = parseJsonError(raw);
+  const code = parsed?.code || parsed?.error?.code;
+  const detail = parsed?.message || parsed?.error?.message;
+  const param = parsed?.param || parsed?.error?.param;
+  if (code === "invalid_json_schema" || /invalid_json_schema|Invalid schema/i.test(raw)) {
+    return `Invalid response schema${param ? ` (${param})` : ""}: ${detail || raw}`;
+  }
+  if (
+    command === "claude" &&
+    (/401|Unauthorized|OAuth token is invalid|Please run \/login|auth/i.test(raw))
+  ) {
+    return "Claude Code authentication failed. Run `claude /login` or configure ANTHROPIC_API_KEY, ANTHROPIC_AUTH_TOKEN, or CLAUDE_CODE_OAUTH_TOKEN.";
+  }
+  return detail || raw;
 }
 
 function hasEntries(value) {
@@ -102,7 +194,7 @@ export function buildCliCommand({
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--json-schema", schemaPath,
+      "--json-schema", JSON.stringify(WORKLAB_RESULT_JSON_SCHEMA),
       "--model", model,
       "--append-system-prompt", systemPrompt,
       "--no-session-persistence",
@@ -122,7 +214,7 @@ export function buildCliCommand({
       args.push("--disallowedTools", shellList(disallowedTools));
     }
     if (mcpConfigPath) args.push("--mcp-config", mcpConfigPath, "--strict-mcp-config");
-    args.push(prompt);
+    args.push("--", prompt);
     return { command: "claude", args, cwd };
   }
 
@@ -140,7 +232,7 @@ export function buildCliCommand({
   else if (permissionMode === "plan") args.push("--sandbox", "read-only");
   if (effort) args.push("--config", `model_reasoning_effort=${effort}`);
   if (hasEntries(mcpServers)) args.push(...codexMcpConfigArgs(mcpServers));
-  args.push(prompt);
+  args.push([systemPrompt, prompt].filter((part) => String(part || "").trim()).join("\n\n"));
   return { command: "codex", args, cwd };
 }
 
@@ -175,6 +267,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const events = [];
   const texts = [];
   let errorMessage = null;
+  let worklabResult = null;
+  let structuredResultSource = null;
   let usage = {};
 
   try {
@@ -202,10 +296,20 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       const ev = normalizeCliEvent(raw);
       events.push(ev);
       options.onEvent?.(ev);
+      if (!worklabResult) {
+        const structured = extractWorklabResult(raw);
+        if (structured.ok) {
+          worklabResult = structured.result;
+          structuredResultSource = structuredResultSource || inferStructuredResultSource(raw);
+        }
+      }
       const text = textFromEvent(raw);
-      if (text) texts.push(text);
+      pushUniqueText(texts, text);
       if (raw.usage) usage = raw.usage;
-      if (raw.type === "error") errorMessage = raw.message || raw.error || "cli error";
+      if (raw.type === "error") {
+        const rawError = raw.message || raw.error || "cli error";
+        errorMessage = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
+      }
     });
 
     if (options.abortSignal) {
@@ -217,25 +321,33 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     const exitCode = await new Promise((resolve) => child.on("close", resolve));
     const stderrText = stderr.join("").trim();
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
+    const text = texts.join("\n\n");
+    if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
+      errorMessage = `${commandSpec.command} completed without final output`;
+    }
     return {
-      text: texts.join("\n\n"),
+      text,
+      worklabResult,
+      structuredResultSource,
       events,
       usage,
       durationMs: Date.now() - start,
-      numTurns: texts.length,
+      numTurns: texts.length || (events.length ? 1 : 0),
       model: `${resolved.sdk}:${resolved.model}`,
       effort: options.effort || null,
       sdk: resolved.sdk,
       cancelled: !!options.abortSignal?.aborted,
-      error: errorMessage,
+      error: errorMessage ? formatCliError(errorMessage, commandSpec.command) : null,
     };
   } catch (err) {
     return {
       text: texts.join("\n\n") || null,
+      worklabResult,
+      structuredResultSource,
       events,
       usage: {},
       durationMs: Date.now() - start,
-      numTurns: texts.length,
+      numTurns: texts.length || (events.length ? 1 : 0),
       model: resolved?.reference || null,
       effort: options.effort || null,
       sdk: resolved?.sdk || "cli",

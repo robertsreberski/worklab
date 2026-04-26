@@ -27,31 +27,49 @@ export const worklabResultSchema = z.object({
 
 export const WORKLAB_RESULT_JSON_SCHEMA = {
   type: "object",
-  additionalProperties: true,
-  required: ["schema", "decision", "summary"],
+  additionalProperties: false,
+  required: [
+    "schema",
+    "stage",
+    "decision",
+    "summary",
+    "details",
+    "artifacts",
+    "blocking_issues",
+    "pending_actions",
+    "subtasks",
+  ],
   properties: {
-    schema: { const: "worklab.v2" },
+    schema: { type: "string", enum: ["worklab.v2"] },
     stage: { type: "string", enum: STAGES },
     decision: { type: "string", enum: DECISIONS },
     summary: { type: "string" },
     details: { type: "string" },
-    artifacts: { type: "object", additionalProperties: true },
+    artifacts: { type: "object", additionalProperties: false, properties: {}, required: [] },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
     subtasks: {
       type: "array",
       items: {
         type: "object",
-        additionalProperties: true,
-        required: ["title"],
+        additionalProperties: false,
+        required: [
+          "title",
+          "instructions",
+          "suggested_agent",
+          "required",
+          "depends_on",
+          "acceptance_criteria",
+          "expected_artifact",
+        ],
         properties: {
           title: { type: "string" },
           instructions: { type: "string" },
-          suggested_agent: { type: "string" },
+          suggested_agent: { type: ["string", "null"] },
           required: { type: "boolean" },
           depends_on: { type: "array", items: { type: "string" } },
           acceptance_criteria: { type: "array", items: { type: "string" } },
-          expected_artifact: { type: "string" },
+          expected_artifact: { type: ["string", "null"] },
         },
       },
     },
@@ -91,6 +109,58 @@ export function parseWorklabResultFromText(text, fallback = {}) {
       return { ok: false, error: "fenced final text is not valid JSON", result: null };
     }
   }
+}
+
+function firstWorklabCandidate(value, seen = new Set(), depth = 0) {
+  if (value == null || depth > 8) return null;
+  if (typeof value === "string") {
+    const parsed = parseWorklabResultFromText(value);
+    return parsed.ok ? parsed.result : null;
+  }
+  if (typeof value !== "object") return null;
+  if (seen.has(value)) return null;
+  seen.add(value);
+
+  if (value.schema === "worklab.v2") return value;
+  if (value.worklab_result) {
+    const nested = firstWorklabCandidate(value.worklab_result, seen, depth + 1);
+    if (nested) return nested;
+  }
+  if ((value.type === "tool_use" || value.type === "tool_call") && value.name === "StructuredOutput") {
+    const nested = firstWorklabCandidate(value.input ?? value.arguments, seen, depth + 1);
+    if (nested) return nested;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const nested = firstWorklabCandidate(item, seen, depth + 1);
+      if (nested) return nested;
+    }
+    return null;
+  }
+
+  const likelyKeys = [
+    "result",
+    "final_output",
+    "output",
+    "input",
+    "arguments",
+    "message",
+    "content",
+    "item",
+  ];
+  for (const key of likelyKeys) {
+    if (!(key in value)) continue;
+    const nested = firstWorklabCandidate(value[key], seen, depth + 1);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+export function extractWorklabResult(value, fallback = {}) {
+  const candidate = firstWorklabCandidate(value);
+  if (!candidate) return { ok: false, error: "no worklab_result found", result: null };
+  return normalizeWorklabResult(candidate, fallback);
 }
 
 export function synthesizeWorklabResult({ stage = "execute", decision = "advance", summary = "", details = "" } = {}) {

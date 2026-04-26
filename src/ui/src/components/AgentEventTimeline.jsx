@@ -1,7 +1,9 @@
 import { useEffect, useState } from "preact/hooks";
-import { renderMarkdown } from "./Markdown.jsx";
 import { Icon } from "./Icon.jsx";
 import { ToolCallBlock } from "./ToolCallBlock.jsx";
+import { StructuredContent } from "./StructuredContent.jsx";
+import { StructuredValue } from "./StructuredValue.jsx";
+import { structuredPreview } from "../lib/structuredValue.js";
 
 const PHASE_NAMES = Object.freeze({
   triage: "Triage",
@@ -150,19 +152,24 @@ export function groupAgentTimelineEvents(events) {
   return groupEvents(events);
 }
 
-function CollapsibleBlock({ title, text, expanded, onToggle, borderColor, muted }) {
-  const safe = text || "";
-  const preview = safe.slice(0, 140);
-  const isLong = safe.length > 140;
+function CollapsibleBlock({ title, text, value, expanded, onToggle, borderColor, muted }) {
+  const payload = value !== undefined ? value : (text || "");
+  const previewText = structuredPreview(payload) || "";
+  const preview = previewText.slice(0, 140);
+  const isLong = previewText.length > 140;
   return (
     <div class="agentlog-collapsible" style={borderColor ? { borderLeftColor: borderColor } : undefined}>
       <button type="button" class="agentlog-coll-header" onClick={onToggle}>
         <span>{title}</span>
         <Icon name="chevron-down" size={14} class={`agentlog-coll-arrow ${expanded ? "open" : ""}`} />
       </button>
-      <pre class={`agentlog-coll-body ${muted ? "agentlog-muted" : ""}`}>
-        {expanded ? safe : `${preview}${isLong ? "..." : ""}`}
-      </pre>
+      {expanded ? (
+        <StructuredValue value={payload} class={muted ? "agentlog-muted" : ""} />
+      ) : (
+        <pre class={`agentlog-coll-body ${muted ? "agentlog-muted" : ""}`}>
+          {`${preview}${isLong ? "..." : ""}`}
+        </pre>
+      )}
     </div>
   );
 }
@@ -264,9 +271,13 @@ function TimelineEvent({ event, isLast, streaming }) {
   if (type === "text") {
     railIcon = <RailIcon name="message-circle" />;
     const text = event.text || "";
-    content = text.length > 5000
-      ? <div class="agentlog-event-text">{text}</div>
-      : <div class="agentlog-event-text doc-content" dangerouslySetInnerHTML={{ __html: renderMarkdown(text) }} />;
+    content = (
+      <StructuredContent
+        content={text}
+        className="agentlog-event-text doc-content"
+        maxHeight={5000}
+      />
+    );
   } else if (type === "thinking") {
     railIcon = <RailIcon name="sparkles" />;
     content = <ThinkingBlock text={event.text || ""} streaming={event.streaming || streaming} />;
@@ -277,7 +288,7 @@ function TimelineEvent({ event, isLast, streaming }) {
     content = (
       <CollapsibleBlock
         title={isError ? "Error" : "Result"}
-        text={typeof resultText === "string" ? resultText : JSON.stringify(resultText, null, 2)}
+        value={resultText}
         expanded={expanded}
         onToggle={() => setExpanded((current) => !current)}
         borderColor={isError ? "var(--accent-alert-border)" : "var(--accent-positive-border)"}
@@ -297,14 +308,43 @@ function TimelineEvent({ event, isLast, streaming }) {
         </div>
       );
     } else {
-      content = <div class="agentlog-event-text">{event.text || event.summary || event.output || "Completed"}</div>;
+      content = event.structured
+        ? <StructuredValue value={event.structured} />
+        : (
+          <StructuredContent
+            content={event.text || event.summary || event.output || "Completed"}
+            className="agentlog-event-text doc-content"
+            maxHeight={5000}
+          />
+        );
     }
   } else if (type === "error") {
     railIcon = <RailIcon name="alert-triangle" tone="error" />;
-    content = <div class="agentlog-event-error">{event.message || event.text || "Error occurred"}</div>;
+    content = (
+      <StructuredContent
+        content={event.message || event.text || "Error occurred"}
+        className="agentlog-event-error doc-content"
+        maxHeight={5000}
+      />
+    );
+  } else if (type === "runtime_warning") {
+    railIcon = <RailIcon name="alert-triangle" tone="error" />;
+    content = (
+      <StructuredContent
+        content={event.message || event.warning_kind || "Runtime warning"}
+        className="agentlog-event-warn doc-content"
+        maxHeight={5000}
+      />
+    );
   } else if (type === "retry") {
     railIcon = <RailIcon name="refresh-cw" />;
-    content = <div class="agentlog-event-warn">{event.message || event.text || "Retrying..."}</div>;
+    content = (
+      <StructuredContent
+        content={event.message || event.text || "Retrying..."}
+        className="agentlog-event-warn doc-content"
+        maxHeight={5000}
+      />
+    );
   } else if (type === "phase") {
     railIcon = <RailIcon name="clock" />;
     content = (
@@ -319,11 +359,22 @@ function TimelineEvent({ event, isLast, streaming }) {
   } else if (type === "cancelled") {
     railIcon = <RailIcon name="circle" tone="error" />;
     content = <div class="agentlog-event-warn">Cancelled</div>;
+  } else if (type === "cli_event" && event.raw) {
+    const title = event.raw.type ? `CLI: ${event.raw.type}` : "CLI event";
+    content = (
+      <CollapsibleBlock
+        title={title}
+        value={event.raw}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+        muted
+      />
+    );
   } else {
     content = (
       <CollapsibleBlock
         title={type}
-        text={JSON.stringify(event, null, 2)}
+        value={event}
         expanded={expanded}
         onToggle={() => setExpanded((current) => !current)}
       />

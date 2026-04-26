@@ -49,6 +49,37 @@ describe("worklab event timeline normalization", () => {
       text: "Only final text.\n\nin 1 / out 2",
     });
   });
+
+  it("uses worklab_result summary for visible final rows", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "final",
+        text: "{\"schema\":\"worklab.v2\"}",
+        worklab_result: { summary: "Short result", details: "Useful detail" },
+        usage: { input_tokens: 1, output_tokens: 2 },
+      },
+    ]);
+
+    expect(events[0]).toEqual({
+      type: "final",
+      text: "Short result\n\nUseful detail\n\nin 1 / out 2",
+      structured: { summary: "Short result", details: "Useful detail" },
+    });
+  });
+
+  it("hides noisy CLI housekeeping events and keeps runtime warnings readable", () => {
+    const events = normalizeWorklabEvents([
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "hook_started", hook: "PreToolUse" } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "system", subtype: "init" } } },
+      { type: "sdk_event", event: { type: "cli_event", raw: { type: "turn_failed", message: "bad" } } },
+      { type: "runtime_warning", warning_kind: "unstructured_result_fallback", message: "final text is not JSON" },
+    ]);
+
+    expect(events).toEqual([
+      { type: "cli_event", raw: { type: "turn_failed", message: "bad" } },
+      { type: "runtime_warning", warning_kind: "unstructured_result_fallback", message: "final text is not JSON" },
+    ]);
+  });
 });
 
 describe("run event merging", () => {

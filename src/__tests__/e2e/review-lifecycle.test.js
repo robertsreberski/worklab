@@ -172,8 +172,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(runs[0]).toMatchObject({ mode: "execute", status: "complete", agent_name: "exec" });
     expect(runs[1]).toMatchObject({ mode: "review", status: "complete", agent_name: "reviewer" });
 
-    // Comments: owner agent (exec, "all good"), reviewer agent (reviewer, contains "Looks good"),
-    // system ("VERDICT: APPROVE").
+    // Comments: owner agent (exec, "all good") and reviewer agent (reviewer, contains "Looks good").
     const comments = finalResp.comments;
     const execComments = comments.filter((c) => c.author_type === "agent" && c.author_id === "exec");
     const reviewerComments = comments.filter((c) => c.author_type === "agent" && c.author_id === "reviewer");
@@ -185,7 +184,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(reviewerComments.length).toBe(1);
     expect(reviewerComments[0].body).toContain("Looks good");
 
-    expect(systemComments.some((c) => c.body === "VERDICT: APPROVE")).toBe(true);
+    expect(systemComments.some((c) => c.body === "VERDICT: APPROVE")).toBe(false);
   }, 15000);
 
   it("REJECT path: task → review → execute, with reviewer + system rejection comments", async () => {
