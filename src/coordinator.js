@@ -1,6 +1,6 @@
 // src/coordinator.js
 import { createServer as createHttpServer } from "node:http";
-import { existsSync, mkdirSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import { promisify } from "node:util";
@@ -17,7 +17,24 @@ import { createScheduleManager } from "./coordinator/schedule-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 
 export async function startCoordinator({ config = loadConfig() } = {}) {
+  mkdirSync(config.dataDir, { recursive: true });
   mkdirSync(config.workspace, { recursive: true });
+
+  const pidFile = join(config.dataDir, ".coordinator.pid");
+  if (existsSync(pidFile)) {
+    const pid = parseInt(readFileSync(pidFile, "utf8").trim(), 10);
+    if (Number.isFinite(pid) && pid !== process.pid) {
+      try {
+        process.kill(pid, 0);
+        throw new Error(`Worklab is already running for ${config.dataDir} (pid ${pid})`);
+      } catch (err) {
+        if (err?.code !== "ESRCH") throw err;
+        try { unlinkSync(pidFile); } catch {}
+      }
+    } else {
+      try { unlinkSync(pidFile); } catch {}
+    }
+  }
 
   const templateDir = join(config.repoRoot, "data-template");
   const seedResult = seedDataFromTemplate({ templateDir, dataDir: config.dataDir });
@@ -57,6 +74,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     consolidation: consolidationProxy,
     scheduleManager: scheduleManagerProxy,
     events,
+    config,
   });
 
   watcherHolder.current = createTaskWatcher({
@@ -81,10 +99,15 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   }
 
   const http = createHttpServer(app);
-  await new Promise((resolve) => http.listen(config.port, resolve));
-  logger.info({ port: config.port }, "coordinator listening");
+  await new Promise((resolve, reject) => {
+    http.once("error", reject);
+    http.listen(config.port, config.host, () => {
+      http.off("error", reject);
+      resolve();
+    });
+  });
+  logger.info({ host: config.host, port: config.port }, "coordinator listening");
 
-  const pidFile = join(config.dataDir, ".coordinator.pid");
   writeFileSync(pidFile, String(process.pid));
 
   let shuttingDown = false;

@@ -49,6 +49,7 @@ describe("spawnWorker", () => {
       args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
       env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
       runId, taskId, broker, db,
+      persistDebounceMs: 10,
     });
     const result = await handle.done;
     expect(result.exitCode).toBe(0);

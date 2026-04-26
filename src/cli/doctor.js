@@ -6,8 +6,10 @@ import { openDb, runMigrations } from "../core/db.js";
 import { getKeyFingerprint } from "../core/crypto.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
 import { testEmbeddingBackend } from "../core/embeddings.js";
+import { applyConfigArgs } from "./args.js";
 
-export async function doctor() {
+export async function doctor(args = []) {
+  applyConfigArgs(args);
   const config = loadConfig();
   const problems = [];
   let db = null;

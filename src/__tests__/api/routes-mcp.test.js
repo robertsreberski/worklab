@@ -61,4 +61,25 @@ describe("mcp config", () => {
       available: true,
     });
   });
+
+  it("protects the admin MCP endpoint with the local token", async () => {
+    const d = mkdtempSync(join(tmpdir(), "worklab-admin-mcp-route-")); dirs.push(d);
+    mkdirSync(join(d, "config"));
+    writeFileSync(join(d, "config/mcp.json"), JSON.stringify({ mcpServers: {} }));
+    const db = makeTestDb();
+    const config = {
+      host: "127.0.0.1",
+      port: 7878,
+      dataDir: d,
+      workspace: d,
+      repoRoot: process.cwd(),
+      logLevel: "error",
+    };
+    const { app } = createServer({ db, logger: undefined, watcher: undefined, dataDir: d, config });
+    const agent = supertest(app);
+
+    await agent.get("/mcp").expect(401);
+    const token = readFileSync(join(d, "mcp-token"), "utf8").trim();
+    await agent.get("/mcp").set("authorization", `Bearer ${token}`).expect(405);
+  });
 });

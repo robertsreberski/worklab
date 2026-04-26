@@ -54,11 +54,21 @@ describe("service file generators", () => {
       cli: "/repo/src/cli/index.js",
       cwd: "/repo",
       dataDir: "/data",
+      env: {
+        WORKLAB_DATA_DIR: "/data",
+        WORKLAB_HOST: "127.0.0.1",
+        WORKLAB_PORT: "9000",
+        WORKLAB_WORKSPACE: "/workspace",
+        WORKLAB_LOG_LEVEL: "info",
+        PATH: "/usr/bin",
+      },
     };
 
     expect(launchdPlist(params)).toContain("<string>/repo/src/cli/index.js</string>");
     expect(launchdPlist(params)).toContain("<key>KeepAlive</key><true/>");
-    expect(systemdUnit(params)).toContain("ExecStart=/usr/bin/node /repo/src/cli/index.js start");
+    expect(systemdUnit(params)).toContain("ExecStart=/usr/bin/node /repo/src/cli/index.js serve");
     expect(systemdUnit(params)).toContain("Restart=always");
+    expect(systemdUnit(params)).toContain("WORKLAB_DATA_DIR=/data");
+    expect(systemdUnit(params)).toContain("WORKLAB_PORT=9000");
   });
 });

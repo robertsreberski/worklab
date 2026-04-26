@@ -1,10 +1,16 @@
 // src/cli/status.js
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
+import { loadConfig, worklabBaseUrl } from "../core/config.js";
+import { serviceStatus } from "./install-service.js";
+import { applyConfigArgs } from "./args.js";
 
-export async function status() {
+export async function status(args = []) {
+  applyConfigArgs(args);
   const config = loadConfig();
+  const svc = await serviceStatus();
+  console.log(`service: ${JSON.stringify(svc)}`);
+
   const pidFile = join(config.dataDir, ".coordinator.pid");
   if (!existsSync(pidFile)) {
     console.log("coordinator: not running");
@@ -20,7 +26,7 @@ export async function status() {
   }
 
   try {
-    const res = await fetch(`http://localhost:${config.port}/api/health`);
+    const res = await fetch(`${worklabBaseUrl(config)}/api/health`);
     const json = await res.json();
     console.log(`coordinator: running pid=${pid} port=${config.port} health=${JSON.stringify(json)}`);
   } catch (err) {
