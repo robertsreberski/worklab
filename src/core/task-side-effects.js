@@ -90,6 +90,23 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
            VALUES (?, ?, 'system', ?, ?)`,
         ).run(newCommentId(), taskId, `VERDICT: ${sideEffect.verdict}`, now);
         break;
+      case "set_plan_body":
+        if (typeof sideEffect.body === "string") {
+          fields.push("plan_body = ?");
+          values.push(sideEffect.body);
+          fields.push("plan_updated_at = ?");
+          values.push(now);
+          fields.push("plan_updated_by = ?");
+          values.push(sideEffect.updatedBy || "agent");
+          fields.push("plan_source_run_id = ?");
+          values.push(sideEffect.runId || null);
+        }
+        break;
+      // Spawn / cross-table directives are dispatched by the caller (watcher
+      // for spawn_worker/spawn_reviewer, watcher for create_subtasks). They
+      // appear in the side-effect list so the state machine can describe a
+      // complete intended outcome, but the DB tx applier intentionally
+      // ignores them. See `task-watcher.js` (`applyTx`).
       case "spawn_worker":
       case "spawn_reviewer":
       case "create_subtasks":

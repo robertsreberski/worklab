@@ -55,6 +55,7 @@ export function AgentPicker({
             <AgentAvatar
               name={opt._agent.name}
               label={opt._agent.display_name || opt._agent.name}
+              role={role}
               size={20}
             />
           );

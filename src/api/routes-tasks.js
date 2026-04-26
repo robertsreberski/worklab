@@ -201,9 +201,9 @@ function replaceTaskDependencies(db, taskId, dependencyIds) {
   tx(dependencyIds);
 }
 
-function applyRouteSideEffects(db, broker, taskId, sideEffects, currentStage, newStage) {
+function applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentStage, newStage) {
   const tx = db.transaction(() => {
-    applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage);
+    applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage, { logger });
   });
   tx();
   broker.broadcast("global", { type: "task_updated", id: taskId });
@@ -280,7 +280,7 @@ function selectRunsWithLog(db, whereClause, ...params) {
   `).all(...params).map(rowToRun);
 }
 
-export function registerTaskRoutes(app, { db, broker, watcher }) {
+export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   app.get("/api/tasks", (req, res) => {
     const where = [];
     const params = [];
@@ -481,6 +481,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
       applyRouteSideEffects(
         db,
         broker,
+        logger,
         req.params.id,
         stageTransition.result.sideEffects,
         stageTransition.currentStage,
@@ -491,7 +492,7 @@ export function registerTaskRoutes(app, { db, broker, watcher }) {
           db,
           childTaskId: req.params.id,
           applySideEffects: (taskId, sideEffects, currentStage, newStage) => {
-            applyRouteSideEffects(db, broker, taskId, sideEffects, currentStage, newStage);
+            applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentStage, newStage);
           },
         });
       }
