@@ -60,14 +60,15 @@ describe("provider routes", () => {
 
     const res = await agent.get("/api/models/available").expect(200);
     expect(res.body.models.map((m) => m.value)).toContain("claude:claude-sonnet-4-6");
-    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.4-mini");
+    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.5");
     expect(res.body.models.map((m) => m.value)).toContain("claude-code:claude-sonnet-4-6");
-    expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.4-mini");
+    expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.5");
     expect(res.body.models.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:${model.model_name}`);
+    expect(res.body.models.map((m) => m.value).some((value) => value.includes("gpt-5.4"))).toBe(false);
     expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
     expect(typeof res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").disabled).toBe("boolean");
     expect(res.body.models.find((m) => m.value === "claude-code:claude-sonnet-4-6").supports_mcp).toBe(true);
-    expect(res.body.models.find((m) => m.value === "codex:gpt-5.4-mini").supports_builtin_tools).toBe(false);
+    expect(res.body.models.find((m) => m.value === "codex:gpt-5.5").supports_builtin_tools).toBe(false);
     expect(res.body.models.find((m) => m.value === `vercel:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
 

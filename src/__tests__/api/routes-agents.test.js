@@ -104,9 +104,9 @@ describe("agents CRUD", () => {
     const { agent } = makeTestServer();
     await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
 
-    const updated = await agent.patch("/api/agents/coder").send({ sdk: "claude", model: "openai:gpt-5.4-mini" }).expect(200);
+    const updated = await agent.patch("/api/agents/coder").send({ sdk: "claude", model: "openai:gpt-5.5" }).expect(200);
     expect(updated.body.agent.sdk).toBe("openai");
-    expect(updated.body.agent.model).toBe("openai:gpt-5.4-mini");
+    expect(updated.body.agent.model).toBe("openai:gpt-5.5");
 
     const rejected = await agent.patch("/api/agents/coder").send({ model: "openai:opus" }).expect(400);
     expect(rejected.body.error.code).toBe("invalid_model");
@@ -124,9 +124,25 @@ describe("agents CRUD", () => {
     const codex = await agent.post("/api/agents").send({
       name: "codex-cli",
       display_name: "Codex CLI",
-      model: "codex:gpt-5.4",
+      model: "codex:gpt-5.5",
     }).expect(201);
     expect(codex.body.agent.sdk).toBe("codex");
+  });
+
+  it("normalizes stale max effort on create and patch", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "openai-effort",
+      display_name: "OpenAI Effort",
+      model: "openai:gpt-5.5",
+      effort: "max",
+    }).expect(201);
+    expect(created.body.agent.effort).toBe("xhigh");
+
+    const patched = await agent.patch("/api/agents/openai-effort").send({
+      model: "claude:claude-sonnet-4-6",
+    }).expect(200);
+    expect(patched.body.agent.effort).toBe("high");
   });
 
   it("POST rejects unavailable built-in providers", async () => {
@@ -135,7 +151,7 @@ describe("agents CRUD", () => {
     const res = await agent.post("/api/agents").send({
       name: "openai-missing",
       display_name: "OpenAI Missing",
-      model: "openai:gpt-5.4",
+      model: "openai:gpt-5.5",
     }).expect(400);
     expect(res.body.error.code).toBe("invalid_model");
     expect(res.body.error.message).toMatch(/OPENAI_API_KEY/);

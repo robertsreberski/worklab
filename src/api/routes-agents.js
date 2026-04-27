@@ -1,4 +1,4 @@
-import { getBuiltinModelByReference, parseModelReference } from "../core/ai.js";
+import { getBuiltinModelByReference, normalizeReasoningEffortForModel, parseModelReference } from "../core/ai.js";
 import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../core/providers.js";
 import { readRunSection } from "../core/journal.js";
 import { isValidSlug, uniqueSlug } from "../core/slugs.js";
@@ -56,6 +56,26 @@ function validateModelForAgent({ db, dataDir, model }) {
     throw new Error(`model is not runnable for agents: ${capabilities.unavailable_reason}`);
   }
   return resolved;
+}
+
+function capabilitiesForAgentModel({ db, dataDir, model, resolved }) {
+  if (resolved?.capabilities) return resolved.capabilities;
+  const ref = resolved?.reference || model;
+  if (resolved?.sdk !== "vercel") return getBuiltinModelByReference(ref)?.capabilities || null;
+
+  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: false });
+  const modelRow = provider ? getModelByProviderAndName({ db, providerId: resolved.providerId, modelName: resolved.modelName }) : null;
+  return provider && modelRow
+    ? buildModelCapabilities(provider.provider_type, modelRow.model_name, modelRow.capabilities)
+    : null;
+}
+
+function normalizeAgentEffort({ db, dataDir, model, resolved, effort }) {
+  return normalizeReasoningEffortForModel(
+    resolved || model,
+    effort,
+    capabilitiesForAgentModel({ db, dataDir, model, resolved }),
+  );
 }
 
 function normalizeList(value) {
@@ -160,7 +180,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
 
     const now = Date.now();
-    const effort = req.body.effort || "medium";
+    const effort = normalizeAgentEffort({ db, dataDir, model, resolved, effort: req.body.effort || "medium" });
     const description = req.body.description || null;
     const instructions = req.body.instructions || "";
     let skillsAllow;
@@ -210,6 +230,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
 
     const fields = [];
     const values = [];
+    const targetModel = req.body.model || existing.model;
+    let targetResolved = null;
+    let wroteEffort = false;
 
     for (const k of PATCHABLE) {
       if (k in req.body) {
@@ -218,6 +241,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             const resolved = req.body[k] === existing.model
               ? parseModelReference(req.body[k])
               : validateModelForAgent({ db, dataDir, model: req.body[k] });
+            targetResolved = resolved;
             fields.push("sdk = ?");
             values.push(resolved.sdk);
           } catch (err) {
@@ -246,6 +270,15 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
           }
         }
+        if (k === "effort") {
+          try {
+            targetResolved ||= parseModelReference(targetModel);
+            req.body[k] = normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: req.body[k] });
+            wroteEffort = true;
+          } catch (err) {
+            return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
+          }
+        }
         fields.push(`${k} = ?`);
         if (k.endsWith("_allowlist")) {
           values.push(JSON.stringify(req.body[k] ?? []));
@@ -255,6 +288,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           values.push(req.body[k]);
         }
       }
+    }
+
+    if ("model" in req.body && !wroteEffort) {
+      targetResolved ||= parseModelReference(targetModel);
+      fields.push("effort = ?");
+      values.push(normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: existing.effort || "medium" }));
     }
 
     if (fields.length > 0) {

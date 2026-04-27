@@ -97,7 +97,7 @@ export async function generateOpenAIResponse(systemPrompt, options = {}) {
       modelSettings: {
         maxTokens: options.maxTokens || 16384,
         store: false,
-        ...(options.effort && options.effort !== "low" ? { reasoning: { effort: options.effort === "max" ? "xhigh" : options.effort } } : {}),
+        ...(options.effort ? { reasoning: { effort: options.effort } } : {}),
       },
     });
 

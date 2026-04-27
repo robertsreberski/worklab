@@ -3,6 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
+import { normalizeReasoningEffortForModel } from "./ai.js";
 import { WORKLAB_RESULT_JSON_SCHEMA, extractWorklabResult } from "./worklab-result.js";
 
 function promptFromMessages(messages) {
@@ -189,6 +190,9 @@ export function buildCliCommand({
   permissionMode,
   maxTurns,
 }) {
+  const normalizedEffort = effort
+    ? normalizeReasoningEffortForModel({ sdk, model }, effort)
+    : null;
   if (sdk === "claude-code") {
     const args = [
       "-p",
@@ -199,7 +203,7 @@ export function buildCliCommand({
       "--append-system-prompt", systemPrompt,
       "--no-session-persistence",
     ];
-    if (effort) args.push("--effort", effort);
+    if (normalizedEffort) args.push("--effort", normalizedEffort);
     if (permissionMode) args.push("--permission-mode", permissionMode);
     if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) args.push("--max-turns", String(Number(maxTurns)));
     if (Array.isArray(allowedTools) && allowedTools.length) {
@@ -226,11 +230,13 @@ export function buildCliCommand({
     "--cd", cwd,
     "--ephemeral",
     "--skip-git-repo-check",
+    "--config", `service_tier=${tomlValue("fast")}`,
+    "--config", "features.fast_mode=true",
   ];
   if (permissionMode === "bypassPermissions") args.push("--dangerously-bypass-approvals-and-sandbox");
   else if (permissionMode === "acceptEdits" || permissionMode === "auto") args.push("--full-auto");
   else if (permissionMode === "plan") args.push("--sandbox", "read-only");
-  if (effort) args.push("--config", `model_reasoning_effort=${effort}`);
+  if (normalizedEffort) args.push("--config", `model_reasoning_effort=${normalizedEffort}`);
   if (hasEntries(mcpServers)) args.push(...codexMcpConfigArgs(mcpServers));
   args.push([systemPrompt, prompt].filter((part) => String(part || "").trim()).join("\n\n"));
   return { command: "codex", args, cwd };

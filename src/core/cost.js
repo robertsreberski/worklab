@@ -2,6 +2,7 @@ const PRICING = {
   "claude-haiku-4-5-20251001": { input: 1.0, cachedInput: 0.1, output: 5.0 },
   "claude-sonnet-4-6": { input: 3.0, cachedInput: 0.3, output: 15.0 },
   "claude-opus-4-7": { input: 5.0, cachedInput: 0.5, output: 25.0 },
+  "gpt-5.5": { input: 5.0, cachedInput: 0.5, output: 30.0 },
   "gpt-5.4-nano": { input: 0.2, cachedInput: 0.02, output: 1.25 },
   "gpt-5.4-mini": { input: 0.75, cachedInput: 0.075, output: 4.5 },
   "gpt-5.4": { input: 2.5, cachedInput: 0.25, output: 15.0 },

@@ -14,9 +14,9 @@ describe("CLI provider adapters", () => {
       sdk: "claude-code",
       model: "claude-sonnet-4-6",
     });
-    expect(parseModelReference("codex:gpt-5.4")).toMatchObject({
+    expect(parseModelReference("codex:gpt-5.5")).toMatchObject({
       sdk: "codex",
-      model: "gpt-5.4",
+      model: "gpt-5.5",
     });
   });
 
@@ -77,7 +77,7 @@ describe("CLI provider adapters", () => {
   it("generates Codex exec JSON command with schema, cwd, and effort", () => {
     const cmd = buildCliCommand({
       sdk: "codex",
-      model: "gpt-5.4",
+      model: "gpt-5.5",
       effort: "high",
       cwd: "/repo",
       schemaPath: "/tmp/schema.json",
@@ -90,10 +90,12 @@ describe("CLI provider adapters", () => {
       "exec",
       "--json",
       "--output-schema", "/tmp/schema.json",
-      "--model", "gpt-5.4",
+      "--model", "gpt-5.5",
       "--cd", "/repo",
       "--ephemeral",
       "--skip-git-repo-check",
+      "--config", "service_tier=\"fast\"",
+      "--config", "features.fast_mode=true",
       "--config", "model_reasoning_effort=high",
     ]));
     expect(cmd.args.at(-1)).toBe("system\n\ndo work");
@@ -102,7 +104,7 @@ describe("CLI provider adapters", () => {
   it("maps Codex permissions and MCP servers to exec flags/config overrides", () => {
     const cmd = buildCliCommand({
       sdk: "codex",
-      model: "gpt-5.4",
+      model: "gpt-5.5",
       effort: "medium",
       cwd: "/repo",
       schemaPath: "/tmp/schema.json",
@@ -113,12 +115,28 @@ describe("CLI provider adapters", () => {
     });
     expect(cmd.args).toEqual(expect.arrayContaining([
       "--dangerously-bypass-approvals-and-sandbox",
+      "--config", "service_tier=\"fast\"",
+      "--config", "features.fast_mode=true",
       "--config", "mcp_servers.worklab.command=\"/bin/sh\"",
       "--config", "mcp_servers.worklab.args=[\"-lc\", \"node server.js\"]",
       "--config", "mcp_servers.worklab.env.WORKLAB_RUN_ID=\"run_1\"",
       "--config", "mcp_servers.worklab.enabled=true",
     ]));
     expect(cmd.args.at(-1)).toBe("system\n\ndo work");
+  });
+
+  it("normalizes stale max effort before passing it to Codex", () => {
+    const cmd = buildCliCommand({
+      sdk: "codex",
+      model: "gpt-5.5",
+      effort: "max",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+    });
+    expect(cmd.args).toContain("model_reasoning_effort=xhigh");
+    expect(cmd.args).not.toContain("model_reasoning_effort=max");
   });
 
   it("treats exit 0 with no CLI output as an adapter error", async () => {

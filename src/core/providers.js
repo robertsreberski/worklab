@@ -29,7 +29,7 @@ export const OPENAI_COMPAT_PROVIDER_TYPES = [
 ];
 
 const OPENAI_COMPAT_PROVIDER_TYPE_SET = new Set(OPENAI_COMPAT_PROVIDER_TYPES);
-const OPENAI_COMPAT_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+const OPENAI_COMPAT_REASONING_LEVELS = ["none", "low", "medium", "high", "xhigh"];
 const OLLAMA_EFFORT_REASONING_HINTS = ["gpt-oss"];
 const OLLAMA_EFFORT_REASONING_LEVELS = ["low", "medium", "high"];
 const OLLAMA_TOGGLE_REASONING_HINTS = ["deepseek", "qwen", "qwq", "thinking", "reasoning"];
