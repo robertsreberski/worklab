@@ -47,6 +47,21 @@ describe("buildExecuteSystemPrompt", () => {
     expect(secondIdx).toBeGreaterThan(firstIdx);
   });
 
+  it("uses agent display names for comment attribution", () => {
+    const comments = [
+      {
+        author_type: "agent",
+        author_id: "code-reviewer",
+        author: { type: "agent", id: "code-reviewer", display_name: "Code Reviewer" },
+        body: "ack",
+        created_at: 1,
+      },
+    ];
+    const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments, pinnedKb: [] });
+    expect(p).toContain("### Comment 1 (Code Reviewer)");
+    expect(p).not.toContain("agent code-reviewer");
+  });
+
   it("preserves comment bodies and includes bounded prior run history for reruns", () => {
     const prompt = buildExecuteSystemPrompt({
       agent: baseAgent,

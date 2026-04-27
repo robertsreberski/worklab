@@ -100,7 +100,12 @@ function formatComments(comments) {
   if (!comments?.length) return "";
   return comments
     .map((c, index) => {
-      const who = c.author_id ? `${c.author_type} ${c.author_id}` : c.author_type;
+      const authorType = c.author_type || c.author?.type || "system";
+      const authorId = c.author_id || c.author?.id;
+      const displayName = c.author?.display_name || c.author?.displayName || c.author_display_name;
+      const who = authorType === "agent" && displayName
+        ? displayName
+        : (authorId ? `${authorType} ${authorId}` : authorType);
       return `### Comment ${index + 1} (${who})\n\n${formatContextText(c.body || c.content || "")}`;
     })
     .join("\n\n");
