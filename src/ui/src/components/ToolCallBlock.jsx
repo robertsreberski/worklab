@@ -13,6 +13,78 @@ function inputAsText(input) {
   return rawJsonText(input);
 }
 
+function shortPath(value) {
+  return String(value || "").split(/[\\/]/).filter(Boolean).pop() || String(value || "");
+}
+
+function fileEditChanges(value) {
+  const payload = value && typeof value === "object" ? value : {};
+  return Array.isArray(payload.changes) ? payload.changes : [];
+}
+
+function lineDelta(stats = {}) {
+  const added = Number(stats.added_lines);
+  const removed = Number(stats.removed_lines);
+  if (Number.isFinite(added) || Number.isFinite(removed)) {
+    return `+${Number.isFinite(added) ? added : 0} -${Number.isFinite(removed) ? removed : 0}`;
+  }
+  const before = Number(stats.before_lines);
+  const after = Number(stats.after_lines);
+  if (Number.isFinite(before) && Number.isFinite(after)) return `${before}->${after} lines`;
+  return "";
+}
+
+export function fileEditSummary(value) {
+  const changes = fileEditChanges(value);
+  if (!changes.length) return "";
+  const summary = value?.summary || {};
+  const added = Number(summary.added_lines);
+  const removed = Number(summary.removed_lines);
+  if (changes.length > 1) {
+    const delta = Number.isFinite(added) || Number.isFinite(removed)
+      ? ` (+${Number.isFinite(added) ? added : 0} -${Number.isFinite(removed) ? removed : 0})`
+      : "";
+    return `${changes.length} files${delta}`;
+  }
+  const change = changes[0];
+  const delta = lineDelta(change?.line_stats);
+  return `${change?.kind || "change"} ${shortPath(change?.path || "")}${delta ? ` (${delta})` : ""}`.trim();
+}
+
+function FileEditResult({ value }) {
+  const changes = fileEditChanges(value);
+  const summary = fileEditSummary(value);
+  const status = value?.status || "";
+  return (
+    <div class="file-edit-result">
+      <div class="file-edit-head">
+        <strong>File edit</strong>
+        {status && <span class="file-edit-status">{status}</span>}
+        {summary && <span class="file-edit-summary">{summary}</span>}
+      </div>
+      {changes.length ? (
+        <ul class="file-edit-list">
+          {changes.map((change, index) => {
+            const delta = lineDelta(change?.line_stats);
+            return (
+              <li key={`${change?.path || "change"}-${index}`}>
+                <span class="file-edit-kind">{change?.kind || "change"}</span>
+                <code title={change?.path || ""}>{shortPath(change?.path || "")}</code>
+                {delta && <span class="file-edit-delta">{delta}</span>}
+                {change?.line_stats?.unavailable_reason && (
+                  <span class="file-edit-muted">{change.line_stats.unavailable_reason}</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <div class="tool-call-missing-note">No file details were captured.</div>
+      )}
+    </div>
+  );
+}
+
 async function writeClipboard(text) {
   try { await navigator.clipboard.writeText(text); } catch { /* best-effort */ }
 }
@@ -48,7 +120,10 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
   const inputText = inputAsText(toolUse?.input);
   const outputIsEmpty = outputText.trim().length === 0;
-  const glyphName = toolUse?.name === "file_edit" ? "file-text" : "terminal";
+  const isFileEdit = toolUse?.name === "file_edit";
+  const fileSummary = isFileEdit ? fileEditSummary(rawOutput ?? toolUse?.input) : "";
+  const glyphName = isFileEdit ? "file-text" : "terminal";
+  const label = isFileEdit && fileSummary ? `file_edit · ${fileSummary}` : toolUse?.name || "unknown";
 
   let statusIcon;
   let stateLabel;
@@ -93,7 +168,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
         <span class="tool-call-name chat-tool-name">
           {statusIcon}
           <Icon name={glyphName} size={13} class="tool-call-glyph chat-tool-glyph" />
-          <span class="tool-call-label chat-tool-label">{toolUse?.name || "unknown"}</span>
+          <span class="tool-call-label chat-tool-label">{label}</span>
         </span>
         <Icon name="chevron-down" size={14} class={`tool-call-chevron chat-tool-chevron ${expanded ? "open" : ""}`} />
       </button>
@@ -124,6 +199,8 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
               )}
               {outputIsEmpty && !isError ? (
                 <div class="tool-call-missing-note">Tool returned empty output.</div>
+              ) : isFileEdit && rawOutput && !isError ? (
+                <FileEditResult value={rawOutput} />
               ) : (
                 <StructuredValue value={rawOutput} hideRaw class={`tool-call-structured ${isError ? "tool-call-error" : ""}`} />
               )}

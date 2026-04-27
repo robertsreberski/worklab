@@ -34,6 +34,12 @@ function worklabValue(value) {
   return null;
 }
 
+function isErrorStatus(status) {
+  if (typeof status === "number") return status >= 400;
+  if (typeof status !== "string") return false;
+  return /(?:error|fail|invalid|denied|unauthori[sz]ed|forbidden|timeout)/i.test(status);
+}
+
 function errorValue(value) {
   if (!isObject(value)) return null;
   for (const key of ["message", "error"]) {
@@ -61,8 +67,8 @@ function errorValue(value) {
     err.code ||
     err.message ||
     err.param ||
-    err.status ||
-    value.status ||
+    isErrorStatus(err.status) ||
+    isErrorStatus(value.status) ||
     value.type === "error" ||
     /(?:error|fail)/i.test(String(value.type || ""))
   ) {
