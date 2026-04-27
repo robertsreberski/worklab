@@ -429,6 +429,7 @@ export function createTaskWatcher({
           warnings.push(`Subtask "${subtask.title.trim()}": suggested agent "${subtask.suggested_agent}" not found or disabled — falling back to "${agentName || "(none)"}".`);
         }
         const childId = newTaskId();
+        const taskKey = nextTaskKey(db);
         const required = subtask.required === false ? 0 : 1;
         db.prepare(`
           INSERT INTO tasks
@@ -438,7 +439,7 @@ export function createTaskWatcher({
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
-          nextTaskKey(db),
+          taskKey,
           rootTaskId,
           parentTask.id,
           runId,
@@ -459,7 +460,7 @@ export function createTaskWatcher({
             (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
           VALUES (?, ?, 'subtask', ?, ?, ?)
         `).run(parentTask.id, childId, required, runId, now);
-        created.push({ id: childId, required: !!required, agentName });
+        created.push({ id: childId, taskKey, title: subtask.title.trim(), required: !!required, agentName });
         byTitle.set(subtask.title.trim(), childId);
       }
 
@@ -490,6 +491,10 @@ export function createTaskWatcher({
 
     if (warnings.length > 0) {
       postSystemComment(parentTask.id, `Delegation warnings:\n- ${warnings.join("\n- ")}`);
+    }
+    if (created.length > 0) {
+      const lines = created.map((child) => `- ${child.taskKey}: ${child.title} (${child.agentName || "unassigned"}${child.required ? ", required" : ", optional"})`);
+      postSystemComment(parentTask.id, `Delegated ${created.length} subtask${created.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
     }
 
     for (const child of created) broker.broadcast("global", { type: "task_created", id: child.id });

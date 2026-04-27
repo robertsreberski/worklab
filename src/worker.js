@@ -9,7 +9,7 @@ import { WORKLAB_BUILTIN_TOOLS, resolveModel, generateResponse } from "./core/ai
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
-import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult } from "./core/worklab-result.js";
+import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
 import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "./core/agent-allowlists.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -18,9 +18,15 @@ function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
 }
 
+function validateRuntimeResult(result) {
+  const validated = validateWorklabResultSemantics(result);
+  if (validated.ok) return { result, error: null, fatal: false };
+  return { result, error: validated.error, fatal: true };
+}
+
 function resultFromTextOrFallback(text, fallback) {
   const parsed = parseWorklabResultFromText(text, fallback);
-  if (parsed.ok) return { result: parsed.result, error: null };
+  if (parsed.ok) return validateRuntimeResult(parsed.result);
   return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
 }
 
@@ -29,18 +35,25 @@ function resultFromResponseOrFallback(response, fallback) {
     const normalized = normalizeWorklabResult(response.worklabResult, fallback);
     if (normalized.ok) {
       return {
-        result: normalized.result,
-        error: null,
+        ...validateRuntimeResult(normalized.result),
         source: response.structuredResultSource || "structured",
       };
     }
+    return { result: null, error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
   }
   return resultFromTextOrFallback(response?.text || "", fallback);
 }
 
 function reviewResultFromText(text) {
   const parsed = parseWorklabResultFromText(text, { stage: "review" });
-  if (parsed.ok) return { result: parsed.result, verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null, notes: parsed.result.details || parsed.result.summary || "", error: null };
+  if (parsed.ok) {
+    const validated = validateRuntimeResult(parsed.result);
+    return {
+      ...validated,
+      verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null,
+      notes: parsed.result.details || parsed.result.summary || "",
+    };
+  }
 
   const { verdict, notes } = parseVerdict(text);
   if (verdict === "APPROVE") {
@@ -68,13 +81,13 @@ function reviewResultFromResponse(response) {
     if (normalized.ok) {
       const result = normalized.result;
       return {
-        result,
+        ...validateRuntimeResult(result),
         verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
         notes: result.details || result.summary || "",
-        error: null,
         source: response.structuredResultSource || "structured",
       };
     }
+    return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
   }
   return reviewResultFromText(response?.text || "");
 }
@@ -379,7 +392,14 @@ async function main() {
         summary: result.text ? String(result.text).trim().slice(0, 500) : "Run completed",
       });
       if (parsedResult.error) {
-        emit({ type: "runtime_warning", warning_kind: "unstructured_result_fallback", message: parsedResult.error });
+        emit({
+          type: "runtime_warning",
+          warning_kind: parsedResult.fatal ? "worklab_result_validation" : "unstructured_result_fallback",
+          message: parsedResult.error,
+        });
+      }
+      if (parsedResult.fatal) {
+        emit({ type: "worklab_result_error", message: parsedResult.error || "Invalid worklab_result" });
       }
       emit({
         type: "final",
@@ -450,10 +470,14 @@ async function main() {
       }
       const parsedReview = reviewResultFromResponse(result);
       if (parsedReview.error) {
-        emit({ type: "runtime_warning", warning_kind: "review_result_parse", message: parsedReview.error });
+        emit({
+          type: "runtime_warning",
+          warning_kind: parsedReview.fatal ? "worklab_result_validation" : "review_result_parse",
+          message: parsedReview.error,
+        });
       }
-      if (!parsedReview.result) {
-        emit({ type: "worklab_result_error", message: "Reviewer did not return a valid worklab_result or verdict" });
+      if (parsedReview.fatal || !parsedReview.result) {
+        emit({ type: "worklab_result_error", message: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict" });
       }
       emit({
         type: "final",

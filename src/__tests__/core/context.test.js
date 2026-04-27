@@ -128,6 +128,10 @@ describe("buildExecuteSystemPrompt", () => {
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
+    expect(p).toContain("Emit the Worklab JSON object exactly once");
+    expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
+    expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
+    expect(p).toContain("For \"advance\", \"approve\", and \"reject\", keep both `pending_actions` and `subtasks` empty.");
     expect(p.trim().endsWith('and "block" when you cannot continue.')).toBe(true);
   });
 

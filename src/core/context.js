@@ -3,6 +3,13 @@ import { stripWorklabResultJson } from "./worklab-result.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
+const RESULT_FIELD_RULES = `Structured result rules:
+- Emit the Worklab JSON object exactly once, only when you are finished. During the run, write normal prose progress or journal entries; do not emit interim \`worklab.v2\` JSON.
+- Put plans, execution steps, and completed-work notes in \`details\` / the plan body, not in \`pending_actions\`.
+- Use \`pending_actions\` only with decision "pause", for exact actions the human must take before the task can continue.
+- Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
+- For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
+
 const PLAN_DIRECTIVE = `Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Do not do implementation work during planning.
 
 Return a structured Worklab result as JSON when you finish:
@@ -196,12 +203,14 @@ function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, p
 
 export function buildPlanSystemPrompt(input) {
   const parts = buildBasePrompt(input);
+  parts.push(RESULT_FIELD_RULES);
   parts.push(PLAN_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }
 
 export function buildExecuteSystemPrompt(input) {
   const parts = buildBasePrompt(input);
+  parts.push(RESULT_FIELD_RULES);
   parts.push(WORK_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }
@@ -217,6 +226,7 @@ export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTa
   parts.push(section("Recent journal", journalTail || ""));
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(formatWorkOutput(execution || {}));
+  parts.push(RESULT_FIELD_RULES);
   parts.push(REVIEW_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }
