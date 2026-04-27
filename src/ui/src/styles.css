@@ -3641,7 +3641,7 @@ select,
 .task-edit-body {
   flex: 1;
   overflow: auto;
-  padding: var(--sp-8) var(--sp-6) var(--sp-12);
+  padding: var(--sp-6) var(--sp-6) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 .task-edit-toolbar {
   display: inline-flex;
@@ -3659,11 +3659,10 @@ select,
 /* §6.4 Two-column edit grid (matches DS prototype EditTaskPage). */
 .task-edit-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
-  gap: var(--sp-8);
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--sp-6);
   align-items: flex-start;
-  max-width: 960px;
-  margin: 0 auto;
+  width: 100%;
 }
 .task-edit-main {
   display: flex;
@@ -3673,7 +3672,7 @@ select,
 }
 .task-edit-rail {
   position: sticky;
-  top: var(--sp-8);
+  top: var(--sp-6);
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
