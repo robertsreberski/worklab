@@ -133,6 +133,32 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("at least one subtask") });
   });
 
+  it("rejects pending_actions except for pause and subtasks except for delegate", () => {
+    const advancePending = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "advance", pending_actions: ["do next"] },
+    });
+    expect(advancePending.stage).toBe("execute");
+    expect(advancePending.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("pending_actions") });
+
+    const advanceSubtask = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "advance", subtasks: [{ title: "child" }] },
+    });
+    expect(advanceSubtask.stage).toBe("execute");
+    expect(advanceSubtask.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("subtasks") });
+
+    const pauseEmpty = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "pause", pending_actions: [] },
+    });
+    expect(pauseEmpty.stage).toBe("execute");
+    expect(pauseEmpty.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("pending_action") });
+  });
+
   it("run_cancelled keeps the stage but does not write error_text or bump failure count", () => {
     const r = nextStage("execute", { type: "run_cancelled", retryStage: "execute", message: "user cancel" });
     expect(r.stage).toBe("execute");

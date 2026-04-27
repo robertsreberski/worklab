@@ -122,6 +122,19 @@ export function nextStage(currentStage, event) {
     case "run_succeeded": {
       const result = event.result || {};
       const decision = result.decision || "advance";
+      const pendingActions = Array.isArray(result.pending_actions) ? result.pending_actions.filter(Boolean) : [];
+      const subtasks = Array.isArray(result.subtasks) ? result.subtasks.filter(Boolean) : [];
+
+      if (decision !== "pause" && pendingActions.length > 0) {
+        return unchanged(current, [
+          { type: "error", message: `pending_actions can only be used with pause (got "${decision}")` },
+        ]);
+      }
+      if (decision !== "delegate" && subtasks.length > 0) {
+        return unchanged(current, [
+          { type: "error", message: `subtasks can only be used with delegate (got "${decision}")` },
+        ]);
+      }
 
       // Review-stage runs must explicitly approve or reject. "advance" is the
       // worker's parse-failure fallback; if a reviewer falls back to it we
@@ -152,7 +165,7 @@ export function nextStage(currentStage, event) {
 
       // Non-review stages: branch on decision.
       if (decision === "delegate") {
-        if (!Array.isArray(result.subtasks) || result.subtasks.length === 0) {
+        if (subtasks.length === 0) {
           return unchanged(current, [
             { type: "error", message: "delegate requires at least one subtask" },
           ]);
@@ -162,17 +175,22 @@ export function nextStage(currentStage, event) {
           ...RESET_USER_ARRAYS,
           { type: "reset_failure_count" },
           { type: "set_stage_reason", reason: "waiting for delegated subtasks" },
-          { type: "create_subtasks", subtasks: result.subtasks },
+          { type: "create_subtasks", subtasks },
         ]);
       }
 
       if (decision === "pause") {
+        if (pendingActions.length === 0) {
+          return unchanged(current, [
+            { type: "error", message: "pause requires at least one pending_action" },
+          ]);
+        }
         return change("awaiting_user", [
           { type: "clear_error_text" },
           { type: "clear_blocking_issues" },
           { type: "reset_failure_count" },
           { type: "set_stage_reason", reason: result.summary || "awaiting user action" },
-          { type: "set_pending_actions", pendingActions: result.pending_actions || [] },
+          { type: "set_pending_actions", pendingActions },
         ]);
       }
 

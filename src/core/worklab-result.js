@@ -95,6 +95,31 @@ export function normalizeWorklabResult(value, fallback = {}) {
   return { ok: true, result: parsed.data, error: null };
 }
 
+export function validateWorklabResultSemantics(result) {
+  const value = result?.worklab_result || result;
+  if (!value || value.schema !== "worklab.v2") {
+    return { ok: false, error: "missing worklab_result" };
+  }
+  const decision = value.decision;
+  const pendingActions = Array.isArray(value.pending_actions) ? value.pending_actions.filter(Boolean) : [];
+  const subtasks = Array.isArray(value.subtasks) ? value.subtasks.filter(Boolean) : [];
+
+  if (decision !== "pause" && pendingActions.length > 0) {
+    return { ok: false, error: `pending_actions can only be used with decision "pause" (got "${decision}")` };
+  }
+  if (decision === "pause" && pendingActions.length === 0) {
+    return { ok: false, error: "pause requires at least one pending_action" };
+  }
+  if (decision !== "delegate" && subtasks.length > 0) {
+    return { ok: false, error: `subtasks can only be used with decision "delegate" (got "${decision}")` };
+  }
+  if (decision === "delegate" && subtasks.length === 0) {
+    return { ok: false, error: "delegate requires at least one subtask" };
+  }
+
+  return { ok: true, error: null };
+}
+
 export function parseWorklabResultFromText(text, fallback = {}) {
   const raw = String(text || "").trim();
   if (!raw) return { ok: false, error: "empty final text", result: null };
@@ -231,7 +256,7 @@ export function formatWorklabResultText(result) {
   return details || summary;
 }
 
-function parseStandaloneWorklabResultText(text) {
+export function parseStandaloneWorklabResultText(text) {
   const raw = String(text || "").trim();
   if (!raw) return null;
   try {

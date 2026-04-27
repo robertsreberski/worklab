@@ -5,6 +5,7 @@ import {
   normalizeWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
+  validateWorklabResultSemantics,
 } from "../../core/worklab-result.js";
 
 function collectObjectSchemas(schema) {
@@ -128,6 +129,36 @@ describe("worklab_result contract", () => {
       pending_actions: [],
       subtasks: [],
     });
+  });
+
+  it("validates runtime semantics for pending actions and subtasks", () => {
+    const base = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+
+    expect(validateWorklabResultSemantics(base).ok).toBe(true);
+    expect(validateWorklabResultSemantics({ ...base, pending_actions: ["approve"] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("pause"),
+    });
+    expect(validateWorklabResultSemantics({ ...base, subtasks: [{ title: "child" }] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("delegate"),
+    });
+    expect(validateWorklabResultSemantics({ ...base, decision: "pause", pending_actions: [] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("pending_action"),
+    });
+    expect(validateWorklabResultSemantics({ ...base, decision: "pause", pending_actions: ["confirm"] }).ok).toBe(true);
+    expect(validateWorklabResultSemantics({ ...base, decision: "delegate", subtasks: [{ title: "child" }] }).ok).toBe(true);
   });
 
   it("exports a strict JSON schema for Codex structured output", () => {

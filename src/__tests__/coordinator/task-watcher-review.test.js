@@ -255,6 +255,9 @@ describe("task-watcher v2 workflow", () => {
     expect(children[1]).toMatchObject({ title: "Optional child", required: 0 });
     const edges = db.prepare("SELECT required FROM task_edges WHERE parent_task_id = ? ORDER BY required DESC").all(taskId);
     expect(edges.map((edge) => edge.required)).toEqual([1, 0]);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'system' AND body LIKE 'Delegated %'").get(taskId);
+    expect(comment.body).toContain("Required child");
+    expect(comment.body).toContain("Optional child");
   });
 
   it("parent resumes after required child finishes while optional child failure remains a warning", async () => {
@@ -461,6 +464,40 @@ describe("task-watcher v2 workflow", () => {
     const task = db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
     expect(task.error_text).toMatch(/at least one subtask/);
+    const edges = db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(taskId);
+    expect(edges.c).toBe(0);
+  });
+
+  it("advance with pending_actions fails validation instead of treating them as a checklist", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "planned next steps",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "advance",
+        summary: "done",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: ["do follow-up work"],
+        subtasks: [],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.error_text).toMatch(/pending_actions/);
     const edges = db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(taskId);
     expect(edges.c).toBe(0);
   });
