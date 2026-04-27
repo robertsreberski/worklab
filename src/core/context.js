@@ -4,7 +4,8 @@ import { stripWorklabResultJson } from "./worklab-result.js";
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
 const RESULT_FIELD_RULES = `Structured result rules:
-- Emit the Worklab JSON object exactly once, only when you are finished. During the run, write normal prose progress or journal entries; do not emit interim \`worklab.v2\` JSON.
+- Worklab needs one final \`worklab.v2\` JSON object when the task is complete. Treat \`worklab.v2\` as final-result data, not progress output.
+- During the run, use normal prose or journal entries for progress. If a structured progress object appears before completion, keep going; the final valid result supersedes earlier structured progress.
 - Put the human-facing final comment in \`final_text\`. For structured-only runtimes, this is the text Worklab will post as the final comment.
 - Keep \`summary\` and \`details\` as structured metadata for Worklab, not as the main user-visible answer.
 - Put plans, execution steps, and completed-work notes in \`details\` / the plan body, not in \`pending_actions\`.
