@@ -84,16 +84,22 @@ describe("explicit model references", () => {
     });
   });
 
-  it("advertises only GPT-5.5 built-in OpenAI/Codex models", () => {
+  it("advertises GPT-5.5 with GPT-5.4 fallback variants", () => {
     const values = getBuiltinModels().map((model) => model.value);
 
     expect(values).toContain("openai:gpt-5.5");
+    expect(values).toContain("openai:gpt-5.4");
+    expect(values).toContain("openai:gpt-5.4-mini");
+    expect(values).toContain("openai:gpt-5.4-nano");
     expect(values).toContain("codex:gpt-5.5");
-    expect(values.some((value) => value.includes("gpt-5.4"))).toBe(false);
+    expect(values).toContain("codex:gpt-5.4");
+    expect(values).toContain("codex:gpt-5.4-mini");
+    expect(values).not.toContain("codex:gpt-5.4-nano");
   });
 
   it("advertises per-model reasoning effort levels", () => {
     expect(getBuiltinModelByReference("openai:gpt-5.5").capabilities.reasoning_levels).toEqual(["none", "low", "medium", "high", "xhigh"]);
+    expect(getBuiltinModelByReference("openai:gpt-5.4-nano").capabilities.reasoning_levels).toEqual(["none", "low", "medium", "high", "xhigh"]);
     expect(getBuiltinModelByReference("claude:claude-sonnet-4-6").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "max"]);
     expect(getBuiltinModelByReference("claude:claude-opus-4-7").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
   });
