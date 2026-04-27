@@ -28,7 +28,7 @@ import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
-const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
+const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 const BUILTIN_TOOL_DESCRIPTIONS = {
   Read: "Read a local file with line numbers.",
@@ -74,12 +74,14 @@ function getReasoningLevels(option) {
 function normalizeEffort(option, effort) {
   const mode = getReasoningMode(option);
   if (mode === "none") return "low";
-  if (mode === "toggle") return effort && effort !== "low" ? "medium" : "low";
+  if (mode === "toggle") return effort && effort !== "none" && effort !== "low" ? "medium" : "low";
   const supported = getReasoningLevels(option);
   if (!supported.length) return "low";
   if (!effort) return supported.includes("medium") ? "medium" : supported[0];
   if (supported.includes(effort)) return effort;
+  if (effort === "max" && supported.includes("xhigh")) return "xhigh";
   if (effort === "max" && supported.includes("high")) return "high";
+  if (effort === "none" && supported.includes("low")) return "low";
   return supported[supported.length - 1];
 }
 function supportedBuiltinTools(option) {
