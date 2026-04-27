@@ -110,7 +110,7 @@ describe("spawnWorker", () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
-    const script = { events: [{ type: "error", message: "boom" }], exitCode: 1 };
+    const script = { events: [{ type: "error", message: "boom", failureKind: "provider_unavailable" }], exitCode: 1 };
     const handle = spawnWorker({
       binary: fakeBinary,
       args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
@@ -120,8 +120,11 @@ describe("spawnWorker", () => {
     const result = await handle.done;
     expect(result.exitCode).toBe(1);
     expect(result.error).toBe("boom");
+    expect(result.failureKind).toBe("provider_unavailable");
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log.status).toBe("error");
+    const run = db.prepare("SELECT failure_kind, error_text FROM task_runs WHERE id = ?").get(runId);
+    expect(run).toMatchObject({ failure_kind: "provider_unavailable", error_text: "boom" });
   });
 
   it("stores full raw events while truncating large tool results in display logs", async () => {

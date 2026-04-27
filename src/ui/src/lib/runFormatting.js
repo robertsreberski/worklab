@@ -49,11 +49,30 @@ function cleanText(value) {
 
 export function decisionTone(decision) {
   if (decision === "advance" || decision === "approve") return "ok";
-  if (decision === "reject" || decision === "block") return "error";
+  if (decision === "reject" || decision === "block" || decision === "failed" || decision === "error" || decision === "abandoned") return "error";
+  return "";
+}
+
+function failureDecision(status) {
+  if (status === "error") return "failed";
+  if (["failed", "cancelled", "abandoned"].includes(status)) return status;
   return "";
 }
 
 export function runResultPreview(run = {}) {
+  const processStatus = cleanText(run?.process_status) || cleanText(run?.status);
+  const failedDecision = failureDecision(processStatus);
+  if (failedDecision) {
+    const summary = cleanText(run?.error_text) || cleanText(run?.failure_kind) || (failedDecision === "cancelled" ? "Run cancelled" : "Run failed");
+    return {
+      decision: failedDecision,
+      summary,
+      details: "",
+      tone: decisionTone(failedDecision),
+      hasResult: true,
+    };
+  }
+
   const result = run?.result || {};
   const decision = cleanText(result.decision) || cleanText(run?.decision);
   const summary = cleanText(result.summary) || cleanText(run?.summary);

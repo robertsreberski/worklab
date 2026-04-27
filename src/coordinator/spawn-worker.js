@@ -106,6 +106,7 @@ export function spawnWorker({
   let finalPayload = null;
   let errorMessage = null;
   let resultError = null;
+  let explicitFailureKind = null;
   let exitCode = null;
   let cancelRequested = false;
   let sigkillTimer = null;
@@ -230,8 +231,14 @@ export function spawnWorker({
     }
     const { rawEvent } = emitEvent(parsed);
     if (rawEvent.type === "final") finalPayload = rawEvent;
-    if (rawEvent.type === "error") errorMessage = rawEvent.message;
-    if (rawEvent.type === "worklab_result_error") resultError = rawEvent.message || "invalid worklab_result";
+    if (rawEvent.type === "error") {
+      errorMessage = rawEvent.message;
+      explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
+    }
+    if (rawEvent.type === "worklab_result_error") {
+      resultError = rawEvent.message || "invalid worklab_result";
+      explicitFailureKind = "invalid_result";
+    }
   });
 
   child.stderr.on("data", (chunk) => {
@@ -282,7 +289,7 @@ export function spawnWorker({
       else if (cancelRequested || code === 130) processStatus = "cancelled";
       else if (code !== 0 || resultError) processStatus = "failed";
       const status = processStatusToLegacyStatus(processStatus);
-      const failureKind = timedOut ? "timeout" : resultError ? "invalid_result" : (processStatus === "failed" ? "spawn" : null);
+      const failureKind = timedOut ? "timeout" : resultError ? "invalid_result" : (processStatus === "failed" ? explicitFailureKind || "spawn" : null);
       const result = finalPayload?.worklab_result || null;
 
       db.prepare(
@@ -336,6 +343,7 @@ export function spawnWorker({
         usage: finalPayload?.usage || {},
         error: errorMessage || resultError,
         resultError,
+        failureKind,
         status,
         processStatus,
       });

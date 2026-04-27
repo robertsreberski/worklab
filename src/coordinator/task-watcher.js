@@ -49,6 +49,7 @@ function buildFallbackResult({ stage, mode, res }) {
     }
     return null;
   }
+  if (!String(res.finalText || "").trim()) return null;
   return synthesizeWorklabResult({
     stage,
     decision: "advance",

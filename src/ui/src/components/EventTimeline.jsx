@@ -39,6 +39,16 @@ function formatFinalText(ev) {
   return ev.text || "Completed";
 }
 
+function providerResultErrorMessage(ev) {
+  const subtype = typeof ev?.subtype === "string" ? ev.subtype : "";
+  const hasErrors = Array.isArray(ev?.errors) && ev.errors.length > 0;
+  if (!ev?.is_error && !subtype.startsWith("error_") && !hasErrors && !ev?.error) return "";
+  if (subtype === "error_max_turns") return "Stopped before final output: max turns reached";
+  const label = subtype ? subtype.replace(/^error_/, "").replace(/_/g, " ") : "provider error";
+  const detail = typeof ev?.error === "string" ? ev.error : ev?.error?.message;
+  return detail ? `${label}: ${detail}` : label;
+}
+
 const HIDDEN_CLI_EVENT_TYPES = new Set([
   "hook_started",
   "hook_response",
@@ -70,6 +80,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (!ev) return null;
   if (ev.type === "sdk_event") return normalizeWorklabEvent(ev.event, { compactFinal });
   if (ev.type === "worklab_result_candidate") return null;
+  if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
   if (ev.type === "cli_event") return normalizeCliEvent(ev);
   if (ev.type === "final") {
     const usage = formatFinalUsage(ev);
@@ -93,6 +104,8 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
     };
   }
   if (ev.type === "result") {
+    const resultError = providerResultErrorMessage(ev);
+    if (resultError) return { type: "error", message: resultError };
     const usage = ev.usage || {};
     const parts = [
       usage.input_tokens != null ? `in ${usage.input_tokens}` : null,
