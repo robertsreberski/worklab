@@ -35,6 +35,16 @@ export function formatMode(mode) {
   return String(mode).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+export function formatRunPhase(run = {}) {
+  return formatMode(run?.stage || run?.mode);
+}
+
+export function formatRunSummaryTitle(run = {}, startedAtLabel = "") {
+  const phase = formatRunPhase(run);
+  const when = String(startedAtLabel || "").trim();
+  return [phase, when].filter(Boolean).join(" · ");
+}
+
 export function runTokenTotal(log = {}) {
   const input = Number(log.input_tokens);
   const output = Number(log.output_tokens);

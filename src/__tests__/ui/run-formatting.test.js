@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatCost, formatDuration, formatMode, formatTokens, runMetricItems } from "../../ui/src/lib/runFormatting.js";
+import {
+  formatCost,
+  formatDuration,
+  formatMode,
+  formatRunPhase,
+  formatRunSummaryTitle,
+  formatTokens,
+  runMetricItems,
+} from "../../ui/src/lib/runFormatting.js";
 
 describe("run formatting helpers", () => {
   it("formats common run values consistently", () => {
@@ -26,5 +34,16 @@ describe("run formatting helpers", () => {
       ["Tokens", "2.0k"],
       ["Cost", "$0.0123"],
     ]);
+  });
+
+  it("builds run summary titles from phase and relative start time", () => {
+    expect(formatRunSummaryTitle({ stage: "execute", mode: "review", agent_name: "mickey" }, "7m")).toBe("Execute · 7m");
+    expect(formatRunSummaryTitle({ mode: "review", agent_name: "mickey" }, "now")).toBe("Review · now");
+    expect(formatRunSummaryTitle({ stage: "plan" })).toBe("Plan");
+  });
+
+  it("does not include agent names in run summary titles", () => {
+    expect(formatRunPhase({ stage: "execute", mode: "execute", agent_name: "Mickey Mouse" })).toBe("Execute");
+    expect(formatRunSummaryTitle({ stage: "execute", agent_name: "Mickey Mouse" }, "7m")).not.toContain("Mickey Mouse");
   });
 });
