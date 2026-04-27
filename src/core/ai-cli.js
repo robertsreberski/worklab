@@ -19,8 +19,59 @@ function promptFromMessages(messages) {
     : String(messages || "");
 }
 
+const CODEX_REASONING_ITEM_EVENTS = new Set(["item.started", "item.updated", "item.completed"]);
+const CODEX_REASONING_EVENT_TYPES = new Set([
+  "agent_reasoning",
+  "agent_reasoning_delta",
+  "reasoning_content_delta",
+  "reasoning_summary_part_added",
+  "reasoning_summary_text_delta",
+]);
+const CODEX_RAW_REASONING_EVENT_TYPES = new Set([
+  "agent_reasoning_raw_content",
+  "agent_reasoning_raw_content_delta",
+  "reasoning_raw_content",
+  "reasoning_raw_content_delta",
+]);
+
+function summaryTextFromValue(value) {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(summaryTextFromValue).filter(Boolean).join("");
+  if (!value || typeof value !== "object") return "";
+  if (value.type && !["summary_text", "reasoning_summary_text"].includes(value.type)) return "";
+  return summaryTextFromValue(value.text ?? value.delta ?? value.summary ?? value.content);
+}
+
+function codexReasoningSummaryText(raw) {
+  const item = raw?.item || {};
+  return [
+    raw?.delta,
+    raw?.text,
+    raw?.summary,
+    raw?.content,
+    item.delta,
+    item.text,
+    item.summary,
+    item.summaries,
+  ].map(summaryTextFromValue).find((text) => text.trim()) || "";
+}
+
+function isCodexReasoningEvent(raw) {
+  if (!raw || typeof raw !== "object") return false;
+  return CODEX_REASONING_EVENT_TYPES.has(raw.type)
+    || CODEX_RAW_REASONING_EVENT_TYPES.has(raw.type)
+    || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning");
+}
+
 function normalizeCliEvent(raw) {
   if (!raw || typeof raw !== "object") return { type: "cli_event", raw };
+  if (CODEX_RAW_REASONING_EVENT_TYPES.has(raw.type)) return null;
+  if (CODEX_REASONING_EVENT_TYPES.has(raw.type) || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning")) {
+    const text = codexReasoningSummaryText(raw).trim();
+    return text
+      ? { type: "assistant", message: { content: [{ type: "thinking", text }] } }
+      : null;
+  }
   if (raw.type === "assistant" || raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
   if (raw.type === "message" && raw.message) return { type: "assistant", message: raw.message };
   if (raw.type === "item.completed" && raw.item?.type === "agent_message" && typeof raw.item.text === "string") {
@@ -292,6 +343,7 @@ export function buildCliCommand({
   else if (permissionMode === "acceptEdits" || permissionMode === "auto") args.push("--full-auto");
   else if (permissionMode === "plan") args.push("--sandbox", "read-only");
   if (normalizedEffort) args.push("--config", `model_reasoning_effort=${normalizedEffort}`);
+  if (normalizedEffort !== "none") args.push("--config", `model_reasoning_summary=${tomlValue("auto")}`);
   if (hasEntries(mcpServers)) args.push(...codexMcpConfigArgs(mcpServers));
   args.push([systemPrompt, prompt].filter((part) => String(part || "").trim()).join("\n\n"));
   return { command: "codex", args, cwd };
@@ -357,16 +409,18 @@ export async function generateCliResponse(systemPrompt, options = {}) {
         return;
       }
       const ev = normalizeCliEvent(raw);
-      events.push(ev);
-      options.onEvent?.(ev);
-      for (const candidate of [raw, ev]) {
+      if (ev) {
+        events.push(ev);
+        options.onEvent?.(ev);
+      }
+      for (const candidate of ev ? [raw, ev] : [raw]) {
         const structured = extractWorklabResult(candidate);
         if (structured.ok) {
           worklabResult = structured.result;
           structuredResultSource = inferStructuredResultSource(raw);
         }
       }
-      if (ev?.type !== "worklab_result_candidate") {
+      if (ev?.type !== "worklab_result_candidate" && !isCodexReasoningEvent(raw)) {
         const text = textFromEvent(raw);
         pushUniqueText(texts, text);
       }

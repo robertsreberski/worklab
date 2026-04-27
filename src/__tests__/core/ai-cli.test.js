@@ -100,6 +100,7 @@ describe("CLI provider adapters", () => {
       "--config", "service_tier=\"fast\"",
       "--config", "features.fast_mode=true",
       "--config", "model_reasoning_effort=high",
+      "--config", "model_reasoning_summary=\"auto\"",
     ]));
     expect(cmd.args.at(-1)).toBe("system\n\ndo work");
   });
@@ -140,6 +141,20 @@ describe("CLI provider adapters", () => {
     });
     expect(cmd.args).toContain("model_reasoning_effort=xhigh");
     expect(cmd.args).not.toContain("model_reasoning_effort=max");
+  });
+
+  it("does not request Codex reasoning summaries when effort is disabled", () => {
+    const cmd = buildCliCommand({
+      sdk: "codex",
+      model: "gpt-5.5",
+      effort: "none",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+    });
+    expect(cmd.args).toContain("model_reasoning_effort=none");
+    expect(cmd.args).not.toContain("model_reasoning_summary=\"auto\"");
   });
 
   it("treats exit 0 with no CLI output as an adapter error", async () => {
@@ -587,6 +602,97 @@ exit 0
         worklab_result: structured,
       });
       expect(result.text).toBe("ok");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("normalizes Codex reasoning summary events without using them as final text", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "done",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const events = [
+      {
+        type: "item.updated",
+        item: {
+          id: "reason_1",
+          type: "reasoning",
+          summary: [{ type: "summary_text", text: "Inspecting the task. " }],
+        },
+      },
+      { type: "agent_reasoning_delta", delta: "Checking command output." },
+      { type: "agent_reasoning_raw_content_delta", delta: "hidden raw chain-of-thought" },
+      {
+        type: "item.started",
+        item: {
+          id: "cmd_1",
+          type: "command_execution",
+          command: "pwd",
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          id: "cmd_1",
+          type: "command_execution",
+          command: "pwd",
+          aggregated_output: "/repo\n",
+          exit_code: 0,
+        },
+      },
+      { type: "item.completed", item: { id: "item_msg", type: "agent_message", text: JSON.stringify(structured) } },
+    ];
+    writeFileSync(fakeCodex, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.events).toEqual([
+        {
+          type: "assistant",
+          message: { content: [{ type: "thinking", text: "Inspecting the task." }] },
+        },
+        {
+          type: "assistant",
+          message: { content: [{ type: "thinking", text: "Checking command output." }] },
+        },
+        expect.objectContaining({
+          type: "assistant",
+          message: {
+            content: [expect.objectContaining({ type: "tool_use", id: "cmd_1", name: "command_execution" })],
+          },
+        }),
+        expect.objectContaining({
+          type: "user",
+          message: {
+            content: [expect.objectContaining({ type: "tool_result", tool_use_id: "cmd_1", is_error: false })],
+          },
+        }),
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: structured }),
+      ]);
+      expect(result.text).toBe("ok\n\ndone");
+      expect(result.text).not.toContain("Inspecting the task");
+      expect(result.text).not.toContain("hidden raw");
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
