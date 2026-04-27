@@ -2807,18 +2807,16 @@ select,
   gap: 0;
   padding: 0;
   background: transparent;
-  border: 0;
-  border-radius: 0;
-  overflow: visible;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
   box-shadow: none;
   transition: border-color var(--dur-snap) var(--ease-snap), background var(--dur-snap) var(--ease-snap);
 }
 .run-card:hover { background: transparent; }
 .activity-feed .run-card:not(.expanded) {
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 38%, transparent), color-mix(in srgb, var(--surface-sunken) 18%, transparent));
-  border: 1px solid color-mix(in srgb, var(--border) 46%, transparent);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  border-color: transparent;
 }
 .activity-feed .run-card:not(.expanded):hover {
   background: linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 34%, transparent), color-mix(in srgb, var(--surface) 20%, transparent));
@@ -2826,9 +2824,7 @@ select,
 }
 .run-card.expanded {
   background: color-mix(in srgb, var(--surface) 52%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border) 56%, transparent);
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  border-color: color-mix(in srgb, var(--border) 56%, transparent);
 }
 .run-card.highlighted {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
@@ -2844,7 +2840,7 @@ select,
 .activity-feed .run-card:not(.expanded) .run-summary {
   padding: var(--sp-3) var(--sp-3);
 }
-.run-card.expanded .run-summary { padding: var(--sp-3) var(--sp-4); }
+.run-card.expanded .run-summary { padding: var(--sp-3); }
 .run-summary-main {
   min-width: 0;
   display: flex;
