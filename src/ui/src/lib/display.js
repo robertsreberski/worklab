@@ -88,8 +88,8 @@ export function taskRouteId(task) {
   return encodeURIComponent(String(task || ""));
 }
 
-// §5.3 — true when the task's most recent run errored. Used by Commander
-// (to put the row in the Blocked group) and TaskDetail (error chip on hero).
+// §5.3 — true when the task's most recent run errored. Used for warning chips;
+// workflow stage display and grouping come from task.stage.
 export function hasRunError(task) {
   if (!task) return false;
   if (task.last_run?.status === "error" || task.last_run?.process_status === "failed" || task.last_run?.process_status === "abandoned") return true;
