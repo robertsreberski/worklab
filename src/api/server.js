@@ -15,7 +15,7 @@ import { registerSearchRoutes } from "./routes-search.js";
 import { registerAutomationRoutes } from "./routes-automations.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -26,7 +26,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
   registerTaskRoutes(app, { db, broker, logger, watcher });
-  registerSettingsRoutes(app, { db, broker, logger, events });
+  registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker, dataDir });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });
