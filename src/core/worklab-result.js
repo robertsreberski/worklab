@@ -284,12 +284,17 @@ export function stripWorklabResultJson(text) {
   if (!raw) return "";
   const standalone = parseStandaloneWorklabResultText(raw);
   if (standalone) return formatWorklabResultText(standalone);
-  return raw
+  let cleaned = raw
     .replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, body) => {
       const results = parseWorklabResultsFromText(body);
-      return results.length > 0 ? formatWorklabResultText(results[results.length - 1]) : match;
+      return results.length > 0 ? "" : match;
     })
     .trim();
+  for (const candidate of extractJsonObjectStrings(cleaned)) {
+    const results = parseWorklabResultsFromText(candidate);
+    if (results.length > 0) cleaned = cleaned.replace(candidate, "");
+  }
+  return cleaned.trim();
 }
 
 export function synthesizeWorklabResult({ stage = "execute", decision = "advance", summary = "", details = "" } = {}) {
