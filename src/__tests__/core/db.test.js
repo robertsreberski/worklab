@@ -25,10 +25,12 @@ describe("openDb + runMigrations", () => {
     runMigrations(db);
     runMigrations(db);
     const now = Date.now();
+    const taskId = newTaskId();
     db.prepare(
       "INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)",
-    ).run(newTaskId(), "ok", now, now);
+    ).run(taskId, "ok", now, now);
     expect(db.prepare("SELECT COUNT(*) AS c FROM tasks").get().c).toBe(1);
+    expect(db.prepare("SELECT run_policy FROM tasks WHERE id = ?").get(taskId).run_policy).toBe("auto_plan_execute");
   });
 
   it("enforces foreign keys", () => {

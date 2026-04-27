@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   instructions TEXT NOT NULL DEFAULT '',
   stage TEXT NOT NULL DEFAULT 'plan',
   stage_reason TEXT,
-  run_policy TEXT NOT NULL DEFAULT 'manual',
+  run_policy TEXT NOT NULL DEFAULT 'auto_plan_execute',
   join_policy TEXT NOT NULL DEFAULT 'all_required',
   subtask_order INTEGER NOT NULL DEFAULT 0,
   required INTEGER NOT NULL DEFAULT 1,
