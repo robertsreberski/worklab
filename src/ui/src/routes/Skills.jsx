@@ -129,6 +129,7 @@ export function Skills({ selectedName = null }) {
   ) : (
     filtered.map((s) => {
       const always = s.priority === "always";
+      const enabled = s.enabled !== false;
       return (
         <PaneRow
           key={s.name}
@@ -142,8 +143,17 @@ export function Skills({ selectedName = null }) {
           leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
           title={skillDisplayName(s)}
           sub={(
-            <span class="pane-row-subline">
-              <span>{s.trigger || "No trigger defined"}</span>
+            <span class="pane-row-substack">
+              <span class="pane-row-description">{s.trigger || "No trigger defined"}</span>
+              <span class="pane-row-subline">
+                <span class="pane-row-mono">{s.name}</span>
+                {!enabled && (
+                  <>
+                    <span class="pane-row-dot">·</span>
+                    <span>disabled</span>
+                  </>
+                )}
+              </span>
             </span>
           )}
           trailing={(

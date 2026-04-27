@@ -95,6 +95,7 @@ export function Agents({ selectedName = null }) {
   ) : (
     filtered.map((a) => {
       const isActive = agentIsActive(a);
+      const description = (a.description || "").trim();
       const trailing = (
         <span class="pane-row-summary pane-row-summary-metrics">
           {isActive
@@ -117,14 +118,23 @@ export function Agents({ selectedName = null }) {
           leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
           title={a.display_name || humanizeSlug(a.name)}
           sub={(
-            <span class="pane-row-subline">
-              <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
-              {a.effort && (
-                <>
-                  <span class="pane-row-dot">·</span>
-                  <span>{a.effort} effort</span>
-                </>
-              )}
+            <span class="pane-row-substack">
+              {description && <span class="pane-row-description">{description}</span>}
+              <span class="pane-row-subline">
+                <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
+                {a.effort && (
+                  <>
+                    <span class="pane-row-dot">·</span>
+                    <span>{a.effort} effort</span>
+                  </>
+                )}
+                {!a.enabled && (
+                  <>
+                    <span class="pane-row-dot">·</span>
+                    <span>disabled</span>
+                  </>
+                )}
+              </span>
             </span>
           )}
           trailing={trailing}

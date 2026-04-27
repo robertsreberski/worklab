@@ -8,7 +8,6 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { RadioGroup } from "../components/primitives/RadioGroup.jsx";
@@ -16,7 +15,6 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
-import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -26,11 +24,22 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const EFFORT_OPTIONS = ["low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+const BUILTIN_TOOL_DESCRIPTIONS = {
+  Read: "Read a local file with line numbers.",
+  Write: "Write content to a local file.",
+  Edit: "Replace an exact string in a local file.",
+  Glob: "Find files matching a pattern.",
+  Grep: "Search file contents with grep.",
+  Bash: "Execute a shell command in the workspace.",
+  WebFetch: "Fetch a URL and return text.",
+  WebSearch: "Search the web and return result summaries.",
+};
 
 const emptyAgent = {
   name: "",
@@ -90,6 +99,104 @@ function optionUnavailable(option) {
 
 function normalizedNames(list) {
   return Array.isArray(list) ? list.filter((name) => typeof name === "string" && name.trim()) : [];
+}
+
+function CapabilityGroup({
+  title,
+  hint,
+  items = [],
+  selected = [],
+  onChange,
+  emptyText,
+  collapseAllSelected = false,
+}) {
+  const selectedNames = normalizedNames(selected);
+  const selectedSet = new Set(selectedNames);
+  const availableItems = items.filter((item) => item.available !== false);
+  const availableIds = availableItems.map((item) => item.id);
+  const explicit = selectedNames.length > 0;
+  const includedCount = explicit
+    ? selectedNames.filter((id) => availableIds.includes(id)).length
+    : availableItems.length;
+  const hasAvailable = availableItems.length > 0;
+  const allSelected = hasAvailable && includedCount === availableItems.length;
+  const summary = hasAvailable
+    ? (!explicit ? "All available" : allSelected ? "Custom: all" : `${includedCount}/${availableItems.length} allowed`)
+    : "None available";
+
+  function applySelection(next) {
+    const availableNext = next.filter((id) => availableIds.includes(id));
+    if (collapseAllSelected && availableNext.length === availableIds.length) {
+      onChange([]);
+      return;
+    }
+    onChange(next);
+  }
+
+  function toggle(item) {
+    if (item.available === false) return;
+    if (!explicit) {
+      const next = availableIds.filter((id) => id !== item.id);
+      applySelection(next.length ? next : []);
+      return;
+    }
+    const next = selectedSet.has(item.id)
+      ? selectedNames.filter((id) => id !== item.id)
+      : [...selectedNames, item.id];
+    applySelection(next);
+  }
+
+  return (
+    <section class="capability-panel">
+      <div class="capability-panel-head">
+        <div class="min-w-0">
+          <div class="capability-panel-title">{title}</div>
+          {hint && <div class="capability-panel-hint">{hint}</div>}
+        </div>
+        <div class="capability-panel-actions">
+          <span class={`capability-mode ${!explicit ? "default" : explicit ? "explicit" : ""}`.trim()}>{summary}</span>
+          {explicit && (
+            <button type="button" class="link-button capability-reset" onClick={() => onChange([])}>
+              Reset to all
+            </button>
+          )}
+        </div>
+      </div>
+
+      {items.length === 0 ? (
+        <div class="capability-empty">{emptyText}</div>
+      ) : (
+        <div class="capability-grid" role="group" aria-label={title}>
+          {items.map((item) => {
+            const available = item.available !== false;
+            const active = explicit ? selectedSet.has(item.id) : available;
+            const detail = available
+              ? (explicit ? (active ? "Allowed" : "Excluded") : "Included by default")
+              : (item.unavailableReason || "Unavailable");
+            return (
+              <button
+                key={item.id}
+                type="button"
+                class={`capability-tile ${active ? "active" : ""} ${active && !explicit ? "implicit" : ""}`.trim()}
+                aria-pressed={active}
+                disabled={!available}
+                onClick={() => toggle(item)}
+              >
+                <span class="capability-tile-mark" aria-hidden="true">
+                  <Icon name={active ? "check" : "plus"} size={12} strokeWidth={2.2} />
+                </span>
+                <span class="capability-tile-copy">
+                  <span class="capability-tile-title">{item.label}</span>
+                  {item.description && <span class="capability-tile-description">{item.description}</span>}
+                  {detail && <span class="capability-tile-detail">{detail}</span>}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
 }
 
 export function AgentEdit({ name, onSaved, onDeleted }) {
@@ -192,10 +299,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const headerModelLabel = modelDisplayName(agent.model, modelOptions);
   const headerSlug = isNew ? "Slug after create" : agent.name;
 
-  function toggleList(list, value) {
-    return list.includes(value) ? list.filter((x) => x !== value) : [...list, value];
-  }
-
   function setModel(model) {
     const opt = allModels.find((item) => item.value === model) || null;
     if (optionUnavailable(opt)) {
@@ -237,6 +340,45 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   }
 
   const title = isNew ? "New agent" : (agent.display_name || agent.name);
+  const availableSkillCount = skills.filter((skill) => skill.enabled !== false).length;
+  const availableMcpCount = mcpServers.filter((server) => server.available !== false).length;
+  const availableToolCount = supportsToolUse ? visibleTools.length : 0;
+  const explicitSkillCount = normalizedNames(agent.skills_allowlist).length;
+  const explicitMcpCount = normalizedNames(agent.mcp_allowlist).length;
+  const explicitToolCount = normalizedNames(agent.builtin_allowlist).length;
+  const capabilityMeta = [
+    {
+      label: "Skills",
+      value: explicitSkillCount ? `${explicitSkillCount}/${availableSkillCount} allowed` : `${availableSkillCount} available`,
+      mono: false,
+    },
+    {
+      label: "MCP",
+      value: explicitMcpCount ? `${explicitMcpCount}/${availableMcpCount} allowed` : `${availableMcpCount} available`,
+      mono: false,
+    },
+    {
+      label: "Built-ins",
+      value: supportsToolUse
+        ? (explicitToolCount ? `${explicitToolCount}/${availableToolCount} allowed` : `${availableToolCount} available`)
+        : "Unavailable",
+      mono: false,
+    },
+  ];
+  const runtimeMeta = [
+    { label: "Slug", value: isNew ? "Generated after create" : agent.name },
+    { label: "SDK", value: agent.sdk || String(agent.model || "").split(":", 1)[0] || "—" },
+    { label: "Model ref", value: agent.model },
+    {
+      label: "Reasoning",
+      value: reasoningMode === "none"
+        ? "Unavailable"
+        : reasoningMode === "toggle"
+          ? (normalizedEffort === "low" ? "Off" : "On")
+          : normalizedEffort,
+      mono: false,
+    },
+  ];
 
   return (
     <>
@@ -267,7 +409,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           </Button>
         </div>
       </header>
-      <div class="pane-detail-body">
+      <div class="pane-detail-body entity-detail-body agent-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
@@ -280,164 +422,168 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         )}
         {notice && <Banner variant="info" detail={notice} />}
 
-        <FormSection kicker="Identity" title="Profile">
-          <FormGrid columns={2}>
-            <FormField label="Display name" required>
-              <Input value={agent.display_name} onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
-            </FormField>
-            <FormField switchInside>
-              <Switch
-                checked={agent.enabled}
-                onChange={(next) => setAgent({ ...agent, enabled: next })}
-                label="Available for assignment"
-                description="Unavailable agents stay configured but cannot be selected."
-              />
-            </FormField>
-            <FormField label="Description" class="span-2">
-              <Input value={agent.description || ""} onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
-            </FormField>
-          </FormGrid>
-          <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : agent.name }]} />
-        </FormSection>
-
-        <FormSection kicker="Runtime" title="Model & reasoning">
-          <FormGrid columns={2}>
-            <FormField label="Model" required>
-              <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
-            </FormField>
-            <FormField label="Advanced reference" hint="Saved model value used at runtime.">
-              <Input value={agent.model} readOnly class="mono-input" />
-            </FormField>
-            <FormField
-              label={reasoningMode === "toggle" ? "Thinking" : "Effort"}
-              class="span-2"
-              hint={reasoningMode === "none" ? "This model does not support reasoning effort" : undefined}
-            >
-              {reasoningMode === "none" ? (
-                <span class="form-field-empty-hint">This model does not support adjustable reasoning.</span>
-              ) : reasoningMode === "toggle" ? (
-                <RadioGroup
-                  ariaLabel="Thinking"
-                  value={normalizedEffort === "low" ? "off" : "on"}
-                  onChange={(v) => setAgent({ ...agent, effort: v === "off" ? "low" : "medium" })}
-                  options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]}
-                />
-              ) : useRadioForEffort ? (
-                <RadioGroup
-                  ariaLabel="Reasoning effort"
-                  value={normalizedEffort}
-                  onChange={(v) => setAgent({ ...agent, effort: v })}
-                  options={effortOptions}
-                />
-              ) : (
-                <Select
-                  value={normalizedEffort}
-                  options={effortOptions}
-                  onChange={(v) => setAgent({ ...agent, effort: v })}
-                />
-              )}
-            </FormField>
-          </FormGrid>
-          <div class="field-hint field-hint-spaced">
-            {visibleTools.length === 0
-              ? (selectedModel?.native_tools_note || "No Worklab built-in tools are exposed for this runtime.")
-              : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
-            {selectedModel?.capabilities?.reasoning
-              ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
-              : " · Reasoning: unavailable"}
-          </div>
-        </FormSection>
-
-        <FormSection kicker="Behavior" title="Instructions">
-          <FormField label="System prompt role">
-            <Textarea
-              rows={10}
-              monospace
-              autoGrow
-              value={agent.instructions}
-              onInput={(e) => setAgent({ ...agent, instructions: e.target.value })}
-            />
-          </FormField>
-        </FormSection>
-
-        <FormSection kicker="Capabilities" title="Allowlists">
-          <FormField label="Skills" hint="Empty = all enabled.">
-            {skills.length === 0 ? (
-              <div class="field-hint">No skills defined yet.</div>
-            ) : (
-              <div class="checkbox-stack">
-                {skills.map((s) => {
-                  const available = s.enabled !== false;
-                  return (
-                    <Checkbox
-                      key={s.name}
-                      checked={agent.skills_allowlist.includes(s.name)}
-                      disabled={!available}
-                      description={available ? (s.trigger || undefined) : "Disabled skill"}
-                      onChange={() => available && setAgent({ ...agent, skills_allowlist: toggleList(agent.skills_allowlist, s.name) })}
-                      label={s.display_name || s.name}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </FormField>
-          <FormField label="MCP servers" hint="Empty = all available registered servers.">
-            {mcpServers.length === 0 ? (
-              <div class="field-hint">No MCP servers registered.</div>
-            ) : (
-              <div class="checkbox-stack">
-                {mcpServers.map((m) => {
-                  const available = m.available !== false;
-                  return (
-                    <Checkbox
-                      key={m.name}
-                      checked={agent.mcp_allowlist.includes(m.name)}
-                      disabled={!available}
-                      description={available ? (m.source === "builtin" ? "Built in" : m.transport || "Registered") : (m.unavailable_reason || "Unavailable")}
-                      onChange={() => available && setAgent({ ...agent, mcp_allowlist: toggleList(agent.mcp_allowlist, m.name) })}
-                      label={m.name}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </FormField>
-          <FormField label="Built-in tools" hint={supportsToolUse ? "Empty = all." : "This runtime cannot call Worklab built-in tools."}>
-            {supportsToolUse && (
-              <div class="checkbox-stack">
-                {visibleTools.map((t) => (
-                  <Checkbox
-                    key={t}
-                    checked={agent.builtin_allowlist.includes(t)}
-                    onChange={() => setAgent({ ...agent, builtin_allowlist: toggleList(agent.builtin_allowlist, t) })}
-                    label={t}
+        <div class="entity-editor-layout agent-editor-layout">
+          <main class="entity-editor-main">
+            <FormSection kicker="Identity" title="Profile">
+              <FormGrid columns={2}>
+                <FormField label="Display name" required>
+                  <Input value={agent.display_name} onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={agent.enabled}
+                    onChange={(next) => setAgent({ ...agent, enabled: next })}
+                    label="Available for assignment"
+                    description="Unavailable agents stay configured but cannot be selected."
                   />
-                ))}
-              </div>
-            )}
-          </FormField>
-        </FormSection>
+                </FormField>
+                <FormField label="Description" class="span-2">
+                  <Input value={agent.description || ""} onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
+                </FormField>
+              </FormGrid>
+            </FormSection>
 
-        {!isNew && (
-          <Card collapsible={{ summary: "More actions", count: 2 }}>
-            <Button
-              variant="secondary"
-              iconLeft={<Icon name="refresh-cw" size={13} />}
-              onClick={consolidateNow}
-              loading={consolidating}
+            <FormSection kicker="Runtime" title="Model & reasoning">
+              <FormGrid columns={2}>
+                <FormField label="Model" required>
+                  <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
+                </FormField>
+                <FormField
+                  label={reasoningMode === "toggle" ? "Thinking" : "Effort"}
+                  hint={reasoningMode === "none" ? "This model does not support reasoning effort" : undefined}
+                >
+                  {reasoningMode === "none" ? (
+                    <span class="form-field-empty-hint">This model does not support adjustable reasoning.</span>
+                  ) : reasoningMode === "toggle" ? (
+                    <RadioGroup
+                      ariaLabel="Thinking"
+                      value={normalizedEffort === "low" ? "off" : "on"}
+                      onChange={(v) => setAgent({ ...agent, effort: v === "off" ? "low" : "medium" })}
+                      options={[{ value: "off", label: "Off" }, { value: "on", label: "On" }]}
+                    />
+                  ) : useRadioForEffort ? (
+                    <RadioGroup
+                      ariaLabel="Reasoning effort"
+                      value={normalizedEffort}
+                      onChange={(v) => setAgent({ ...agent, effort: v })}
+                      options={effortOptions}
+                    />
+                  ) : (
+                    <Select
+                      value={normalizedEffort}
+                      options={effortOptions}
+                      onChange={(v) => setAgent({ ...agent, effort: v })}
+                    />
+                  )}
+                </FormField>
+              </FormGrid>
+              <div class="field-hint field-hint-spaced">
+                {visibleTools.length === 0
+                  ? (selectedModel?.native_tools_note || "No Worklab built-in tools are exposed for this runtime.")
+                  : `Tools: ${(visibleTools || BUILTIN_TOOLS).join(", ")}`}
+                {selectedModel?.capabilities?.reasoning
+                  ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
+                  : " · Reasoning: unavailable"}
+              </div>
+            </FormSection>
+
+            <FormSection kicker="Behavior" title="Instructions">
+              <FormField label="System prompt role">
+                <Textarea
+                  rows={12}
+                  monospace
+                  autoGrow
+                  value={agent.instructions}
+                  onInput={(e) => setAgent({ ...agent, instructions: e.target.value })}
+                />
+              </FormField>
+            </FormSection>
+
+            <FormSection
+              kicker="Capabilities"
+              title="Allowlists"
+              description="All available tools are included by default. Select tiles only when this agent should use a narrower scope."
             >
-              Consolidate memory
-            </Button>
-            <Button
-              variant="destructive"
-              iconLeft={<Icon name="trash" size={13} />}
-              onClick={() => setDeleteOpen(true)}
-            >
-              Delete agent
-            </Button>
-          </Card>
-        )}
+              <div class="capability-layout">
+                <CapabilityGroup
+                  title="Skills"
+                  hint="Prompt packs this agent may use."
+                  items={skills.map((skill) => ({
+                    id: skill.name,
+                    label: skill.display_name || skill.name,
+                    description: skill.enabled !== false ? (skill.trigger || "Enabled skill") : "Disabled skill",
+                    available: skill.enabled !== false,
+                    unavailableReason: "Disabled skill",
+                  }))}
+                  selected={agent.skills_allowlist}
+                  onChange={(next) => setAgent({ ...agent, skills_allowlist: next })}
+                  emptyText="No skills defined yet."
+                />
+                <CapabilityGroup
+                  title="MCP servers"
+                  hint="External tools and data connections."
+                  items={mcpServers.map((server) => ({
+                    id: server.name,
+                    label: server.name,
+                    description: server.available !== false
+                      ? (server.source === "builtin" ? "Built in" : server.transport || "Registered")
+                      : (server.unavailable_reason || "Unavailable"),
+                    available: server.available !== false,
+                    unavailableReason: server.unavailable_reason || "Unavailable",
+                  }))}
+                  selected={agent.mcp_allowlist}
+                  onChange={(next) => setAgent({ ...agent, mcp_allowlist: next })}
+                  emptyText="No MCP servers registered."
+                />
+                <CapabilityGroup
+                  title="Built-in tools"
+                  hint={supportsToolUse ? "Worklab-native file, shell, and web tools." : "This runtime cannot call Worklab built-in tools."}
+                  items={supportsToolUse
+                    ? visibleTools.map((tool) => ({
+                      id: tool,
+                      label: tool,
+                      description: BUILTIN_TOOL_DESCRIPTIONS[tool] || "Runtime-provided built-in tool.",
+                      available: true,
+                    }))
+                    : []}
+                  selected={agent.builtin_allowlist}
+                  onChange={(next) => setAgent({ ...agent, builtin_allowlist: next })}
+                  emptyText={supportsToolUse ? "No built-in tools are available." : "This runtime cannot call Worklab built-in tools."}
+                  collapseAllSelected
+                />
+              </div>
+            </FormSection>
+          </main>
+
+          <aside class="entity-editor-rail">
+            <Card variant="spacious" title="Runtime snapshot" class="entity-rail-card">
+              <EntityMetaList items={runtimeMeta} />
+            </Card>
+            <Card variant="spacious" title="Capability scope" class="entity-rail-card">
+              <EntityMetaList items={capabilityMeta} />
+            </Card>
+
+            {!isNew && (
+              <Card collapsible={{ summary: "More actions", count: 2 }} class="entity-rail-card">
+                <Button
+                  variant="secondary"
+                  iconLeft={<Icon name="refresh-cw" size={13} />}
+                  onClick={consolidateNow}
+                  loading={consolidating}
+                >
+                  Consolidate memory
+                </Button>
+                <Button
+                  variant="destructive"
+                  iconLeft={<Icon name="trash" size={13} />}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete agent
+                </Button>
+              </Card>
+            )}
+          </aside>
+        </div>
       </div>
 
       {/* Delete modal */}
