@@ -10,6 +10,20 @@ async function request(method, path, body) {
   return json;
 }
 
+async function uploadZip(path, file) {
+  const res = await fetch(`/api${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": file?.type || "application/zip",
+      "X-Skill-Filename": encodeURIComponent(file?.name || "skill.zip"),
+    },
+    body: file,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json?.error?.message || res.statusText), { code: json?.error?.code, status: res.status });
+  return json;
+}
+
 export const api = {
   // tasks
   listTasks: (query) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`),
@@ -50,6 +64,7 @@ export const api = {
   listSkills: () => request("GET", "/skills"),
   getSkill: (name) => request("GET", `/skills/${name}`),
   createSkill: (data) => request("POST", "/skills", data),
+  importSkillZip: (file) => uploadZip("/skills/import", file),
   patchSkill: (name, patch) => request("PATCH", `/skills/${name}`, patch),
   deleteSkill: (name) => request("DELETE", `/skills/${name}`),
   skillUsage: (name) => request("GET", `/skills/${name}/usage`),
