@@ -16,6 +16,16 @@ function mockStream(events) {
   };
 }
 
+function mockStreamWithThrow(events, error) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const e of events) yield e;
+      throw error;
+    },
+    return: vi.fn(async () => ({ done: true })),
+  };
+}
+
 describe("generateClaudeResponse", () => {
   beforeEach(() => mockQuery.mockReset());
 
@@ -112,6 +122,71 @@ describe("generateClaudeResponse", () => {
     });
     expect(r.error).toBe("Claude result error (provider): provider failed");
     expect(r.failureKind).toBe("provider_unavailable");
+  });
+
+  it("preserves successful final output when Claude emits a trailing execution error", async () => {
+    mockQuery.mockReturnValue(mockStreamWithThrow([
+      { type: "assistant", message: { content: [{ type: "text", text: "working" }] } },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "# Report\n\nFinal delivered answer.",
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 2,
+      },
+      {
+        type: "result",
+        subtype: "error_during_execution",
+        is_error: true,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        duration_ms: 0,
+        num_turns: 0,
+        errors: [
+          "MaxFileReadTokenExceededError: File content exceeds maximum allowed tokens",
+        ],
+      },
+    ], new Error("Claude Code process exited with code 1")));
+
+    const events = [];
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      effort: "high",
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(r.error).toBeNull();
+    expect(r.failureKind).toBeNull();
+    expect(r.text).toBe("# Report\n\nFinal delivered answer.");
+    expect(r.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(r.durationMs).toBe(100);
+    expect(r.numTurns).toBe(2);
+    expect(r.runtimeWarnings).toHaveLength(1);
+    expect(r.runtimeWarnings[0]).toMatchObject({
+      warning_kind: "claude_post_success_error",
+    });
+    expect(r.runtimeWarnings[0].message).toContain("MaxFileReadTokenExceededError");
+    expect(events).toHaveLength(3);
+  });
+
+  it("treats SDK iterator failures before a successful result as provider errors", async () => {
+    mockQuery.mockReturnValue(mockStreamWithThrow([
+      { type: "assistant", message: { content: [{ type: "text", text: "partial" }] } },
+    ], new Error("Claude Code process exited with code 1")));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+
+    expect(r.error).toBe("Claude Code process exited with code 1");
+    expect(r.failureKind).toBe("provider_unavailable");
+    expect(r.text).toBe("partial");
+    expect(r.runtimeWarnings).toEqual([]);
   });
 
   it("maps effort: low → thinking disabled", async () => {

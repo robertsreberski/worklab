@@ -52,6 +52,13 @@ function resultEventError(event) {
   };
 }
 
+function makeRuntimeWarning(message) {
+  return {
+    warning_kind: "claude_post_success_error",
+    message,
+  };
+}
+
 export async function generateClaudeResponse(systemPrompt, options) {
   const {
     messages,
@@ -98,7 +105,22 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let cancelled = false;
   let errorMessage = null;
   let failureKind = null;
+  let successfulResultSeen = false;
+  let postSuccessErrorSeen = false;
+  const runtimeWarnings = [];
   const capturedEvents = [];
+
+  const finalText = () => resultText || text;
+
+  function hasUsableFinalOutput() {
+    return String(finalText() || "").trim().length > 0;
+  }
+
+  function preservePostSuccessError(message) {
+    if (postSuccessErrorSeen) return;
+    postSuccessErrorSeen = true;
+    runtimeWarnings.push(makeRuntimeWarning(message));
+  }
 
   const abortHandler = async () => {
     cancelled = true;
@@ -115,28 +137,49 @@ export async function generateClaudeResponse(systemPrompt, options) {
       onEvent(event);
       if (event.type === "assistant") text += extractText(event);
       else if (event.type === "error") {
-        errorMessage = event.error?.message || event.error || "sdk stream error";
-        failureKind = "provider_unavailable";
+        const message = event.error?.message || event.error || "sdk stream error";
+        if (successfulResultSeen && hasUsableFinalOutput()) {
+          preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${message}`);
+        } else {
+          errorMessage = message;
+          failureKind = "provider_unavailable";
+        }
         break;
       } else if (event.type === "result") {
-        usage = event.usage || {};
-        durationMs = event.duration_ms || 0;
-        numTurns = event.num_turns || 0;
-        resultText = extractResultText(event) || resultText;
         const resultError = resultEventError(event);
         if (resultError) {
-          errorMessage = resultError.message;
-          failureKind = resultError.failureKind;
+          if (successfulResultSeen && hasUsableFinalOutput()) {
+            preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${resultError.message}`);
+          } else {
+            errorMessage = resultError.message;
+            failureKind = resultError.failureKind;
+          }
+        } else {
+          usage = event.usage || {};
+          durationMs = event.duration_ms || 0;
+          numTurns = event.num_turns || 0;
+          resultText = extractResultText(event) || resultText;
+          successfulResultSeen = true;
         }
       }
       if (cancelled) break;
+    }
+  } catch (err) {
+    if (!cancelled) {
+      const message = err?.message || String(err);
+      if (successfulResultSeen && hasUsableFinalOutput()) {
+        preservePostSuccessError(`Claude SDK stream failed after final output; preserved final result. ${message}`);
+      } else {
+        errorMessage = message;
+        failureKind = "provider_unavailable";
+      }
     }
   } finally {
     if (abortSignal) abortSignal.removeEventListener?.("abort", abortHandler);
   }
 
   return {
-    text: resultText || text,
+    text: finalText(),
     events: capturedEvents,
     usage,
     durationMs,
@@ -146,5 +189,6 @@ export async function generateClaudeResponse(systemPrompt, options) {
     cancelled,
     error: errorMessage,
     failureKind,
+    runtimeWarnings,
   };
 }
