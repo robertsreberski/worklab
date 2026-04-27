@@ -143,7 +143,7 @@ export async function generateOpenAIResponse(systemPrompt, options = {}) {
     const durationMs = Date.now() - start;
     const costUsd = estimateCost({ db: options.db, model: `openai:${model}`, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, cachedTokens: usage.cacheRead });
     return {
-      text: texts.join("\n\n"),
+      text: finalOutput || texts.join("\n\n"),
       events,
       usage: {
         input_tokens: usage.inputTokens,

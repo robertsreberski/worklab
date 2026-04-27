@@ -6,6 +6,7 @@ import {
   formatRunPhase,
   formatRunSummaryTitle,
   formatTokens,
+  runResultPreview,
   runMetricItems,
 } from "../../ui/src/lib/runFormatting.js";
 
@@ -45,5 +46,42 @@ describe("run formatting helpers", () => {
   it("does not include agent names in run summary titles", () => {
     expect(formatRunPhase({ stage: "execute", mode: "execute", agent_name: "Sample Agent" })).toBe("Execute");
     expect(formatRunSummaryTitle({ stage: "execute", agent_name: "Sample Agent" }, "7m")).not.toContain("Sample Agent");
+  });
+
+  it("builds structured run result previews from parsed result metadata", () => {
+    expect(runResultPreview({
+      decision: "block",
+      summary: "legacy summary",
+      result: {
+        schema: "worklab.v2",
+        decision: "advance",
+        summary: "Implemented it",
+        details: "Changed the files and verified tests.",
+      },
+    })).toEqual({
+      decision: "advance",
+      summary: "Implemented it",
+      details: "Changed the files and verified tests.",
+      tone: "ok",
+      hasResult: true,
+    });
+  });
+
+  it("falls back to legacy run columns and suppresses duplicate details", () => {
+    expect(runResultPreview({
+      decision: "reject",
+      summary: "Needs tests",
+      details: "Needs tests",
+    })).toEqual({
+      decision: "reject",
+      summary: "Needs tests",
+      details: "",
+      tone: "error",
+      hasResult: true,
+    });
+  });
+
+  it("keeps neutral decision tones neutral", () => {
+    expect(runResultPreview({ decision: "delegate", summary: "Split work" }).tone).toBe("");
   });
 });

@@ -614,4 +614,54 @@ exit 0
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("uses delivered Codex prose as final text while extracting embedded worklab JSON", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "short metadata",
+      details: "metadata details",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const delivered = [
+      "# Delivered Report",
+      "",
+      "Useful final answer.",
+      "",
+      "```json",
+      JSON.stringify(structured),
+      "```",
+    ].join("\n");
+    const events = [
+      { type: "item.completed", item: { id: "msg_1", type: "agent_message", text: "I will gather data." } },
+      { type: "item.completed", item: { id: "msg_2", type: "agent_message", text: delivered } },
+    ];
+    writeFileSync(fakeCodex, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.worklabResult).toEqual(structured);
+      expect(result.text).toBe("# Delivered Report\n\nUseful final answer.");
+      expect(result.text).not.toContain("\"schema\"");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

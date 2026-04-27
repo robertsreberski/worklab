@@ -31,6 +31,47 @@ describe("extractExecutionFromEvents", () => {
     });
   });
 
+  it("prefers delivered final text over structured result summary", () => {
+    const events = [
+      {
+        type: "final",
+        text: [
+          "# Delivered Report",
+          "",
+          "Useful final content.",
+          "",
+          "```json",
+          "{\"schema\":\"worklab.v2\",\"stage\":\"execute\",\"decision\":\"advance\",\"summary\":\"Short\",\"details\":\"Metadata\",\"artifacts\":{},\"blocking_issues\":[],\"pending_actions\":[],\"subtasks\":[]}",
+          "```",
+        ].join("\n"),
+        worklab_result: {
+          schema: "worklab.v2",
+          decision: "advance",
+          summary: "Short",
+          details: "Metadata",
+        },
+      },
+    ];
+    const result = extractExecutionFromEvents(events, AGENT_ROW);
+    expect(result.finalText).toBe("# Delivered Report\n\nUseful final content.");
+  });
+
+  it("falls back to structured result text when final text is absent", () => {
+    const events = [
+      {
+        type: "final",
+        worklab_result: {
+          schema: "worklab.v2",
+          decision: "advance",
+          summary: "Short",
+          details: "Metadata",
+        },
+      },
+    ];
+    const result = extractExecutionFromEvents(events, AGENT_ROW);
+    expect(result.finalText).toBe("Short\n\nMetadata");
+  });
+
   it("events with multiple finals → keeps the LAST one", () => {
     const events = [
       { type: "final", text: "first attempt", numTurns: 2, durationMs: 500 },

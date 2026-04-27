@@ -45,6 +45,31 @@ export function formatRunSummaryTitle(run = {}, startedAtLabel = "") {
   return [phase, when].filter(Boolean).join(" · ");
 }
 
+function cleanText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function decisionTone(decision) {
+  if (decision === "advance" || decision === "approve") return "ok";
+  if (decision === "reject" || decision === "block") return "error";
+  return "";
+}
+
+export function runResultPreview(run = {}) {
+  const result = run?.result || {};
+  const decision = cleanText(result.decision) || cleanText(run?.decision);
+  const summary = cleanText(result.summary) || cleanText(run?.summary);
+  const detailsRaw = cleanText(result.details) || cleanText(run?.details);
+  const details = detailsRaw && detailsRaw !== summary ? detailsRaw : "";
+  return {
+    decision,
+    summary,
+    details,
+    tone: decisionTone(decision),
+    hasResult: Boolean(decision || summary || details),
+  };
+}
+
 export function runTokenTotal(log = {}) {
   const input = Number(log.input_tokens);
   const output = Number(log.output_tokens);

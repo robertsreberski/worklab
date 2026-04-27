@@ -1,4 +1,4 @@
-import { formatWorklabResultText } from "./worklab-result.js";
+import { formatWorklabResultText, stripWorklabResultJson } from "./worklab-result.js";
 
 /**
  * Pure helpers for extracting execution metadata from a prior run's agent_log events.
@@ -33,9 +33,10 @@ export function extractExecutionFromEvents(priorEvents, priorRun) {
 
   // Find the last `final` event (reverse-scan so multiple finals keep last).
   const finalEvent = [...events].reverse().find((e) => e && e.type === "final");
-  const finalText = finalEvent?.worklab_result
+  const deliveredText = stripWorklabResultJson(finalEvent?.text ?? "");
+  const finalText = deliveredText || (finalEvent?.worklab_result
     ? formatWorklabResultText(finalEvent.worklab_result)
-    : (finalEvent?.text ?? "");
+    : "");
 
   return {
     agentName: priorRun.agent_name ?? "unknown",

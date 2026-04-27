@@ -1,8 +1,15 @@
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
+import { normalizeCommentText } from "../lib/commentFormatting.js";
 
-function eventHasVisibleText(ev) {
+function visibleTextFromEvent(ev) {
+  if (ev?.type === "sdk_event") return visibleTextFromEvent(ev.event);
+  if (ev?.type !== "assistant" && ev?.type !== "message") return "";
   const content = ev?.message?.content || ev?.content;
-  return Array.isArray(content) && content.some((block) => block?.type === "text" && String(block.text || "").trim());
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((block) => block?.type === "text" && String(block.text || "").trim())
+    .map((block) => block.text)
+    .join("");
 }
 
 function formatFinalUsage(ev) {
@@ -19,6 +26,9 @@ function formatFinalUsage(ev) {
 }
 
 function formatFinalText(ev) {
+  const rawText = String(ev.text || "").trim();
+  const delivered = normalizeCommentText(rawText);
+  if (delivered && (delivered !== rawText || !/^[{[]/.test(rawText))) return delivered;
   const result = ev.worklab_result;
   if (result?.summary || result?.details) {
     const summary = String(result.summary || "").trim();
@@ -104,13 +114,20 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
 }
 
 export function normalizeWorklabEvents(events = []) {
-  let sawAssistantText = false;
+  const visibleTexts = new Set();
   return events.map((event) => {
+    const rawFinalText = String(event?.text || "").trim();
+    const normalizedFinalText = normalizeCommentText(rawFinalText);
+    const compactFinal = event?.type === "final" && (
+      normalizedFinalText
+        ? visibleTexts.has(normalizedFinalText)
+        : visibleTexts.size > 0
+    );
     const normalized = normalizeWorklabEvent(event, {
-      compactFinal: event?.type === "final" && sawAssistantText,
+      compactFinal,
     });
-    if (event?.type === "sdk_event" && eventHasVisibleText(event.event)) sawAssistantText = true;
-    if (eventHasVisibleText(event)) sawAssistantText = true;
+    const visibleText = normalizeCommentText(visibleTextFromEvent(event));
+    if (visibleText) visibleTexts.add(visibleText);
     return normalized;
   }).filter(Boolean);
 }
