@@ -1530,6 +1530,12 @@ select,
 .tool-call-status-missing { color: var(--text-subtle); }
 .tool-call-status-empty   { color: var(--text-muted); }
 .tool-call-missing-note   { color: var(--text-muted); font-size: var(--text-sm); }
+.tool-call-truncated-note {
+  color: var(--status-progress);
+  font-size: var(--text-sm);
+  border-left: 2px solid var(--status-progress-border);
+  padding-left: var(--sp-2);
+}
 .tool-call-error          { color: var(--status-error); }
 .tool-call-structured { max-height: 320px; overflow: auto; }
 
@@ -4765,6 +4771,14 @@ select,
   padding: var(--sp-3);
   background: var(--surface-sunken);
   border-top: 1px solid var(--border);
+}
+.run-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: var(--text-sm);
 }
 .run-card-events-loading {
   color: var(--text-muted);

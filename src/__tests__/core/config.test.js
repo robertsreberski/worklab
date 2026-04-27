@@ -18,6 +18,9 @@ describe("loadConfig", () => {
     expect(c.host).toBe("127.0.0.1");
     expect(c.dataDir).toMatch(/\/\.worklab$/);
     expect(c.logLevel).toBe("info");
+    expect(c.runTimeoutMs).toBe(30 * 60 * 1000);
+    expect(c.runIdleWarningMs).toBe(120 * 1000);
+    expect(c.logInlineLimit).toBe(12_000);
   });
 
   it("honors WORKLAB_PORT", () => {
@@ -33,6 +36,16 @@ describe("loadConfig", () => {
   it("honors WORKLAB_DATA_DIR", () => {
     process.env.WORKLAB_DATA_DIR = "/tmp/custom";
     expect(loadConfig().dataDir).toBe("/tmp/custom");
+  });
+
+  it("honors runtime logging guardrail overrides", () => {
+    process.env.WORKLAB_RUN_TIMEOUT_MS = "1000";
+    process.env.WORKLAB_RUN_IDLE_WARNING_MS = "2000";
+    process.env.WORKLAB_LOG_INLINE_LIMIT = "3000";
+    const c = loadConfig();
+    expect(c.runTimeoutMs).toBe(1000);
+    expect(c.runIdleWarningMs).toBe(2000);
+    expect(c.logInlineLimit).toBe(3000);
   });
 
   it("resolves workspace default to ~/worklab-workspace", () => {

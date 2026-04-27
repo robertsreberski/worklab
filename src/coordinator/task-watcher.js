@@ -121,6 +121,9 @@ export function createTaskWatcher({
   repoRoot,
   dataDir,
   workspace,
+  runTimeoutMs = 30 * 60 * 1000,
+  runIdleWarningMs = 120 * 1000,
+  logInlineLimit = 12_000,
   maxFailures = DEFAULT_MAX_FAILURES,
 }) {
   const active = new Map();
@@ -298,6 +301,10 @@ export function createTaskWatcher({
       broker,
       db,
       logger,
+      dataDir,
+      runTimeoutMs,
+      runIdleWarningMs,
+      logInlineLimit,
     });
 
     db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);

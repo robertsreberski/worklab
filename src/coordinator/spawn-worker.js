@@ -1,7 +1,85 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { newAgentLogId } from "../core/ids.js";
 import { processStatusToLegacyStatus } from "../core/state-machine.js";
+
+function makeRawLogPath(dataDir, runId) {
+  if (!dataDir || !runId) return null;
+  const dir = join(dataDir, "logs", "runs");
+  mkdirSync(dir, { recursive: true });
+  return join(dir, `${runId}.jsonl`);
+}
+
+function truncateString(value, { limit }) {
+  if (!limit || limit < 1 || typeof value !== "string" || value.length <= limit) {
+    return { value, truncated: false, originalLength: value?.length || 0 };
+  }
+  const marker = `\n\n[truncated ${value.length - limit} chars; full raw log available]`;
+  return {
+    value: `${value.slice(0, limit)}${marker}`,
+    truncated: true,
+    originalLength: value.length,
+  };
+}
+
+function truncateToolResultValue(value, options) {
+  if (typeof value === "string") return truncateString(value, options);
+  if (Array.isArray(value)) {
+    let truncated = false;
+    let originalLength = 0;
+    const next = value.map((item) => {
+      if (item?.type === "text" && typeof item.text === "string") {
+        const result = truncateString(item.text, options);
+        truncated ||= result.truncated;
+        originalLength = Math.max(originalLength, result.originalLength);
+        return result.truncated ? { ...item, text: result.value } : item;
+      }
+      return item;
+    });
+    return { value: next, truncated, originalLength };
+  }
+  return { value, truncated: false, originalLength: 0 };
+}
+
+function truncateToolResultBlock(block, options) {
+  if (!block || typeof block !== "object" || block.type !== "tool_result") return block;
+  let next = block;
+  let truncated = false;
+  let originalLength = 0;
+  for (const key of ["content", "output", "result"]) {
+    if (!(key in next)) continue;
+    const clipped = truncateToolResultValue(next[key], options);
+    if (clipped.truncated) {
+      next = { ...next, [key]: clipped.value };
+      truncated = true;
+      originalLength = Math.max(originalLength, clipped.originalLength);
+    }
+  }
+  if (!truncated) return next;
+  return {
+    ...next,
+    truncated: true,
+    original_length: originalLength,
+    raw_output_path: options.rawLogPath || null,
+  };
+}
+
+function truncateDisplayEvent(event, options) {
+  if (!event || !options.limit || options.limit < 1) return event;
+  const next = JSON.parse(JSON.stringify(event));
+  const target = next.type === "sdk_event" && next.event ? next.event : next;
+  if (Array.isArray(target?.message?.content)) {
+    target.message.content = target.message.content.map((block) => truncateToolResultBlock(block, options));
+  }
+  if (target?.type === "tool_result") {
+    const clipped = truncateToolResultBlock(target, options);
+    if (next.type === "sdk_event" && next.event) next.event = clipped;
+    else return clipped;
+  }
+  return next;
+}
 
 export function spawnWorker({
   binary,
@@ -14,6 +92,10 @@ export function spawnWorker({
   logger,
   cancelGraceMs = 5000,
   persistDebounceMs = 250,
+  dataDir = env.WORKLAB_DATA_DIR,
+  runTimeoutMs = 30 * 60 * 1000,
+  runIdleWarningMs = 120 * 1000,
+  logInlineLimit = 12_000,
 }) {
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
@@ -30,8 +112,12 @@ export function spawnWorker({
   let finalized = false;
   let exitFallbackTimer = null;
   let persistTimer = null;
+  let timeoutTimer = null;
+  let idleTimer = null;
+  let timedOut = false;
   const startedAt = Date.now();
   const logId = newAgentLogId();
+  let rawLogPath = null;
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
   // O(N²) bytes written, which can stall WAL on a small disk. The final UPDATE
@@ -44,6 +130,16 @@ export function spawnWorker({
       (id, task_run_id, events, status, created_at)
      VALUES (?, ?, '[]', 'running', ?)`,
   ).run(logId, runId, startedAt);
+
+  try {
+    rawLogPath = makeRawLogPath(dataDir, runId);
+    if (rawLogPath) {
+      db.prepare("UPDATE task_runs SET raw_output_path = ? WHERE id = ?").run(rawLogPath, runId);
+    }
+  } catch (err) {
+    rawLogPath = null;
+    logger?.warn?.({ err: err.message, runId }, "raw run log initialization failed");
+  }
 
   function flushEvents() {
     db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?").run(JSON.stringify(events), logId);
@@ -58,6 +154,70 @@ export function spawnWorker({
     }, persistDebounceMs);
   }
 
+  function appendRawEvent(event) {
+    if (!rawLogPath) return;
+    try {
+      appendFileSync(rawLogPath, `${JSON.stringify(event)}\n`);
+    } catch (err) {
+      logger?.warn?.({ err: err.message, runId, rawLogPath }, "raw run log write failed");
+      rawLogPath = null;
+    }
+  }
+
+  function emitEvent(parsed) {
+    const rawEvent = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
+    appendRawEvent(rawEvent);
+    const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
+    events.push(event);
+    schedulePersist();
+    broker.broadcast(runId, event);
+    resetIdleTimer();
+    return { rawEvent, event };
+  }
+
+  function resetIdleTimer() {
+    if (!runIdleWarningMs || runIdleWarningMs < 1 || finalized) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      if (finalized) return;
+      emitEvent({
+        type: "runtime_warning",
+        warning_kind: "idle",
+        message: `No worker events for ${runIdleWarningMs}ms.`,
+        ts: Date.now(),
+      });
+    }, runIdleWarningMs);
+    idleTimer.unref?.();
+  }
+
+  function terminateChild() {
+    try { child.kill("SIGTERM"); } catch { /* already gone */ }
+    if (!sigkillTimer) {
+      sigkillTimer = setTimeout(() => {
+        try { child.kill("SIGKILL"); } catch { /* already gone */ }
+      }, cancelGraceMs);
+      sigkillTimer.unref?.();
+    }
+  }
+
+  if (runTimeoutMs && runTimeoutMs > 0) {
+    timeoutTimer = setTimeout(() => {
+      if (finalized) return;
+      timedOut = true;
+      cancelRequested = true;
+      errorMessage = errorMessage || `run timed out after ${runTimeoutMs}ms`;
+      emitEvent({
+        type: "runtime_warning",
+        warning_kind: "timeout",
+        message: errorMessage,
+        ts: Date.now(),
+      });
+      terminateChild();
+    }, runTimeoutMs);
+    timeoutTimer.unref?.();
+  }
+  resetIdleTimer();
+
   const rl = createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     if (!line.trim()) return;
@@ -68,13 +228,10 @@ export function spawnWorker({
       logger?.warn?.({ line, err: err.message }, "worker emitted malformed stdout");
       return;
     }
-    const event = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
-    events.push(event);
-    schedulePersist();
-    broker.broadcast(runId, event);
-    if (event.type === "final") finalPayload = event;
-    if (event.type === "error") errorMessage = event.message;
-    if (event.type === "worklab_result_error") resultError = event.message || "invalid worklab_result";
+    const { rawEvent } = emitEvent(parsed);
+    if (rawEvent.type === "final") finalPayload = rawEvent;
+    if (rawEvent.type === "error") errorMessage = rawEvent.message;
+    if (rawEvent.type === "worklab_result_error") resultError = rawEvent.message || "invalid worklab_result";
   });
 
   child.stderr.on("data", (chunk) => {
@@ -92,10 +249,7 @@ export function spawnWorker({
   function cancel() {
     if (cancelRequested) return;
     cancelRequested = true;
-    try { child.kill("SIGTERM"); } catch { /* already gone */ }
-    sigkillTimer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch { /* already gone */ }
-    }, cancelGraceMs);
+    terminateChild();
   }
 
   const done = new Promise((resolve) => {
@@ -114,12 +268,21 @@ export function spawnWorker({
         clearTimeout(persistTimer);
         persistTimer = null;
       }
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+        timeoutTimer = null;
+      }
+      if (idleTimer) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
       const durationMs = Date.now() - startedAt;
       let processStatus = "succeeded";
-      if (cancelRequested || code === 130) processStatus = "cancelled";
+      if (timedOut) processStatus = "failed";
+      else if (cancelRequested || code === 130) processStatus = "cancelled";
       else if (code !== 0 || resultError) processStatus = "failed";
       const status = processStatusToLegacyStatus(processStatus);
-      const failureKind = resultError ? "invalid_result" : (processStatus === "failed" ? "spawn" : null);
+      const failureKind = timedOut ? "timeout" : resultError ? "invalid_result" : (processStatus === "failed" ? "spawn" : null);
       const result = finalPayload?.worklab_result || null;
 
       db.prepare(

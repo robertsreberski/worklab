@@ -84,15 +84,24 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   watcherHolder.current = createTaskWatcher({
     db, broker, spawn: spawnWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
+    runTimeoutMs: config.runTimeoutMs,
+    runIdleWarningMs: config.runIdleWarningMs,
+    logInlineLimit: config.logInlineLimit,
   });
   consolidationHolder.current = createConsolidationManager({
     db, broker, spawn: spawnWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
+    runTimeoutMs: config.runTimeoutMs,
+    runIdleWarningMs: config.runIdleWarningMs,
+    logInlineLimit: config.logInlineLimit,
   });
   consolidationHolder.current.start();
   automationManagerHolder.current = createAutomationManager({
     db, broker, spawn: spawnWorker, watcher: watcherHolder.current, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
+    runTimeoutMs: config.runTimeoutMs,
+    runIdleWarningMs: config.runIdleWarningMs,
+    logInlineLimit: config.logInlineLimit,
   });
   automationManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });

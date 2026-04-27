@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
 
@@ -38,6 +41,29 @@ describe("GET /api/runs/:id", () => {
 
     expect(res.body.run.process_status).toBe("running");
     expect(res.body.log.events).toEqual([{ type: "text", text: "still working", _event_seq: 1 }]);
+  });
+
+  it("returns a run raw log when the path is inside the data dir", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-raw-log-"));
+    try {
+      const { agent, db } = makeTestServer({ dataDir });
+      const taskId = newTaskId();
+      const runId = newRunId();
+      const now = Date.now();
+      const rawDir = join(dataDir, "logs", "runs");
+      const rawPath = join(rawDir, `${runId}.jsonl`);
+      mkdirSync(rawDir, { recursive: true });
+      writeFileSync(rawPath, "{\"type\":\"started\"}\n");
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+      db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, raw_output_path) VALUES (?, ?, 'execute', 'a', ?, 'complete', ?)")
+        .run(runId, taskId, now, rawPath);
+
+      const res = await agent.get(`/api/runs/${runId}/raw-log`).expect(200);
+      expect(res.text).toBe("{\"type\":\"started\"}\n");
+      expect(res.headers["content-type"]).toMatch(/text\/plain/);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 });
 

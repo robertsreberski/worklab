@@ -29,6 +29,9 @@ export function createConsolidationManager({
   repoRoot,
   dataDir,
   config = {},
+  runTimeoutMs = 30 * 60 * 1000,
+  runIdleWarningMs = 120 * 1000,
+  logInlineLimit = 12_000,
 } = {}) {
   const active = new Map();
   let interval = null;
@@ -85,6 +88,10 @@ export function createConsolidationManager({
       broker,
       db,
       logger,
+      dataDir,
+      runTimeoutMs,
+      runIdleWarningMs,
+      logInlineLimit,
     });
     db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
     active.set(agentName, { runId, handle });
