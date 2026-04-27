@@ -680,6 +680,44 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
   await expect(run).toContainText("Completed seeded run");
 });
 
+test("task detail run expansion only changes border color", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  const run = page.locator(".activity-feed-entry.run .run-card").first();
+  await expect(run).toBeVisible();
+
+  const before = await run.evaluate((node) => {
+    const summary = node.querySelector(".run-summary");
+    const cardStyle = getComputedStyle(node);
+    const summaryStyle = summary ? getComputedStyle(summary) : null;
+    return {
+      borderLeftWidth: cardStyle.borderLeftWidth,
+      borderRightWidth: cardStyle.borderRightWidth,
+      paddingLeft: summaryStyle?.paddingLeft || "",
+      paddingRight: summaryStyle?.paddingRight || "",
+    };
+  });
+
+  await run.locator(".run-card-summary").click();
+  await expect(run.locator(".run-card-events")).toBeVisible();
+
+  const after = await run.evaluate((node) => {
+    const summary = node.querySelector(".run-summary");
+    const cardStyle = getComputedStyle(node);
+    const summaryStyle = summary ? getComputedStyle(summary) : null;
+    return {
+      borderLeftWidth: cardStyle.borderLeftWidth,
+      borderRightWidth: cardStyle.borderRightWidth,
+      paddingLeft: summaryStyle?.paddingLeft || "",
+      paddingRight: summaryStyle?.paddingRight || "",
+    };
+  });
+
+  expect(after.borderLeftWidth).toBe(before.borderLeftWidth);
+  expect(after.borderRightWidth).toBe(before.borderRightWidth);
+  expect(after.paddingLeft).toBe(before.paddingLeft);
+  expect(after.paddingRight).toBe(before.paddingRight);
+});
+
 test("task detail mounts the automations card with scheduled markers", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-hero-status-row .chip", { hasText: "Scheduled" })).toBeVisible();
