@@ -683,6 +683,31 @@ test("task detail mounts the automations card with scheduled markers", async ({ 
   await expect(page.locator(".task-automation-row", { hasText: "Daily" })).toBeVisible();
 });
 
+test("task detail inline checkboxes align with their labels", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  await expect(page.locator(".task-subtasks-add .checkbox", { hasText: "Required" })).toBeVisible();
+  await page.locator(".task-automations-card").getByRole("button", { name: "Add" }).click();
+  await expect(page.locator(".task-automation-form .checkbox", { hasText: "Enabled" })).toBeVisible();
+
+  const deltas = await page.evaluate(() => {
+    function centerDelta(selector) {
+      const box = document.querySelector(`${selector} .checkbox-box`);
+      const label = document.querySelector(`${selector} .checkbox-label`);
+      if (!box || !label) return 99;
+      const boxRect = box.getBoundingClientRect();
+      const labelRect = label.getBoundingClientRect();
+      return Math.abs((boxRect.top + boxRect.height / 2) - (labelRect.top + labelRect.height / 2));
+    }
+    return {
+      required: centerDelta(".task-subtasks-add .checkbox"),
+      enabled: centerDelta(".task-automation-form .checkbox"),
+    };
+  });
+
+  expect(deltas.required).toBeLessThanOrEqual(2);
+  expect(deltas.enabled).toBeLessThanOrEqual(2);
+});
+
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/agents/regression-agent",
@@ -708,12 +733,14 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       title: "Regression Agent",
       rowText: "Regression Agent",
       detailText: "regression-agent",
+      entityEditor: true,
     },
     {
       hash: `#/skills/${skillName}`,
       title: "Regression Skill",
       rowText: "Regression Skill",
       detailText: "On demand",
+      entityEditor: true,
     },
     {
       hash: "#/knowledge/mobile-layout-reference",
@@ -733,24 +760,40 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
       await expect(page.locator(".pane-detail-subline", { hasText: route.detailText })).toBeVisible();
       await expect(page.locator(".pane-row.active", { hasText: route.rowText })).toBeVisible();
-      await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+      if (route.entityEditor) {
+        await expect(page.locator(".entity-editor-layout")).toBeVisible();
+        await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
+        await expect(page.locator(".entity-editor-rail .card-title").first()).toBeVisible();
+      } else {
+        await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+      }
 
-      const paneMetrics = await page.evaluate(() => {
+      const paneMetrics = await page.evaluate((entityEditor) => {
         const row = document.querySelector(".pane-row.active");
         const detailHead = document.querySelector(".pane-detail-head");
         const body = document.querySelector(".pane-detail-body");
         const list = document.querySelector(".pane-list");
+        const formSection = entityEditor
+          ? document.querySelector(".entity-editor-main > .form-section")
+          : document.querySelector(".pane-detail-body > .form-section");
+        const editor = document.querySelector(".entity-editor-layout");
         return {
           rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
           headHeight: detailHead ? Math.round(detailHead.getBoundingClientRect().height) : 0,
           bodyWidth: body ? Math.round(body.getBoundingClientRect().width) : 0,
           listWidth: list ? Math.round(list.getBoundingClientRect().width) : 0,
+          sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
+          editorColumns: editor ? getComputedStyle(editor).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
         };
-      });
+      }, !!route.entityEditor);
       expect(paneMetrics.rowHeight, `${viewport.label} ${route.hash} row height`).toBeGreaterThanOrEqual(56);
       expect(paneMetrics.headHeight, `${viewport.label} ${route.hash} head height`).toBeGreaterThanOrEqual(68);
       expect(paneMetrics.bodyWidth, `${viewport.label} ${route.hash} body width`).toBeGreaterThan(0);
       expect(paneMetrics.listWidth, `${viewport.label} ${route.hash} list width`).toBeGreaterThanOrEqual(300);
+      expect(paneMetrics.sectionRadius, `${viewport.label} ${route.hash} section radius`).toBeGreaterThanOrEqual(6);
+      if (route.entityEditor) {
+        expect(paneMetrics.editorColumns, `${viewport.label} ${route.hash} editor columns`).toBeGreaterThanOrEqual(1);
+      }
 
       await expectNoHorizontalOverflow(page, `${viewport.label} ${route.hash} polished panes`);
       await expectNoCriticalHorizontalClipping(
@@ -762,6 +805,8 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
           ".pane-list-head .button",
           ".pane-row-title",
           ".pane-row-meta",
+          ".entity-meta-row dt",
+          ".entity-meta-row dd",
           ".kb-category-badge",
           ".chip",
         ].join(", "),
@@ -774,8 +819,8 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
 test("mobile agents skills and knowledge panes preserve compact premium detail structure", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents" },
-    { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills" },
+    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true },
+    { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
     { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "All entries" },
   ];
 
@@ -784,25 +829,36 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
     await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
     await expect(page.locator(".pane-detail-subline")).toBeVisible();
-    await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+    if (route.entityEditor) {
+      await expect(page.locator(".entity-editor-layout")).toBeVisible();
+      await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
+      await expect(page.locator(".entity-editor-rail").first()).toBeVisible();
+    } else {
+      await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+    }
 
-    const mobileMetrics = await page.evaluate(() => {
+    const mobileMetrics = await page.evaluate((entityEditor) => {
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
-      const formSection = document.querySelector(".pane-detail-body > .form-section");
+      const formSection = entityEditor
+        ? document.querySelector(".entity-editor-main > .form-section")
+        : document.querySelector(".pane-detail-body > .form-section");
       const icon = document.querySelector(".pane-detail-icon, .agent-avatar");
+      const rail = document.querySelector(".entity-editor-rail");
       return {
         headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
         toolbarTop: toolbar ? Math.round(toolbar.getBoundingClientRect().top) : 0,
         headTop: head ? Math.round(head.getBoundingClientRect().top) : 0,
         sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
         iconWidth: icon ? Math.round(icon.getBoundingClientRect().width) : 0,
+        railPosition: rail ? getComputedStyle(rail).position : "",
       };
-    });
+    }, !!route.entityEditor);
     expect(mobileMetrics.headWidth).toBeLessThanOrEqual(390);
     expect(mobileMetrics.toolbarTop).toBeGreaterThanOrEqual(mobileMetrics.headTop);
     expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
     expect(mobileMetrics.iconWidth).toBeGreaterThanOrEqual(28);
+    if (route.entityEditor) expect(mobileMetrics.railPosition).toBe("static");
 
     await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
     await expectNoCriticalHorizontalClipping(
@@ -1031,8 +1087,8 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
 test("mobile create editors keep headers, actions, and forms usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents/new", title: "New agent", back: "All agents" },
-    { hash: "#/skills/new", title: "New skill", back: "All skills" },
+    { hash: "#/agents/new", title: "New agent", back: "All agents", entityEditor: true },
+    { hash: "#/skills/new", title: "New skill", back: "All skills", entityEditor: true },
     { hash: "#/knowledge/new", title: "New entry", back: "All entries" },
     { hash: "#/providers/new", title: "New provider", back: "All providers" },
   ];
@@ -1042,13 +1098,17 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
     await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
     await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
     await expect(page.locator(".pane-detail-head .toolbar .button").first()).toBeVisible();
-    await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+    if (route.entityEditor) {
+      await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
+    } else {
+      await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+    }
 
-    const metrics = await page.evaluate(() => {
+    const metrics = await page.evaluate((entityEditor) => {
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
       const buttons = [...document.querySelectorAll(".pane-detail-head .toolbar .button")];
-      const sections = [...document.querySelectorAll(".pane-detail-body > .form-section")];
+      const sections = [...document.querySelectorAll(entityEditor ? ".entity-editor-main > .form-section" : ".pane-detail-body > .form-section")];
       return {
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
@@ -1061,7 +1121,7 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
           ? Math.min(...sections.map((section) => Math.round(section.getBoundingClientRect().width)))
           : 0,
       };
-    });
+    }, !!route.entityEditor);
     expect(metrics.overflow, `${route.hash} overflow`).toBeLessThanOrEqual(0);
     expect(metrics.headWidth, `${route.hash} head width`).toBeLessThanOrEqual(390);
     expect(metrics.toolbarWidth, `${route.hash} toolbar width`).toBeLessThanOrEqual(390);
