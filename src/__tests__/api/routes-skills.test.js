@@ -2,9 +2,18 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import JSZip from "jszip";
 import supertest from "supertest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createServer } from "../../api/server.js";
+
+async function zipBuffer(files) {
+  const zip = new JSZip();
+  for (const [path, content] of Object.entries(files)) {
+    zip.file(path, content);
+  }
+  return zip.generateAsync({ type: "nodebuffer" });
+}
 
 describe("skills CRUD", () => {
   const dirs = [];
@@ -35,6 +44,20 @@ describe("skills CRUD", () => {
     expect(res.body.skills[0].display_name).toBe("");
   });
 
+  it("GET /api/skills/:name returns a names-only file tree", async () => {
+    const { agent, dataDir } = mkServer();
+    mkdirSync(join(dataDir, "skills", "alpha", "assets"), { recursive: true });
+    writeFileSync(join(dataDir, "skills", "alpha", "SKILL.md"), `---\nname: alpha\ntrigger: x\n---\nbody`);
+    writeFileSync(join(dataDir, "skills", "alpha", "assets", "prompt.txt"), "hello");
+
+    const res = await agent.get("/api/skills/alpha").expect(200);
+
+    expect(res.body.skill.files).toEqual([
+      { name: "assets", type: "folder", children: [{ name: "prompt.txt", type: "file" }] },
+      { name: "SKILL.md", type: "file" },
+    ]);
+  });
+
   it("POST /api/skills creates folder + SKILL.md", async () => {
     const { agent, dataDir } = mkServer();
     const res = await agent
@@ -46,6 +69,53 @@ describe("skills CRUD", () => {
     const content = readFileSync(join(dataDir, "skills", "new-skill", "SKILL.md"), "utf8");
     expect(content).toMatch(/trigger:/);
     expect(content).toMatch(/playbook/);
+  });
+
+  it("POST /api/skills/import imports a zip skill", async () => {
+    const { agent, dataDir } = mkServer();
+    const buffer = await zipBuffer({
+      "Imported Skill/SKILL.md": "---\ntrigger: when imported\n---\nbody",
+      "Imported Skill/assets/example.txt": "asset",
+    });
+
+    const res = await agent
+      .post("/api/skills/import")
+      .set("content-type", "application/zip")
+      .set("x-skill-filename", encodeURIComponent("fallback.zip"))
+      .send(buffer)
+      .expect(201);
+
+    expect(res.body.skill.name).toBe("imported-skill");
+    expect(existsSync(join(dataDir, "skills", "imported-skill", "assets", "example.txt"))).toBe(true);
+    expect(res.body.skill.files).toEqual([
+      { name: "assets", type: "folder", children: [{ name: "example.txt", type: "file" }] },
+      { name: "SKILL.md", type: "file" },
+    ]);
+  });
+
+  it("POST /api/skills/import rejects duplicate skill names", async () => {
+    const { agent, dataDir } = mkServer();
+    mkdirSync(join(dataDir, "skills", "dup"));
+    writeFileSync(join(dataDir, "skills", "dup", "SKILL.md"), `---\nname: dup\ntrigger: x\n---\n`);
+    const buffer = await zipBuffer({
+      "SKILL.md": "---\nname: dup\ntrigger: when dup\n---\nbody",
+    });
+
+    await agent
+      .post("/api/skills/import")
+      .set("content-type", "application/zip")
+      .send(buffer)
+      .expect(409);
+  });
+
+  it("POST /api/skills/import rejects invalid archives", async () => {
+    const { agent } = mkServer();
+
+    await agent
+      .post("/api/skills/import")
+      .set("content-type", "application/zip")
+      .send(Buffer.from("not a zip"))
+      .expect(400);
   });
 
   it("POST /api/skills generates a folder slug from display_name when name is omitted", async () => {

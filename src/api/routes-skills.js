@@ -1,6 +1,13 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { loadSkills, parseSkillFrontmatter } from "../core/skills.js";
+import express from "express";
+import {
+  buildSkillFileTree,
+  importSkillZip,
+  loadSkills,
+  parseSkillFrontmatter,
+  SkillImportError,
+} from "../core/skills.js";
 import { isValidSlug, uniqueSlug } from "../core/slugs.js";
 
 function serializeSkill(meta, body) {
@@ -20,6 +27,25 @@ function serializeSkill(meta, body) {
 
 export function registerSkillRoutes(app, { dataDir, db }) {
   const skillsDir = () => join(dataDir, "skills");
+  const parseZipBody = express.raw({ type: ["application/zip", "application/x-zip-compressed", "application/octet-stream"], limit: "25mb" });
+
+  function parseRawZip(req, res, next) {
+    parseZipBody(req, res, (err) => {
+      if (!err) return next();
+      const status = err.type === "entity.too.large" ? 413 : 400;
+      const code = status === 413 ? "too_large" : "validation";
+      res.status(status).json({ error: { code, message: status === 413 ? "zip file is too large" : err.message } });
+    });
+  }
+
+  function headerFilename(req) {
+    const raw = req.get("x-skill-filename") || req.get("x-filename") || "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
 
   app.get("/api/skills", (_req, res) => {
     const agents = db
@@ -49,7 +75,23 @@ export function registerSkillRoutes(app, { dataDir, db }) {
       return res.status(404).json({ error: { code: "not_found", message: "skill not found" } });
     }
     const parsed = parseSkillFrontmatter(readFileSync(file, "utf8"));
-    res.json({ skill: { name: req.params.name, meta: parsed?.meta || {}, body: parsed?.body || "" } });
+    res.json({ skill: { name: req.params.name, meta: parsed?.meta || {}, body: parsed?.body || "", files: buildSkillFileTree(dir) } });
+  });
+
+  app.post("/api/skills/import", parseRawZip, async (req, res, next) => {
+    try {
+      const skill = await importSkillZip({
+        skillsDir: skillsDir(),
+        zipBuffer: req.body,
+        filename: headerFilename(req),
+      });
+      res.status(201).json({ skill });
+    } catch (err) {
+      if (err instanceof SkillImportError) {
+        return res.status(err.status).json({ error: { code: err.code, message: err.message } });
+      }
+      next(err);
+    }
   });
 
   app.post("/api/skills", (req, res) => {
