@@ -3,6 +3,7 @@ import { parseModelReference } from "../core/ai.js";
 import { nextStage, processStatusToLegacyStatus } from "../core/state-machine.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { newAutomationRunId } from "../core/ids.js";
+import { readSettings } from "../core/settings.js";
 
 const TICK_MS = 60_000;
 
@@ -295,6 +296,7 @@ export function createAutomationManager({
 
     const { runId } = tx();
     try {
+      const settings = readSettings(db);
       const handle = spawn({
         binary: workerBinary,
         args: ["--mode", "automation", "--agent", automation.agent_name, "--automation", automation.id],
@@ -310,8 +312,8 @@ export function createAutomationManager({
         db,
         logger,
         dataDir,
-        cancelGraceMs,
-        runTimeoutMs,
+        cancelGraceMs: settings.cancel_grace_ms ?? cancelGraceMs,
+        runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
         runIdleWarningMs,
         logInlineLimit,
       });

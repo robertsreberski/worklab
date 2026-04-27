@@ -29,6 +29,7 @@ export function createConsolidationManager({
   repoRoot,
   dataDir,
   config = {},
+  cancelGraceMs = 5000,
   runTimeoutMs = 30 * 60 * 1000,
   runIdleWarningMs = 120 * 1000,
   logInlineLimit = 12_000,
@@ -68,6 +69,7 @@ export function createConsolidationManager({
     if (!journalHash) throw new Error(`agent ${agentName} has no journal entries`);
     const previous = db.prepare("SELECT last_journal_hash FROM agent_consolidations WHERE agent_name = ?").get(agentName);
     if (!force && previous?.last_journal_hash === journalHash) return { skipped: true, reason: "journal unchanged" };
+    const settings = readSettings(db);
 
     const runId = newRunId();
     const now = Date.now();
@@ -89,7 +91,8 @@ export function createConsolidationManager({
       db,
       logger,
       dataDir,
-      runTimeoutMs,
+      cancelGraceMs: settings.cancel_grace_ms ?? cancelGraceMs,
+      runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
       runIdleWarningMs,
       logInlineLimit,
     });

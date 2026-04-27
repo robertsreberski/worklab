@@ -68,4 +68,10 @@ describe("journal", () => {
   it("readJournalTail returns empty string when journal missing", () => {
     expect(readJournalTail({ dataDir: mk(), agent: "nobody", maxLines: 80 })).toBe("");
   });
+
+  it("readJournalTail returns empty string when maxLines is zero", () => {
+    const d = mk();
+    appendJournalEntry({ dataDir: d, agent: "a", runId: "r1", taskId: "t1", taskTitle: "x", bullet: "hidden" });
+    expect(readJournalTail({ dataDir: d, agent: "a", maxLines: 0 })).toBe("");
+  });
 });

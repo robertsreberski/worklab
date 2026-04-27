@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createAutomationManager } from "../../coordinator/automation-manager.js";
+import { writeSettings } from "../../core/settings.js";
 
 function stubBroker() {
   const events = [];
@@ -73,6 +74,38 @@ describe("automation manager", () => {
     expect(automation.last_run_id).toBe(result.started[0].runId);
     expect(broker.events.some((event) => event.type === "automation_triggered")).toBe(true);
     expect(db.prepare("SELECT outcome FROM automation_triggers WHERE automation_id = 'auto_1'").get()).toMatchObject({ outcome: "started" });
+  });
+
+  it("passes persisted worker timeout and cancel grace to taskless automation runs", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const now = Date.UTC(2026, 0, 5, 9, 0, 0, 0);
+    seedAgent(db);
+    writeSettings(db, { worker_timeout_ms: 2345, cancel_grace_ms: 45 });
+
+    db.prepare(`
+      INSERT INTO automations (
+        id, title, instructions, agent_name, tags, trigger_json,
+        enabled, next_fire_at, created_at, updated_at
+      ) VALUES (?, ?, '', ?, '[]', ?, 1, ?, ?, ?)
+    `).run(
+      "auto_settings",
+      "Daily sync",
+      "maintainer",
+      JSON.stringify({ type: "daily", hour: 9, minute: 0 }),
+      now,
+      now - 10_000,
+      now - 10_000,
+    );
+
+    const spawn = vi.fn(spawnFake);
+    const manager = createAutomationManager({ db, broker, spawn, runTimeoutMs: 999999 });
+    await manager.tick(now);
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      runTimeoutMs: 2345,
+      cancelGraceMs: 45,
+    }));
   });
 
   it("reopens a done task automation and starts a task run", async () => {
