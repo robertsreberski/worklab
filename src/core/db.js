@@ -337,6 +337,9 @@ export function runMigrations(db) {
   ensureWorkflowColumns(db);
   addColumnIfMissing(db, "tasks", "task_key", "task_key TEXT");
   addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
+  addColumnIfMissing(db, "agents", "skills_allowlist_mode", "skills_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
+  addColumnIfMissing(db, "agents", "mcp_allowlist_mode", "mcp_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
+  addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");

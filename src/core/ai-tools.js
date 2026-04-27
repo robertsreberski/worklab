@@ -39,7 +39,7 @@ function readSkillTool(skillNames = [], dataDir) {
   );
 }
 
-export function getOpenAITools(allowedTools = [], { skillNames = [], dataDir } = {}) {
+export function getOpenAITools(allowedTools, { skillNames = [], dataDir } = {}) {
   const all = {
     Read: makeTool("Read", "Read a local file with line numbers.", {
       file_path: { type: "string" }, offset: { type: "integer" }, limit: { type: "integer" },
@@ -66,7 +66,7 @@ export function getOpenAITools(allowedTools = [], { skillNames = [], dataDir } =
       query: { type: "string" }, limit: { type: "integer" },
     }, ["query"], webSearchToolImpl),
   };
-  const names = allowedTools?.length ? allowedTools : Object.keys(all);
+  const names = Array.isArray(allowedTools) ? allowedTools : Object.keys(all);
   const tools = names.map((name) => all[name]).filter(Boolean);
   const skillTool = readSkillTool(skillNames, dataDir);
   if (skillTool) tools.push(skillTool);

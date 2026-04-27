@@ -50,8 +50,11 @@ const emptyAgent = {
   effort: "medium",
   instructions: "",
   skills_allowlist: [],
+  skills_allowlist_mode: "all",
   mcp_allowlist: [],
+  mcp_allowlist_mode: "all",
   builtin_allowlist: [],
+  builtin_allowlist_mode: "all",
   enabled: true,
 };
 
@@ -103,11 +106,16 @@ function normalizedNames(list) {
   return Array.isArray(list) ? list.filter((name) => typeof name === "string" && name.trim()) : [];
 }
 
+function allowlistMode(mode) {
+  return mode === "custom" ? "custom" : "all";
+}
+
 function CapabilityGroup({
   title,
   hint,
   items = [],
   selected = [],
+  mode = "all",
   onChange,
   emptyText,
   collapseAllSelected = false,
@@ -116,7 +124,7 @@ function CapabilityGroup({
   const selectedSet = new Set(selectedNames);
   const availableItems = items.filter((item) => item.available !== false);
   const availableIds = availableItems.map((item) => item.id);
-  const explicit = selectedNames.length > 0;
+  const explicit = allowlistMode(mode) === "custom";
   const includedCount = explicit
     ? selectedNames.filter((id) => availableIds.includes(id)).length
     : availableItems.length;
@@ -129,17 +137,17 @@ function CapabilityGroup({
   function applySelection(next) {
     const availableNext = next.filter((id) => availableIds.includes(id));
     if (collapseAllSelected && availableNext.length === availableIds.length) {
-      onChange([]);
+      onChange([], "all");
       return;
     }
-    onChange(next);
+    onChange(availableNext, "custom");
   }
 
   function toggle(item) {
     if (item.available === false) return;
     if (!explicit) {
       const next = availableIds.filter((id) => id !== item.id);
-      applySelection(next.length ? next : []);
+      applySelection(next);
       return;
     }
     const next = selectedSet.has(item.id)
@@ -158,7 +166,7 @@ function CapabilityGroup({
         <div class="capability-panel-actions">
           <span class={`capability-mode ${!explicit ? "default" : explicit ? "explicit" : ""}`.trim()}>{summary}</span>
           {explicit && (
-            <button type="button" class="link-button capability-reset" onClick={() => onChange([])}>
+            <button type="button" class="link-button capability-reset" onClick={() => onChange([], "all")}>
               Reset to all
             </button>
           )}
@@ -242,25 +250,37 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     if (modelSaveBlocked) throw new Error(selectedModel?.unavailable_reason || "Selected model is unavailable");
     const enabledSkillNames = new Set(skills.filter((s) => s.enabled !== false).map((s) => s.name));
     const availableMcpNames = new Set(mcpServers.filter((s) => s.available !== false).map((s) => s.name));
+    const skillsMode = allowlistMode(agent.skills_allowlist_mode);
+    const mcpMode = allowlistMode(agent.mcp_allowlist_mode);
+    const builtinMode = allowlistMode(agent.builtin_allowlist_mode);
     const payload = {
       ...agent,
       name: isNew ? undefined : agent.name,
       effort: normalizedEffort,
-      skills_allowlist: normalizedNames(agent.skills_allowlist).filter((skill) => enabledSkillNames.has(skill)),
-      mcp_allowlist: normalizedNames(agent.mcp_allowlist).filter((server) => availableMcpNames.has(server)),
-      builtin_allowlist: supportsToolUse
-        ? agent.builtin_allowlist.filter((t) => visibleTools.includes(t))
+      skills_allowlist_mode: skillsMode,
+      skills_allowlist: skillsMode === "all"
+        ? []
+        : normalizedNames(agent.skills_allowlist).filter((skill) => enabledSkillNames.has(skill)),
+      mcp_allowlist_mode: mcpMode,
+      mcp_allowlist: mcpMode === "all"
+        ? []
+        : normalizedNames(agent.mcp_allowlist).filter((server) => availableMcpNames.has(server)),
+      builtin_allowlist_mode: builtinMode,
+      builtin_allowlist: supportsToolUse && builtinMode === "custom"
+        ? normalizedNames(agent.builtin_allowlist).filter((t) => visibleTools.includes(t))
         : [],
     };
     if (isNew) {
       const res = await api.createAgent(payload);
       pushToast("Agent created", { variant: "success" });
-      setBaseline(agent);
+      setAgent(res.agent);
+      setBaseline(res.agent);
       onSaved?.(res.agent.name);
     } else {
-      await api.patchAgent(name, payload);
+      const res = await api.patchAgent(name, payload);
       pushToast("Saved.", { variant: "success" });
-      setBaseline(agent);
+      setAgent(res.agent);
+      setBaseline(res.agent);
       onSaved?.(name);
     }
   });
@@ -345,24 +365,27 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const availableSkillCount = skills.filter((skill) => skill.enabled !== false).length;
   const availableMcpCount = mcpServers.filter((server) => server.available !== false).length;
   const availableToolCount = supportsToolUse ? visibleTools.length : 0;
+  const skillsMode = allowlistMode(agent.skills_allowlist_mode);
+  const mcpMode = allowlistMode(agent.mcp_allowlist_mode);
+  const builtinMode = allowlistMode(agent.builtin_allowlist_mode);
   const explicitSkillCount = normalizedNames(agent.skills_allowlist).length;
   const explicitMcpCount = normalizedNames(agent.mcp_allowlist).length;
   const explicitToolCount = normalizedNames(agent.builtin_allowlist).length;
   const capabilityMeta = [
     {
       label: "Skills",
-      value: explicitSkillCount ? `${explicitSkillCount}/${availableSkillCount} allowed` : `${availableSkillCount} available`,
+      value: skillsMode === "custom" ? `${explicitSkillCount}/${availableSkillCount} allowed` : `${availableSkillCount} available`,
       mono: false,
     },
     {
       label: "MCP",
-      value: explicitMcpCount ? `${explicitMcpCount}/${availableMcpCount} allowed` : `${availableMcpCount} available`,
+      value: mcpMode === "custom" ? `${explicitMcpCount}/${availableMcpCount} allowed` : `${availableMcpCount} available`,
       mono: false,
     },
     {
       label: "Built-ins",
       value: supportsToolUse
-        ? (explicitToolCount ? `${explicitToolCount}/${availableToolCount} allowed` : `${availableToolCount} available`)
+        ? (builtinMode === "custom" ? `${explicitToolCount}/${availableToolCount} allowed` : `${availableToolCount} available`)
         : "Unavailable",
       mono: false,
     },
@@ -518,7 +541,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     unavailableReason: "Disabled skill",
                   }))}
                   selected={agent.skills_allowlist}
-                  onChange={(next) => setAgent({ ...agent, skills_allowlist: next })}
+                  mode={skillsMode}
+                  onChange={(next, mode) => setAgent({ ...agent, skills_allowlist: next, skills_allowlist_mode: mode })}
                   emptyText="No skills defined yet."
                 />
                 <CapabilityGroup
@@ -534,7 +558,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     unavailableReason: server.unavailable_reason || "Unavailable",
                   }))}
                   selected={agent.mcp_allowlist}
-                  onChange={(next) => setAgent({ ...agent, mcp_allowlist: next })}
+                  mode={mcpMode}
+                  onChange={(next, mode) => setAgent({ ...agent, mcp_allowlist: next, mcp_allowlist_mode: mode })}
                   emptyText="No MCP servers registered."
                 />
                 <CapabilityGroup
@@ -549,7 +574,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     }))
                     : []}
                   selected={agent.builtin_allowlist}
-                  onChange={(next) => setAgent({ ...agent, builtin_allowlist: next })}
+                  mode={builtinMode}
+                  onChange={(next, mode) => setAgent({ ...agent, builtin_allowlist: next, builtin_allowlist_mode: mode })}
                   emptyText={supportsToolUse ? "No built-in tools are available." : "This runtime cannot call Worklab built-in tools."}
                   collapseAllSelected
                 />

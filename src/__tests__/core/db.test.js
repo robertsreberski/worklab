@@ -45,7 +45,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("12");
+    expect(row.value).toBe("13");
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {

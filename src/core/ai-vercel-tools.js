@@ -34,7 +34,7 @@ function readSkillTool(skillNames = [], dataDir) {
   });
 }
 
-export function getVercelTools({ allowedTools = [], skillNames = [], dataDir } = {}) {
+export function getVercelTools({ allowedTools, skillNames = [], dataDir } = {}) {
   const all = {
     Read: tool({ description: "Read a local file with line numbers.", inputSchema: z.object({ file_path: z.string(), offset: z.number().int().optional(), limit: z.number().int().optional() }), execute: readToolImpl }),
     Write: tool({ description: "Write content to a local file.", inputSchema: z.object({ file_path: z.string(), content: z.string() }), execute: writeToolImpl }),
@@ -45,7 +45,7 @@ export function getVercelTools({ allowedTools = [], skillNames = [], dataDir } =
     WebFetch: tool({ description: "Fetch a URL and return text.", inputSchema: z.object({ url: z.string(), headers: z.record(z.string(), z.string()).optional() }), execute: webFetchToolImpl }),
     WebSearch: tool({ description: "Search the web and return result summaries.", inputSchema: z.object({ query: z.string(), limit: z.number().int().optional() }), execute: webSearchToolImpl }),
   };
-  const names = allowedTools?.length ? allowedTools : Object.keys(all);
+  const names = Array.isArray(allowedTools) ? allowedTools : Object.keys(all);
   const out = Object.fromEntries(names.filter((name) => all[name]).map((name) => [name, all[name]]));
   const skillTool = readSkillTool(skillNames, dataDir);
   if (skillTool) out.read_skill = skillTool;
