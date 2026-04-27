@@ -19,6 +19,7 @@ export const worklabResultSchema = z.object({
   decision: z.enum(DECISIONS),
   summary: z.string().default(""),
   details: z.string().optional().default(""),
+  final_text: z.string().optional().default(""),
   artifacts: artifactSchema,
   blocking_issues: z.array(z.string()).default([]),
   pending_actions: z.array(z.string()).default([]),
@@ -34,6 +35,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     "decision",
     "summary",
     "details",
+    "final_text",
     "artifacts",
     "blocking_issues",
     "pending_actions",
@@ -45,6 +47,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     decision: { type: "string", enum: DECISIONS },
     summary: { type: "string" },
     details: { type: "string" },
+    final_text: { type: "string" },
     artifacts: { type: "object", additionalProperties: false, properties: {}, required: [] },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
@@ -82,6 +85,7 @@ export function normalizeWorklabResult(value, fallback = {}) {
     blocking_issues: [],
     pending_actions: [],
     subtasks: [],
+    final_text: "",
     ...fallback,
     ...(value || {}),
   });
@@ -250,6 +254,8 @@ export function extractWorklabResult(value, fallback = {}) {
 export function formatWorklabResultText(result) {
   const value = result?.worklab_result || result;
   if (!value || value.schema !== "worklab.v2") return "";
+  const finalText = typeof value.final_text === "string" ? value.final_text.trim() : "";
+  if (finalText) return finalText;
   const summary = typeof value.summary === "string" ? value.summary.trim() : "";
   const details = typeof value.details === "string" ? value.details.trim() : "";
   if (summary && details && summary !== details) return `${summary}\n\n${details}`;
@@ -297,13 +303,14 @@ export function stripWorklabResultJson(text) {
   return cleaned.trim();
 }
 
-export function synthesizeWorklabResult({ stage = "execute", decision = "advance", summary = "", details = "" } = {}) {
+export function synthesizeWorklabResult({ stage = "execute", decision = "advance", summary = "", details = "", final_text = "" } = {}) {
   return {
     schema: "worklab.v2",
     stage,
     decision,
     summary,
     details,
+    final_text,
     artifacts: {},
     blocking_issues: [],
     pending_actions: [],

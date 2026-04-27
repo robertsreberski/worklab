@@ -83,7 +83,7 @@ export function normalizeToolTokenEvent(event) {
   if (event.type === "final") {
     return {
       type: "text",
-      text: event.worklab_result?.summary || event.text || "Completed",
+      text: event.worklab_result?.final_text || event.worklab_result?.summary || event.text || "Completed",
     };
   }
   if (event.type === "verdict") {

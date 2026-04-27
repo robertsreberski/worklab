@@ -30,7 +30,9 @@ function formatFinalText(ev) {
   const delivered = normalizeCommentText(rawText);
   if (delivered && (delivered !== rawText || !/^[{[]/.test(rawText))) return delivered;
   const result = ev.worklab_result;
-  if (result?.summary || result?.details) {
+  if (result?.final_text || result?.summary || result?.details) {
+    const finalText = String(result.final_text || "").trim();
+    if (finalText) return finalText;
     const summary = String(result.summary || "").trim();
     const details = String(result.details || "").trim();
     if (summary && details && summary !== details) return `${summary}\n\n${details}`;

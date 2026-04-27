@@ -270,7 +270,7 @@ exit 0
       });
       expect(result.error).toBeNull();
       expect(result.text).toBe("structured ok");
-      expect(result.worklabResult).toEqual(structured);
+      expect(result.worklabResult).toMatchObject(structured);
       expect(result.structuredResultSource).toBe("StructuredOutput");
       expect(result.numTurns).toBe(1);
     } finally {
@@ -750,7 +750,7 @@ exit 0
             content: [expect.objectContaining({ type: "tool_result", tool_use_id: "cmd_1", is_error: false })],
           },
         }),
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: structured }),
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(structured) }),
       ]);
       expect(result.text).toBe("ok\n\ndone");
       expect(result.text).not.toContain("Inspecting the task");
@@ -799,14 +799,57 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toEqual(late);
+      expect(result.worklabResult).toMatchObject(late);
       expect(result.structuredResultSource).toBe("agent_message");
       expect(result.text).toBe("final summary\n\nfinal details");
       expect(result.text).not.toContain("\"schema\"");
       expect(result.events).toEqual([
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: early }),
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: late }),
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(early) }),
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(late) }),
       ]);
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("uses structured final_text as the final comment when Codex returns no prose", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "metadata summary",
+      details: "technical justification for Worklab",
+      final_text: "Human-facing final comment.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const events = [
+      { type: "item.completed", item: { id: "msg_1", type: "agent_message", text: JSON.stringify(structured) } },
+    ];
+    writeFileSync(fakeCodex, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.worklabResult).toEqual(structured);
+      expect(result.structuredResultSource).toBe("agent_message");
+      expect(result.text).toBe("Human-facing final comment.");
+      expect(result.text).not.toContain("technical justification");
+      expect(result.text).not.toContain("metadata summary");
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
@@ -854,7 +897,7 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toEqual(structured);
+      expect(result.worklabResult).toMatchObject(structured);
       expect(result.text).toBe("# Delivered Report\n\nUseful final answer.");
       expect(result.text).not.toContain("\"schema\"");
     } finally {

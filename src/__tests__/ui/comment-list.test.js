@@ -18,6 +18,23 @@ describe("comment display normalization", () => {
     expect(stripWorklabJson(body)).toBe("Approved\n\nLooks good.");
   });
 
+  it("prefers worklab_result final_text over summary and details", () => {
+    const body = JSON.stringify({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Metadata summary",
+      details: "Technical justification.",
+      final_text: "Human-facing final comment.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    });
+
+    expect(stripWorklabJson(body)).toBe("Human-facing final comment.");
+  });
+
   it("renders the last result from concatenated worklab_result JSON comments", () => {
     const first = {
       schema: "worklab.v2",
@@ -30,10 +47,10 @@ describe("comment display normalization", () => {
       pending_actions: ["finish"],
       subtasks: [],
     };
-    const last = { ...first, summary: "Finished", details: "Useful final details.", pending_actions: [] };
+    const last = { ...first, summary: "Finished", details: "Useful final details.", final_text: "Finished final comment.", pending_actions: [] };
 
     expect(normalizeCommentText(`${JSON.stringify(first)}\n\n${JSON.stringify(last)}`))
-      .toBe("Finished\n\nUseful final details.");
+      .toBe("Finished final comment.");
   });
 
   it("removes fenced worklab_result JSON from prose comments", () => {

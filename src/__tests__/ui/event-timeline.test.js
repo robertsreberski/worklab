@@ -74,20 +74,20 @@ describe("worklab event timeline normalization", () => {
     });
   });
 
-  it("uses worklab_result summary for visible final rows", () => {
+  it("uses worklab_result final_text for visible final rows", () => {
     const events = normalizeWorklabEvents([
       {
         type: "final",
         text: "{\"schema\":\"worklab.v2\"}",
-        worklab_result: { summary: "Short result", details: "Useful detail" },
+        worklab_result: { final_text: "Human-facing final comment", summary: "Short result", details: "Useful detail" },
         usage: { input_tokens: 1, output_tokens: 2 },
       },
     ]);
 
     expect(events[0]).toEqual({
       type: "final",
-      text: "Short result\n\nUseful detail\n\nin 1 / out 2",
-      structured: { summary: "Short result", details: "Useful detail" },
+      text: "Human-facing final comment\n\nin 1 / out 2",
+      structured: { final_text: "Human-facing final comment", summary: "Short result", details: "Useful detail" },
     });
   });
 
@@ -256,9 +256,9 @@ describe("compact run event labels", () => {
       normalizeToolTokenEvent({
         type: "final",
         text: "long final text",
-        worklab_result: { summary: "Short outcome" },
+        worklab_result: { final_text: "Final comment", summary: "Short outcome" },
       }),
-    ).toEqual({ type: "text", text: "Short outcome" });
+    ).toEqual({ type: "text", text: "Final comment" });
   });
 
   it("labels raw Codex file changes as file edits", () => {
