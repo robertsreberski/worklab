@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { normalizeReasoningEffortForModel } from "./ai.js";
+import { getSkillAccessDirs } from "./skills.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
   extractWorklabResult,
@@ -203,6 +204,7 @@ export function buildCliCommand({
   disallowedTools,
   permissionMode,
   maxTurns,
+  skillDirs,
 }) {
   const normalizedEffort = effort
     ? normalizeReasoningEffortForModel({ sdk, model }, effort)
@@ -220,6 +222,9 @@ export function buildCliCommand({
     if (normalizedEffort) args.push("--effort", normalizedEffort);
     if (permissionMode) args.push("--permission-mode", permissionMode);
     if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) args.push("--max-turns", String(Number(maxTurns)));
+    if (Array.isArray(skillDirs) && skillDirs.length) {
+      args.push("--add-dir", ...skillDirs);
+    }
     if (Array.isArray(allowedTools) && allowedTools.length) {
       args.push("--tools", allowedTools.join(","));
     }
@@ -282,6 +287,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     disallowedTools: options.disallowedTools,
     permissionMode: options.permissionMode,
     maxTurns: options.maxTurns,
+    skillDirs: getSkillAccessDirs(options.skills || []),
   });
 
   const events = [];

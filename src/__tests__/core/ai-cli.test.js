@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { buildCliCommand, generateCliResponse } from "../../core/ai-cli.js";
 import { parseModelReference } from "../../core/ai.js";
 import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result.js";
@@ -60,11 +60,13 @@ describe("CLI provider adapters", () => {
       disallowedTools: ["WebSearch"],
       permissionMode: "bypassPermissions",
       maxTurns: 12,
+      skillDirs: ["/tmp/worklab-skills"],
     });
     expect(cmd.args).toEqual(expect.arrayContaining([
       "--effort", "high",
       "--permission-mode", "bypassPermissions",
       "--max-turns", "12",
+      "--add-dir", "/tmp/worklab-skills",
       "--tools", "Read,Bash",
       "--allowedTools", "Read Bash mcp__worklab__*",
       "--disallowedTools", "WebSearch",
@@ -343,6 +345,7 @@ exit 0
         model: { sdk: "claude-code", model: "fake" },
         messages: [{ role: "user", content: "do work" }],
         cwd: process.cwd(),
+        skills: loadSkills(skillsDir),
         allowedTools: ["Read", "Bash"],
         disallowedTools: ["WebSearch"],
         permissionMode: "bypassPermissions",
@@ -359,7 +362,10 @@ exit 0
       const mcpConfig = JSON.parse(readFileSync(`${capturePrefix}.mcp`, "utf8"));
       expect(result.error).toBeNull();
       expect(argsText).toContain("SAMPLE_SKILL_BODY");
+      expect(argsText).toContain(`Worklab skills root: ${resolve(skillsDir)}`);
       expect(args).toEqual(expect.arrayContaining([
+        "--add-dir",
+        resolve(skillsDir),
         "--tools",
         "Read,Bash",
         "--allowedTools",

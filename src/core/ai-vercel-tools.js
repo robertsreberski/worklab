@@ -12,9 +12,10 @@ import {
 } from "./ai-tool-helpers.js";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { formatSkillBodyWithPathNote } from "./skills.js";
 
 function stripFrontmatter(content) {
-  const m = content.match(/^---\n[\s\S]*?\n---\n?/);
+  const m = content.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/);
   return m ? content.slice(m[0].length).trim() : content.trim();
 }
 
@@ -29,7 +30,11 @@ function readSkillTool(skillNames = [], dataDir) {
       const root = resolve(dataDir, "skills");
       if (!path.startsWith(root + "/")) return `Error: invalid skill path: ${name}`;
       if (!existsSync(path)) return `Error: SKILL.md not found for ${name}`;
-      return stripFrontmatter(readFileSync(path, "utf8")).slice(0, 12000);
+      return formatSkillBodyWithPathNote({
+        body: stripFrontmatter(readFileSync(path, "utf8")),
+        assetsPath: resolve(root, name),
+        skillsRoot: root,
+      });
     },
   });
 }
