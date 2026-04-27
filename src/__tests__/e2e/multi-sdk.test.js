@@ -130,10 +130,10 @@ beforeAll(async () => {
 // ══════════════════════════════════════════════════════════════════════════
 
 describe("generateResponse → OpenAI Agents SDK path", () => {
-  it("resolveModel returns sdk:openai for openai:gpt-5.4", () => {
-    const m = resolveModel("openai:gpt-5.4");
+  it("resolveModel returns sdk:openai for openai:gpt-5.5", () => {
+    const m = resolveModel("openai:gpt-5.5");
     expect(m.sdk).toBe("openai");
-    expect(m.model).toBe("gpt-5.4");
+    expect(m.model).toBe("gpt-5.5");
   });
 
   it("dispatches to ai-openai.js, emits events, returns canonical shape", async () => {
@@ -171,7 +171,7 @@ describe("generateResponse → OpenAI Agents SDK path", () => {
 
     const events = [];
     const result = await generateResponse("You are a test assistant.", {
-      model: resolveModel("openai:gpt-5.4"),
+      model: resolveModel("openai:gpt-5.5"),
       effort: "medium",
       messages: [{ role: "user", content: "hi" }],
       onEvent: (e) => events.push(e),
@@ -179,7 +179,7 @@ describe("generateResponse → OpenAI Agents SDK path", () => {
 
     // Basic shape assertions
     expect(result.sdk).toBe("openai");
-    expect(result.model).toBe("gpt-5.4");
+    expect(result.model).toBe("gpt-5.5");
     expect(typeof result.text).toBe("string");
     expect(result.text.length).toBeGreaterThan(0);
     expect(typeof result.durationMs).toBe("number");
@@ -212,7 +212,7 @@ describe("generateResponse → OpenAI Agents SDK path", () => {
     process.env.OPENAI_API_KEY = "test-key";
 
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.4"),
+      model: resolveModel("openai:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       onEvent: () => {},
@@ -238,7 +238,7 @@ describe("generateResponse → OpenAI Agents SDK path", () => {
     process.env.OPENAI_API_KEY = "test-key";
 
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.4"),
+      model: resolveModel("openai:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "x" }],
       abortSignal: ac.signal,
@@ -383,8 +383,8 @@ describe("resolveModel parse coverage", () => {
   });
 
   it("openai: form", () => {
-    const m = resolveModel("openai:gpt-5.4-mini");
-    expect(m).toMatchObject({ sdk: "openai", model: "gpt-5.4-mini" });
+    const m = resolveModel("openai:gpt-5.5");
+    expect(m).toMatchObject({ sdk: "openai", model: "gpt-5.5" });
   });
 
   it("vercel: form preserves colons in model name", () => {

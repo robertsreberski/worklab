@@ -92,11 +92,11 @@ async function closeMcpClients(clients) {
 }
 
 const OPENAI_COMPAT_REASONING_EFFORT = {
+  none: null,
   low: "low",
   medium: "medium",
   high: "high",
   xhigh: "high",
-  max: "high",
 };
 
 function toCamelCase(value = "") {

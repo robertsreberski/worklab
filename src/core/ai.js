@@ -5,9 +5,7 @@ export const BUILTIN_CLAUDE_MODELS = [
 ];
 
 export const BUILTIN_OPENAI_MODELS = [
-  "gpt-5.4-nano",
-  "gpt-5.4-mini",
-  "gpt-5.4",
+  "gpt-5.5",
 ];
 
 export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex"];
@@ -17,13 +15,11 @@ const MODEL_SHORT_LABELS = {
   "claude-haiku-4-5-20251001": "Haiku 4.5",
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-opus-4-7": "Opus 4.7",
-  "gpt-5.4-nano": "GPT-5.4 Nano",
-  "gpt-5.4-mini": "GPT-5.4 Mini",
-  "gpt-5.4": "GPT-5.4",
+  "gpt-5.5": "GPT-5.5",
 };
 
-const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
-const OPENAI_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
+const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh"];
+const OPENAI_REASONING_LEVELS = ["none", "low", "medium", "high", "xhigh"];
 
 function runtimeMetadata({
   runtimeKind,
@@ -145,28 +141,12 @@ const BUILTIN_MODEL_GROUPS = [
     label: "OpenAI",
     models: [
       {
-        value: "openai:gpt-5.4-nano",
-        label: "GPT-5.4 Nano",
-        description: "Fast",
+        value: "openai:gpt-5.5",
+        label: "GPT-5.5",
+        description: "Flagship",
         sdk: "openai",
-        model: "gpt-5.4-nano",
-        capabilities: openaiReasoningCapabilities("gpt-5.4-nano"),
-      },
-      {
-        value: "openai:gpt-5.4-mini",
-        label: "GPT-5.4 Mini",
-        description: "Balanced",
-        sdk: "openai",
-        model: "gpt-5.4-mini",
-        capabilities: openaiReasoningCapabilities("gpt-5.4-mini"),
-      },
-      {
-        value: "openai:gpt-5.4",
-        label: "GPT-5.4",
-        description: "Most capable",
-        sdk: "openai",
-        model: "gpt-5.4",
-        capabilities: openaiReasoningCapabilities("gpt-5.4"),
+        model: "gpt-5.5",
+        capabilities: openaiReasoningCapabilities("gpt-5.5"),
       },
     ],
   },
@@ -239,6 +219,60 @@ export function getBuiltinModelByReference(reference) {
   return getBuiltinModels().find((model) => model.value === reference) || null;
 }
 
+function inferFallbackCapabilities(resolved) {
+  if (!resolved?.sdk) return null;
+  if (resolved.sdk === "openai" || resolved.sdk === "codex") {
+    return openaiReasoningCapabilities(resolved.model, resolved.sdk === "codex" ? "cli" : "sdk");
+  }
+  if (resolved.sdk === "claude" || resolved.sdk === "claude-code") {
+    return claudeReasoningCapabilities(resolved.model, resolved.sdk === "claude-code" ? "cli" : "sdk");
+  }
+  return null;
+}
+
+function reasoningLevels(capabilities) {
+  if (!capabilities || capabilities.reasoning === false || capabilities.reasoning_mode === "none") return [];
+  if (Array.isArray(capabilities.reasoning_levels) && capabilities.reasoning_levels.length) {
+    return capabilities.reasoning_levels.filter((level) => typeof level === "string" && level !== "max");
+  }
+  return [...CLAUDE_REASONING_LEVELS];
+}
+
+function preferredEffort(levels, preferred = "medium") {
+  if (levels.includes(preferred)) return preferred;
+  if (levels.includes("low")) return "low";
+  return levels[0] || "medium";
+}
+
+export function normalizeReasoningEffortForModel(modelRefOrResolved, effort, capabilities = null) {
+  let resolved = null;
+  if (typeof modelRefOrResolved === "string") {
+    try { resolved = parseModelReference(modelRefOrResolved); } catch { resolved = null; }
+  } else if (modelRefOrResolved?.sdk) {
+    resolved = modelRefOrResolved;
+  }
+
+  const reference = resolved?.reference || (resolved?.sdk && resolved?.model ? `${resolved.sdk}:${resolved.model}` : null);
+  const builtin = reference ? getBuiltinModelByReference(reference) : null;
+  const caps = capabilities || builtin?.capabilities || inferFallbackCapabilities(resolved);
+  const mode = caps?.reasoning_mode || (caps?.reasoning ? "effort" : "none");
+  const requested = typeof effort === "string" && effort.trim() ? effort.trim() : null;
+
+  if (mode === "none") return "low";
+  if (mode === "toggle") return requested && requested !== "none" && requested !== "low" ? "medium" : "low";
+
+  const levels = reasoningLevels(caps);
+  if (!levels.length) return "low";
+  if (!requested) return preferredEffort(levels);
+  if (levels.includes(requested)) return requested;
+  if (requested === "max") {
+    if (levels.includes("xhigh")) return "xhigh";
+    if (levels.includes("high")) return "high";
+  }
+  if (requested === "none" && levels.includes("low")) return "low";
+  return levels[levels.length - 1];
+}
+
 function requireModelPart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) {
     throw new Error(message);
@@ -290,21 +324,24 @@ export function resolveModel(value) {
 
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
+  const nextOptions = resolved.sdk === "vercel"
+    ? { ...options, model: resolved }
+    : { ...options, model: resolved, effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium") };
   if (resolved.sdk === "claude") {
     const { generateClaudeResponse } = await import("./ai-claude.js");
-    return generateClaudeResponse(systemPrompt, { ...options, model: resolved });
+    return generateClaudeResponse(systemPrompt, nextOptions);
   }
   if (resolved.sdk === "openai") {
     const { generateOpenAIResponse } = await import("./ai-openai.js");
-    return generateOpenAIResponse(systemPrompt, { ...options, model: resolved });
+    return generateOpenAIResponse(systemPrompt, nextOptions);
   }
   if (resolved.sdk === "vercel") {
     const { generateVercelResponse } = await import("./ai-vercel.js");
-    return generateVercelResponse(systemPrompt, { ...options, model: resolved });
+    return generateVercelResponse(systemPrompt, nextOptions);
   }
   if (resolved.sdk === "claude-code" || resolved.sdk === "codex") {
     const { generateCliResponse } = await import("./ai-cli.js");
-    return generateCliResponse(systemPrompt, { ...options, model: resolved });
+    return generateCliResponse(systemPrompt, nextOptions);
   }
   throw new Error(`unsupported sdk: ${resolved.sdk}`);
 }

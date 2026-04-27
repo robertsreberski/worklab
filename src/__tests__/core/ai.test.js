@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { getBuiltinModelByReference, parseModelReference, resolveModel, isValidModelReference } from "../../core/ai.js";
+import {
+  getBuiltinModelByReference,
+  getBuiltinModels,
+  isValidModelReference,
+  normalizeReasoningEffortForModel,
+  parseModelReference,
+  resolveModel,
+} from "../../core/ai.js";
 
 describe("explicit model references", () => {
   it("parses an exact Claude model reference", () => {
@@ -11,9 +18,9 @@ describe("explicit model references", () => {
   });
 
   it("parses an exact OpenAI model reference", () => {
-    expect(resolveModel("openai:gpt-5.4-mini")).toMatchObject({
+    expect(resolveModel("openai:gpt-5.5")).toMatchObject({
       sdk: "openai",
-      model: "gpt-5.4-mini",
+      model: "gpt-5.5",
     });
   });
 
@@ -48,7 +55,7 @@ describe("explicit model references", () => {
 
   it("advertises CLI tool, skill, and MCP support accurately", () => {
     const claudeCode = getBuiltinModelByReference("claude-code:claude-sonnet-4-6");
-    const codex = getBuiltinModelByReference("codex:gpt-5.4-mini");
+    const codex = getBuiltinModelByReference("codex:gpt-5.5");
 
     expect(claudeCode).toMatchObject({
       sdk: "claude-code",
@@ -75,5 +82,19 @@ describe("explicit model references", () => {
         skills_mode: "prompt-index",
       },
     });
+  });
+
+  it("advertises only GPT-5.5 built-in OpenAI/Codex models", () => {
+    const values = getBuiltinModels().map((model) => model.value);
+
+    expect(values).toContain("openai:gpt-5.5");
+    expect(values).toContain("codex:gpt-5.5");
+    expect(values.some((value) => value.includes("gpt-5.4"))).toBe(false);
+  });
+
+  it("normalizes stale max effort to supported values", () => {
+    expect(normalizeReasoningEffortForModel("openai:gpt-5.5", "max")).toBe("xhigh");
+    expect(normalizeReasoningEffortForModel("claude:claude-sonnet-4-6", "max")).toBe("high");
+    expect(normalizeReasoningEffortForModel("openai:gpt-5.5", "none")).toBe("none");
   });
 });
