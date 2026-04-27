@@ -89,7 +89,10 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
       meta: { ...skill.meta, trigger: skill.meta.trigger, enabled: !!skill.meta.enabled },
       body: skill.body,
     };
-    if (!skill.meta.priority) delete payload.meta.priority;
+    if (!skill.meta.priority) {
+      if (isNew) delete payload.meta.priority;
+      else payload.meta.priority = null;
+    }
     if (isNew) {
       const res = await api.createSkill({ ...payload });
       pushToast("Skill created", { variant: "success" });
@@ -198,7 +201,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
                     onChange={(v) => setSkill({ ...skill, meta: { ...skill.meta, priority: v || undefined } })}
                   />
                 </FormField>
-                <FormField switchInside>
+                <FormField switchInside class="span-2">
                   <Switch
                     checked={skill.meta.enabled !== false}
                     onChange={(next) => setSkill({ ...skill, meta: { ...skill.meta, enabled: next } })}

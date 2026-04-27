@@ -154,6 +154,37 @@ describe("skills CRUD", () => {
     expect(content).toMatch(/new/);
   });
 
+  it("PATCH preserves priority when priority is omitted", async () => {
+    const { agent, dataDir } = mkServer();
+    await agent
+      .post("/api/skills")
+      .send({ name: "s", meta: { trigger: "t", enabled: true, priority: "always" }, body: "old" });
+
+    await agent
+      .patch("/api/skills/s")
+      .send({ meta: { trigger: "t2", enabled: true }, body: "new" })
+      .expect(200);
+
+    const content = readFileSync(join(dataDir, "skills", "s", "SKILL.md"), "utf8");
+    expect(content).toMatch(/^priority: always$/m);
+  });
+
+  it("PATCH clears priority when priority is explicitly blank", async () => {
+    const { agent, dataDir } = mkServer();
+    await agent
+      .post("/api/skills")
+      .send({ name: "s", meta: { trigger: "t", enabled: true, priority: "always" }, body: "old" });
+
+    const res = await agent
+      .patch("/api/skills/s")
+      .send({ meta: { trigger: "t2", enabled: true, priority: null }, body: "new" })
+      .expect(200);
+
+    const content = readFileSync(join(dataDir, "skills", "s", "SKILL.md"), "utf8");
+    expect("priority" in res.body.skill.meta).toBe(false);
+    expect(content).not.toMatch(/^priority:/m);
+  });
+
   it("DELETE removes the skill folder", async () => {
     const { agent, dataDir } = mkServer();
     await agent
