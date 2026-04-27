@@ -4550,11 +4550,16 @@ select,
   .pane-detail-head .toolbar {
     width: 100%;
     justify-content: flex-start;
+    align-items: stretch;
+  }
+  .pane-detail-head .toolbar .button {
+    flex: 1 1 112px;
   }
   .pane-detail-body { padding: var(--sp-4) var(--sp-3); }
   .pane-detail-body > .form-section { padding: var(--sp-4); }
   .pane-row-summary { justify-content: flex-start; }
   .pane-list-head { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
+  .pane-list-head > .button { width: 100%; }
   .pane-list-head .tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; gap: var(--sp-3); }
   .pane-list-head .tabs::-webkit-scrollbar { display: none; }
   .task-edit-body { padding: var(--sp-4) var(--sp-3); }
@@ -4821,6 +4826,36 @@ select,
     height: 38px;
   }
   .activity-filters { grid-template-columns: 1fr; }
+  .activity-list {
+    gap: var(--sp-2);
+  }
+  .activity-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: flex-start;
+    gap: var(--sp-2) var(--sp-3);
+    padding: var(--sp-3);
+    border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--surface) 62%, transparent);
+  }
+  .activity-row:last-child {
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  }
+  .activity-row .activity-title {
+    line-height: 1.3;
+  }
+  .activity-row .activity-meta {
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+  }
+  .activity-row .status-pill,
+  .activity-row .activity-time {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .activity-row .activity-time {
+    white-space: normal;
+  }
   .provider-model-grid { grid-template-columns: 1fr; }
   .provider-type-segmented { display: none; }
   .provider-type-select { max-width: none; }
@@ -4890,6 +4925,27 @@ select,
   }
   .modal-foot {
     padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    align-items: stretch;
+  }
+  .modal-foot .button {
+    width: 100%;
+    min-height: 46px;
+  }
+  .drawer {
+    width: 100%;
+  }
+  .drawer-body {
+    padding-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
+  }
+  .form-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    align-items: stretch;
+  }
+  .form-actions .button {
+    width: 100%;
   }
 
   .app:has(input:focus, textarea:focus, select:focus) {
@@ -4919,6 +4975,17 @@ select,
   .search-field { height: 40px; }
   .search-field-input { font-size: 16px; }
 
+  .toast-host {
+    left: var(--sp-3);
+    right: var(--sp-3);
+    bottom: calc(56px + var(--sp-3) + env(safe-area-inset-bottom));
+  }
+  .toast {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+  }
+
   /* Touch targets. WCAG 2.5.5 advisory is 44px; bump the small sizes that
      fall below that. Larger primitives (.button.md, .button.lg) already
      clear it. */
@@ -4942,6 +5009,12 @@ select,
   .card-collapsible-body > .button,
   .task-actions-stack > .button {
     width: 100%;
+  }
+  .kbd-help-grid {
+    grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  }
+  .kbd-help-label {
+    overflow-wrap: anywhere;
   }
 }
 
@@ -5019,6 +5092,21 @@ select,
   .run-metric-tokens {
     display: none;
   }
+  .summary-tiles {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-2);
+  }
+  .summary-tile,
+  .summary-tiles .metric {
+    min-width: 0;
+    padding: var(--sp-3);
+  }
+  .summary-tile .label,
+  .summary-tiles .metric .label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .activity-item {
     max-width: 100%;
   }
@@ -5071,7 +5159,7 @@ select,
   }
   .modal-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
   .modal-body { padding: var(--sp-4); }
-  .modal-foot { padding: var(--sp-2) var(--sp-4); }
+  .modal-foot { padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom)); }
   .drawer-head { padding: var(--sp-3) var(--sp-4); }
   .drawer-body { padding: var(--sp-4); }
 }

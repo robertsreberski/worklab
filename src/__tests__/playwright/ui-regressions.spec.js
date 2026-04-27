@@ -503,9 +503,10 @@ test("task detail renders two-column layout", async ({ page }) => {
 test("task detail polish keeps details, agent picker, and newest-first comments clear", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-detail-tile")).toHaveCount(0);
-  await expect(page.locator(".task-context-row")).toHaveCount(3);
+  await expect(page.locator(".task-context-row")).toHaveCount(4);
   await expect(page.locator(".task-context-row", { hasText: "Completed" })).toHaveCount(0);
   await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
+  await expect(page.locator(".task-context-row", { hasText: "Next scheduled run" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(2);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
@@ -844,8 +845,10 @@ function responsiveRoutes(page, ids) {
     { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
     { hash: "#/skills", ready: () => page.locator('h1.app-title', { hasText: "Skills" }) },
     { hash: `#/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
+    { hash: "#/skills/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New skill" }) },
     { hash: "#/knowledge", ready: () => page.locator('h1.app-title', { hasText: "Knowledge" }) },
     { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
+    { hash: "#/knowledge/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New entry" }) },
     { hash: "#/providers", ready: () => page.locator('h1.app-title', { hasText: "Providers" }) },
     { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
     { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
@@ -859,6 +862,7 @@ for (const vp of RESPONSIVE_VIEWPORTS) {
     await page.setViewportSize({ width: vp.w, height: vp.h });
     const routes = responsiveRoutes(page, { taskId, providerId, skillName });
     for (const route of routes) {
+      await page.goto("about:blank");
       await page.goto(`${baseUrl}/${route.hash}`);
       await expect(route.ready()).toBeVisible({ timeout: 5000 });
       await expectNoHorizontalOverflow(page, `${vp.label} ${route.hash}`);
@@ -1022,6 +1026,176 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
   expect(metrics.statusMinHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.bodyPaddingBottom).toBeGreaterThanOrEqual(120);
   await expectNoHorizontalOverflow(page, "mobile task edit action dock");
+});
+
+test("mobile create editors keep headers, actions, and forms usable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routes = [
+    { hash: "#/agents/new", title: "New agent", back: "All agents" },
+    { hash: "#/skills/new", title: "New skill", back: "All skills" },
+    { hash: "#/knowledge/new", title: "New entry", back: "All entries" },
+    { hash: "#/providers/new", title: "New provider", back: "All providers" },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
+    await expect(page.locator(".pane-detail-head .toolbar .button").first()).toBeVisible();
+    await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const head = document.querySelector(".pane-detail-head");
+      const toolbar = document.querySelector(".pane-detail-head .toolbar");
+      const buttons = [...document.querySelectorAll(".pane-detail-head .toolbar .button")];
+      const sections = [...document.querySelectorAll(".pane-detail-body > .form-section")];
+      return {
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
+        toolbarWidth: toolbar ? Math.round(toolbar.getBoundingClientRect().width) : 0,
+        minButtonHeight: buttons.length
+          ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height)))
+          : 0,
+        sectionCount: sections.length,
+        minSectionWidth: sections.length
+          ? Math.min(...sections.map((section) => Math.round(section.getBoundingClientRect().width)))
+          : 0,
+      };
+    });
+    expect(metrics.overflow, `${route.hash} overflow`).toBeLessThanOrEqual(0);
+    expect(metrics.headWidth, `${route.hash} head width`).toBeLessThanOrEqual(390);
+    expect(metrics.toolbarWidth, `${route.hash} toolbar width`).toBeLessThanOrEqual(390);
+    expect(metrics.minButtonHeight, `${route.hash} button height`).toBeGreaterThanOrEqual(44);
+    expect(metrics.sectionCount, `${route.hash} sections`).toBeGreaterThan(0);
+    expect(metrics.minSectionWidth, `${route.hash} section width`).toBeGreaterThan(0);
+
+    await expectNoHorizontalOverflow(page, `mobile create editor ${route.hash}`);
+    await expectNoCriticalHorizontalClipping(
+      page,
+      [
+        ".pane-mobile-back .button",
+        ".pane-detail-head h2",
+        ".pane-detail-subline",
+        ".pane-detail-head .button",
+        ".form-section-title",
+        ".form-field-label",
+        ".kb-category-badge",
+        ".chip",
+      ].join(", "),
+      `mobile create editor ${route.hash}`,
+    );
+  }
+});
+
+test("mobile activity screen uses stacked readable rows", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/activity`);
+  await expect(page.locator(".activity-row").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const filters = document.querySelector(".activity-filters");
+    const row = document.querySelector(".activity-row");
+    const status = row?.querySelector(".status-pill");
+    const time = row?.querySelector(".activity-time");
+    const tiles = [...document.querySelectorAll(".summary-tiles .metric")];
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      filterColumns: filters ? getComputedStyle(filters).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
+      rowColumns: row ? getComputedStyle(row).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
+      rowWidth: row ? Math.round(row.getBoundingClientRect().width) : 0,
+      rowRadius: row ? parseFloat(getComputedStyle(row).borderRadius) : 0,
+      statusColumn: status ? getComputedStyle(status).gridColumnStart : "",
+      timeColumn: time ? getComputedStyle(time).gridColumnStart : "",
+      tileCount: tiles.length,
+      tileColumns: tiles.length
+        ? getComputedStyle(tiles[0].parentElement).gridTemplateColumns.split(" ").filter(Boolean).length
+        : 0,
+    };
+  });
+
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+  expect(metrics.filterColumns).toBe(1);
+  expect(metrics.rowColumns).toBe(2);
+  expect(metrics.rowWidth).toBeLessThanOrEqual(390);
+  expect(metrics.rowRadius).toBeGreaterThanOrEqual(6);
+  expect(metrics.statusColumn).toBe("2");
+  expect(metrics.timeColumn).toBe("2");
+  expect(metrics.tileCount).toBe(3);
+  expect(metrics.tileColumns).toBe(3);
+  await expectNoHorizontalOverflow(page, "mobile activity rows");
+  await expectNoCriticalHorizontalClipping(
+    page,
+    [
+      ".summary-tiles .metric .label",
+      ".summary-tiles .metric .value",
+      ".activity-title",
+      ".activity-meta",
+      ".activity-time",
+      ".status-pill-label",
+    ].join(", "),
+    "mobile activity rows",
+  );
+});
+
+test("mobile overlays keep drawer and modal controls reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+  await page.keyboard.press("?");
+  await expect(page.locator(".drawer", { hasText: "Keyboard shortcuts" })).toBeVisible();
+
+  const drawerMetrics = await page.evaluate(() => {
+    const drawer = document.querySelector(".drawer");
+    const body = document.querySelector(".drawer-body");
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      width: drawer ? Math.round(drawer.getBoundingClientRect().width) : 0,
+      bodyPaddingBottom: body ? Math.round(parseFloat(getComputedStyle(body).paddingBottom)) : 0,
+    };
+  });
+  expect(drawerMetrics.overflow).toBeLessThanOrEqual(0);
+  expect(drawerMetrics.width).toBeLessThanOrEqual(390);
+  expect(drawerMetrics.bodyPaddingBottom).toBeGreaterThan(0);
+  await expectNoCriticalHorizontalClipping(
+    page,
+    [".drawer-head h2", ".kbd-help-keys", ".kbd-help-label"].join(", "),
+    "mobile keyboard drawer",
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".drawer")).toHaveCount(0);
+
+  await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
+  await page.locator('input[placeholder*="actionable"]').fill("UI regression task with unsaved mobile edit");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".modal", { hasText: "You have unsaved changes" })).toBeVisible();
+
+  const modalMetrics = await page.evaluate(() => {
+    const modal = document.querySelector(".modal");
+    const footer = document.querySelector(".modal-foot");
+    const buttons = [...document.querySelectorAll(".modal-foot .button")];
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      width: modal ? Math.round(modal.getBoundingClientRect().width) : 0,
+      footerDisplay: footer ? getComputedStyle(footer).display : "",
+      minButtonHeight: buttons.length
+        ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height)))
+        : 0,
+      maxButtonWidth: buttons.length
+        ? Math.max(...buttons.map((button) => Math.round(button.getBoundingClientRect().width)))
+        : 0,
+    };
+  });
+  expect(modalMetrics.overflow).toBeLessThanOrEqual(0);
+  expect(modalMetrics.width).toBeLessThanOrEqual(390);
+  expect(modalMetrics.footerDisplay).toBe("grid");
+  expect(modalMetrics.minButtonHeight).toBeGreaterThanOrEqual(44);
+  expect(modalMetrics.maxButtonWidth).toBeLessThanOrEqual(390);
+  await expectNoCriticalHorizontalClipping(
+    page,
+    [".modal-head h2", ".modal-body", ".modal-foot .button"].join(", "),
+    "mobile unsaved modal",
+  );
 });
 
 test("pressing N opens new-task form from the commander", async ({ page }) => {
