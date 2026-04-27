@@ -51,9 +51,29 @@ function ensureNullableTaskRunsTaskId(db) {
   const taskId = getColumn(db, "task_runs", "task_id");
   if (!taskId || taskId.notnull === 0) return;
 
+  const runColumns = db.prepare("PRAGMA table_info(task_runs)").all().map((row) => row.name);
+  const runColumn = (name, fallback = "NULL") => runColumns.includes(name) ? name : fallback;
+  const statusExpression = runColumn("status", "'running'");
+  const processStatusExpression = runColumns.includes("process_status")
+    ? "process_status"
+    : `CASE ${statusExpression}
+        WHEN 'complete' THEN 'succeeded'
+        WHEN 'succeeded' THEN 'succeeded'
+        WHEN 'error' THEN 'failed'
+        WHEN 'failed' THEN 'failed'
+        WHEN 'cancelled' THEN 'cancelled'
+        WHEN 'abandoned' THEN 'abandoned'
+        WHEN 'queued' THEN 'queued'
+        ELSE 'running'
+      END`;
+  const stageExpression = runColumns.includes("stage")
+    ? "COALESCE(stage, CASE WHEN mode = 'review' THEN 'review' ELSE 'execute' END)"
+    : "CASE WHEN mode = 'review' THEN 'review' ELSE 'execute' END";
+
   db.exec(`
     PRAGMA foreign_keys = OFF;
-    CREATE TABLE IF NOT EXISTS task_runs_new (
+    DROP TABLE IF EXISTS task_runs_new;
+    CREATE TABLE task_runs_new (
       id TEXT PRIMARY KEY,
       task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
       parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
@@ -78,9 +98,16 @@ function ensureNullableTaskRunsTaskId(db) {
       result_json TEXT
     );
     INSERT INTO task_runs_new
-      (id, task_id, mode, stage, agent_name, worker_pid, status, process_status, started_at, ended_at, exit_code, error_text)
-    SELECT id, task_id, mode, CASE WHEN mode = 'review' THEN 'review' ELSE 'execute' END,
-           agent_name, worker_pid, status, status, started_at, ended_at, exit_code, error_text
+      (id, task_id, parent_run_id, mode, stage, agent_name, provider_kind, worker_pid,
+       status, process_status, decision, failure_kind, retry_stage, started_at, ended_at,
+       exit_code, error_text, summary, details, raw_output_path, artifact_paths_json, result_json)
+    SELECT id, task_id, ${runColumn("parent_run_id")}, mode, ${stageExpression}, agent_name,
+           ${runColumn("provider_kind")}, ${runColumn("worker_pid")}, ${statusExpression},
+           ${processStatusExpression}, ${runColumn("decision")}, ${runColumn("failure_kind")},
+           ${runColumn("retry_stage")}, ${runColumn("started_at", "0")},
+           ${runColumn("ended_at")}, ${runColumn("exit_code")}, ${runColumn("error_text")},
+           ${runColumn("summary")}, ${runColumn("details")}, ${runColumn("raw_output_path")},
+           ${runColumn("artifact_paths_json", "'[]'")}, ${runColumn("result_json")}
     FROM task_runs;
     DROP TABLE task_runs;
     ALTER TABLE task_runs_new RENAME TO task_runs;
