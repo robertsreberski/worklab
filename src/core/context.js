@@ -1,4 +1,5 @@
 import { buildSkillIndex } from "./skills.js";
+import { stripWorklabResultJson } from "./worklab-result.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
@@ -74,8 +75,9 @@ function formatWorkOutput(execution) {
   const safeNumTurns = numTurns ?? 0;
   const safeDurationMs = durationMs ?? 0;
   const header = `## Work output (by ${safeAgentName}, ${safeNumTurns} turns, ${formatDuration(safeDurationMs)})`;
-  const body = finalText && String(finalText).trim()
-    ? String(finalText).trim()
+  const formatted = formatContextText(finalText);
+  const body = formatted
+    ? formatted
     : "_The owner produced no final text._";
   return `${header}\n\n${body}\n`;
 }
@@ -90,7 +92,7 @@ function formatComments(comments) {
   return comments
     .map((c, index) => {
       const who = c.author_id ? `${c.author_type} ${c.author_id}` : c.author_type;
-      return `### Comment ${index + 1} (${who})\n\n${String(c.body || "").trim()}`;
+      return `### Comment ${index + 1} (${who})\n\n${formatContextText(c.body || c.content || "")}`;
     })
     .join("\n\n");
 }
@@ -119,6 +121,24 @@ function clipText(text, maxChars = 1200) {
   return `${trimmed.slice(0, maxChars)}\n...[truncated]`;
 }
 
+function collapseDuplicateParagraphs(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const paragraphs = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
+  if (paragraphs.length <= 1) return raw;
+  const seen = new Set();
+  return paragraphs.filter((paragraph) => {
+    const key = paragraph.replace(/\s+/g, " ");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join("\n\n");
+}
+
+function formatContextText(text, maxChars = 1200) {
+  return clipText(collapseDuplicateParagraphs(stripWorklabResultJson(text)), maxChars);
+}
+
 function formatPriorRuns(priorRuns) {
   if (!priorRuns?.length) return "";
   return priorRuns
@@ -132,7 +152,7 @@ function formatPriorRuns(priorRuns) {
         run.errorText ? `- Error: ${run.errorText}` : "",
       ].filter(Boolean);
 
-      const finalText = clipText(run.finalText);
+      const finalText = formatContextText(run.finalText);
       if (finalText) {
         lines.push("", "**Final output:**", finalText);
       }

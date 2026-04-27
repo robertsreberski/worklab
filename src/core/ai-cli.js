@@ -302,11 +302,11 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       const ev = normalizeCliEvent(raw);
       events.push(ev);
       options.onEvent?.(ev);
-      if (!worklabResult) {
-        const structured = extractWorklabResult(raw);
+      for (const candidate of [raw, ev]) {
+        const structured = extractWorklabResult(candidate);
         if (structured.ok) {
           worklabResult = structured.result;
-          structuredResultSource = structuredResultSource || inferStructuredResultSource(raw);
+          structuredResultSource = inferStructuredResultSource(raw);
         }
       }
       const text = textFromEvent(raw);

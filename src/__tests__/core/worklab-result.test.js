@@ -51,6 +51,30 @@ describe("worklab_result contract", () => {
     expect(fenced.result.decision).toBe("pause");
   });
 
+  it("parses the last worklab result from concatenated progress JSON", () => {
+    const first = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "started",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: ["finish"],
+      subtasks: [],
+    };
+    const last = {
+      ...first,
+      summary: "finished",
+      details: "final details",
+      pending_actions: [],
+    };
+    const parsed = parseWorklabResultFromText(`${JSON.stringify(first)}\n\n${JSON.stringify(last)}`);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.summary).toBe("finished");
+    expect(parsed.result.details).toBe("final details");
+  });
+
   it("extracts a result from Claude StructuredOutput tool events", () => {
     const event = {
       type: "assistant",
@@ -75,6 +99,22 @@ describe("worklab_result contract", () => {
     const parsed = extractWorklabResult(event);
     expect(parsed.ok).toBe(true);
     expect(parsed.result.summary).toBe("done");
+  });
+
+  it("extracts the latest result from Codex agent message item streams", () => {
+    const parsed = extractWorklabResult({
+      type: "item.completed",
+      item: {
+        type: "agent_message",
+        text: [
+          "{\"schema\":\"worklab.v2\",\"stage\":\"execute\",\"decision\":\"advance\",\"summary\":\"early\",\"details\":\"\",\"artifacts\":{},\"blocking_issues\":[],\"pending_actions\":[\"x\"],\"subtasks\":[]}",
+          "{\"schema\":\"worklab.v2\",\"stage\":\"execute\",\"decision\":\"advance\",\"summary\":\"late\",\"details\":\"done\",\"artifacts\":{},\"blocking_issues\":[],\"pending_actions\":[],\"subtasks\":[]}",
+        ].join("\n\n"),
+      },
+    });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.summary).toBe("late");
+    expect(parsed.result.pending_actions).toEqual([]);
   });
 
   it("synthesizes the default empty arrays and artifact object", () => {

@@ -101,48 +101,107 @@ export function parseWorklabResultFromText(text, fallback = {}) {
   try {
     return normalizeWorklabResult(JSON.parse(raw), fallback);
   } catch {
-    const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-    if (!fenced) return { ok: false, error: "final text is not JSON", result: null };
-    try {
-      return normalizeWorklabResult(JSON.parse(fenced[1]), fallback);
-    } catch {
-      return { ok: false, error: "fenced final text is not valid JSON", result: null };
-    }
+    const candidates = parseWorklabResultsFromText(raw, fallback);
+    if (candidates.length > 0) return { ok: true, error: null, result: candidates[candidates.length - 1] };
+    return { ok: false, error: "final text is not JSON", result: null };
   }
 }
 
-function firstWorklabCandidate(value, seen = new Set(), depth = 0) {
-  if (value == null || depth > 8) return null;
-  if (typeof value === "string") {
-    const parsed = parseWorklabResultFromText(value);
-    return parsed.ok ? parsed.result : null;
+function extractJsonObjectStrings(text) {
+  const raw = String(text || "");
+  const objects = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+    if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(raw.slice(start, i + 1));
+        start = -1;
+      }
+    }
   }
-  if (typeof value !== "object") return null;
-  if (seen.has(value)) return null;
+  return objects;
+}
+
+function collectTextJsonCandidates(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return [];
+  const candidates = [];
+  const fencedRe = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match;
+  while ((match = fencedRe.exec(raw))) candidates.push(match[1]);
+  candidates.push(...extractJsonObjectStrings(raw));
+  return candidates;
+}
+
+export function parseWorklabResultsFromText(text, fallback = {}) {
+  const results = [];
+  for (const candidate of collectTextJsonCandidates(text)) {
+    try {
+      const normalized = normalizeWorklabResult(JSON.parse(candidate), fallback);
+      if (normalized.ok) results.push(normalized.result);
+    } catch {
+      // Ignore non-JSON braces in ordinary prose and keep looking.
+    }
+  }
+  return results;
+}
+
+function collectWorklabCandidates(value, out, seen = new Set(), depth = 0) {
+  if (value == null || depth > 8) return;
+  if (typeof value === "string") {
+    out.push(...parseWorklabResultsFromText(value));
+    return;
+  }
+  if (typeof value !== "object") return;
+  if (seen.has(value)) return;
   seen.add(value);
 
-  if (value.schema === "worklab.v2") return value;
+  if (value.schema === "worklab.v2") {
+    out.push(value);
+    return;
+  }
   if (value.worklab_result) {
-    const nested = firstWorklabCandidate(value.worklab_result, seen, depth + 1);
-    if (nested) return nested;
+    collectWorklabCandidates(value.worklab_result, out, seen, depth + 1);
   }
   if ((value.type === "tool_use" || value.type === "tool_call") && value.name === "StructuredOutput") {
-    const nested = firstWorklabCandidate(value.input ?? value.arguments, seen, depth + 1);
-    if (nested) return nested;
+    collectWorklabCandidates(value.input ?? value.arguments, out, seen, depth + 1);
   }
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const nested = firstWorklabCandidate(item, seen, depth + 1);
-      if (nested) return nested;
+      collectWorklabCandidates(item, out, seen, depth + 1);
     }
-    return null;
+    return;
   }
 
   const likelyKeys = [
     "result",
     "final_output",
     "output",
+    "text",
     "input",
     "arguments",
     "message",
@@ -151,16 +210,61 @@ function firstWorklabCandidate(value, seen = new Set(), depth = 0) {
   ];
   for (const key of likelyKeys) {
     if (!(key in value)) continue;
-    const nested = firstWorklabCandidate(value[key], seen, depth + 1);
-    if (nested) return nested;
+    collectWorklabCandidates(value[key], out, seen, depth + 1);
   }
-  return null;
 }
 
 export function extractWorklabResult(value, fallback = {}) {
-  const candidate = firstWorklabCandidate(value);
+  const candidates = [];
+  collectWorklabCandidates(value, candidates);
+  const candidate = candidates[candidates.length - 1];
   if (!candidate) return { ok: false, error: "no worklab_result found", result: null };
   return normalizeWorklabResult(candidate, fallback);
+}
+
+export function formatWorklabResultText(result) {
+  const value = result?.worklab_result || result;
+  if (!value || value.schema !== "worklab.v2") return "";
+  const summary = typeof value.summary === "string" ? value.summary.trim() : "";
+  const details = typeof value.details === "string" ? value.details.trim() : "";
+  if (summary && details && summary !== details) return `${summary}\n\n${details}`;
+  return details || summary;
+}
+
+function parseStandaloneWorklabResultText(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return null;
+  try {
+    const parsed = normalizeWorklabResult(JSON.parse(raw));
+    if (parsed.ok) return parsed.result;
+  } catch {
+    // Continue with fenced or concatenated JSON payloads.
+  }
+  const fencedOnly = raw.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+  if (fencedOnly) {
+    const parsed = parseWorklabResultFromText(fencedOnly[1]);
+    return parsed.ok ? parsed.result : null;
+  }
+  const candidates = extractJsonObjectStrings(raw);
+  if (candidates.length === 0) return null;
+  let remainder = raw;
+  for (const candidate of candidates) remainder = remainder.replace(candidate, "");
+  if (remainder.trim()) return null;
+  const results = parseWorklabResultsFromText(raw);
+  return results[results.length - 1] || null;
+}
+
+export function stripWorklabResultJson(text) {
+  const raw = String(text || "").trim();
+  if (!raw) return "";
+  const standalone = parseStandaloneWorklabResultText(raw);
+  if (standalone) return formatWorklabResultText(standalone);
+  return raw
+    .replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, body) => {
+      const results = parseWorklabResultsFromText(body);
+      return results.length > 0 ? formatWorklabResultText(results[results.length - 1]) : match;
+    })
+    .trim();
 }
 
 export function synthesizeWorklabResult({ stage = "execute", decision = "advance", summary = "", details = "" } = {}) {
