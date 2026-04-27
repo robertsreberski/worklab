@@ -55,6 +55,13 @@ describe("structured value parsing", () => {
     expect(structuredPreview(error)).toBe("invalid_json_schema · text.format.schema · Invalid schema");
   });
 
+  it("does not treat successful status objects as errors", () => {
+    const payload = { status: "completed", changes: [{ path: "/tmp/a.js", kind: "update" }] };
+
+    expect(structuredKind(payload)).toBe("object");
+    expect(structuredPreview(payload)).toBe("2 fields");
+  });
+
   it("unwraps serialized provider errors embedded in CLI event messages", () => {
     const providerError = {
       type: "error",

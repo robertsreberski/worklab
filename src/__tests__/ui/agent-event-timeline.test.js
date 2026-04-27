@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { groupAgentTimelineEvents, normaliseAgentTimelineEvents } from "../../ui/src/components/AgentEventTimeline.jsx";
+import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 
 describe("agent event timeline normalization", () => {
   it("coalesces consecutive thinking fragments", () => {
@@ -59,5 +60,16 @@ describe("agent event timeline normalization", () => {
     expect(items[0]._toolCall).toBe(true);
     expect(items[0].toolUse.name).toBe("file_edit");
     expect(items[0].toolResult.is_error).toBe(false);
+  });
+
+  it("summarizes file edits with captured line stats", () => {
+    expect(fileEditSummary({
+      status: "completed",
+      changes: [{
+        path: "/workspace/catching-up/build_wp_p2_tree.py",
+        kind: "update",
+        line_stats: { added_lines: 12, removed_lines: 3 },
+      }],
+    })).toBe("update build_wp_p2_tree.py (+12 -3)");
   });
 });

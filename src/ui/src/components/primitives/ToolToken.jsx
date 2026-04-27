@@ -22,10 +22,19 @@ function shortPath(value) {
   return String(value || "").split(/[\\/]/).filter(Boolean).pop() || String(value || "");
 }
 
+function lineDelta(stats = {}) {
+  const added = Number(stats.added_lines);
+  const removed = Number(stats.removed_lines);
+  if (Number.isFinite(added) || Number.isFinite(removed)) {
+    return ` (+${Number.isFinite(added) ? added : 0} -${Number.isFinite(removed) ? removed : 0})`;
+  }
+  return "";
+}
+
 function fileChangeLabel(changes = []) {
   const list = Array.isArray(changes) ? changes : [];
   return list
-    .map((change) => `${change?.kind || "change"} ${shortPath(change?.path || "")}`.trim())
+    .map((change) => `${change?.kind || "change"} ${shortPath(change?.path || "")}${lineDelta(change?.line_stats)}`.trim())
     .filter(Boolean)
     .join(", ");
 }
@@ -56,14 +65,32 @@ export function normalizeToolTokenEvent(event) {
   }
 
   if (event.type === "tool_use") {
+    const name = event.name || event.tool || "tool";
+    if (name === "file_edit") {
+      return {
+        ...event,
+        name,
+        arg: fileChangeLabel(event.input?.changes),
+        status: event.input?.status === "completed" ? "done" : event.input?.status === "failed" ? "error" : event.input?.status === "in_progress" ? "running" : event.status,
+      };
+    }
     return {
       ...event,
-      name: event.name || event.tool || "tool",
+      name,
       arg: previewValue(event.input ?? event.arguments ?? event.arg),
     };
   }
   if (event.type === "tool_result") {
-    const output = previewValue(event.output ?? event.content ?? event.result);
+    const payload = event.output ?? event.content ?? event.result;
+    if (payload?.changes && payload?.status) {
+      return {
+        type: "tool_use",
+        name: "file_edit",
+        arg: fileChangeLabel(payload.changes),
+        status: event.is_error || event.error ? "error" : "done",
+      };
+    }
+    const output = previewValue(payload);
     return {
       type: "text",
       text: output ? `Tool result: ${output}` : "Tool result",

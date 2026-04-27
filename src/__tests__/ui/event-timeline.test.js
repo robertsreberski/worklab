@@ -283,4 +283,27 @@ describe("compact run event labels", () => {
       status: "running",
     });
   });
+
+  it("labels completed file edit tool results with line stats", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "tool_result",
+        tool_use_id: "file-1",
+        content: {
+          status: "completed",
+          changes: [{
+            path: "/workspace/catching-up/build_wp_p2_tree.py",
+            kind: "update",
+            line_stats: { added_lines: 12, removed_lines: 3 },
+          }],
+        },
+        is_error: false,
+      }),
+    ).toEqual({
+      type: "tool_use",
+      name: "file_edit",
+      arg: "update build_wp_p2_tree.py (+12 -3)",
+      status: "done",
+    });
+  });
 });

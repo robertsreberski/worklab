@@ -670,6 +670,79 @@ exit 0
     }
   });
 
+  it("adds best-effort line stats to completed Codex file edits", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const targetFile = join(dir, "edited.txt");
+    const originalPath = process.env.PATH;
+    writeFileSync(targetFile, "one\ntwo\nthree\n");
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const changes = [{ path: targetFile, kind: "update" }];
+    const started = { type: "item.started", item: { id: "item_file", type: "file_change", changes, status: "in_progress" } };
+    const completed = { type: "item.completed", item: { id: "item_file", type: "file_change", changes, status: "completed" } };
+    const final = { type: "item.completed", item: { id: "item_msg", type: "agent_message", text: JSON.stringify(structured) } };
+    writeFileSync(fakeCodex, `#!/bin/sh
+printf '%s\\n' '${JSON.stringify(started)}'
+cat > ${JSON.stringify(targetFile)} <<'EOF_EDITED'
+one
+TWO
+three
+four
+EOF_EDITED
+printf '%s\\n' '${JSON.stringify(completed)}'
+printf '%s\\n' '${JSON.stringify(final)}'
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+      });
+      expect(result.error).toBeNull();
+      expect(result.events[1]).toMatchObject({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "item_file",
+            content: {
+              status: "completed",
+              summary: { files: 1, added_lines: 2, removed_lines: 1, changed_lines: 3, unavailable_count: 0 },
+              changes: [{
+                path: targetFile,
+                kind: "update",
+                line_stats: {
+                  before_lines: 3,
+                  after_lines: 4,
+                  added_lines: 2,
+                  removed_lines: 1,
+                  changed_lines: 3,
+                },
+              }],
+            },
+            is_error: false,
+          }],
+        },
+      });
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("normalizes Codex reasoning summary events without using them as final text", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
     const fakeCodex = join(dir, "codex");

@@ -1583,6 +1583,60 @@ select,
 }
 .tool-call-error          { color: var(--status-error); }
 .tool-call-structured { max-height: 320px; overflow: auto; }
+.file-edit-result {
+  padding: var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.file-edit-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-bottom: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.file-edit-status,
+.file-edit-kind,
+.file-edit-delta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+.file-edit-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.file-edit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.file-edit-list li {
+  display: grid;
+  grid-template-columns: minmax(48px, auto) minmax(0, 1fr) auto auto;
+  gap: var(--sp-2);
+  align-items: center;
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+.file-edit-list code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-edit-muted {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
 
 /* §4.16.1 StructuredValue */
 .structured-content {
