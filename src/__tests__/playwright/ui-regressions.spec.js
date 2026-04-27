@@ -470,9 +470,32 @@ test("agents two-pane: clicking a list row selects inline editor via URL", async
 });
 
 test("task edit is reachable via #/tasks/new and shows a full-page form", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/#/tasks/new`);
   await expect(page.locator(".task-edit-head").first()).toBeVisible();
   await expect(page.locator('input[placeholder*="actionable"]')).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const body = document.querySelector(".task-edit-body");
+    const grid = document.querySelector(".task-edit-grid");
+    if (!body || !grid) return null;
+    const bodyStyle = getComputedStyle(body);
+    const gridStyle = getComputedStyle(grid);
+    const bodyContentWidth = body.clientWidth
+      - parseFloat(bodyStyle.paddingLeft)
+      - parseFloat(bodyStyle.paddingRight);
+    const columns = gridStyle.gridTemplateColumns.split(" ").filter(Boolean);
+    return {
+      bodyContentWidth: Math.round(bodyContentWidth),
+      gridWidth: Math.round(grid.getBoundingClientRect().width),
+      columnCount: columns.length,
+      railWidth: Math.round(parseFloat(columns.at(-1) || "0")),
+    };
+  });
+  expect(metrics).not.toBeNull();
+  expect(Math.abs(metrics.gridWidth - metrics.bodyContentWidth)).toBeLessThanOrEqual(2);
+  expect(metrics.columnCount).toBe(2);
+  expect(metrics.railWidth).toBeGreaterThanOrEqual(320);
 });
 
 test("creating a task is single-save and does not show a false unsaved warning", async ({ page }) => {
