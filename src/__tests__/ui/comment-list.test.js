@@ -18,6 +18,24 @@ describe("comment display normalization", () => {
     expect(stripWorklabJson(body)).toBe("Approved\n\nLooks good.");
   });
 
+  it("renders the last result from concatenated worklab_result JSON comments", () => {
+    const first = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Started",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: ["finish"],
+      subtasks: [],
+    };
+    const last = { ...first, summary: "Finished", details: "Useful final details.", pending_actions: [] };
+
+    expect(normalizeCommentText(`${JSON.stringify(first)}\n\n${JSON.stringify(last)}`))
+      .toBe("Finished\n\nUseful final details.");
+  });
+
   it("removes fenced worklab_result JSON from prose comments", () => {
     const body = `Verified the file.
 

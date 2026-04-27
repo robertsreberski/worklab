@@ -555,4 +555,50 @@ exit 0
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps the latest Codex structured progress message as the final worklab result", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeCodex = join(dir, "codex");
+    const originalPath = process.env.PATH;
+    const early = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "early progress",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: ["finish"],
+      subtasks: [],
+    };
+    const late = {
+      ...early,
+      summary: "final summary",
+      details: "final details",
+      pending_actions: [],
+    };
+    const events = [
+      { type: "item.completed", item: { id: "msg_1", type: "agent_message", text: JSON.stringify(early) } },
+      { type: "item.completed", item: { id: "msg_2", type: "agent_message", text: JSON.stringify(late) } },
+    ];
+    writeFileSync(fakeCodex, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeCodex, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "codex", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBeNull();
+      expect(result.worklabResult).toEqual(late);
+      expect(result.structuredResultSource).toBe("agent_message");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

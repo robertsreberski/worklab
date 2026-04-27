@@ -6,7 +6,7 @@ import {
 } from "../core/state-machine.js";
 import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
-import { parseWorklabResultFromText, synthesizeWorklabResult } from "../core/worklab-result.js";
+import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result.js";
 import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
@@ -71,27 +71,8 @@ function collapseDuplicateParagraphs(text) {
   }).join("\n\n");
 }
 
-function formatWorklabResultText(result) {
-  if (!result) return "";
-  const summary = typeof result.summary === "string" ? result.summary.trim() : "";
-  const details = typeof result.details === "string" ? result.details.trim() : "";
-  if (summary && details && summary !== details) return `${summary}\n\n${details}`;
-  return details || summary;
-}
-
-function stripStructuredResultBlocks(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return "";
-  const whole = parseWorklabResultFromText(raw);
-  if (whole.ok) return formatWorklabResultText(whole.result);
-  return raw.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, body) => {
-    const parsed = parseWorklabResultFromText(body);
-    return parsed.ok ? "" : match;
-  }).trim();
-}
-
 function sanitizeAgentText(text) {
-  return collapseDuplicateParagraphs(stripStructuredResultBlocks(text));
+  return collapseDuplicateParagraphs(stripWorklabResultJson(text));
 }
 
 function agentCommentBody(result, finalText) {

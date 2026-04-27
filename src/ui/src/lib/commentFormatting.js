@@ -17,8 +17,55 @@ function parseJson(value) {
   }
 }
 
+function extractJsonObjectStrings(text) {
+  const raw = String(text || "");
+  const objects = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const char = raw[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === "\\" && inString) {
+      escaped = true;
+      continue;
+    }
+    if (char === "\"") {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (char === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (char === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(raw.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+  return objects;
+}
+
 function parseWorklabJson(text) {
-  return formatWorklabResult(parseJson(text));
+  const direct = formatWorklabResult(parseJson(text));
+  if (direct) return direct;
+  const candidates = extractJsonObjectStrings(text);
+  let remainder = String(text || "").trim();
+  for (let i = candidates.length - 1; i >= 0; i -= 1) {
+    const formatted = formatWorklabResult(parseJson(candidates[i]));
+    if (formatted) {
+      for (const candidate of candidates) remainder = remainder.replace(candidate, "");
+      return remainder.trim() ? "" : formatted;
+    }
+  }
+  return "";
 }
 
 function formatErrorJson(body) {
@@ -52,6 +99,11 @@ export function collapseDuplicateParagraphs(text) {
 export function stripWorklabJson(body) {
   const raw = String(body || "").trim();
   if (!raw) return "";
+  const fencedOnly = raw.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/i);
+  if (fencedOnly) {
+    const fenced = parseWorklabJson(fencedOnly[1]);
+    if (fenced) return fenced;
+  }
   const whole = parseWorklabJson(raw);
   if (whole) return whole;
   return raw.replace(/```(?:json)?\s*([\s\S]*?)```/gi, (match, json) => {
@@ -76,10 +128,15 @@ export function normalizeCommentBody(body) {
 export function normalizeCommentText(body) {
   const text = collapseDuplicateParagraphs(String(body || "").trim());
   if (!text) return "";
-  if (parseJson(text) || /^ERROR:\s*{[\s\S]*}\s*$/.test(text) || /```(?:json)?\s*[\s\S]*?```/i.test(text)) {
+  if (/^ERROR:\s*{[\s\S]*}\s*$/.test(text)) {
     return text;
   }
-  return text.replace(/([a-z0-9])\.([A-Z])/g, "$1. $2");
+  const stripped = collapseDuplicateParagraphs(stripWorklabJson(text));
+  if (stripped !== text) {
+    return stripped.replace(/([a-z0-9])\.([A-Z])/g, "$1. $2");
+  }
+  if (parseJson(text) || /```(?:json)?\s*[\s\S]*?```/i.test(text)) return text;
+  return stripped.replace(/([a-z0-9])\.([A-Z])/g, "$1. $2");
 }
 
 export function shouldHideComment(comment) {

@@ -85,6 +85,46 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("**Final output:**\nTried a first pass fix.");
   });
 
+  it("normalizes raw Worklab JSON comments and prior run output before prompting", () => {
+    const early = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "early",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: ["finish"],
+      subtasks: [],
+    };
+    const final = { ...early, summary: "final", details: "clean details", pending_actions: [] };
+    const prompt = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [
+        { author_type: "agent", author_id: "coder", body: `${JSON.stringify(early)}\n\n${JSON.stringify(final)}` },
+      ],
+      pinnedKb: [],
+      priorRuns: [
+        {
+          mode: "execute",
+          status: "complete",
+          agentName: "coder",
+          finalText: `${JSON.stringify(early)}\n\n${JSON.stringify(final)}`,
+          numTurns: 2,
+          durationMs: 1000,
+        },
+      ],
+    });
+
+    expect(prompt).toContain("final\n\nclean details");
+    expect(prompt).not.toContain("\"schema\":\"worklab.v2\"");
+    expect(prompt).not.toContain("early");
+  });
+
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
