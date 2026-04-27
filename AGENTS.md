@@ -144,3 +144,7 @@ npm test
 npm run build:ui
 git diff --check
 ```
+
+## WORKFLOW RULES (important)
+
+After every change, make sure you commit code granularly.
