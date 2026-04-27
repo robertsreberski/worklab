@@ -111,7 +111,7 @@ function WorklabResult({ value }) {
       <KeyValueRows entries={[
         ["Artifacts", result.artifacts && Object.keys(result.artifacts).length ? result.artifacts : ""],
         ["Blocking", result.blocking_issues?.length ? result.blocking_issues : ""],
-        ["Pending", result.pending_actions?.length ? result.pending_actions : ""],
+        ["Human actions", result.pending_actions?.length ? result.pending_actions : ""],
         ["Subtasks", result.subtasks?.length ? result.subtasks : ""],
       ]} />
     </>

@@ -160,7 +160,7 @@ describe("CLI provider adapters", () => {
     }
   });
 
-  it("stringifies structured result objects from CLI result events", async () => {
+  it("formats structured result objects from CLI result events", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
     const fakeClaude = join(dir, "claude");
     const originalPath = process.env.PATH;
@@ -185,7 +185,7 @@ describe("CLI provider adapters", () => {
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(JSON.parse(result.text)).toEqual(structured);
+      expect(result.text).toBe("ok");
       expect(result.numTurns).toBe(1);
     } finally {
       process.env.PATH = originalPath;
@@ -222,7 +222,7 @@ describe("CLI provider adapters", () => {
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.text).toBe("");
+      expect(result.text).toBe("structured ok");
       expect(result.worklabResult).toEqual(structured);
       expect(result.structuredResultSource).toBe("StructuredOutput");
       expect(result.numTurns).toBe(1);
@@ -546,10 +546,11 @@ exit 0
         },
       });
       expect(result.events[2]).toMatchObject({
-        type: "assistant",
-        message: { content: [{ type: "text", text: JSON.stringify(structured) }] },
+        type: "worklab_result_candidate",
+        source: "agent_message",
+        worklab_result: structured,
       });
-      expect(JSON.parse(result.text)).toEqual(structured);
+      expect(result.text).toBe("ok");
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
@@ -596,6 +597,12 @@ exit 0
       expect(result.error).toBeNull();
       expect(result.worklabResult).toEqual(late);
       expect(result.structuredResultSource).toBe("agent_message");
+      expect(result.text).toBe("final summary\n\nfinal details");
+      expect(result.text).not.toContain("\"schema\"");
+      expect(result.events).toEqual([
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: early }),
+        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: late }),
+      ]);
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });

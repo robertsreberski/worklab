@@ -80,6 +80,35 @@ describe("worklab event timeline normalization", () => {
       { type: "runtime_warning", warning_kind: "unstructured_result_fallback", message: "final text is not JSON" },
     ]);
   });
+
+  it("hides mid-run structured result candidates", () => {
+    const events = normalizeWorklabEvents([
+      { type: "started" },
+      {
+        type: "sdk_event",
+        event: {
+          type: "worklab_result_candidate",
+          source: "agent_message",
+          text: "{\"schema\":\"worklab.v2\"}",
+          worklab_result: { schema: "worklab.v2", decision: "advance", summary: "progress" },
+        },
+      },
+      {
+        type: "final",
+        worklab_result: { schema: "worklab.v2", decision: "advance", summary: "done", details: "" },
+        usage: {},
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "started" },
+      {
+        type: "final",
+        text: "done",
+        structured: { schema: "worklab.v2", decision: "advance", summary: "done", details: "" },
+      },
+    ]);
+  });
 });
 
 describe("run event merging", () => {
