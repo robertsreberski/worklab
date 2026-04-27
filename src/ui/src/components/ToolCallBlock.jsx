@@ -5,6 +5,7 @@
 import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { StructuredValue } from "./StructuredValue.jsx";
+import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { rawJsonText } from "../lib/structuredValue.js";
 
 function inputAsText(input) {
@@ -70,6 +71,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   const blockClass = [
     "tool-call",
     "chat-tool-block", // legacy alias
+    pending ? "tool-call-running" : "",
     missing ? "chat-tool-block-missing" : "",
     isError ? "chat-tool-block-error" : "",
     !missing && !isError && outputIsEmpty && !pending ? "chat-tool-block-empty" : "",
@@ -90,6 +92,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
         </span>
         <Icon name="chevron-down" size={14} class={`tool-call-chevron chat-tool-chevron ${expanded ? "open" : ""}`} />
       </button>
+      {pending && <ShimmerBar height={2} class="tool-call-progress" />}
       {expanded && (
         <div class="tool-call-body chat-tool-body">
           <div class="tool-call-section chat-tool-section">

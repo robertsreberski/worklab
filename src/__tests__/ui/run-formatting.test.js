@@ -37,15 +37,15 @@ describe("run formatting helpers", () => {
     ]);
   });
 
-  it("builds run summary titles from phase and relative start time", () => {
-    expect(formatRunSummaryTitle({ stage: "execute", mode: "review", agent_name: "assistant" }, "7m")).toBe("Execute · 7m");
-    expect(formatRunSummaryTitle({ mode: "review", agent_name: "assistant" }, "now")).toBe("Review · now");
+  it("builds run summary titles from phase only", () => {
+    expect(formatRunSummaryTitle({ stage: "execute", mode: "review", agent_name: "assistant" }, "7m")).toBe("Execute");
+    expect(formatRunSummaryTitle({ mode: "review", agent_name: "assistant" }, "now")).toBe("Review");
     expect(formatRunSummaryTitle({ stage: "plan" })).toBe("Plan");
   });
 
   it("does not include agent names in run summary titles", () => {
     expect(formatRunPhase({ stage: "execute", mode: "execute", agent_name: "Sample Agent" })).toBe("Execute");
-    expect(formatRunSummaryTitle({ stage: "execute", agent_name: "Sample Agent" }, "7m")).not.toContain("Sample Agent");
+    expect(formatRunSummaryTitle({ stage: "execute", agent_name: "Sample Agent" }, "7m")).toBe("Execute");
   });
 
   it("builds structured run result previews from parsed result metadata", () => {

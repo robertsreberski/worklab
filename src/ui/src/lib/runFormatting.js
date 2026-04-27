@@ -39,10 +39,8 @@ export function formatRunPhase(run = {}) {
   return formatMode(run?.stage || run?.mode);
 }
 
-export function formatRunSummaryTitle(run = {}, startedAtLabel = "") {
-  const phase = formatRunPhase(run);
-  const when = String(startedAtLabel || "").trim();
-  return [phase, when].filter(Boolean).join(" · ");
+export function formatRunSummaryTitle(run = {}) {
+  return formatRunPhase(run);
 }
 
 function cleanText(value) {

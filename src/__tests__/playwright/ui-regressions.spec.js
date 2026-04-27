@@ -279,11 +279,29 @@ test.beforeAll(async () => {
       (id, task_id, author_type, author_id, body, created_at)
      VALUES (?, ?, 'human', NULL, ?, ?)`,
   ).run("comment-newest-existing", taskId, "Newest seeded comment", now - 1_000);
+  const completeRunResult = {
+    schema: "worklab.v2",
+    stage: "execute",
+    decision: "advance",
+    summary: "Implemented regression run summary.",
+    details: "Changed seeded data and verified the summary card layout.",
+  };
   db.prepare(
     `INSERT INTO task_runs
-      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
-     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'complete', ?, ?, 0, NULL)`,
-  ).run("run-complete-existing", taskId, now - 18_000, now - 12_000);
+      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at,
+       exit_code, error_text, decision, summary, details, result_json)
+     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'complete', ?, ?,
+       0, NULL, ?, ?, ?, ?)`,
+  ).run(
+    "run-complete-existing",
+    taskId,
+    now - 18_000,
+    now - 12_000,
+    completeRunResult.decision,
+    completeRunResult.summary,
+    completeRunResult.details,
+    JSON.stringify(completeRunResult),
+  );
   db.prepare(
     `INSERT INTO agent_logs
       (id, task_run_id, events, model, effort, input_tokens, output_tokens,
@@ -308,7 +326,10 @@ test.beforeAll(async () => {
   ).run(
     "log-live-existing",
     "run-live-existing",
-    JSON.stringify([{ type: "text", text: "Existing streamed event", ts: now - 5_000 }]),
+    JSON.stringify([
+      { type: "text", text: "Existing streamed event", ts: now - 5_000 },
+      { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" } },
+    ]),
     now - 5_000,
   );
   db.prepare(
@@ -539,6 +560,14 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Newest seeded comment");
   await expect(page.locator(".run-summary-metrics").first()).toBeVisible();
   await expect(page.locator(".activity-feed-entry")).toHaveCount(3);
+  const runCard = page.locator(".activity-feed-entry.run .run-card").first();
+  await expect(runCard.locator(".run-result-decision")).toContainText("advance");
+  await expect(runCard.locator(".run-result-summary")).toContainText("Implemented regression run summary.");
+  await expect(runCard.locator(".run-result-details")).toContainText("Changed seeded data");
+  await expect(runCard.locator(".run-summary-side .run-summary-time")).toBeVisible();
+  await expect(runCard.locator(".run-summary-status .status-pill")).toHaveCount(0);
+  await expect(runCard.locator(".run-summary-title")).toHaveCount(0);
+  await expect(runCard.locator(".run-card-summary")).not.toContainText("Execute ·");
 
   const order = await page.evaluate(() => {
     const composer = document.querySelector(".activity-composer");
@@ -661,6 +690,8 @@ test("desktop task detail states keep actions and context obvious without clippe
           ".rail-agent-picker .select-trigger",
           ".blocked-link .status-pill-label",
           ".run-summary-title",
+          ".run-result-summary",
+          ".run-summary-time",
           ".run-metric-label",
           ".run-metric-value",
         ].join(", "),
@@ -685,6 +716,16 @@ test("task detail shows linked dependencies when the graph exists", async ({ pag
 test("task detail live panel hydrates existing run events", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${runningTaskId}`);
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
+  await expect(page.locator(".task-live-panel .tool-call", { hasText: "shell" })).toBeVisible();
+  await expect(page.locator(".task-live-panel .tool-call-progress")).toBeVisible();
+  const toolCallAnimation = await page.locator(".task-live-panel .tool-call-progress").evaluate((node) => {
+    return getComputedStyle(node).animationName;
+  });
+  expect(toolCallAnimation).toBe("wl-shimmer");
+  const toolCallSpinnerAnimation = await page.locator(".task-live-panel .tool-call-spinner").evaluate((node) => {
+    return getComputedStyle(node).animationName;
+  });
+  expect(toolCallSpinnerAnimation).toBe("wl-rotate");
   await expect(page.locator(".task-live-events")).toBeVisible();
   await expect(page.locator(".card-title", { hasText: "Activity" })).toBeVisible();
   await expect(page.locator(".card-title", { hasText: "Live run" })).toHaveCount(0);

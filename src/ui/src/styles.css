@@ -1486,6 +1486,9 @@ select,
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
+.tool-call-running {
+  border-color: color-mix(in srgb, var(--status-progress) 32%, var(--border));
+}
 .tool-call-header {
   width: 100%;
   display: flex;
@@ -1544,11 +1547,17 @@ select,
   max-height: 280px;
 }
 .tool-call-spinner {
+  display: inline-block;
+  flex: 0 0 auto;
   width: 13px; height: 13px;
   border: 1.5px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: wl-shimmer 0.8s linear infinite;
+  animation: wl-rotate 0.8s linear infinite;
+}
+.tool-call-progress {
+  background: linear-gradient(90deg, transparent, var(--status-progress), transparent);
+  background-size: 200% 100%;
 }
 .tool-call-status-ok      { color: var(--status-done); }
 .tool-call-status-error   { color: var(--status-error); }
@@ -2859,6 +2868,7 @@ select,
   align-items: baseline;
   gap: var(--sp-2);
   min-width: 0;
+  flex-wrap: wrap;
 }
 .run-result-decision {
   flex: 0 0 auto;
@@ -2885,8 +2895,8 @@ select,
 .run-result-summary {
   min-width: 0;
   color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 600;
+  font-size: var(--text-base);
+  font-weight: 700;
   line-height: 1.42;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2905,7 +2915,7 @@ select,
 .run-summary-side  {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
   font-weight: 600;
@@ -2915,6 +2925,11 @@ select,
   border: 1px solid transparent;
   border-radius: var(--radius-pill);
   background: transparent;
+}
+.run-summary-time {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 .run-summary-chevron { transition: transform var(--dur-snap) var(--ease-snap); }
 .run-card[open] .run-summary-chevron { transform: rotate(180deg); }
