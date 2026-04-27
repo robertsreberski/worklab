@@ -76,8 +76,8 @@ export function CommanderRow({
     ? `Next scheduled run: ${new Date(schedule.next_fire_at).toLocaleString()}`
     : (hasSchedule ? "Task schedule is paused" : undefined);
 
-  // Title-row chip — disambiguates the reason a task lives in Blocked or
-  // warns the user an owner is missing. Order: stuck > error > needs-owner.
+  // Title-row chip — surfaces warnings without changing the stage grouping.
+  // Order: stuck > error > needs-owner.
   // Blocked-by gets its own grid cell (.commander-cell-deps).
   let metaChip = null;
   if (stuck) {

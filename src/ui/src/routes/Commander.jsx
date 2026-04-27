@@ -18,7 +18,7 @@ import { ErrorState } from "../components/ErrorState.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
-import { hasRunError, taskRouteId } from "../lib/display.js";
+import { taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
 
 const GROUPS = [
@@ -31,13 +31,8 @@ const GROUPS = [
   { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "●" },
 ];
 
-function groupKeyFor(task) {
+export function groupKeyFor(task) {
   const stage = task.stage || "plan";
-  const unmetDeps = Array.isArray(task.blocked_by)
-    && task.blocked_by.some((d) => (d.stage || "plan") !== "done");
-  const runErrored = hasRunError(task);
-  const stuck = task.running_run_id && task.is_locked === false;
-  if (unmetDeps || runErrored || stuck) return "blocked";
   if (["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"].includes(stage)) {
     return stage;
   }
