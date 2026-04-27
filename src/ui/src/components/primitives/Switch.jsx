@@ -1,6 +1,5 @@
 // §3.7 Switch — binary on/off with aligned label + description.
-// Track sits at `align-self: start` so it anchors to the label x-height
-// regardless of whether the description wraps to multiple lines.
+// Track centers against the visible copy block, including descriptions.
 // This replaces SwitchField.jsx (now a compat wrapper).
 
 let switchUid = 0;

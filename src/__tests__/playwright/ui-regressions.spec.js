@@ -839,6 +839,44 @@ test("task detail inline checkboxes align with their labels", async ({ page }) =
   expect(deltas.enabled).toBeLessThanOrEqual(2);
 });
 
+test("multi-line selection controls center against their copy", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await expect(page.locator(".switch", { hasText: "Nightly consolidation" })).toBeVisible();
+
+  const deltas = await page.evaluate(() => {
+    const fixture = document.createElement("div");
+    fixture.innerHTML = `
+      <label class="checkbox checkbox-alignment-fixture">
+        <input class="checkbox-input" type="checkbox">
+        <span class="checkbox-box"></span>
+        <span class="checkbox-copy">
+          <span class="checkbox-label">Fixture checkbox</span>
+          <span class="checkbox-description">Description text below.</span>
+        </span>
+      </label>
+    `;
+    document.body.appendChild(fixture);
+
+    function centerDelta(rootSelector, markerSelector, copySelector) {
+      const marker = document.querySelector(`${rootSelector} ${markerSelector}`);
+      const copy = document.querySelector(`${rootSelector} ${copySelector}`);
+      if (!marker || !copy) return 99;
+      const markerRect = marker.getBoundingClientRect();
+      const copyRect = copy.getBoundingClientRect();
+      return Math.abs((markerRect.top + markerRect.height / 2) - (copyRect.top + copyRect.height / 2));
+    }
+
+    return {
+      settingsSwitch: centerDelta(".settings-sections .switch", ".switch-track", ".switch-copy"),
+      checkbox: centerDelta(".checkbox-alignment-fixture", ".checkbox-box", ".checkbox-copy"),
+    };
+  });
+
+  expect(deltas.settingsSwitch).toBeLessThanOrEqual(1);
+  expect(deltas.checkbox).toBeLessThanOrEqual(1);
+});
+
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/agents/regression-agent",
