@@ -138,7 +138,7 @@ export function createTaskWatcher({
     if (!task) return false;
     const stage = taskStage(task);
     if (task.run_policy !== AUTO_RUN_POLICY) return false;
-    if (!["plan", "execute"].includes(stage)) return false;
+    if (!["plan", "execute", "review"].includes(stage)) return false;
     if (!agentForStage(task, stage)) return false;
     if (active.has(taskId) || pendingStarts.has(taskId)) return false;
     if (hasOpenBlocker(taskId)) return false;
@@ -576,7 +576,7 @@ export function createTaskWatcher({
 
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
     if (next.stage === "done") maybeAutoStartDependents(taskId);
-    if (["plan", "execute"].includes(next.stage)) maybeAutoStartTask(taskId);
+    if (["plan", "execute", "review"].includes(next.stage)) maybeAutoStartTask(taskId);
   }
 
   function handleFailedExit(taskId, runId, res, task, run) {

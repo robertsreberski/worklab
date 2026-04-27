@@ -154,6 +154,29 @@ describe("task-watcher v2 workflow", () => {
     expect(task.completed_at).toBeTruthy();
   });
 
+  it("auto mode starts reviewer work after owner advance", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker", runPolicy: "auto_plan_execute" });
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", workspace: "/workspace" });
+    const { runId: executeRunId } = await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
+    await waitFor(() => spawn.mock.calls.length >= 2);
+
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage).toBe("review");
+    expect(calls[1].args).toEqual(expect.arrayContaining(["--mode", "review", "--agent", "checker"]));
+    expect(calls[1].env.WORKLAB_PRIOR_RUN_ID).toBe(executeRunId);
+    expect(calls[1].env.WORKLAB_WORKSPACE).toBe("/workspace");
+
+    resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "approved", worklabResult: approveResult });
+    await waitFor(() => db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage === "done");
+
+    expect(db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(taskId).completed_at).toBeTruthy();
+  });
+
   it("review rejection routes back to execute and clears stale errors", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
