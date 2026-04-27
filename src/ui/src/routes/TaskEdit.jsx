@@ -40,7 +40,7 @@ const STATUS_OPTIONS = [
 ];
 
 const RUN_POLICY_OPTIONS = [
-  { value: "auto_plan_execute", label: "Auto plan + work" },
+  { value: "auto_plan_execute", label: "Auto" },
   { value: "manual", label: "Manual" },
 ];
 
@@ -373,7 +373,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                   />
                 </FormField>
 
-                <FormField label="Run mode" hint="Auto mode starts plan and work after blockers clear.">
+                <FormField label="Run mode" hint="Auto mode starts eligible stages after blockers clear.">
                   <Select
                     variant="native"
                     value={draft.run_policy || DEFAULT_RUN_POLICY}

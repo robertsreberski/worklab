@@ -704,7 +704,7 @@ test("desktop task detail states keep actions and context obvious without clippe
 test("task detail context shows completion and run mode", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${completedTaskId}`);
   await expect(page.locator(".task-context-row", { hasText: "Completed" })).toBeVisible();
-  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
+  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toContainText("Auto");
 });
 
 test("task detail shows linked dependencies when the graph exists", async ({ page }) => {

@@ -43,7 +43,7 @@ import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 
 function formatRunPolicy(value) {
-  return value === "auto_plan_execute" ? "Auto plan + work" : "Manual";
+  return value === "auto_plan_execute" ? "Auto" : "Manual";
 }
 
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
