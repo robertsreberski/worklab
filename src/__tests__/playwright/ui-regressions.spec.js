@@ -181,6 +181,7 @@ test.beforeAll(async () => {
     owner_agent: "regression-agent",
     reviewer_agent: "reviewer-agent",
     stage: "execute",
+    run_policy: "manual",
   });
   completedTaskId = await createTask("Completed detail task", {
     owner_agent: "regression-agent",
@@ -511,6 +512,7 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(2);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
   await expect(page.locator(".activity-composer")).toBeVisible();
+  await expect(page.locator(".activity-rerun-checkbox input")).toBeChecked();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Newest seeded comment");
   await expect(page.locator(".run-summary-metrics").first()).toBeVisible();
   await expect(page.locator(".activity-feed-entry")).toHaveCount(3);
@@ -527,6 +529,8 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   const fontFamily = await page.locator(".task-detail").evaluate((node) => getComputedStyle(node).fontFamily);
   expect(fontFamily).toContain("Manrope");
 
+  await page.locator(".activity-rerun-checkbox").click();
+  await expect(page.locator(".activity-rerun-checkbox input")).not.toBeChecked();
   await page.locator(".activity-composer textarea").fill("Fresh comment from regression test.");
   await page.locator(".activity-composer button", { hasText: "Post" }).click();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Fresh comment from regression test.");
@@ -976,6 +980,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const composer = document.querySelector(".activity-composer-form");
     const input = document.querySelector(".activity-composer-input");
     const shortcut = document.querySelector(".activity-composer-shortcut");
+    const rerun = document.querySelector(".activity-rerun-checkbox input");
     const dock = document.querySelector(".app-mobile-action-dock");
     const headerToolbar = document.querySelector(".app-header > .toolbar");
     const nav = document.querySelector(".app-rail");
@@ -993,6 +998,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       composerHeight: composer ? Math.round(composer.getBoundingClientRect().height) : 0,
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
       shortcutDisplay: shortcut ? getComputedStyle(shortcut).display : "",
+      rerunChecked: rerun ? rerun.checked : false,
       dockDisplay: dock ? getComputedStyle(dock).display : "",
       dockMinButtonHeight: dock
         ? Math.min(...[...dock.querySelectorAll(".button")].map((button) => Math.round(button.getBoundingClientRect().height)))
@@ -1010,9 +1016,10 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.activityBeforeAgents).toBe(true);
   expect(beforeFocus.activityBeforeContext).toBe(true);
   expect(beforeFocus.activityBorder).toBe(0);
-  expect(beforeFocus.composerHeight).toBeLessThanOrEqual(64);
+  expect(beforeFocus.composerHeight).toBeLessThanOrEqual(112);
   expect(beforeFocus.inputHeight).toBeLessThanOrEqual(48);
   expect(beforeFocus.shortcutDisplay).toBe("none");
+  expect(beforeFocus.rerunChecked).toBe(true);
   expect(beforeFocus.dockDisplay).toBe("flex");
   expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(beforeFocus.dockBottomBeforeNav).toBe(true);

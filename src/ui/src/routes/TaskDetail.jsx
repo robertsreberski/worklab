@@ -710,6 +710,7 @@ export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(null);
   const [agents, setAgents] = useState([]);
   const [newComment, setNewComment] = useState("");
+  const [commentRerun, setCommentRerun] = useState(true);
   const [highlightedRunId, setHighlightedRunId] = useState(runParam);
   const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [runError, setRunError] = useState(null);
@@ -752,6 +753,7 @@ export function TaskDetail({ id, runParam = null }) {
     setPlanDraft("");
     setSubtaskTitle("");
     setTaskAutomations(null);
+    setCommentRerun(true);
   }, [id, runParam]);
 
   useEffect(() => {
@@ -849,8 +851,19 @@ export function TaskDetail({ id, runParam = null }) {
     if (!newComment.trim() || commentSaving) return;
     setCommentSaving(true);
     try {
-      await api.addComment(operationTaskId, newComment.trim());
+      const shouldRerun = commentRerun && !runningRun;
+      const result = await api.addComment(operationTaskId, newComment.trim(), { rerun: shouldRerun });
       setNewComment("");
+      setCommentRerun(true);
+      if (result?.rerun?.started) {
+        if (result.rerun.runId) {
+          setHighlightedRunId(result.rerun.runId);
+          setExpandedRunIds((s) => new Set([...s, result.rerun.runId]));
+        }
+        pushToast("Comment posted and run started", { variant: "success" });
+      } else if (result?.rerun?.error) {
+        pushToast(`Comment posted; rerun did not start: ${result.rerun.error.message}`, { variant: "error" });
+      }
       reload();
     } catch (err) {
       pushToast(`Could not post comment: ${err.message}`, { variant: "error" });
@@ -1311,9 +1324,18 @@ export function TaskDetail({ id, runParam = null }) {
                   onInput={(e) => setNewComment(e.target.value)}
                 />
                 <div class="activity-composer-actions">
-                  <span class="activity-composer-shortcut">Cmd Enter</span>
+                  <div class="activity-composer-options">
+                    <Checkbox
+                      class="activity-rerun-checkbox"
+                      checked={commentRerun && !runningRun}
+                      disabled={Boolean(runningRun)}
+                      onChange={setCommentRerun}
+                      label="Rerun task"
+                    />
+                    <span class="activity-composer-shortcut">Cmd Enter</span>
+                  </div>
                   <Button type="submit" variant="primary" disabled={!newComment.trim() || commentSaving}>
-                    {commentSaving ? "Posting…" : "Post"}
+                    {commentSaving ? "Posting…" : commentRerun && !runningRun ? "Post & run" : "Post"}
                   </Button>
                 </div>
               </form>

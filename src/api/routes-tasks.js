@@ -344,6 +344,54 @@ function sendRouteError(res, error) {
   });
 }
 
+function rerunResponseError(error, fallbackCode = "invalid_state") {
+  return {
+    requested: true,
+    started: false,
+    error: {
+      code: error?.code || fallbackCode,
+      message: error?.message || "rerun failed",
+    },
+  };
+}
+
+async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
+  if (!watcher?.handleRunRequested) {
+    return rerunResponseError({ code: "not_configured", message: "watcher not wired" });
+  }
+
+  const runningRow = db.prepare(`
+    SELECT id
+    FROM task_runs
+    WHERE task_id = ? AND status = 'running'
+    ORDER BY started_at DESC
+    LIMIT 1
+  `).get(taskId);
+  if (watcher.isActive?.(taskId) || runningRow) {
+    return rerunResponseError({ code: "already_running", message: "task already running" });
+  }
+
+  try {
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    if (!task) return rerunResponseError({ code: "not_found", message: "task not found" }, "not_found");
+
+    const currentStage = taskStage(task);
+    if (!["plan", "execute", "review"].includes(currentStage)) {
+      const result = nextStage(currentStage, { type: "human_move", target: "execute" });
+      const errorSideEffect = result.sideEffects.find((se) => se.type === "error");
+      if (errorSideEffect) {
+        return rerunResponseError({ code: "invalid_transition", message: errorSideEffect.message });
+      }
+      applyRouteSideEffects(db, broker, logger, taskId, result.sideEffects, currentStage, result.stage);
+    }
+
+    const result = await watcher.handleRunRequested(taskId);
+    return { requested: true, started: true, runId: result?.runId || null };
+  } catch (error) {
+    return rerunResponseError(error);
+  }
+}
+
 function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} }) {
   const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
   if (!existing) throw routeError(404, "not_found", "task not found");
@@ -801,10 +849,10 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     }
   });
 
-  app.post("/api/tasks/:id/comments", (req, res) => {
+  app.post("/api/tasks/:id/comments", async (req, res) => {
     const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const { body } = req.body || {};
+    const { body, rerun } = req.body || {};
     if (!body || typeof body !== "string") {
       return res.status(400).json({ error: { code: "validation", message: "body is required" } });
     }
@@ -817,7 +865,11 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
     broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
     const row = db.prepare("SELECT * FROM task_comments WHERE id = ?").get(id);
-    res.status(201).json({ comment: row });
+    const payload = { comment: row };
+    if (rerun === true) {
+      payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
+    }
+    res.status(201).json(payload);
   });
 
   app.get("/api/tasks/:id/runs", (req, res) => {
