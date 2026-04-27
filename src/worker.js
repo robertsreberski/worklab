@@ -102,6 +102,18 @@ function maxTurnsForModel(model, fallback) {
   return fallback;
 }
 
+function emitRuntimeWarnings(response) {
+  const warnings = Array.isArray(response?.runtimeWarnings) ? response.runtimeWarnings : [];
+  for (const warning of warnings) {
+    emit({
+      type: "runtime_warning",
+      warning_kind: warning?.warning_kind || warning?.warningKind || "runtime",
+      message: warning?.message || String(warning || "runtime warning"),
+      ts: Date.now(),
+    });
+  }
+}
+
 function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
   const availableSkills = loadSkills(join(config.dataDir, "skills")).filter((skill) => skill.enabled !== false);
   const skills = resolveAllowlist({
@@ -299,6 +311,7 @@ async function main() {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
+      emitRuntimeWarnings(result);
       const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
       emit({ type: "memory_written", agent: agentName, path });
       emit({
@@ -347,6 +360,7 @@ async function main() {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
+      emitRuntimeWarnings(result);
       emit({
         type: "final",
         text: result.text,
@@ -400,6 +414,7 @@ async function main() {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
+      emitRuntimeWarnings(result);
       const parsedResult = resultFromResponseOrFallback(result, {
         stage: task.stage || mode,
         decision: "advance",
@@ -484,6 +499,7 @@ async function main() {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
+      emitRuntimeWarnings(result);
       const parsedReview = reviewResultFromResponse(result);
       if (parsedReview.error) {
         emit({
