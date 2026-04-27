@@ -9,14 +9,17 @@ import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { CommanderRow } from "../components/CommanderRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { ErrorState } from "../components/ErrorState.jsx";
+import { Modal } from "../components/Modal.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { hasRunError } from "../lib/display.js";
+import { pushToast } from "../lib/toast.js";
 
 const GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
@@ -52,6 +55,104 @@ const TABS = [
   { value: "done", label: "Done" },
 ];
 
+const BULK_STAGE_OPTIONS = GROUPS.map((group) => ({ value: group.key, label: group.label }));
+
+const BULK_RUN_POLICY_OPTIONS = [
+  { value: "manual", label: "Manual" },
+  { value: "auto_plan_execute", label: "Auto plan + work" },
+];
+
+function agentBulkOptions(agents) {
+  return [
+    { value: "__unassigned__", label: "Unassigned" },
+    ...agents.map((agent) => ({
+      value: agent.name,
+      label: agent.display_name || agent.name,
+      description: agent.enabled === false ? "disabled" : undefined,
+    })),
+  ];
+}
+
+function BulkTaskBar({
+  count,
+  visibleCount,
+  agents,
+  busy,
+  onClear,
+  onSelectVisible,
+  onPatch,
+  onDelete,
+}) {
+  const agentOptions = useMemo(() => agentBulkOptions(agents), [agents]);
+
+  return (
+    <div class="commander-bulkbar" role="region" aria-label="Bulk task actions">
+      <div class="commander-bulkbar-summary">
+        <Icon name="check-circle" size={14} />
+        <strong>{count}</strong>
+        <span>{count === 1 ? "task selected" : "tasks selected"}</span>
+      </div>
+      <div class="commander-bulkbar-actions">
+        <Button size="sm" variant="ghost" iconLeft={<Icon name="x" size={12} />} disabled={busy} onClick={onClear}>
+          Clear
+        </Button>
+        <Button size="sm" variant="secondary" disabled={busy || visibleCount === 0} onClick={onSelectVisible}>
+          Select visible
+        </Button>
+        <Select
+          class="bulk-action-select"
+          variant="native"
+          value=""
+          placeholder="Stage"
+          ariaLabel="Bulk change stage"
+          disabled={busy}
+          options={BULK_STAGE_OPTIONS}
+          onChange={(value) => value && onPatch({ stage: value })}
+        />
+        <Select
+          class="bulk-action-select"
+          variant="menu"
+          value=""
+          placeholder="Owner"
+          ariaLabel="Bulk assign owner"
+          disabled={busy}
+          options={agentOptions}
+          onChange={(value) => onPatch({ owner_agent: value === "__unassigned__" ? null : value })}
+        />
+        <Select
+          class="bulk-action-select"
+          variant="menu"
+          value=""
+          placeholder="Reviewer"
+          ariaLabel="Bulk assign reviewer"
+          disabled={busy}
+          options={agentOptions}
+          onChange={(value) => onPatch({ reviewer_agent: value === "__unassigned__" ? null : value })}
+        />
+        <Select
+          class="bulk-action-select bulk-action-select-wide"
+          variant="native"
+          value=""
+          placeholder="Run mode"
+          ariaLabel="Bulk change run mode"
+          disabled={busy}
+          options={BULK_RUN_POLICY_OPTIONS}
+          onChange={(value) => value && onPatch({ run_policy: value })}
+        />
+        <Button
+          size="sm"
+          variant="destructive"
+          iconLeft={<Icon name="trash" size={12} />}
+          disabled={busy}
+          onClick={onDelete}
+        >
+          Delete
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export function Commander() {
   const [tasks, setTasks] = useState(null);
   const [agents, setAgents] = useState([]);
@@ -60,12 +161,14 @@ export function Commander() {
   const [error, setError] = useState(null);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [checkedIds, setCheckedIds] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [listOwnsFocus, setListOwnsFocus] = useState(false);
   const searchRef = useRef(null);
 
   const reload = useCallback(() => {
     setError(null);
-    api.listTasks()
+    return api.listTasks()
       .then((r) => setTasks(r.tasks || []))
       .catch((e) => { setTasks([]); setError(e.message || "Failed to load tasks"); });
   }, []);
@@ -77,6 +180,16 @@ export function Commander() {
   useSSE("global", (evt) => {
     if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reload();
   });
+
+  useEffect(() => {
+    if (!tasks) return;
+    const validIds = new Set(tasks.map((task) => task.id));
+    setCheckedIds((current) => {
+      if (current.size === 0) return current;
+      const next = new Set([...current].filter((id) => validIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [tasks]);
 
   const withGroup = useMemo(() => {
     return (tasks || []).map((t) => ({ task: t, group: groupKeyFor(t) }));
@@ -113,6 +226,8 @@ export function Commander() {
       .filter((g) => g.tasks.length > 0);
   }, [filtered]);
   const orderedTasks = useMemo(() => grouped.flatMap((group) => group.tasks), [grouped]);
+  const checkedTaskIds = useMemo(() => [...checkedIds], [checkedIds]);
+  const visibleTaskIds = useMemo(() => orderedTasks.map((task) => task.id), [orderedTasks]);
 
   useEffect(() => {
     if (orderedTasks.length === 0) {
@@ -173,26 +288,71 @@ export function Commander() {
 
   const headerMeta = tasks ? <span>{counts.all || 0} tasks</span> : null;
 
+  async function applyBulk(operation, patch) {
+    if (checkedTaskIds.length === 0) return;
+    setBulkBusy(true);
+    try {
+      const payload = { ids: checkedTaskIds, operation };
+      if (patch) payload.patch = patch;
+      const result = await api.bulkTasks(payload);
+      const failedIds = result.results?.filter((entry) => !entry.ok).map((entry) => entry.id) || [];
+      const summary = result.summary || { succeeded: 0, failed: failedIds.length };
+      if (summary.failed > 0) {
+        pushToast(`${summary.succeeded} succeeded, ${summary.failed} failed`, { variant: "error" });
+      } else {
+        pushToast(operation === "delete" ? "Tasks deleted" : "Tasks updated", { variant: "success" });
+      }
+      setCheckedIds(new Set(failedIds));
+      await reload();
+    } catch (err) {
+      pushToast(`Bulk action failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function selectVisibleTasks() {
+    setCheckedIds((current) => {
+      const next = new Set(current);
+      for (const id of visibleTaskIds) next.add(id);
+      return next;
+    });
+  }
+
   return (
     <AppShell route="tasks" title="Tasks" headerMeta={headerMeta} headerActions={headerActions}>
       <div class="commander">
-        <div class="commander-filter">
-          <SearchField
-            value={query}
-            onInput={(e) => setQuery(e.target.value)}
-            placeholder="Search tasks…"
-            shortcut="/"
-            ariaLabel="Search tasks"
-            inputRef={searchRef}
-          />
-          <div class="filter-divider" />
-          <Tabs
-            ariaLabel="Filter by stage"
-            value={statusFilter}
-            onChange={setStatusFilter}
-            tabs={tabsWithCounts}
-            class="tabs-pills"
-          />
+        <div class="commander-topbar">
+          <div class="commander-filter">
+            <SearchField
+              value={query}
+              onInput={(e) => setQuery(e.target.value)}
+              placeholder="Search tasks…"
+              shortcut="/"
+              ariaLabel="Search tasks"
+              inputRef={searchRef}
+            />
+            <div class="filter-divider" />
+            <Tabs
+              ariaLabel="Filter by stage"
+              value={statusFilter}
+              onChange={setStatusFilter}
+              tabs={tabsWithCounts}
+              class="tabs-pills"
+            />
+          </div>
+          {checkedTaskIds.length > 0 && (
+            <BulkTaskBar
+              count={checkedTaskIds.length}
+              visibleCount={visibleTaskIds.length}
+              agents={agents}
+              busy={bulkBusy}
+              onClear={() => setCheckedIds(new Set())}
+              onSelectVisible={selectVisibleTasks}
+              onPatch={(patch) => applyBulk("patch", patch)}
+              onDelete={() => setBulkDeleteOpen(true)}
+            />
+          )}
         </div>
         {error && tasks?.length === 0 ? (
           <ErrorState message={error} onRetry={reload} />
@@ -257,6 +417,29 @@ export function Commander() {
           </div>
         )}
       </div>
+      <Modal
+        open={bulkDeleteOpen}
+        onClose={() => setBulkDeleteOpen(false)}
+        title={`Delete ${checkedTaskIds.length} ${checkedTaskIds.length === 1 ? "task" : "tasks"}?`}
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" disabled={bulkBusy} onClick={() => setBulkDeleteOpen(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              loading={bulkBusy}
+              onClick={() => {
+                setBulkDeleteOpen(false);
+                applyBulk("delete");
+              }}
+            >
+              Delete
+            </Button>
+          </>
+        }
+      >
+        <p>This permanently removes the selected tasks and their runs. This action cannot be undone.</p>
+      </Modal>
     </AppShell>
   );
 }

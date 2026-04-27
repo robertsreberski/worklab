@@ -6,6 +6,8 @@ describe("admin MCP tools", () => {
     const names = adminToolDefinitions.map((tool) => tool.name);
     expect(names).toContain("worklab_api_request");
     expect(names).toContain("worklab_task_create");
+    expect(names).toContain("worklab_automation_create");
+    expect(names).not.toContain("worklab_schedule_create");
     expect(names).toContain("worklab_service_restart");
   });
 
@@ -30,5 +32,9 @@ describe("admin MCP tools", () => {
     expect(result.url).toBe("http://localhost:7878/api/tasks/task_1");
     expect(result.method).toBe("PATCH");
     expect(result.body).toEqual({ title: "New" });
+
+    const automation = await handlers.worklab_automation_run({ id: "auto_1" });
+    expect(automation.url).toBe("http://localhost:7878/api/automations/auto_1/run");
+    expect(automation.method).toBe("POST");
   });
 });

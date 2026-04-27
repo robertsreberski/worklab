@@ -28,7 +28,7 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("no agent") });
   });
 
-  it("execute advance moves to review and can spawn a reviewer", () => {
+  it("execute advance moves to review without auto-spawning a reviewer", () => {
     const r = nextStage("execute", {
       type: "run_succeeded",
       stage: "execute",
@@ -36,7 +36,7 @@ describe("workflow stage reducer", () => {
       result: { decision: "advance" },
     });
     expect(r.stage).toBe("review");
-    expect(r.sideEffects).toContainEqual({ type: "spawn_reviewer", agentName: "checker" });
+    expect(r.sideEffects).not.toContainEqual({ type: "spawn_reviewer", agentName: "checker" });
   });
 
   it("execute failure remains retryable in execute with failure context", () => {

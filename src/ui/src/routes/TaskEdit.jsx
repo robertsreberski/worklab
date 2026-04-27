@@ -38,6 +38,11 @@ const STATUS_OPTIONS = [
   { value: "done", label: "Done", icon: "●", color: "var(--status-done)" },
 ];
 
+const RUN_POLICY_OPTIONS = [
+  { value: "manual", label: "Manual" },
+  { value: "auto_plan_execute", label: "Auto plan + work" },
+];
+
 function emptyDraft() {
   return {
     title: "",
@@ -45,6 +50,7 @@ function emptyDraft() {
     owner_agent: null,
     reviewer_agent: null,
     stage: "plan",
+    run_policy: "manual",
     tags: [],
     blocked_by_ids: [],
   };
@@ -84,6 +90,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           owner_agent: data.task.owner_agent || null,
           reviewer_agent: data.task.reviewer_agent || null,
           stage: data.task.stage || "plan",
+          run_policy: data.task.run_policy || "manual",
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -120,6 +127,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       owner_agent: draft.owner_agent,
       reviewer_agent: draft.reviewer_agent,
       stage: draft.stage || "plan",
+      run_policy: draft.run_policy || "manual",
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
@@ -355,6 +363,16 @@ export function TaskEdit({ mode = "create", id = null }) {
                     onChange={(name) => update({ owner_agent: name })}
                     agents={agents}
                     placeholder="Pick an owner"
+                  />
+                </FormField>
+
+                <FormField label="Run mode" hint="Auto mode starts plan and work after blockers clear.">
+                  <Select
+                    variant="native"
+                    value={draft.run_policy || "manual"}
+                    onChange={(value) => update({ run_policy: value })}
+                    options={RUN_POLICY_OPTIONS}
+                    ariaLabel="Run mode"
                   />
                 </FormField>
 

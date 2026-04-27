@@ -10,16 +10,31 @@ import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 
-export const ROUTES = [
-  { id: "tasks",     label: "Tasks",     icon: "layout-list" },
-  { id: "agents",    label: "Agents",    icon: "user" },
-  { id: "skills",    label: "Skills",    icon: "sparkles" },
-  { id: "knowledge", label: "Knowledge", icon: "book" },
-  { id: "providers", label: "Providers", icon: "terminal" },
-  { id: "activity",  label: "Activity",  icon: "clock" },
-  { id: "schedules", label: "Schedules", icon: "calendar" },
-  { id: "settings",  label: "Settings",  icon: "settings" },
+export const ROUTE_GROUPS = [
+  {
+    label: "Work",
+    routes: [
+      { id: "tasks", label: "Tasks", icon: "layout-list" },
+      { id: "activity", label: "Activity", icon: "clock" },
+    ],
+  },
+  {
+    label: "Library",
+    routes: [
+      { id: "agents", label: "Agents", icon: "user" },
+      { id: "skills", label: "Skills", icon: "sparkles" },
+      { id: "knowledge", label: "Knowledge", icon: "book" },
+    ],
+  },
+  {
+    label: "System",
+    routes: [
+      { id: "providers", label: "Providers", icon: "terminal" },
+      { id: "settings", label: "Settings", icon: "settings" },
+    ],
+  },
 ];
+export const ROUTES = ROUTE_GROUPS.flatMap((group) => group.routes);
 
 export function AppShell({ route, title, headerMeta, headerActions, mobileActionDock, children }) {
   const [helpOpen, setHelpOpen] = useState(false);
@@ -49,21 +64,26 @@ export function AppShell({ route, title, headerMeta, headerActions, mobileAction
           </span>
         </a>
         <nav class="app-nav" aria-label="Primary navigation">
-          {ROUTES.map((item) => (
-            <a
-              key={item.id}
-              href={`#/${item.id}`}
-              class={route === item.id ? "active" : ""}
-              aria-label={item.label}
-              title={item.label}
-              onClick={(event) => {
-                event.preventDefault();
-                navigateHash(`#/${item.id}`);
-              }}
-            >
-              <Icon name={item.icon} size={14} class="nav-icon" />
-              <span>{item.label}</span>
-            </a>
+          {ROUTE_GROUPS.map((group) => (
+            <div class="app-nav-group" key={group.label}>
+              <div class="app-nav-group-label">{group.label}</div>
+              {group.routes.map((item) => (
+                <a
+                  key={item.id}
+                  href={`#/${item.id}`}
+                  class={route === item.id ? "active" : ""}
+                  aria-label={item.label}
+                  title={item.label}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    navigateHash(`#/${item.id}`);
+                  }}
+                >
+                  <Icon name={item.icon} size={14} class="nav-icon" />
+                  <span>{item.label}</span>
+                </a>
+              ))}
+            </div>
           ))}
         </nav>
         <div class="rail-footer">

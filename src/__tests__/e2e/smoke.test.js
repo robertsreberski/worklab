@@ -71,4 +71,10 @@ describe("e2e smoke", () => {
     res = await fetch(`${baseUrl}/api/tasks/${task.id}`, { method: "DELETE" });
     expect(res.status).toBe(204);
   });
+
+  it("returns JSON 404 for unknown API routes", async () => {
+    const res = await fetch(`${baseUrl}/api/schedules`);
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: { code: "not_found", message: "Not found" } });
+  });
 });

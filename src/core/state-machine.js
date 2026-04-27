@@ -209,7 +209,6 @@ export function nextStage(currentStage, event) {
           { type: "clear_error_text" },
           { type: "clear_stage_reason" },
           ...RESET_USER_ARRAYS,
-          { type: "spawn_reviewer", agentName: event.reviewerAgent },
         ]);
       }
       return change("done", [

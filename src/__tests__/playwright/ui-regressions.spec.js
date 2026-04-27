@@ -25,8 +25,6 @@ let desktopBlockerTaskId;
 let desktopBlockedTaskId;
 let desktopRunningTaskId;
 let desktopErroredTaskId;
-let scheduleId;
-let scheduledTaskId;
 let providerId;
 let skillName;
 
@@ -234,19 +232,14 @@ test.beforeAll(async () => {
     owner_agent: "regression-agent",
     stage: "execute",
   });
-  const schedule = await requestJson("/api/schedules", {
+  await requestJson(`/api/tasks/${taskId}/automations`, {
     method: "POST",
     body: {
-      title: "Regression schedule",
-      description: "Ensures schedules route renders.",
-      cadence: { type: "daily", hour: 9, minute: 15 },
+      trigger: { type: "daily", hour: 9, minute: 15 },
       enabled: true,
     },
     ok: [201],
   });
-  scheduleId = schedule.schedule.id;
-  const scheduleRun = await requestJson(`/api/schedules/${scheduleId}/run`, { method: "POST", ok: [201] });
-  scheduledTaskId = scheduleRun.task.id;
   const provider = await requestJson("/api/providers", {
     method: "POST",
     body: {
@@ -510,9 +503,9 @@ test("task detail renders two-column layout", async ({ page }) => {
 test("task detail polish keeps details, agent picker, and newest-first comments clear", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-detail-tile")).toHaveCount(0);
-  await expect(page.locator(".task-context-row")).toHaveCount(2);
+  await expect(page.locator(".task-context-row")).toHaveCount(3);
   await expect(page.locator(".task-context-row", { hasText: "Completed" })).toHaveCount(0);
-  await expect(page.locator(".task-context-row", { hasText: "Schedule" })).toHaveCount(0);
+  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(2);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
@@ -649,14 +642,10 @@ test("desktop task detail states keep actions and context obvious without clippe
   }
 });
 
-test("task detail context only shows completion and schedule when present", async ({ page }) => {
+test("task detail context shows completion and run mode", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${completedTaskId}`);
   await expect(page.locator(".task-context-row", { hasText: "Completed" })).toBeVisible();
-
-  await page.goto(`${baseUrl}/#/tasks/${scheduledTaskId}`);
-  const scheduleRow = page.locator(".task-context-row", { hasText: "Schedule" });
-  await expect(scheduleRow).toBeVisible();
-  await expect(scheduleRow.locator("a")).toHaveAttribute("href", `#/schedules/${scheduleId}`);
+  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
 });
 
 test("task detail shows linked dependencies when the graph exists", async ({ page }) => {
@@ -686,21 +675,20 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
   await expect(run).toContainText("Completed seeded run");
 });
 
-test("schedules route mounts the pane editor with upcoming and recent sections", async ({ page }) => {
-  await page.goto(`${baseUrl}/#/schedules/${scheduleId}`);
-  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression schedule" })).toBeVisible();
-  await expect(page.locator(".card-title", { hasText: "Upcoming fires" })).toBeVisible();
-  await expect(page.locator(".card-title", { hasText: "Recent spawned tasks" })).toBeVisible();
+test("task detail mounts the automations card with scheduled markers", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  await expect(page.locator(".task-hero-status-row .chip", { hasText: "Scheduled" })).toBeVisible();
+  await expect(page.locator(".card-title", { hasText: "Automations" })).toBeVisible();
+  await expect(page.locator(".task-automation-row", { hasText: "Daily" })).toBeVisible();
 });
 
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
-  for (const hash of [
-    "#/agents/regression-agent",
-    "#/knowledge/welcome",
-    `#/providers/${providerId}`,
-    `#/schedules/${scheduleId}`,
-    `#/skills/${skillName}`,
-  ]) {
+	  for (const hash of [
+	    "#/agents/regression-agent",
+	    "#/knowledge/welcome",
+	    `#/providers/${providerId}`,
+	    `#/skills/${skillName}`,
+	  ]) {
     await page.goto(`${baseUrl}/${hash}`);
     await expect(page.locator(".pane-detail-head")).toBeVisible();
     await expect(page.locator(".pane-detail-head .button.destructive")).toHaveCount(0);
@@ -846,7 +834,7 @@ const RESPONSIVE_VIEWPORTS = [
 ];
 
 function responsiveRoutes(page, ids) {
-  const { taskId, scheduleId, providerId, skillName } = ids;
+  const { taskId, providerId, skillName } = ids;
   return [
     { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
     { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
@@ -862,8 +850,6 @@ function responsiveRoutes(page, ids) {
     { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
     { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
     { hash: "#/activity", ready: () => page.locator('h1.app-title', { hasText: "Activity" }) },
-    { hash: "#/schedules", ready: () => page.locator('h1.app-title', { hasText: "Schedules" }) },
-    { hash: `#/schedules/${scheduleId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression schedule" }) },
     { hash: "#/settings", ready: () => page.locator('h1.app-title', { hasText: "Settings" }) },
   ];
 }
@@ -871,7 +857,7 @@ function responsiveRoutes(page, ids) {
 for (const vp of RESPONSIVE_VIEWPORTS) {
   test(`no horizontal overflow at ${vp.label} (${vp.w}x${vp.h})`, async ({ page }) => {
     await page.setViewportSize({ width: vp.w, height: vp.h });
-    const routes = responsiveRoutes(page, { taskId, scheduleId, providerId, skillName });
+    const routes = responsiveRoutes(page, { taskId, providerId, skillName });
     for (const route of routes) {
       await page.goto(`${baseUrl}/${route.hash}`);
       await expect(route.ready()).toBeVisible({ timeout: 5000 });

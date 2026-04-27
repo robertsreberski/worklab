@@ -101,7 +101,7 @@ export function Settings() {
                   checked={!!settings.consolidation_enabled}
                   onChange={(next) => setSettings({ ...settings, consolidation_enabled: next })}
                   label="Enabled"
-                  description="Run the scheduled consolidation job each night."
+                  description="Run memory consolidation each night."
                 />
               </FormField>
               <FormField label="Journal tail lines">

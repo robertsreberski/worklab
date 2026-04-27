@@ -24,8 +24,8 @@ const patch = object({}, [], true);
 export const adminToolDefinitions = [
   tool("worklab_status", "Return Worklab health, service metadata, and configuration summary."),
   tool("worklab_service_status", "Return per-user service installation and active-state metadata."),
-  tool("worklab_service_restart", "Schedule a Worklab service restart."),
-  tool("worklab_service_stop", "Schedule a Worklab service stop."),
+  tool("worklab_service_restart", "Request a Worklab service restart."),
+  tool("worklab_service_stop", "Request a Worklab service stop."),
 
   tool("worklab_task_list", "List tasks, optionally filtered by stage or agent.", object({
     stage: string("Workflow stage filter"),
@@ -38,6 +38,7 @@ export const adminToolDefinitions = [
     owner_agent: string("Owner agent name"),
     reviewer_agent: string("Reviewer agent name"),
     stage: string("Initial workflow stage"),
+    run_policy: string("Run policy: manual or auto_plan_execute"),
     tags: arrayOfString("Tags"),
     blocked_by_ids: arrayOfString("Dependency task ids"),
     client_request_id: string("Idempotency key"),
@@ -105,12 +106,12 @@ export const adminToolDefinitions = [
   tool("worklab_skill_delete", "Delete a skill.", object({ name: string("Skill name") }, ["name"])),
   tool("worklab_skill_usage", "List agents that can use a skill.", object({ name: string("Skill name") }, ["name"])),
 
-  tool("worklab_schedule_list", "List schedules."),
-  tool("worklab_schedule_get", "Get a schedule.", object({ id }, ["id"])),
-  tool("worklab_schedule_create", "Create a schedule.", object({}, ["title"], true)),
-  tool("worklab_schedule_update", "Patch a schedule.", object({ id, patch }, ["id", "patch"])),
-  tool("worklab_schedule_delete", "Delete a schedule.", object({ id }, ["id"])),
-  tool("worklab_schedule_run", "Manually spawn a task from a schedule.", object({ id }, ["id"])),
+  tool("worklab_automation_list", "List automations."),
+  tool("worklab_automation_get", "Get an automation.", object({ id }, ["id"])),
+  tool("worklab_automation_create", "Create an automation.", object({}, ["title"], true)),
+  tool("worklab_automation_update", "Patch an automation.", object({ id, patch }, ["id", "patch"])),
+  tool("worklab_automation_delete", "Delete an automation.", object({ id }, ["id"])),
+  tool("worklab_automation_run", "Run an automation once now.", object({ id }, ["id"])),
 
   tool("worklab_provider_list", "List custom providers."),
   tool("worklab_provider_get", "Get a custom provider.", object({ id }, ["id"])),
@@ -205,12 +206,12 @@ const specs = [
   ["worklab_skill_update", "PATCH", "/api/skills/:name", [], "skillPatch"],
   ["worklab_skill_delete", "DELETE", "/api/skills/:name"],
   ["worklab_skill_usage", "GET", "/api/skills/:name/usage"],
-  ["worklab_schedule_list", "GET", "/api/schedules"],
-  ["worklab_schedule_get", "GET", "/api/schedules/:id"],
-  ["worklab_schedule_create", "POST", "/api/schedules", [], "input"],
-  ["worklab_schedule_update", "PATCH", "/api/schedules/:id", [], "patch"],
-  ["worklab_schedule_delete", "DELETE", "/api/schedules/:id"],
-  ["worklab_schedule_run", "POST", "/api/schedules/:id/run"],
+  ["worklab_automation_list", "GET", "/api/automations"],
+  ["worklab_automation_get", "GET", "/api/automations/:id"],
+  ["worklab_automation_create", "POST", "/api/automations", [], "input"],
+  ["worklab_automation_update", "PATCH", "/api/automations/:id", [], "patch"],
+  ["worklab_automation_delete", "DELETE", "/api/automations/:id"],
+  ["worklab_automation_run", "POST", "/api/automations/:id/run"],
   ["worklab_provider_list", "GET", "/api/providers"],
   ["worklab_provider_get", "GET", "/api/providers/:id"],
   ["worklab_provider_create", "POST", "/api/providers", [], "input"],
@@ -243,7 +244,7 @@ function bodyFor(kind, input) {
   return undefined;
 }
 
-function scheduleCliCommand(config, command) {
+function queueCliCommand(config, command) {
   const cli = join(config.repoRoot, "src", "cli", "index.js");
   const child = spawn(process.execPath, [cli, command], {
     detached: true,
@@ -251,7 +252,7 @@ function scheduleCliCommand(config, command) {
     env: { ...process.env, WORKLAB_DATA_DIR: config.dataDir },
   });
   child.unref();
-  return { scheduled: true, command, pid: child.pid };
+  return { queued: true, command, pid: child.pid };
 }
 
 export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch } = {}) {
@@ -278,8 +279,8 @@ export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch } =
   });
 
   handlers.worklab_service_status = async () => serviceStatus();
-  handlers.worklab_service_restart = async () => scheduleCliCommand(config, "restart");
-  handlers.worklab_service_stop = async () => scheduleCliCommand(config, "stop");
+  handlers.worklab_service_restart = async () => queueCliCommand(config, "restart");
+  handlers.worklab_service_stop = async () => queueCliCommand(config, "stop");
 
   handlers.worklab_search = async (input = {}) => apiRequest(client, "GET", "/api/search", {
     query: {

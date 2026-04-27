@@ -37,6 +37,12 @@ function fmtAge(value) {
 }
 function fmtCost(value) { return value == null ? "" : `$${Number(value).toFixed(4)}`; }
 
+function activityTitle(item) {
+  if (item.mode === "consolidate") return "Consolidation";
+  if (item.mode === "automation") return item.automation_title || "Automation";
+  return item.task_title || item.mode;
+}
+
 export function Activity() {
   const [items, setItems] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
@@ -131,23 +137,29 @@ export function Activity() {
           <EmptyState
             icon={<Icon name="clock" size={48} />}
             title="No activity yet"
-            body='Runs appear here as soon as you click "Run now" on a task or a scheduled consolidation fires.'
+            body='Runs appear here as soon as you click "Run now" on a task, automation, or consolidation.'
             cta={<Button variant="primary" onClick={() => navigateHash("#/tasks")}>Open the task board</Button>}
           />
         )}
 
         {items?.length > 0 && (
           <Card>
-            <div class="activity-list">
-              {items.map((item) => (
-                <div class="activity-row" key={item.id}>
-                  <AgentAvatar name={item.agent_name} label={item.agent_name} size={24} />
-                  <div class="min-w-0">
-                    <div class="activity-title">
-                      {item.mode === "consolidate" ? "Consolidation" : (item.task_title || item.mode)}
-                    </div>
-                    <div class="activity-meta">
-                      {item.mode} · {item.agent_name}
+	            <div class="activity-list">
+	              {items.map((item) => (
+	                <div class="activity-row" key={item.id}>
+	                  <AgentAvatar name={item.agent_name} label={item.agent_name} size={24} />
+	                  <div class="min-w-0">
+	                    <div class="activity-title">
+	                      {activityTitle(item)}
+	                      {item.automation_trigger_type && item.mode !== "automation" && (
+	                        <span class="chip chip-trigger">
+	                          <Icon name="clock" size={10} /> Scheduled
+	                        </span>
+	                      )}
+	                    </div>
+	                    <div class="activity-meta">
+	                      {item.mode} · {item.agent_name}
+                      {item.automation_trigger_type && ` · ${item.automation_trigger_type}`}
                       {item.model && ` · ${modelDisplayName(item.model)}`}
                       {item.duration_ms != null && ` · ${fmtDuration(item.duration_ms)}`}
                       {item.input_tokens != null && ` · ${item.input_tokens} in / ${item.output_tokens ?? 0} out`}

@@ -4,6 +4,9 @@ import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
+const RUN_POLICIES = ["manual", "auto_plan_execute"];
+const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "tags", "run_policy"];
+const BULK_PATCHABLE = ["stage", "owner_agent", "reviewer_agent", "run_policy"];
 
 function rowToTask(row) {
   if (!row) return null;
@@ -13,7 +16,7 @@ function rowToTask(row) {
     stage,
     tags: JSON.parse(row.tags || "[]"),
     retry_count: row.retry_count ?? 0,
-    source_schedule_id: row.source_schedule_id || null,
+    run_policy: row.run_policy || "manual",
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,
     owner_agent: row.owner_agent || null,
@@ -39,7 +42,7 @@ function compactTaskSummary(row) {
     updated_at: task.updated_at,
     owner_agent: task.owner_agent,
     reviewer_agent: task.reviewer_agent,
-    source_schedule_id: task.source_schedule_id,
+    run_policy: task.run_policy,
   };
 }
 
@@ -147,8 +150,39 @@ function attachTaskGraph(db, task) {
   };
 }
 
+function attachAutomationSummary(db, task) {
+  if (!task) return task;
+  const rows = db.prepare(`
+    SELECT id, enabled, next_fire_at, last_status, last_error
+    FROM automations
+    WHERE task_id = ?
+  `).all(task.id);
+  const enabled = rows.filter((row) => row.enabled !== 0);
+  const nextFireAt = enabled
+    .map((row) => row.next_fire_at)
+    .filter((value) => value != null)
+    .sort((a, b) => a - b)[0] || null;
+  const latestTrigger = db.prepare(`
+    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
+    FROM automation_triggers
+    WHERE task_id = ?
+    ORDER BY fired_at DESC, rowid DESC
+    LIMIT 1
+  `).get(task.id) || null;
+  return {
+    ...task,
+    automation_summary: {
+      count: rows.length,
+      enabled_count: enabled.length,
+      paused_count: rows.length - enabled.length,
+      next_fire_at: nextFireAt,
+      last_trigger: latestTrigger,
+    },
+  };
+}
+
 function enrichTask(db, task) {
-  return attachTaskGraph(db, attachDerivedRunFields(db, task));
+  return attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task)));
 }
 
 function normaliseDependencyIds(value) {
@@ -161,6 +195,12 @@ function normaliseClientRequestId(value) {
   const trimmed = value.trim();
   if (!trimmed) return null;
   return trimmed.slice(0, 160);
+}
+
+function normalizeRunPolicy(value, fallback = "manual") {
+  if (value === undefined) return fallback;
+  if (RUN_POLICIES.includes(value)) return value;
+  throw Object.assign(new Error(`invalid run_policy: ${value}`), { code: "validation" });
 }
 
 function pathExists(db, startId, targetId, seen = new Set()) {
@@ -270,14 +310,211 @@ function selectRunsWithLog(db, whereClause, ...params) {
       l.cache_read_tokens AS log_cache_read_tokens,
       l.cache_creation_tokens AS log_cache_creation_tokens,
       l.cost_usd AS log_cost_usd,
-      l.duration_ms AS log_duration_ms,
-      l.num_turns AS log_num_turns,
-      l.status AS log_status
-    FROM task_runs r
-    LEFT JOIN agent_logs l ON l.task_run_id = r.id
-    ${whereClause}
-    ${RUNS_ORDER_BY}
-  `).all(...params).map(rowToRun);
+	      l.duration_ms AS log_duration_ms,
+	      l.num_turns AS log_num_turns,
+	      l.status AS log_status,
+	      ar.automation_id,
+	      ar.trigger_type AS automation_trigger_type,
+	      ar.fired_at AS automation_fired_at,
+	      a.title AS automation_title,
+	      a.task_id AS automation_task_id
+	    FROM task_runs r
+	    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+	    LEFT JOIN automation_runs ar ON ar.run_id = r.id
+	    LEFT JOIN automations a ON a.id = ar.automation_id
+	    ${whereClause}
+	    ${RUNS_ORDER_BY}
+	  `).all(...params).map(rowToRun);
+}
+
+function routeError(status, code, message) {
+  return Object.assign(new Error(message), { status, code });
+}
+
+function sendRouteError(res, error) {
+  if (!error?.status) throw error;
+  return res.status(error.status).json({
+    error: { code: error.code || "error", message: error.message },
+  });
+}
+
+function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} }) {
+  const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  if (!existing) throw routeError(404, "not_found", "task not found");
+  if ("executor_agent" in (patch || {})) {
+    throw routeError(400, "validation", "executor_agent is not supported; use owner_agent");
+  }
+  if ("status" in (patch || {})) {
+    throw routeError(400, "validation", "status is not supported; use stage");
+  }
+
+  const fields = [];
+  const values = [];
+  let stageTransition = null;
+
+  // Non-status fields
+  for (const k of PATCHABLE) {
+    if (k in patch) {
+      fields.push(`${k} = ?`);
+      if (k === "tags") values.push(JSON.stringify(patch[k] ?? []));
+      else if (k === "run_policy") {
+        try {
+          values.push(normalizeRunPolicy(patch[k], existing.run_policy || "manual"));
+        } catch (error) {
+          throw routeError(400, error.code || "validation", error.message);
+        }
+      } else values.push(patch[k]);
+    }
+  }
+
+  if ("plan_body" in patch) {
+    if (patch.plan_body != null && typeof patch.plan_body !== "string") {
+      throw routeError(400, "validation", "plan_body must be a string");
+    }
+    const now = Date.now();
+    fields.push("plan_body = ?");
+    values.push(patch.plan_body || "");
+    fields.push("plan_updated_at = ?");
+    values.push(now);
+    fields.push("plan_updated_by = ?");
+    values.push("human");
+    fields.push("plan_source_run_id = ?");
+    values.push(null);
+  }
+
+  if ("stage" in patch) {
+    const requested = patch.stage;
+    if (!STAGES.includes(requested)) {
+      throw routeError(400, "validation", "invalid stage");
+    }
+    const currentStage = taskStage(existing);
+    const result = nextStage(currentStage, { type: "human_move", target: requested });
+    const errorSideEffect = result.sideEffects.find((se) => se.type === "error");
+    if (errorSideEffect) {
+      throw routeError(400, "invalid_transition", errorSideEffect.message);
+    }
+    stageTransition = { currentStage, result };
+  }
+
+  if ("blocked_by_ids" in patch) {
+    try {
+      const dependencyIds = validateDependencyIds(db, taskId, patch.blocked_by_ids);
+      replaceTaskDependencies(db, taskId, dependencyIds);
+    } catch (error) {
+      throw routeError(400, error.code || "validation", error.message);
+    }
+    fields.push("updated_at = ?");
+    values.push(Date.now());
+  }
+
+  if (fields.length === 0 && !stageTransition) {
+    return enrichTask(db, rowToTask(existing));
+  }
+
+  if (fields.length > 0) {
+    if (!fields.includes("updated_at = ?")) {
+      fields.push("updated_at = ?");
+      values.push(Date.now());
+    }
+    values.push(taskId);
+    db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    broker?.broadcast?.("global", { type: "task_updated", id: taskId });
+  }
+
+  if (stageTransition) {
+    applyRouteSideEffects(
+      db,
+      broker,
+      logger,
+      taskId,
+      stageTransition.result.sideEffects,
+      stageTransition.currentStage,
+      stageTransition.result.stage,
+    );
+    if (stageTransition.result.stage === "done" || stageTransition.result.stage === "blocked") {
+      resumeWaitingParents({
+        db,
+        childTaskId: taskId,
+        applySideEffects: (parentTaskId, sideEffects, currentStage, newStage) => {
+          applyRouteSideEffects(db, broker, logger, parentTaskId, sideEffects, currentStage, newStage);
+        },
+      });
+    }
+    if (stageTransition.result.stage === "done") {
+      watcher?.maybeAutoStartDependents?.(taskId);
+    }
+  }
+  watcher?.maybeAutoStart?.(taskId);
+
+  const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  return enrichTask(db, rowToTask(row));
+}
+
+function deleteTaskById({ db, broker, watcher, taskId }) {
+  const running = db.prepare(
+    `SELECT id FROM task_runs
+     WHERE task_id = ? AND status = 'running'
+     LIMIT 1`,
+  ).get(taskId);
+  if (running || watcher?.isActive?.(taskId)) {
+    throw routeError(409, "task_running", "cancel the active run before deleting this task");
+  }
+  const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  if (r.changes === 0) throw routeError(404, "not_found", "task not found");
+  broker?.broadcast?.("global", { type: "task_deleted", id: taskId });
+}
+
+function normalizeBulkIds(value) {
+  if (!Array.isArray(value)) {
+    throw routeError(400, "validation", "ids must be an array");
+  }
+  const ids = [...new Set(value.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim()))];
+  if (ids.length === 0) {
+    throw routeError(400, "validation", "ids are required");
+  }
+  return ids;
+}
+
+function validateBulkPatch(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw routeError(400, "validation", "patch is required");
+  }
+  const keys = Object.keys(patch);
+  if (keys.length === 0) {
+    throw routeError(400, "validation", "patch is required");
+  }
+  for (const key of keys) {
+    if (!BULK_PATCHABLE.includes(key)) {
+      throw routeError(400, "validation", `unsupported bulk patch field: ${key}`);
+    }
+  }
+  if ("stage" in patch && !STAGES.includes(patch.stage)) {
+    throw routeError(400, "validation", "invalid stage");
+  }
+  if ("run_policy" in patch) {
+    try {
+      normalizeRunPolicy(patch.run_policy);
+    } catch (error) {
+      throw routeError(400, error.code || "validation", error.message);
+    }
+  }
+}
+
+function bulkSummary(results) {
+  const succeeded = results.filter((result) => result.ok).length;
+  return {
+    requested: results.length,
+    succeeded,
+    failed: results.length - succeeded,
+  };
+}
+
+function resultError(error) {
+  return {
+    code: error.code || "error",
+    message: error.message || "failed",
+    status: error.status || 500,
+  };
 }
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
@@ -323,6 +560,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       reviewer_agent = null,
       owner_agent = null,
       stage = "plan",
+      run_policy = "manual",
       tags = [],
       blocked_by_ids = [],
       client_request_id = null,
@@ -338,6 +576,12 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     if (!STAGES.includes(stage)) {
       return res.status(400).json({ error: { code: "validation", message: `invalid stage: ${stage}` } });
     }
+    let normalizedRunPolicy = "manual";
+    try {
+      normalizedRunPolicy = normalizeRunPolicy(run_policy);
+    } catch (error) {
+      return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
+    }
     let dependencyIds = [];
     try {
       dependencyIds = validateDependencyIds(db, null, blocked_by_ids);
@@ -349,8 +593,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     const insertTask = db.prepare(`
       INSERT INTO tasks
         (id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
-         reviewer_agent, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         reviewer_agent, run_policy, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     try {
       insertTask.run(
@@ -362,6 +606,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
         stage,
         owner_agent,
         reviewer_agent,
+        normalizedRunPolicy,
         JSON.stringify(tags),
         now,
         now,
@@ -377,7 +622,44 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
     const task = enrichTask(db, rowToTask(row));
     broker.broadcast("global", { type: "task_created", id });
+    watcher?.maybeAutoStart?.(id);
     res.status(201).json({ task });
+  });
+
+  app.post("/api/tasks/bulk", (req, res) => {
+    let ids;
+    try {
+      ids = normalizeBulkIds(req.body?.ids);
+      const operation = req.body?.operation;
+      if (!["patch", "delete"].includes(operation)) {
+        throw routeError(400, "validation", "operation must be patch or delete");
+      }
+      if (operation === "patch") validateBulkPatch(req.body?.patch);
+
+      const results = ids.map((id) => {
+        try {
+          if (operation === "delete") {
+            deleteTaskById({ db, broker, watcher, taskId: id });
+            return { id, ok: true };
+          }
+          const task = applyTaskPatchById({
+            db,
+            broker,
+            watcher,
+            logger,
+            taskId: id,
+            patch: req.body.patch,
+          });
+          return { id, ok: true, task };
+        } catch (error) {
+          return { id, ok: false, error: resultError(error) };
+        }
+      });
+
+      res.json({ summary: bulkSummary(results), results });
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
   });
 
   app.get("/api/tasks/:id", (req, res) => {
@@ -394,112 +676,20 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     res.json({ task, comments, runs });
   });
 
-  const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "tags"];
-
   app.patch("/api/tasks/:id", (req, res) => {
-    const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
-    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    if ("executor_agent" in (req.body || {})) {
-      return res.status(400).json({
-        error: { code: "validation", message: "executor_agent is not supported; use owner_agent" },
-      });
-    }
-    if ("status" in (req.body || {})) {
-      return res.status(400).json({
-        error: { code: "validation", message: "status is not supported; use stage" },
-      });
-    }
-
-    const fields = [];
-    const values = [];
-    let stageTransition = null;
-
-    // Non-status fields
-    for (const k of PATCHABLE) {
-      if (k in req.body) {
-        fields.push(`${k} = ?`);
-        values.push(k === "tags" ? JSON.stringify(req.body[k] ?? []) : req.body[k]);
-      }
-    }
-
-    if ("plan_body" in req.body) {
-      if (req.body.plan_body != null && typeof req.body.plan_body !== "string") {
-        return res.status(400).json({ error: { code: "validation", message: "plan_body must be a string" } });
-      }
-      const now = Date.now();
-      fields.push("plan_body = ?");
-      values.push(req.body.plan_body || "");
-      fields.push("plan_updated_at = ?");
-      values.push(now);
-      fields.push("plan_updated_by = ?");
-      values.push("human");
-      fields.push("plan_source_run_id = ?");
-      values.push(null);
-    }
-
-    if ("stage" in req.body) {
-      const requested = req.body.stage;
-      if (!STAGES.includes(requested)) {
-        return res.status(400).json({ error: { code: "validation", message: "invalid stage" } });
-      }
-      const currentStage = taskStage(existing);
-      const result = nextStage(currentStage, { type: "human_move", target: requested });
-      if (result.sideEffects.some(se => se.type === "error")) {
-        return res.status(400).json({
-          error: { code: "invalid_transition", message: result.sideEffects.find(se => se.type === "error").message },
-        });
-      }
-      stageTransition = { currentStage, result };
-    }
-
-    if ("blocked_by_ids" in req.body) {
-      try {
-        const dependencyIds = validateDependencyIds(db, req.params.id, req.body.blocked_by_ids);
-        replaceTaskDependencies(db, req.params.id, dependencyIds);
-      } catch (error) {
-        return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
-      }
-      fields.push("updated_at = ?");
-      values.push(Date.now());
-    }
-
-    if (fields.length === 0 && !stageTransition) {
-      return res.json({ task: enrichTask(db, rowToTask(existing)) });
-    }
-
-    if (fields.length > 0) {
-      if (!fields.includes("updated_at = ?")) {
-        fields.push("updated_at = ?");
-        values.push(Date.now());
-      }
-      values.push(req.params.id);
-      db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-      broker.broadcast("global", { type: "task_updated", id: req.params.id });
-    }
-
-    if (stageTransition) {
-      applyRouteSideEffects(
+    try {
+      const task = applyTaskPatchById({
         db,
         broker,
+        watcher,
         logger,
-        req.params.id,
-        stageTransition.result.sideEffects,
-        stageTransition.currentStage,
-        stageTransition.result.stage,
-      );
-      if (stageTransition.result.stage === "done" || stageTransition.result.stage === "blocked") {
-        resumeWaitingParents({
-          db,
-          childTaskId: req.params.id,
-          applySideEffects: (taskId, sideEffects, currentStage, newStage) => {
-            applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentStage, newStage);
-          },
-        });
-      }
+        taskId: req.params.id,
+        patch: req.body || {},
+      });
+      res.json({ task });
+    } catch (error) {
+      return sendRouteError(res, error);
     }
-
-    const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
-    res.json({ task: enrichTask(db, rowToTask(row)) });
   });
 
   app.post("/api/tasks/:id/subtasks", (req, res) => {
@@ -527,9 +717,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
         db.prepare(`
           INSERT INTO tasks
             (id, root_task_id, parent_task_id, owner_agent, reviewer_agent,
-             title, instructions, stage, join_policy, subtask_order, required,
+             title, instructions, stage, run_policy, join_policy, subtask_order, required,
              tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'plan', 'all_required', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
         `).run(
           childId,
           rootTaskId,
@@ -538,6 +728,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
           reviewerAgent,
           title,
           instructions,
+          parent.run_policy || "manual",
           subtaskOrder,
           required,
           JSON.stringify([]),
@@ -576,22 +767,17 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)));
     broker.broadcast("global", { type: "task_created", id: childId });
     broker.broadcast("global", { type: "task_updated", id: parent.id });
+    watcher?.maybeAutoStart?.(childId);
     res.status(201).json({ task: child, parent: updatedParent });
   });
 
   app.delete("/api/tasks/:id", (req, res) => {
-    const running = db.prepare(
-      `SELECT id FROM task_runs
-       WHERE task_id = ? AND status = 'running'
-       LIMIT 1`,
-    ).get(req.params.id);
-    if (running || watcher?.isActive?.(req.params.id)) {
-      return res.status(409).json({ error: { code: "task_running", message: "cancel the active run before deleting this task" } });
+    try {
+      deleteTaskById({ db, broker, watcher, taskId: req.params.id });
+      res.status(204).end();
+    } catch (error) {
+      return sendRouteError(res, error);
     }
-    const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(req.params.id);
-    if (r.changes === 0) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    broker.broadcast("global", { type: "task_deleted", id: req.params.id });
-    res.status(204).end();
   });
 
   app.post("/api/tasks/:id/comments", (req, res) => {

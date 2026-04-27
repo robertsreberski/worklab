@@ -13,7 +13,7 @@ import { seedDataFromTemplate } from "./core/first-boot.js";
 import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";
-import { createScheduleManager } from "./coordinator/schedule-manager.js";
+import { createAutomationManager } from "./coordinator/automation-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 
 export async function startCoordinator({ config = loadConfig() } = {}) {
@@ -53,16 +53,20 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     cancel: (...args) => watcherHolder.current.cancel(...args),
     shutdown: (...args) => watcherHolder.current.shutdown(...args),
     isActive: (...args) => watcherHolder.current.isActive(...args),
+    maybeAutoStart: (...args) => watcherHolder.current.maybeAutoStart(...args),
+    maybeAutoStartDependents: (...args) => watcherHolder.current.maybeAutoStartDependents(...args),
   };
   const consolidationHolder = { current: null };
   const consolidationProxy = {
     runNow: (...args) => consolidationHolder.current.runNow(...args),
     isActive: (...args) => consolidationHolder.current.isActive(...args),
   };
-  const scheduleManagerHolder = { current: null };
-  const scheduleManagerProxy = {
-    refresh: (...args) => scheduleManagerHolder.current.refresh(...args),
-    tick: (...args) => scheduleManagerHolder.current.tick(...args),
+  const automationManagerHolder = { current: null };
+  const automationManagerProxy = {
+    refresh: (...args) => automationManagerHolder.current.refresh(...args),
+    tick: (...args) => automationManagerHolder.current.tick(...args),
+    runNow: (...args) => automationManagerHolder.current.runNow(...args),
+    isActive: (...args) => automationManagerHolder.current.isActive(...args),
   };
   const events = new EventEmitter();
   const { app, broker } = createServer({
@@ -72,7 +76,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     dataDir: config.dataDir,
     repoRoot: config.repoRoot,
     consolidation: consolidationProxy,
-    scheduleManager: scheduleManagerProxy,
+    automationManager: automationManagerProxy,
     events,
     config,
   });
@@ -86,8 +90,11 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
   });
   consolidationHolder.current.start();
-  scheduleManagerHolder.current = createScheduleManager({ db, broker, logger });
-  scheduleManagerHolder.current.start();
+  automationManagerHolder.current = createAutomationManager({
+    db, broker, spawn: spawnWorker, watcher: watcherHolder.current, workerBinary, logger,
+    repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
+  });
+  automationManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
 
   const uiDist = join(config.repoRoot, "src/ui/dist");
@@ -129,7 +136,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
 
     try { await watcherHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
-    try { await scheduleManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "schedule manager shutdown error"); }
+    try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
@@ -153,7 +160,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     config,
     watcher: watcherHolder.current,
     consolidation: consolidationHolder.current,
-    scheduleManager: scheduleManagerHolder.current,
+    automationManager: automationManagerHolder.current,
     searchIndexer,
   };
 }

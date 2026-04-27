@@ -4,7 +4,7 @@ import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
 import { getAvailableMcpServers, pickMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
-import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt } from "./core/context.js";
+import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
@@ -132,6 +132,50 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
   return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
 }
 
+function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
+  const automation = db.prepare("SELECT * FROM automations WHERE id = ?").get(automationId);
+  if (!automation) { emit({ type: "error", message: `automation ${automationId} not found` }); process.exit(1); }
+  const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+  if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
+
+  const skillsAll = loadSkills(join(config.dataDir, "skills"));
+  const skillAllowlist = JSON.parse(agent.skills_allowlist || "[]");
+  const skills = skillAllowlist.length === 0 ? skillsAll : skillsAll.filter(s => skillAllowlist.includes(s.name));
+
+  const memoryPath = agentMemoryPath(config.dataDir, agentName);
+  const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
+  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
+
+  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
+  const mcpAllowlist = JSON.parse(agent.mcp_allowlist || "[]");
+  const mcpServers = pickMcpServers(allMcpServers, mcpAllowlist.length === 0 ? [] : ["worklab", ...mcpAllowlist]);
+
+  if (mcpServers.worklab) {
+    mcpServers.worklab = {
+      ...mcpServers.worklab,
+      env: {
+        ...(mcpServers.worklab.env || {}),
+        WORKLAB_DATA_DIR: config.dataDir,
+        WORKLAB_AGENT_NAME: agentName,
+        WORKLAB_RUN_ID: runId,
+        WORKLAB_AUTOMATION_ID: automationId,
+        WORKLAB_AUTOMATION_TITLE: automation.title,
+      },
+    };
+  }
+
+  const builtinAllowlist = JSON.parse(agent.builtin_allowlist || "[]");
+  const allowedTools = builtinAllowlist.length === 0
+    ? ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"]
+    : builtinAllowlist;
+
+  const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
+  const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
+  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
+
+  return { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
+}
+
 function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
   const runs = db.prepare(
     `SELECT * FROM task_runs
@@ -162,19 +206,20 @@ async function main() {
   const { values } = parseArgs({
     options: {
       task: { type: "string" },
+      automation: { type: "string" },
       mode: { type: "string" },
       agent: { type: "string" },
     },
   });
-  const { task: taskId, mode, agent: agentName } = values;
+  const { task: taskId, automation: automationId, mode, agent: agentName } = values;
   const runId = process.env.WORKLAB_RUN_ID;
   const config = loadConfig();
 
-  if (!mode || !agentName || !runId || (mode !== "consolidate" && !taskId)) {
+  if (!mode || !agentName || !runId || (!["consolidate", "automation"].includes(mode) && !taskId) || (mode === "automation" && !automationId)) {
     emit({ type: "error", message: "missing required args/env" });
     process.exit(1);
   }
-  if (mode !== "plan" && mode !== "execute" && mode !== "review" && mode !== "consolidate") {
+  if (mode !== "plan" && mode !== "execute" && mode !== "review" && mode !== "consolidate" && mode !== "automation") {
     emit({ type: "error", message: `mode ${mode} not implemented` });
     process.exit(1);
   }
@@ -225,6 +270,51 @@ async function main() {
       }
       const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
       emit({ type: "memory_written", agent: agentName, path });
+      emit({
+        type: "final",
+        text: result.text,
+        usage: result.usage,
+        durationMs: result.durationMs,
+        numTurns: result.numTurns,
+        model: result.model,
+        effort: result.effort,
+      });
+      process.exit(0);
+    } catch (err) {
+      emit({ type: "error", message: err.message || String(err) });
+      process.exit(1);
+    }
+  }
+
+  if (mode === "automation") {
+    const setup = loadAutomationSetup({ config, db, automationId, agentName, runId });
+    const { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
+    const systemPrompt = buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb });
+    try {
+      const result = await generateResponse(systemPrompt, {
+        model: resolveModel(agent.model),
+        effort: agent.effort || "medium",
+        db,
+        dataDir: config.dataDir,
+        skills,
+        messages: [{ role: "user", content: `Run automation "${automation.title}".` }],
+        cwd: config.workspace,
+        mcpServers,
+        allowedTools,
+        disallowedTools: [],
+        permissionMode: "bypassPermissions",
+        maxTurns: 30,
+        abortSignal: ac.signal,
+        onEvent: (event) => emit({ type: "sdk_event", event }),
+      });
+      if (result.cancelled) {
+        emit({ type: "cancelled" });
+        process.exit(130);
+      }
+      if (result.error) {
+        emit({ type: "error", message: result.error });
+        process.exit(1);
+      }
       emit({
         type: "final",
         text: result.text,

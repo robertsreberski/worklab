@@ -17,6 +17,7 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.title).toBe("do thing");
     expect(res.body.task.status).toBeUndefined();
     expect(res.body.task.stage).toBe("plan");
+    expect(res.body.task.run_policy).toBe("manual");
     expect(res.body.task.root_task_id).toBe(res.body.task.id);
     expect(res.body.task.plan_body).toBe("");
     expect(res.body.task.plan_updated_at).toBeNull();
@@ -236,6 +237,19 @@ describe("PATCH /api/tasks/:id", () => {
     expect(res.body.task.executor_agent).toBeUndefined();
   });
 
+  it("updates run policy and rejects invalid values", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "auto",
+      run_policy: "auto_plan_execute",
+    }).expect(201);
+    expect(task.run_policy).toBe("auto_plan_execute");
+
+    const manual = await agent.patch(`/api/tasks/${task.id}`).send({ run_policy: "manual" }).expect(200);
+    expect(manual.body.task.run_policy).toBe("manual");
+    await agent.patch(`/api/tasks/${task.id}`).send({ run_policy: "always" }).expect(400);
+  });
+
   it("rejects legacy status and executor fields", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
@@ -279,12 +293,103 @@ describe("PATCH /api/tasks/:id stage", () => {
     expect(res.body.task.completed_at).toBeTruthy();
   });
 
+  it("notifies the watcher to wake dependents when a task is marked done", async () => {
+    const watcher = {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      maybeAutoStart: vi.fn(),
+      maybeAutoStartDependents: vi.fn(),
+    };
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" }).expect(200);
+
+    expect(watcher.maybeAutoStartDependents).toHaveBeenCalledWith(task.id);
+  });
+
   it("moving done → execute clears completed_at", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" });
     const res = await agent.patch(`/api/tasks/${task.id}`).send({ stage: "execute" });
     expect(res.body.task.completed_at).toBeNull();
+  });
+});
+
+describe("POST /api/tasks/bulk", () => {
+  it("bulk patches owner, reviewer, and run policy", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("owner", "Owner", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("reviewer", "Reviewer", "claude", "claude:claude-sonnet-4-6", now, now);
+    const { body: { task: a } } = await agent.post("/api/tasks").send({ title: "a" }).expect(201);
+    const { body: { task: b } } = await agent.post("/api/tasks").send({ title: "b" }).expect(201);
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [a.id, b.id],
+      operation: "patch",
+      patch: {
+        owner_agent: "owner",
+        reviewer_agent: "reviewer",
+        run_policy: "auto_plan_execute",
+      },
+    }).expect(200);
+
+    expect(res.body.summary).toEqual({ requested: 2, succeeded: 2, failed: 0 });
+    expect(res.body.results.every((result) => result.ok)).toBe(true);
+    const rows = db.prepare("SELECT owner_agent, reviewer_agent, run_policy FROM tasks ORDER BY title").all();
+    expect(rows).toEqual([
+      { owner_agent: "owner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
+      { owner_agent: "owner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
+    ]);
+  });
+
+  it("bulk patch reports per-task failures while updating valid tasks", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "a" }).expect(201);
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [task.id, "missing"],
+      operation: "patch",
+      patch: { stage: "execute" },
+    }).expect(200);
+
+    expect(res.body.summary).toEqual({ requested: 2, succeeded: 1, failed: 1 });
+    expect(res.body.results.find((result) => result.id === task.id)).toMatchObject({ ok: true });
+    expect(res.body.results.find((result) => result.id === "missing").error.code).toBe("not_found");
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(task.id).stage).toBe("execute");
+  });
+
+  it("bulk delete removes deletable tasks and rejects running tasks per item", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task: deletable } } = await agent.post("/api/tasks").send({ title: "delete" }).expect(201);
+    const { body: { task: running } } = await agent.post("/api/tasks").send({ title: "running" }).expect(201);
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, status, process_status) VALUES (?, ?, 'execute', 'execute', 'alpha', ?, 'running', 'running')",
+    ).run("active-run", running.id, Date.now());
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [deletable.id, running.id],
+      operation: "delete",
+    }).expect(200);
+
+    expect(res.body.summary).toEqual({ requested: 2, succeeded: 1, failed: 1 });
+    expect(res.body.results.find((result) => result.id === running.id).error.code).toBe("task_running");
+    expect(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE id = ?").get(deletable.id).c).toBe(0);
+    expect(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE id = ?").get(running.id).c).toBe(1);
+  });
+
+  it("rejects invalid bulk requests", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/tasks/bulk").send({ ids: [], operation: "delete" }).expect(400);
+    await agent.post("/api/tasks/bulk").send({ ids: ["a"], operation: "bogus" }).expect(400);
+    await agent.post("/api/tasks/bulk").send({ ids: ["a"], operation: "patch", patch: { stage: "bogus" } }).expect(400);
+    await agent.post("/api/tasks/bulk").send({ ids: ["a"], operation: "patch", patch: { title: "unsupported" } }).expect(400);
   });
 });
 
@@ -307,6 +412,7 @@ describe("POST /api/tasks/:id/subtasks", () => {
       root_task_id: parent.id,
       owner_agent: "owner",
       stage: "plan",
+      run_policy: "manual",
       required: true,
     });
     expect(res.body.parent).toMatchObject({ id: parent.id, stage: "awaiting_children", stage_reason: "waiting for manual subtasks" });

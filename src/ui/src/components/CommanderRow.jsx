@@ -74,6 +74,13 @@ export function CommanderRow({
   const runError = hasRunError(task);
   const stuck = task.running_run_id && task.is_locked === false;
   const needsOwner = !runnerName && displayStage !== "done";
+  const autoRun = task.run_policy === "auto_plan_execute";
+  const schedule = task.automation_summary || {};
+  const hasSchedule = Number(schedule.count || 0) > 0;
+  const scheduleEnabled = Number(schedule.enabled_count || 0) > 0;
+  const scheduleTitle = schedule.next_fire_at
+    ? `Next scheduled run: ${new Date(schedule.next_fire_at).toLocaleString()}`
+    : (hasSchedule ? "Task schedule is paused" : undefined);
 
   // Title-row chip — disambiguates the reason a task lives in Blocked or
   // warns the user an owner is missing. Order: stuck > error > needs-owner.
@@ -136,6 +143,16 @@ export function CommanderRow({
         <div class="commander-cell-title-row">
           <span class="commander-title">{task.title}</span>
           {metaChip}
+          {autoRun && (
+            <span class="chip">
+              <Icon name="zap" size={10} /> Auto-run
+            </span>
+          )}
+          {hasSchedule && (
+            <span class={`chip ${scheduleEnabled ? "chip-trigger" : "chip-muted"}`} title={scheduleTitle}>
+              <Icon name={scheduleEnabled ? "clock" : "minus-circle"} size={10} /> {scheduleEnabled ? "Scheduled" : "Schedule paused"}
+            </span>
+          )}
         </div>
         {isStreaming && event && (
           <div class="commander-live-line" key={`${task.id}-${event.ts || event.t || 0}`}>

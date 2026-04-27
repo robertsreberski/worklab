@@ -29,6 +29,10 @@ export function registerActivityRoutes(app, { db }) {
     const cols = `
       r.*,
       t.title AS task_title,
+      ar.automation_id,
+      ar.trigger_type AS automation_trigger_type,
+      ar.fired_at AS automation_fired_at,
+      a.title AS automation_title,
       l.model,
       l.effort,
       l.input_tokens,
@@ -41,6 +45,8 @@ export function registerActivityRoutes(app, { db }) {
     `;
     const sql = `SELECT ${cols} FROM task_runs r
       LEFT JOIN tasks t ON t.id = r.task_id
+      LEFT JOIN automation_runs ar ON ar.run_id = r.id
+      LEFT JOIN automations a ON a.id = ar.automation_id
       LEFT JOIN agent_logs l ON l.task_run_id = r.id
       ${filters.length ? `WHERE ${filters.join(" AND ")}` : ""}
       ORDER BY r.started_at DESC LIMIT ?`;

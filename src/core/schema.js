@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 9;
+export const SCHEMA_VERSION = 11;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   instructions TEXT NOT NULL DEFAULT '',
   stage TEXT NOT NULL DEFAULT 'plan',
   stage_reason TEXT,
+  run_policy TEXT NOT NULL DEFAULT 'manual',
   join_policy TEXT NOT NULL DEFAULT 'all_required',
   subtask_order INTEGER NOT NULL DEFAULT 0,
   required INTEGER NOT NULL DEFAULT 1,
@@ -50,7 +51,6 @@ CREATE TABLE IF NOT EXISTS tasks (
   tags TEXT NOT NULL DEFAULT '[]',
   error_text TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
-  source_schedule_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER
@@ -195,31 +195,50 @@ CREATE TABLE IF NOT EXISTS agent_consolidations (
   last_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL
 );
 
-CREATE TABLE IF NOT EXISTS schedules (
+CREATE TABLE IF NOT EXISTS automations (
   id TEXT PRIMARY KEY,
+  task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   instructions TEXT NOT NULL DEFAULT '',
-  owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
-  reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  agent_name TEXT REFERENCES agents(name) ON DELETE SET NULL,
   tags TEXT NOT NULL DEFAULT '[]',
-  cadence_json TEXT NOT NULL DEFAULT '{}',
+  trigger_json TEXT NOT NULL DEFAULT '{}',
   enabled INTEGER NOT NULL DEFAULT 1,
   next_fire_at INTEGER,
   last_fired_at INTEGER,
+  last_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
+  last_status TEXT,
+  last_error TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_fire ON schedules(enabled, next_fire_at);
+CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_fire ON automations(enabled, next_fire_at);
+CREATE INDEX IF NOT EXISTS idx_automations_task ON automations(task_id, updated_at DESC);
 
-CREATE TABLE IF NOT EXISTS schedule_spawns (
+CREATE TABLE IF NOT EXISTS automation_runs (
   id TEXT PRIMARY KEY,
-  schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE,
-  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE,
   trigger_type TEXT NOT NULL DEFAULT 'manual',
+  fired_at INTEGER NOT NULL,
+  UNIQUE(run_id)
+);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, fired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_runs_run ON automation_runs(run_id);
+
+CREATE TABLE IF NOT EXISTS automation_triggers (
+  id TEXT PRIMARY KEY,
+  automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
+  trigger_type TEXT NOT NULL DEFAULT 'manual',
+  outcome TEXT NOT NULL,
+  reason TEXT,
   fired_at INTEGER NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_schedule_spawns_schedule ON schedule_spawns(schedule_id, fired_at DESC);
-CREATE INDEX IF NOT EXISTS idx_schedule_spawns_task ON schedule_spawns(task_id);
+CREATE INDEX IF NOT EXISTS idx_automation_triggers_automation ON automation_triggers(automation_id, fired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_triggers_task ON automation_triggers(task_id, fired_at DESC);
+CREATE INDEX IF NOT EXISTS idx_automation_triggers_run ON automation_triggers(run_id);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

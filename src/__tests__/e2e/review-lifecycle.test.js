@@ -1,7 +1,7 @@
 // src/__tests__/e2e/review-lifecycle.test.js
 //
-// End-to-end test of the reviewer loop: HTTP → task-watcher → fake worker
-// (execute mode → review mode) → DB → agent comments → task stage transition.
+// End-to-end test of the reviewer loop: HTTP -> task-watcher -> fake worker
+// (execute mode, explicit review mode) -> DB -> comments -> task transition.
 //
 // Two scenarios:
 //   A) APPROVE path — reviewer approves, task transitions to `done`.
@@ -122,7 +122,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     else process.env.ANTHROPIC_API_KEY = savedAnthropicKey;
   });
 
-  it("APPROVE path: task → review → done, with owner + reviewer + system comments", async () => {
+  it("APPROVE path: task reaches review, explicit reviewer run approves, then done", async () => {
     const runIdRef = { execute: null, review: null };
     ctx = await setupHarness({
       executeEvents: [
@@ -153,6 +153,17 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
 
     const runRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(runRes.status).toBe(200);
+
+    const reviewReady = await pollTaskUntil(
+      ctx.baseUrl,
+      task.id,
+      (tr) => tr.task.stage === "review",
+      { timeoutMs: 5000, stepMs: 100 },
+    );
+    expect(reviewReady.task.stage).toBe("review");
+
+    const reviewRunRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    expect(reviewRunRes.status).toBe(200);
 
     const finalResp = await pollTaskUntil(
       ctx.baseUrl,
@@ -187,7 +198,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     expect(systemComments.some((c) => c.body === "VERDICT: APPROVE")).toBe(false);
   }, 15000);
 
-  it("REJECT path: task → review → execute, with reviewer + system rejection comments", async () => {
+  it("REJECT path: explicit reviewer run returns task to execute with notes", async () => {
     const rejectionNotes = "- fix X\n- fix Y";
     ctx = await setupHarness({
       executeEvents: [
@@ -216,6 +227,17 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
 
     const runRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
     expect(runRes.status).toBe(200);
+
+    const reviewReady = await pollTaskUntil(
+      ctx.baseUrl,
+      task.id,
+      (tr) => tr.task.stage === "review",
+      { timeoutMs: 5000, stepMs: 100 },
+    );
+    expect(reviewReady.task.stage).toBe("review");
+
+    const reviewRunRes = await fetch(`${ctx.baseUrl}/api/tasks/${task.id}/run`, { method: "POST" });
+    expect(reviewRunRes.status).toBe(200);
 
     // Wait for the reviewer to bounce it back to the retryable execute stage.
     const finalResp = await pollTaskUntil(
