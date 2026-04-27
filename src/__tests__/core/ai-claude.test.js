@@ -39,6 +39,27 @@ describe("generateClaudeResponse", () => {
     expect(events.length).toBe(2);
   });
 
+  it("prefers the SDK result text over intermediate assistant narration", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      { type: "assistant", message: { content: [{ type: "text", text: "I will gather the data." }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "Now compiling." }] } },
+      {
+        type: "result",
+        result: "# Report\n\nFinal delivered answer.",
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 2,
+      },
+    ]));
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+    expect(r.text).toBe("# Report\n\nFinal delivered answer.");
+  });
+
   it("maps effort: low → thinking disabled", async () => {
     mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
     await generateClaudeResponse("sys", {

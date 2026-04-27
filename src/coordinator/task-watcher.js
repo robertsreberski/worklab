@@ -76,9 +76,9 @@ function sanitizeAgentText(text) {
 }
 
 function agentCommentBody(result, finalText) {
-  const structured = sanitizeAgentText(formatWorklabResultText(result));
-  if (structured) return structured;
-  return sanitizeAgentText(finalText);
+  const delivered = sanitizeAgentText(finalText);
+  if (delivered) return delivered;
+  return sanitizeAgentText(formatWorklabResultText(result));
 }
 
 // In-memory cycle check across a freshly-delegated batch of subtasks. Each

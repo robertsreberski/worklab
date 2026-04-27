@@ -14,6 +14,15 @@ function extractText(event) {
   return out;
 }
 
+function extractResultText(event) {
+  if (event.type !== "result") return "";
+  if (typeof event.result === "string") return event.result;
+  if (event.result != null) return JSON.stringify(event.result);
+  if (typeof event.final_output === "string") return event.final_output;
+  if (event.final_output != null) return JSON.stringify(event.final_output);
+  return "";
+}
+
 export async function generateClaudeResponse(systemPrompt, options) {
   const {
     messages,
@@ -55,6 +64,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let usage = {};
   let durationMs = 0;
   let numTurns = 0;
+  let resultText = "";
   let cancelled = false;
   let errorMessage = null;
   const capturedEvents = [];
@@ -80,6 +90,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
         usage = event.usage || {};
         durationMs = event.duration_ms || 0;
         numTurns = event.num_turns || 0;
+        resultText = extractResultText(event) || resultText;
       }
       if (cancelled) break;
     }
@@ -88,7 +99,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   }
 
   return {
-    text,
+    text: resultText || text,
     events: capturedEvents,
     usage,
     durationMs,
