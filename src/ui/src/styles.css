@@ -1129,6 +1129,13 @@ select,
 .form-grid.cols-3 { --cols: 3; }
 .form-grid .span-2,
 .form-grid .field.wide { grid-column: 1 / -1; }
+.agent-profile-grid {
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.25fr) minmax(240px, 0.9fr);
+  align-items: end;
+}
+.agent-availability-field {
+  padding-bottom: 1px;
+}
 @media (max-width: 860px) {
   .form-grid { grid-template-columns: 1fr; }
   .form-grid .span-2, .form-grid .field.wide { grid-column: auto; }

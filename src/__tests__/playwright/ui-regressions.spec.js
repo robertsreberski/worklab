@@ -490,6 +490,31 @@ test("agents two-pane: clicking a list row selects inline editor via URL", async
   await expect(page.locator(".pane-detail-head h2", { hasText: "New agent" })).toBeVisible();
 });
 
+test("agent profile availability stays inline after identity fields", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${baseUrl}/#/agents/new`);
+  await expect(page.locator(".agent-profile-grid")).toBeVisible();
+
+  const fields = await page.locator(".agent-profile-grid").evaluate((grid) => {
+    return Array.from(grid.children).map((child) => {
+      const rect = child.getBoundingClientRect();
+      return {
+        text: (child.textContent || "").replace(/\s+/g, " ").trim(),
+        left: Math.round(rect.left),
+        bottom: Math.round(rect.bottom),
+      };
+    });
+  });
+
+  expect(fields).toHaveLength(3);
+  expect(fields[0].text).toContain("Display name");
+  expect(fields[1].text).toContain("Description");
+  expect(fields[2].text).toContain("Available for assignment");
+  expect(fields[0].left).toBeLessThan(fields[1].left);
+  expect(fields[1].left).toBeLessThan(fields[2].left);
+  expect(Math.abs(fields[0].bottom - fields[2].bottom)).toBeLessThanOrEqual(6);
+});
+
 test("task edit is reachable via #/tasks/new and shows a full-page form", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/#/tasks/new`);

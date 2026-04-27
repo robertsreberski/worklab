@@ -448,20 +448,20 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         <div class="entity-editor-layout agent-editor-layout">
           <main class="entity-editor-main">
             <FormSection kicker="Identity" title="Profile">
-              <FormGrid columns={2}>
+              <FormGrid columns={3} class="agent-profile-grid">
                 <FormField label="Display name" required>
                   <Input value={agent.display_name} onInput={(e) => setAgent({ ...agent, display_name: e.target.value })} />
                 </FormField>
-                <FormField switchInside>
+                <FormField label="Description">
+                  <Input value={agent.description || ""} onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
+                </FormField>
+                <FormField switchInside class="agent-availability-field">
                   <Switch
                     checked={agent.enabled}
                     onChange={(next) => setAgent({ ...agent, enabled: next })}
                     label="Available for assignment"
                     description="Unavailable agents stay configured but cannot be selected."
                   />
-                </FormField>
-                <FormField label="Description" class="span-2">
-                  <Input value={agent.description || ""} onInput={(e) => setAgent({ ...agent, description: e.target.value })} />
                 </FormField>
               </FormGrid>
             </FormSection>
