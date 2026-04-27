@@ -625,7 +625,7 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const resultPreview = runResultPreview(run);
   const startedAt = formatDate(run.started_at);
   const shortStartedAt = formatActivityTime(run.started_at);
-  const title = formatRunSummaryTitle(run, shortStartedAt);
+  const title = formatRunSummaryTitle(run);
   const processStatus = run.process_status || run.status;
   const warningLabel = processStatus === "succeeded" && Number(run.log?.num_turns) === 0
     ? "No final text"
@@ -639,17 +639,7 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
       <summary class="run-card-summary">
         <div class="run-summary">
           <div class="run-summary-main">
-            <div class="run-summary-status">
-              <StatusPill status={processStatus} size="sm" />
-              {run.automation_trigger_type && (
-                <span class="chip chip-trigger">
-                  <Icon name="clock" size={10} /> Scheduled
-                </span>
-              )}
-              <span class="run-summary-title" title={startedAt || undefined}>{title}</span>
-              {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
-            </div>
-            {resultPreview.hasResult && (
+            {resultPreview.hasResult ? (
               <div class="run-summary-result">
                 <div class="run-summary-result-head">
                   {resultPreview.decision && (
@@ -658,8 +648,26 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
                     </span>
                   )}
                   {resultPreview.summary && <span class="run-result-summary">{resultPreview.summary}</span>}
+                  {!resultPreview.summary && <span class="run-result-summary">Result recorded</span>}
+                  {run.automation_trigger_type && (
+                    <span class="chip chip-trigger">
+                      <Icon name="clock" size={10} /> Scheduled
+                    </span>
+                  )}
+                  {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
                 </div>
                 {resultPreview.details && <div class="run-result-details">{resultPreview.details}</div>}
+              </div>
+            ) : (
+              <div class="run-summary-status">
+                <StatusPill status={processStatus} size="sm" />
+                {run.automation_trigger_type && (
+                  <span class="chip chip-trigger">
+                    <Icon name="clock" size={10} /> Scheduled
+                  </span>
+                )}
+                <span class="run-summary-title" title={startedAt || undefined}>{title}</span>
+                {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
               </div>
             )}
           </div>
@@ -669,6 +677,7 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
             </div>
           )}
           <div class="run-summary-side">
+            {shortStartedAt && <span class="run-summary-time" title={startedAt || undefined}>{shortStartedAt}</span>}
             <span>{expanded ? "Collapse" : "Details"}</span>
             <Icon name="chevron-down" size={14} class="run-summary-chevron" />
           </div>
