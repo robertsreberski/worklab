@@ -144,7 +144,8 @@ describe("buildExecuteSystemPrompt", () => {
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
-    expect(p).toContain("Emit the Worklab JSON object exactly once");
+    expect(p).toContain("Worklab needs one final `worklab.v2` JSON object");
+    expect(p).toContain("the final valid result supersedes earlier structured progress");
     expect(p).toContain("Put the human-facing final comment in `final_text`");
     expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
     expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
