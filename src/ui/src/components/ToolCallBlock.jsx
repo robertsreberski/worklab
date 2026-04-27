@@ -53,7 +53,11 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   let statusIcon;
   let stateLabel;
   if (pending) {
-    statusIcon = <span class="tool-call-spinner" aria-hidden="true" />;
+    statusIcon = (
+      <span class="tool-call-status-running tool-call-spinner" aria-hidden="true">
+        <Icon name="refresh-cw" size={13} strokeWidth={2} />
+      </span>
+    );
     stateLabel = "running";
   } else if (isError) {
     statusIcon = <Icon name="alert-triangle" size={13} class="tool-call-status-error" />;
