@@ -3,14 +3,12 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { navigateHash } from "../lib/navigation.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Button } from "../components/primitives/Button.jsx";
-import { Chip } from "../components/primitives/Chip.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
@@ -18,7 +16,6 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { modelDisplayName } from "../lib/display.js";
 
 const LOG_LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"].map((value) => ({ value, label: value }));
 const MCP_TRANSPORT_OPTIONS = [
@@ -43,6 +40,20 @@ export function minutesToMs(value) {
   const minutes = Number(value);
   if (!Number.isFinite(minutes)) return "";
   return Math.round(minutes * 60000);
+}
+
+export function secondsValue(ms) {
+  if (ms === "" || ms == null) return "";
+  const seconds = Number(ms) / 1000;
+  if (!Number.isFinite(seconds)) return "";
+  return Number(seconds.toFixed(2)).toString();
+}
+
+export function secondsToMs(value) {
+  if (value === "") return "";
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds)) return "";
+  return Math.round(seconds * 1000);
 }
 
 function numberOrEmpty(value) {
@@ -106,22 +117,6 @@ function mcpServersFromRows(rows = []) {
   return servers;
 }
 
-function modelOptionsFromGroups(groups = []) {
-  return groups.map((group) => ({
-    label: group.available === false ? `${group.label} (unavailable)` : group.label,
-    options: (group.models || []).map((model) => ({
-      value: model.value,
-      label: model.label || model.value,
-      description: model.description || undefined,
-      disabled: group.available === false || model.available === false || model.disabled === true,
-    })),
-  }));
-}
-
-function flattenModels(groups = []) {
-  return groups.flatMap((group) => (group.models || []).map((model) => ({ ...model, group: group.label })));
-}
-
 export function runtimePayload(runtimeDraft = {}) {
   return {
     host: runtimeDraft.host,
@@ -155,16 +150,6 @@ function FieldNote({ label, value, mono = false }) {
   );
 }
 
-function ProviderStatus({ status }) {
-  if (!status) return null;
-  if (status.kind === "testing") return <span class="settings-inline-status">Testing...</span>;
-  if (status.kind === "discovering") return <span class="settings-inline-status">Discovering...</span>;
-  if (status.kind === "error") return <span class="settings-inline-status error">{status.message}</span>;
-  if (status.kind === "test") return <span class={`settings-inline-status ${status.result?.ok ? "ok" : "error"}`.trim()}>{status.result?.ok ? "Reachable" : "Unreachable"}</span>;
-  if (status.kind === "discovered") return <span class="settings-inline-status ok">{status.count} models</span>;
-  return null;
-}
-
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
@@ -174,14 +159,9 @@ export function Settings() {
   const [runtimeError, setRuntimeError] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
-  const [providers, setProviders] = useState([]);
-  const [providerModels, setProviderModels] = useState({});
-  const [providerStatus, setProviderStatus] = useState({});
   const [mcpStatus, setMcpStatus] = useState(null);
   const [mcpRows, setMcpRows] = useState([]);
   const [mcpBaselineRows, setMcpBaselineRows] = useState([]);
-  const [agents, setAgents] = useState([]);
-  const [modelGroups, setModelGroups] = useState([]);
   const [restarting, setRestarting] = useState(false);
 
   const loadSettings = useCallback(async () => {
@@ -214,21 +194,6 @@ export function Settings() {
     }
   }, []);
 
-  const loadProviders = useCallback(async () => {
-    const response = await api.listProviders();
-    const nextProviders = response.providers || [];
-    setProviders(nextProviders);
-    const entries = await Promise.all(nextProviders.map(async (provider) => {
-      try {
-        const models = await api.listProviderModels(provider.id);
-        return [provider.id, models.models || []];
-      } catch {
-        return [provider.id, []];
-      }
-    }));
-    setProviderModels(Object.fromEntries(entries));
-  }, []);
-
   const loadMcp = useCallback(async () => {
     const [config, status] = await Promise.all([
       api.getMcpConfig().catch(() => ({ mcpServers: {} })),
@@ -240,24 +205,13 @@ export function Settings() {
     setMcpStatus(status);
   }, []);
 
-  const loadAgents = useCallback(async () => {
-    const [agentResponse, modelResponse] = await Promise.all([
-      api.listAgents().catch(() => ({ agents: [] })),
-      api.listAvailableModels().catch(() => ({ groups: [] })),
-    ]);
-    setAgents(agentResponse.agents || []);
-    setModelGroups(modelResponse.groups || []);
-  }, []);
-
   useEffect(() => {
     loadSettings().catch((err) => pushToast(`Settings failed: ${err.message}`, { variant: "error" }));
     loadRuntime();
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
-    loadProviders().catch((err) => pushToast(`Providers failed: ${err.message}`, { variant: "error" }));
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
-    loadAgents().catch((err) => pushToast(`Agents failed: ${err.message}`, { variant: "error" }));
-  }, [loadAgents, loadMcp, loadProviders, loadRuntime, loadSettings]);
+  }, [loadMcp, loadRuntime, loadSettings]);
 
   const settingsDirty = useMemo(() => baseline ? !jsonEqual(settings, baseline) : false, [settings, baseline]);
   const runtimeDirty = useMemo(() => runtimeBaseline ? !jsonEqual(runtimeDraft, runtimeBaseline) : false, [runtimeDraft, runtimeBaseline]);
@@ -277,7 +231,6 @@ export function Settings() {
     if (mcpDirty) {
       await api.putMcpConfig({ mcpServers: mcpServersFromRows(mcpRows) });
       await loadMcp();
-      await loadAgents();
     }
     pushToast("Saved.", { variant: "success" });
   });
@@ -304,9 +257,6 @@ export function Settings() {
     })),
   ];
 
-  const modelOptions = modelOptionsFromGroups(modelGroups);
-  const modelRows = flattenModels(modelGroups);
-
   async function restartRuntime() {
     setRestarting(true);
     try {
@@ -317,54 +267,6 @@ export function Settings() {
       pushToast(`Restart failed: ${err.message}`, { variant: "error" });
     } finally {
       setRestarting(false);
-    }
-  }
-
-  async function toggleProvider(provider, enabled) {
-    try {
-      await api.patchProvider(provider.id, { enabled });
-      await loadProviders();
-      await loadAgents();
-    } catch (err) {
-      pushToast(`Provider update failed: ${err.message}`, { variant: "error" });
-    }
-  }
-
-  async function providerAction(provider, action) {
-    const key = `${provider.id}:${action}`;
-    setProviderStatus((current) => ({ ...current, [provider.id]: { kind: action === "test" ? "testing" : "discovering" } }));
-    try {
-      if (action === "test") {
-        const result = await api.testProvider(provider.id);
-        setProviderStatus((current) => ({ ...current, [provider.id]: { kind: "test", result } }));
-      } else {
-        const result = await api.discoverProviderModels(provider.id);
-        setProviderModels((current) => ({ ...current, [provider.id]: result.models || [] }));
-        setProviderStatus((current) => ({ ...current, [provider.id]: { kind: "discovered", count: (result.models || []).length } }));
-        await loadAgents();
-      }
-    } catch (err) {
-      setProviderStatus((current) => ({ ...current, [provider.id]: { kind: "error", message: err.message, key } }));
-    }
-  }
-
-  async function toggleModel(provider, model) {
-    try {
-      await api.patchProviderModel(provider.id, model.id, { enabled: !model.enabled });
-      const response = await api.listProviderModels(provider.id);
-      setProviderModels((current) => ({ ...current, [provider.id]: response.models || [] }));
-      await loadAgents();
-    } catch (err) {
-      pushToast(`Model update failed: ${err.message}`, { variant: "error" });
-    }
-  }
-
-  async function toggleAgent(agent, enabled) {
-    try {
-      const response = await api.patchAgent(agent.name, { enabled });
-      setAgents((current) => current.map((item) => item.name === agent.name ? response.agent : item));
-    } catch (err) {
-      pushToast(`Agent update failed: ${err.message}`, { variant: "error" });
     }
   }
 
@@ -428,7 +330,7 @@ export function Settings() {
         )}
 
         <div class="settings-sections">
-          <FormSection kicker="Runtime" title="Service runtime" description="Values written here apply after the Worklab service restarts. Timeout durations are shown in minutes.">
+          <FormSection kicker="Runtime" title="Service runtime" description="Values written here apply after the Worklab service restarts.">
             <FormGrid columns={3}>
               <FormField label="Host">
                 <Input disabled={!!runtimeError} value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
@@ -464,8 +366,8 @@ export function Settings() {
               <FormField label="Worker timeout (minutes)">
                 <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.worker_timeout_ms)} onInput={(event) => setSettings({ ...settings, worker_timeout_ms: minutesToMs(event.target.value) })} />
               </FormField>
-              <FormField label="Cancel grace (minutes)">
-                <Input type="number" min="0" step="0.01" value={minutesValue(settings.cancel_grace_ms)} onInput={(event) => setSettings({ ...settings, cancel_grace_ms: minutesToMs(event.target.value) })} />
+              <FormField label="Cancel grace (seconds)">
+                <Input type="number" min="0" step="1" value={secondsValue(settings.cancel_grace_ms)} onInput={(event) => setSettings({ ...settings, cancel_grace_ms: secondsToMs(event.target.value) })} />
               </FormField>
               <FormField label="Consolidation hour">
                 <Input type="number" min="0" max="23" value={settings.consolidation_hour} onInput={(event) => setSettings({ ...settings, consolidation_hour: event.target.value })} />
@@ -504,45 +406,6 @@ export function Settings() {
                 {indexStatus.model && !indexStatus.ready && ` / paused (${indexStatus.reason || "provider not configured"})`}
               </div>
             )}
-          </FormSection>
-
-          <FormSection kicker="Models" title="Providers and discovered models" description="Enable providers and models that should appear in agent and embedding pickers.">
-            <div class="settings-list">
-              {providers.length === 0 ? (
-                <div class="field-hint">No custom providers configured.</div>
-              ) : providers.map((provider) => (
-                <div class="settings-admin-row" key={provider.id}>
-                  <div class="settings-admin-row-head">
-                    <div class="min-w-0">
-                      <strong>{provider.name}</strong>
-                      <div class="settings-row-sub mono">{provider.base_url}</div>
-                    </div>
-                    <div class="settings-row-actions">
-                      <ProviderStatus status={providerStatus[provider.id]} />
-                      <Switch checked={!!provider.enabled} onChange={(next) => toggleProvider(provider, next)} label={provider.enabled ? "Enabled" : "Disabled"} />
-                      <Button size="sm" variant="secondary" onClick={() => providerAction(provider, "test")}>Test</Button>
-                      <Button size="sm" variant="secondary" onClick={() => providerAction(provider, "discover")}>Discover</Button>
-                      <Button size="sm" variant="ghost" onClick={() => navigateHash(`#/providers/${provider.id}`)}>Edit</Button>
-                    </div>
-                  </div>
-                  <div class="settings-model-grid">
-                    {(providerModels[provider.id] || []).map((model) => (
-                      <div class="settings-model-row" key={model.id}>
-                        <div class="min-w-0">
-                          <strong>{model.display_name || model.model_name}</strong>
-                          <div class="settings-row-sub mono">{model.model_name}</div>
-                        </div>
-                        <div class="settings-row-actions">
-                          {model.capabilities?.embedding && <Chip variant="accent">Embedding</Chip>}
-                          {model.capabilities?.runnable_for_agent !== false && <Chip variant="tag">Chat</Chip>}
-                          <Switch checked={!!model.enabled} onChange={() => toggleModel(provider, model)} label={model.enabled ? "Enabled" : "Disabled"} />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
           </FormSection>
 
           <FormSection kicker="Tools" title="MCP servers" description="Built-in servers are read-only. User servers are saved to the MCP config file.">
@@ -598,32 +461,6 @@ export function Settings() {
             <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
           </FormSection>
 
-          <FormSection kicker="Agents" title="Agent runtime inventory" description="Common agent runtime choices are summarized here; detailed prompts and allowlists stay on each agent page.">
-            <div class="settings-list">
-              {agents.length === 0 ? (
-                <div class="field-hint">No agents configured.</div>
-              ) : agents.map((agent) => {
-                const selectedModel = modelRows.find((model) => model.value === agent.model);
-                const availableSkills = agent.skills_allowlist_mode === "custom" ? agent.skills_allowlist.length : "all";
-                const availableMcp = agent.mcp_allowlist_mode === "custom" ? agent.mcp_allowlist.length : "all";
-                return (
-                  <div class="settings-admin-row compact" key={agent.name}>
-                    <div class="min-w-0">
-                      <strong>{agent.display_name || agent.name}</strong>
-                      <div class="settings-row-sub">
-                        {modelDisplayName(agent.model, modelOptions)} / effort {agent.effort || "medium"} / skills {availableSkills} / MCP {availableMcp}
-                        {selectedModel?.available === false && " / model unavailable"}
-                      </div>
-                    </div>
-                    <div class="settings-row-actions">
-                      <Switch checked={!!agent.enabled} onChange={(next) => toggleAgent(agent, next)} label={agent.enabled ? "Enabled" : "Disabled"} />
-                      <Button size="sm" variant="ghost" onClick={() => navigateHash(`#/agents/${agent.name}`)}>Edit</Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </FormSection>
         </div>
       </div>
     </AppShell>

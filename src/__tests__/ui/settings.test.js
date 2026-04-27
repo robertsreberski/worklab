@@ -3,6 +3,8 @@ import {
   minutesToMs,
   minutesValue,
   runtimePayload,
+  secondsToMs,
+  secondsValue,
   settingsPayload,
 } from "../../ui/src/routes/Settings.jsx";
 
@@ -13,10 +15,22 @@ describe("settings UI duration conversions", () => {
     expect(minutesValue(5000)).toBe("0.0833");
   });
 
+  it("formats cancel grace values as seconds", () => {
+    expect(secondsValue(5000)).toBe("5");
+    expect(secondsValue(2500)).toBe("2.5");
+    expect(secondsValue(333)).toBe("0.33");
+  });
+
   it("converts minute inputs back to integer milliseconds", () => {
     expect(minutesToMs("30")).toBe(1800000);
     expect(minutesToMs("2.5")).toBe(150000);
     expect(minutesToMs("0.0833")).toBe(4998);
+  });
+
+  it("converts second inputs back to integer milliseconds", () => {
+    expect(secondsToMs("5")).toBe(5000);
+    expect(secondsToMs("2.5")).toBe(2500);
+    expect(secondsToMs("0.33")).toBe(330);
   });
 
   it("keeps settings payload timeout fields in milliseconds", () => {
@@ -24,13 +38,13 @@ describe("settings UI duration conversions", () => {
       consolidation_hour: 3,
       consolidation_enabled: true,
       worker_timeout_ms: minutesToMs("30"),
-      cancel_grace_ms: minutesToMs("0.0833"),
+      cancel_grace_ms: secondsToMs("5"),
       journal_tail_lines: 80,
       kb_pinned_limit: 10,
       default_embedding_model: "",
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
-    expect(payload.cancel_grace_ms).toBe(4998);
+    expect(payload.cancel_grace_ms).toBe(5000);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {
