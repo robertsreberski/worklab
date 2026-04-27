@@ -10,6 +10,7 @@ import { parseWorklabResultFromText, synthesizeWorklabResult } from "../core/wor
 import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
+import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -443,12 +444,13 @@ export function createTaskWatcher({
         const required = subtask.required === false ? 0 : 1;
         db.prepare(`
           INSERT INTO tasks
-            (id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
+            (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
              owner_agent, title, instructions, stage, run_policy, join_policy, subtask_order,
              required, reviewer_agent, tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
+          nextTaskKey(db),
           rootTaskId,
           parentTask.id,
           runId,
@@ -483,8 +485,7 @@ export function createTaskWatcher({
           if (!depId) {
             // Allow referring to an existing task by id (sibling created in
             // this batch already covered above; this handles cross-batch).
-            const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(trimmed);
-            if (existing) depId = existing.id;
+            depId = resolveTaskId(db, trimmed);
           }
           if (!depId || depId === child.id) {
             warnings.push(`Subtask "${subtask.title || "?"}": depends_on "${dep}" did not resolve and was dropped.`);

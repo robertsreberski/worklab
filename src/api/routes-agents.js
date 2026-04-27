@@ -295,6 +295,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const rows = db.prepare(`
       SELECT r.id, r.task_id, r.mode, r.status, r.started_at, r.ended_at,
              t.title AS task_title,
+             t.task_key AS task_key,
              l.model, l.cost_usd, l.duration_ms, l.input_tokens, l.output_tokens
       FROM task_runs r
       LEFT JOIN tasks t ON t.id = r.task_id

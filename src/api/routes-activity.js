@@ -29,6 +29,7 @@ export function registerActivityRoutes(app, { db }) {
     const cols = `
       r.*,
       t.title AS task_title,
+      t.task_key AS task_key,
       ar.automation_id,
       ar.trigger_type AS automation_trigger_type,
       ar.fired_at AS automation_fired_at,

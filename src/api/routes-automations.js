@@ -1,6 +1,7 @@
 import { newAutomationId } from "../core/ids.js";
 import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../core/automations.js";
 import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+import { resolveTaskRow } from "../core/task-keys.js";
 
 function validateAutomationInput(body = {}) {
   if (!body.title || typeof body.title !== "string" || !body.title.trim()) {
@@ -88,6 +89,11 @@ function taskTitle(db, taskId) {
   return db.prepare("SELECT title FROM tasks WHERE id = ?").get(taskId)?.title || null;
 }
 
+function taskKey(db, taskId) {
+  if (!taskId) return null;
+  return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId)?.task_key || null;
+}
+
 function listSummary(db, automation) {
   const windowStart = Date.now() - 30 * 86_400_000;
   const recent30d = db.prepare(
@@ -96,6 +102,7 @@ function listSummary(db, automation) {
   return {
     id: automation.id,
     task_id: automation.task_id || null,
+    task_key: taskKey(db, automation.task_id),
     task_title: taskTitle(db, automation.task_id),
     title: automation.title,
     agent_name: automation.agent_name || null,
@@ -135,7 +142,7 @@ function taskAutomationPayload(db, automation) {
 }
 
 function getTaskOr404(db, taskId) {
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  const task = resolveTaskRow(db, taskId);
   if (!task) throw Object.assign(new Error("task not found"), { status: 404, code: "not_found" });
   return task;
 }
@@ -169,8 +176,8 @@ function deleteAutomation(db, automationId) {
 export function registerAutomationRoutes(app, { db, broker, automationManager }) {
   app.get("/api/tasks/:taskId/automations", (req, res) => {
     try {
-      getTaskOr404(db, req.params.taskId);
-      const rows = db.prepare("SELECT * FROM automations WHERE task_id = ? ORDER BY updated_at DESC, rowid DESC").all(req.params.taskId);
+      const task = getTaskOr404(db, req.params.taskId);
+      const rows = db.prepare("SELECT * FROM automations WHERE task_id = ? ORDER BY updated_at DESC, rowid DESC").all(task.id);
       const automations = rows.map(rowToAutomation).map((automation) => taskAutomationPayload(db, automation));
       res.json({ automations });
     } catch (error) {
@@ -213,8 +220,8 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
 
   app.get("/api/tasks/:taskId/automations/:id", (req, res) => {
     try {
-      getTaskOr404(db, req.params.taskId);
-      res.json({ automation: taskAutomationPayload(db, getTaskAutomationOr404(db, req.params.taskId, req.params.id)) });
+      const task = getTaskOr404(db, req.params.taskId);
+      res.json({ automation: taskAutomationPayload(db, getTaskAutomationOr404(db, task.id, req.params.id)) });
     } catch (error) {
       sendError(res, error);
     }
@@ -223,7 +230,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
   app.patch("/api/tasks/:taskId/automations/:id", (req, res) => {
     try {
       const task = getTaskOr404(db, req.params.taskId);
-      const current = getTaskAutomationOr404(db, req.params.taskId, req.params.id);
+      const current = getTaskAutomationOr404(db, task.id, req.params.id);
       const nextTrigger = "trigger" in (req.body || {}) ? req.body.trigger : current.trigger;
       validateTaskAutomationInput({ trigger: nextTrigger });
       const now = Date.now();
@@ -266,8 +273,8 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       return res.status(501).json({ error: { code: "not_configured", message: "automation manager not wired" } });
     }
     try {
-      getTaskOr404(db, req.params.taskId);
-      getTaskAutomationOr404(db, req.params.taskId, req.params.id);
+      const task = getTaskOr404(db, req.params.taskId);
+      getTaskAutomationOr404(db, task.id, req.params.id);
       const result = await automationManager.runNow(req.params.id, { triggerType: "manual" });
       res.status(result?.skipped ? 202 : 201).json(result);
     } catch (error) {

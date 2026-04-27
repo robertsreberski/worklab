@@ -2,6 +2,7 @@ import { newTaskId, newCommentId } from "../core/ids.js";
 import { nextStage, STAGES, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
+import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -37,6 +38,7 @@ function compactTaskSummary(row) {
   if (!task) return null;
   return {
     id: task.id,
+    task_key: task.task_key || null,
     title: task.title,
     stage: task.stage,
     updated_at: task.updated_at,
@@ -216,19 +218,21 @@ function pathExists(db, startId, targetId, seen = new Set()) {
 
 function validateDependencyIds(db, taskId, dependencyIds) {
   const ids = normaliseDependencyIds(dependencyIds);
-  for (const dependencyId of ids) {
+  const resolvedIds = [];
+  for (const inputId of ids) {
+    const dependencyId = resolveTaskId(db, inputId);
+    if (!dependencyId) {
+      throw Object.assign(new Error(`dependency task not found: ${inputId}`), { code: "validation" });
+    }
     if (taskId && dependencyId === taskId) {
       throw Object.assign(new Error("a task cannot depend on itself"), { code: "validation" });
-    }
-    const row = db.prepare("SELECT id FROM tasks WHERE id = ?").get(dependencyId);
-    if (!row) {
-      throw Object.assign(new Error(`dependency task not found: ${dependencyId}`), { code: "validation" });
     }
     if (taskId && pathExists(db, dependencyId, taskId)) {
       throw Object.assign(new Error("dependency would create a cycle"), { code: "validation" });
     }
+    resolvedIds.push(dependencyId);
   }
-  return ids;
+  return [...new Set(resolvedIds)];
 }
 
 function replaceTaskDependencies(db, taskId, dependencyIds) {
@@ -246,7 +250,8 @@ function applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentS
     applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage, { logger });
   });
   tx();
-  broker.broadcast("global", { type: "task_updated", id: taskId });
+  const taskKey = db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId)?.task_key || null;
+  broker.broadcast("global", { type: "task_updated", id: taskId, taskKey });
 }
 
 function nullableAgentName(value, fallback = null) {
@@ -418,7 +423,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
     }
     values.push(taskId);
     db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-    broker?.broadcast?.("global", { type: "task_updated", id: taskId });
+    broker?.broadcast?.("global", { type: "task_updated", id: taskId, taskKey: existing.task_key || null });
   }
 
   if (stageTransition) {
@@ -451,6 +456,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
 }
 
 function deleteTaskById({ db, broker, watcher, taskId }) {
+  const existing = db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId);
   const running = db.prepare(
     `SELECT id FROM task_runs
      WHERE task_id = ? AND status = 'running'
@@ -461,7 +467,7 @@ function deleteTaskById({ db, broker, watcher, taskId }) {
   }
   const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   if (r.changes === 0) throw routeError(404, "not_found", "task not found");
-  broker?.broadcast?.("global", { type: "task_deleted", id: taskId });
+  broker?.broadcast?.("global", { type: "task_deleted", id: taskId, taskKey: existing?.task_key || null });
 }
 
 function normalizeBulkIds(value) {
@@ -515,6 +521,12 @@ function resultError(error) {
     message: error.message || "failed",
     status: error.status || 500,
   };
+}
+
+function taskOr404(db, value) {
+  const task = resolveTaskRow(db, value);
+  if (!task) throw routeError(404, "not_found", "task not found");
+  return task;
 }
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
@@ -588,29 +600,34 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     } catch (error) {
       return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
-    const id = newTaskId();
     const now = Date.now();
     const insertTask = db.prepare(`
       INSERT INTO tasks
-        (id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
+        (id, task_key, root_task_id, client_request_id, title, instructions, stage, owner_agent,
          reviewer_agent, run_policy, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
+    let id;
     try {
-      insertTask.run(
-        id,
-        id,
-        requestId,
-        title,
-        instructions,
-        stage,
-        owner_agent,
-        reviewer_agent,
-        normalizedRunPolicy,
-        JSON.stringify(tags),
-        now,
-        now,
-      );
+      db.transaction(() => {
+        id = newTaskId();
+        insertTask.run(
+          id,
+          nextTaskKey(db),
+          id,
+          requestId,
+          title,
+          instructions,
+          stage,
+          owner_agent,
+          reviewer_agent,
+          normalizedRunPolicy,
+          JSON.stringify(tags),
+          now,
+          now,
+        );
+        replaceTaskDependencies(db, id, dependencyIds);
+      })();
     } catch (error) {
       if (requestId && String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
         const existing = db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
@@ -618,10 +635,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       }
       throw error;
     }
-    replaceTaskDependencies(db, id, dependencyIds);
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
     const task = enrichTask(db, rowToTask(row));
-    broker.broadcast("global", { type: "task_created", id });
+    broker.broadcast("global", { type: "task_created", id, taskKey: task.task_key || null });
     watcher?.maybeAutoStart?.(id);
     res.status(201).json({ task });
   });
@@ -636,23 +652,24 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       }
       if (operation === "patch") validateBulkPatch(req.body?.patch);
 
-      const results = ids.map((id) => {
+      const results = ids.map((inputId) => {
         try {
+          const taskRow = taskOr404(db, inputId);
           if (operation === "delete") {
-            deleteTaskById({ db, broker, watcher, taskId: id });
-            return { id, ok: true };
+            deleteTaskById({ db, broker, watcher, taskId: taskRow.id });
+            return { id: inputId, task_id: taskRow.id, ok: true };
           }
           const task = applyTaskPatchById({
             db,
             broker,
             watcher,
             logger,
-            taskId: id,
+            taskId: taskRow.id,
             patch: req.body.patch,
           });
-          return { id, ok: true, task };
+          return { id: inputId, task_id: taskRow.id, ok: true, task };
         } catch (error) {
-          return { id, ok: false, error: resultError(error) };
+          return { id: inputId, ok: false, error: resultError(error) };
         }
       });
 
@@ -663,27 +680,28 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   });
 
   app.get("/api/tasks/:id", (req, res) => {
-    const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
+    const row = resolveTaskRow(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const comments = db
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
-      .all(req.params.id);
-    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
+      .all(row.id);
+    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", row.id);
     const task = enrichTask(db, rowToTask(row));
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
-    task.is_locked = watcher?.isActive ? !!watcher.isActive(req.params.id) : null;
+    task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
     res.json({ task, comments, runs });
   });
 
   app.patch("/api/tasks/:id", (req, res) => {
     try {
+      const taskRow = taskOr404(db, req.params.id);
       const task = applyTaskPatchById({
         db,
         broker,
         watcher,
         logger,
-        taskId: req.params.id,
+        taskId: taskRow.id,
         patch: req.body || {},
       });
       res.json({ task });
@@ -693,7 +711,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   });
 
   app.post("/api/tasks/:id/subtasks", (req, res) => {
-    const parent = db.prepare("SELECT * FROM tasks WHERE id = ?").get(req.params.id);
+    const parent = resolveTaskRow(db, req.params.id);
     if (!parent) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
 
     const body = req.body || {};
@@ -716,12 +734,13 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       db.transaction(() => {
         db.prepare(`
           INSERT INTO tasks
-            (id, root_task_id, parent_task_id, owner_agent, reviewer_agent,
+            (id, task_key, root_task_id, parent_task_id, owner_agent, reviewer_agent,
              title, instructions, stage, run_policy, join_policy, subtask_order, required,
              tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
         `).run(
           childId,
+          nextTaskKey(db),
           rootTaskId,
           parent.id,
           ownerAgent,
@@ -765,15 +784,16 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
 
     const child = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(childId)));
     const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)));
-    broker.broadcast("global", { type: "task_created", id: childId });
-    broker.broadcast("global", { type: "task_updated", id: parent.id });
+    broker.broadcast("global", { type: "task_created", id: childId, taskKey: child.task_key || null });
+    broker.broadcast("global", { type: "task_updated", id: parent.id, taskKey: updatedParent.task_key || null });
     watcher?.maybeAutoStart?.(childId);
     res.status(201).json({ task: child, parent: updatedParent });
   });
 
   app.delete("/api/tasks/:id", (req, res) => {
     try {
-      deleteTaskById({ db, broker, watcher, taskId: req.params.id });
+      const taskRow = taskOr404(db, req.params.id);
+      deleteTaskById({ db, broker, watcher, taskId: taskRow.id });
       res.status(204).end();
     } catch (error) {
       return sendRouteError(res, error);
@@ -781,7 +801,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   });
 
   app.post("/api/tasks/:id/comments", (req, res) => {
-    const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
+    const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const { body } = req.body || {};
     if (!body || typeof body !== "string") {
@@ -792,33 +812,36 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     db.prepare(`
       INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
       VALUES (?, ?, 'human', NULL, ?, ?)
-    `).run(id, req.params.id, body, now);
-    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, req.params.id);
-    broker.broadcast("global", { type: "task_updated", id: req.params.id });
+    `).run(id, existing.id, body, now);
+    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
+    broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
     const row = db.prepare("SELECT * FROM task_comments WHERE id = ?").get(id);
     res.status(201).json({ comment: row });
   });
 
   app.get("/api/tasks/:id/runs", (req, res) => {
-    const existing = db.prepare("SELECT id FROM tasks WHERE id = ?").get(req.params.id);
+    const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", req.params.id);
+    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id);
     res.json({ runs });
   });
 
   app.post("/api/tasks/:id/run", async (req, res) => {
     if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
     try {
-      const result = await watcher.handleRunRequested(req.params.id);
+      const taskRow = taskOr404(db, req.params.id);
+      const result = await watcher.handleRunRequested(taskRow.id);
       res.json(result);
     } catch (err) {
-      res.status(400).json({ error: { code: "invalid_state", message: err.message } });
+      res.status(err.status || 400).json({ error: { code: err.code || "invalid_state", message: err.message } });
     }
   });
 
   app.post("/api/tasks/:id/cancel", (req, res) => {
     if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
-    const taskId = req.params.id;
+    const taskRow = resolveTaskRow(db, req.params.id);
+    if (!taskRow) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+    const taskId = taskRow.id;
     const cancelled = watcher.cancel(taskId);
     if (cancelled) return res.status(204).end();
 
@@ -849,8 +872,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       ).run(retryStage, "Previous run did not finish", now, taskId);
     })();
 
-    broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId });
-    broker.broadcast("global", { type: "task_updated", id: taskId });
+    broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId, taskKey: taskRow.task_key || null });
+    broker.broadcast("global", { type: "task_updated", id: taskId, taskKey: taskRow.task_key || null });
     res.status(204).end();
   });
 }

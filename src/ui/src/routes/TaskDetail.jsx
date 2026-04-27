@@ -10,7 +10,7 @@ import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { agentDisplayName } from "../lib/display.js";
+import { agentDisplayName, taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { selectHighlightedRunId } from "./taskDetailRuns.js";
 
 import { AppShell } from "../components/AppShell.jsx";
@@ -233,7 +233,7 @@ function TaskWorkflowMeta({ task }) {
   return (
     <section class="task-workflow-meta">
       {showParent && (
-        <a class="task-workflow-parent" href={`#/tasks/${task.parent.id}`}>
+        <a class="task-workflow-parent" href={`#/tasks/${taskRouteId(task.parent)}`}>
           <Icon name="corner-up-left" size={12} />
           <span class="task-workflow-parent-label">Parent</span>
           <span class="truncate">{task.parent.title}</span>
@@ -341,7 +341,7 @@ function TaskSubtasksCard({
         <ul class="task-subtasks-list">
           {children.map((child) => (
             <li key={child.id}>
-              <a href={`#/tasks/${child.id}`} class="task-subtask-link">
+              <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
                 <span class="truncate">{child.title}</span>
                 <span class="task-subtask-meta">
                   <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
@@ -761,12 +761,19 @@ export function TaskDetail({ id, runParam = null }) {
   }, [data?.task?.id, data?.task?.owner_agent]);
 
   useSSE("global", (evt) => {
-    const taskChanged = evt.id === id;
-    const runChanged = evt.taskId === id && (evt.type === "run_started" || evt.type === "run_ended");
-    const automationChanged = evt.taskId === id && String(evt.type || "").startsWith("automation_");
+    const currentTask = data?.task;
+    const matchesCurrentTask = (value) => Boolean(value)
+      && (value === id || value === currentTask?.id || value === currentTask?.task_key);
+    const taskChanged = matchesCurrentTask(evt.id) || matchesCurrentTask(evt.taskKey);
+    const runChanged = (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))
+      && (evt.type === "run_started" || evt.type === "run_ended");
+    const automationChanged = (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))
+      && String(evt.type || "").startsWith("automation_");
     if (taskChanged || runChanged || automationChanged) reload();
     if (automationChanged || runChanged) reloadAutomations();
-    if (evt.type === "run_started" && evt.taskId === id) setHighlightedRunId(evt.runId);
+    if (evt.type === "run_started" && (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))) {
+      setHighlightedRunId(evt.runId);
+    }
   });
 
   useEffect(() => {
@@ -785,6 +792,9 @@ export function TaskDetail({ id, runParam = null }) {
   }, [highlightedRunId]);
 
   const task = data?.task;
+  const operationTaskId = task?.id || id;
+  const currentTaskRouteId = task ? taskRouteId(task) : encodeURIComponent(id);
+  const taskKeyLabel = taskDisplayKey(task || id);
   const runs = data?.runs || [];
   const comments = data?.comments || [];
   const stage = task?.stage || "plan";
@@ -832,7 +842,7 @@ export function TaskDetail({ id, runParam = null }) {
     if (!newComment.trim() || commentSaving) return;
     setCommentSaving(true);
     try {
-      await api.addComment(id, newComment.trim());
+      await api.addComment(operationTaskId, newComment.trim());
       setNewComment("");
       reload();
     } catch (err) {
@@ -845,7 +855,7 @@ export function TaskDetail({ id, runParam = null }) {
   async function savePlan() {
     setPlanSaving(true);
     try {
-      await api.patchTask(id, { plan_body: planDraft });
+      await api.patchTask(operationTaskId, { plan_body: planDraft });
       setPlanEditing(false);
       reload();
       pushToast("Plan saved", { variant: "success" });
@@ -867,7 +877,7 @@ export function TaskDetail({ id, runParam = null }) {
     if (!title || subtaskSaving) return;
     setSubtaskSaving(true);
     try {
-      await api.createSubtask(id, {
+      await api.createSubtask(operationTaskId, {
         title,
         owner_agent: subtaskOwner || null,
         required: subtaskRequired,
@@ -885,7 +895,7 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function destroy() {
     try {
-      await api.deleteTask(id);
+      await api.deleteTask(operationTaskId);
       pushToast("Task deleted", { variant: "success" });
       navigateHash("#/tasks");
     } catch (err) {
@@ -896,7 +906,7 @@ export function TaskDetail({ id, runParam = null }) {
   async function runNow() {
     setRunError(null);
     try {
-      const r = await api.runTask(id);
+      const r = await api.runTask(operationTaskId);
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
       reload();
@@ -908,13 +918,13 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   async function cancelRun() {
-    try { await api.cancelTask(id); pushToast("Run cancelled", { variant: "info" }); }
+    try { await api.cancelTask(operationTaskId); pushToast("Run cancelled", { variant: "info" }); }
     catch (err) { setRunError(err.message); pushToast(`Cancel failed: ${err.message}`, { variant: "error" }); }
   }
 
   async function resetToExecute() {
     try {
-      await api.patchTask(id, { stage: "execute" });
+      await api.patchTask(operationTaskId, { stage: "execute" });
       reload();
       pushToast("Reset to execute", { variant: "success" });
     } catch (err) {
@@ -924,8 +934,8 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function retryStuck() {
     try {
-      await api.patchTask(id, { stage: "execute" });
-      const r = await api.runTask(id);
+      await api.patchTask(operationTaskId, { stage: "execute" });
+      const r = await api.runTask(operationTaskId);
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
       reload();
@@ -941,7 +951,7 @@ export function TaskDetail({ id, runParam = null }) {
         await runNow();
         return;
       }
-      await api.patchTask(id, { stage: t.to });
+      await api.patchTask(operationTaskId, { stage: t.to });
       reload();
       pushToast(`Stage → ${t.to}`, { variant: "success" });
     } catch (err) {
@@ -956,7 +966,7 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function updateAssignee(role, value) {
     try {
-      await api.patchTask(id, { [role]: value || null });
+      await api.patchTask(operationTaskId, { [role]: value || null });
       pushToast("Assignment updated", { variant: "success" });
       reload();
     } catch (error) {
@@ -1089,7 +1099,7 @@ export function TaskDetail({ id, runParam = null }) {
   const headerActions = task && (
     <>
       {renderPrimaryAction()}
-      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
+      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
         Edit
       </Button>
     </>
@@ -1097,7 +1107,7 @@ export function TaskDetail({ id, runParam = null }) {
   const mobileActionDock = task && (
     <>
       {renderPrimaryAction()}
-      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${id}/edit`); }}>
+      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
         Edit
       </Button>
     </>
@@ -1120,8 +1130,8 @@ export function TaskDetail({ id, runParam = null }) {
       }
       else if (stage === "done") applyStatusTransition({ from: "done", to: "execute" });
     },
-    "e": () => { navigateHash(`#/tasks/${id}/edit`); },
-    "E": () => { navigateHash(`#/tasks/${id}/edit`); },
+    "e": () => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
+    "E": () => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); },
   });
 
   if (!data) {
@@ -1149,7 +1159,7 @@ export function TaskDetail({ id, runParam = null }) {
     <AppShell route="tasks" title="Tasks" headerActions={headerActions} mobileActionDock={mobileActionDock}>
       <div class="task-detail">
         <div class="task-detail-main">
-          <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: `#${String(task.id).slice(-6)}` }]} />
+          <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: taskKeyLabel }]} />
 
           <section class="task-hero">
             <div class="task-hero-top">
@@ -1230,7 +1240,7 @@ export function TaskDetail({ id, runParam = null }) {
           <TaskWorkflowMeta task={task} />
 
           <TaskAutomationsCard
-            taskId={task.id}
+            taskId={operationTaskId}
             automations={taskAutomations}
             loading={automationsLoading}
             onChanged={() => {
@@ -1389,7 +1399,7 @@ export function TaskDetail({ id, runParam = null }) {
                 <div class="dependency-group">
                   <div class="all-caps">Blocked by</div>
                   {(task.blocked_by || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
                       <span class="truncate">{dependency.title}</span>
                       <StatusPill status={dependency.stage || "plan"} size="sm" />
                     </a>
@@ -1400,7 +1410,7 @@ export function TaskDetail({ id, runParam = null }) {
                 <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
                   <div class="all-caps">Blocks</div>
                   {(task.blocks || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${dependency.id}`}>
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
                       <span class="truncate">{dependency.title}</span>
                       <StatusPill status={dependency.stage || "plan"} size="sm" />
                     </a>
@@ -1417,14 +1427,14 @@ export function TaskDetail({ id, runParam = null }) {
                 iconLeft={<Icon name="database" size={13} />}
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(task.id);
-                    pushToast("Task ID copied", { variant: "success" });
+                    await navigator.clipboard.writeText(taskDisplayKey(task));
+                    pushToast("Task key copied", { variant: "success" });
                   } catch {
                     pushToast("Copy failed", { variant: "error" });
                   }
                 }}
               >
-                Copy task ID
+                Copy task key
               </Button>
               <Button
                 variant="secondary"
@@ -1441,7 +1451,7 @@ export function TaskDetail({ id, runParam = null }) {
                     };
                     const r = await api.createTask(copy);
                     pushToast("Task duplicated", { variant: "success" });
-                    navigateHash(`#/tasks/${r.task.id}`);
+                    navigateHash(`#/tasks/${taskRouteId(r.task)}`);
                   } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
                 }}
               >Duplicate</Button>

@@ -18,7 +18,7 @@ import { ErrorState } from "../components/ErrorState.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
-import { hasRunError } from "../lib/display.js";
+import { hasRunError, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
 
 const GROUPS = [
@@ -209,6 +209,7 @@ export function Commander() {
       return (
         task.title?.toLowerCase().includes(q) ||
         task.instructions?.toLowerCase().includes(q) ||
+        task.task_key?.toLowerCase().includes(q) ||
         task.id?.toLowerCase().includes(q) ||
         task.owner_agent?.toLowerCase().includes(q) ||
         task.reviewer_agent?.toLowerCase().includes(q)
@@ -262,7 +263,8 @@ export function Commander() {
     Enter: (event) => {
       if (!listOwnsFocus || !selectedTaskId) return;
       event.preventDefault();
-      navigateHash(`#/tasks/${selectedTaskId}`);
+      const selectedTask = orderedTasks.find((task) => task.id === selectedTaskId);
+      navigateHash(`#/tasks/${taskRouteId(selectedTask)}`);
     },
     x: (event) => {
       if (!listOwnsFocus || !selectedTaskId) return;
@@ -409,7 +411,7 @@ export function Commander() {
                         return next;
                       });
                     }}
-                    onOpen={() => navigateHash(`#/tasks/${task.id}`)}
+                    onOpen={() => navigateHash(`#/tasks/${taskRouteId(task)}`)}
                   />
                 ))}
               </div>

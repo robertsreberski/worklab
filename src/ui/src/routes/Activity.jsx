@@ -13,7 +13,7 @@ import { Metric } from "../components/Metric.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { modelDisplayName } from "../lib/display.js";
+import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
 function fmtTime(ts) { return ts ? new Date(ts).toLocaleString() : "-"; }
@@ -170,7 +170,7 @@ export function Activity() {
                   <span class="activity-time" title={fmtTime(item.started_at)}>
                     {fmtAge(item.started_at)}
                     {item.task_id && (
-                      <>{" · "}<a href={`#/tasks/${item.task_id}?run=${item.id}`}>open</a></>
+                      <>{" · "}<a href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${item.id}`}>open</a></>
                     )}
                   </span>
                 </div>

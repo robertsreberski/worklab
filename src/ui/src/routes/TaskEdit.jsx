@@ -26,6 +26,7 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
+import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 
 // Stage grid in the right rail.
 const STATUS_OPTIONS = [
@@ -66,6 +67,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [baseline, setBaseline] = useState(emptyDraft());
   const [agents, setAgents] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [loadedTask, setLoadedTask] = useState(null);
   const [loading, setLoading] = useState(mode === "edit");
   const [notFound, setNotFound] = useState(false);
   const [tagDraft, setTagDraft] = useState("");
@@ -81,9 +83,12 @@ export function TaskEdit({ mode = "create", id = null }) {
   useEffect(() => {
     if (mode !== "edit" || !id) return;
     setLoading(true);
+    setNotFound(false);
+    setLoadedTask(null);
     api.getTask(id)
       .then((data) => {
-        if (!data?.task) { setNotFound(true); return; }
+        if (!data?.task) { setLoadedTask(null); setNotFound(true); return; }
+        setLoadedTask(data.task);
         const initial = {
           title: data.task.title || "",
           instructions: data.task.instructions || "",
@@ -105,12 +110,12 @@ export function TaskEdit({ mode = "create", id = null }) {
     if (mode === "create") {
       const r = await api.createTask(patch);
       pushToast("Task created", { variant: "success" });
-      return r.task.id;
+      return taskRouteId(r.task);
     } else {
       await api.patchTask(id, patch);
       pushToast("Saved.", { variant: "success" });
       setBaseline(draft);
-      return id;
+      return loadedTask ? taskRouteId(loadedTask) : id;
     }
   });
 
@@ -147,7 +152,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => save({ navigateOnSuccess: false }) });
 
   function cancel() {
-    if (mode === "edit" && id) guard.requestNavigation(`#/tasks/${id}`);
+    if (mode === "edit" && id) guard.requestNavigation(`#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}`);
     else guard.requestNavigation("#/tasks");
   }
 
@@ -176,13 +181,13 @@ export function TaskEdit({ mode = "create", id = null }) {
 
   const dependencyOptions = useMemo(() => {
     return tasks
-      .filter((task) => task.id !== id && !draft.blocked_by_ids.includes(task.id))
+      .filter((task) => task.id !== loadedTask?.id && task.id !== id && taskDisplayKey(task) !== taskDisplayKey(id) && !draft.blocked_by_ids.includes(task.id))
       .map((task) => ({
         value: task.id,
         label: task.title,
-        description: `${(task.stage || "plan").replaceAll("_", " ")} · #${String(task.id).slice(-6)}`,
+        description: `${(task.stage || "plan").replaceAll("_", " ")} · ${taskDisplayKey(task)}`,
       }));
-  }, [draft.blocked_by_ids, id, tasks]);
+  }, [draft.blocked_by_ids, id, loadedTask?.id, tasks]);
 
   function addDependency(taskId) {
     if (!taskId || draft.blocked_by_ids.includes(taskId)) return;
@@ -195,7 +200,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   }
 
   const heading = mode === "create" ? "New task" : "Edit task";
-  const idDisplay = mode === "edit" && id ? `#${String(id).slice(-6).toUpperCase()}` : null;
+  const idDisplay = mode === "edit" && id ? taskDisplayKey(loadedTask || id) : null;
   const saveButtonVariant = isDirty || mode === "create" ? "primary" : "secondary";
   const saveButtonLabel = mode === "create" ? "Create task" : "Save";
   const mobileActionDock = (
@@ -224,7 +229,7 @@ export function TaskEdit({ mode = "create", id = null }) {
             />
             <Breadcrumb items={[
               { label: "Tasks", href: "#/tasks" },
-              ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${id}` }] : []),
+              ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}` }] : []),
               { label: mode === "create" ? "New" : "Edit" },
             ]} />
           </div>

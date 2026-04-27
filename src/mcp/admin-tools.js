@@ -18,6 +18,7 @@ function tool(name, description, inputSchema = object()) {
 }
 
 const id = string("Identifier");
+const taskId = string("Task id or public task key");
 const slug = string("Slug");
 const patch = object({}, [], true);
 
@@ -31,7 +32,7 @@ export const adminToolDefinitions = [
     stage: string("Workflow stage filter"),
     agent: string("Owner or reviewer agent filter"),
   })),
-  tool("worklab_task_get", "Get a task with comments, runs, and graph context.", object({ id }, ["id"])),
+  tool("worklab_task_get", "Get a task with comments, runs, and graph context.", object({ id: taskId }, ["id"])),
   tool("worklab_task_create", "Create a task.", object({
     title: string("Task title"),
     instructions: string("Task instructions"),
@@ -40,22 +41,22 @@ export const adminToolDefinitions = [
     stage: string("Initial workflow stage"),
     run_policy: string("Run policy: manual or auto_plan_execute"),
     tags: arrayOfString("Tags"),
-    blocked_by_ids: arrayOfString("Dependency task ids"),
+    blocked_by_ids: arrayOfString("Dependency task ids or public task keys"),
     client_request_id: string("Idempotency key"),
   }, ["title"])),
-  tool("worklab_task_update", "Patch a task. Use the same fields accepted by PATCH /api/tasks/:id.", object({ id, patch }, ["id", "patch"])),
-  tool("worklab_task_delete", "Delete a task.", object({ id }, ["id"])),
-  tool("worklab_task_comment", "Add a human comment to a task.", object({ id, body: string("Comment body") }, ["id", "body"])),
+  tool("worklab_task_update", "Patch a task. Use the same fields accepted by PATCH /api/tasks/:id.", object({ id: taskId, patch }, ["id", "patch"])),
+  tool("worklab_task_delete", "Delete a task.", object({ id: taskId }, ["id"])),
+  tool("worklab_task_comment", "Add a human comment to a task.", object({ id: taskId, body: string("Comment body") }, ["id", "body"])),
   tool("worklab_task_create_subtask", "Create a subtask under a parent task.", object({
-    id,
+    id: taskId,
     title: string("Subtask title"),
     instructions: string("Subtask instructions"),
     owner_agent: string("Owner agent name"),
     reviewer_agent: string("Reviewer agent name"),
     required: boolean("Whether parent waits for this subtask"),
   }, ["id", "title"])),
-  tool("worklab_task_run", "Start a task run.", object({ id }, ["id"])),
-  tool("worklab_task_cancel", "Cancel or reconcile the active run for a task.", object({ id }, ["id"])),
+  tool("worklab_task_run", "Start a task run.", object({ id: taskId }, ["id"])),
+  tool("worklab_task_cancel", "Cancel or reconcile the active run for a task.", object({ id: taskId }, ["id"])),
 
   tool("worklab_agent_list", "List agents."),
   tool("worklab_agent_get", "Get an agent.", object({ name: string("Agent name") }, ["name"])),

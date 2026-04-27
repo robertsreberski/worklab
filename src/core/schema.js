@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 11;
+export const SCHEMA_VERSION = 12;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS agents (
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
+  task_key TEXT,
   root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   delegated_by_run_id TEXT,
@@ -55,6 +56,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at INTEGER NOT NULL,
   completed_at INTEGER
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS task_dependencies (

@@ -166,20 +166,20 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
 
     const tasks = [];
     const seenTasks = new Set();
-    for (const row of db.prepare("SELECT id, title, instructions, stage FROM tasks").all()) {
+    for (const row of db.prepare("SELECT id, task_key, title, instructions, stage FROM tasks").all()) {
       if (matches(row.title) || matches(row.instructions)) {
         if (!seenTasks.has(row.id)) {
           seenTasks.add(row.id);
-          tasks.push({ id: row.id, title: row.title, stage: row.stage, via: "body" });
+          tasks.push({ id: row.id, task_key: row.task_key || null, title: row.title, stage: row.stage, via: "body" });
         }
       }
     }
     for (const row of db.prepare("SELECT task_id, body FROM task_comments").all()) {
       if (matches(row.body) && !seenTasks.has(row.task_id)) {
-        const task = db.prepare("SELECT id, title, stage FROM tasks WHERE id = ?").get(row.task_id);
+        const task = db.prepare("SELECT id, task_key, title, stage FROM tasks WHERE id = ?").get(row.task_id);
         if (task) {
           seenTasks.add(task.id);
-          tasks.push({ id: task.id, title: task.title, stage: task.stage, via: "comment" });
+          tasks.push({ id: task.id, task_key: task.task_key || null, title: task.title, stage: task.stage, via: "comment" });
         }
       }
     }
