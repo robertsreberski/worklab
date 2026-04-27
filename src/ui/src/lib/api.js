@@ -51,6 +51,9 @@ export const api = {
   // settings
   getSettings: () => request("GET", "/settings"),
   patchSettings: (patch) => request("PATCH", "/settings", patch),
+  getRuntimeSettings: () => request("GET", "/settings/runtime"),
+  patchRuntimeSettings: (patch) => request("PATCH", "/settings/runtime", patch),
+  restartRuntime: () => request("POST", "/settings/runtime/restart"),
   // agents
   listAgents: () => request("GET", "/agents"),
   getAgent: (name) => request("GET", `/agents/${name}`),
