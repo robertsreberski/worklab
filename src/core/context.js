@@ -5,6 +5,8 @@ const CADENCE = `Journal as you work — call \`journal_append\` for facts you d
 
 const RESULT_FIELD_RULES = `Structured result rules:
 - Emit the Worklab JSON object exactly once, only when you are finished. During the run, write normal prose progress or journal entries; do not emit interim \`worklab.v2\` JSON.
+- Put the human-facing final comment in \`final_text\`. For structured-only runtimes, this is the text Worklab will post as the final comment.
+- Keep \`summary\` and \`details\` as structured metadata for Worklab, not as the main user-visible answer.
 - Put plans, execution steps, and completed-work notes in \`details\` / the plan body, not in \`pending_actions\`.
 - Use \`pending_actions\` only with decision "pause", for exact actions the human must take before the task can continue.
 - Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
@@ -20,6 +22,7 @@ Return a structured Worklab result as JSON when you finish:
   "decision": "advance",
   "summary": "Short outcome.",
   "details": "Optional planning notes.",
+  "final_text": "Human-facing final comment.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
@@ -40,6 +43,7 @@ Return a structured Worklab result as JSON when you finish:
   "decision": "advance",
   "summary": "Short outcome.",
   "details": "Optional implementation notes.",
+  "final_text": "Human-facing final comment.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
@@ -58,6 +62,7 @@ Return a structured Worklab result as JSON when you finish:
   "decision": "approve",
   "summary": "Short outcome.",
   "details": "Optional review notes.",
+  "final_text": "Human-facing review comment.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],

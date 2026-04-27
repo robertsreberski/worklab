@@ -3,6 +3,8 @@ const VERDICT_RE = /^VERDICT:\s*(APPROVE|REJECT)\b/;
 function formatWorklabResult(result) {
   const value = result?.worklab_result || result;
   if (!value || value.schema !== "worklab.v2") return "";
+  const finalText = typeof value.final_text === "string" ? value.final_text.trim() : "";
+  if (finalText) return finalText;
   const summary = typeof value.summary === "string" ? value.summary.trim() : "";
   const details = typeof value.details === "string" ? value.details.trim() : "";
   if (summary && details && summary !== details) return `${summary}\n\n${details}`;

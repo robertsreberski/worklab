@@ -65,11 +65,12 @@ describe("extractExecutionFromEvents", () => {
           decision: "advance",
           summary: "Short",
           details: "Metadata",
+          final_text: "Final comment",
         },
       },
     ];
     const result = extractExecutionFromEvents(events, AGENT_ROW);
-    expect(result.finalText).toBe("Short\n\nMetadata");
+    expect(result.finalText).toBe("Final comment");
   });
 
   it("events with multiple finals → keeps the LAST one", () => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
   extractWorklabResult,
+  formatWorklabResultText,
   normalizeWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
@@ -30,6 +31,7 @@ describe("worklab_result contract", () => {
       decision: "delegate",
       summary: "split",
       details: "details",
+      final_text: "Final comment.",
       artifacts: { patch: "path" },
       blocking_issues: [],
       pending_actions: [],
@@ -37,6 +39,33 @@ describe("worklab_result contract", () => {
     });
     expect(parsed.ok).toBe(true);
     expect(parsed.result.subtasks[0]).toMatchObject({ title: "child", required: true });
+    expect(parsed.result.final_text).toBe("Final comment.");
+  });
+
+  it("uses final_text for human-facing result text with legacy summary/details fallback", () => {
+    const normalized = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "metadata summary",
+      details: "technical detail",
+      final_text: "Human-facing final comment.",
+    });
+
+    expect(normalized.ok).toBe(true);
+    expect(formatWorklabResultText(normalized.result)).toBe("Human-facing final comment.");
+
+    const legacy = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "legacy summary",
+      details: "legacy detail",
+    });
+
+    expect(legacy.ok).toBe(true);
+    expect(legacy.result.final_text).toBe("");
+    expect(formatWorklabResultText(legacy.result)).toBe("legacy summary\n\nlegacy detail");
   });
 
   it("rejects missing schema or unknown decisions", () => {
@@ -124,6 +153,7 @@ describe("worklab_result contract", () => {
       schema: "worklab.v2",
       stage: "review",
       decision: "approve",
+      final_text: "",
       artifacts: {},
       blocking_issues: [],
       pending_actions: [],

@@ -112,7 +112,7 @@ describe("buildExecuteSystemPrompt", () => {
       pending_actions: ["finish"],
       subtasks: [],
     };
-    const final = { ...early, summary: "final", details: "clean details", pending_actions: [] };
+    const final = { ...early, summary: "final", details: "clean details", final_text: "human final comment", pending_actions: [] };
     const prompt = buildExecuteSystemPrompt({
       agent: baseAgent,
       task: baseTask,
@@ -135,17 +135,20 @@ describe("buildExecuteSystemPrompt", () => {
       ],
     });
 
-    expect(prompt).toContain("final\n\nclean details");
+    expect(prompt).toContain("human final comment");
     expect(prompt).not.toContain("\"schema\":\"worklab.v2\"");
     expect(prompt).not.toContain("early");
+    expect(prompt).not.toContain("clean details");
   });
 
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
     expect(p).toContain("Emit the Worklab JSON object exactly once");
+    expect(p).toContain("Put the human-facing final comment in `final_text`");
     expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
     expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
+    expect(p).toContain('"final_text": "Human-facing final comment."');
     expect(p).toContain("For \"advance\", \"approve\", and \"reject\", keep both `pending_actions` and `subtasks` empty.");
     expect(p.trim().endsWith('and "block" when you cannot continue.')).toBe(true);
   });
@@ -340,6 +343,7 @@ Return a structured Worklab result as JSON when you finish:
   "decision": "approve",
   "summary": "Short outcome.",
   "details": "Optional review notes.",
+  "final_text": "Human-facing review comment.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
