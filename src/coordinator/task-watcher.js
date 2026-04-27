@@ -11,6 +11,7 @@ import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
+import { readSettings } from "../core/settings.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -275,6 +276,7 @@ export function createTaskWatcher({
 
   function spawnRun({ task, stage, mode, agentName, parentRunId = null }) {
     const { providerKind } = assertAgentRunnable(agentName);
+    const settings = readSettings(db);
     const runId = newRunId();
     const now = Date.now();
     db.prepare(
@@ -303,7 +305,8 @@ export function createTaskWatcher({
       db,
       logger,
       dataDir,
-      runTimeoutMs,
+      cancelGraceMs: settings.cancel_grace_ms,
+      runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
       runIdleWarningMs,
       logInlineLimit,
     });

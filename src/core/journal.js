@@ -46,6 +46,7 @@ export function appendJournalSummary({ dataDir, agent, runId, text, now = new Da
 export function readJournalTail({ dataDir, agent, maxLines = 80 }) {
   const path = agentJournalPath(dataDir, agent);
   if (!existsSync(path)) return "";
+  if (!Number.isFinite(Number(maxLines)) || Number(maxLines) <= 0) return "";
   const content = readFileSync(path, "utf8");
   const lines = content.split("\n");
   return lines.slice(-maxLines).join("\n");

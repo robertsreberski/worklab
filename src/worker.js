@@ -12,6 +12,7 @@ import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
 import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
 import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "./core/agent-allowlists.js";
+import { readSettings } from "./core/settings.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -153,6 +154,7 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
   if (!task) { emit({ type: "error", message: `task ${taskId} not found` }); process.exit(1); }
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
+  const settings = readSettings(db);
 
   const commentRows = enrichCommentRows(
     db,
@@ -161,7 +163,7 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
 
   const memoryPath = agentMemoryPath(config.dataDir, agentName);
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
-  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
+  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: settings.journal_tail_lines });
   const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
     config,
     agent,
@@ -173,9 +175,7 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
     },
   });
 
-  const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
-  const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
-  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
+  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
 
   return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
 }
@@ -185,10 +185,11 @@ function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   if (!automation) { emit({ type: "error", message: `automation ${automationId} not found` }); process.exit(1); }
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
+  const settings = readSettings(db);
 
   const memoryPath = agentMemoryPath(config.dataDir, agentName);
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
-  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
+  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: settings.journal_tail_lines });
   const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
     config,
     agent,
@@ -200,9 +201,7 @@ function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
     },
   });
 
-  const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
-  const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
-  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
+  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
 
   return { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
 }

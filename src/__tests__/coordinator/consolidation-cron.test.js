@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createConsolidationManager } from "../../coordinator/consolidation-cron.js";
+import { writeSettings } from "../../core/settings.js";
 
 describe("consolidation manager", () => {
   const dirs = [];
@@ -81,6 +82,17 @@ describe("consolidation manager", () => {
       "run_ended",
       "agent_consolidated",
     ]));
+  });
+
+  it("passes persisted worker timeout and cancel grace to consolidation runs", () => {
+    const { db, spawn, manager } = fixture();
+    writeSettings(db, { worker_timeout_ms: 3456, cancel_grace_ms: 67 });
+    manager.runNow("alice");
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      runTimeoutMs: 3456,
+      cancelGraceMs: 67,
+    }));
   });
 
   it("scheduled ticks run at the configured hour and skip unchanged journals", async () => {

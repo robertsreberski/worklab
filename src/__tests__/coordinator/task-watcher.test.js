@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
+import { writeSettings } from "../../core/settings.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -155,6 +156,29 @@ describe("task-watcher", () => {
       workerBinary: "/fake",
     });
     await expect(watcher.handleRunRequested(taskId)).resolves.toMatchObject({ runId: expect.any(String) });
+  });
+
+  it("passes persisted worker timeout and cancel grace to spawned runs", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    writeSettings(db, { worker_timeout_ms: 1234, cancel_grace_ms: 12 });
+    const handle = { pid: 1, done: new Promise(() => {}), cancel: vi.fn() };
+    const spawn = vi.fn(() => handle);
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      runTimeoutMs: 999999,
+    });
+
+    await watcher.handleRunRequested(taskId);
+
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      runTimeoutMs: 1234,
+      cancelGraceMs: 12,
+    }));
   });
 
   it("failed worker keeps task retryable in execute with error_text and error comment", async () => {
