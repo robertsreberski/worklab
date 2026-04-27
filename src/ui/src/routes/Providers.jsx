@@ -549,7 +549,7 @@ export function Providers({ selectedId = null }) {
   );
 
   return (
-    <AppShell route="providers" title="Providers">
+    <AppShell route="providers">
       <PaneLayout
         listHeader={listHeader}
         listBody={listBody}

@@ -166,7 +166,7 @@ export function Agents({ selectedName = null }) {
   );
 
   return (
-    <AppShell route="agents" title="Agents">
+    <AppShell route="agents">
       <PaneLayout
         listHeader={listHeader}
         listBody={listBody}

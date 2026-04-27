@@ -278,17 +278,11 @@ export function Commander() {
     },
   });
 
-  const headerActions = (
-    <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
-      New task
-    </Button>
-  );
-
   const tabsWithCounts = TABS.map((t) => ({ ...t, count: counts[t.value] || 0 }));
 
   const hasFilter = statusFilter !== "all" || !!query.trim();
 
-  const headerMeta = tasks ? <span>{counts.all || 0} tasks</span> : null;
+  const taskCountLabel = tasks ? `${counts.all || 0} tasks` : null;
 
   async function applyBulk(operation, patch) {
     if (checkedTaskIds.length === 0) return;
@@ -322,7 +316,7 @@ export function Commander() {
   }
 
   return (
-    <AppShell route="tasks" title="Tasks" headerMeta={headerMeta} headerActions={headerActions}>
+    <AppShell route="tasks">
       <div class="commander">
         <div class="commander-topbar">
           <div class="commander-filter">
@@ -342,6 +336,12 @@ export function Commander() {
               tabs={tabsWithCounts}
               class="tabs-pills"
             />
+            <div class="commander-filter-actions">
+              {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
+              <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
+                New task
+              </Button>
+            </div>
           </div>
           {checkedTaskIds.length > 0 && (
             <BulkTaskBar

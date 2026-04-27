@@ -1,4 +1,4 @@
-// §6.1 AppShell — persistent chrome: navigation rail + page header + main.
+// §6.1 AppShell — persistent chrome: navigation rail + main.
 // Global rail chrome stays quiet (§9.4 item 8) — no ambient live counts.
 // Skip-link at top for a11y.
 // ? opens the keyboard-help drawer globally.
@@ -36,7 +36,7 @@ export const ROUTE_GROUPS = [
 ];
 export const ROUTES = ROUTE_GROUPS.flatMap((group) => group.routes);
 
-export function AppShell({ route, title, headerMeta, headerActions, mobileActionDock, children }) {
+export function AppShell({ route, mobileActionDock, children }) {
   const [helpOpen, setHelpOpen] = useState(false);
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
@@ -99,13 +99,6 @@ export function AppShell({ route, title, headerMeta, headerActions, mobileAction
         </div>
       </aside>
       <div class="app-body">
-        <header class="app-header">
-          <div class="app-header-left">
-            <h1 class="app-title">{title}</h1>
-          </div>
-          {headerMeta && <div class="app-header-meta">{headerMeta}</div>}
-          {headerActions && <div class="toolbar">{headerActions}</div>}
-        </header>
         <main id="main" class="app-main">{children}</main>
       </div>
       {mobileActionDock && (

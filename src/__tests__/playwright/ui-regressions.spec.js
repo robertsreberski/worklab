@@ -438,7 +438,7 @@ test("desktop task list keeps every task state legible without clipped controls"
         ".chip",
         ".commander-cell-age",
         ".tab",
-        ".app-header .button",
+        ".commander-filter .button",
       ].join(", "),
       `${viewport.label} task list states`,
     );
@@ -613,7 +613,7 @@ test("desktop task detail states keep actions and context obvious without clippe
       await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
 
       for (const action of state.actions) {
-        const button = page.locator(".app-header .button", { hasText: action.label }).first();
+        const button = page.locator(".task-hero-actions .button", { hasText: action.label }).first();
         await expect(button).toBeVisible();
         if (action.enabled) await expect(button).toBeEnabled();
         else await expect(button).toBeDisabled();
@@ -630,7 +630,7 @@ test("desktop task detail states keep actions and context obvious without clippe
         [
           ".task-hero-status-row .status-pill-label",
           ".task-hero-status-row .chip",
-          ".app-header .button",
+          ".task-hero-actions .button",
           ".activity-composer-actions .button",
           ".card-title",
           ".task-context-label",
@@ -900,20 +900,20 @@ function responsiveRoutes(page, ids) {
     { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
     { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
     { hash: "#/tasks/new", ready: () => page.locator(".task-edit-head").first() },
-    { hash: "#/agents", ready: () => page.locator('h1.app-title', { hasText: "Agents" }) },
+    { hash: "#/agents", ready: () => page.locator(".pane-list") },
     { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
     { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
-    { hash: "#/skills", ready: () => page.locator('h1.app-title', { hasText: "Skills" }) },
+    { hash: "#/skills", ready: () => page.locator(".pane-list") },
     { hash: `#/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
     { hash: "#/skills/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New skill" }) },
-    { hash: "#/knowledge", ready: () => page.locator('h1.app-title', { hasText: "Knowledge" }) },
+    { hash: "#/knowledge", ready: () => page.locator(".pane-list") },
     { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
     { hash: "#/knowledge/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New entry" }) },
-    { hash: "#/providers", ready: () => page.locator('h1.app-title', { hasText: "Providers" }) },
+    { hash: "#/providers", ready: () => page.locator(".pane-list") },
     { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
     { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
-    { hash: "#/activity", ready: () => page.locator('h1.app-title', { hasText: "Activity" }) },
-    { hash: "#/settings", ready: () => page.locator('h1.app-title', { hasText: "Settings" }) },
+    { hash: "#/activity", ready: () => page.locator(".summary-tiles") },
+    { hash: "#/settings", ready: () => page.locator(".settings-sections") },
   ];
 }
 
@@ -982,7 +982,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const shortcut = document.querySelector(".activity-composer-shortcut");
     const rerun = document.querySelector(".activity-rerun-checkbox input");
     const dock = document.querySelector(".app-mobile-action-dock");
-    const headerToolbar = document.querySelector(".app-header > .toolbar");
+    const heroActions = document.querySelector(".task-hero-actions");
     const nav = document.querySelector(".app-rail");
     const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
     const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
@@ -1006,7 +1006,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       dockBottomBeforeNav: dock && nav
         ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
         : false,
-      headerToolbarDisplay: headerToolbar ? getComputedStyle(headerToolbar).display : "",
+      heroActionsDisplay: heroActions ? getComputedStyle(heroActions).display : "",
       railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
       dotWidth: dot ? Math.round(parseFloat(getComputedStyle(dot).getPropertyValue("--activity-dot-size")) || dot.getBoundingClientRect().width) : 0,
       lineWidth: line ? Math.round(parseFloat(line.width)) : 0,
@@ -1023,7 +1023,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.dockDisplay).toBe("flex");
   expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(beforeFocus.dockBottomBeforeNav).toBe(true);
-  expect(beforeFocus.headerToolbarDisplay).toBe("none");
+  expect(beforeFocus.heroActionsDisplay).toBe("none");
   expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
   expect(beforeFocus.dotWidth).toBeLessThanOrEqual(20);
   expect(beforeFocus.lineWidth).toBe(1);

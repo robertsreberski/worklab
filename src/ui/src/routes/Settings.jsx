@@ -49,7 +49,7 @@ export function Settings() {
 
   if (!settings) {
     return (
-      <AppShell route="settings" title="Settings">
+      <AppShell route="settings">
         <div class="page-wrap"><LoadingState caption="Loading settings…" /></div>
       </AppShell>
     );
@@ -73,7 +73,7 @@ export function Settings() {
     })),
   ];
 
-  const headerActions = (
+  const pageActions = (
     <Button
       variant={isDirty ? "primary" : "secondary"}
       loading={formSave.saving}
@@ -84,8 +84,9 @@ export function Settings() {
   );
 
   return (
-    <AppShell route="settings" title="Settings" headerActions={headerActions}>
+    <AppShell route="settings">
       <div class="page-wrap">
+        <div class="page-actions toolbar">{pageActions}</div>
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}

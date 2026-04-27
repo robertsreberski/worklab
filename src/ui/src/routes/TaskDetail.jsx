@@ -1130,7 +1130,7 @@ export function TaskDetail({ id, runParam = null }) {
     return null;
   }
 
-  const headerActions = task && (
+  const taskActions = task && (
     <>
       {renderPrimaryAction()}
       <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
@@ -1170,14 +1170,14 @@ export function TaskDetail({ id, runParam = null }) {
 
   if (!data) {
     return (
-      <AppShell route="tasks" title="Tasks">
+      <AppShell route="tasks">
         <div class="page-wrap"><LoadingState caption="Loading task…" /></div>
       </AppShell>
     );
   }
   if (data.notFound) {
     return (
-      <AppShell route="tasks" title="Tasks">
+      <AppShell route="tasks">
         <div class="page-wrap">
             <EmptyState
               title="Task not found"
@@ -1190,7 +1190,7 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   return (
-    <AppShell route="tasks" title="Tasks" headerActions={headerActions} mobileActionDock={mobileActionDock}>
+    <AppShell route="tasks" mobileActionDock={mobileActionDock}>
       <div class="task-detail">
         <div class="task-detail-main">
           <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: taskKeyLabel }]} />
@@ -1223,6 +1223,7 @@ export function TaskDetail({ id, runParam = null }) {
                 </div>
                 <h1 class="task-hero-title title-display">{task.title}</h1>
               </div>
+              {taskActions && <div class="task-hero-actions toolbar">{taskActions}</div>}
             </div>
             {task.instructions && (
               <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>

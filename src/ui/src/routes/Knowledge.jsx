@@ -161,7 +161,7 @@ export function Knowledge({ selectedSlug = null }) {
   );
 
   return (
-    <AppShell route="knowledge" title="Knowledge">
+    <AppShell route="knowledge">
       <PaneLayout
         listHeader={listHeader}
         listBody={listBody}
