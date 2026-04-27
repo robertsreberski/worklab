@@ -126,6 +126,51 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("normalizes historical Codex file change CLI events as file edits", () => {
+    const changes = [{ path: "/workspace/catching-up/build_wp_p2_tree.py", kind: "add" }];
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.started", item: { id: "item_file", type: "file_change", changes, status: "in_progress" } },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: { type: "item.completed", item: { id: "item_file", type: "file_change", changes, status: "completed" } },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "item_file",
+            name: "file_edit",
+            input: { changes, status: "in_progress" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "item_file",
+            content: { changes, status: "completed" },
+            is_error: false,
+          }],
+        },
+      },
+    ]);
+  });
+
   it("normalizes provider result errors as visible errors", () => {
     const events = normalizeWorklabEvents([
       {
@@ -214,5 +259,28 @@ describe("compact run event labels", () => {
         worklab_result: { summary: "Short outcome" },
       }),
     ).toEqual({ type: "text", text: "Short outcome" });
+  });
+
+  it("labels raw Codex file changes as file edits", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "sdk_event",
+        event: {
+          type: "cli_event",
+          raw: {
+            type: "item.started",
+            item: {
+              type: "file_change",
+              changes: [{ path: "/workspace/catching-up/build_wp_p2_tree.py", kind: "update" }],
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      type: "tool_use",
+      name: "file_edit",
+      arg: "update build_wp_p2_tree.py",
+      status: "running",
+    });
   });
 });

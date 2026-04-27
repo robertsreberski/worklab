@@ -33,6 +33,7 @@ const CODEX_RAW_REASONING_EVENT_TYPES = new Set([
   "reasoning_raw_content",
   "reasoning_raw_content_delta",
 ]);
+const CODEX_FILE_CHANGE_ITEM_EVENTS = new Set(["item.started", "item.completed"]);
 
 function summaryTextFromValue(value) {
   if (typeof value === "string") return value;
@@ -63,8 +64,36 @@ function isCodexReasoningEvent(raw) {
     || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning");
 }
 
+function normalizeCodexFileChange(raw) {
+  if (!CODEX_FILE_CHANGE_ITEM_EVENTS.has(raw?.type) || raw.item?.type !== "file_change") return null;
+  const item = raw.item;
+  const id = item.id || "file_change";
+  const changes = Array.isArray(item.changes) ? item.changes : [];
+  const payload = {
+    changes,
+    status: item.status || (raw.type === "item.completed" ? "completed" : "in_progress"),
+  };
+  if (raw.type === "item.started") {
+    return { type: "assistant", message: { content: [{ type: "tool_use", id, name: "file_edit", input: payload }] } };
+  }
+  const failed = Boolean(item.error || item.status === "failed" || item.status === "errored");
+  return {
+    type: "user",
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: id,
+        content: item.error || payload,
+        is_error: failed,
+      }],
+    },
+  };
+}
+
 function normalizeCliEvent(raw) {
   if (!raw || typeof raw !== "object") return { type: "cli_event", raw };
+  const fileChange = normalizeCodexFileChange(raw);
+  if (fileChange) return fileChange;
   if (CODEX_RAW_REASONING_EVENT_TYPES.has(raw.type)) return null;
   if (CODEX_REASONING_EVENT_TYPES.has(raw.type) || (CODEX_REASONING_ITEM_EVENTS.has(raw.type) && raw.item?.type === "reasoning")) {
     const text = codexReasoningSummaryText(raw).trim();

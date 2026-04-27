@@ -48,6 +48,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
   const inputText = inputAsText(toolUse?.input);
   const outputIsEmpty = outputText.trim().length === 0;
+  const glyphName = toolUse?.name === "file_edit" ? "file-text" : "terminal";
 
   let statusIcon;
   let stateLabel;
@@ -87,7 +88,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
       >
         <span class="tool-call-name chat-tool-name">
           {statusIcon}
-          <Icon name="terminal" size={13} class="tool-call-glyph chat-tool-glyph" />
+          <Icon name={glyphName} size={13} class="tool-call-glyph chat-tool-glyph" />
           <span class="tool-call-label chat-tool-label">{toolUse?.name || "unknown"}</span>
         </span>
         <Icon name="chevron-down" size={14} class={`tool-call-chevron chat-tool-chevron ${expanded ? "open" : ""}`} />

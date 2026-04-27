@@ -18,10 +18,34 @@ function previewValue(value) {
   }
 }
 
+function shortPath(value) {
+  return String(value || "").split(/[\\/]/).filter(Boolean).pop() || String(value || "");
+}
+
+function fileChangeLabel(changes = []) {
+  const list = Array.isArray(changes) ? changes : [];
+  return list
+    .map((change) => `${change?.kind || "change"} ${shortPath(change?.path || "")}`.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function normalizeFileChangeToken(event) {
+  if ((event?.type !== "item.started" && event?.type !== "item.completed") || event.item?.type !== "file_change") return null;
+  return {
+    type: "tool_use",
+    name: "file_edit",
+    arg: fileChangeLabel(event.item.changes),
+    status: event.type === "item.completed" ? (event.item.error ? "error" : "done") : "running",
+  };
+}
+
 export function normalizeToolTokenEvent(event) {
   if (!event) return null;
   if (event.type === "sdk_event") return normalizeToolTokenEvent(event.event);
   if (event.type === "worklab_result_candidate") return null;
+  const fileChange = normalizeFileChangeToken(event);
+  if (fileChange) return fileChange;
 
   const content = event.message?.content || event.content;
   if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {

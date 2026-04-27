@@ -56,9 +56,37 @@ const HIDDEN_CLI_EVENT_TYPES = new Set([
   "rate_limit_event",
 ]);
 
+function normalizeCodexFileChange(raw) {
+  if ((raw?.type !== "item.started" && raw?.type !== "item.completed") || raw.item?.type !== "file_change") return null;
+  const item = raw.item;
+  const id = item.id || "file_change";
+  const changes = Array.isArray(item.changes) ? item.changes : [];
+  const payload = {
+    changes,
+    status: item.status || (raw.type === "item.completed" ? "completed" : "in_progress"),
+  };
+  if (raw.type === "item.started") {
+    return { type: "assistant", message: { content: [{ type: "tool_use", id, name: "file_edit", input: payload }] } };
+  }
+  const failed = Boolean(item.error || item.status === "failed" || item.status === "errored");
+  return {
+    type: "user",
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: id,
+        content: item.error || payload,
+        is_error: failed,
+      }],
+    },
+  };
+}
+
 function normalizeCliEvent(ev) {
   const raw = ev?.raw;
   if (!raw) return ev;
+  const fileChange = normalizeCodexFileChange(raw);
+  if (fileChange) return fileChange;
   if (HIDDEN_CLI_EVENT_TYPES.has(raw.type) || HIDDEN_CLI_EVENT_TYPES.has(raw.subtype)) return null;
   if (raw.type === "error") {
     return { type: "error", message: raw.message || raw.error || "CLI error" };
