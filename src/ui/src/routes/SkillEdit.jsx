@@ -24,6 +24,45 @@ import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
 
+function fileTreeIcon(type) {
+  if (type === "folder") return "folder";
+  if (type === "symlink") return "link";
+  return "file-text";
+}
+
+function SkillFileTreeNode({ node, depth = 0 }) {
+  const isFolder = node.type === "folder";
+  const isSkillFile = node.name === "SKILL.md";
+  return (
+    <li class={`skill-file-tree-item ${isFolder ? "is-folder" : "is-file"} ${isSkillFile ? "is-skill-file" : ""}`.trim()}>
+      <div class="skill-file-tree-row" style={{ "--indent": `${depth * 18}px` }}>
+        <Icon name={fileTreeIcon(node.type)} size={14} />
+        <span class="skill-file-tree-name">{node.name}</span>
+      </div>
+      {isFolder && node.children?.length > 0 && (
+        <ul class="skill-file-tree-list">
+          {node.children.map((child) => (
+            <SkillFileTreeNode key={`${child.type}:${child.name}`} node={child} depth={depth + 1} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
+export function SkillFileTree({ files = [] }) {
+  if (!files.length) {
+    return <div class="field-hint">No files found.</div>;
+  }
+  return (
+    <ul class="skill-file-tree-list skill-file-tree-root" aria-label="Skill files">
+      {files.map((node) => (
+        <SkillFileTreeNode key={`${node.type}:${node.name}`} node={node} />
+      ))}
+    </ul>
+  );
+}
+
 export function SkillEdit({ name, onSaved, onDeleted }) {
   const isNew = name === "new";
   const [skill, setSkill] = useState(isNew ? emptySkill : null);
@@ -167,6 +206,12 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           </FormGrid>
           <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : skill.name }]} />
         </FormSection>
+
+        {!isNew && (
+          <FormSection kicker="Files" title="File tree">
+            <SkillFileTree files={skill.files || []} />
+          </FormSection>
+        )}
 
         <FormSection kicker="Playbook" title="Body (Markdown)">
           <Textarea
