@@ -92,9 +92,17 @@ describe("explicit model references", () => {
     expect(values.some((value) => value.includes("gpt-5.4"))).toBe(false);
   });
 
-  it("normalizes stale max effort to supported values", () => {
+  it("advertises per-model reasoning effort levels", () => {
+    expect(getBuiltinModelByReference("openai:gpt-5.5").capabilities.reasoning_levels).toEqual(["none", "low", "medium", "high", "xhigh"]);
+    expect(getBuiltinModelByReference("claude:claude-sonnet-4-6").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "max"]);
+    expect(getBuiltinModelByReference("claude:claude-opus-4-7").capabilities.reasoning_levels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+  });
+
+  it("normalizes stale or unsupported effort to supported values", () => {
     expect(normalizeReasoningEffortForModel("openai:gpt-5.5", "max")).toBe("xhigh");
-    expect(normalizeReasoningEffortForModel("claude:claude-sonnet-4-6", "max")).toBe("high");
+    expect(normalizeReasoningEffortForModel("claude:claude-sonnet-4-6", "max")).toBe("max");
+    expect(normalizeReasoningEffortForModel("claude:claude-sonnet-4-6", "xhigh")).toBe("high");
+    expect(normalizeReasoningEffortForModel("claude:claude-opus-4-7", "max")).toBe("max");
     expect(normalizeReasoningEffortForModel("openai:gpt-5.5", "none")).toBe("none");
   });
 });

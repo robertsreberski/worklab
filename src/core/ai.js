@@ -18,8 +18,9 @@ const MODEL_SHORT_LABELS = {
   "gpt-5.5": "GPT-5.5",
 };
 
-const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh"];
+const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 const OPENAI_REASONING_LEVELS = ["none", "low", "medium", "high", "xhigh"];
+const REASONING_EFFORT_ORDER = ["none", "low", "medium", "high", "xhigh", "max"];
 
 function runtimeMetadata({
   runtimeKind,
@@ -233,7 +234,7 @@ function inferFallbackCapabilities(resolved) {
 function reasoningLevels(capabilities) {
   if (!capabilities || capabilities.reasoning === false || capabilities.reasoning_mode === "none") return [];
   if (Array.isArray(capabilities.reasoning_levels) && capabilities.reasoning_levels.length) {
-    return capabilities.reasoning_levels.filter((level) => typeof level === "string" && level !== "max");
+    return capabilities.reasoning_levels.filter((level) => typeof level === "string");
   }
   return [...CLAUDE_REASONING_LEVELS];
 }
@@ -242,6 +243,16 @@ function preferredEffort(levels, preferred = "medium") {
   if (levels.includes(preferred)) return preferred;
   if (levels.includes("low")) return "low";
   return levels[0] || "medium";
+}
+
+function nearestSupportedEffortAtOrBelow(levels, requested) {
+  const requestedRank = REASONING_EFFORT_ORDER.indexOf(requested);
+  if (requestedRank < 0) return levels[levels.length - 1];
+  const ranked = levels
+    .map((level) => ({ level, rank: REASONING_EFFORT_ORDER.indexOf(level) }))
+    .filter((item) => item.rank >= 0 && item.rank <= requestedRank)
+    .sort((left, right) => right.rank - left.rank);
+  return ranked[0]?.level || preferredEffort(levels);
 }
 
 export function normalizeReasoningEffortForModel(modelRefOrResolved, effort, capabilities = null) {
@@ -265,12 +276,8 @@ export function normalizeReasoningEffortForModel(modelRefOrResolved, effort, cap
   if (!levels.length) return "low";
   if (!requested) return preferredEffort(levels);
   if (levels.includes(requested)) return requested;
-  if (requested === "max") {
-    if (levels.includes("xhigh")) return "xhigh";
-    if (levels.includes("high")) return "high";
-  }
   if (requested === "none" && levels.includes("low")) return "low";
-  return levels[levels.length - 1];
+  return nearestSupportedEffortAtOrBelow(levels, requested);
 }
 
 function requireModelPart(value, message) {

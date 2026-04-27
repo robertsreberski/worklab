@@ -28,7 +28,7 @@ import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
-const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh"];
+const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 const BUILTIN_TOOL_DESCRIPTIONS = {
   Read: "Read a local file with line numbers.",
