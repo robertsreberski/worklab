@@ -13,7 +13,7 @@ import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
-import { agentDisplayName, hasRunError } from "../lib/display.js";
+import { agentDisplayName, hasRunError, taskDisplayKey } from "../lib/display.js";
 
 function formatAge(value) {
   if (!value) return "";
@@ -23,12 +23,6 @@ function formatAge(value) {
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h`;
   if (ms < 86_400_000 * 7) return `${Math.floor(ms / 86_400_000)}d`;
   return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function taskIdDisplay(id) {
-  const raw = String(id || "");
-  if (raw.startsWith("task_")) return raw.slice(5, 11).toUpperCase();
-  return raw.slice(0, 6).toUpperCase();
 }
 
 // Derive which run is currently streaming. Prefer the explicit running_run_id
@@ -133,7 +127,7 @@ export function CommanderRow({
           label={<span class="sr-only">Select task {task.title}</span>}
         />
       </div>
-      <span class="commander-cell-id">{taskIdDisplay(task.id)}</span>
+      <span class="commander-cell-id">{taskDisplayKey(task)}</span>
       <span class="commander-cell-state" aria-hidden="true">
         {isStreaming
           ? <LivePulse color={meta.color} size={8} />

@@ -290,6 +290,7 @@ describe("kb REST routes", () => {
     expect(res.body.tasks).toEqual([
       {
         id: taskRes.body.task.id,
+        task_key: taskRes.body.task.task_key,
         title: "Use Search Guide",
         stage: "plan",
         via: "body",

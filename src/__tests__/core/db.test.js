@@ -45,7 +45,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("11");
+    expect(row.value).toBe("12");
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {
@@ -103,9 +103,10 @@ describe("openDb + runMigrations", () => {
     expect(taskCols).not.toContain("source_schedule_id");
     expect(tables).not.toContain("schedules");
     expect(tables).not.toContain("schedule_spawns");
-    const taskRow = db.prepare("SELECT id, title, instructions, stage, owner_agent, root_task_id, run_policy FROM tasks WHERE id='t1'").get();
+    const taskRow = db.prepare("SELECT id, task_key, title, instructions, stage, owner_agent, root_task_id, run_policy FROM tasks WHERE id='t1'").get();
     expect(taskRow).toMatchObject({
       id: "t1",
+      task_key: "T-1",
       title: "keep me",
       instructions: "stay",
       stage: "execute",
@@ -113,7 +114,32 @@ describe("openDb + runMigrations", () => {
       root_task_id: "t1",
       run_policy: "manual",
     });
-    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body", "run_policy"]));
+    expect(taskCols).toEqual(expect.arrayContaining(["task_key", "stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body", "run_policy"]));
+  });
+
+  it("backfills task keys by creation order and advances the counter", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("late", "late", 200, 200);
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("early", "early", 100, 100);
+
+    runMigrations(db);
+
+    expect(db.prepare("SELECT id, task_key FROM tasks ORDER BY created_at ASC, id ASC").all()).toEqual([
+      { id: "early", task_key: "T-1" },
+      { id: "late", task_key: "T-2" },
+    ]);
+    expect(db.prepare("SELECT value FROM settings WHERE key = 'task_key_next'").get().value).toBe("3");
   });
 
   it("allows taskless consolidation runs", () => {

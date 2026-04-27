@@ -10,13 +10,13 @@ function seedAgent(db, name = "maintainer") {
   `).run(name, name, now, now);
 }
 
-function seedTask(db, { id = "task_1", title = "Scheduled task", owner = "maintainer", stage = "execute" } = {}) {
+function seedTask(db, { id = "task_1", taskKey = "T-1", title = "Scheduled task", owner = "maintainer", stage = "execute" } = {}) {
   const now = Date.now();
   db.prepare(`
-    INSERT INTO tasks (id, root_task_id, title, stage, owner_agent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, id, title, stage, owner, now, now);
-  return id;
+    INSERT INTO tasks (id, task_key, root_task_id, title, stage, owner_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, taskKey, id, title, stage, owner, now, now);
+  return { id, taskKey };
 }
 
 function spawnFake() {
@@ -88,20 +88,21 @@ describe("automations routes", () => {
   it("creates task automations and marks the task summary", async () => {
     const { agent, db } = makeTestServer();
     seedAgent(db);
-    const taskId = seedTask(db);
+    const { id: taskId, taskKey } = seedTask(db);
 
-    const create = await agent.post(`/api/tasks/${taskId}/automations`).send({
+    const create = await agent.post(`/api/tasks/${taskKey}/automations`).send({
       trigger: { type: "daily", hour: 7, minute: 30 },
       enabled: true,
     }).expect(201);
 
     expect(create.body.automation).toMatchObject({
       task_id: taskId,
+      task_key: taskKey,
       enabled: true,
       trigger: { type: "daily", hour: 7, minute: 30 },
     });
 
-    const list = await agent.get(`/api/tasks/${taskId}/automations`).expect(200);
+    const list = await agent.get(`/api/tasks/${taskKey}/automations`).expect(200);
     expect(list.body.automations).toHaveLength(1);
     expect(list.body.automations[0].trigger_summary).toContain("Daily");
 
@@ -141,14 +142,14 @@ describe("automations routes", () => {
     const { agent, db, broker } = makeTestServer({ watcher, automationManager });
     holder.db = db;
     seedAgent(db);
-    const taskId = seedTask(db);
+    const { id: taskId, taskKey } = seedTask(db);
     automationHolder.current = createAutomationManager({ db, broker, watcher, spawn: spawnFake });
 
-    const create = await agent.post(`/api/tasks/${taskId}/automations`).send({
+    const create = await agent.post(`/api/tasks/${taskKey}/automations`).send({
       trigger: { type: "daily", hour: 8, minute: 0 },
       enabled: true,
     }).expect(201);
-    const run = await agent.post(`/api/tasks/${taskId}/automations/${create.body.automation.id}/run`).expect(201);
+    const run = await agent.post(`/api/tasks/${taskKey}/automations/${create.body.automation.id}/run`).expect(201);
 
     expect(run.body.runId).toBe("run_task_auto");
     const runRow = db.prepare("SELECT task_id, mode FROM task_runs WHERE id = ?").get(run.body.runId);

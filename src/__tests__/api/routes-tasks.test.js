@@ -14,6 +14,7 @@ describe("POST /api/tasks", () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/tasks").send({ title: "do thing" }).expect(201);
     expect(res.body.task.id).toMatch(/^[a-zA-Z0-9]{21}$/);
+    expect(res.body.task.task_key).toBe("T-1");
     expect(res.body.task.title).toBe("do thing");
     expect(res.body.task.status).toBeUndefined();
     expect(res.body.task.stage).toBe("plan");
@@ -43,6 +44,7 @@ describe("POST /api/tasks", () => {
     await agent.post("/api/tasks").send({ title: "b" });
     const res = await agent.get("/api/tasks").expect(200);
     expect(res.body.tasks.map(t => t.title).sort()).toEqual(["a", "b"]);
+    expect(res.body.tasks.map(t => t.task_key).sort()).toEqual(["T-1", "T-2"]);
   });
 
   it("deduplicates create retries with the same client request id", async () => {
@@ -61,11 +63,36 @@ describe("POST /api/tasks", () => {
     const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
     const { body: { task } } = await agent.post("/api/tasks").send({
       title: "Blocked task",
-      blocked_by_ids: [blocker.id],
+      blocked_by_ids: [blocker.task_key],
     }).expect(201);
     expect(task.dependency_ids).toEqual([blocker.id]);
     expect(task.blocked_by).toHaveLength(1);
-    expect(task.blocked_by[0]).toMatchObject({ id: blocker.id, title: "Blocker" });
+    expect(task.blocked_by[0]).toMatchObject({ id: blocker.id, task_key: blocker.task_key, title: "Blocker" });
+  });
+
+  it("resolves task routes by public task key", async () => {
+    const calls = [];
+    const { agent } = makeTestServer({
+      watcher: {
+        handleRunRequested: async (taskId) => { calls.push(taskId); return { runId: "fake-run" }; },
+        cancel: () => true,
+        shutdown: async () => {},
+        isActive: () => false,
+        maybeAutoStart: () => {},
+        maybeAutoStartDependents: () => {},
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "keyed" }).expect(201);
+
+    const detail = await agent.get(`/api/tasks/${task.task_key}`).expect(200);
+    expect(detail.body.task.id).toBe(task.id);
+    await agent.patch(`/api/tasks/${task.task_key}`).send({ title: "renamed" }).expect(200);
+    await agent.post(`/api/tasks/${task.task_key}/comments`).send({ body: "note" }).expect(201);
+    await agent.get(`/api/tasks/${task.task_key}/runs`).expect(200);
+    await agent.post(`/api/tasks/${task.task_key}/run`).expect(200);
+    await agent.post(`/api/tasks/${task.task_key}/cancel`).expect(204);
+
+    expect(calls).toEqual([task.id]);
   });
 
   it("broadcasts task_created", async () => {
@@ -217,7 +244,7 @@ describe("PATCH /api/tasks/:id", () => {
     let got = null;
     broker.broadcast = (ch, p) => { if (ch === "global" && p.type === "task_updated") got = p; };
     await agent.patch(`/api/tasks/${task.id}`).send({ title: "b" });
-    expect(got).toEqual({ type: "task_updated", id: task.id });
+    expect(got).toEqual({ type: "task_updated", id: task.id, taskKey: task.task_key });
   });
 
   it("stores owner assignment", async () => {
@@ -331,7 +358,7 @@ describe("POST /api/tasks/bulk", () => {
     const { body: { task: b } } = await agent.post("/api/tasks").send({ title: "b" }).expect(201);
 
     const res = await agent.post("/api/tasks/bulk").send({
-      ids: [a.id, b.id],
+      ids: [a.task_key, b.task_key],
       operation: "patch",
       patch: {
         owner_agent: "owner",
@@ -341,6 +368,7 @@ describe("POST /api/tasks/bulk", () => {
     }).expect(200);
 
     expect(res.body.summary).toEqual({ requested: 2, succeeded: 2, failed: 0 });
+    expect(res.body.results.map((result) => result.task_id).sort()).toEqual([a.id, b.id].sort());
     expect(res.body.results.every((result) => result.ok)).toBe(true);
     const rows = db.prepare("SELECT owner_agent, reviewer_agent, run_policy FROM tasks ORDER BY title").all();
     expect(rows).toEqual([
@@ -404,9 +432,10 @@ describe("POST /api/tasks/:id/subtasks", () => {
       owner_agent: "owner",
     }).expect(201);
 
-    const res = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+    const res = await agent.post(`/api/tasks/${parent.task_key}/subtasks`).send({ title: "Child" }).expect(201);
 
     expect(res.body.task).toMatchObject({
+      task_key: "T-2",
       title: "Child",
       parent_task_id: parent.id,
       root_task_id: parent.id,

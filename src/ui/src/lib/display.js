@@ -69,6 +69,25 @@ export function shortDate(value) {
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
+export function taskDisplayKey(taskOrId) {
+  if (taskOrId && typeof taskOrId === "object") {
+    if (taskOrId.task_key) return String(taskOrId.task_key).toUpperCase();
+    taskOrId = taskOrId.id;
+  }
+  const raw = String(taskOrId || "");
+  if (!raw) return "";
+  if (/^T-\d+$/i.test(raw)) return raw.toUpperCase();
+  if (raw.startsWith("task_")) return raw.slice(5, 11).toUpperCase();
+  return raw.slice(0, 6).toUpperCase();
+}
+
+export function taskRouteId(task) {
+  if (task && typeof task === "object") {
+    return encodeURIComponent(task.task_key || task.id || "");
+  }
+  return encodeURIComponent(String(task || ""));
+}
+
 // §5.3 — true when the task's most recent run errored. Used by Commander
 // (to put the row in the Blocked group) and TaskDetail (error chip on hero).
 export function hasRunError(task) {

@@ -21,6 +21,7 @@ import { Card } from "../components/Card.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
+import { taskRouteId } from "../lib/display.js";
 
 export function KbEdit({ slug, onSaved, onDeleted }) {
   const isNew = slug === "new";
@@ -174,7 +175,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
                 <ul class="usage-list">
                   {usage.tasks.map((t) => (
                     <li key={t.id}>
-                      <a href={`#/tasks/${t.id}`}>{t.title}</a>{" "}
+                      <a href={`#/tasks/${taskRouteId(t)}`}>{t.title}</a>{" "}
                       <StatusPill status={t.stage || "plan"} size="sm" />
                     </li>
                   ))}
