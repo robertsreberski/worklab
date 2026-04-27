@@ -6,6 +6,15 @@ export const BUILTIN_CLAUDE_MODELS = [
 
 export const BUILTIN_OPENAI_MODELS = [
   "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+];
+
+export const BUILTIN_CODEX_MODELS = [
+  "gpt-5.5",
+  "gpt-5.4",
+  "gpt-5.4-mini",
 ];
 
 export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex"];
@@ -16,6 +25,9 @@ const MODEL_SHORT_LABELS = {
   "claude-sonnet-4-6": "Sonnet 4.6",
   "claude-opus-4-7": "Opus 4.7",
   "gpt-5.5": "GPT-5.5",
+  "gpt-5.4": "GPT-5.4",
+  "gpt-5.4-mini": "GPT-5.4 Mini",
+  "gpt-5.4-nano": "GPT-5.4 Nano",
 };
 
 const CLAUDE_REASONING_LEVELS = ["low", "medium", "high", "xhigh", "max"];
@@ -90,13 +102,6 @@ function openaiReasoningCapabilities(model, runtime = "sdk") {
       mcpMode: runtime === "cli" ? "inline-config" : "sdk",
     }),
   };
-  if (model.endsWith("-nano")) {
-    return {
-      ...common,
-      reasoning: false,
-      reasoning_mode: "none",
-    };
-  }
   return {
     ...common,
     reasoning: true,
@@ -149,6 +154,30 @@ const BUILTIN_MODEL_GROUPS = [
         model: "gpt-5.5",
         capabilities: openaiReasoningCapabilities("gpt-5.5"),
       },
+      {
+        value: "openai:gpt-5.4",
+        label: "GPT-5.4",
+        description: "Fallback flagship",
+        sdk: "openai",
+        model: "gpt-5.4",
+        capabilities: openaiReasoningCapabilities("gpt-5.4"),
+      },
+      {
+        value: "openai:gpt-5.4-mini",
+        label: "GPT-5.4 Mini",
+        description: "Fallback mini",
+        sdk: "openai",
+        model: "gpt-5.4-mini",
+        capabilities: openaiReasoningCapabilities("gpt-5.4-mini"),
+      },
+      {
+        value: "openai:gpt-5.4-nano",
+        label: "GPT-5.4 Nano",
+        description: "Fallback nano",
+        sdk: "openai",
+        model: "gpt-5.4-nano",
+        capabilities: openaiReasoningCapabilities("gpt-5.4-nano"),
+      },
     ],
   },
 ];
@@ -174,7 +203,7 @@ const CLI_MODEL_GROUPS = [
   {
     id: "codex",
     label: "Codex CLI",
-    models: BUILTIN_OPENAI_MODELS.map((model) => ({
+    models: BUILTIN_CODEX_MODELS.map((model) => ({
       value: `codex:${model}`,
       label: `Codex ${MODEL_SHORT_LABELS[model] || model}`,
       description: "Runs through the local `codex exec` command",

@@ -1,4 +1,4 @@
-// §3.9 RadioGroup — segmented bar for 2–4 mutually exclusive options.
+// §3.9 RadioGroup — segmented bar for 2–5 mutually exclusive options.
 import { useRef } from "preact/hooks";
 
 export function RadioGroup({
