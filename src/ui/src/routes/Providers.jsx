@@ -80,8 +80,44 @@ function applyPreset(form, providerType) {
   };
 }
 
-function Capability({ on, label }) {
-  return <Chip variant={on ? "accent" : "ghost"}>{on ? label : `no ${label}`}</Chip>;
+function isEmbeddingOnlyModel(capabilities = {}) {
+  return capabilities.embedding === true && capabilities.runnable_for_agent === false;
+}
+
+function modelCapabilityTags(model) {
+  const capabilities = model.capabilities || {};
+  if (isEmbeddingOnlyModel(capabilities)) return [{ label: "Embedding", variant: "accent" }];
+
+  const tags = [];
+  if (capabilities.runnable_for_agent !== false) tags.push({ label: "Chat", variant: "tag" });
+  if (capabilities.tool_use) tags.push({ label: "Tools", variant: "tag" });
+  if (capabilities.reasoning) tags.push({ label: capabilities.reasoning_mode === "toggle" ? "Thinking" : "Reasoning", variant: "tag" });
+  if (capabilities.vision) tags.push({ label: "Vision", variant: "tag" });
+  if (capabilities.embedding) tags.push({ label: "Embedding", variant: "accent" });
+  if (!tags.length) tags.push({ label: "Unsupported", variant: "ghost" });
+  return tags;
+}
+
+function modelPurpose(model) {
+  const capabilities = model.capabilities || {};
+  if (isEmbeddingOnlyModel(capabilities)) {
+    return model.enabled
+      ? "Used for knowledge search. Not a chat model."
+      : "Enable to show in Settings -> Embeddings.";
+  }
+  if (capabilities.embedding === true) {
+    return model.enabled
+      ? "Available for agents and embeddings."
+      : "Enable for agents or embeddings.";
+  }
+  if (capabilities.runnable_for_agent !== false) {
+    return model.enabled ? "Available for agent model pickers." : "Enable for agents.";
+  }
+  return "Not usable for agents or embeddings.";
+}
+
+function modelSwitchLabel(model) {
+  return model.enabled ? "Enabled" : "Disabled";
 }
 
 function ProviderEdit({ providerId, onSaved, onDeleted }) {
@@ -89,7 +125,8 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   const [provider, setProvider] = useState(isNew ? EMPTY_FORM : null);
   const [baseline, setBaseline] = useState(isNew ? EMPTY_FORM : null);
   const [models, setModels] = useState([]);
-  const [status, setStatus] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState(null);
+  const [discoveryStatus, setDiscoveryStatus] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const loadModels = useCallback(async (id) => {
@@ -97,9 +134,39 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     setModels(response.models || []);
   }, []);
 
+  const testProviderConnection = useCallback(async (id = providerId, { isCancelled = () => false } = {}) => {
+    if (isNew) return null;
+    setConnectionStatus({ kind: "testing" });
+    try {
+      const result = await api.testProvider(id);
+      if (!isCancelled()) setConnectionStatus({ kind: "test", result });
+      return result;
+    } catch (error) {
+      if (!isCancelled()) setConnectionStatus({ kind: "error", message: error.message });
+      return null;
+    }
+  }, [isNew, providerId]);
+
+  const discoverProviderModels = useCallback(async (id = providerId, { isCancelled = () => false } = {}) => {
+    if (isNew) return null;
+    setDiscoveryStatus({ kind: "discovering" });
+    try {
+      const result = await api.discoverProviderModels(id);
+      if (!isCancelled()) {
+        setModels(result.models || []);
+        setDiscoveryStatus({ kind: "discovered", count: (result.models || []).length });
+      }
+      return result;
+    } catch (error) {
+      if (!isCancelled()) setDiscoveryStatus({ kind: "error", message: error.message });
+      return null;
+    }
+  }, [isNew, providerId]);
+
   useEffect(() => {
     let cancelled = false;
-    setStatus(null);
+    setConnectionStatus(null);
+    setDiscoveryStatus(null);
     if (isNew) {
       setProvider(EMPTY_FORM);
       setBaseline(EMPTY_FORM);
@@ -116,8 +183,10 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
       })
       .catch(() => { if (!cancelled) setProvider({ notFound: true }); });
     loadModels(providerId).catch(() => { if (!cancelled) setModels([]); });
+    testProviderConnection(providerId, { isCancelled: () => cancelled });
+    discoverProviderModels(providerId, { isCancelled: () => cancelled });
     return () => { cancelled = true; };
-  }, [isNew, loadModels, providerId]);
+  }, [discoverProviderModels, isNew, loadModels, providerId, testProviderConnection]);
 
   const isDirty = useMemo(
     () => (baseline ? JSON.stringify(provider) !== JSON.stringify(baseline) : true),
@@ -179,29 +248,6 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     }
   }
 
-  async function testProviderConnection() {
-    if (isNew) return;
-    setStatus({ kind: "testing" });
-    try {
-      const result = await api.testProvider(providerId);
-      setStatus({ kind: "test", result });
-    } catch (error) {
-      setStatus({ kind: "error", message: error.message });
-    }
-  }
-
-  async function discoverProviderModels() {
-    if (isNew) return;
-    setStatus({ kind: "discovering" });
-    try {
-      const result = await api.discoverProviderModels(providerId);
-      setModels(result.models || []);
-      setStatus({ kind: "discovered", count: (result.models || []).length });
-    } catch (error) {
-      setStatus({ kind: "error", message: error.message });
-    }
-  }
-
   return (
     <>
       <header class="pane-detail-head">
@@ -211,6 +257,28 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         </div>
         <div class="toolbar">
           {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
+          {!isNew && (
+            <Button
+              variant="secondary"
+              loading={connectionStatus?.kind === "testing"}
+              onClick={() => testProviderConnection()}
+              disabled={isDirty}
+              title={isDirty ? "Save provider changes before testing." : undefined}
+            >
+              Test
+            </Button>
+          )}
+          {!isNew && (
+            <Button
+              variant="secondary"
+              loading={discoveryStatus?.kind === "discovering"}
+              onClick={() => discoverProviderModels()}
+              disabled={isDirty}
+              title={isDirty ? "Save provider changes before discovering models." : undefined}
+            >
+              Discover
+            </Button>
+          )}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
             loading={formSave.saving}
@@ -226,18 +294,31 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
-        {status?.kind === "test" && (
+        {connectionStatus?.kind === "testing" && (
+          <Banner variant="info" title="Checking provider" detail="Testing the saved provider connection." dismissible={false} />
+        )}
+        {connectionStatus?.kind === "test" && (
           <Banner
-            variant={status.result.ok ? "success" : "error"}
-            title={status.result.ok ? "Provider reachable" : "Provider unreachable"}
-            detail={status.result.ok ? `HTTP ${status.result.status} in ${status.result.duration_ms ?? 0}ms.` : (status.result.error || "Connection failed.")}
+            variant={connectionStatus.result.ok ? "success" : "error"}
+            title={connectionStatus.result.ok ? "Provider reachable" : "Provider unreachable"}
+            detail={connectionStatus.result.ok ? `HTTP ${connectionStatus.result.status} in ${connectionStatus.result.duration_ms ?? 0}ms.` : (connectionStatus.result.error || "Connection failed.")}
           />
         )}
-        {status?.kind === "discovered" && (
-          <Banner variant="success" title="Discovery complete" detail={`Found ${status.count} model${status.count === 1 ? "" : "s"}.`} />
+        {connectionStatus?.kind === "error" && (
+          <Banner variant="error" title="Provider check failed" detail={connectionStatus.message} />
         )}
-        {status?.kind === "error" && (
-          <Banner variant="error" title="Action failed" detail={status.message} />
+        {discoveryStatus?.kind === "discovering" && (
+          <Banner variant="info" title="Discovering models" detail="Refreshing models from the saved provider connection." dismissible={false} />
+        )}
+        {discoveryStatus?.kind === "discovered" && (
+          <Banner
+            variant="success"
+            title="Discovery complete"
+            detail={`Found ${discoveryStatus.count} model${discoveryStatus.count === 1 ? "" : "s"}. Embedding models are enabled automatically for Settings.`}
+          />
+        )}
+        {discoveryStatus?.kind === "error" && (
+          <Banner variant="error" title="Discovery failed" detail={discoveryStatus.message} />
         )}
 
         <FormSection kicker="Identity" title="Provider settings">
@@ -282,25 +363,26 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         </FormSection>
 
         {!isNew && (
-          <FormSection kicker="Models" title="Discovered models">
+          <FormSection kicker="Models" title="Discovered models" description="Opening a provider tests the connection and refreshes this list automatically. Use the visible Test and Discover buttons to retry.">
             {(models || []).length === 0 ? (
-              <div class="field-hint">Save the provider, then run Discover to load models.</div>
+              <div class="field-hint">No models yet. Discovery runs automatically when the provider opens; use Discover above to retry.</div>
             ) : (
               <div class="provider-model-grid">
                 {models.map((model) => {
                   const capabilities = model.capabilities || {};
+                  const embeddingOnly = isEmbeddingOnlyModel(capabilities);
                   return (
-                    <div key={model.id} class="card card-inset provider-model-card">
+                    <div key={model.id} class={`card card-inset provider-model-card ${embeddingOnly ? "is-embedding" : ""}`.trim()}>
                       <div class="provider-model-row">
                         <div class="provider-model-info">
                           <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
                           <div class="mono muted provider-model-id">{model.model_name}</div>
                           <div class="provider-model-caps">
-                            <Capability on={capabilities.runnable_for_agent !== false} label="chat" />
-                            <Capability on={capabilities.tool_use} label="tools" />
-                            <Capability on={capabilities.reasoning} label={capabilities.reasoning_mode === "toggle" ? "thinking" : "reasoning"} />
-                            <Capability on={capabilities.vision} label="vision" />
+                            {modelCapabilityTags(model).map((tag) => (
+                              <Chip key={tag.label} variant={tag.variant}>{tag.label}</Chip>
+                            ))}
                           </div>
+                          <div class="provider-model-purpose">{modelPurpose(model)}</div>
                         </div>
                         <Switch
                           checked={!!model.enabled}
@@ -309,7 +391,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                               .then(() => loadModels(providerId))
                               .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
                           }}
-                          label={model.enabled ? "Enabled" : "Disabled"}
+                          label={modelSwitchLabel(model)}
                         />
                       </div>
                     </div>
@@ -321,21 +403,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         )}
 
         {!isNew && (
-          <Card collapsible={{ summary: "More actions", count: 3 }}>
-            <Button
-              variant="secondary"
-              onClick={testProviderConnection}
-              loading={status?.kind === "testing"}
-            >
-              Test connection
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={discoverProviderModels}
-              loading={status?.kind === "discovering"}
-            >
-              Discover models
-            </Button>
+          <Card collapsible={{ summary: "More actions", count: 1 }}>
             <Button
               variant="destructive"
               iconLeft={<Icon name="trash" size={13} />}

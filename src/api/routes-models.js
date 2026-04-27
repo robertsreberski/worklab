@@ -111,7 +111,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
 
     for (const provider of listProviders({ db, dataDir, enabledOnly: true })) {
       if (!isValidProviderType(provider.provider_type)) continue;
-      const embeddingModels = listModels({ db, providerId: provider.id, enabledOnly: true }).filter((m) => {
+      const embeddingModels = listModels({ db, providerId: provider.id }).filter((m) => {
         const caps = m.capabilities || {};
         return caps.embedding === true || /embed/i.test(m.model_name);
       });
@@ -126,10 +126,10 @@ export function registerModelRoutes(app, { db, dataDir }) {
         models: embeddingModels.map((m) => ({
           value: `vercel:${provider.id}:${m.model_name}`,
           label: m.display_name || m.model_name,
-          description: `${provider.name} / ${m.model_name}`,
-          available: true,
-          disabled: false,
-          unavailable_reason: null,
+          description: m.enabled ? `${provider.name} / ${m.model_name}` : "Enable this model in Providers to select it.",
+          available: !!m.enabled,
+          disabled: !m.enabled,
+          unavailable_reason: m.enabled ? null : "Model is disabled in Providers.",
         })),
       });
     }

@@ -211,6 +211,7 @@ describe("providers", () => {
     });
 
     const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
+    expect(model.enabled).toBe(true);
     expect(capabilities).toMatchObject({
       runnable_for_agent: false,
       supports_builtin_tools: false,

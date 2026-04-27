@@ -491,7 +491,10 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
     modelName: model.modelName,
     displayName: model.displayName,
     capabilities: model.capabilities,
-    enabled: undefined,
+    enabled: model.capabilities?.embedding === true
+      && !getModelByProviderAndName({ db, providerId: provider.id, modelName: model.modelName })
+      ? true
+      : undefined,
   }));
 }
 
