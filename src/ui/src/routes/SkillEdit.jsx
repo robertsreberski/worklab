@@ -10,7 +10,6 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
@@ -18,6 +17,7 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -129,6 +129,14 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   const slugLabel = isNew ? "Slug after create" : skill.name;
   const priorityLabel = skill.meta.priority === "always" ? "Always inline" : "On demand";
   const usageCount = usage?.explicit?.length || 0;
+  const fileCount = Array.isArray(skill.files) ? skill.files.length : 0;
+  const contextMeta = [
+    { label: "Slug", value: isNew ? "Generated after create" : skill.name },
+    { label: "Availability", value: skill.meta.enabled !== false ? "Available" : "Disabled", mono: false },
+    { label: "Priority", value: priorityLabel, mono: false },
+    !isNew ? { label: "Used by", value: `${usageCount} explicit agent${usageCount === 1 ? "" : "s"}`, mono: false } : null,
+    !isNew ? { label: "Files", value: `${fileCount} root item${fileCount === 1 ? "" : "s"}`, mono: false } : null,
+  ];
 
   return (
     <>
@@ -165,85 +173,95 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           </Button>
         </div>
       </header>
-      <div class="pane-detail-body">
+      <div class="pane-detail-body entity-detail-body skill-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
 
-        <FormSection kicker="Metadata" title="Activation">
-          <FormGrid columns={2}>
-            <FormField label="Display name" required class="span-2">
-              <Input
-                value={skill.meta.display_name || (isNew ? "" : humanizeSlug(skill.name))}
-                onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, display_name: e.target.value } })}
-              />
-            </FormField>
-            <FormField label="Priority">
-              <Select
-                value={skill.meta.priority || ""}
-                options={[
-                  { value: "", label: "On demand" },
-                  { value: "always", label: "Always inline full body" },
-                ]}
-                onChange={(v) => setSkill({ ...skill, meta: { ...skill.meta, priority: v || undefined } })}
-              />
-            </FormField>
-            <FormField switchInside>
-              <Switch
-                checked={skill.meta.enabled !== false}
-                onChange={(next) => setSkill({ ...skill, meta: { ...skill.meta, enabled: next } })}
-                label="Available to agents"
-                description="Unavailable skills stay saved but are not offered to agents."
-              />
-            </FormField>
-            <FormField label="Trigger" class="span-2">
-              <Input
-                placeholder="When should this skill activate?"
-                value={skill.meta.trigger || ""}
-                onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })}
-              />
-            </FormField>
-          </FormGrid>
-          <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : skill.name }]} />
-        </FormSection>
+        <div class="entity-editor-layout skill-editor-layout">
+          <main class="entity-editor-main">
+            <FormSection kicker="Definition" title="Activation">
+              <FormGrid columns={2}>
+                <FormField label="Display name" required class="span-2">
+                  <Input
+                    value={skill.meta.display_name || (isNew ? "" : humanizeSlug(skill.name))}
+                    onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, display_name: e.target.value } })}
+                  />
+                </FormField>
+                <FormField label="Priority">
+                  <Select
+                    value={skill.meta.priority || ""}
+                    options={[
+                      { value: "", label: "On demand" },
+                      { value: "always", label: "Always inline full body" },
+                    ]}
+                    onChange={(v) => setSkill({ ...skill, meta: { ...skill.meta, priority: v || undefined } })}
+                  />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={skill.meta.enabled !== false}
+                    onChange={(next) => setSkill({ ...skill, meta: { ...skill.meta, enabled: next } })}
+                    label="Available to agents"
+                    description="Unavailable skills stay saved but are not offered to agents."
+                  />
+                </FormField>
+                <FormField label="Trigger" class="span-2" hint="Used to decide when agents should apply this playbook.">
+                  <Input
+                    placeholder="When should this skill activate?"
+                    value={skill.meta.trigger || ""}
+                    onInput={(e) => setSkill({ ...skill, meta: { ...skill.meta, trigger: e.target.value } })}
+                  />
+                </FormField>
+              </FormGrid>
+            </FormSection>
 
-        {!isNew && (
-          <FormSection kicker="Files" title="File tree">
-            <SkillFileTree files={skill.files || []} />
-          </FormSection>
-        )}
+            <FormSection kicker="Playbook" title="Skill body">
+              <Textarea
+                class="skill-body-editor"
+                rows={28}
+                monospace
+                autoGrow
+                value={skill.body}
+                onInput={(e) => setSkill({ ...skill, body: e.target.value })}
+              />
+            </FormSection>
+          </main>
 
-        <FormSection kicker="Playbook" title="Body (Markdown)">
-          <Textarea
-            rows={22}
-            monospace
-            autoGrow
-            value={skill.body}
-            onInput={(e) => setSkill({ ...skill, body: e.target.value })}
-          />
-        </FormSection>
+          <aside class="entity-editor-rail">
+            <Card variant="spacious" title="Context" class="entity-rail-card">
+              <EntityMetaList items={contextMeta} />
+            </Card>
 
-        {!isNew && usage && usage.explicit?.length > 0 && (
-          <FormSection kicker="References" title="Used by agents">
-            <ul class="usage-list">
-              {usage.explicit.map((a) => (
-                <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
-              ))}
-            </ul>
-          </FormSection>
-        )}
+            {!isNew && (
+              <Card variant="spacious" title="File tree" class="entity-rail-card skill-files-card">
+                <SkillFileTree files={skill.files || []} />
+              </Card>
+            )}
 
-        {!isNew && (
-          <Card collapsible={{ summary: "More actions", count: 1 }}>
-            <Button
-              variant="destructive"
-              iconLeft={<Icon name="trash" size={13} />}
-              onClick={() => setDeleteOpen(true)}
-            >
-              Delete skill
-            </Button>
-          </Card>
-        )}
+            {!isNew && usage && usage.explicit?.length > 0 && (
+              <Card variant="spacious" title="Used by agents" class="entity-rail-card">
+                <ul class="usage-list">
+                  {usage.explicit.map((a) => (
+                    <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
+                  ))}
+                </ul>
+              </Card>
+            )}
+
+            {!isNew && (
+              <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
+                <Button
+                  variant="destructive"
+                  iconLeft={<Icon name="trash" size={13} />}
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  Delete skill
+                </Button>
+              </Card>
+            )}
+          </aside>
+        </div>
       </div>
 
       <Modal
