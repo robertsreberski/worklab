@@ -39,6 +39,7 @@ describe("consolidation manager", () => {
       workerBinary: "worker.js",
       dataDir,
       repoRoot: dataDir,
+      config: { timezone: "UTC" },
       logger: { warn: vi.fn(), error: vi.fn() },
     });
     return { dataDir, db, broker, broadcasts, spawn, manager };
