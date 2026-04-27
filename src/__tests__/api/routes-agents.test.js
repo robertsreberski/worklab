@@ -143,6 +143,14 @@ describe("agents CRUD", () => {
       model: "claude:claude-sonnet-4-6",
     }).expect(200);
     expect(patched.body.agent.effort).toBe("high");
+
+    const opus = await agent.post("/api/agents").send({
+      name: "opus-effort",
+      display_name: "Opus Effort",
+      model: "claude:claude-opus-4-7",
+      effort: "max",
+    }).expect(201);
+    expect(opus.body.agent.effort).toBe("max");
   });
 
   it("POST rejects unavailable built-in providers", async () => {
