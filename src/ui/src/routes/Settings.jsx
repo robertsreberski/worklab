@@ -171,6 +171,7 @@ export function Settings() {
   const [runtime, setRuntime] = useState(null);
   const [runtimeDraft, setRuntimeDraft] = useState(null);
   const [runtimeBaseline, setRuntimeBaseline] = useState(null);
+  const [runtimeError, setRuntimeError] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
   const [providers, setProviders] = useState([]);
@@ -190,10 +191,27 @@ export function Settings() {
   }, []);
 
   const loadRuntime = useCallback(async () => {
-    const response = await api.getRuntimeSettings();
-    setRuntime(response.runtime);
-    setRuntimeDraft(response.runtime?.desired || null);
-    setRuntimeBaseline(response.runtime?.desired || null);
+    try {
+      const response = await api.getRuntimeSettings();
+      setRuntime(response.runtime);
+      setRuntimeDraft(response.runtime?.desired || null);
+      setRuntimeBaseline(response.runtime?.desired || null);
+      setRuntimeError(null);
+    } catch (err) {
+      const fallback = {
+        host: "",
+        port: "",
+        workspace: "",
+        logLevel: "info",
+        timezone: "",
+        runIdleWarningMs: 120000,
+        logInlineLimit: 12000,
+      };
+      setRuntime(null);
+      setRuntimeDraft(fallback);
+      setRuntimeBaseline(fallback);
+      setRuntimeError(err.message || "Runtime settings are unavailable");
+    }
   }, []);
 
   const loadProviders = useCallback(async () => {
@@ -233,7 +251,7 @@ export function Settings() {
 
   useEffect(() => {
     loadSettings().catch((err) => pushToast(`Settings failed: ${err.message}`, { variant: "error" }));
-    loadRuntime().catch((err) => pushToast(`Runtime settings failed: ${err.message}`, { variant: "error" }));
+    loadRuntime();
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
     loadProviders().catch((err) => pushToast(`Providers failed: ${err.message}`, { variant: "error" }));
@@ -401,30 +419,37 @@ export function Settings() {
             actions={<Button size="sm" loading={restarting} onClick={restartRuntime}>Restart</Button>}
           />
         )}
+        {runtimeError && (
+          <Banner
+            variant="error"
+            title="Runtime settings unavailable"
+            detail={runtimeError}
+          />
+        )}
 
         <div class="settings-sections">
           <FormSection kicker="Runtime" title="Service runtime" description="Values written here apply after the Worklab service restarts. Timeout durations are shown in minutes.">
             <FormGrid columns={3}>
               <FormField label="Host">
-                <Input value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
+                <Input disabled={!!runtimeError} value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
               </FormField>
               <FormField label="Port">
-                <Input type="number" min="1" max="65535" value={runtimeDraft.port} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(event.target.value) })} />
+                <Input disabled={!!runtimeError} type="number" min="1" max="65535" value={runtimeDraft.port} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(event.target.value) })} />
               </FormField>
               <FormField label="Log level">
-                <Select variant="native" value={runtimeDraft.logLevel} options={LOG_LEVEL_OPTIONS} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logLevel: value })} />
+                <Select disabled={!!runtimeError} variant="native" value={runtimeDraft.logLevel} options={LOG_LEVEL_OPTIONS} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logLevel: value })} />
               </FormField>
               <FormField label="Workspace" class="span-2">
-                <Input value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
+                <Input disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
               </FormField>
               <FormField label="Timezone">
-                <Input value={runtimeDraft.timezone || ""} placeholder="system local time" onInput={(event) => setRuntimeDraft({ ...runtimeDraft, timezone: event.target.value })} />
+                <Input disabled={!!runtimeError} value={runtimeDraft.timezone || ""} placeholder="system local time" onInput={(event) => setRuntimeDraft({ ...runtimeDraft, timezone: event.target.value })} />
               </FormField>
               <FormField label="Idle warning (minutes)">
-                <Input type="number" min="0" step="0.01" value={minutesValue(runtimeDraft.runIdleWarningMs)} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: minutesToMs(event.target.value) })} />
+                <Input disabled={!!runtimeError} type="number" min="0" step="0.01" value={minutesValue(runtimeDraft.runIdleWarningMs)} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: minutesToMs(event.target.value) })} />
               </FormField>
               <FormField label="Inline log limit (chars)">
-                <Input type="number" min="0" value={runtimeDraft.logInlineLimit} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(event.target.value) })} />
+                <Input disabled={!!runtimeError} type="number" min="0" value={runtimeDraft.logInlineLimit} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(event.target.value) })} />
               </FormField>
             </FormGrid>
             <div class="settings-note-grid">
