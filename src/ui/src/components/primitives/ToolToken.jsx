@@ -21,6 +21,7 @@ function previewValue(value) {
 export function normalizeToolTokenEvent(event) {
   if (!event) return null;
   if (event.type === "sdk_event") return normalizeToolTokenEvent(event.event);
+  if (event.type === "worklab_result_candidate") return null;
 
   const content = event.message?.content || event.content;
   if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {

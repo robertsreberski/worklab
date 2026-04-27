@@ -226,8 +226,9 @@ function TaskWorkflowMeta({ task }) {
   const stageReason = task.stage_reason;
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
+  const showPendingActions = task.stage === "awaiting_user" && pendingActions.length > 0;
   const showStageReason = stageReason && task.stage !== "execute" && task.stage !== "done";
-  if (!showParent && !showStageReason && pendingActions.length === 0 && blockingIssues.length === 0) {
+  if (!showParent && !showStageReason && !showPendingActions && blockingIssues.length === 0) {
     return null;
   }
   return (
@@ -245,8 +246,8 @@ function TaskWorkflowMeta({ task }) {
           <span>{stageReason}</span>
         </div>
       )}
-      {pendingActions.length > 0 && (
-        <Card title="Pending actions" class="task-workflow-pending">
+      {showPendingActions && (
+        <Card title="Human actions needed" class="task-workflow-pending">
           <ul class="task-workflow-list">
             {pendingActions.map((action, idx) => <li key={idx}>{action}</li>)}
           </ul>

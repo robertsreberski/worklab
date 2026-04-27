@@ -59,6 +59,7 @@ function normalizeCliEvent(ev) {
 function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (!ev) return null;
   if (ev.type === "sdk_event") return normalizeWorklabEvent(ev.event, { compactFinal });
+  if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "cli_event") return normalizeCliEvent(ev);
   if (ev.type === "final") {
     const usage = formatFinalUsage(ev);

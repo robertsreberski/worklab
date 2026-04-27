@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { normalizeReasoningEffortForModel } from "./ai.js";
-import { WORKLAB_RESULT_JSON_SCHEMA, extractWorklabResult } from "./worklab-result.js";
+import {
+  WORKLAB_RESULT_JSON_SCHEMA,
+  extractWorklabResult,
+  formatWorklabResultText,
+  parseStandaloneWorklabResultText,
+} from "./worklab-result.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -17,6 +22,15 @@ function normalizeCliEvent(raw) {
   if (raw.type === "assistant" || raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
   if (raw.type === "message" && raw.message) return { type: "assistant", message: raw.message };
   if (raw.type === "item.completed" && raw.item?.type === "agent_message" && typeof raw.item.text === "string") {
+    const result = parseStandaloneWorklabResultText(raw.item.text);
+    if (result) {
+      return {
+        type: "worklab_result_candidate",
+        source: "agent_message",
+        text: raw.item.text,
+        worklab_result: result,
+      };
+    }
     return { type: "assistant", message: { content: [{ type: "text", text: raw.item.text }] } };
   }
   if ((raw.type === "item.started" || raw.type === "item.completed") && raw.item?.type === "mcp_tool_call") {
@@ -309,8 +323,10 @@ export async function generateCliResponse(systemPrompt, options = {}) {
           structuredResultSource = inferStructuredResultSource(raw);
         }
       }
-      const text = textFromEvent(raw);
-      pushUniqueText(texts, text);
+      if (ev?.type !== "worklab_result_candidate") {
+        const text = textFromEvent(raw);
+        pushUniqueText(texts, text);
+      }
       if (raw.usage) usage = raw.usage;
       if (raw.type === "error") {
         const rawError = raw.message || raw.error || "cli error";
@@ -327,7 +343,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     const exitCode = await new Promise((resolve) => child.on("close", resolve));
     const stderrText = stderr.join("").trim();
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
-    const text = texts.join("\n\n");
+    const text = formatWorklabResultText(worklabResult) || texts.join("\n\n");
     if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
       errorMessage = `${commandSpec.command} completed without final output`;
     }
@@ -347,7 +363,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     return {
-      text: texts.join("\n\n") || null,
+      text: formatWorklabResultText(worklabResult) || texts.join("\n\n") || null,
       worklabResult,
       structuredResultSource,
       events,
