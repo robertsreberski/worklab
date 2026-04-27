@@ -127,7 +127,7 @@ export function Settings() {
           <FormSection kicker="Search" title="Embeddings" description="Controls which embedding model is used to index knowledge and journals.">
             <FormField
               label="Embedding model"
-              hint='Disabled skips vectorization. Run "Discover" on a provider to surface more models.'
+              hint='Disabled skips vectorization. Run "Discover" on a provider, then enable an embedding model to select it here.'
             >
               <Select
                 value={currentEmbedding}

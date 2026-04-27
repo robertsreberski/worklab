@@ -438,7 +438,7 @@ describe("provider routes", () => {
   });
 
   describe("PATCH /api/providers/:id/models/:modelId", () => {
-    it("rejects enabling a non-runnable model", async () => {
+    it("discovers embedding-only models as enabled without adding them to the agent model catalogue", async () => {
       const dataDir = tmpDataDir();
       const { agent } = makeTestServer({ dataDir });
 
@@ -449,29 +449,103 @@ describe("provider routes", () => {
       }).expect(201);
 
       const id = createRes.body.provider.id;
-      vi.stubGlobal("fetch", vi.fn()
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({ models: [{ name: "nomic-embed-text:v1.5" }] }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          status: 200,
-          json: async () => ({
-            model: "nomic-embed-text:v1.5",
-            details: { family: "nomic-bert", parameter_size: "137M" },
-            capabilities: ["embedding"],
-          }),
+      const tagsResponse = () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ models: [{ name: "nomic-embed-text:v1.5" }] }),
+      });
+      const showResponse = () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          model: "nomic-embed-text:v1.5",
+          details: { family: "nomic-bert", parameter_size: "137M" },
+          capabilities: ["embedding"],
         }),
-      );
+      });
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce(tagsResponse())
+        .mockResolvedValueOnce(showResponse());
+      vi.stubGlobal("fetch", fetchMock);
 
       const discovered = await agent.post(`/api/providers/${id}/discover`).expect(200);
       const model = discovered.body.models[0];
       expect(model.capabilities.runnable_for_agent).toBe(false);
+      expect(model.enabled).toBe(true);
+
+      const res = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: true }).expect(200);
+      expect(res.body.model.enabled).toBe(true);
+
+      const agentModels = await agent.get("/api/models/available").expect(200);
+      expect(agentModels.body.models.map((m) => m.value)).not.toContain(`vercel:${id}:nomic-embed-text:v1.5`);
+
+      const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
+      expect(embeddingModels.body.groups.flatMap((group) => group.models).map((m) => m.value))
+        .toContain(`vercel:${id}:nomic-embed-text:v1.5`);
+
+      const disabled = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: false }).expect(200);
+      expect(disabled.body.model.enabled).toBe(false);
+
+      fetchMock
+        .mockResolvedValueOnce(tagsResponse())
+        .mockResolvedValueOnce(showResponse());
+      const rediscovered = await agent.post(`/api/providers/${id}/discover`).expect(200);
+      expect(rediscovered.body.models[0].enabled).toBe(false);
+    });
+
+    it("shows disabled embedding models in Settings as unavailable choices", async () => {
+      const dataDir = tmpDataDir();
+      const { agent, db } = makeTestServer({ dataDir });
+
+      const createRes = await agent.post("/api/providers").send({
+        name: "ollama",
+        provider_type: "ollama",
+        base_url: "http://localhost:11434",
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      upsertModel({
+        db,
+        providerId: id,
+        modelName: "nomic-embed-text:v1.5",
+        displayName: "nomic-embed-text:v1.5",
+        capabilities: { advertised_capabilities: ["embedding"], embedding: true, chat: false },
+        enabled: false,
+      });
+
+      const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
+      const option = embeddingModels.body.groups
+        .flatMap((group) => group.models)
+        .find((modelOption) => modelOption.value === `vercel:${id}:nomic-embed-text:v1.5`);
+      expect(option).toMatchObject({
+        available: false,
+        disabled: true,
+        unavailable_reason: "Model is disabled in Providers.",
+      });
+    });
+
+    it("rejects enabling models that are neither runnable nor embedding-capable", async () => {
+      const dataDir = tmpDataDir();
+      const { agent, db } = makeTestServer({ dataDir });
+
+      const createRes = await agent.post("/api/providers").send({
+        name: "ollama",
+        provider_type: "ollama",
+        base_url: "http://localhost:11434",
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      const model = upsertModel({
+        db,
+        providerId: id,
+        modelName: "reranker-local",
+        displayName: "reranker-local",
+        capabilities: { advertised_capabilities: ["rerank"], chat: false, embedding: false },
+        enabled: false,
+      });
 
       const res = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: true }).expect(400);
-      expect(res.body.error.message).toMatch(/not runnable for agents/i);
+      expect(res.body.error.message).toMatch(/not runnable for agents or embeddings/i);
     });
   });
 });

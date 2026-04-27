@@ -126,8 +126,8 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
     if (body.enabled === true) {
       const capabilities = modelRunStatus(provider, model, body.capabilities ?? model.capabilities);
-      if (!capabilities.runnable_for_agent) {
-        return error(res, 400, "validation", `model is not runnable for agents: ${capabilities.unavailable_reason}`);
+      if (!capabilities.runnable_for_agent && capabilities.embedding !== true) {
+        return error(res, 400, "validation", `model is not runnable for agents or embeddings: ${capabilities.unavailable_reason}`);
       }
     }
     let updated;
