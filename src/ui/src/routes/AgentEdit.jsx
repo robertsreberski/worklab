@@ -180,9 +180,7 @@ function CapabilityGroup({
           {items.map((item) => {
             const available = item.available !== false;
             const active = explicit ? selectedSet.has(item.id) : available;
-            const detail = available
-              ? (explicit ? (active ? "Allowed" : "Excluded") : "Included by default")
-              : (item.unavailableReason || "Unavailable");
+            const detail = available ? null : (item.unavailableReason || "Unavailable");
             return (
               <button
                 key={item.id}
