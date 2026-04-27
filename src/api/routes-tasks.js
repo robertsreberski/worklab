@@ -1,4 +1,5 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
+import { enrichCommentRows } from "../core/comments.js";
 import { nextStage, STAGES, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
@@ -731,9 +732,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   app.get("/api/tasks/:id", (req, res) => {
     const row = resolveTaskRow(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const comments = db
+    const comments = enrichCommentRows(db, db
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
-      .all(row.id);
+      .all(row.id));
     const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", row.id);
     const task = enrichTask(db, rowToTask(row));
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
@@ -864,7 +865,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     `).run(id, existing.id, body, now);
     db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
     broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
-    const row = db.prepare("SELECT * FROM task_comments WHERE id = ?").get(id);
+    const row = enrichCommentRows(db, db.prepare("SELECT * FROM task_comments WHERE id = ?").all(id))[0];
     const payload = { comment: row };
     if (rerun === true) {
       payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });

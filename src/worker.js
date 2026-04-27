@@ -2,6 +2,7 @@ import { parseArgs } from "node:util";
 import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
+import { enrichCommentRows } from "./core/comments.js";
 import { getAvailableMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
 import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
@@ -145,7 +146,10 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
 
-  const commentRows = db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId);
+  const commentRows = enrichCommentRows(
+    db,
+    db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId),
+  );
 
   const memoryPath = agentMemoryPath(config.dataDir, agentName);
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";

@@ -119,6 +119,28 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.runs).toEqual([]);
   });
 
+  it("enriches agent comment attribution with the agent display name", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("code-reviewer", "Code Reviewer", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare("INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at) VALUES (?, ?, 'agent', ?, ?, ?)")
+      .run("comment-agent", task.id, "code-reviewer", "looks good", now);
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.comments[0]).toMatchObject({
+      author_type: "agent",
+      author_id: "code-reviewer",
+      author: {
+        type: "agent",
+        id: "code-reviewer",
+        display_name: "Code Reviewer",
+      },
+    });
+  });
+
   it("includes blockers and reverse links in task detail", async () => {
     const { agent } = makeTestServer();
     const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
