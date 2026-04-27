@@ -42,6 +42,7 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
   const pending = !toolResult && messageStatus === "streaming";
   const missing = !toolResult && messageStatus !== "streaming";
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
+  const truncated = Boolean(toolResult?.truncated);
   const rawOutput = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
   const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
   const inputText = inputAsText(toolUse?.input);
@@ -108,6 +109,11 @@ export function ToolCallBlock({ toolUse, toolResult, messageStatus }) {
                 <span>{isError ? "ERROR" : "OUTPUT"}</span>
                 {!outputIsEmpty && <CopyButton text={outputText} label="Copy tool output" />}
               </div>
+              {truncated && (
+                <div class="tool-call-truncated-note">
+                  Output truncated for display. Full raw log is available from the run.
+                </div>
+              )}
               {outputIsEmpty && !isError ? (
                 <div class="tool-call-missing-note">Tool returned empty output.</div>
               ) : (

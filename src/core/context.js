@@ -23,6 +23,8 @@ Use decision "advance" when the plan is ready and the task should move to work, 
 
 const WORK_DIRECTIVE = `Do the task work requested by the instructions.
 
+Keep local shell work bounded: avoid whole-home or whole-disk scans unless the user explicitly asked for that scope, prefer targeted paths, use commands that cap output, and summarize large results instead of dumping full command output.
+
 Return a structured Worklab result as JSON when you finish:
 
 {

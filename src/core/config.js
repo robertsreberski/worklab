@@ -14,6 +14,15 @@ function parsePort(value) {
   return port;
 }
 
+function parseNonNegativeInt(value, fallback, name) {
+  if (value == null || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${name} must be a non-negative integer, got ${JSON.stringify(value)}`);
+  }
+  return parsed;
+}
+
 export function loadConfig(env = process.env) {
   return {
     port: parsePort(env.WORKLAB_PORT),
@@ -22,6 +31,9 @@ export function loadConfig(env = process.env) {
     workspace: env.WORKLAB_WORKSPACE || resolve(homedir(), "worklab-workspace"),
     logLevel: env.WORKLAB_LOG_LEVEL || "info",
     timezone: env.WORKLAB_TIMEZONE,
+    runTimeoutMs: parseNonNegativeInt(env.WORKLAB_RUN_TIMEOUT_MS, 30 * 60 * 1000, "WORKLAB_RUN_TIMEOUT_MS"),
+    runIdleWarningMs: parseNonNegativeInt(env.WORKLAB_RUN_IDLE_WARNING_MS, 120 * 1000, "WORKLAB_RUN_IDLE_WARNING_MS"),
+    logInlineLimit: parseNonNegativeInt(env.WORKLAB_LOG_INLINE_LIMIT, 12_000, "WORKLAB_LOG_INLINE_LIMIT"),
     repoRoot,
   };
 }

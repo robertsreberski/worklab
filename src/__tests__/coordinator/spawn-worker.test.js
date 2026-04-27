@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
 import { makeTestDb } from "../helpers/test-db.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -121,6 +123,73 @@ describe("spawnWorker", () => {
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log.status).toBe("error");
   });
+
+  it("stores full raw events while truncating large tool results in display logs", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-spawn-"));
+    const { taskId, runId } = seedTaskAndRun(db);
+    const largeOutput = "x".repeat(80);
+    const script = {
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "user",
+            message: {
+              content: [{ type: "tool_result", tool_use_id: "tool-1", content: largeOutput, is_error: false }],
+            },
+          },
+        },
+        { type: "final", text: "done" },
+      ],
+      exitCode: 0,
+    };
+    try {
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        runId, taskId, broker, db, dataDir, logInlineLimit: 20,
+      });
+      await handle.done;
+
+      const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      expect(run.raw_output_path).toContain(`${runId}.jsonl`);
+      expect(readFileSync(run.raw_output_path, "utf8")).toContain(largeOutput);
+      const displayEvents = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
+      const resultBlock = displayEvents[0].event.message.content[0];
+      expect(resultBlock.content).toContain("[truncated");
+      expect(resultBlock.content.length).toBeLessThan(largeOutput.length);
+      expect(resultBlock.truncated).toBe(true);
+      expect(resultBlock.original_length).toBe(largeOutput.length);
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks a run failed when the worker exceeds the run timeout", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = { events: [{ type: "started", runId }], exitCode: 0, exitAfterMs: 2000 };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runTimeoutMs: 100,
+      cancelGraceMs: 200,
+      runIdleWarningMs: 0,
+    });
+    const result = await handle.done;
+    expect(result.processStatus).toBe("failed");
+    expect(result.error).toContain("run timed out");
+    const run = db.prepare("SELECT process_status, failure_kind, error_text FROM task_runs WHERE id = ?").get(runId);
+    expect(run.process_status).toBe("failed");
+    expect(run.failure_kind).toBe("timeout");
+    expect(run.error_text).toContain("run timed out");
+  }, 10000);
 
   it("cancel() sends SIGTERM, worker exits 130, status=cancelled", async () => {
     const db = makeTestDb();

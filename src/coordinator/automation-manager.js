@@ -27,6 +27,9 @@ export function createAutomationManager({
   dataDir,
   workspace,
   cancelGraceMs = 5000,
+  runTimeoutMs = 30 * 60 * 1000,
+  runIdleWarningMs = 120 * 1000,
+  logInlineLimit = 12_000,
 } = {}) {
   const active = new Map();
   let interval = null;
@@ -306,7 +309,11 @@ export function createAutomationManager({
         broker,
         db,
         logger,
+        dataDir,
         cancelGraceMs,
+        runTimeoutMs,
+        runIdleWarningMs,
+        logInlineLimit,
       });
       db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
       active.set(automation.id, { runId, handle });

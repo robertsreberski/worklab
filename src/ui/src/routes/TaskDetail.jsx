@@ -660,6 +660,13 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
           </div>
         </div>
       </summary>
+      {run.raw_output_path && (
+        <div class="run-card-actions">
+          <a href={`/api/runs/${run.id}/raw-log`} target="_blank" rel="noreferrer">
+            Raw log
+          </a>
+        </div>
+      )}
       <div class="run-card-events">
         {loading ? (
           <div class="run-card-events-loading">Loading events…</div>
