@@ -5,6 +5,14 @@ import { isValidSlug, uniqueSlug } from "../core/slugs.js";
 import { getBuiltinProviderAvailability } from "../core/credentials.js";
 import { loadSkills } from "../core/skills.js";
 import { getMcpServerStatuses } from "../core/mcp-config.js";
+import {
+  ALLOWLIST_MODE_ALL,
+  inferAllowlistMode,
+  normalizeAllowlistMode,
+  normalizeList,
+  parseStoredAllowlist,
+  storedAllowlistMode,
+} from "../core/agent-allowlists.js";
 import { join } from "node:path";
 
 function rowToAgent(row) {
@@ -12,9 +20,12 @@ function rowToAgent(row) {
   return {
     ...row,
     enabled: !!row.enabled,
-    skills_allowlist: JSON.parse(row.skills_allowlist || "[]"),
-    mcp_allowlist: JSON.parse(row.mcp_allowlist || "[]"),
-    builtin_allowlist: JSON.parse(row.builtin_allowlist || "[]"),
+    skills_allowlist: parseStoredAllowlist(row.skills_allowlist),
+    skills_allowlist_mode: storedAllowlistMode(row.skills_allowlist_mode),
+    mcp_allowlist: parseStoredAllowlist(row.mcp_allowlist),
+    mcp_allowlist_mode: storedAllowlistMode(row.mcp_allowlist_mode),
+    builtin_allowlist: parseStoredAllowlist(row.builtin_allowlist),
+    builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
   };
 }
 
@@ -26,8 +37,11 @@ const PATCHABLE = [
   "effort",
   "instructions",
   "skills_allowlist",
+  "skills_allowlist_mode",
   "mcp_allowlist",
+  "mcp_allowlist_mode",
   "builtin_allowlist",
+  "builtin_allowlist_mode",
   "enabled",
 ];
 
@@ -78,22 +92,12 @@ function normalizeAgentEffort({ db, dataDir, model, resolved, effort }) {
   );
 }
 
-function normalizeList(value) {
-  return Array.isArray(value)
-    ? [...new Set(value.filter((entry) => typeof entry === "string" && entry.trim()).map((entry) => entry.trim()))]
-    : [];
-}
-
 function sameList(left, right) {
   return JSON.stringify(normalizeList(left)) === JSON.stringify(normalizeList(right));
 }
 
 function existingAllowlist(row, key) {
-  try {
-    return normalizeList(JSON.parse(row?.[key] || "[]"));
-  } catch {
-    return [];
-  }
+  return parseStoredAllowlist(row?.[key]);
 }
 
 function validateSkillAllowlist({ dataDir, allowlist }) {
@@ -134,6 +138,60 @@ function validateBuiltinAllowlist({ model, allowlist }) {
     if (!supported.has(name)) throw new Error(`built-in tool unavailable for ${model}: ${name}`);
   }
   return list;
+}
+
+const ALLOWLIST_FIELDS = {
+  skills_allowlist: { modeKey: "skills_allowlist_mode", validate: validateSkillAllowlist },
+  mcp_allowlist: { modeKey: "mcp_allowlist_mode", validate: validateMcpAllowlist },
+  builtin_allowlist: { modeKey: "builtin_allowlist_mode", validate: validateBuiltinAllowlist },
+};
+const ALLOWLIST_PATCH_KEYS = new Set(Object.entries(ALLOWLIST_FIELDS).flatMap(([listKey, { modeKey }]) => [listKey, modeKey]));
+
+function existingAllowlistMode(row, listKey) {
+  return storedAllowlistMode(row?.[ALLOWLIST_FIELDS[listKey]?.modeKey]);
+}
+
+function validateAllowlist({ listKey, mode, list, dataDir, model }) {
+  if (mode === ALLOWLIST_MODE_ALL) return [];
+  const { validate } = ALLOWLIST_FIELDS[listKey];
+  if (listKey === "builtin_allowlist") return validate({ model, allowlist: list });
+  return validate({ dataDir, allowlist: list });
+}
+
+function createAllowlist({ body, listKey, dataDir, model }) {
+  const { modeKey } = ALLOWLIST_FIELDS[listKey];
+  const rawList = body?.[listKey] ?? [];
+  const mode = inferAllowlistMode({
+    mode: body && modeKey in body ? body[modeKey] : undefined,
+    list: rawList,
+    fallback: ALLOWLIST_MODE_ALL,
+  });
+  return {
+    mode,
+    list: validateAllowlist({ listKey, mode, list: rawList, dataDir, model }),
+  };
+}
+
+function patchAllowlist({ body, existing, listKey, dataDir, model }) {
+  const { modeKey } = ALLOWLIST_FIELDS[listKey];
+  const hasList = listKey in body;
+  const hasMode = modeKey in body;
+  if (!hasList && !hasMode) return null;
+
+  const existingList = existingAllowlist(existing, listKey);
+  const existingMode = existingAllowlistMode(existing, listKey);
+  const rawList = hasList ? body[listKey] : existingList;
+  const mode = hasMode
+    ? normalizeAllowlistMode(body[modeKey])
+    : inferAllowlistMode({ list: rawList, fallback: existingMode });
+  const normalizedList = normalizeList(rawList);
+  const changed = mode !== existingMode || !sameList(normalizedList, existingList);
+  return {
+    mode,
+    list: changed
+      ? validateAllowlist({ listKey, mode, list: normalizedList, dataDir, model })
+      : (mode === ALLOWLIST_MODE_ALL ? [] : normalizedList),
+  };
 }
 
 export function registerAgentRoutes(app, { db, broker, consolidation, dataDir }) {
@@ -187,9 +245,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let mcpAllow;
     let builtinAllow;
     try {
-      skillsAllow = JSON.stringify(validateSkillAllowlist({ dataDir, allowlist: req.body.skills_allowlist || [] }));
-      mcpAllow = JSON.stringify(validateMcpAllowlist({ dataDir, allowlist: req.body.mcp_allowlist || [] }));
-      builtinAllow = JSON.stringify(validateBuiltinAllowlist({ model, allowlist: req.body.builtin_allowlist || [] }));
+      skillsAllow = createAllowlist({ body: req.body, listKey: "skills_allowlist", dataDir, model });
+      mcpAllow = createAllowlist({ body: req.body, listKey: "mcp_allowlist", dataDir, model });
+      builtinAllow = createAllowlist({ body: req.body, listKey: "builtin_allowlist", dataDir, model });
     } catch (err) {
       return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
     }
@@ -198,10 +256,14 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     db.prepare(`
       INSERT INTO agents
         (name, display_name, description, sdk, model, effort, instructions,
-         skills_allowlist, mcp_allowlist, builtin_allowlist, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
+         builtin_allowlist, builtin_allowlist_mode, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(finalName, display_name, description, resolved.sdk, model, effort, instructions,
-           skillsAllow, mcpAllow, builtinAllow, enabled, now, now);
+           JSON.stringify(skillsAllow.list), skillsAllow.mode,
+           JSON.stringify(mcpAllow.list), mcpAllow.mode,
+           JSON.stringify(builtinAllow.list), builtinAllow.mode,
+           enabled, now, now);
 
     broker.broadcast("global", { type: "agent_updated", name: finalName });
     const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(finalName);
@@ -236,6 +298,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
 
     for (const k of PATCHABLE) {
       if (k in req.body) {
+        if (ALLOWLIST_PATCH_KEYS.has(k)) continue;
         if (k === "model") {
           try {
             const resolved = req.body[k] === existing.model
@@ -249,27 +312,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           }
         }
         if (k === "sdk") continue;
-        if (k === "skills_allowlist" && !sameList(req.body[k], existingAllowlist(existing, k))) {
-          try {
-            req.body[k] = validateSkillAllowlist({ dataDir, allowlist: req.body[k] });
-          } catch (err) {
-            return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
-          }
-        }
-        if (k === "mcp_allowlist" && !sameList(req.body[k], existingAllowlist(existing, k))) {
-          try {
-            req.body[k] = validateMcpAllowlist({ dataDir, allowlist: req.body[k] });
-          } catch (err) {
-            return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
-          }
-        }
-        if (k === "builtin_allowlist" && !sameList(req.body[k], existingAllowlist(existing, k))) {
-          try {
-            req.body[k] = validateBuiltinAllowlist({ model: req.body.model || existing.model, allowlist: req.body[k] });
-          } catch (err) {
-            return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
-          }
-        }
         if (k === "effort") {
           try {
             targetResolved ||= parseModelReference(targetModel);
@@ -288,6 +330,19 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           values.push(req.body[k]);
         }
       }
+    }
+
+    for (const listKey of Object.keys(ALLOWLIST_FIELDS)) {
+      let update;
+      try {
+        update = patchAllowlist({ body: req.body, existing, listKey, dataDir, model: targetModel });
+      } catch (err) {
+        return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
+      }
+      if (!update) continue;
+      const { modeKey } = ALLOWLIST_FIELDS[listKey];
+      fields.push(`${listKey} = ?`, `${modeKey} = ?`);
+      values.push(JSON.stringify(update.list), update.mode);
     }
 
     if ("model" in req.body && !wroteEffort) {

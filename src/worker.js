@@ -2,14 +2,15 @@ import { parseArgs } from "node:util";
 import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
 import { loadSkills } from "./core/skills.js";
-import { getAvailableMcpServers, pickMcpServers } from "./core/mcp-config.js";
+import { getAvailableMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
 import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
-import { resolveModel, generateResponse } from "./core/ai.js";
+import { WORKLAB_BUILTIN_TOOLS, resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
 import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult } from "./core/worklab-result.js";
+import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "./core/agent-allowlists.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -78,11 +79,51 @@ function reviewResultFromResponse(response) {
   return reviewResultFromText(response?.text || "");
 }
 
+function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
+  const availableSkills = loadSkills(join(config.dataDir, "skills")).filter((skill) => skill.enabled !== false);
+  const skills = resolveAllowlist({
+    mode: agent.skills_allowlist_mode,
+    allowlist: parseStoredAllowlist(agent.skills_allowlist),
+    all: availableSkills,
+    getName: (skill) => skill.name,
+  });
+
+  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
+  const mcpServers = resolveAllowlistMap({
+    mode: agent.mcp_allowlist_mode,
+    allowlist: parseStoredAllowlist(agent.mcp_allowlist),
+    all: allMcpServers,
+  });
+
+  if (mcpServers.worklab) {
+    mcpServers.worklab = {
+      ...mcpServers.worklab,
+      env: {
+        ...(mcpServers.worklab.env || {}),
+        WORKLAB_DATA_DIR: config.dataDir,
+        WORKLAB_AGENT_NAME: agentName,
+        WORKLAB_RUN_ID: runId,
+        ...env,
+      },
+    };
+  }
+
+  const builtinMode = storedAllowlistMode(agent.builtin_allowlist_mode);
+  const allowedTools = builtinMode === "all"
+    ? [...WORKLAB_BUILTIN_TOOLS]
+    : parseStoredAllowlist(agent.builtin_allowlist).filter((tool) => WORKLAB_BUILTIN_TOOLS.includes(tool));
+  const disallowedTools = builtinMode === "custom" && allowedTools.length === 0
+    ? [...WORKLAB_BUILTIN_TOOLS]
+    : [];
+
+  return { skills, mcpServers, allowedTools, disallowedTools };
+}
+
 /**
  * Load the shared setup required by both execute and review modes:
  * agent row, task row, comments, skills, memory, journal tail, and MCP servers.
  *
- * Returns { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools }
+ * Returns { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools }
  * or calls emit({ type:"error" }) + process.exit(1) on any missing required data.
  */
 function loadCommonSetup({ config, db, taskId, agentName, runId }) {
@@ -93,43 +134,25 @@ function loadCommonSetup({ config, db, taskId, agentName, runId }) {
 
   const commentRows = db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId);
 
-  const skillsAll = loadSkills(join(config.dataDir, "skills"));
-  const skillAllowlist = JSON.parse(agent.skills_allowlist || "[]");
-  const skills = skillAllowlist.length === 0 ? skillsAll : skillsAll.filter(s => skillAllowlist.includes(s.name));
-
   const memoryPath = agentMemoryPath(config.dataDir, agentName);
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
   const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
-
-  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
-  const mcpAllowlist = JSON.parse(agent.mcp_allowlist || "[]");
-  const mcpServers = pickMcpServers(allMcpServers, mcpAllowlist.length === 0 ? [] : ["worklab", ...mcpAllowlist]);
-
-  // Inject worklab-mcp env so the built-in server knows which agent/run it's serving
-  if (mcpServers.worklab) {
-    mcpServers.worklab = {
-      ...mcpServers.worklab,
-      env: {
-        ...(mcpServers.worklab.env || {}),
-        WORKLAB_DATA_DIR: config.dataDir,
-        WORKLAB_AGENT_NAME: agentName,
-        WORKLAB_RUN_ID: runId,
-        WORKLAB_TASK_ID: taskId,
-        WORKLAB_TASK_TITLE: task.title,
-      },
-    };
-  }
-
-  const builtinAllowlist = JSON.parse(agent.builtin_allowlist || "[]");
-  const allowedTools = builtinAllowlist.length === 0
-    ? ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"]
-    : builtinAllowlist;
+  const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
+    config,
+    agent,
+    agentName,
+    runId,
+    env: {
+      WORKLAB_TASK_ID: taskId,
+      WORKLAB_TASK_TITLE: task.title,
+    },
+  });
 
   const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
   const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
 
-  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
+  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
 }
 
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
@@ -138,42 +161,25 @@ function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
 
-  const skillsAll = loadSkills(join(config.dataDir, "skills"));
-  const skillAllowlist = JSON.parse(agent.skills_allowlist || "[]");
-  const skills = skillAllowlist.length === 0 ? skillsAll : skillsAll.filter(s => skillAllowlist.includes(s.name));
-
   const memoryPath = agentMemoryPath(config.dataDir, agentName);
   const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
   const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: 80 });
-
-  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
-  const mcpAllowlist = JSON.parse(agent.mcp_allowlist || "[]");
-  const mcpServers = pickMcpServers(allMcpServers, mcpAllowlist.length === 0 ? [] : ["worklab", ...mcpAllowlist]);
-
-  if (mcpServers.worklab) {
-    mcpServers.worklab = {
-      ...mcpServers.worklab,
-      env: {
-        ...(mcpServers.worklab.env || {}),
-        WORKLAB_DATA_DIR: config.dataDir,
-        WORKLAB_AGENT_NAME: agentName,
-        WORKLAB_RUN_ID: runId,
-        WORKLAB_AUTOMATION_ID: automationId,
-        WORKLAB_AUTOMATION_TITLE: automation.title,
-      },
-    };
-  }
-
-  const builtinAllowlist = JSON.parse(agent.builtin_allowlist || "[]");
-  const allowedTools = builtinAllowlist.length === 0
-    ? ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"]
-    : builtinAllowlist;
+  const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
+    config,
+    agent,
+    agentName,
+    runId,
+    env: {
+      WORKLAB_AUTOMATION_ID: automationId,
+      WORKLAB_AUTOMATION_TITLE: automation.title,
+    },
+  });
 
   const kbPinnedLimitRaw = db.prepare("SELECT value FROM settings WHERE key = 'kb_pinned_limit'").get()?.value ?? 10;
   const kbPinnedLimit = Number(kbPinnedLimitRaw) || 10;
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: kbPinnedLimit });
 
-  return { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb };
+  return { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
 }
 
 function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
@@ -288,7 +294,7 @@ async function main() {
 
   if (mode === "automation") {
     const setup = loadAutomationSetup({ config, db, automationId, agentName, runId });
-    const { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
+    const { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb } = setup;
     const systemPrompt = buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb });
     try {
       const result = await generateResponse(systemPrompt, {
@@ -301,7 +307,7 @@ async function main() {
         cwd: config.workspace,
         mcpServers,
         allowedTools,
-        disallowedTools: [],
+        disallowedTools,
         permissionMode: "bypassPermissions",
         maxTurns: 30,
         abortSignal: ac.signal,
@@ -332,7 +338,7 @@ async function main() {
   }
 
   const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
-  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, pinnedKb } = setup;
+  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb } = setup;
 
   // ── Plan / execute modes ────────────────────────────────────────────────────
   if (mode === "plan" || mode === "execute") {
@@ -353,7 +359,7 @@ async function main() {
         cwd: config.workspace,
         mcpServers,
         allowedTools,
-        disallowedTools: [],
+        disallowedTools,
         permissionMode: "bypassPermissions",
         maxTurns: 30,
         abortSignal: ac.signal,
@@ -428,7 +434,7 @@ async function main() {
         cwd: config.workspace,
         mcpServers,
         allowedTools,
-        disallowedTools: [],
+        disallowedTools,
         permissionMode: "bypassPermissions",
         maxTurns: 30,
         abortSignal: ac.signal,

@@ -88,8 +88,11 @@ describe("agents CRUD", () => {
     await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
     const res = await agent.get("/api/agents/coder").expect(200);
     expect(res.body.agent.skills_allowlist).toEqual([]);
+    expect(res.body.agent.skills_allowlist_mode).toBe("all");
     expect(res.body.agent.mcp_allowlist).toEqual([]);
+    expect(res.body.agent.mcp_allowlist_mode).toBe("all");
     expect(res.body.agent.builtin_allowlist).toEqual([]);
+    expect(res.body.agent.builtin_allowlist_mode).toBe("all");
   });
 
   it("PATCH updates fields including allowlists (arrays)", async () => {
@@ -98,6 +101,28 @@ describe("agents CRUD", () => {
     const res = await agent.patch("/api/agents/coder").send({ instructions: "new", skills_allowlist: ["example"] }).expect(200);
     expect(res.body.agent.instructions).toBe("new");
     expect(res.body.agent.skills_allowlist).toEqual(["example"]);
+    expect(res.body.agent.skills_allowlist_mode).toBe("custom");
+  });
+
+  it("PATCH preserves explicit empty custom allowlists", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
+
+    const res = await agent.patch("/api/agents/coder").send({
+      skills_allowlist_mode: "custom",
+      skills_allowlist: [],
+      mcp_allowlist_mode: "custom",
+      mcp_allowlist: [],
+      builtin_allowlist_mode: "custom",
+      builtin_allowlist: [],
+    }).expect(200);
+
+    expect(res.body.agent.skills_allowlist).toEqual([]);
+    expect(res.body.agent.skills_allowlist_mode).toBe("custom");
+    expect(res.body.agent.mcp_allowlist).toEqual([]);
+    expect(res.body.agent.mcp_allowlist_mode).toBe("custom");
+    expect(res.body.agent.builtin_allowlist).toEqual([]);
+    expect(res.body.agent.builtin_allowlist_mode).toBe("custom");
   });
 
   it("PATCH derives sdk from explicit model refs and rejects tier aliases", async () => {
