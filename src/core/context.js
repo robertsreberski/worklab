@@ -58,6 +58,8 @@ Use decision "approve" when the work satisfies the task and "reject" when change
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 
+const AUTOMATION_DIRECTIVE = `Run this automation action now. Complete the requested work directly and summarize the result clearly. If you cannot complete it, explain the blocker and what would be needed next.`;
+
 // Duration split: <1000 ms → "<N>ms"; >=1000 ms → "<N.N>s" (one decimal, e.g. 2350 → "2.4s").
 // Defensively guards against negative, NaN, non-numeric, and other edge cases.
 function formatDuration(ms) {
@@ -150,6 +152,13 @@ function buildTaskBody(task, comments) {
   ].filter(Boolean).join("\n");
 }
 
+function buildAutomationBody(automation) {
+  return [
+    `**Title:** ${automation.title}`,
+    automation.instructions ? `\n**Instructions:**\n${automation.instructions}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, priorRuns }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));
@@ -196,5 +205,18 @@ export function buildConsolidationSystemPrompt({ agent, memory, journal }) {
   parts.push(section("Current memory", memory || "_No existing memory._"));
   parts.push(section("Full journal", journal || "_No journal entries._"));
   parts.push(CONSOLIDATION_DIRECTIVE);
+  return parts.filter(Boolean).join("\n");
+}
+
+export function buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb }) {
+  const parts = [];
+  parts.push(section("Role", agent.instructions || ""));
+  parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
+  parts.push(renderSkills(skills));
+  parts.push(section("Memory", memory || ""));
+  parts.push(section("Recent journal", journalTail || ""));
+  parts.push(section("Automation", buildAutomationBody(automation)));
+  parts.push(CADENCE);
+  parts.push(AUTOMATION_DIRECTIVE);
   return parts.filter(Boolean).join("\n");
 }

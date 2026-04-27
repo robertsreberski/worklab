@@ -7,7 +7,7 @@ Status: code-derived audit. Earlier docs were treated as obsolete during this re
 ## Executive Summary
 
 Worklab currently has a useful local orchestration base: agents, tasks,
-runs, comments, SSE streaming, SDK dispatch, MCP tools, schedules, KB,
+runs, comments, SSE streaming, SDK dispatch, MCP tools, automations, KB,
 journals, memory consolidation, and provider registry are all present.
 The task and agent workflow logic is not yet coherent enough for
 "bulletproof" autonomous cooperation.
@@ -47,7 +47,7 @@ Local Worklab code:
 - `src/core/ai-tool-helpers.js`
 - `src/api/routes-tasks.js`
 - `src/api/routes-agents.js`
-- `src/api/routes-schedules.js`
+- `src/api/routes-automations.js`
 - `src/core/schema.js`
 - `src/core/db.js`
 - `src/mcp/worklab-tools.js`
@@ -98,8 +98,8 @@ Related tables:
 - `agent_logs`
 - `task_comments`
 - `task_dependencies`
-- `schedules`
-- `schedule_spawns`
+- `automations`
+- `automation_runs`
 
 There is no task hierarchy. Dependencies are blockers only; they do not
 represent parent/child delegation, ownership, subtasks, or join semantics.
@@ -312,17 +312,19 @@ tools.
 Target fix: failed MCP server initialization should emit normalized
 `runtime_warning` events and be stored in run metadata.
 
-### 12. Schedule Semantics Are Incomplete
+### 12. Automation Semantics Must Stay Explicit
 
-Schedules create tasks. They do not clearly define whether spawned tasks
-should auto-run, how duplicate due ticks are prevented under partial failure,
-or how schedule errors are surfaced.
+Automations are either legacy taskless one-off/recurring agent actions or
+task-bound schedules managed from task details. They must not create tasks.
+Task-bound schedules should run through normal task execution semantics and
+record when a trigger is skipped rather than bypassing blockers or waiting
+states.
 
 Target fix:
 
-- Schedule spawn should be transactional.
-- Schedule policy should explicitly choose `create_only` or `create_and_run`.
-- Each schedule trigger should create a run-source/audit record.
+- Automation run/source creation should be transactional where possible.
+- Each automation trigger should create a run-source/audit record.
+- Task-bound automations should be visually distinct from `run_policy` auto-run.
 
 ### 13. There Is No First-Class Delegation Or Subtask Model
 

@@ -14,8 +14,8 @@ describe("openDb + runMigrations", () => {
       expect.arrayContaining([
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
         "custom_providers", "custom_models", "embeddings", "settings",
-        "agent_consolidations", "task_dependencies", "schedules", "schedule_spawns",
-        "task_edges",
+        "agent_consolidations", "task_dependencies", "automations", "automation_runs",
+        "automation_triggers", "task_edges",
       ]),
     );
   });
@@ -45,10 +45,10 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("9");
+    expect(row.value).toBe("11");
   });
 
-  it("migration drops legacy task/schedule workflow columns", () => {
+  it("migration drops legacy task workflow columns and schedule tables", () => {
     const db = openDb(":memory:");
     // Seed a v4-shape tasks + schedules table with priority + description.
     db.exec(`
@@ -95,19 +95,25 @@ describe("openDb + runMigrations", () => {
     ).run("s1", "sched", "drop sched desc", "stay", "legacy-owner", 1, "{}", now, now);
     runMigrations(db);
     const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((r) => r.name);
-    const schedCols = db.prepare("PRAGMA table_info(schedules)").all().map((r) => r.name);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((r) => r.name);
     expect(taskCols).not.toContain("priority");
     expect(taskCols).not.toContain("description");
     expect(taskCols).not.toContain("status");
     expect(taskCols).not.toContain("executor_agent");
-    expect(schedCols).not.toContain("priority");
-    expect(schedCols).not.toContain("description");
-    expect(schedCols).not.toContain("executor_agent");
-    const taskRow = db.prepare("SELECT id, title, instructions, stage, owner_agent, root_task_id FROM tasks WHERE id='t1'").get();
-    expect(taskRow).toMatchObject({ id: "t1", title: "keep me", instructions: "stay", stage: "execute", owner_agent: "legacy-owner", root_task_id: "t1" });
-    const scheduleRow = db.prepare("SELECT id, owner_agent FROM schedules WHERE id='s1'").get();
-    expect(scheduleRow).toMatchObject({ id: "s1", owner_agent: "legacy-owner" });
-    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body"]));
+    expect(taskCols).not.toContain("source_schedule_id");
+    expect(tables).not.toContain("schedules");
+    expect(tables).not.toContain("schedule_spawns");
+    const taskRow = db.prepare("SELECT id, title, instructions, stage, owner_agent, root_task_id, run_policy FROM tasks WHERE id='t1'").get();
+    expect(taskRow).toMatchObject({
+      id: "t1",
+      title: "keep me",
+      instructions: "stay",
+      stage: "execute",
+      owner_agent: "legacy-owner",
+      root_task_id: "t1",
+      run_policy: "manual",
+    });
+    expect(taskCols).toEqual(expect.arrayContaining(["stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body", "run_policy"]));
   });
 
   it("allows taskless consolidation runs", () => {
@@ -117,6 +123,42 @@ describe("openDb + runMigrations", () => {
       .run("r1", "consolidate", "alice", Date.now());
     const row = db.prepare("SELECT task_id, mode FROM task_runs WHERE id = 'r1'").get();
     expect(row).toMatchObject({ task_id: null, mode: "consolidate" });
+  });
+
+  it("migrates legacy taskless automations before creating task indexes", () => {
+    const db = openDb(":memory:");
+    const now = Date.now();
+    db.exec(`
+      CREATE TABLE automations (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        agent_name TEXT,
+        tags TEXT NOT NULL DEFAULT '[]',
+        trigger_json TEXT NOT NULL DEFAULT '{}',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        next_fire_at INTEGER,
+        last_fired_at INTEGER,
+        last_run_id TEXT,
+        last_status TEXT,
+        last_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+    db.prepare(`
+      INSERT INTO automations (
+        id, title, instructions, agent_name, tags, trigger_json,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("auto_legacy", "Legacy", "Keep this", "agent", "[]", "{\"type\":\"daily\"}", now, now);
+
+    runMigrations(db);
+
+    const columns = db.prepare("PRAGMA table_info(automations)").all().map((r) => r.name);
+    const row = db.prepare("SELECT id, task_id, title, instructions FROM automations WHERE id = 'auto_legacy'").get();
+    expect(columns).toContain("task_id");
+    expect(row).toMatchObject({ id: "auto_legacy", task_id: null, title: "Legacy", instructions: "Keep this" });
   });
 
   it("does not rewrite legacy tier model strings during migration", () => {

@@ -12,10 +12,10 @@ import { registerKbRoutes } from "./routes-kb.js";
 import { registerProviderRoutes } from "./routes-providers.js";
 import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
-import { registerScheduleRoutes } from "./routes-schedules.js";
+import { registerAutomationRoutes } from "./routes-automations.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, scheduleManager, events, config }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -36,8 +36,12 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerProviderRoutes(app, { db, dataDir, broker });
   if (dataDir) registerModelRoutes(app, { db, dataDir });
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
-  registerScheduleRoutes(app, { db, broker, scheduleManager });
+  registerAutomationRoutes(app, { db, broker, automationManager });
   if (config) registerAdminMcpRoutes(app, { config, logger });
+
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ error: { code: "not_found", message: "Not found" } });
+  });
 
   app.use((err, _req, res, _next) => {
     logger?.error?.({ err }, "unhandled error");

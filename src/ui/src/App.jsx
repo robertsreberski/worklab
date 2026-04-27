@@ -8,8 +8,7 @@ import { Skills } from "./routes/Skills.jsx";
 import { Knowledge } from "./routes/Knowledge.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
-import { Schedules } from "./routes/Schedules.jsx";
-import { consumeAllowedHash, getNavigationGuard, normalizeHash } from "./lib/navigation.js";
+import { consumeAllowedHash, getNavigationGuard, navigateHash, normalizeHash } from "./lib/navigation.js";
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -53,6 +52,9 @@ export function App() {
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);
   }, []);
+  useEffect(() => {
+    if (route === "automations") navigateHash("#/tasks");
+  }, [route]);
 
   // Global keyboard shortcuts now live in AppShell via useGlobalShortcuts.
 
@@ -74,8 +76,8 @@ export function App() {
     body = <Activity />;
   } else if (route === "settings") {
     body = <Settings />;
-  } else if (route === "schedules") {
-    body = <Schedules selectedId={rest[0] || null} />;
+  } else if (route === "automations") {
+    body = <Commander />;
   } else {
     body = <Commander />;
   }

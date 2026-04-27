@@ -22,14 +22,14 @@ function seedAgent(db, name) {
   ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
-function seedTask(db, { owner = null, reviewer = null, stage = "execute" } = {}) {
+function seedTask(db, { owner = null, reviewer = null, stage = "execute", runPolicy = "manual" } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
     `INSERT INTO tasks
-      (id, root_task_id, title, stage, owner_agent, reviewer_agent, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, id, "t", stage, owner, reviewer, now, now);
+      (id, root_task_id, title, stage, owner_agent, reviewer_agent, run_policy, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, id, "t", stage, owner, reviewer, runPolicy, now, now);
   return id;
 }
 
@@ -125,7 +125,7 @@ describe("task-watcher v2 workflow", () => {
     expect(task.plan_source_run_id).toBe(run.id);
   });
 
-  it("owner advance with reviewer spawns review and approve reaches done", async () => {
+  it("owner advance with reviewer waits for explicit review run before approve reaches done", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     seedAgent(db, "checker");
@@ -137,6 +137,10 @@ describe("task-watcher v2 workflow", () => {
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
 
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage).toBe("review");
+
+    await watcher.handleRunRequested(taskId);
     expect(spawn).toHaveBeenCalledTimes(2);
     expect(calls[1].args).toEqual(expect.arrayContaining(["--mode", "review", "--agent", "checker"]));
     expect(calls[1].env.WORKLAB_PRIOR_RUN_ID).toBe(executeRunId);
@@ -162,6 +166,7 @@ describe("task-watcher v2 workflow", () => {
 
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
     resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "rejected", worklabResult: rejectResult });
     await new Promise((r) => setTimeout(r, 20));
 
@@ -182,6 +187,7 @@ describe("task-watcher v2 workflow", () => {
 
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
     resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "Looks good", events: [] });
     await new Promise((r) => setTimeout(r, 20));
 
@@ -202,6 +208,7 @@ describe("task-watcher v2 workflow", () => {
 
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
     resolvers[1]({ exitCode: 130, status: "cancelled", processStatus: "cancelled", error: "Run cancelled." });
     await new Promise((r) => setTimeout(r, 20));
 
@@ -254,7 +261,7 @@ describe("task-watcher v2 workflow", () => {
     const db = makeTestDb();
     seedAgent(db, "owner");
     seedAgent(db, "helper");
-    const taskId = seedTask(db, { owner: "owner" });
+    const taskId = seedTask(db, { owner: "owner", runPolicy: "auto_plan_execute" });
     const { resolvers, spawn } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
     const delegateResult = {
@@ -302,7 +309,7 @@ describe("task-watcher v2 workflow", () => {
     const db = makeTestDb();
     seedAgent(db, "owner");
     seedAgent(db, "helper");
-    const taskId = seedTask(db, { owner: "owner" });
+    const taskId = seedTask(db, { owner: "owner", runPolicy: "auto_plan_execute" });
     const { resolvers, spawn } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
     await watcher.handleRunRequested(taskId);
@@ -462,7 +469,7 @@ describe("task-watcher v2 workflow", () => {
     const db = makeTestDb();
     seedAgent(db, "owner");
     seedAgent(db, "helper");
-    const taskId = seedTask(db, { owner: "owner" });
+    const taskId = seedTask(db, { owner: "owner", runPolicy: "auto_plan_execute" });
     const { resolvers, spawn } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
 
@@ -530,12 +537,10 @@ describe("task-watcher v2 workflow", () => {
     expect(allChildren.map((row) => row.title)).toEqual(["Round 1 child", "Round 2 child"]);
   });
 
-  it("spawn_reviewer failure (e.g. reviewer agent disabled) parks the task at review with a useful error", async () => {
+  it("explicit review run rejects when the reviewer agent is disabled and leaves the task at review", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     seedAgent(db, "checker");
-    // Disable the reviewer after task creation to simulate the agent being
-    // taken offline between request time and review-spawn time.
     db.prepare("UPDATE agents SET enabled = 0 WHERE name = 'checker'").run();
     const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
     const { spawn, resolvers } = makeDeferredSpawn();
@@ -545,11 +550,11 @@ describe("task-watcher v2 workflow", () => {
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "done", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
 
-    // The watcher caught the spawn failure, annotated the task with a useful
-    // error_text, and left it parked at review (NOT silently moved on).
+    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/agent disabled: checker/);
     const task = db.prepare("SELECT stage, error_text, stage_reason FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("review");
-    expect(task.error_text).toMatch(/Failed to spawn reviewer.*checker/);
-    expect(task.stage_reason).toBe("spawn");
+    expect(task.error_text).toBeNull();
+    expect(task.stage_reason).toBeNull();
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 });

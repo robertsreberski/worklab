@@ -25,6 +25,8 @@ function modeForStage(stage) {
   return stage === "review" ? "review" : "execute";
 }
 
+const AUTO_RUN_POLICY = "auto_plan_execute";
+
 function buildFallbackResult({ stage, mode, res }) {
   if (stage === "review" || mode === "review") {
     // Worker's reviewResultFromText handles the verdict-line parse already; if
@@ -146,14 +148,49 @@ export function createTaskWatcher({
   // delegation round.
   const pendingStarts = new Set();
 
+  function canAutoStart(taskId) {
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    if (!task) return false;
+    const stage = taskStage(task);
+    if (task.run_policy !== AUTO_RUN_POLICY) return false;
+    if (!["plan", "execute"].includes(stage)) return false;
+    if (!agentForStage(task, stage)) return false;
+    if (active.has(taskId) || pendingStarts.has(taskId)) return false;
+    if (hasOpenBlocker(taskId)) return false;
+    return true;
+  }
+
   function scheduleAutoStart(taskId, onError) {
+    if (!canAutoStart(taskId)) return;
     if (active.has(taskId) || pendingStarts.has(taskId)) return;
     pendingStarts.add(taskId);
     setTimeout(() => {
       pendingStarts.delete(taskId);
-      if (active.has(taskId)) return;
+      if (!canAutoStart(taskId)) return;
       handleRunRequested(taskId).catch(onError);
     }, 0);
+  }
+
+  function maybeAutoStartTask(taskId, onError) {
+    scheduleAutoStart(taskId, onError || ((err) => {
+      logger?.warn?.({ err, taskId }, "task auto-run failed");
+      annotateTaskFailure(taskId, { message: `Auto-run failed: ${err.message}`, failureKind: "spawn" });
+    }));
+  }
+
+  function maybeAutoStartDependents(taskId, onError) {
+    const rows = db.prepare(`
+      SELECT task_id
+      FROM task_dependencies
+      WHERE depends_on_task_id = ?
+      ORDER BY created_at ASC
+    `).all(taskId);
+    for (const row of rows) {
+      scheduleAutoStart(row.task_id, onError || ((err) => {
+        logger?.warn?.({ err, taskId: row.task_id, dependencyId: taskId }, "dependent task auto-run failed");
+        annotateTaskFailure(row.task_id, { message: `Auto-run failed: ${err.message}`, failureKind: "spawn" });
+      }));
+    }
   }
 
   {
@@ -239,6 +276,17 @@ export function createTaskWatcher({
     `).get(taskId);
   }
 
+  function latestPriorExecuteRunId(taskId) {
+    return db.prepare(`
+      SELECT id
+      FROM task_runs
+      WHERE task_id = ?
+        AND mode = 'execute'
+      ORDER BY ended_at DESC, started_at DESC, rowid DESC
+      LIMIT 1
+    `).get(taskId)?.id || null;
+  }
+
   function spawnRun({ task, stage, mode, agentName, parentRunId = null }) {
     const { providerKind } = assertAgentRunnable(agentName);
     const runId = newRunId();
@@ -306,21 +354,12 @@ export function createTaskWatcher({
     const errorSideEffect = result.sideEffects.find((sideEffect) => sideEffect.type === "error");
     if (errorSideEffect) throw new Error(errorSideEffect.message);
 
-    const run = spawnRun({ task, stage, mode, agentName, parentRunId: options.parentRunId || null });
+    const parentRunId = options.parentRunId || (mode === "review" ? latestPriorExecuteRunId(taskId) : null);
+    if (mode === "review" && !parentRunId) throw new Error("no execute run to review");
+
+    const run = spawnRun({ task, stage, mode, agentName, parentRunId });
     applySideEffects(taskId, result.sideEffects, stage, result.stage, { running: true });
     return run;
-  }
-
-  function spawnReviewer(taskId, reviewerAgent, priorRunId) {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-    if (!task) return null;
-    return spawnRun({
-      task: { ...task, stage: "review" },
-      stage: "review",
-      mode: "review",
-      agentName: reviewerAgent,
-      parentRunId: priorRunId,
-    });
   }
 
   function postAgentFinalComment(taskId, agentName, result, finalText) {
@@ -405,9 +444,9 @@ export function createTaskWatcher({
         db.prepare(`
           INSERT INTO tasks
             (id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
-             owner_agent, title, instructions, stage, join_policy, subtask_order,
+             owner_agent, title, instructions, stage, run_policy, join_policy, subtask_order,
              required, reviewer_agent, tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'execute', 'all_required', ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
           rootTaskId,
@@ -417,6 +456,7 @@ export function createTaskWatcher({
           agentName,
           subtask.title.trim(),
           subtask.instructions || "",
+          parentTask.run_policy || "manual",
           index,
           required,
           parentTask.reviewer_agent || null,
@@ -469,8 +509,6 @@ export function createTaskWatcher({
 
   function maybeRunDelegatedChildren(children) {
     for (const child of children) {
-      const blocker = hasOpenBlocker(child.id);
-      if (blocker || !child.agentName) continue;
       scheduleAutoStart(child.id, (err) => {
         logger?.warn?.({ err, childId: child.id }, "delegated child auto-run failed");
         annotateTaskFailure(child.id, { message: `Auto-start failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
@@ -534,8 +572,7 @@ export function createTaskWatcher({
       if (planSideEffect) sideEffects = [planSideEffect, ...sideEffects];
     }
 
-    const willSpawnReviewer = sideEffects.some((sideEffect) => sideEffect.type === "spawn_reviewer");
-    applySideEffects(taskId, sideEffects, taskStage(task), next.stage, { running: willSpawnReviewer });
+    applySideEffects(taskId, sideEffects, taskStage(task), next.stage);
 
     const delegated = next.sideEffects.find((sideEffect) => sideEffect.type === "create_subtasks");
     if (delegated) {
@@ -543,21 +580,9 @@ export function createTaskWatcher({
       maybeRunDelegatedChildren(children);
     }
 
-    const reviewer = next.sideEffects.find((sideEffect) => sideEffect.type === "spawn_reviewer");
-    if (reviewer) {
-      try {
-        spawnReviewer(taskId, reviewer.agentName, runId);
-      } catch (err) {
-        logger?.error?.({ err, taskId, agent: reviewer.agentName }, "spawn_reviewer failed");
-        annotateTaskFailure(taskId, {
-          message: `Failed to spawn reviewer "${reviewer.agentName}": ${err.message}`,
-          failureKind: "spawn",
-          retryStage: "review",
-        });
-      }
-    }
-
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
+    if (next.stage === "done") maybeAutoStartDependents(taskId);
+    if (["plan", "execute"].includes(next.stage)) maybeAutoStartTask(taskId);
   }
 
   function handleFailedExit(taskId, runId, res, task, run) {
@@ -629,5 +654,7 @@ export function createTaskWatcher({
     cancel,
     shutdown,
     isActive: (taskId) => active.has(taskId),
+    maybeAutoStart: maybeAutoStartTask,
+    maybeAutoStartDependents,
   };
 }

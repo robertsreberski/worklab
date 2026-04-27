@@ -11,5 +11,6 @@ export const newAgentLogId = () => nid21();
 export const newEmbeddingId = () => nid21();
 export const newProviderId = () => nid12();
 export const newModelId = () => nid21();
-export const newScheduleId = () => nid12();
-export const newScheduleSpawnId = () => nid21();
+export const newAutomationId = () => nid12();
+export const newAutomationRunId = () => nid21();
+export const newAutomationTriggerId = () => nid21();

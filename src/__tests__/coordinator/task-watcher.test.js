@@ -21,19 +21,19 @@ function seedAgent(db, name = "coder") {
   ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
-function seedTask(db, { owner = null, reviewer = null } = {}) {
+function seedTask(db, { owner = null, reviewer = null, stage = "execute", runPolicy = "manual" } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
     `INSERT INTO tasks
-      (id, root_task_id, title, stage, owner_agent, reviewer_agent, created_at, updated_at)
-     VALUES (?, ?, ?, 'execute', ?, ?, ?, ?)`,
-  ).run(id, id, "t", owner, reviewer, now, now);
+      (id, root_task_id, title, stage, owner_agent, reviewer_agent, run_policy, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, id, "t", stage, owner, reviewer, runPolicy, now, now);
   return id;
 }
 
 describe("task-watcher", () => {
-  it("handleRunRequested on execute task with owner and reviewer spawns work, then advances to review", async () => {
+  it("handleRunRequested on execute task with owner and reviewer spawns work, then waits at review", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     seedAgent(db, "checker");
@@ -55,7 +55,7 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
     const after = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(after.stage).toBe("review");
-    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {
@@ -109,6 +109,25 @@ describe("task-watcher", () => {
 
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn: vi.fn(), workerBinary: "/fake" });
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/blocked by/i);
+  });
+
+  it("auto-starts an opted-in dependent when its blocker is done", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const blockerId = seedTask(db, { owner: "coder", stage: "execute" });
+    const taskId = seedTask(db, { owner: "coder", stage: "execute", runPolicy: "auto_plan_execute" });
+    db.prepare(
+      "INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
+    ).run(taskId, blockerId, Date.now());
+    db.prepare("UPDATE tasks SET stage = 'done' WHERE id = ?").run(blockerId);
+    const spawn = vi.fn(() => ({ pid: 1, done: new Promise(() => {}), cancel: vi.fn() }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    watcher.maybeAutoStartDependents(blockerId);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0].taskId).toBe(taskId);
   });
 
   it("manual execute stage does not fake an active worker", async () => {

@@ -98,6 +98,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
   addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'plan'");
   addColumnIfMissing(db, "tasks", "stage_reason", "stage_reason TEXT");
+  addColumnIfMissing(db, "tasks", "run_policy", "run_policy TEXT NOT NULL DEFAULT 'manual'");
   addColumnIfMissing(db, "tasks", "join_policy", "join_policy TEXT NOT NULL DEFAULT 'all_required'");
   addColumnIfMissing(db, "tasks", "subtask_order", "subtask_order INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "required", "required INTEGER NOT NULL DEFAULT 1");
@@ -166,7 +167,7 @@ function resetLegacyEmbeddings(db) {
 
 // SQLite doesn't reliably support `ALTER TABLE DROP COLUMN`, so any schema
 // cleanup that removes columns rebuilds the table inside a single transaction.
-function rebuildTaskAndScheduleWorkflowTables(db) {
+function rebuildTaskWorkflowTables(db) {
   const taskColumns = tableExists(db, "tasks")
     ? db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name)
     : [];
@@ -207,7 +208,8 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
   const tasksHasLegacy = taskColumns.includes("priority")
     || taskColumns.includes("description")
     || taskColumns.includes("status")
-    || taskColumns.includes("executor_agent");
+    || taskColumns.includes("executor_agent")
+    || taskColumns.includes("source_schedule_id");
   if (tasksHasLegacy) {
     db.exec(`
       PRAGMA foreign_keys = OFF;
@@ -224,6 +226,7 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
         instructions TEXT NOT NULL DEFAULT '',
         stage TEXT NOT NULL DEFAULT 'plan',
         stage_reason TEXT,
+        run_policy TEXT NOT NULL DEFAULT 'manual',
         join_policy TEXT NOT NULL DEFAULT 'all_required',
         subtask_order INTEGER NOT NULL DEFAULT 0,
         required INTEGER NOT NULL DEFAULT 1,
@@ -237,17 +240,16 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
         tags TEXT NOT NULL DEFAULT '[]',
         error_text TEXT,
         retry_count INTEGER NOT NULL DEFAULT 0,
-        source_schedule_id TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         completed_at INTEGER
       );
       INSERT INTO tasks__new (
         id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
-        client_request_id, title, instructions, stage, stage_reason, join_policy, subtask_order, required,
+        client_request_id, title, instructions, stage, stage_reason, run_policy, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
         plan_source_run_id, reviewer_agent, tags,
-        error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
+        error_text, retry_count, created_at, updated_at, completed_at
       )
       SELECT
         id,
@@ -261,6 +263,7 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
         instructions,
         ${stageExpression},
         stage_reason,
+        ${taskColumn("run_policy", "'manual'")},
         join_policy,
         subtask_order,
         required,
@@ -272,7 +275,7 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
         ${taskColumn("plan_source_run_id")},
         reviewer_agent,
         tags,
-        error_text, retry_count, source_schedule_id, created_at, updated_at, completed_at
+        error_text, retry_count, created_at, updated_at, completed_at
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
@@ -280,51 +283,6 @@ function rebuildTaskAndScheduleWorkflowTables(db) {
       CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
       CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_tasks_source_schedule ON tasks(source_schedule_id, created_at DESC);
-      COMMIT;
-      PRAGMA foreign_keys = ON;
-    `);
-  }
-
-  const scheduleColumns = tableExists(db, "schedules")
-    ? db.prepare("PRAGMA table_info(schedules)").all().map((row) => row.name)
-    : [];
-  const scheduleOwnerExpression = scheduleColumns.includes("owner_agent") && scheduleColumns.includes("executor_agent")
-    ? "COALESCE(owner_agent, executor_agent)"
-    : (scheduleColumns.includes("owner_agent") ? "owner_agent" : (scheduleColumns.includes("executor_agent") ? "executor_agent" : "NULL"));
-  const schedulesHasLegacy = tableExists(db, "schedules")
-    && (scheduleColumns.includes("priority")
-      || scheduleColumns.includes("description")
-      || scheduleColumns.includes("executor_agent"));
-  if (schedulesHasLegacy) {
-    db.exec(`
-      PRAGMA foreign_keys = OFF;
-      BEGIN;
-      CREATE TABLE schedules__new (
-        id TEXT PRIMARY KEY,
-        title TEXT NOT NULL,
-        instructions TEXT NOT NULL DEFAULT '',
-        owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
-        reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
-        tags TEXT NOT NULL DEFAULT '[]',
-        cadence_json TEXT NOT NULL DEFAULT '{}',
-        enabled INTEGER NOT NULL DEFAULT 1,
-        next_fire_at INTEGER,
-        last_fired_at INTEGER,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
-      );
-      INSERT INTO schedules__new (
-        id, title, instructions, owner_agent, reviewer_agent, tags,
-        cadence_json, enabled, next_fire_at, last_fired_at, created_at, updated_at
-      )
-      SELECT
-        id, title, instructions, ${scheduleOwnerExpression}, reviewer_agent, tags,
-        cadence_json, enabled, next_fire_at, last_fired_at, created_at, updated_at
-      FROM schedules;
-      DROP TABLE schedules;
-      ALTER TABLE schedules__new RENAME TO schedules;
-      CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_fire ON schedules(enabled, next_fire_at);
       COMMIT;
       PRAGMA foreign_keys = ON;
     `);
@@ -338,17 +296,19 @@ export function runMigrations(db) {
   if (tableExists(db, "tasks")) {
     addColumnIfMissing(db, "tasks", "stage", "stage TEXT");
   }
+  if (tableExists(db, "automations")) {
+    addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
+  }
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
-  addColumnIfMissing(db, "tasks", "source_schedule_id", "source_schedule_id TEXT");
   addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "pricing_json", "pricing_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "discovered_at", "discovered_at INTEGER");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_source_schedule ON tasks(source_schedule_id, created_at DESC)");
+  addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order)");
@@ -360,16 +320,23 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
-  db.exec("CREATE TABLE IF NOT EXISTS schedules (id TEXT PRIMARY KEY, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', cadence_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_fire ON schedules(enabled, next_fire_at)");
-  db.exec("CREATE TABLE IF NOT EXISTS schedule_spawns (id TEXT PRIMARY KEY, schedule_id TEXT NOT NULL REFERENCES schedules(id) ON DELETE CASCADE, task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, trigger_type TEXT NOT NULL DEFAULT 'manual', fired_at INTEGER NOT NULL)");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_schedule_spawns_schedule ON schedule_spawns(schedule_id, fired_at DESC)");
-  db.exec("CREATE INDEX IF NOT EXISTS idx_schedule_spawns_task ON schedule_spawns(task_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', agent_name TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', trigger_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, last_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL, last_status TEXT, last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_fire ON automations(enabled, next_fire_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automations_task ON automations(task_id, updated_at DESC)");
+  db.exec("CREATE TABLE IF NOT EXISTS automation_runs (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE, trigger_type TEXT NOT NULL DEFAULT 'manual', fired_at INTEGER NOT NULL, UNIQUE(run_id))");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automation_runs_automation ON automation_runs(automation_id, fired_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automation_runs_run ON automation_runs(run_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS automation_triggers (id TEXT PRIMARY KEY, automation_id TEXT NOT NULL REFERENCES automations(id) ON DELETE CASCADE, task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL, trigger_type TEXT NOT NULL DEFAULT 'manual', outcome TEXT NOT NULL, reason TEXT, fired_at INTEGER NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automation_triggers_automation ON automation_triggers(automation_id, fired_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automation_triggers_task ON automation_triggers(task_id, fired_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_automation_triggers_run ON automation_triggers(run_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_enabled ON custom_models(enabled, provider_id)");
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
-  rebuildTaskAndScheduleWorkflowTables(db);
+  rebuildTaskWorkflowTables(db);
+  db.exec("DROP TABLE IF EXISTS schedule_spawns");
+  db.exec("DROP TABLE IF EXISTS schedules");
   db.exec(SCHEMA_SQL);
   normalizeWorkflowState(db);
   db.prepare(

@@ -31,6 +31,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Input } from "../components/primitives/Input.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
@@ -40,6 +41,90 @@ import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } from "../lib/commentFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
+
+function formatRunPolicy(value) {
+  return value === "auto_plan_execute" ? "Auto plan + work" : "Manual";
+}
+
+const AUTOMATION_TRIGGER_OPTIONS = [
+  { value: "once", label: "Once" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+];
+
+const WEEKDAY_OPTIONS = [
+  { value: "0", label: "Sunday" },
+  { value: "1", label: "Monday" },
+  { value: "2", label: "Tuesday" },
+  { value: "3", label: "Wednesday" },
+  { value: "4", label: "Thursday" },
+  { value: "5", label: "Friday" },
+  { value: "6", label: "Saturday" },
+];
+
+function pad2(value) {
+  return String(value).padStart(2, "0");
+}
+
+function defaultRunAt() {
+  const hourFromNow = Date.now() + 3_600_000;
+  const date = new Date(hourFromNow);
+  date.setSeconds(0, 0);
+  return date.getTime();
+}
+
+function emptyAutomationDraft() {
+  return {
+    enabled: true,
+    trigger: { type: "daily", hour: 9, minute: 0 },
+  };
+}
+
+function normalizeAutomationTrigger(trigger = {}) {
+  const type = trigger?.type || "daily";
+  if (type === "once") return { type, run_at: Number(trigger.run_at) || defaultRunAt() };
+  const base = {
+    type,
+    hour: Number.isFinite(Number(trigger.hour)) ? Number(trigger.hour) : 9,
+    minute: Number.isFinite(Number(trigger.minute)) ? Number(trigger.minute) : 0,
+  };
+  if (type === "weekly") base.weekdays = Array.isArray(trigger.weekdays) && trigger.weekdays.length ? trigger.weekdays : [1];
+  if (type === "monthly") base.day_of_month = Number(trigger.day_of_month) || 1;
+  return base;
+}
+
+function automationDraftFrom(automation) {
+  return {
+    enabled: automation.enabled !== false,
+    trigger: normalizeAutomationTrigger(automation.trigger),
+  };
+}
+
+function timeValue(trigger) {
+  return `${pad2(trigger?.hour ?? 9)}:${pad2(trigger?.minute ?? 0)}`;
+}
+
+function updateTriggerTime(trigger, value) {
+  const [hour = "09", minute = "00"] = String(value || "").split(":");
+  return { ...trigger, hour: Number(hour) || 0, minute: Number(minute) || 0 };
+}
+
+function dateTimeLocalValue(value) {
+  const ms = Number(value);
+  if (!Number.isFinite(ms)) return "";
+  const date = new Date(ms);
+  return [
+    date.getFullYear(),
+    pad2(date.getMonth() + 1),
+    pad2(date.getDate()),
+  ].join("-") + `T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function parseDateTimeLocal(value) {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : defaultRunAt();
+}
 
 function formatActivityTime(value) {
   if (!value) return "";
@@ -90,14 +175,8 @@ function TaskContextCard({ task }) {
     task.updated_at ? { icon: "clock", label: "Updated", value: formatDate(task.updated_at) } : null,
     task.created_at ? { icon: "calendar", label: "Created", value: formatDate(task.created_at) } : null,
     task.completed_at ? { icon: "check-circle", label: "Completed", value: formatDate(task.completed_at) } : null,
-    task.source_schedule_id
-      ? {
-          icon: "link",
-          label: "Schedule",
-          value: "Open schedule",
-          href: `#/schedules/${task.source_schedule_id}`,
-        }
-      : null,
+    task.automation_summary?.next_fire_at ? { icon: "clock", label: "Next scheduled run", value: formatDate(task.automation_summary.next_fire_at) } : null,
+    { icon: "zap", label: "Run mode", value: formatRunPolicy(task.run_policy) },
   ].filter(Boolean);
 
   if (items.length === 0) return null;
@@ -310,6 +389,203 @@ function TaskSubtasksCard({
   );
 }
 
+function automationOutcomeMeta(automation) {
+  const latest = automation.recent_triggers?.[0] || null;
+  if (!automation.enabled) return { label: "Paused", className: "chip-muted", icon: "minus-circle" };
+  if (latest?.outcome === "skipped") return { label: "Skipped", className: "chip-warn", icon: "alert-circle" };
+  if (latest?.outcome === "failed") return { label: "Failed", className: "chip-error", icon: "alert-triangle" };
+  return { label: "Enabled", className: "chip-trigger", icon: "clock" };
+}
+
+function TaskAutomationsCard({ taskId, automations, loading, onChanged }) {
+  const [editingId, setEditingId] = useState(null);
+  const [draft, setDraft] = useState(emptyAutomationDraft);
+  const [saving, setSaving] = useState(false);
+
+  function startNew() {
+    setEditingId("new");
+    setDraft(emptyAutomationDraft());
+  }
+
+  function startEdit(automation) {
+    setEditingId(automation.id);
+    setDraft(automationDraftFrom(automation));
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setDraft(emptyAutomationDraft());
+  }
+
+  function patchDraft(patch) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  function patchTrigger(patch) {
+    setDraft((current) => ({
+      ...current,
+      trigger: normalizeAutomationTrigger({ ...current.trigger, ...patch }),
+    }));
+  }
+
+  async function saveAutomation(event) {
+    event?.preventDefault?.();
+    setSaving(true);
+    try {
+      const payload = {
+        enabled: !!draft.enabled,
+        trigger: normalizeAutomationTrigger(draft.trigger),
+      };
+      if (editingId === "new") {
+        await api.createTaskAutomation(taskId, payload);
+        pushToast("Schedule created", { variant: "success" });
+      } else {
+        await api.patchTaskAutomation(taskId, editingId, payload);
+        pushToast("Schedule saved", { variant: "success" });
+      }
+      cancelEdit();
+      onChanged?.();
+    } catch (error) {
+      pushToast(`Schedule save failed: ${error.message}`, { variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAutomation(automation) {
+    try {
+      await api.deleteTaskAutomation(taskId, automation.id);
+      pushToast("Schedule deleted", { variant: "success" });
+      if (editingId === automation.id) cancelEdit();
+      onChanged?.();
+    } catch (error) {
+      pushToast(`Delete failed: ${error.message}`, { variant: "error" });
+    }
+  }
+
+  async function runAutomation(automation) {
+    try {
+      const result = await api.runTaskAutomation(taskId, automation.id);
+      if (result?.skipped) pushToast(`Schedule skipped: ${result.reason}`, { variant: "info" });
+      else pushToast("Scheduled run started", { variant: "success" });
+      onChanged?.();
+    } catch (error) {
+      pushToast(`Run failed: ${error.message}`, { variant: "error" });
+    }
+  }
+
+  const list = automations || [];
+  return (
+    <Card
+      title={`Automations (${list.length})`}
+      class="task-automations-card"
+      headerRight={
+        <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={startNew}>
+          Add
+        </Button>
+      }
+    >
+      {editingId && (
+        <form class="task-automation-form" onSubmit={saveAutomation}>
+          <Select
+            variant="native"
+            value={draft.trigger.type}
+            onChange={(value) => patchDraft({ trigger: normalizeAutomationTrigger({ ...draft.trigger, type: value }) })}
+            options={AUTOMATION_TRIGGER_OPTIONS}
+            ariaLabel="Schedule trigger type"
+            disabled={saving}
+          />
+          {draft.trigger.type === "once" ? (
+            <Input
+              type="datetime-local"
+              aria-label="Run at"
+              value={dateTimeLocalValue(draft.trigger.run_at)}
+              onInput={(event) => patchTrigger({ run_at: parseDateTimeLocal(event.currentTarget.value) })}
+              disabled={saving}
+            />
+          ) : (
+            <Input
+              type="time"
+              aria-label="Schedule time"
+              value={timeValue(draft.trigger)}
+              onInput={(event) => patchTrigger(updateTriggerTime(draft.trigger, event.currentTarget.value))}
+              disabled={saving}
+            />
+          )}
+          {draft.trigger.type === "weekly" && (
+            <Select
+              variant="native"
+              value={String(draft.trigger.weekdays?.[0] ?? 1)}
+              onChange={(value) => patchTrigger({ weekdays: [Number(value)] })}
+              options={WEEKDAY_OPTIONS}
+              ariaLabel="Schedule weekday"
+              disabled={saving}
+            />
+          )}
+          {draft.trigger.type === "monthly" && (
+            <Input
+              type="number"
+              aria-label="Day of month"
+              min="1"
+              max="31"
+              value={String(draft.trigger.day_of_month || 1)}
+              onInput={(event) => patchTrigger({ day_of_month: Number(event.currentTarget.value) || 1 })}
+              disabled={saving}
+            />
+          )}
+          <Checkbox
+            checked={!!draft.enabled}
+            onChange={(value) => patchDraft({ enabled: value })}
+            label="Enabled"
+            disabled={saving}
+          />
+          <div class="task-automation-form-actions">
+            <Button type="button" size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>Cancel</Button>
+            <Button type="submit" size="sm" variant="primary" loading={saving}>{editingId === "new" ? "Create" : "Save"}</Button>
+          </div>
+        </form>
+      )}
+      {loading ? (
+        <div class="field-hint">Loading schedules...</div>
+      ) : list.length === 0 ? (
+        <div class="task-automations-empty">No schedules yet.</div>
+      ) : (
+        <div class="task-automation-list">
+          {list.map((automation) => {
+            const meta = automationOutcomeMeta(automation);
+            const latest = automation.recent_triggers?.[0] || null;
+            return (
+              <div key={automation.id} class="task-automation-row">
+                <div class="task-automation-main">
+                  <span class={`chip ${meta.className}`} title={latest?.reason || undefined}>
+                    <Icon name={meta.icon} size={10} /> {meta.label}
+                  </span>
+                  <span class="task-automation-trigger">{automation.trigger_summary}</span>
+                  <span class="soft-meta">
+                    {automation.next_fire_at ? `next ${formatDate(automation.next_fire_at)}` : "no upcoming run"}
+                  </span>
+                  {latest?.reason && <span class="task-automation-reason">{latest.reason}</span>}
+                </div>
+                <div class="task-automation-actions">
+                  <Button size="sm" variant="ghost" iconLeft={<Icon name="play" size={12} />} onClick={() => runAutomation(automation)}>
+                    Run
+                  </Button>
+                  <Button size="sm" variant="ghost" iconLeft={<Icon name="settings" size={12} />} onClick={() => startEdit(automation)}>
+                    Edit
+                  </Button>
+                  <Button size="sm" variant="ghost" iconLeft={<Icon name="trash" size={12} />} onClick={() => deleteAutomation(automation)}>
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function AgentRailRow({ role, value, onChange, agents, caption: captionOverride }) {
   const unassigned = !value;
   const roleLabel = role === "owner"
@@ -363,6 +639,11 @@ function RunCard({ run, expanded, highlighted, onToggle, agentLabel, subscribe }
           <div class="run-summary-main">
             <div class="run-summary-status">
               <StatusPill status={processStatus} size="sm" />
+              {run.automation_trigger_type && (
+                <span class="chip chip-trigger">
+                  <Icon name="clock" size={10} /> Scheduled
+                </span>
+              )}
               <span class="run-summary-title">{title}</span>
               {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
             </div>
@@ -437,12 +718,22 @@ export function TaskDetail({ id, runParam = null }) {
   const [subtaskOwner, setSubtaskOwner] = useState("");
   const [subtaskRequired, setSubtaskRequired] = useState(true);
   const [subtaskSaving, setSubtaskSaving] = useState(false);
+  const [taskAutomations, setTaskAutomations] = useState(null);
+  const [automationsLoading, setAutomationsLoading] = useState(false);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
   }, [id]);
+  const reloadAutomations = useCallback(() => {
+    setAutomationsLoading(true);
+    api.listTaskAutomations(id)
+      .then((response) => setTaskAutomations(response.automations || []))
+      .catch(() => setTaskAutomations([]))
+      .finally(() => setAutomationsLoading(false));
+  }, [id]);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { reloadAutomations(); }, [reloadAutomations]);
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
   }, []);
@@ -453,6 +744,7 @@ export function TaskDetail({ id, runParam = null }) {
     setPlanEditing(false);
     setPlanDraft("");
     setSubtaskTitle("");
+    setTaskAutomations(null);
   }, [id, runParam]);
 
   useEffect(() => {
@@ -471,7 +763,9 @@ export function TaskDetail({ id, runParam = null }) {
   useSSE("global", (evt) => {
     const taskChanged = evt.id === id;
     const runChanged = evt.taskId === id && (evt.type === "run_started" || evt.type === "run_ended");
-    if (taskChanged || runChanged) reload();
+    const automationChanged = evt.taskId === id && String(evt.type || "").startsWith("automation_");
+    if (taskChanged || runChanged || automationChanged) reload();
+    if (automationChanged || runChanged) reloadAutomations();
     if (evt.type === "run_started" && evt.taskId === id) setHighlightedRunId(evt.runId);
   });
 
@@ -494,6 +788,9 @@ export function TaskDetail({ id, runParam = null }) {
   const runs = data?.runs || [];
   const comments = data?.comments || [];
   const stage = task?.stage || "plan";
+  const automationSummary = task?.automation_summary || {};
+  const hasTaskSchedules = Number(automationSummary.count || 0) > 0;
+  const hasEnabledSchedule = Number(automationSummary.enabled_count || 0) > 0;
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
   const displayedStage = runningRun ? "running" : stage;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
@@ -870,6 +1167,15 @@ export function TaskDetail({ id, runParam = null }) {
                       <Icon name="alert-triangle" size={10} /> Stuck — reset
                     </span>
                   )}
+                  {hasTaskSchedules && (
+                    <span
+                      class={`chip ${hasEnabledSchedule ? "chip-trigger" : "chip-muted"}`}
+                      title={automationSummary.next_fire_at ? `Next scheduled run: ${formatDate(automationSummary.next_fire_at)}` : undefined}
+                    >
+                      <Icon name={hasEnabledSchedule ? "clock" : "minus-circle"} size={10} />
+                      {hasEnabledSchedule ? "Scheduled" : "Schedule paused"}
+                    </span>
+                  )}
                 </div>
                 <h1 class="task-hero-title title-display">{task.title}</h1>
               </div>
@@ -922,6 +1228,16 @@ export function TaskDetail({ id, runParam = null }) {
           />
 
           <TaskWorkflowMeta task={task} />
+
+          <TaskAutomationsCard
+            taskId={task.id}
+            automations={taskAutomations}
+            loading={automationsLoading}
+            onChanged={() => {
+              reload();
+              reloadAutomations();
+            }}
+          />
 
           <TaskSubtasksCard
             task={task}
@@ -1115,7 +1431,14 @@ export function TaskDetail({ id, runParam = null }) {
                 iconLeft={<Icon name="copy" size={13} />}
                 onClick={async () => {
                   try {
-                    const copy = { title: `Copy of ${task.title}`, instructions: task.instructions, owner_agent: task.owner_agent, reviewer_agent: task.reviewer_agent, tags: task.tags };
+                    const copy = {
+                      title: `Copy of ${task.title}`,
+                      instructions: task.instructions,
+                      owner_agent: task.owner_agent,
+                      reviewer_agent: task.reviewer_agent,
+                      run_policy: task.run_policy || "manual",
+                      tags: task.tags,
+                    };
                     const r = await api.createTask(copy);
                     pushToast("Task duplicated", { variant: "success" });
                     navigateHash(`#/tasks/${r.task.id}`);
