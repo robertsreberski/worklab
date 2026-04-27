@@ -857,6 +857,52 @@ test("destructive pane actions stay behind disclosure", async ({ page }) => {
   }
 });
 
+test("skill editor clears priority and keeps availability on its own row", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${baseUrl}/#/skills/${skillName}`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Skill" })).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const grid = document.querySelector(".skill-detail-body .form-grid");
+    const fields = grid ? [...grid.children] : [];
+    const priority = fields.find((field) => (field.textContent || "").includes("Priority"));
+    const availability = grid?.querySelector(".form-field-switch");
+    const gridRect = grid?.getBoundingClientRect();
+    const priorityRect = priority?.getBoundingClientRect();
+    const availabilityRect = availability?.getBoundingClientRect();
+    return {
+      gridWidth: gridRect?.width || 0,
+      availabilityWidth: availabilityRect?.width || 0,
+      availabilityTop: availabilityRect?.top || 0,
+      priorityBottom: priorityRect?.bottom || 0,
+    };
+  });
+  expect(layout.availabilityWidth).toBeGreaterThan(layout.gridWidth * 0.9);
+  expect(layout.availabilityTop).toBeGreaterThan(layout.priorityBottom);
+
+  const priorityField = page.locator(".skill-detail-body .form-field", { hasText: "Priority" });
+  const priorityTrigger = priorityField.locator(".select-trigger");
+  await priorityTrigger.click();
+  await page.getByRole("option", { name: "Always inline full body" }).click();
+  await expect(priorityTrigger).toContainText("Always inline full body");
+  await Promise.all([
+    page.waitForResponse((res) => res.url().endsWith(`/api/skills/${skillName}`) && res.request().method() === "PATCH"),
+    page.getByRole("button", { name: "Save" }).click(),
+  ]);
+
+  await priorityTrigger.click();
+  await page.getByRole("option", { name: "On demand" }).click();
+  await expect(priorityTrigger).toContainText("On demand");
+  await Promise.all([
+    page.waitForResponse((res) => res.url().endsWith(`/api/skills/${skillName}`) && res.request().method() === "PATCH"),
+    page.getByRole("button", { name: "Save" }).click(),
+  ]);
+
+  await page.reload();
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Skill" })).toBeVisible();
+  await expect(priorityTrigger).toContainText("On demand");
+});
+
 test("agents skills and knowledge panes keep polished rows and detail headers legible", async ({ page }) => {
   const routes = [
     {

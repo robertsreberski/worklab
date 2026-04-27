@@ -14,6 +14,7 @@ import { parseStoredAllowlist, storedAllowlistMode } from "../core/agent-allowli
 function serializeSkill(meta, body) {
   const yamlLines = ["---"];
   for (const [k, v] of Object.entries(meta)) {
+    if (v === null || v === undefined) continue;
     if (typeof v === "string") {
       yamlLines.push(
         `${k}: ${v.includes(":") || v.includes("#") ? `"${v.replace(/"/g, '\\"')}"` : v}`
@@ -128,7 +129,11 @@ export function registerSkillRoutes(app, { dataDir, db }) {
       return res.status(404).json({ error: { code: "not_found", message: "skill not found" } });
     }
     const current = parseSkillFrontmatter(readFileSync(file, "utf8"));
-    const meta = { ...(current?.meta || {}), ...(req.body.meta || {}), name: req.params.name };
+    const patchMeta = req.body.meta || {};
+    const meta = { ...(current?.meta || {}), ...patchMeta, name: req.params.name };
+    if ("priority" in patchMeta && (patchMeta.priority === null || patchMeta.priority === "")) {
+      delete meta.priority;
+    }
     const body = req.body.body !== undefined ? req.body.body : (current?.body || "");
     writeFileSync(file, serializeSkill(meta, body));
     res.json({ skill: { name: req.params.name, meta, body } });
