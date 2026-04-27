@@ -571,10 +571,11 @@ select,
 .switch {
   display: inline-grid;
   grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: var(--sp-3);
   cursor: pointer;
   position: relative;
+  min-height: 32px;
   padding: 2px 0;
 }
 .switch-input {
@@ -585,8 +586,7 @@ select,
 }
 .switch-track {
   grid-column: 1;
-  grid-row: 1 / span 2;
-  align-self: start;     /* §3.7: track anchors to label x-height */
+  align-self: center;
   width: 30px;
   height: 18px;
   border-radius: var(--radius-pill);
@@ -630,7 +630,7 @@ select,
 /* §3.8 Checkbox */
 .checkbox {
   display: inline-flex;
-  align-items: flex-start;
+  align-items: center;
   gap: var(--sp-2);
   cursor: pointer;
   font-size: var(--text-base);
@@ -655,7 +655,7 @@ select,
   justify-content: center;
   color: var(--text-inverse);
   flex: 0 0 auto;
-  margin-top: 1px;
+  margin-top: 0;
   transition: background var(--dur-snap) var(--ease-snap), border-color var(--dur-snap) var(--ease-snap);
 }
 .checkbox:hover .checkbox-box {
