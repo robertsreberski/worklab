@@ -1,7 +1,22 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, join, resolve, sep } from "node:path";
+import JSZip from "jszip";
+import { isValidSlug, slugify } from "./slugs.js";
 
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+const MAX_IMPORT_ZIP_BYTES = 25 * 1024 * 1024;
+const MAX_IMPORT_UNPACKED_BYTES = 50 * 1024 * 1024;
+const MAX_IMPORT_FILES = 500;
+const MAX_TREE_ENTRIES = 1000;
+
+export class SkillImportError extends Error {
+  constructor(message, { code = "validation", status = 400 } = {}) {
+    super(message);
+    this.name = "SkillImportError";
+    this.code = code;
+    this.status = status;
+  }
+}
 
 function coerce(value) {
   if (value === "true") return true;
@@ -55,6 +70,180 @@ export function loadSkills(skillsDir) {
     });
   }
   return out;
+}
+
+function safeArchivePath(name) {
+  const raw = String(name || "");
+  if (!raw || raw.includes("\0")) {
+    throw new SkillImportError("zip contains an invalid path");
+  }
+  const normalizedSlash = raw.replace(/\\/g, "/");
+  if (normalizedSlash.startsWith("/") || /^[A-Za-z]:/.test(normalizedSlash)) {
+    throw new SkillImportError("zip contains an absolute path");
+  }
+  const parts = normalizedSlash.split("/").filter(Boolean);
+  if (parts.some((part) => part === "..")) {
+    throw new SkillImportError("zip contains a path outside the skill folder");
+  }
+  return parts.join("/");
+}
+
+function isIgnoredArchivePath(path) {
+  return path === ".DS_Store" || path.endsWith("/.DS_Store") || path === "__MACOSX" || path.startsWith("__MACOSX/");
+}
+
+function isZipSymlink(entry) {
+  return typeof entry.unixPermissions === "number" && (entry.unixPermissions & 0o170000) === 0o120000;
+}
+
+function collectArchiveEntries(zip) {
+  const entries = [];
+  for (const entry of Object.values(zip.files)) {
+    if (isZipSymlink(entry)) {
+      throw new SkillImportError("zip contains symlinks, which are not supported");
+    }
+    const path = safeArchivePath(entry.unsafeOriginalName || entry.name);
+    if (!path || isIgnoredArchivePath(path)) continue;
+    entries.push({ path, dir: entry.dir || entry.name.endsWith("/"), entry });
+  }
+  if (entries.length === 0) {
+    throw new SkillImportError("zip does not contain a skill");
+  }
+  return entries;
+}
+
+function detectSkillRoot(entries) {
+  const rootSkill = entries.find((item) => item.path === "SKILL.md" && !item.dir);
+  if (rootSkill) return { prefix: "", skillPath: "SKILL.md", topFolder: "" };
+
+  const topFolders = new Set(entries.map((item) => item.path.split("/")[0]).filter(Boolean));
+  if (topFolders.size !== 1) {
+    throw new SkillImportError("zip must contain SKILL.md at the root or inside one top-level folder");
+  }
+  const [topFolder] = [...topFolders];
+  const skillPath = `${topFolder}/SKILL.md`;
+  const skillEntry = entries.find((item) => item.path === skillPath && !item.dir);
+  if (!skillEntry) {
+    throw new SkillImportError("zip does not contain SKILL.md");
+  }
+  return { prefix: `${topFolder}/`, skillPath, topFolder };
+}
+
+function resolveImportName({ meta, topFolder, filename }) {
+  if (meta.name) {
+    if (!isValidSlug(meta.name)) {
+      throw new SkillImportError("SKILL.md name must be a lowercase slug");
+    }
+    return meta.name;
+  }
+  const filenameStem = basename(String(filename || "")).replace(/\.zip$/i, "");
+  return slugify(topFolder || filenameStem, "skill");
+}
+
+function assertInside(parent, child) {
+  const root = resolve(parent);
+  const target = resolve(child);
+  if (target !== root && !target.startsWith(root + sep)) {
+    throw new SkillImportError("zip contains a path outside the skill folder");
+  }
+}
+
+export function buildSkillFileTree(skillDir, { maxEntries = MAX_TREE_ENTRIES } = {}) {
+  if (!existsSync(skillDir)) return [];
+  let count = 0;
+  function walk(dir) {
+    const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    const nodes = [];
+    for (const entry of entries) {
+      count += 1;
+      if (count > maxEntries) break;
+      if (entry.isDirectory()) {
+        nodes.push({ name: entry.name, type: "folder", children: walk(join(dir, entry.name)) });
+      } else if (entry.isSymbolicLink()) {
+        nodes.push({ name: entry.name, type: "symlink" });
+      } else {
+        nodes.push({ name: entry.name, type: "file" });
+      }
+    }
+    return nodes;
+  }
+  return walk(skillDir);
+}
+
+export async function importSkillZip({ skillsDir, zipBuffer, filename = "" }) {
+  if (!Buffer.isBuffer(zipBuffer) || zipBuffer.length === 0) {
+    throw new SkillImportError("zip file is required");
+  }
+  if (zipBuffer.length > MAX_IMPORT_ZIP_BYTES) {
+    throw new SkillImportError("zip file is too large", { code: "too_large", status: 413 });
+  }
+
+  let zip;
+  try {
+    zip = await JSZip.loadAsync(zipBuffer);
+  } catch {
+    throw new SkillImportError("invalid zip file");
+  }
+
+  const entries = collectArchiveEntries(zip);
+  const root = detectSkillRoot(entries);
+  const skillEntry = entries.find((item) => item.path === root.skillPath);
+  const content = await skillEntry.entry.async("string");
+  const parsed = parseSkillFrontmatter(content);
+  if (!parsed) {
+    throw new SkillImportError("SKILL.md must use YAML frontmatter");
+  }
+
+  const name = resolveImportName({ meta: parsed.meta || {}, topFolder: root.topFolder, filename });
+  const finalDir = join(skillsDir, name);
+  if (existsSync(finalDir)) {
+    throw new SkillImportError("skill already exists", { code: "conflict", status: 409 });
+  }
+
+  mkdirSync(skillsDir, { recursive: true });
+  const tmpDir = join(skillsDir, `.import-${name}-${process.pid}-${Date.now()}`);
+  mkdirSync(tmpDir, { recursive: true });
+  let fileCount = 0;
+  let unpackedBytes = 0;
+
+  try {
+    for (const item of entries) {
+      if (root.prefix && !item.path.startsWith(root.prefix)) continue;
+      const relativePath = root.prefix ? item.path.slice(root.prefix.length) : item.path;
+      if (!relativePath) continue;
+      const dest = join(tmpDir, relativePath);
+      assertInside(tmpDir, dest);
+      if (item.dir) {
+        mkdirSync(dest, { recursive: true });
+        continue;
+      }
+      fileCount += 1;
+      if (fileCount > MAX_IMPORT_FILES) {
+        throw new SkillImportError(`skill zip may contain at most ${MAX_IMPORT_FILES} files`);
+      }
+      const data = await item.entry.async("nodebuffer");
+      unpackedBytes += data.length;
+      if (unpackedBytes > MAX_IMPORT_UNPACKED_BYTES) {
+        throw new SkillImportError("unpacked skill is too large", { code: "too_large", status: 413 });
+      }
+      mkdirSync(join(dest, ".."), { recursive: true });
+      writeFileSync(dest, data);
+    }
+    renameSync(tmpDir, finalDir);
+  } catch (err) {
+    rmSync(tmpDir, { recursive: true, force: true });
+    throw err;
+  }
+
+  return {
+    name,
+    meta: parsed.meta || {},
+    body: parsed.body || "",
+    files: buildSkillFileTree(finalDir),
+  };
 }
 
 export function buildSkillIndex(skills) {
