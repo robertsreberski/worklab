@@ -47,4 +47,17 @@ describe("agent event timeline normalization", () => {
     expect(items[0].toolUse.name).toBe("Read");
     expect(items[0].toolResult.output).toBe("ok");
   });
+
+  it("pairs file edit events without marking completed changes as errors", () => {
+    const changes = [{ path: "/workspace/catching-up/build_wp_p2_tree.py", kind: "update" }];
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "file-1", name: "file_edit", input: { changes, status: "in_progress" } },
+      { type: "tool_result", tool_use_id: "file-1", content: { changes, status: "completed" }, is_error: false },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse.name).toBe("file_edit");
+    expect(items[0].toolResult.is_error).toBe(false);
+  });
 });

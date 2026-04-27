@@ -74,7 +74,7 @@ function normaliseBlock(block) {
       type: "tool_result",
       tool_use_id: block.tool_use_id,
       output: block.output ?? block.content ?? block.result ?? "",
-      is_error: block.is_error || block.error,
+      is_error: Boolean(block.is_error || block.error),
     };
   }
   return block;
@@ -246,7 +246,8 @@ function PhaseClusterBlock({ cluster, isLast }) {
 
 function ToolCallTimelineItem({ toolUse, toolResult, messageStatus, isLast }) {
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
-  const railName = isError ? "alert-triangle" : toolResult ? "check" : "terminal";
+  const isFileEdit = toolUse?.name === "file_edit";
+  const railName = isError ? "alert-triangle" : isFileEdit ? "file-text" : toolResult ? "check" : "terminal";
   const railTone = isError ? "error" : toolResult ? "ok" : "muted";
   return (
     <div class="agentlog-tl-item">
