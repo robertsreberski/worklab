@@ -1,5 +1,5 @@
 // §4.4 CommanderRow — the canonical dense task row.
-// Dense grid (matches DS prototype VariationA):
+// Dense grid:
 //   checkbox · id · title+live · deps-chip · owner→reviewer · status-pill · age
 // Error chip policy (§5.3): derived from last_run.status === 'error'.
 // "Stuck" chip: running_run_id && is_locked===false (§5.2).
