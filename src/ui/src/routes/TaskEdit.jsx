@@ -220,7 +220,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   );
 
   return (
-    <AppShell route="tasks" title="Tasks" mobileActionDock={mobileActionDock}>
+    <AppShell route="tasks" mobileActionDock={mobileActionDock}>
       <div class="task-edit">
         <header class="task-edit-head" aria-label={heading}>
           <div class="task-edit-head-left">

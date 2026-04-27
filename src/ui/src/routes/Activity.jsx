@@ -86,15 +86,16 @@ export function Activity() {
     return { total, running, errors };
   }, [items]);
 
-  const headerActions = (
+  const pageActions = (
     <Button variant="secondary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={() => load()} loading={loading}>
       Refresh
     </Button>
   );
 
   return (
-    <AppShell route="activity" title="Activity" headerActions={headerActions}>
+    <AppShell route="activity">
       <div class="page-wrap">
+        <div class="page-actions toolbar">{pageActions}</div>
         <div class="summary-tiles">
           <Metric label="Items" value={tiles.total} />
           <Metric label="Running" value={tiles.running} />

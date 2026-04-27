@@ -184,7 +184,7 @@ export function Skills({ selectedName = null }) {
   );
 
   return (
-    <AppShell route="skills" title="Skills">
+    <AppShell route="skills">
       <div
         class={`skill-import-surface ${dragActive ? "is-dragging" : ""}`.trim()}
         onDragEnter={(event) => {

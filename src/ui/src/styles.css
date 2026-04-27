@@ -1966,36 +1966,6 @@ select,
 .rail-action:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 
 .app-body { min-width: 0; display: flex; flex-direction: column; }
-
-.app-header {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-4);
-  min-height: 56px;
-  padding: max(var(--sp-3), env(safe-area-inset-top)) var(--sp-6) var(--sp-3);
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-.app-header-left { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.app-title {
-  margin: 0;
-  font-size: var(--text-xl);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  line-height: 1.25;
-}
-.app-header-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-}
-.app-header-meta .dot { color: var(--text-subtle); }
 .app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .app-mobile-action-dock { display: none; }
 
@@ -2036,6 +2006,20 @@ select,
 }
 .commander-filter .tabs::-webkit-scrollbar { display: none; }
 .commander-filter .filter-divider { width: 1px; height: 16px; background: var(--border); }
+.commander-filter-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.commander-filter-count {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
 .commander-bulkbar {
   display: flex;
   align-items: center;
@@ -2304,7 +2288,12 @@ select,
 .task-breadcrumb a:hover { color: var(--text); }
 .task-breadcrumb .sep { color: var(--text-subtle); }
 .task-hero { display: flex; flex-direction: column; gap: var(--sp-3); }
-.task-hero-top { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
+.task-hero-top { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--sp-4); }
+.task-hero-actions {
+  flex: 0 1 auto;
+  justify-content: flex-end;
+  max-width: 100%;
+}
 .task-hero-title {
   margin: 0;
   font-size: clamp(28px, 3vw, 40px);
@@ -3985,6 +3974,10 @@ select,
   width: 100%;
   margin: 0 auto;
 }
+.page-actions {
+  justify-content: flex-end;
+  min-width: 0;
+}
 .summary-tiles {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -4442,7 +4435,7 @@ select,
   flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
-  flex: 1;
+  flex: 1 1 260px;
 }
 .task-hero-status-row {
   display: flex;
@@ -5003,12 +4996,7 @@ select,
   }
   .rail-footer { display: none; }
   .app-body { min-height: calc(100dvh - 56px - env(safe-area-inset-bottom)); }
-  .app-header {
-    padding: var(--sp-2) var(--sp-3);
-    flex-wrap: wrap;
-    gap: var(--sp-2);
-  }
-  .app.has-mobile-action-dock .app-header > .toolbar {
+  .app.has-mobile-action-dock .task-hero-actions {
     display: none;
   }
   .app.has-mobile-action-dock .app-mobile-action-dock {
@@ -5344,6 +5332,11 @@ select,
     min-height: 34px;
     padding: 0 var(--sp-3);
   }
+  .commander-filter-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
   .commander-bulkbar {
     align-items: stretch;
     flex-direction: column;
@@ -5559,10 +5552,6 @@ select,
 /* Mobile density band — 390px class devices (iPhone SE/15, small Android) */
 @media (max-width: 480px) {
   .page-wrap { padding: var(--sp-3); }
-  .app-header {
-    padding: max(var(--sp-2), env(safe-area-inset-top)) var(--sp-3) var(--sp-2);
-  }
-  .app-title { font-size: var(--text-lg); }
   .task-hero-title { font-size: var(--text-2xl); }
   .task-detail { padding: var(--sp-3); }
   .commander-header { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
