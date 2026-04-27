@@ -5,6 +5,20 @@ import { join } from "node:path";
 import { loadConfig } from "../core/config.js";
 import { applyConfigArgs } from "./args.js";
 
+const LAUNCHD_LABEL = "ai.worklab";
+
+function launchdDomain() {
+  return `gui/${userInfo().uid}`;
+}
+
+function launchdTarget() {
+  return `${launchdDomain()}/${LAUNCHD_LABEL}`;
+}
+
+function launchdFilePath() {
+  return join(homedir(), "Library", "LaunchAgents", `${LAUNCHD_LABEL}.plist`);
+}
+
 function xmlEscape(value) {
   return String(value)
     .replace(/&/g, "&amp;")
@@ -101,7 +115,7 @@ function dryRun(args) {
 }
 
 export function serviceFilePath(p = platform()) {
-  if (p === "darwin") return join(homedir(), "Library", "LaunchAgents", "ai.worklab.plist");
+  if (p === "darwin") return launchdFilePath();
   if (p === "linux") return join(homedir(), ".config", "systemd", "user", "worklab.service");
   return null;
 }
@@ -122,7 +136,7 @@ export async function ensureServiceInstalled({ config = loadConfig(), dry = fals
 
   if (p === "darwin") {
     const dir = join(homedir(), "Library", "LaunchAgents");
-    const file = join(dir, "ai.worklab.plist");
+    const file = launchdFilePath();
     const content = launchdPlist(params);
     if (dry) return { platform: p, file, content, installed: false };
     mkdirSync(dir, { recursive: true });
@@ -144,12 +158,20 @@ export async function ensureServiceInstalled({ config = loadConfig(), dry = fals
   throw new Error(`service is not supported on ${p}`);
 }
 
+function bootstrapLaunchdService(file) {
+  const domain = launchdDomain();
+  const target = launchdTarget();
+  try { execFileSync("launchctl", ["bootout", domain, file], { stdio: "ignore" }); } catch { /* not loaded */ }
+  execFileSync("launchctl", ["bootstrap", domain, file], { stdio: "inherit" });
+  execFileSync("launchctl", ["enable", target], { stdio: "ignore" });
+  execFileSync("launchctl", ["kickstart", "-k", target], { stdio: "inherit" });
+}
+
 export async function startUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
   if (p === "darwin") {
-    try { execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" }); } catch { /* not loaded */ }
-    execFileSync("launchctl", ["load", "-w", file], { stdio: "inherit" });
+    bootstrapLaunchdService(file);
     return { platform: p, file };
   }
 
@@ -165,8 +187,7 @@ export async function restartUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
   if (p === "darwin") {
-    try { execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" }); } catch { /* not loaded */ }
-    execFileSync("launchctl", ["load", "-w", file], { stdio: "inherit" });
+    bootstrapLaunchdService(file);
     return { platform: p, file };
   }
   if (p === "linux") {
