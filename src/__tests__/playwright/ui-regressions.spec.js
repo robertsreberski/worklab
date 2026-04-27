@@ -769,6 +769,32 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
   await expect(run).toContainText("Completed seeded run");
 });
 
+test("activity open link scrolls to targeted task run", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 560 });
+  await page.goto(`${baseUrl}/#/activity`);
+  const row = page.locator(".activity-row", { hasText: "UI regression task" }).first();
+  await expect(row).toBeVisible();
+
+  await row.locator("a", { hasText: "open" }).click();
+  await expect(page).toHaveURL(/#\/tasks\/[^?]+\?run=run-complete-existing$/);
+
+  const run = page.locator(".run-card.highlighted").first();
+  await expect(run).toBeVisible();
+  await expect(run.locator(".run-card-events")).toBeVisible();
+
+  await expect.poll(async () => {
+    return page.locator(".task-detail").evaluate((container) => {
+      const target = container.querySelector(".run-card.highlighted");
+      if (!target) return false;
+      const targetBox = target.getBoundingClientRect();
+      const scrollTop = container.scrollTop || document.documentElement.scrollTop || window.scrollY;
+      return scrollTop > 0
+        && targetBox.top >= 0
+        && targetBox.bottom <= window.innerHeight;
+    });
+  }).toBe(true);
+});
+
 test("task detail run expansion only changes border color", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   const run = page.locator(".activity-feed-entry.run .run-card").first();
