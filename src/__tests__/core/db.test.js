@@ -125,6 +125,96 @@ describe("openDb + runMigrations", () => {
     expect(row).toMatchObject({ task_id: null, mode: "consolidate" });
   });
 
+  it("preserves task run metadata while relaxing legacy task_id constraints", () => {
+    const db = openDb(":memory:");
+    const now = Date.now();
+    db.exec(`
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        stage TEXT NOT NULL DEFAULT 'execute',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE task_runs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        parent_run_id TEXT,
+        mode TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'execute',
+        agent_name TEXT NOT NULL,
+        provider_kind TEXT,
+        worker_pid INTEGER,
+        status TEXT NOT NULL DEFAULT 'running',
+        process_status TEXT NOT NULL DEFAULT 'running',
+        decision TEXT,
+        failure_kind TEXT,
+        retry_stage TEXT,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        exit_code INTEGER,
+        error_text TEXT,
+        summary TEXT,
+        details TEXT,
+        raw_output_path TEXT,
+        artifact_paths_json TEXT NOT NULL DEFAULT '[]',
+        result_json TEXT
+      );
+    `);
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("t1", "partial upgrade", now, now);
+    db.prepare(`
+      INSERT INTO task_runs (
+        id, task_id, mode, stage, agent_name, provider_kind, worker_pid,
+        status, process_status, decision, failure_kind, retry_stage,
+        started_at, ended_at, exit_code, error_text, summary, details,
+        raw_output_path, artifact_paths_json, result_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "r1", "t1", "execute", "plan", "alice", "openai", 123,
+      "error", "failed", "block", "tool_failure", "execute",
+      now - 100, now, 2, "boom", "summary", "details",
+      "/tmp/raw.log", "[\"artifact.txt\"]", "{\"ok\":false}",
+    );
+
+    runMigrations(db);
+
+    const taskIdColumn = db.prepare("PRAGMA table_info(task_runs)").all().find((row) => row.name === "task_id");
+    expect(taskIdColumn.notnull).toBe(0);
+    const row = db.prepare(`
+      SELECT task_id, mode, stage, agent_name, provider_kind, worker_pid,
+             status, process_status, decision, failure_kind, retry_stage,
+             started_at, ended_at, exit_code, error_text, summary, details,
+             raw_output_path, artifact_paths_json, result_json
+      FROM task_runs WHERE id = 'r1'
+    `).get();
+    expect(row).toMatchObject({
+      task_id: "t1",
+      mode: "execute",
+      stage: "plan",
+      agent_name: "alice",
+      provider_kind: "openai",
+      worker_pid: 123,
+      status: "error",
+      process_status: "failed",
+      decision: "block",
+      failure_kind: "tool_failure",
+      retry_stage: "execute",
+      started_at: now - 100,
+      ended_at: now,
+      exit_code: 2,
+      error_text: "boom",
+      summary: "summary",
+      details: "details",
+      raw_output_path: "/tmp/raw.log",
+      artifact_paths_json: "[\"artifact.txt\"]",
+      result_json: "{\"ok\":false}",
+    });
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at) VALUES (?, NULL, ?, ?, ?)")
+      .run("automation-run", "automation", "alice", now);
+  });
+
   it("migrates legacy taskless automations before creating task indexes", () => {
     const db = openDb(":memory:");
     const now = Date.now();
