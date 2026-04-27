@@ -4411,6 +4411,28 @@ select,
   justify-content: space-between;
   gap: var(--sp-3);
 }
+.activity-composer-options {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.activity-rerun-checkbox {
+  align-items: center;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.activity-rerun-checkbox .checkbox-box {
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+}
+.activity-rerun-checkbox .checkbox-label {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
 .activity-composer-shortcut {
   display: inline-flex;
   align-items: center;
@@ -5023,8 +5045,8 @@ select,
   }
   .activity-composer-form {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: end;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
     gap: var(--sp-2);
     padding: var(--sp-2);
     border-color: var(--border);
@@ -5048,8 +5070,11 @@ select,
   }
   .activity-composer-actions {
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     flex-direction: row;
+    gap: var(--sp-2);
+  }
+  .activity-composer-options {
     gap: var(--sp-2);
   }
   .activity-composer-shortcut {

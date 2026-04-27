@@ -532,12 +532,99 @@ describe("DELETE /api/tasks/:id", () => {
 });
 
 describe("POST /api/tasks/:id/comments", () => {
+  function watcherWithRun(overrides = {}) {
+    return {
+      handleRunRequested: vi.fn(async () => ({ runId: "r1" })),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      ...overrides,
+    };
+  }
+
   it("creates a human comment", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "a note" }).expect(201);
     expect(res.body.comment.body).toBe("a note");
     expect(res.body.comment.author_type).toBe("human");
+  });
+
+  it("does not rerun by default", async () => {
+    const watcher = watcherWithRun();
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "a note" }).expect(201);
+    expect(res.body.rerun).toBeUndefined();
+    expect(watcher.handleRunRequested).not.toHaveBeenCalled();
+  });
+
+  it("does not rerun when explicitly unchecked", async () => {
+    const watcher = watcherWithRun();
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "a note", rerun: false }).expect(201);
+    expect(res.body.rerun).toBeUndefined();
+    expect(watcher.handleRunRequested).not.toHaveBeenCalled();
+  });
+
+  it("reruns an execute task when requested", async () => {
+    const watcher = watcherWithRun();
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "execute" }).expect(200);
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "try again", rerun: true }).expect(201);
+    expect(res.body.comment.body).toBe("try again");
+    expect(res.body.rerun).toEqual({ requested: true, started: true, runId: "r1" });
+    expect(watcher.handleRunRequested).toHaveBeenCalledWith(task.id);
+  });
+
+  it("reopens done tasks to execute before rerunning", async () => {
+    const watcher = watcherWithRun();
+    const { agent, db } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" }).expect(200);
+    expect(db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(task.id).completed_at).toBeTruthy();
+
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "redo this", rerun: true }).expect(201);
+
+    expect(res.body.rerun).toEqual({ requested: true, started: true, runId: "r1" });
+    const updated = db.prepare("SELECT stage, completed_at FROM tasks WHERE id = ?").get(task.id);
+    expect(updated.stage).toBe("execute");
+    expect(updated.completed_at).toBeNull();
+    expect(watcher.handleRunRequested).toHaveBeenCalledWith(task.id);
+  });
+
+  it("keeps the comment when the requested rerun fails", async () => {
+    const watcher = watcherWithRun({
+      handleRunRequested: vi.fn(async () => {
+        throw Object.assign(new Error("no owner assigned"), { code: "missing_agent" });
+      }),
+    });
+    const { agent, db } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "please continue", rerun: true }).expect(201);
+
+    expect(res.body.comment.body).toBe("please continue");
+    expect(res.body.rerun).toEqual({
+      requested: true,
+      started: false,
+      error: { code: "missing_agent", message: "no owner assigned" },
+    });
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_comments WHERE task_id = ?").get(task.id).count).toBe(1);
+  });
+
+  it("keeps the comment when a task is already running", async () => {
+    const watcher = watcherWithRun({ isActive: () => true });
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "note while running", rerun: true }).expect(201);
+    expect(res.body.rerun).toEqual({
+      requested: true,
+      started: false,
+      error: { code: "already_running", message: "task already running" },
+    });
+    expect(watcher.handleRunRequested).not.toHaveBeenCalled();
   });
 
   it("rejects empty body", async () => {

@@ -39,7 +39,7 @@ export const api = {
   deleteTaskAutomation: (taskId, automationId) => request("DELETE", `/tasks/${taskId}/automations/${automationId}`),
   runTaskAutomation: (taskId, automationId) => request("POST", `/tasks/${taskId}/automations/${automationId}/run`),
   deleteTask: (id) => request("DELETE", `/tasks/${id}`),
-  addComment: (id, body) => request("POST", `/tasks/${id}/comments`, { body }),
+  addComment: (id, body, options = {}) => request("POST", `/tasks/${id}/comments`, { body, rerun: options.rerun === true }),
   runTask: (id) => request("POST", `/tasks/${id}/run`),
   cancelTask: (id) => request("POST", `/tasks/${id}/cancel`),
   // runs
