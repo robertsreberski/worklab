@@ -224,6 +224,35 @@ describe("generateResponse → OpenAI Agents SDK path", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("prefers OpenAI finalOutput over intermediate message events", async () => {
+    const scriptedStream = {
+      ...makeAsyncIterable([
+        {
+          type: "run_item_stream_event",
+          name: "message_output_created",
+          item: {
+            content: [{ type: "text", text: "Intermediate narration" }],
+            rawItem: { content: [{ type: "text", text: "Intermediate narration" }] },
+          },
+        },
+      ]),
+      finalOutput: "# Final Report\n\nDelivered answer.",
+      runContext: { usage: { inputTokens: 20, outputTokens: 8 } },
+    };
+
+    mockRun.mockResolvedValue(scriptedStream);
+    process.env.OPENAI_API_KEY = "test-key";
+
+    const result = await generateResponse("sys", {
+      model: resolveModel("openai:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      onEvent: () => {},
+    });
+
+    expect(result.text).toBe("# Final Report\n\nDelivered answer.");
+  });
+
   it("result.cancelled is true when abort signal fires before stream completes", async () => {
     const ac = new AbortController();
     // Immediately abort so the stream loop sees it
@@ -352,6 +381,34 @@ describe("generateResponse → Vercel AI SDK path", () => {
     expect(result.sdk).toBe("vercel");
     expect(result.error).toMatch(/provider unreachable/);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("prefers Vercel result.text over step text", async () => {
+    const scriptedResult = {
+      fullStream: makeAsyncIterable([]),
+      totalUsage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
+      usage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
+      text: Promise.resolve("# Final Report\n\nDelivered answer."),
+    };
+
+    mockStreamText.mockImplementation((opts) => {
+      opts?.onStepFinish?.({
+        text: "Intermediate narration",
+        toolCalls: [],
+        toolResults: [],
+        usage: { inputTokens: 15, outputTokens: 6 },
+      });
+      return scriptedResult;
+    });
+
+    const result = await generateResponse("sys", {
+      model: resolveModel(MODEL_REF),
+      effort: "low",
+      messages: [{ role: "user", content: "hi" }],
+      onEvent: () => {},
+    });
+
+    expect(result.text).toBe("# Final Report\n\nDelivered answer.");
   });
 
   it("returns an error field when resolveVercelModel throws (provider not found)", async () => {

@@ -34,6 +34,30 @@ describe("worklab event timeline normalization", () => {
     });
   });
 
+  it("keeps different delivered final text visible after intermediate assistant text", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "I will gather the data." }] },
+        },
+      },
+      {
+        type: "final",
+        text: "# Report\n\nFinal delivered answer.",
+        worklab_result: { schema: "worklab.v2", decision: "advance", summary: "Short result", details: "Useful detail" },
+        usage: { input_tokens: 1, output_tokens: 2 },
+      },
+    ]);
+
+    expect(events[1]).toEqual({
+      type: "final",
+      text: "# Report\n\nFinal delivered answer.\n\nin 1 / out 2",
+      structured: { schema: "worklab.v2", decision: "advance", summary: "Short result", details: "Useful detail" },
+    });
+  });
+
   it("keeps final text visible when no assistant text event was recorded", () => {
     const events = normalizeWorklabEvents([
       { type: "started" },
@@ -64,6 +88,27 @@ describe("worklab event timeline normalization", () => {
       type: "final",
       text: "Short result\n\nUseful detail\n\nin 1 / out 2",
       structured: { summary: "Short result", details: "Useful detail" },
+    });
+  });
+
+  it("strips embedded worklab JSON from visible final text", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "final",
+        text: [
+          "Delivered answer.",
+          "```json",
+          "{\"schema\":\"worklab.v2\",\"stage\":\"execute\",\"decision\":\"advance\",\"summary\":\"Short\",\"details\":\"Detail\",\"artifacts\":{},\"blocking_issues\":[],\"pending_actions\":[],\"subtasks\":[]}",
+          "```",
+        ].join("\n"),
+        worklab_result: { schema: "worklab.v2", decision: "advance", summary: "Short", details: "Detail" },
+      },
+    ]);
+
+    expect(events[0]).toEqual({
+      type: "final",
+      text: "Delivered answer.",
+      structured: { schema: "worklab.v2", decision: "advance", summary: "Short", details: "Detail" },
     });
   });
 

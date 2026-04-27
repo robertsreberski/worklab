@@ -37,7 +37,7 @@ import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { navigateHash } from "../lib/navigation.js";
-import { formatRunSummaryTitle, runMetricItems } from "../lib/runFormatting.js";
+import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../lib/runFormatting.js";
 import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } from "../lib/commentFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
@@ -622,6 +622,7 @@ function AgentRailRow({ role, value, onChange, agents, caption: captionOverride 
 function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
   const metrics = runMetricItems(run);
+  const resultPreview = runResultPreview(run);
   const startedAt = formatDate(run.started_at);
   const shortStartedAt = formatActivityTime(run.started_at);
   const title = formatRunSummaryTitle(run, shortStartedAt);
@@ -648,6 +649,19 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
               <span class="run-summary-title" title={startedAt || undefined}>{title}</span>
               {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
             </div>
+            {resultPreview.hasResult && (
+              <div class="run-summary-result">
+                <div class="run-summary-result-head">
+                  {resultPreview.decision && (
+                    <span class={`run-result-decision ${resultPreview.tone || ""}`.trim()}>
+                      {resultPreview.decision}
+                    </span>
+                  )}
+                  {resultPreview.summary && <span class="run-result-summary">{resultPreview.summary}</span>}
+                </div>
+                {resultPreview.details && <div class="run-result-details">{resultPreview.details}</div>}
+              </div>
+            )}
           </div>
           {metrics.length > 0 && (
             <div class="run-summary-metrics" aria-label="Run metrics">

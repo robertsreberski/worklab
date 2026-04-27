@@ -231,7 +231,7 @@ export async function generateVercelResponse(systemPrompt, options = {}) {
     const reference = `vercel:${resolved.providerId}:${resolved.modelName}`;
     const costUsd = estimateCost({ db: options.db, model: reference, inputTokens: usage.inputTokens, outputTokens: usage.outputTokens });
     return {
-      text: texts.join("\n\n"),
+      text: finalText?.trim() || texts.join("\n\n"),
       events,
       usage: { input_tokens: usage.inputTokens, output_tokens: usage.outputTokens, cost_usd: costUsd },
       durationMs: Date.now() - start,

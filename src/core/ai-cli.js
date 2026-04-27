@@ -10,6 +10,7 @@ import {
   extractWorklabResult,
   formatWorklabResultText,
   parseStandaloneWorklabResultText,
+  stripWorklabResultJson,
 } from "./worklab-result.js";
 
 function promptFromMessages(messages) {
@@ -113,6 +114,11 @@ function pushUniqueText(texts, text) {
   if (!value) return;
   if (texts.some((existing) => existing.trim() === value)) return;
   texts.push(value);
+}
+
+function finalTextFromCliOutput(worklabResult, texts) {
+  const delivered = stripWorklabResultJson(texts[texts.length - 1] || "");
+  return delivered || formatWorklabResultText(worklabResult);
 }
 
 function parseJsonError(text) {
@@ -349,7 +355,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     const exitCode = await new Promise((resolve) => child.on("close", resolve));
     const stderrText = stderr.join("").trim();
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
-    const text = formatWorklabResultText(worklabResult) || texts.join("\n\n");
+    const text = finalTextFromCliOutput(worklabResult, texts);
     if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
       errorMessage = `${commandSpec.command} completed without final output`;
     }
@@ -369,7 +375,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     return {
-      text: formatWorklabResultText(worklabResult) || texts.join("\n\n") || null,
+      text: finalTextFromCliOutput(worklabResult, texts) || null,
       worklabResult,
       structuredResultSource,
       events,
