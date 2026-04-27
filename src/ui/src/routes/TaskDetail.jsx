@@ -4,7 +4,7 @@
 // Rail: Agents, Context, Tags, Actions.
 // Error chip (§5.3) derived from last_run.status === 'error'.
 
-import { useEffect, useMemo, useState, useCallback } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
@@ -751,6 +751,8 @@ export function TaskDetail({ id, runParam = null }) {
   const [subtaskSaving, setSubtaskSaving] = useState(false);
   const [taskAutomations, setTaskAutomations] = useState(null);
   const [automationsLoading, setAutomationsLoading] = useState(false);
+  const runTargetRefs = useRef(new Map());
+  const lastScrolledRunRef = useRef(null);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -854,11 +856,38 @@ export function TaskDetail({ id, runParam = null }) {
       : visibleActivity,
     [runningRun, visibleActivity],
   );
+  const targetedRunExpanded = Boolean(
+    runParam && (runningRun?.id === runParam || expandedRunIds.has(runParam)),
+  );
+  const runActivityIndex = useMemo(() => {
+    if (!runParam || runningRun?.id === runParam) return -1;
+    return activity.findIndex((item) => item.type === "run" && item.run?.id === runParam);
+  }, [activity, runParam, runningRun?.id]);
 
   const unresolvedBlockedBy = useMemo(
     () => (task?.blocked_by || []).filter((entry) => (entry.stage || "plan") !== "done"),
     [task],
   );
+
+  useEffect(() => {
+    if (!runParam || showOlderActivity || runningRun?.id === runParam) return;
+    if (runActivityIndex >= 12) setShowOlderActivity(true);
+  }, [runParam, runActivityIndex, runningRun?.id, showOlderActivity]);
+
+  useEffect(() => {
+    if (!runParam || !task?.id || !targetedRunExpanded) return undefined;
+    const scrollKey = `${task.id}:${runParam}`;
+    if (lastScrolledRunRef.current === scrollKey) return undefined;
+    const target = runTargetRefs.current.get(runParam);
+    if (!target) return undefined;
+    const frame = requestAnimationFrame(() => {
+      const currentTarget = runTargetRefs.current.get(runParam);
+      if (!currentTarget) return;
+      lastScrolledRunRef.current = scrollKey;
+      currentTarget.scrollIntoView({ block: "center", inline: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [displayActivity, runParam, showOlderActivity, targetedRunExpanded, task?.id]);
 
   function toggleRun(runId, open) {
     setHighlightedRunId((current) => (open ? runId : current === runId ? null : current));
@@ -867,6 +896,12 @@ export function TaskDetail({ id, runParam = null }) {
       if (open) n.add(runId); else n.delete(runId);
       return n;
     });
+  }
+
+  function setRunTarget(runId, node) {
+    if (!runId) return;
+    if (node) runTargetRefs.current.set(runId, node);
+    else runTargetRefs.current.delete(runId);
   }
 
   async function addComment(e) {
@@ -1326,11 +1361,13 @@ export function TaskDetail({ id, runParam = null }) {
           )}
 
           {runningRun ? (
-            <LiveRunPanel
-              run={runningRun}
-              isStreaming
-              agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
-            />
+            <div ref={(node) => setRunTarget(runningRun.id, node)}>
+              <LiveRunPanel
+                run={runningRun}
+                isStreaming
+                agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
+              />
+            </div>
           ) : null}
 
           <Card
@@ -1371,7 +1408,7 @@ export function TaskDetail({ id, runParam = null }) {
                   if (item.type === "run") {
                     const run = item.run;
                     return (
-                      <div key={item.id} class="activity-feed-entry run">
+                      <div key={item.id} class="activity-feed-entry run" ref={(node) => setRunTarget(run.id, node)}>
                         <div class="activity-feed-rail">
                           <ActivityRailDot item={item} agentLabel={agentDisplayName(agents, run.agent_name, run.agent_name)} />
                         </div>
