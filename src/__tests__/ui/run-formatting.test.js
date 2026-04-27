@@ -81,6 +81,25 @@ describe("run formatting helpers", () => {
     });
   });
 
+  it("prefers failed run error text over stale successful result metadata", () => {
+    expect(runResultPreview({
+      process_status: "failed",
+      error_text: "Claude stopped before final output: max turns reached",
+      result: {
+        schema: "worklab.v2",
+        decision: "advance",
+        summary: "technical progress",
+        details: "more progress",
+      },
+    })).toEqual({
+      decision: "failed",
+      summary: "Claude stopped before final output: max turns reached",
+      details: "",
+      tone: "error",
+      hasResult: true,
+    });
+  });
+
   it("keeps neutral decision tones neutral", () => {
     expect(runResultPreview({ decision: "delegate", summary: "Split work" }).tone).toBe("");
   });

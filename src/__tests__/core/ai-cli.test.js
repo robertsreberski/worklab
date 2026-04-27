@@ -38,6 +38,7 @@ describe("CLI provider adapters", () => {
       "--append-system-prompt", "system",
       "--no-session-persistence",
     ]));
+    expect(cmd.args).not.toContain("--max-turns");
     const schemaIndex = cmd.args.indexOf("--json-schema");
     expect(schemaIndex).toBeGreaterThanOrEqual(0);
     expect(JSON.parse(cmd.args[schemaIndex + 1])).toEqual(WORKLAB_RESULT_JSON_SCHEMA);
@@ -156,6 +157,35 @@ describe("CLI provider adapters", () => {
       });
       expect(result.text).toBe("");
       expect(result.error).toBe("claude completed without final output");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("treats CLI result error subtypes as adapter errors", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    const events = [
+      { type: "assistant", message: { content: [{ type: "text", text: "Working..." }] } },
+      { type: "result", subtype: "error_max_turns", is_error: false, usage: { input_tokens: 1, output_tokens: 2 } },
+    ];
+    writeFileSync(fakeClaude, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.error).toBe("Claude Code stopped before final output: max turns reached");
+      expect(result.failureKind).toBe("usage_limit");
+      expect(result.text).toBe("Working...");
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });

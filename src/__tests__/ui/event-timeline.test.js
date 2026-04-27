@@ -126,6 +126,26 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("normalizes provider result errors as visible errors", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "result",
+          subtype: "error_max_turns",
+          is_error: false,
+          usage: { input_tokens: 1, output_tokens: 2 },
+        },
+      },
+      { type: "worklab_result_error", message: "invalid worklab_result" },
+    ]);
+
+    expect(events).toEqual([
+      { type: "error", message: "Stopped before final output: max turns reached" },
+      { type: "error", message: "invalid worklab_result" },
+    ]);
+  });
+
   it("hides mid-run structured result candidates", () => {
     const events = normalizeWorklabEvents([
       { type: "started" },

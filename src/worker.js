@@ -28,6 +28,9 @@ function validateRuntimeResult(result) {
 function resultFromTextOrFallback(text, fallback) {
   const parsed = parseWorklabResultFromText(text, fallback);
   if (parsed.ok) return validateRuntimeResult(parsed.result);
+  if (!String(text || "").trim()) {
+    return { result: null, error: "missing final output", fatal: true };
+  }
   return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
 }
 
@@ -91,6 +94,11 @@ function reviewResultFromResponse(response) {
     return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
   }
   return reviewResultFromText(response?.text || "");
+}
+
+function maxTurnsForModel(model, fallback) {
+  if (["claude", "claude-code", "codex"].includes(model?.sdk)) return undefined;
+  return fallback;
 }
 
 function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
@@ -266,9 +274,10 @@ async function main() {
       process.exit(1);
     }
     const systemPrompt = buildConsolidationSystemPrompt({ agent, memory, journal });
+    const model = resolveModel(agent.model);
     try {
       const result = await generateResponse(systemPrompt, {
-        model: resolveModel(agent.model),
+        model,
         effort: agent.effort || "medium",
         db,
         dataDir: config.dataDir,
@@ -279,7 +288,7 @@ async function main() {
         allowedTools: [],
         disallowedTools: ["journal_append", "journal_summary"],
         permissionMode: "bypassPermissions",
-        maxTurns: 10,
+        maxTurns: maxTurnsForModel(model, 10),
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
@@ -288,7 +297,7 @@ async function main() {
         process.exit(130);
       }
       if (result.error) {
-        emit({ type: "error", message: result.error });
+        emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
       const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
@@ -313,9 +322,10 @@ async function main() {
     const setup = loadAutomationSetup({ config, db, automationId, agentName, runId });
     const { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb } = setup;
     const systemPrompt = buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb });
+    const model = resolveModel(agent.model);
     try {
       const result = await generateResponse(systemPrompt, {
-        model: resolveModel(agent.model),
+        model,
         effort: agent.effort || "medium",
         db,
         dataDir: config.dataDir,
@@ -326,7 +336,7 @@ async function main() {
         allowedTools,
         disallowedTools,
         permissionMode: "bypassPermissions",
-        maxTurns: 30,
+        maxTurns: maxTurnsForModel(model, 30),
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
@@ -335,7 +345,7 @@ async function main() {
         process.exit(130);
       }
       if (result.error) {
-        emit({ type: "error", message: result.error });
+        emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
       emit({
@@ -364,10 +374,11 @@ async function main() {
     const systemPrompt = mode === "plan"
       ? buildPlanSystemPrompt(promptInput)
       : buildExecuteSystemPrompt(promptInput);
+    const model = resolveModel(agent.model);
 
     try {
       const result = await generateResponse(systemPrompt, {
-        model: resolveModel(agent.model),
+        model,
         effort: agent.effort || "medium",
         db,
         dataDir: config.dataDir,
@@ -378,7 +389,7 @@ async function main() {
         allowedTools,
         disallowedTools,
         permissionMode: "bypassPermissions",
-        maxTurns: 30,
+        maxTurns: maxTurnsForModel(model, 30),
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
@@ -387,7 +398,7 @@ async function main() {
         process.exit(130);
       }
       if (result.error) {
-        emit({ type: "error", message: result.error });
+        emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
       const parsedResult = resultFromResponseOrFallback(result, {
@@ -402,8 +413,9 @@ async function main() {
           message: parsedResult.error,
         });
       }
-      if (parsedResult.fatal) {
+      if (parsedResult.fatal || !parsedResult.result) {
         emit({ type: "worklab_result_error", message: parsedResult.error || "Invalid worklab_result" });
+        process.exit(1);
       }
       emit({
         type: "final",
@@ -446,10 +458,11 @@ async function main() {
     const systemPrompt = buildReviewSystemPrompt({
       agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, execution,
     });
+    const model = resolveModel(agent.model);
 
     try {
       const result = await generateResponse(systemPrompt, {
-        model: resolveModel(agent.model),
+        model,
         effort: agent.effort || "medium",
         db,
         dataDir: config.dataDir,
@@ -460,7 +473,7 @@ async function main() {
         allowedTools,
         disallowedTools,
         permissionMode: "bypassPermissions",
-        maxTurns: 30,
+        maxTurns: maxTurnsForModel(model, 30),
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
@@ -469,7 +482,7 @@ async function main() {
         process.exit(130);
       }
       if (result.error) {
-        emit({ type: "error", message: result.error });
+        emit({ type: "error", message: result.error, failureKind: result.failureKind });
         process.exit(1);
       }
       const parsedReview = reviewResultFromResponse(result);
@@ -482,6 +495,7 @@ async function main() {
       }
       if (parsedReview.fatal || !parsedReview.result) {
         emit({ type: "worklab_result_error", message: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict" });
+        process.exit(1);
       }
       emit({
         type: "final",

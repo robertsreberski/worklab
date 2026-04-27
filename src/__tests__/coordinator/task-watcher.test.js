@@ -32,6 +32,18 @@ function seedTask(db, { owner = null, reviewer = null, stage = "execute", runPol
   return id;
 }
 
+const advanceResult = {
+  schema: "worklab.v2",
+  stage: "execute",
+  decision: "advance",
+  summary: "implemented",
+  details: "",
+  artifacts: {},
+  blocking_issues: [],
+  pending_actions: [],
+  subtasks: [],
+};
+
 describe("task-watcher", () => {
   it("handleRunRequested on execute task with owner and reviewer spawns work, then waits at review", async () => {
     const db = makeTestDb();
@@ -51,7 +63,7 @@ describe("task-watcher", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
-    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded" });
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "implemented", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
     const after = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(after.stage).toBe("review");
@@ -169,6 +181,34 @@ describe("task-watcher", () => {
       .prepare("SELECT * FROM task_comments WHERE task_id = ?")
       .all(taskId);
     expect(comments.some((c) => c.body.includes("timeout"))).toBe(true);
+    expect(comments.some((c) => c.author_type === "agent")).toBe(false);
+  });
+
+  it("successful worker exit without final output is invalid and does not advance", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+    resolveDone({ exitCode: 0, status: "complete", processStatus: "succeeded" });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT stage, error_text FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.error_text).toBe("invalid worklab_result");
+    const comments = db
+      .prepare("SELECT author_type, body FROM task_comments WHERE task_id = ? ORDER BY created_at")
+      .all(taskId);
+    expect(comments.some((c) => c.author_type === "agent")).toBe(false);
+    expect(comments.some((c) => c.author_type === "system" && c.body.includes("invalid worklab_result"))).toBe(true);
   });
 
   it("reconciles stale running runs at boot", async () => {

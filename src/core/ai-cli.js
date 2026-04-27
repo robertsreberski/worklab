@@ -109,6 +109,36 @@ function inferStructuredResultSource(raw) {
   return "event";
 }
 
+function stringifyError(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function humanizeSubtype(subtype) {
+  return String(subtype || "").replace(/^error_/, "").replace(/_/g, " ").trim();
+}
+
+function resultEventError(raw, command) {
+  if (raw?.type !== "result") return null;
+  const subtype = typeof raw.subtype === "string" ? raw.subtype : "";
+  const errors = Array.isArray(raw.errors) ? raw.errors.filter(Boolean) : [];
+  const explicit = stringifyError(raw.error) || stringifyError(raw.message);
+  if (!raw.is_error && !subtype.startsWith("error_") && errors.length === 0 && !explicit) return null;
+
+  const runtime = command === "claude" ? "Claude Code" : command === "codex" ? "Codex" : command || "CLI";
+  const detail = explicit || errors.map(stringifyError).filter(Boolean).join("; ");
+  const label = humanizeSubtype(subtype);
+  const message = subtype === "error_max_turns"
+    ? `${runtime} stopped before final output: max turns reached`
+    : `${runtime} result error${label ? ` (${label})` : ""}${detail ? `: ${detail}` : ""}`;
+  return {
+    message,
+    failureKind: subtype === "error_max_turns" ? "usage_limit" : "provider_unavailable",
+  };
+}
+
 function pushUniqueText(texts, text) {
   const value = typeof text === "string" ? text.trim() : "";
   if (!value) return;
@@ -299,6 +329,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const events = [];
   const texts = [];
   let errorMessage = null;
+  let failureKind = null;
   let worklabResult = null;
   let structuredResultSource = null;
   let usage = {};
@@ -343,6 +374,12 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       if (raw.type === "error") {
         const rawError = raw.message || raw.error || "cli error";
         errorMessage = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
+        failureKind = "provider_unavailable";
+      }
+      const resultError = resultEventError(raw, commandSpec.command);
+      if (resultError) {
+        errorMessage = resultError.message;
+        failureKind = resultError.failureKind;
       }
     });
 
@@ -372,6 +409,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       sdk: resolved.sdk,
       cancelled: !!options.abortSignal?.aborted,
       error: errorMessage ? formatCliError(errorMessage, commandSpec.command) : null,
+      failureKind,
     };
   } catch (err) {
     return {
@@ -387,6 +425,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       sdk: resolved?.sdk || "cli",
       cancelled: !!options.abortSignal?.aborted,
       error: err.message || String(err),
+      failureKind: failureKind || "provider_unavailable",
     };
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}

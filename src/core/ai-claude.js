@@ -23,6 +23,35 @@ function extractResultText(event) {
   return "";
 }
 
+function stringifyError(value) {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function humanizeSubtype(subtype) {
+  return String(subtype || "").replace(/^error_/, "").replace(/_/g, " ").trim();
+}
+
+function resultEventError(event) {
+  if (event.type !== "result") return null;
+  const subtype = typeof event.subtype === "string" ? event.subtype : "";
+  const errors = Array.isArray(event.errors) ? event.errors.filter(Boolean) : [];
+  const explicit = stringifyError(event.error) || stringifyError(event.message);
+  if (!event.is_error && !subtype.startsWith("error_") && errors.length === 0 && !explicit) return null;
+
+  const detail = explicit || errors.map(stringifyError).filter(Boolean).join("; ");
+  const label = humanizeSubtype(subtype);
+  const message = subtype === "error_max_turns"
+    ? "Claude stopped before final output: max turns reached"
+    : `Claude result error${label ? ` (${label})` : ""}${detail ? `: ${detail}` : ""}`;
+  return {
+    message,
+    failureKind: subtype === "error_max_turns" ? "usage_limit" : "provider_unavailable",
+  };
+}
+
 export async function generateClaudeResponse(systemPrompt, options) {
   const {
     messages,
@@ -33,7 +62,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     allowedTools,
     disallowedTools,
     permissionMode = "bypassPermissions",
-    maxTurns = 30,
+    maxTurns,
     abortSignal,
     onEvent = () => {},
   } = options;
@@ -45,20 +74,21 @@ export async function generateClaudeResponse(systemPrompt, options) {
     ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
     : String(messages || "");
 
-  const stream = query({
-    prompt: promptString,
-    options: {
-      systemPrompt,
-      model: model.model,
-      maxTurns,
-      cwd,
-      permissionMode,
-      allowedTools,
-      disallowedTools,
-      mcpServers,
-      ...thinkingOpts,
-    },
-  });
+  const queryOptions = {
+    systemPrompt,
+    model: model.model,
+    cwd,
+    permissionMode,
+    allowedTools,
+    disallowedTools,
+    mcpServers,
+    ...thinkingOpts,
+  };
+  if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) {
+    queryOptions.maxTurns = Number(maxTurns);
+  }
+
+  const stream = query({ prompt: promptString, options: queryOptions });
 
   let text = "";
   let usage = {};
@@ -67,6 +97,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let resultText = "";
   let cancelled = false;
   let errorMessage = null;
+  let failureKind = null;
   const capturedEvents = [];
 
   const abortHandler = async () => {
@@ -85,12 +116,18 @@ export async function generateClaudeResponse(systemPrompt, options) {
       if (event.type === "assistant") text += extractText(event);
       else if (event.type === "error") {
         errorMessage = event.error?.message || event.error || "sdk stream error";
+        failureKind = "provider_unavailable";
         break;
       } else if (event.type === "result") {
         usage = event.usage || {};
         durationMs = event.duration_ms || 0;
         numTurns = event.num_turns || 0;
         resultText = extractResultText(event) || resultText;
+        const resultError = resultEventError(event);
+        if (resultError) {
+          errorMessage = resultError.message;
+          failureKind = resultError.failureKind;
+        }
       }
       if (cancelled) break;
     }
@@ -108,5 +145,6 @@ export async function generateClaudeResponse(systemPrompt, options) {
     effort,
     cancelled,
     error: errorMessage,
+    failureKind,
   };
 }
