@@ -4358,7 +4358,6 @@ select,
   appearance: none;
   width: 100%;
   min-width: 0;
-  min-height: 74px;
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr);
   gap: var(--sp-2);
