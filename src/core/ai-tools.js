@@ -11,6 +11,7 @@ import {
 } from "./ai-tool-helpers.js";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { formatSkillBodyWithPathNote } from "./skills.js";
 
 function makeTool(name, description, properties, required, execute) {
   return tool({ name, description, parameters: { type: "object", properties, required }, strict: false, execute });
@@ -34,7 +35,11 @@ function readSkillTool(skillNames = [], dataDir) {
       const root = resolve(dataDir, "skills");
       if (!path.startsWith(root + "/")) return `Error: invalid skill path: ${name}`;
       if (!existsSync(path)) return `Error: SKILL.md not found for ${name}`;
-      return stripFrontmatter(readFileSync(path, "utf8")).slice(0, 12000);
+      return formatSkillBodyWithPathNote({
+        body: stripFrontmatter(readFileSync(path, "utf8")),
+        assetsPath: resolve(root, name),
+        skillsRoot: root,
+      });
     },
   );
 }

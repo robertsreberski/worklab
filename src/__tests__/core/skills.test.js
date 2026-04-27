@@ -1,12 +1,16 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { existsSync, mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import JSZip from "jszip";
 import {
+  buildSkillPathNote,
   buildSkillFileTree,
   buildSkillIndex,
+  formatSkillBodyWithPathNote,
+  getSkillAccessDirs,
   importSkillZip,
+  inferSkillsRoot,
   loadSkills,
   parseSkillFrontmatter,
   stripFrontmatter,
@@ -83,6 +87,7 @@ enabled: false
 body-b`);
     const loaded = loadSkills(d);
     expect(loaded.map(s => s.name).sort()).toEqual(["a", "b"]);
+    expect(loaded.find(s => s.name === "a").assetsPath).toBe(resolve(d, "a"));
     const enabled = loaded.filter(s => s.enabled);
     expect(enabled.length).toBe(1);
     expect(enabled[0].name).toBe("a");
@@ -106,6 +111,38 @@ body-b`);
     const idx = buildSkillIndex(skills);
     expect(idx).toContain("INLINED BODY");
     expect(idx).not.toContain("deferred");
+  });
+
+  it("renders skill roots, directories, and relative file guidance", () => {
+    const d = mk();
+    const skills = [
+      { name: "pin", trigger: "always", enabled: true, priority: "always", body: "python3 scripts/tool.py", assetsPath: join(d, "pin") },
+      { name: "ref", trigger: "on demand", enabled: true, priority: undefined, body: "deferred", assetsPath: join(d, "ref") },
+    ];
+
+    const idx = buildSkillIndex(skills);
+
+    expect(inferSkillsRoot(skills)).toBe(resolve(d));
+    expect(getSkillAccessDirs(skills)).toEqual([resolve(d)]);
+    expect(idx).toContain(`Worklab skills root: ${resolve(d)}`);
+    expect(idx).toContain(`Skill directory: ${resolve(d, "pin")}`);
+    expect(idx).toContain(`- ref: on demand (directory: ${resolve(d, "ref")})`);
+    expect(idx).toContain("Resolve `scripts/...`, `references/...`, and `assets/...`");
+    expect(idx).toContain("relative to the Worklab skills root");
+  });
+
+  it("formats loaded skill bodies with path notes", () => {
+    const d = mk();
+    const text = formatSkillBodyWithPathNote({
+      body: "Use scripts/tool.py",
+      assetsPath: join(d, "reader"),
+      skillsRoot: d,
+    });
+
+    expect(buildSkillPathNote({ skillsRoot: d })).toContain(`Worklab skills root: ${resolve(d)}`);
+    expect(text).toContain(`Worklab skills root: ${resolve(d)}`);
+    expect(text).toContain(`Skill directory: ${resolve(d, "reader")}`);
+    expect(text).toContain("Use scripts/tool.py");
   });
 });
 
