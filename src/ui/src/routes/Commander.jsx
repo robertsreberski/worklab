@@ -58,8 +58,8 @@ const TABS = [
 const BULK_STAGE_OPTIONS = GROUPS.map((group) => ({ value: group.key, label: group.label }));
 
 const BULK_RUN_POLICY_OPTIONS = [
-  { value: "manual", label: "Manual" },
   { value: "auto_plan_execute", label: "Auto plan + work" },
+  { value: "manual", label: "Manual" },
 ];
 
 function agentBulkOptions(agents) {

@@ -18,7 +18,7 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.title).toBe("do thing");
     expect(res.body.task.status).toBeUndefined();
     expect(res.body.task.stage).toBe("plan");
-    expect(res.body.task.run_policy).toBe("manual");
+    expect(res.body.task.run_policy).toBe("auto_plan_execute");
     expect(res.body.task.root_task_id).toBe(res.body.task.id);
     expect(res.body.task.plan_body).toBe("");
     expect(res.body.task.plan_updated_at).toBeNull();
@@ -441,7 +441,7 @@ describe("POST /api/tasks/:id/subtasks", () => {
       root_task_id: parent.id,
       owner_agent: "owner",
       stage: "plan",
-      run_policy: "manual",
+      run_policy: "auto_plan_execute",
       required: true,
     });
     expect(res.body.parent).toMatchObject({ id: parent.id, stage: "awaiting_children", stage_reason: "waiting for manual subtasks" });

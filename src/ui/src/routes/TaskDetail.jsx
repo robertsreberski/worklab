@@ -46,6 +46,8 @@ function formatRunPolicy(value) {
   return value === "auto_plan_execute" ? "Auto plan + work" : "Manual";
 }
 
+const DEFAULT_RUN_POLICY = "auto_plan_execute";
+
 const AUTOMATION_TRIGGER_OPTIONS = [
   { value: "once", label: "Once" },
   { value: "daily", label: "Daily" },
@@ -1450,7 +1452,7 @@ export function TaskDetail({ id, runParam = null }) {
                       instructions: task.instructions,
                       owner_agent: task.owner_agent,
                       reviewer_agent: task.reviewer_agent,
-                      run_policy: task.run_policy || "manual",
+                      run_policy: task.run_policy || DEFAULT_RUN_POLICY,
                       tags: task.tags,
                     };
                     const r = await api.createTask(copy);

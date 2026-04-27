@@ -6,6 +6,7 @@ import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
+const DEFAULT_RUN_POLICY = "auto_plan_execute";
 const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "tags", "run_policy"];
 const BULK_PATCHABLE = ["stage", "owner_agent", "reviewer_agent", "run_policy"];
 
@@ -17,7 +18,7 @@ function rowToTask(row) {
     stage,
     tags: JSON.parse(row.tags || "[]"),
     retry_count: row.retry_count ?? 0,
-    run_policy: row.run_policy || "manual",
+    run_policy: row.run_policy || DEFAULT_RUN_POLICY,
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,
     owner_agent: row.owner_agent || null,
@@ -199,7 +200,7 @@ function normaliseClientRequestId(value) {
   return trimmed.slice(0, 160);
 }
 
-function normalizeRunPolicy(value, fallback = "manual") {
+function normalizeRunPolicy(value, fallback = DEFAULT_RUN_POLICY) {
   if (value === undefined) return fallback;
   if (RUN_POLICIES.includes(value)) return value;
   throw Object.assign(new Error(`invalid run_policy: ${value}`), { code: "validation" });
@@ -364,7 +365,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
       if (k === "tags") values.push(JSON.stringify(patch[k] ?? []));
       else if (k === "run_policy") {
         try {
-          values.push(normalizeRunPolicy(patch[k], existing.run_policy || "manual"));
+          values.push(normalizeRunPolicy(patch[k], existing.run_policy || DEFAULT_RUN_POLICY));
         } catch (error) {
           throw routeError(400, error.code || "validation", error.message);
         }
@@ -572,7 +573,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
       reviewer_agent = null,
       owner_agent = null,
       stage = "plan",
-      run_policy = "manual",
+      run_policy = DEFAULT_RUN_POLICY,
       tags = [],
       blocked_by_ids = [],
       client_request_id = null,
@@ -588,7 +589,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     if (!STAGES.includes(stage)) {
       return res.status(400).json({ error: { code: "validation", message: `invalid stage: ${stage}` } });
     }
-    let normalizedRunPolicy = "manual";
+    let normalizedRunPolicy = DEFAULT_RUN_POLICY;
     try {
       normalizedRunPolicy = normalizeRunPolicy(run_policy);
     } catch (error) {
@@ -747,7 +748,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
           reviewerAgent,
           title,
           instructions,
-          parent.run_policy || "manual",
+          parent.run_policy || DEFAULT_RUN_POLICY,
           subtaskOrder,
           required,
           JSON.stringify([]),
