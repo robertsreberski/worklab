@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import { randomUUID } from "node:crypto";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -59,6 +60,32 @@ function makeRuntimeWarning(message) {
   };
 }
 
+function promptStringFromMessages(messages) {
+  return Array.isArray(messages)
+    ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
+    : String(messages || "");
+}
+
+function makeSdkUserMessage(body, sessionId, uuid = randomUUID()) {
+  return {
+    type: "user",
+    session_id: sessionId,
+    parent_tool_use_id: null,
+    uuid,
+    message: {
+      role: "user",
+      content: body,
+    },
+  };
+}
+
+async function* livePromptMessages({ initialPrompt, liveInput, sessionId }) {
+  yield makeSdkUserMessage(initialPrompt, sessionId);
+  for await (const message of liveInput) {
+    yield makeSdkUserMessage(message.body, sessionId, message.id || randomUUID());
+  }
+}
+
 export async function generateClaudeResponse(systemPrompt, options) {
   const {
     messages,
@@ -76,10 +103,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
   const thinkingOpts = thinkingForEffort(effort);
 
-  // Single-turn: concatenate user messages into one prompt string for the SDK
-  const promptString = Array.isArray(messages)
-    ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
-    : String(messages || "");
+  const promptString = promptStringFromMessages(messages);
 
   const queryOptions = {
     systemPrompt,
@@ -95,7 +119,10 @@ export async function generateClaudeResponse(systemPrompt, options) {
     queryOptions.maxTurns = Number(maxTurns);
   }
 
-  const stream = query({ prompt: promptString, options: queryOptions });
+  const prompt = options.liveInput
+    ? livePromptMessages({ initialPrompt: promptString, liveInput: options.liveInput, sessionId: randomUUID() })
+    : promptString;
+  const stream = query({ prompt, options: queryOptions });
 
   let text = "";
   let usage = {};

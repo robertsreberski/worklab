@@ -6,6 +6,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 
 const { generateClaudeResponse } = await import("../../core/ai-claude.js");
+const { createLiveInputQueue } = await import("../../core/live-input.js");
 
 function mockStream(events) {
   return {
@@ -296,6 +297,38 @@ describe("generateClaudeResponse", () => {
     const call = mockQuery.mock.calls[0][0];
     expect(typeof call.prompt).toBe("string");
     expect(call.prompt).toBe("do the thing");
+  });
+
+  it("uses Claude streaming user messages when live input is provided", async () => {
+    mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
+    const liveInput = createLiveInputQueue();
+    await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "do the thing" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      liveInput,
+      onEvent: () => {},
+    });
+
+    const call = mockQuery.mock.calls[0][0];
+    expect(typeof call.prompt).not.toBe("string");
+    const iterator = call.prompt[Symbol.asyncIterator]();
+    const initial = await iterator.next();
+    expect(initial.value).toMatchObject({
+      type: "user",
+      parent_tool_use_id: null,
+      message: { role: "user", content: "do the thing" },
+    });
+
+    liveInput.push({ id: "comment-1", body: "Please focus the answer." });
+    const followup = await iterator.next();
+    expect(followup.value).toMatchObject({
+      type: "user",
+      uuid: "comment-1",
+      message: { role: "user", content: "Please focus the answer." },
+    });
+    liveInput.close();
+    expect(await iterator.next()).toEqual({ value: undefined, done: true });
   });
 
   it("abort signal cancels the stream", async () => {
