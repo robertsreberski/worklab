@@ -25,7 +25,7 @@ export function liveRunComposerState(run, isStreaming = false) {
   const visible = Boolean(isStreaming && supported && run?.id);
   return {
     visible,
-    canSend: visible,
+    canSend: visible && liveInput.active !== false,
   };
 }
 
@@ -68,9 +68,8 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
   }
 
   function handleKeyDown(event) {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-      submitMessage(event);
-    }
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    submitMessage(event);
   }
 
   return (
@@ -113,7 +112,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
             class="task-live-composer-input"
             placeholder="Guide this run..."
             value={message}
-            disabled={sending}
+            disabled={!canSend || sending}
             onInput={(event) => setMessage(event.target.value)}
             onKeyDown={handleKeyDown}
             aria-label="Live run message"
@@ -123,7 +122,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
             variant="primary"
             size="sm"
             loading={sending}
-            disabled={!trimmedMessage || sending}
+            disabled={!canSend || !trimmedMessage || sending}
             iconLeft={<Icon name="send" size={14} />}
             aria-label="Send live run message"
           />

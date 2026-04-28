@@ -22,4 +22,15 @@ describe("live run composer visibility", () => {
       canSend: false,
     });
   });
+
+  it("stays visible but not sendable while the worker is not accepting live input", () => {
+    expect(liveRunComposerState({
+      id: "run-1",
+      provider_kind: "codex",
+      live_input: { supported: true, active: false, reason: "not_active" },
+    }, true)).toEqual({
+      visible: true,
+      canSend: false,
+    });
+  });
 });
