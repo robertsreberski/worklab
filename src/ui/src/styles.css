@@ -3709,6 +3709,44 @@ select,
   max-height: 360px;
   overflow: auto;
 }
+.run-artifacts-card .skill-file-tree-root {
+  max-height: 360px;
+  overflow: auto;
+}
+.run-artifacts-context {
+  margin-bottom: var(--sp-3);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-artifacts-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+.run-artifacts-lines,
+.run-artifact-meta {
+  font-family: var(--font-mono);
+}
+.run-artifacts-lines,
+.run-artifact-meta.delta {
+  color: var(--status-done);
+}
+.run-artifact-meta.pending {
+  color: var(--status-progress);
+}
+.run-artifact-meta.muted {
+  color: var(--text-subtle);
+}
+.skill-file-tree-item.is-pending > .skill-file-tree-row {
+  background: color-mix(in srgb, var(--status-progress) 8%, transparent);
+}
 .pane-mobile-back {
   padding: var(--sp-3) var(--sp-3) 0;
   border-bottom: 1px solid var(--border);
