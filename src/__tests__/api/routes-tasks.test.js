@@ -172,6 +172,39 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
 
+  it("includes live input state on task detail runs", async () => {
+    const watcher = {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => true,
+      isRunActive: () => true,
+      getRunLiveInputState: (runId) => (
+        runId === "run-active"
+          ? { supported: true, active: true, reason: null }
+          : { supported: false, active: false, reason: "not_active" }
+      ),
+      sendRunMessage: async () => ({ ok: true }),
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+    };
+    const { agent, db } = makeTestServer({ watcher });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      `INSERT INTO task_runs
+        (id, task_id, mode, agent_name, provider_kind, started_at, status, process_status)
+       VALUES (?, ?, 'execute', 'alpha', 'codex', ?, 'running', 'running')`,
+    ).run("run-active", task.id, Date.now());
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.runs[0].live_input).toEqual({
+      supported: true,
+      active: true,
+      reason: null,
+    });
+  });
+
   it("includes the latest running event summary on list and detail payloads", async () => {
     const { agent, db } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });

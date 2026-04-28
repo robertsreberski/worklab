@@ -15,6 +15,20 @@ import { useRunStream } from "../lib/useRunStream.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { api } from "../lib/api.js";
 
+const LIVE_INPUT_PROVIDER_KINDS = new Set(["claude", "codex"]);
+
+export function liveRunComposerState(run, isStreaming = false) {
+  const liveInput = run?.live_input || {};
+  const providerKind = String(run?.provider_kind || "");
+  const supportedByProvider = LIVE_INPUT_PROVIDER_KINDS.has(providerKind);
+  const supported = liveInput.supported === true || (liveInput.supported !== false && supportedByProvider);
+  const visible = Boolean(isStreaming && supported && run?.id);
+  return {
+    visible,
+    canSend: visible,
+  };
+}
+
 export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel }) {
   const { events: streamedEvents, run: streamedRun, loading } = useRunStream(run?.id, { subscribe: isStreaming });
   const effectiveRun = streamedRun || run;
@@ -34,8 +48,8 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
 
   const runStatus = effectiveRun?.process_status || effectiveRun?.status || (isStreaming ? "running" : "complete");
   const metrics = runMetricItems(effectiveRun);
-  const liveInput = effectiveRun?.live_input || {};
-  const canSend = Boolean(isStreaming && liveInput.supported && liveInput.active && effectiveRun?.id);
+  const composer = liveRunComposerState(effectiveRun, isStreaming);
+  const canSend = composer.canSend;
   const trimmedMessage = message.trim();
 
   async function submitMessage(event) {
@@ -91,7 +105,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           <EventTimeline events={visibleEvents} streaming={isStreaming} />
         )}
       </div>
-      {canSend && (
+      {composer.visible && (
         <form class="task-live-composer" onSubmit={submitMessage}>
           <Textarea
             rows={1}

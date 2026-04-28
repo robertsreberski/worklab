@@ -4,6 +4,7 @@ import { nextStage, STAGES, legacyRunStatusToProcessStatus } from "../core/state
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js";
+import { supportsLiveInputProvider } from "../core/live-input.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -305,6 +306,23 @@ function rowToRun(row) {
   };
 }
 
+function liveInputForRun(run, watcher) {
+  const supported = supportsLiveInputProvider(run?.provider_kind);
+  const state = watcher?.getRunLiveInputState?.(run.id) || null;
+  return {
+    supported,
+    active: !!(supported && state?.active),
+    reason: supported ? (state?.reason || null) : "unsupported_provider",
+  };
+}
+
+function attachLiveInputState(runs, watcher) {
+  return (runs || []).map((run) => ({
+    ...run,
+    live_input: liveInputForRun(run, watcher),
+  }));
+}
+
 function selectRunsWithLog(db, whereClause, ...params) {
   return db.prepare(`
     SELECT
@@ -331,7 +349,7 @@ function selectRunsWithLog(db, whereClause, ...params) {
 	    LEFT JOIN automations a ON a.id = ar.automation_id
 	    ${whereClause}
 	    ${RUNS_ORDER_BY}
-	  `).all(...params).map(rowToRun);
+  `).all(...params).map(rowToRun);
 }
 
 function routeError(status, code, message) {
@@ -735,7 +753,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     const comments = enrichCommentRows(db, db
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(row.id));
-    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", row.id);
+    const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id), watcher);
     const task = enrichTask(db, rowToTask(row));
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
@@ -876,7 +894,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
   app.get("/api/tasks/:id/runs", (req, res) => {
     const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id);
+    const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id), watcher);
     res.json({ runs });
   });
 
