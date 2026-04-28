@@ -5,6 +5,7 @@ describe("live run composer visibility", () => {
   it("shows for streaming Codex runs even before live input metadata is hydrated", () => {
     expect(liveRunComposerState({ id: "run-1", provider_kind: "codex" }, true)).toEqual({
       visible: true,
+      canEdit: true,
       canSend: true,
     });
   });
@@ -12,6 +13,7 @@ describe("live run composer visibility", () => {
   it("hides for unsupported streaming providers", () => {
     expect(liveRunComposerState({ id: "run-1", provider_kind: "openai" }, true)).toEqual({
       visible: false,
+      canEdit: false,
       canSend: false,
     });
   });
@@ -19,6 +21,7 @@ describe("live run composer visibility", () => {
   it("hides when the run is not streaming", () => {
     expect(liveRunComposerState({ id: "run-1", provider_kind: "codex" }, false)).toEqual({
       visible: false,
+      canEdit: false,
       canSend: false,
     });
   });
@@ -30,6 +33,7 @@ describe("live run composer visibility", () => {
       live_input: { supported: true, active: false, reason: "not_active" },
     }, true)).toEqual({
       visible: true,
+      canEdit: true,
       canSend: false,
     });
   });

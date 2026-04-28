@@ -32,6 +32,16 @@ function userTextInput(text) {
   return [{ type: "text", text: String(text || ""), text_elements: [] }];
 }
 
+function liveGuidanceText(text) {
+  return [
+    "Live guidance from the user:",
+    String(text || ""),
+    "",
+    "Continue satisfying the original Worklab task, existing comments, and current run objective.",
+    "Treat this as additive guidance, not a replacement for the task. Do not narrow the final answer to only this message unless the user explicitly asks to replace the task.",
+  ].join("\n");
+}
+
 function sandboxForPermissionMode(permissionMode) {
   if (permissionMode === "bypassPermissions") return "danger-full-access";
   if (permissionMode === "plan") return "read-only";
@@ -82,6 +92,10 @@ function codexErrorMessage(error) {
 function isActiveTurnNotSteerable(error) {
   const info = error?.data?.info || error?.data?.error?.info || error?.info;
   return info === "activeTurnNotSteerable" || Boolean(info?.activeTurnNotSteerable);
+}
+
+function isNoActiveTurnToSteer(error) {
+  return /no active turn to steer/i.test(codexErrorMessage(error));
 }
 
 export function createCodexAppServerClient({
@@ -275,9 +289,9 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   const turnDone = new Promise((resolve) => { resolveTurn = resolve; });
   const turnReady = new Promise((resolve) => { resolveTurnReady = resolve; });
 
-  function setActiveTurnId(turnId) {
+  function setActiveTurnId(turnId, { steerReady = false } = {}) {
     activeTurnId = turnId || activeTurnId;
-    if (!turnReadyResolved && threadId && activeTurnId) {
+    if (steerReady && !turnReadyResolved && threadId && activeTurnId) {
       turnReadyResolved = true;
       resolveTurnReady();
     }
@@ -314,7 +328,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     onNotification: (notification) => {
       const { method, params = {} } = notification;
       if (method === "turn/started") {
-        setActiveTurnId(params.turn?.id);
+        setActiveTurnId(params.turn?.id, { steerReady: true });
         emitEvent({ type: "cli_event", raw: { type: "turn_started", turn: params.turn } });
         return;
       }
@@ -372,22 +386,49 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     if (!options.liveInput) return;
     for await (const message of options.liveInput) {
       if (turnCompleted) break;
-      if (!threadId || !activeTurnId) {
+      if (!threadId || !activeTurnId || !turnReadyResolved) {
         await Promise.race([
           turnReady,
+          turnDone,
           client.closed.then((err) => { throw err; }),
         ]);
-        if (turnCompleted) break;
+        if (turnCompleted || !turnReadyResolved) break;
       }
+      const input = userTextInput(liveGuidanceText(message.body));
       try {
         const response = await client.request("turn/steer", {
           threadId,
           expectedTurnId: activeTurnId,
-          input: userTextInput(message.body),
+          input,
         });
         activeTurnId = response?.turnId || activeTurnId;
       } catch (err) {
         const providerError = err?.responseError;
+        if (isNoActiveTurnToSteer(providerError || err)) {
+          await Promise.race([
+            turnReady,
+            turnDone,
+            client.closed.then((closedErr) => { throw closedErr; }),
+          ]);
+          if (turnCompleted) break;
+          try {
+            const response = await client.request("turn/steer", {
+              threadId,
+              expectedTurnId: activeTurnId,
+              input,
+            });
+            activeTurnId = response?.turnId || activeTurnId;
+            continue;
+          } catch (retryErr) {
+            const retryProviderError = retryErr?.responseError;
+            emitEvent({
+              type: "runtime_warning",
+              warning_kind: isActiveTurnNotSteerable(retryProviderError) ? "active_turn_not_steerable" : "live_input_rejected",
+              message: codexErrorMessage(retryProviderError || retryErr),
+            });
+            continue;
+          }
+        }
         emitEvent({
           type: "runtime_warning",
           warning_kind: isActiveTurnNotSteerable(providerError) ? "active_turn_not_steerable" : "live_input_rejected",

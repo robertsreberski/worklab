@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateCodexAppResponse } from "../../core/ai-codex-app.js";
@@ -12,6 +12,7 @@ const fs = require("node:fs");
 const readline = require("node:readline");
 const logPath = process.env.FAKE_CODEX_REQUEST_LOG;
 const mode = process.env.FAKE_CODEX_MODE || "complete_after_steer";
+let startedSent = false;
 const rl = readline.createInterface({ input: process.stdin });
 function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
 function record(value) { if (logPath) fs.appendFileSync(logPath, JSON.stringify(value) + "\\n"); }
@@ -43,6 +44,10 @@ function complete(detail) {
     send({ method: "turn/completed", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "completed", error: null, startedAt: 1, completedAt: 2, durationMs: 10 } } });
   }, 10);
 }
+function turnStarted() {
+  startedSent = true;
+  send({ method: "turn/started", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
+}
 rl.on("line", (line) => {
   if (!line.trim()) return;
   const request = JSON.parse(line);
@@ -53,10 +58,14 @@ rl.on("line", (line) => {
     send({ id: request.id, result: { thread: { id: "thread1", forkedFromId: null, preview: "", ephemeral: true, modelProvider: "openai", createdAt: 1, updatedAt: 1, status: { type: "idle" }, path: null, cwd: request.params.cwd, cliVersion: "fake", source: "codex app-server", agentNickname: null, agentRole: null, gitInfo: null, name: null, turns: [] }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd, instructionSources: [], approvalPolicy: request.params.approvalPolicy, approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, permissionProfile: null, reasoningEffort: request.params.config?.model_reasoning_effort || null } });
   } else if (request.method === "turn/start") {
     send({ id: request.id, result: { turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
-    send({ method: "turn/started", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
+    if (mode === "delayed_turn_started") setTimeout(turnStarted, 100);
+    else turnStarted();
     if (mode === "complete_immediately") setTimeout(() => complete("Initial"), 10);
   } else if (request.method === "turn/steer") {
-    if (mode === "not_steerable") {
+    if (mode === "delayed_turn_started" && !startedSent) {
+      send({ id: request.id, error: { code: -32000, message: "no active turn to steer" } });
+      setTimeout(() => complete("Initial"), 10);
+    } else if (mode === "not_steerable") {
       send({ id: request.id, error: { code: -32000, message: "not steerable", data: { info: { activeTurnNotSteerable: { turnKind: "review" } } } } });
       setTimeout(() => complete("Initial"), 10);
     } else {
@@ -73,7 +82,18 @@ rl.on("line", (line) => {
 }
 
 function readRequests(path) {
+  if (!existsSync(path)) return [];
   return readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line));
+}
+
+function expectedLiveGuidance(text) {
+  return [
+    "Live guidance from the user:",
+    text,
+    "",
+    "Continue satisfying the original Worklab task, existing comments, and current run objective.",
+    "Treat this as additive guidance, not a replacement for the task. Do not narrow the final answer to only this message unless the user explicitly asks to replace the task.",
+  ].join("\n");
 }
 
 describe("generateCodexAppResponse", () => {
@@ -121,10 +141,11 @@ describe("generateCodexAppResponse", () => {
         threadId: "thread1",
         expectedTurnId: "turn1",
       });
-      expect(steer.params.input).toEqual([{ type: "text", text: "Please narrow the scope.", text_elements: [] }]);
+      const expectedGuidance = expectedLiveGuidance("Please narrow the scope.");
+      expect(steer.params.input).toEqual([{ type: "text", text: expectedGuidance, text_elements: [] }]);
       expect(result.error).toBeNull();
       expect(result.worklabResult.summary).toBe("Done");
-      expect(result.worklabResult.details).toBe("Guided: Please narrow the scope.");
+      expect(result.worklabResult.details).toBe(`Guided: ${expectedGuidance}`);
       expect(result.usage).toMatchObject({ input_tokens: 5, output_tokens: 3, cache_read_tokens: 1 });
       expect(events).toContainEqual({
         type: "assistant",
@@ -167,6 +188,52 @@ describe("generateCodexAppResponse", () => {
           }],
         },
       });
+    } finally {
+      liveInput.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("waits for Codex turn/started before steering queued live input", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    const events = [];
+    const liveInput = createLiveInputQueue();
+    try {
+      const env = { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "delayed_turn_started" };
+      const promise = generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        liveInput,
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: env,
+        onEvent: (event) => events.push(event),
+      });
+
+      for (let i = 0; i < 50; i += 1) {
+        if (readRequests(logPath).some((request) => request.method === "turn/start")) break;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      liveInput.push({ id: "comment-1", body: "Please wait for readiness." });
+
+      const result = await promise;
+      const requests = readRequests(logPath);
+      const steers = requests.filter((request) => request.method === "turn/steer");
+      const expectedGuidance = expectedLiveGuidance("Please wait for readiness.");
+
+      expect(steers).toHaveLength(1);
+      expect(steers[0].params.input).toEqual([{ type: "text", text: expectedGuidance, text_elements: [] }]);
+      expect(result.error).toBeNull();
+      expect(result.worklabResult.details).toBe(`Guided: ${expectedGuidance}`);
+      expect(events).not.toContainEqual(expect.objectContaining({
+        type: "runtime_warning",
+        warning_kind: "live_input_rejected",
+      }));
     } finally {
       liveInput.close();
       rmSync(dir, { recursive: true, force: true });
