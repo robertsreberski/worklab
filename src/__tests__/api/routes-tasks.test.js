@@ -786,11 +786,16 @@ describe("GET /api/tasks/:id/run-preview", () => {
         agent_name: "planner",
         model: "claude:claude-sonnet-4-6",
         effort: "medium",
-        messages: [{ role: "user", content: 'Plan task "Preview task".' }],
       });
+      expect(res.body.preview.messages[0]).toMatchObject({ role: "user" });
+      expect(res.body.preview.messages[0].content).toContain("# Plan task");
+      expect(res.body.preview.messages[0].content).toContain('Task: "Preview task"');
+      expect(res.body.preview.input.messages[0]).toMatchObject({ role: "user", format: "markdown" });
       expect(res.body.preview.system_prompt).toContain("Plan carefully.");
       expect(res.body.preview.system_prompt).toContain("Inspect the current prompt.");
       expect(res.body.preview.system_prompt).toContain("Plan this task.");
+      expect(res.body.preview.input.system).toMatchObject({ format: "markdown", content: res.body.preview.system_prompt });
+      expect(res.body.preview.input.tools[0]).toMatchObject({ name: "run_log_read" });
     });
   });
 
@@ -812,9 +817,13 @@ describe("GET /api/tasks/:id/run-preview", () => {
       const res = await agent.get(`/api/tasks/${task.task_key}/run-preview`).expect(200);
 
       expect(res.body.preview.mode).toBe("execute");
-      expect(res.body.preview.messages).toEqual([{ role: "user", content: 'Work on task "Retry preview".' }]);
+      expect(res.body.preview.messages[0].content).toContain("# Work on task");
+      expect(res.body.preview.messages[0].content).toContain('Task: "Retry preview"');
       expect(res.body.preview.system_prompt).toContain("## Prior run history");
+      expect(res.body.preview.system_prompt).toContain("- Run id: run-old");
       expect(res.body.preview.system_prompt).toContain("Tried a first pass fix.");
+      expect(res.body.preview.system_prompt).toContain("## Available run logs");
+      expect(res.body.preview.system_prompt).toContain("run_log_read");
       expect(res.body.preview.system_prompt).toContain("Do the task work requested by the instructions.");
     });
   });
@@ -842,10 +851,13 @@ describe("GET /api/tasks/:id/run-preview", () => {
         stage: "review",
         mode: "review",
         agent_name: "reviewer",
-        messages: [{ role: "user", content: 'Review task "Review preview". Respond with your verdict.' }],
       });
+      expect(res.body.preview.messages[0].content).toContain("# Review task");
+      expect(res.body.preview.messages[0].content).toContain('Task: "Review preview"');
       expect(res.body.preview.system_prompt).toContain("Review strictly.");
       expect(res.body.preview.system_prompt).toContain("## Work output (by owner");
+      expect(res.body.preview.system_prompt).toContain("Run id: `run-exec`");
+      expect(res.body.preview.system_prompt).toContain("run_log_read");
       expect(res.body.preview.system_prompt).toContain("Implemented the requested change.");
     });
   });

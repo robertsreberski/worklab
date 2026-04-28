@@ -85,16 +85,17 @@ function formatDuration(ms) {
 }
 
 function formatWorkOutput(execution) {
-  const { finalText, agentName, numTurns, durationMs } = execution || {};
+  const { finalText, agentName, numTurns, durationMs, runId } = execution || {};
   const safeAgentName = agentName ?? "unknown";
   const safeNumTurns = numTurns ?? 0;
   const safeDurationMs = durationMs ?? 0;
   const header = `## Work output (by ${safeAgentName}, ${safeNumTurns} turns, ${formatDuration(safeDurationMs)})`;
+  const meta = runId ? `Run id: \`${runId}\`\n\n` : "";
   const formatted = formatContextText(finalText);
   const body = formatted
     ? formatted
     : "_The owner produced no final text._";
-  return `${header}\n\n${body}\n`;
+  return `${header}\n\n${meta}${body}\n`;
 }
 
 function section(title, body) {
@@ -165,6 +166,7 @@ function formatPriorRuns(priorRuns) {
     .map((run, index) => {
       const lines = [
         `### Run ${index + 1} - ${run.mode} by ${run.agentName} (${run.status})`,
+        run.id ? `- Run id: ${run.id}` : "",
         run.startedAt ? `- Started: ${formatTimestamp(run.startedAt)}` : "",
         run.endedAt ? `- Ended: ${formatTimestamp(run.endedAt)}` : "",
         run.durationMs ? `- Duration: ${formatDuration(run.durationMs)}` : "",
@@ -180,6 +182,26 @@ function formatPriorRuns(priorRuns) {
       return lines.join("\n");
     })
     .join("\n\n");
+}
+
+function formatAvailableRunLogs(priorRuns) {
+  const runs = (priorRuns || []).filter((run) => run?.id);
+  if (!runs.length) return "";
+  const entries = runs.map((run) => `- \`${run.id}\` (${run.mode} by ${run.agentName}, ${run.status})`).join("\n");
+  return [
+    "Prior run history above is an abbreviated preview.",
+    "When you need exact tool calls, raw model events, or full prior output, call `run_log_read` with a `run_id`.",
+    "",
+    entries,
+  ].join("\n");
+}
+
+function formatReviewRunLogs(execution) {
+  if (!execution?.runId) return "";
+  return [
+    "The work output above is an abbreviated preview of the owner run.",
+    `For the full raw owner-run log, call \`run_log_read\` with \`run_id: "${execution.runId}"\`.`,
+  ].join("\n");
 }
 
 function buildTaskBody(task, comments) {
@@ -208,6 +230,7 @@ function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, p
   parts.push(section("Recent journal", journalTail || ""));
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
+  parts.push(section("Available run logs", formatAvailableRunLogs(priorRuns)));
   parts.push(CADENCE);
   return parts;
 }
@@ -237,6 +260,7 @@ export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTa
   parts.push(section("Recent journal", journalTail || ""));
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(formatWorkOutput(execution || {}));
+  parts.push(section("Available run logs", formatReviewRunLogs(execution)));
   parts.push(RESULT_FIELD_RULES);
   parts.push(REVIEW_DIRECTIVE);
   return parts.filter(Boolean).join("\n");

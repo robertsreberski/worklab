@@ -64,6 +64,22 @@ describe("run input assembly", () => {
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
       expect(preview.messages).toEqual(input.messages);
+      expect(preview.input).toMatchObject({
+        metadata: {
+          task_id: task.id,
+          task_key: task.task_key,
+          stage: "execute",
+          mode: "execute",
+          agent_name: "owner",
+          model: "claude:claude-sonnet-4-6",
+          effort: "medium",
+          generated_at: now,
+        },
+        system: { format: "markdown", content: input.systemPrompt },
+        tools: [{ name: "run_log_read" }],
+      });
+      expect(preview.input.messages).toEqual(input.messages.map((message) => ({ ...message, format: "markdown" })));
+      expect(preview.messages[0].content).toContain("# Work on task");
     });
   });
 
