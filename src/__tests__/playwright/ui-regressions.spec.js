@@ -1257,6 +1257,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   const metrics = await page.evaluate(() => {
     const row = document.querySelector(".commander-row");
     const selectedRow = document.querySelector(".commander-row.selected");
+    const baseRow = document.querySelector(".commander-row:not(.selected)");
     const id = row?.querySelector(".commander-cell-id");
     const state = row?.querySelector(".commander-cell-state");
     const filter = document.querySelector(".commander-filter");
@@ -1265,9 +1266,12 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const fab = document.querySelector(".commander-new-task-fab");
     const nav = document.querySelector(".app-rail");
     const selectedStyles = selectedRow ? getComputedStyle(selectedRow) : null;
+    const baseStyles = baseRow ? getComputedStyle(baseRow) : null;
     const fabStyles = fab ? getComputedStyle(fab) : null;
     const fabRect = fab?.getBoundingClientRect();
     const navRect = nav?.getBoundingClientRect();
+    const navElement = document.querySelector(".app-nav");
+    const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
     const navWidths = [...document.querySelectorAll(".app-nav a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
     const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
@@ -1279,13 +1283,20 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       stateDisplay: state ? getComputedStyle(state).display : "",
       pillVisible: pill ? getComputedStyle(pill).display !== "none" : false,
       navMinWidth: Math.min(...navWidths),
+      navMaxWidth: Math.max(...navWidths),
+      navOverflow: navElement ? Math.round(navElement.scrollWidth - navElement.clientWidth) : 0,
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
+      viewportMeta,
       inlineNewTaskDisplay: inlineNewTask ? getComputedStyle(inlineNewTask).display : "",
       selectedBorderLeftWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderLeftWidth)) : 0,
       selectedBorderTopColor: selectedStyles?.borderTopColor || "",
       selectedBorderRightColor: selectedStyles?.borderRightColor || "",
       selectedBorderBottomWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderBottomWidth)) : -1,
+      selectedPaddingLeft: selectedStyles ? Math.round(parseFloat(selectedStyles.paddingLeft)) : -1,
+      basePaddingLeft: baseStyles ? Math.round(parseFloat(baseStyles.paddingLeft)) : -1,
+      selectedTopLeftRadius: selectedStyles ? Math.round(parseFloat(selectedStyles.borderTopLeftRadius)) : -1,
+      selectedBottomLeftRadius: selectedStyles ? Math.round(parseFloat(selectedStyles.borderBottomLeftRadius)) : -1,
       fabDisplay: fabStyles?.display || "",
       fabLabel: fab?.getAttribute("aria-label") || "",
       fabWidth: fabRect ? Math.round(fabRect.width) : 0,
@@ -1303,12 +1314,19 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.rowHeight).toBeLessThanOrEqual(88);
   expect(metrics.filterHeight).toBeLessThanOrEqual(92);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
+  expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
+  expect(metrics.navOverflow).toBeLessThanOrEqual(0);
+  expect(metrics.viewportMeta).toContain("maximum-scale=1");
+  expect(metrics.viewportMeta).toContain("user-scalable=no");
   expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.inlineNewTaskDisplay).toBe("none");
   expect(metrics.selectedBorderLeftWidth).toBe(2);
   expect(metrics.selectedBorderTopColor).toBe("rgba(0, 0, 0, 0)");
   expect(metrics.selectedBorderRightColor).toBe("rgba(0, 0, 0, 0)");
   expect(metrics.selectedBorderBottomWidth).toBe(0);
+  expect(metrics.selectedPaddingLeft).toBe(metrics.basePaddingLeft);
+  expect(metrics.selectedTopLeftRadius).toBe(0);
+  expect(metrics.selectedBottomLeftRadius).toBe(0);
   expect(metrics.fabDisplay).toBe("flex");
   expect(metrics.fabLabel).toBe("New task");
   expect(metrics.fabWidth).toBe(56);
