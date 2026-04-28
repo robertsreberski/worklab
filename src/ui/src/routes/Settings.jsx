@@ -23,6 +23,7 @@ import {
 } from "../lib/browserNotifications.js";
 
 const LOG_LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"].map((value) => ({ value, label: value }));
+const SLACK_EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"].map((value) => ({ value, label: value }));
 const MCP_TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
   { value: "http", label: "HTTP" },
@@ -65,6 +66,17 @@ function numberOrEmpty(value) {
   if (value === "") return "";
   const n = Number(value);
   return Number.isFinite(n) ? n : "";
+}
+
+function listFromText(value) {
+  return String(value || "")
+    .split(/[\n,]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function textFromList(value) {
+  return Array.isArray(value) ? value.join("\n") : String(value || "");
 }
 
 function parseJsonObject(text, label) {
@@ -123,7 +135,7 @@ function mcpServersFromRows(rows = []) {
 }
 
 export function runtimePayload(runtimeDraft = {}) {
-  return {
+  const payload = {
     host: runtimeDraft.host,
     port: Number(runtimeDraft.port),
     workspace: runtimeDraft.workspace,
@@ -132,6 +144,9 @@ export function runtimePayload(runtimeDraft = {}) {
     runIdleWarningMs: Number(runtimeDraft.runIdleWarningMs),
     logInlineLimit: Number(runtimeDraft.logInlineLimit),
   };
+  if (runtimeDraft.slackBotToken) payload.slackBotToken = runtimeDraft.slackBotToken;
+  if (runtimeDraft.slackAppToken) payload.slackAppToken = runtimeDraft.slackAppToken;
+  return payload;
 }
 
 export function settingsPayload(settings = {}) {
@@ -143,6 +158,17 @@ export function settingsPayload(settings = {}) {
     journal_tail_lines: Number(settings.journal_tail_lines),
     kb_pinned_limit: Number(settings.kb_pinned_limit),
     default_embedding_model: settings.default_embedding_model || "",
+    slack_enabled: !!settings.slack_enabled,
+    slack_user_id: settings.slack_user_id || "",
+    slack_agent_name: settings.slack_agent_name || "assistant",
+    slack_model: settings.slack_model || "codex:gpt-5.5",
+    slack_effort: settings.slack_effort || "xhigh",
+    slack_channel_ids: Array.isArray(settings.slack_channel_ids)
+      ? settings.slack_channel_ids
+      : listFromText(settings.slack_channel_ids),
+    slack_run_timeout_ms: Number(settings.slack_run_timeout_ms ?? 120000),
+    slack_notify_task_completed: settings.slack_notify_task_completed !== false,
+    slack_notify_task_errors: settings.slack_notify_task_errors !== false,
   };
 }
 
@@ -168,6 +194,14 @@ function notificationDescription(settings) {
   return "Task run starts, completions, and errors in background tabs.";
 }
 
+function slackStatusMeta(status) {
+  if (!status?.enabled) return { status: "disabled", label: "Off" };
+  if (!status?.token_present?.bot || !status?.token_present?.app) return { status: "error", label: "Missing tokens" };
+  if (status.connected) return { status: "enabled", label: "Connected" };
+  if (status.reason === "start_failed") return { status: "error", label: "Start failed" };
+  return { status: "running", label: "Configured" };
+}
+
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
@@ -177,9 +211,11 @@ export function Settings() {
   const [runtimeError, setRuntimeError] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
+  const [modelGroups, setModelGroups] = useState([]);
   const [mcpStatus, setMcpStatus] = useState(null);
   const [mcpRows, setMcpRows] = useState([]);
   const [mcpBaselineRows, setMcpBaselineRows] = useState([]);
+  const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => browserNotificationSettings());
   const [notificationBusy, setNotificationBusy] = useState(false);
@@ -206,6 +242,8 @@ export function Settings() {
         timezone: "",
         runIdleWarningMs: 120000,
         logInlineLimit: 12000,
+        slackBotToken: "",
+        slackAppToken: "",
       };
       setRuntime(null);
       setRuntimeDraft(fallback);
@@ -225,13 +263,20 @@ export function Settings() {
     setMcpStatus(status);
   }, []);
 
+  const loadSlackStatus = useCallback(async () => {
+    const response = await api.getSlackStatus();
+    setSlackStatus(response.slack || null);
+  }, []);
+
   useEffect(() => {
     loadSettings().catch((err) => pushToast(`Settings failed: ${err.message}`, { variant: "error" }));
     loadRuntime();
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
+    api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
+    loadSlackStatus().catch(() => setSlackStatus(null));
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
-  }, [loadMcp, loadRuntime, loadSettings]);
+  }, [loadMcp, loadRuntime, loadSettings, loadSlackStatus]);
 
   const settingsDirty = useMemo(() => baseline ? !jsonEqual(settings, baseline) : false, [settings, baseline]);
   const runtimeDirty = useMemo(() => runtimeBaseline ? !jsonEqual(runtimeDraft, runtimeBaseline) : false, [runtimeDraft, runtimeBaseline]);
@@ -243,10 +288,12 @@ export function Settings() {
       const response = await api.patchSettings(settingsPayload(settings));
       setSettings(response.settings);
       setBaseline(response.settings);
+      await loadSlackStatus().catch(() => {});
     }
     if (runtimeDirty) {
       await api.patchRuntimeSettings(runtimePayload(runtimeDraft));
       await loadRuntime();
+      await loadSlackStatus().catch(() => {});
     }
     if (mcpDirty) {
       await api.putMcpConfig({ mcpServers: mcpServersFromRows(mcpRows) });
@@ -261,6 +308,22 @@ export function Settings() {
 
   const currentEmbedding = settings?.default_embedding_model || "";
   const allEmbeddingValues = embeddingGroups.flatMap((g) => (g.models || []).map((m) => m.value));
+  const currentSlackModel = settings?.slack_model || "codex:gpt-5.5";
+  const allModelValues = modelGroups.flatMap((g) => (g.models || []).map((m) => m.value));
+  const slackModelOptions = [
+    ...(currentSlackModel && !allModelValues.includes(currentSlackModel)
+      ? [{ label: "Current", options: [{ value: currentSlackModel, label: `${currentSlackModel} (custom)` }] }]
+      : []),
+    ...modelGroups.map((g) => ({
+      label: g.available === false ? `${g.label} (credentials not set)` : g.label,
+      options: (g.models || []).map((m) => ({
+        value: m.value,
+        label: m.label || m.value,
+        description: g.available === false ? (g.unavailable_reason || "Unavailable") : (m.description || m.unavailable_reason || undefined),
+        disabled: g.available === false || m.available === false || m.disabled === true,
+      })),
+    })),
+  ];
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled - no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
@@ -276,6 +339,7 @@ export function Settings() {
       })),
     })),
   ];
+  const slackMeta = slackStatusMeta(slackStatus);
 
   async function restartRuntime() {
     setRestarting(true);
@@ -445,6 +509,98 @@ export function Settings() {
               />
               <StatusPill status={notificationMeta.status} label={notificationMeta.label} />
             </div>
+          </FormSection>
+
+          <FormSection kicker="Slack" title="Bot integration" description="Socket Mode bot for Slack triage and Worklab task notifications. Token changes apply after restart.">
+            <FormGrid columns={3}>
+              <FormField switchInside>
+                <Switch
+                  checked={!!settings.slack_enabled}
+                  onChange={(next) => setSettings({ ...settings, slack_enabled: next })}
+                  label="Slack bot"
+                  description="Receive Slack messages and send task complete/error DMs."
+                />
+              </FormField>
+              <FormField switchInside>
+                <Switch
+                  checked={!!settings.slack_notify_task_completed}
+                  onChange={(next) => setSettings({ ...settings, slack_notify_task_completed: next })}
+                  label="Task completions"
+                  description="DM when a task reaches done."
+                />
+              </FormField>
+              <FormField switchInside>
+                <Switch
+                  checked={!!settings.slack_notify_task_errors}
+                  onChange={(next) => setSettings({ ...settings, slack_notify_task_errors: next })}
+                  label="Task errors"
+                  description="DM when a task run fails or blocks."
+                />
+              </FormField>
+              <FormField label="Slack user ID">
+                <Input value={settings.slack_user_id || ""} placeholder="U..." onInput={(event) => setSettings({ ...settings, slack_user_id: event.target.value })} />
+              </FormField>
+              <FormField label="Bot memory name">
+                <Input value={settings.slack_agent_name || ""} placeholder="assistant" onInput={(event) => setSettings({ ...settings, slack_agent_name: event.target.value })} />
+              </FormField>
+              <FormField label="Run timeout (minutes)">
+                <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.slack_run_timeout_ms)} onInput={(event) => setSettings({ ...settings, slack_run_timeout_ms: minutesToMs(event.target.value) })} />
+              </FormField>
+              <FormField label="Default model" class="span-2">
+                <Select
+                  value={currentSlackModel}
+                  options={slackModelOptions}
+                  onChange={(value) => setSettings({ ...settings, slack_model: value })}
+                />
+              </FormField>
+              <FormField label="Effort">
+                <Select
+                  variant="native"
+                  value={settings.slack_effort || "xhigh"}
+                  options={SLACK_EFFORT_OPTIONS}
+                  onChange={(value) => setSettings({ ...settings, slack_effort: value })}
+                />
+              </FormField>
+              <FormField label="Bot token">
+                <Input
+                  type="password"
+                  autocomplete="new-password"
+                  value={runtimeDraft.slackBotToken || ""}
+                  placeholder={runtime?.secrets?.slackBotToken?.desiredPresent ? "Configured" : "xoxb-..."}
+                  onInput={(event) => setRuntimeDraft({ ...runtimeDraft, slackBotToken: event.target.value })}
+                />
+              </FormField>
+              <FormField label="App token">
+                <Input
+                  type="password"
+                  autocomplete="new-password"
+                  value={runtimeDraft.slackAppToken || ""}
+                  placeholder={runtime?.secrets?.slackAppToken?.desiredPresent ? "Configured" : "xapp-..."}
+                  onInput={(event) => setRuntimeDraft({ ...runtimeDraft, slackAppToken: event.target.value })}
+                />
+              </FormField>
+              <FormField label="Status">
+                <div class="settings-admin-row-head">
+                  <StatusPill status={slackMeta.status} label={slackMeta.label} />
+                  {slackStatus?.bot_user_id && <span class="settings-inline-status">{slackStatus.bot_user_id}</span>}
+                </div>
+              </FormField>
+              <FormField label="Channel allowlist" class="span-3" hint="Optional. Leave empty to accept all non-DM channels where the bot receives events.">
+                <Textarea
+                  rows={3}
+                  monospace
+                  value={textFromList(settings.slack_channel_ids)}
+                  placeholder={"C123...\nC456..."}
+                  onInput={(event) => setSettings({ ...settings, slack_channel_ids: listFromText(event.target.value) })}
+                />
+              </FormField>
+            </FormGrid>
+            <div class="settings-note-grid">
+              <FieldNote label="Last inbound" value={slackStatus?.last_inbound?.received_at ? new Date(slackStatus.last_inbound.received_at).toLocaleString() : "-"} />
+              <FieldNote label="Last run" value={slackStatus?.last_run?.status || "-"} />
+              <FieldNote label="Last delivery" value={slackStatus?.last_delivery?.status || "-"} />
+            </div>
+            {slackStatus?.last_error && <Banner variant="error" title="Slack error" detail={slackStatus.last_error} />}
           </FormSection>
 
           <FormSection kicker="Search" title="Embeddings" description="Controls which embedding model is used to index knowledge and journals.">

@@ -34,6 +34,8 @@ export function loadConfig(env = process.env) {
     runTimeoutMs: parseNonNegativeInt(env.WORKLAB_RUN_TIMEOUT_MS, 30 * 60 * 1000, "WORKLAB_RUN_TIMEOUT_MS"),
     runIdleWarningMs: parseNonNegativeInt(env.WORKLAB_RUN_IDLE_WARNING_MS, 120 * 1000, "WORKLAB_RUN_IDLE_WARNING_MS"),
     logInlineLimit: parseNonNegativeInt(env.WORKLAB_LOG_INLINE_LIMIT, 12_000, "WORKLAB_LOG_INLINE_LIMIT"),
+    slackBotToken: env.WORKLAB_SLACK_BOT_TOKEN || env.SLACK_BOT_TOKEN || "",
+    slackAppToken: env.WORKLAB_SLACK_APP_TOKEN || env.SLACK_APP_TOKEN || "",
     repoRoot,
   };
 }

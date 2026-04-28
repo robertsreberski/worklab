@@ -14,3 +14,5 @@ export const newModelId = () => nid21();
 export const newAutomationId = () => nid12();
 export const newAutomationRunId = () => nid21();
 export const newAutomationTriggerId = () => nid21();
+export const newSlackInboundEventId = () => nid21();
+export const newSlackDeliveryId = () => nid21();

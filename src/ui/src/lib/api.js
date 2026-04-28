@@ -57,6 +57,7 @@ export const api = {
   getRuntimeSettings: () => request("GET", "/settings/runtime"),
   patchRuntimeSettings: (patch) => request("PATCH", "/settings/runtime", patch),
   restartRuntime: () => request("POST", "/settings/runtime/restart"),
+  getSlackStatus: () => request("GET", "/slack/status"),
   // agents
   listAgents: () => request("GET", "/agents"),
   getAgent: (name) => request("GET", `/agents/${name}`),

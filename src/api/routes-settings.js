@@ -74,11 +74,12 @@ export function registerSettingsRoutes(app, { db, broker, events, dataDir, confi
           error: { code: "service_not_installed", message: "Worklab user service is not installed" },
         });
       }
-      const runtime = readRuntimeSettings({ dataDir: config?.dataDir || dataDir, config });
+      const runtime = readRuntimeSettings({ dataDir: config?.dataDir || dataDir, config, redact: false });
       const queued = runtimeControls.restart
         ? await runtimeControls.restart({ config, desired: runtime.desired })
         : queueRuntimeRestart({ config, desired: runtime.desired });
-      res.status(202).json({ restart: queued, runtime: { ...runtime, service: status } });
+      const redacted = readRuntimeSettings({ dataDir: config?.dataDir || dataDir, config });
+      res.status(202).json({ restart: queued, runtime: { ...redacted, service: status } });
     } catch (err) {
       res.status(500).json({ error: { code: "restart_failed", message: err.message } });
     }

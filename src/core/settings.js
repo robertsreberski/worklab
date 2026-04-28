@@ -1,4 +1,5 @@
 import { DEFAULT_EMBEDDING_MODEL, parseEmbeddingReference } from "./embeddings.js";
+import { isValidModelReference } from "./ai.js";
 
 export const DEFAULT_SETTINGS = {
   consolidation_hour: 3,
@@ -8,7 +9,18 @@ export const DEFAULT_SETTINGS = {
   kb_pinned_limit: 10,
   worker_timeout_ms: 1800000,
   cancel_grace_ms: 5000,
+  slack_enabled: false,
+  slack_user_id: "",
+  slack_agent_name: "assistant",
+  slack_model: "codex:gpt-5.5",
+  slack_effort: "xhigh",
+  slack_channel_ids: [],
+  slack_run_timeout_ms: 120000,
+  slack_notify_task_completed: true,
+  slack_notify_task_errors: true,
 };
+
+const SLACK_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 function coerceStored(value) {
   try { return JSON.parse(value); } catch { return value; }
@@ -29,6 +41,19 @@ function integerInRange(key, value, { min = -Infinity, max = Infinity } = {}) {
   return n;
 }
 
+function stringValue(key, value, { required = false } = {}) {
+  const text = String(value ?? "").trim();
+  if (required && !text) throw new Error(`${key} is required`);
+  return text;
+}
+
+function stringArray(key, value) {
+  const raw = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[\n,]/);
+  return raw.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
 export function validateSetting(key, value) {
   switch (key) {
     case "consolidation_hour":
@@ -47,6 +72,28 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     case "cancel_grace_ms":
       return integerInRange(key, value, { min: 0, max: Number.MAX_SAFE_INTEGER });
+    case "slack_enabled":
+    case "slack_notify_task_completed":
+    case "slack_notify_task_errors":
+      if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
+      return value;
+    case "slack_user_id":
+    case "slack_agent_name":
+      return stringValue(key, value);
+    case "slack_model": {
+      const text = stringValue(key, value, { required: true });
+      if (!isValidModelReference(text)) throw new Error(`${key} must be a valid model reference`);
+      return text;
+    }
+    case "slack_effort": {
+      const text = stringValue(key, value, { required: true });
+      if (!SLACK_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...SLACK_EFFORTS].join(", ")}`);
+      return text;
+    }
+    case "slack_channel_ids":
+      return stringArray(key, value);
+    case "slack_run_timeout_ms":
+      return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     default:
       throw new Error(`unknown setting: ${key}`);
   }

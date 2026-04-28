@@ -246,6 +246,76 @@ CREATE INDEX IF NOT EXISTS idx_automation_triggers_automation ON automation_trig
 CREATE INDEX IF NOT EXISTS idx_automation_triggers_task ON automation_triggers(task_id, fired_at DESC);
 CREATE INDEX IF NOT EXISTS idx_automation_triggers_run ON automation_triggers(run_id);
 
+CREATE TABLE IF NOT EXISTS slack_inbound_events (
+  id TEXT PRIMARY KEY,
+  source_key TEXT NOT NULL UNIQUE,
+  type TEXT NOT NULL,
+  title TEXT,
+  text TEXT NOT NULL DEFAULT '',
+  channel_id TEXT,
+  user_id TEXT,
+  thread_ts TEXT,
+  message_ts TEXT,
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'queued',
+  error_text TEXT,
+  received_at INTEGER NOT NULL,
+  processed_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_slack_inbound_received ON slack_inbound_events(received_at DESC);
+CREATE INDEX IF NOT EXISTS idx_slack_inbound_status ON slack_inbound_events(status, received_at);
+
+CREATE TABLE IF NOT EXISTS slack_triage_runs (
+  id TEXT PRIMARY KEY,
+  inbound_event_id TEXT NOT NULL REFERENCES slack_inbound_events(id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  model TEXT,
+  effort TEXT,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER,
+  cost_usd REAL,
+  duration_ms INTEGER,
+  num_turns INTEGER,
+  summary TEXT,
+  final_json TEXT,
+  error_text TEXT,
+  raw_output_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_slack_triage_event ON slack_triage_runs(inbound_event_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_slack_triage_status ON slack_triage_runs(status, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS slack_agent_logs (
+  id TEXT PRIMARY KEY,
+  slack_triage_run_id TEXT NOT NULL REFERENCES slack_triage_runs(id) ON DELETE CASCADE,
+  events TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_slack_agent_logs_run ON slack_agent_logs(slack_triage_run_id);
+
+CREATE TABLE IF NOT EXISTS slack_delivery_log (
+  id TEXT PRIMARY KEY,
+  slack_triage_run_id TEXT REFERENCES slack_triage_runs(id) ON DELETE SET NULL,
+  inbound_event_id TEXT REFERENCES slack_inbound_events(id) ON DELETE SET NULL,
+  task_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
+  target_type TEXT NOT NULL,
+  channel_id TEXT,
+  user_id TEXT,
+  thread_ts TEXT,
+  message_ts TEXT,
+  text TEXT NOT NULL,
+  status TEXT NOT NULL,
+  error_text TEXT,
+  response_json TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_slack_delivery_run ON slack_delivery_log(slack_triage_run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_slack_delivery_task_run ON slack_delivery_log(task_run_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
