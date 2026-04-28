@@ -777,6 +777,18 @@ describe("DELETE /api/tasks/:id/comments/:commentId", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM task_comments WHERE task_id = ?").get(task.id).count).toBe(2);
   });
 
+  it("accepts activity item ids prefixed with c-", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" }).expect(201);
+    const { body: { comment } } = await agent.post(`/api/tasks/${task.id}/comments`)
+      .send({ body: "delete from activity" })
+      .expect(201);
+
+    await agent.delete(`/api/tasks/${task.id}/comments/c-${comment.id}`).expect(204);
+
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_comments WHERE id = ?").get(comment.id).count).toBe(0);
+  });
+
   it("returns 404 for a missing task or missing comment", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" }).expect(201);

@@ -681,7 +681,13 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(freshComment).toBeVisible();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Fresh comment from regression test.");
   await expect(page.locator(".activity-feed-entry.comment.system").getByLabel("Delete comment")).toHaveCount(0);
-  await freshComment.getByLabel("Delete comment").click();
+  const deleteButton = freshComment.getByLabel("Delete comment");
+  await expect(deleteButton).toHaveCSS("opacity", "0");
+  await expect(deleteButton).toHaveCSS("pointer-events", "none");
+  await freshComment.hover();
+  await expect(deleteButton).toHaveCSS("opacity", "0.72");
+  await expect(deleteButton).toHaveCSS("pointer-events", "auto");
+  await deleteButton.click();
   const deleteCommentModal = page.locator(".modal", { hasText: "Delete comment?" });
   await expect(deleteCommentModal).toBeVisible();
   await deleteCommentModal.getByRole("button", { name: "Delete" }).click();

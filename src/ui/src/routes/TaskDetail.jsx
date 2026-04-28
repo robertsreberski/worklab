@@ -1017,6 +1017,7 @@ export function TaskDetail({ id, runParam = null }) {
   const [runPreviewError, setRunPreviewError] = useState(null);
   const runTargetRefs = useRef(new Map());
   const lastScrolledRunRef = useRef(null);
+  const commentDeletingRef = useRef(false);
 
   const reload = useCallback(() => {
     api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
@@ -1045,6 +1046,7 @@ export function TaskDetail({ id, runParam = null }) {
     setCommentRerun(true);
     setCommentDeleteTarget(null);
     setCommentDeleting(false);
+    commentDeletingRef.current = false;
     setRunPreviewOpen(false);
     setRunPreview(null);
     setRunPreviewError(null);
@@ -1254,7 +1256,8 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   async function deleteComment() {
-    if (!commentDeleteTarget?.commentId || commentDeleting) return;
+    if (!commentDeleteTarget?.commentId || commentDeletingRef.current) return;
+    commentDeletingRef.current = true;
     setCommentDeleting(true);
     try {
       await api.deleteComment(operationTaskId, commentDeleteTarget.commentId);
@@ -1262,8 +1265,15 @@ export function TaskDetail({ id, runParam = null }) {
       reload();
       pushToast("Comment deleted", { variant: "success" });
     } catch (err) {
+      if (err.status === 404 && err.code === "not_found") {
+        setCommentDeleteTarget(null);
+        reload();
+        pushToast("Comment was already removed; activity refreshed", { variant: "info" });
+        return;
+      }
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
     } finally {
+      commentDeletingRef.current = false;
       setCommentDeleting(false);
     }
   }

@@ -2984,20 +2984,38 @@ select,
   box-shadow: none;
 }
 .activity-item-head {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  padding-right: 34px;
   margin-bottom: var(--sp-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
 .activity-comment-delete {
-  margin-left: auto;
-  opacity: .64;
+  position: absolute;
+  top: 50%;
+  right: 0;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%);
 }
+.activity-feed-entry.comment:hover .activity-comment-delete,
+.activity-feed-entry.comment:focus-within .activity-comment-delete {
+  opacity: .72;
+  pointer-events: auto;
+}
+.activity-comment-delete:focus-visible,
 .activity-comment-delete:hover {
   color: var(--status-error);
   opacity: 1;
+}
+@media (hover: none) {
+  .activity-comment-delete {
+    opacity: .72;
+    pointer-events: auto;
+  }
 }
 .activity-item-body { color: var(--text); line-height: 1.58; white-space: pre-wrap; }
 .activity-author-badge {
