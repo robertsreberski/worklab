@@ -325,6 +325,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
           numTurns = event.num_turns || 0;
           resultText = extractResultText(event) || resultText;
           successfulResultSeen = true;
+          if (options.liveInput) break;
         }
       }
       if (cancelled) break;

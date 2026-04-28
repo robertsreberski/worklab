@@ -30,6 +30,23 @@ function mockStreamWithThrow(events, error) {
   };
 }
 
+function mockHangingStreamAfter(events) {
+  const returnSpy = vi.fn(async () => ({ done: true }));
+  return {
+    return: returnSpy,
+    [Symbol.asyncIterator]() {
+      let index = 0;
+      return {
+        async next() {
+          if (index < events.length) return { value: events[index++], done: false };
+          return new Promise(() => {});
+        },
+        return: returnSpy,
+      };
+    },
+  };
+}
+
 function hookMatches(matcher, toolName) {
   if (!matcher || matcher === "*") return true;
   return String(matcher).split("|").includes(toolName);
@@ -519,6 +536,39 @@ describe("generateClaudeResponse", () => {
     });
     liveInput.close();
     expect(await iterator.next()).toEqual({ value: undefined, done: true });
+  });
+
+  it("ends live-input runs after a successful result event", async () => {
+    const stream = mockHangingStreamAfter([
+      { type: "assistant", message: { content: [{ type: "text", text: "working" }] } },
+      {
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "# Report\n\nFinal delivered answer.",
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 1,
+      },
+    ]);
+    mockQuery.mockReturnValue(stream);
+    const liveInput = createLiveInputQueue();
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "do the thing" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      liveInput,
+      onEvent: () => {},
+    });
+    liveInput.close();
+
+    expect(r.text).toBe("# Report\n\nFinal delivered answer.");
+    expect(r.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(r.durationMs).toBe(100);
+    expect(r.numTurns).toBe(1);
+    expect(r.error).toBeNull();
+    expect(stream.return).toHaveBeenCalledTimes(1);
   });
 
   it("abort signal cancels the stream", async () => {
