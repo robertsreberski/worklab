@@ -677,7 +677,15 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".activity-rerun-checkbox input")).not.toBeChecked();
   await page.locator(".activity-composer textarea").fill("Fresh comment from regression test.");
   await page.locator(".activity-composer button", { hasText: "Post" }).click();
+  const freshComment = page.locator(".activity-feed-entry.comment.human", { hasText: "Fresh comment from regression test." });
+  await expect(freshComment).toBeVisible();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Fresh comment from regression test.");
+  await expect(page.locator(".activity-feed-entry.comment.system").getByLabel("Delete comment")).toHaveCount(0);
+  await freshComment.getByLabel("Delete comment").click();
+  const deleteCommentModal = page.locator(".modal", { hasText: "Delete comment?" });
+  await expect(deleteCommentModal).toBeVisible();
+  await deleteCommentModal.getByRole("button", { name: "Delete" }).click();
+  await expect(freshComment).toHaveCount(0);
 });
 
 test("desktop task detail states keep actions and context obvious without clipped controls", async ({ page }) => {

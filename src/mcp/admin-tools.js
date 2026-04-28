@@ -47,6 +47,10 @@ export const adminToolDefinitions = [
   tool("worklab_task_update", "Patch a task. Use the same fields accepted by PATCH /api/tasks/:id.", object({ id: taskId, patch }, ["id", "patch"])),
   tool("worklab_task_delete", "Delete a task.", object({ id: taskId }, ["id"])),
   tool("worklab_task_comment", "Add a human comment to a task.", object({ id: taskId, body: string("Comment body") }, ["id", "body"])),
+  tool("worklab_task_comment_delete", "Delete a human comment from a task.", object({
+    id: taskId,
+    comment_id: string("Comment id"),
+  }, ["id", "comment_id"])),
   tool("worklab_task_create_subtask", "Create a subtask under a parent task.", object({
     id: taskId,
     title: string("Subtask title"),
@@ -183,6 +187,7 @@ const specs = [
   ["worklab_task_update", "PATCH", "/api/tasks/:id", [], "patch"],
   ["worklab_task_delete", "DELETE", "/api/tasks/:id"],
   ["worklab_task_comment", "POST", "/api/tasks/:id/comments", [], "comment"],
+  ["worklab_task_comment_delete", "DELETE", "/api/tasks/:id/comments/:comment_id"],
   ["worklab_task_create_subtask", "POST", "/api/tasks/:id/subtasks", [], "subtask"],
   ["worklab_task_run", "POST", "/api/tasks/:id/run"],
   ["worklab_task_cancel", "POST", "/api/tasks/:id/cancel"],

@@ -2991,6 +2991,14 @@ select,
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
+.activity-comment-delete {
+  margin-left: auto;
+  opacity: .64;
+}
+.activity-comment-delete:hover {
+  color: var(--status-error);
+  opacity: 1;
+}
 .activity-item-body { color: var(--text); line-height: 1.58; white-space: pre-wrap; }
 .activity-author-badge {
   display: inline-flex;
