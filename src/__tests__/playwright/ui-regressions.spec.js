@@ -315,7 +315,48 @@ test.beforeAll(async () => {
   ).run(
     "log-complete-existing",
     "run-complete-existing",
-    JSON.stringify([{ type: "text", text: "Completed seeded run", ts: now - 12_000 }]),
+    JSON.stringify([
+      { type: "text", text: "Completed seeded run", ts: now - 12_000 },
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "file-seed",
+            name: "file_edit",
+            input: {
+              status: "in_progress",
+              changes: [{ path: "src/ui/TaskDetail.jsx", kind: "update" }],
+            },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "file-seed",
+            content: {
+              status: "completed",
+              changes: [{
+                path: "src/ui/TaskDetail.jsx",
+                kind: "update",
+                line_stats: {
+                  before_lines: 100,
+                  after_lines: 108,
+                  added_lines: 10,
+                  removed_lines: 2,
+                  changed_lines: 12,
+                },
+              }],
+              summary: { files: 1, added_lines: 10, removed_lines: 2, changed_lines: 12, unavailable_count: 0 },
+            },
+            is_error: false,
+          }],
+        },
+      },
+    ]),
     now - 12_000,
   );
   db.prepare(
@@ -583,6 +624,9 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
   await expect(page.locator(".task-context-row", { hasText: "Next scheduled run" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
+  await expect(page.locator(".run-artifacts-card")).toContainText("Artifacts");
+  await expect(page.locator(".run-artifacts-card")).toContainText("TaskDetail.jsx");
+  await expect(page.locator(".run-artifacts-card")).toContainText("+10 -2");
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(2);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
   await expect(page.locator(".activity-composer")).toBeVisible();
