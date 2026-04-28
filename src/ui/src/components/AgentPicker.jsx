@@ -2,7 +2,7 @@
 // agent-specific leading slot (AgentAvatar + role). Keeps prior call-site API.
 import { Select } from "./primitives/Select.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
-import { humanizeSlug } from "../lib/display.js";
+import { agentModelEffortLabel, humanizeSlug } from "../lib/display.js";
 
 function normalizeRoleForAvatar(role) {
   const normalized = String(role || "").trim().toLowerCase();
@@ -29,10 +29,14 @@ export function AgentPicker({
     });
   }
   for (const a of agents) {
+    const metadata = agentModelEffortLabel(a);
     options.push({
       value: a.name,
       label: a.display_name || humanizeSlug(a.name),
-      description: a.enabled === false ? "disabled" : (role || a.role || undefined),
+      description: [
+        a.enabled === false ? "disabled" : null,
+        metadata || null,
+      ].filter(Boolean).join(" · ") || undefined,
       _agent: a,
     });
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { taskDisplayKey, taskRouteId } from "../../ui/src/lib/display.js";
+import { agentModelEffortLabel, taskDisplayKey, taskRouteId } from "../../ui/src/lib/display.js";
 
 describe("task display helpers", () => {
   it("uses public task keys when present", () => {
@@ -10,5 +10,10 @@ describe("task display helpers", () => {
   it("keeps full internal ids in routes when no public key is available", () => {
     expect(taskDisplayKey({ id: "abcdef1234567890" })).toBe("ABCDEF");
     expect(taskRouteId({ id: "abcdef1234567890" })).toBe("abcdef1234567890");
+  });
+
+  it("describes agents with full model reference and effort", () => {
+    expect(agentModelEffortLabel({ model: "codex:gpt-5.5", effort: "medium" })).toBe("codex:gpt-5.5 · medium effort");
+    expect(agentModelEffortLabel({ model: "claude:claude-sonnet-4-6" })).toBe("claude:claude-sonnet-4-6");
   });
 });
