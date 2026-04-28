@@ -191,8 +191,21 @@ function notificationDescription(settings) {
   return "Task run starts, completions, and errors in background tabs.";
 }
 
-function slackStatusMeta(status) {
+export function slackUserMatchesBot(settings = {}, status = {}) {
+  return !!(settings?.slack_user_id && status?.bot_user_id && settings.slack_user_id === status.bot_user_id);
+}
+
+export function slackRejectedSenderLabel(status = {}) {
+  if (!status?.last_rejected) return "-";
+  const parts = [];
+  if (status.last_rejected.reason) parts.push(status.last_rejected.reason);
+  if (status.last_rejected.user) parts.push(status.last_rejected.user);
+  return parts.join(" / ") || "-";
+}
+
+function slackStatusMeta(status, settings) {
   if (!status?.enabled) return { status: "disabled", label: "Off" };
+  if (slackUserMatchesBot(settings, status)) return { status: "error", label: "Bot ID configured" };
   if (!status?.token_present?.bot || !status?.token_present?.app) return { status: "error", label: "Missing tokens" };
   if (status.connected) return { status: "enabled", label: "Connected" };
   if (status.reason === "start_failed") return { status: "error", label: "Start failed" };
@@ -334,7 +347,8 @@ export function Settings() {
       })),
     })),
   ];
-  const slackMeta = slackStatusMeta(slackStatus);
+  const slackMeta = slackStatusMeta(slackStatus, settings);
+  const slackUserIsBot = slackUserMatchesBot(settings, slackStatus);
 
   async function restartRuntime() {
     setRestarting(true);
@@ -532,7 +546,7 @@ export function Settings() {
                   description="DM when a task run fails or blocks."
                 />
               </FormField>
-              <FormField label="Slack user ID">
+              <FormField label="Human Slack user ID" hint="Used for DMs and task notifications. This must be your Slack user ID, not the bot user ID.">
                 <Input value={settings.slack_user_id || ""} placeholder="U..." onInput={(event) => setSettings({ ...settings, slack_user_id: event.target.value })} />
               </FormField>
               <FormField label="Bot memory name">
@@ -574,9 +588,17 @@ export function Settings() {
             </FormGrid>
             <div class="settings-note-grid">
               <FieldNote label="Last inbound" value={slackStatus?.last_inbound?.received_at ? new Date(slackStatus.last_inbound.received_at).toLocaleString() : "-"} />
+              <FieldNote label="Last rejected" value={slackRejectedSenderLabel(slackStatus)} mono />
               <FieldNote label="Last run" value={slackStatus?.last_run?.status || "-"} />
               <FieldNote label="Last delivery" value={slackStatus?.last_delivery?.status || "-"} />
             </div>
+            {slackUserIsBot && (
+              <Banner
+                variant="error"
+                title="Human Slack user ID matches the bot"
+                detail="Set the human Slack user ID to the person who should DM the bot and receive task notifications."
+              />
+            )}
             {slackStatus?.last_error && <Banner variant="error" title="Slack error" detail={slackStatus.last_error} />}
           </FormSection>
 

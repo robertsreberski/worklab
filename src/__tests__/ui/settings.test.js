@@ -6,6 +6,8 @@ import {
   secondsToMs,
   secondsValue,
   settingsPayload,
+  slackRejectedSenderLabel,
+  slackUserMatchesBot,
 } from "../../ui/src/routes/Settings.jsx";
 
 describe("settings UI duration conversions", () => {
@@ -61,5 +63,17 @@ describe("settings UI duration conversions", () => {
     });
     expect(payload.runIdleWarningMs).toBe(120000);
     expect(payload).not.toHaveProperty("slackBotToken");
+  });
+
+  it("detects when the configured Slack user is the bot user", () => {
+    expect(slackUserMatchesBot({ slack_user_id: "UBOT" }, { bot_user_id: "UBOT" })).toBe(true);
+    expect(slackUserMatchesBot({ slack_user_id: "UHUMAN" }, { bot_user_id: "UBOT" })).toBe(false);
+  });
+
+  it("formats the last rejected Slack sender for status display", () => {
+    expect(slackRejectedSenderLabel({
+      last_rejected: { reason: "wrong_dm_user", user: "U02NXLR1NPL" },
+    })).toBe("wrong_dm_user / U02NXLR1NPL");
+    expect(slackRejectedSenderLabel({})).toBe("-");
   });
 });
