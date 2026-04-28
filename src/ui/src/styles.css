@@ -1842,6 +1842,11 @@ select,
 .markdown th { color: var(--text-muted); font-weight: 500; }
 .markdown a { color: var(--accent); }
 .markdown a:hover { text-decoration: underline; }
+.doc-content a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+.doc-content a:hover { text-decoration: underline; }
 .markdown-expandable { position: relative; }
 .markdown-expandable.clamped { max-height: 320px; overflow: hidden; }
 .markdown-expandable.clamped::after {

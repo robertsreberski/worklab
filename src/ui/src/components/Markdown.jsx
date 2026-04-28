@@ -167,15 +167,83 @@ function safeHref(url) {
   return "#";
 }
 
+function renderAnchor(href, label) {
+  return `<a href="${safeHref(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+}
+
 function renderInline(text) {
-  return escapeHtml(text)
-    .replace(/\n/g, "<br/>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
-      `<a href="${safeHref(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`);
+  const placeholders = [];
+  const stash = (html) => {
+    const index = placeholders.length;
+    placeholders.push(html);
+    return `\x00INLINE${index}\x00`;
+  };
+
+  const rendered = linkifyBareUrls(
+    escapeHtml(text)
+      .replace(/`([^`]+)`/g, (_, code) => stash(`<code>${code}</code>`))
+      .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.+?)\*/g, "<em>$1</em>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
+        stash(renderAnchor(url, label))),
+    stash
+  ).replace(/\n/g, "<br/>");
+
+  return restoreInlinePlaceholders(rendered, placeholders);
+}
+
+function restoreInlinePlaceholders(value, placeholders) {
+  let rendered = value;
+  for (let i = 0; i < placeholders.length; i += 1) {
+    rendered = rendered.replace(/\x00INLINE(\d+)\x00/g, (_, index) => placeholders[Number(index)] || "");
+  }
+  return rendered;
+}
+
+function linkifyBareUrls(html, stash) {
+  return html
+    .split(/(<[^>]+>|\x00INLINE\d+\x00)/g)
+    .map((part) => {
+      if (!part || /^<[^>]+>$/.test(part) || /^\x00INLINE\d+\x00$/.test(part)) return part;
+      return linkifyText(part, stash);
+    })
+    .join("");
+}
+
+function linkifyText(text, stash) {
+  return text.replace(/(^|[\s(])((?:https?:\/\/|www\.)[^\s<]+)/gi, (match, prefix, rawUrl) => {
+    const { url, suffix } = splitTrailingUrlSuffix(rawUrl);
+    if (!url) return match;
+    const href = /^www\./i.test(url) ? `https://${url}` : url;
+    return `${prefix}${stash(renderAnchor(href, url))}${suffix}`;
+  });
+}
+
+function splitTrailingUrlSuffix(rawUrl) {
+  let url = rawUrl;
+  let suffix = "";
+
+  while (/[.,!?;:]$/.test(url)) {
+    suffix = `${url.slice(-1)}${suffix}`;
+    url = url.slice(0, -1);
+  }
+
+  while (url.endsWith(")") && countChar(url, ")") > countChar(url, "(")) {
+    suffix = `)${suffix}`;
+    url = url.slice(0, -1);
+  }
+
+  while (url.endsWith("]") && countChar(url, "]") > countChar(url, "[")) {
+    suffix = `]${suffix}`;
+    url = url.slice(0, -1);
+  }
+
+  return { url, suffix };
+}
+
+function countChar(value, char) {
+  return [...value].filter((entry) => entry === char).length;
 }
 
 function renderTable(lines) {

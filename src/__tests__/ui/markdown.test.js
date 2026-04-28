@@ -18,4 +18,26 @@ describe("renderMarkdown", () => {
     expect(html).toContain('href="#"');
     expect(html).toContain(">click me</a>");
   });
+
+  it("auto-links bare URLs in task comments", () => {
+    const html = renderMarkdown("See https://example.com/path?a=1&b=2.");
+    const link = '<a href="https://example.com/path?a=1&amp;b=2" target="_blank" rel="noopener noreferrer">https://example.com/path?a=1&amp;b=2</a>.';
+
+    expect(html).toContain(link);
+  });
+
+  it("auto-links www URLs with an https target", () => {
+    const html = renderMarkdown("Docs: www.example.com/help");
+    const link = '<a href="https://www.example.com/help" target="_blank" rel="noopener noreferrer">www.example.com/help</a>';
+
+    expect(html).toContain(link);
+  });
+
+  it("does not auto-link URLs inside inline code or existing markdown links", () => {
+    const html = renderMarkdown("Use `https://example.com/code` or [docs](https://example.com/docs).");
+
+    expect(html).toContain("<code>https://example.com/code</code>");
+    expect(html).toContain('<a href="https://example.com/docs" target="_blank" rel="noopener noreferrer">docs</a>');
+    expect(html.match(/<a /g)).toHaveLength(1);
+  });
 });
