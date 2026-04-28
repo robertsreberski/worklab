@@ -9,6 +9,9 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     cancel: () => true,
     shutdown: async () => {},
     isActive: () => false,
+    isRunActive: () => false,
+    getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+    sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
     maybeAutoStart: () => {},
     maybeAutoStartDependents: () => {},
   };

@@ -12,6 +12,7 @@ import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 import { readSettings } from "../core/settings.js";
+import { supportsLiveInputProvider } from "../core/live-input.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -129,6 +130,7 @@ export function createTaskWatcher({
   maxFailures = DEFAULT_MAX_FAILURES,
 }) {
   const active = new Map();
+  const activeByRunId = new Map();
   // Tasks for which an auto-start has been scheduled (via setTimeout) but the
   // worker has not yet been spawned. Prevents duplicate kicks when sibling
   // children complete in the same tick or a child finishes during a fresh
@@ -313,6 +315,7 @@ export function createTaskWatcher({
 
     db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
     active.set(task.id, { runId, handle });
+    activeByRunId.set(runId, { taskId: task.id, handle, providerKind });
     broker.broadcast("global", { type: "run_started", runId, taskId: task.id });
 
     handle.done
@@ -616,6 +619,7 @@ export function createTaskWatcher({
   function onWorkerExit(taskId, runId, res) {
     const entry = active.get(taskId);
     if (entry?.runId === runId) active.delete(taskId);
+    activeByRunId.delete(runId);
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     if (!task) return;
     const run = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
@@ -638,6 +642,34 @@ export function createTaskWatcher({
     return true;
   }
 
+  function getRunLiveInputState(runId) {
+    const run = db.prepare("SELECT id, process_status, status, provider_kind FROM task_runs WHERE id = ?").get(runId);
+    if (!run) return { supported: false, active: false, reason: "not_found" };
+    if (!supportsLiveInputProvider(run.provider_kind)) {
+      return { supported: false, active: false, reason: "unsupported_provider" };
+    }
+    const entry = activeByRunId.get(runId);
+    return {
+      supported: true,
+      active: !!entry,
+      reason: entry ? null : "not_active",
+    };
+  }
+
+  async function sendRunMessage(runId, message) {
+    const entry = activeByRunId.get(runId);
+    if (!entry) {
+      return { ok: false, code: "run_not_active", message: "run is not active" };
+    }
+    if (!supportsLiveInputProvider(entry.providerKind)) {
+      return { ok: false, code: "live_input_unsupported", message: "live input is not supported for this provider" };
+    }
+    if (typeof entry.handle?.sendLiveMessage !== "function") {
+      return { ok: false, code: "live_input_unavailable", message: "worker does not accept live input" };
+    }
+    return entry.handle.sendLiveMessage(message);
+  }
+
   async function shutdown() {
     const promises = [];
     for (const entry of active.values()) {
@@ -652,6 +684,9 @@ export function createTaskWatcher({
     cancel,
     shutdown,
     isActive: (taskId) => active.has(taskId),
+    isRunActive: (runId) => activeByRunId.has(runId),
+    getRunLiveInputState,
+    sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,
     maybeAutoStartDependents,
   };
