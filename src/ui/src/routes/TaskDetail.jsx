@@ -1344,8 +1344,18 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   async function updateAssignee(role, value) {
+    const nextValue = value || null;
     try {
-      await api.patchTask(operationTaskId, { [role]: value || null });
+      const response = await api.patchTask(operationTaskId, { [role]: nextValue });
+      if (response?.task) {
+        setData((current) => current?.task
+          ? { ...current, task: { ...current.task, ...response.task } }
+          : current);
+      } else {
+        setData((current) => current?.task
+          ? { ...current, task: { ...current.task, [role]: nextValue } }
+          : current);
+      }
       pushToast("Assignment updated", { variant: "success" });
       reload();
     } catch (error) {
