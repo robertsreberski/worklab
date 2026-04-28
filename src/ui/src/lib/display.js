@@ -50,6 +50,13 @@ export function agentDisplayName(agents = [], name, fallback = "Unassigned") {
   return agent?.display_name || humanizeSlug(name) || name;
 }
 
+export function agentModelEffortLabel(agent) {
+  const parts = [];
+  if (agent?.model) parts.push(String(agent.model));
+  if (agent?.effort) parts.push(`${agent.effort} effort`);
+  return parts.join(" · ");
+}
+
 export function skillDisplayName(skill) {
   return skill?.display_name || skill?.meta?.display_name || humanizeSlug(skill?.name) || skill?.name || "";
 }

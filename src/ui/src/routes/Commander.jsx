@@ -18,7 +18,7 @@ import { ErrorState } from "../components/ErrorState.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
-import { taskRouteId } from "../lib/display.js";
+import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
 
 const GROUPS = [
@@ -60,11 +60,17 @@ const BULK_RUN_POLICY_OPTIONS = [
 function agentBulkOptions(agents) {
   return [
     { value: "__unassigned__", label: "Unassigned" },
-    ...agents.map((agent) => ({
-      value: agent.name,
-      label: agent.display_name || agent.name,
-      description: agent.enabled === false ? "disabled" : undefined,
-    })),
+    ...agents.map((agent) => {
+      const metadata = agentModelEffortLabel(agent);
+      return {
+        value: agent.name,
+        label: agent.display_name || agent.name,
+        description: [
+          agent.enabled === false ? "disabled" : null,
+          metadata || null,
+        ].filter(Boolean).join(" · ") || undefined,
+      };
+    }),
   ];
 }
 
