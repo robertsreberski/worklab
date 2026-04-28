@@ -21,6 +21,8 @@ import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
 
+const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
+
 const GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
   { key: "execute",         label: "Execute",     color: "var(--status-todo)",     icon: "○" },
@@ -28,12 +30,16 @@ const GROUPS = [
   { key: "awaiting_children", label: "Waiting",   color: "var(--status-progress)", icon: "◐" },
   { key: "awaiting_user",   label: "Needs input", color: "var(--status-error)",    icon: "▲" },
   { key: "blocked",         label: "Blocked",     color: "var(--status-error)",    icon: "▲" },
+  { key: "automated",       label: "Automated",   color: "var(--status-progress)", icon: "◐" },
   { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "●" },
 ];
 
 export function groupKeyFor(task) {
   const stage = task.stage || "plan";
-  if (["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"].includes(stage)) {
+  if (stage === "done" && Number(task.automation_summary?.enabled_count || 0) > 0) {
+    return "automated";
+  }
+  if (STAGE_GROUP_KEYS.includes(stage)) {
     return stage;
   }
   return "execute";
@@ -47,10 +53,13 @@ const TABS = [
   { value: "awaiting_children", label: "Waiting" },
   { value: "awaiting_user", label: "Needs input" },
   { value: "blocked", label: "Blocked" },
+  { value: "automated", label: "Automated" },
   { value: "done", label: "Done" },
 ];
 
-const BULK_STAGE_OPTIONS = GROUPS.map((group) => ({ value: group.key, label: group.label }));
+const BULK_STAGE_OPTIONS = GROUPS
+  .filter((group) => STAGE_GROUP_KEYS.includes(group.key))
+  .map((group) => ({ value: group.key, label: group.label }));
 
 const BULK_RUN_POLICY_OPTIONS = [
   { value: "auto_plan_execute", label: "Auto" },
