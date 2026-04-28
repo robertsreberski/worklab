@@ -21,6 +21,7 @@ import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
+import { FileTree } from "../components/FileTree.jsx";
 import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Banner } from "../components/Banner.jsx";
@@ -38,6 +39,7 @@ import { MarkdownContent } from "../components/Markdown.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../lib/runFormatting.js";
+import { artifactDeltaLabel, buildRunArtifactTree, extractRunArtifacts, runArtifactSummary } from "../lib/runArtifacts.js";
 import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } from "../lib/commentFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
@@ -702,6 +704,70 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   );
 }
 
+function runArtifactsTitle(run) {
+  if (!run) return "";
+  const status = run.process_status || run.status;
+  const phase = formatRunSummaryTitle(run);
+  return [phase, status === "running" ? "running" : null].filter(Boolean).join(" · ");
+}
+
+function RunArtifactMeta({ node }) {
+  if (node.type !== "file") return null;
+  if (node.unavailable_reason) {
+    return <span class="run-artifact-meta muted">{node.unavailable_reason}</span>;
+  }
+  const delta = artifactDeltaLabel(node);
+  if (delta) return <span class="run-artifact-meta delta">{delta}</span>;
+  if (node.status === "in_progress" || node.status === "running") {
+    return <span class="run-artifact-meta pending">pending</span>;
+  }
+  return null;
+}
+
+function RunArtifactsCard({ run }) {
+  const processStatus = run?.process_status || run?.status;
+  const isStreaming = processStatus === "running";
+  const { events, loading } = useRunStream(run?.id, { subscribe: isStreaming });
+  const artifacts = useMemo(() => extractRunArtifacts(events), [events]);
+  const tree = useMemo(() => buildRunArtifactTree(artifacts), [artifacts]);
+  const summary = useMemo(() => runArtifactSummary(artifacts), [artifacts]);
+  const summaryLabel = summary.files > 0
+    ? `${summary.files} file${summary.files === 1 ? "" : "s"}`
+    : null;
+  const lineLabel = summary.files > 0 && (summary.added_lines || summary.removed_lines)
+    ? `+${summary.added_lines} -${summary.removed_lines}`
+    : null;
+  const emptyText = loading
+    ? "Loading artifacts..."
+    : isStreaming
+      ? "No file edits recorded yet."
+      : "No file edits recorded.";
+
+  if (!run) return null;
+  return (
+    <Card
+      variant="spacious"
+      title="Artifacts"
+      class="run-artifacts-card"
+      headerRight={summaryLabel && (
+        <span class="run-artifacts-summary">
+          <span>{summaryLabel}</span>
+          {lineLabel && <span class="run-artifacts-lines">{lineLabel}</span>}
+        </span>
+      )}
+    >
+      <div class="run-artifacts-context" title={run.id}>{runArtifactsTitle(run)}</div>
+      <FileTree
+        files={tree}
+        ariaLabel="Run artifacts"
+        emptyText={emptyText}
+        renderMeta={(node) => <RunArtifactMeta node={node} />}
+        getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+      />
+    </Card>
+  );
+}
+
 // §6.3 Activity feed: client-side merge of comments[] and runs[] milestones.
 // One entry per run (not two) — sort by ended_at when present, else started_at.
 function buildActivity({ comments = [], runs = [] }) {
@@ -839,6 +905,8 @@ export function TaskDetail({ id, runParam = null }) {
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
   const displayedStage = runningRun ? "running" : stage;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
+  const highlightedRun = highlightedRunId ? runs.find((r) => r.id === highlightedRunId) || null : null;
+  const artifactRun = runningRun || highlightedRun || runs[0] || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned";
   // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
@@ -1472,6 +1540,8 @@ export function TaskDetail({ id, runParam = null }) {
           </Card>
 
           <TaskContextCard task={task} />
+
+          {artifactRun && <RunArtifactsCard run={artifactRun} />}
 
           {(task.tags || []).length > 0 && (
             <Card variant="spacious" title="Tags">
