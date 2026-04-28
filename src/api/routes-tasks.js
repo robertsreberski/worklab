@@ -6,6 +6,7 @@ import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildNextTaskRunPreview } from "../core/run-input.js";
+import { buildRunLifecycleEvent } from "../core/run-events.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -964,7 +965,10 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       ).run(retryStage, "Previous run did not finish", now, taskId);
     })();
 
-    broker.broadcast("global", { type: "run_ended", runId: staleRun.id, taskId, taskKey: taskRow.task_key || null });
+    broker.broadcast("global", buildRunLifecycleEvent(db, "run_ended", staleRun.id, {
+      taskId,
+      taskKey: taskRow.task_key || null,
+    }));
     broker.broadcast("global", { type: "task_updated", id: taskId, taskKey: taskRow.task_key || null });
     res.status(204).end();
   });

@@ -62,13 +62,33 @@ describe("task-watcher", () => {
     const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
     await watcher.handleRunRequested(taskId);
     expect(spawn).toHaveBeenCalledTimes(1);
+    const startEvent = broker.broadcasts.find((event) => event.p?.type === "run_started")?.p;
+    expect(startEvent).toMatchObject({
+      taskId,
+      taskTitle: "t",
+      mode: "execute",
+      stage: "execute",
+      agentName: "coder",
+      status: "running",
+      processStatus: "running",
+    });
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
+    db.prepare("UPDATE task_runs SET status = 'complete', process_status = 'succeeded', ended_at = ? WHERE id = ?")
+      .run(Date.now(), startEvent.runId);
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "implemented", worklabResult: advanceResult });
     await new Promise((r) => setTimeout(r, 20));
     const after = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(after.stage).toBe("review");
     expect(spawn).toHaveBeenCalledTimes(1);
+    const endEvent = broker.broadcasts.find((event) => event.p?.type === "run_ended")?.p;
+    expect(endEvent).toMatchObject({
+      runId: startEvent.runId,
+      taskId,
+      taskTitle: "t",
+      status: "complete",
+      processStatus: "succeeded",
+    });
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {
