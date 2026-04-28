@@ -11,6 +11,7 @@ import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllo
 import { readSettings } from "./settings.js";
 import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
+import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -36,11 +37,6 @@ export function modeForTaskStage(stage) {
   if (stage === "review") return "review";
   if (stage === "execute") return "execute";
   return null;
-}
-
-export function agentForTaskStage(task, stage) {
-  if (stage === "review") return task?.reviewer_agent || null;
-  return task?.owner_agent || null;
 }
 
 export function hasOpenBlocker(db, taskId) {
@@ -299,7 +295,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
   if (blocker) throw runInputError(400, "invalid_state", `task is blocked by "${blocker.title}"`);
 
   const agentName = agentForTaskStage(task, stage);
-  if (!agentName) throw runInputError(400, "invalid_state", mode === "review" ? "no reviewer assigned" : "no owner assigned");
+  if (!agentName) throw runInputError(400, "invalid_state", missingAgentMessageForTaskStage(stage));
 
   const { agent } = assertAgentRunnable(db, agentName);
   const result = nextStage(stage, { type: "run_requested", stage, mode, agentName });

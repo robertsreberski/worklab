@@ -878,6 +878,29 @@ describe("GET /api/tasks/:id/run-preview", () => {
     });
   });
 
+  it("uses explicit planner assignment for plan run preview", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "owner", { instructions: "Own implementation." });
+      seedAgent(db, "planner", { instructions: "Plan carefully." });
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Specialized planning",
+        stage: "plan",
+        owner_agent: "owner",
+        planner_agent: "planner",
+      }).expect(201);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(200);
+
+      expect(res.body.preview).toMatchObject({
+        stage: "plan",
+        mode: "plan",
+        agent_name: "planner",
+      });
+      expect(res.body.preview.system_prompt).toContain("Plan carefully.");
+      expect(res.body.preview.system_prompt).not.toContain("Own implementation.");
+    });
+  });
+
   it("returns execute preview with prior run history", async () => {
     await withPreviewServer(async ({ agent, db }) => {
       seedAgent(db, "owner", { instructions: "Ship the change." });
@@ -947,7 +970,7 @@ describe("GET /api/tasks/:id/run-preview", () => {
 
       const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(400);
 
-      expect(res.body.error).toMatchObject({ code: "invalid_state", message: "no owner assigned" });
+      expect(res.body.error).toMatchObject({ code: "invalid_state", message: "no planner or owner assigned" });
     });
   });
 

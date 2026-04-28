@@ -4,6 +4,7 @@ import { nextStage, processStatusToLegacyStatus } from "../core/state-machine.js
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { newAutomationRunId } from "../core/ids.js";
 import { readSettings } from "../core/settings.js";
+import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
 
 const TICK_MS = 60_000;
 
@@ -66,11 +67,6 @@ export function createAutomationManager({
       ORDER BY t.updated_at DESC
       LIMIT 1
     `).get(taskId);
-  }
-
-  function agentForTaskStage(task, stage) {
-    const runnableStage = stage === "done" ? "execute" : stage;
-    return runnableStage === "review" ? task.reviewer_agent : task.owner_agent;
   }
 
   function applyAutomaticNextState(automation, now) {
@@ -190,7 +186,7 @@ export function createAutomationManager({
       failTaskAutomation(
         automation,
         triggerType,
-        currentStage === "review" ? "no reviewer assigned" : "no owner assigned",
+        missingAgentMessageForTaskStage(currentStage),
         now,
       );
     }

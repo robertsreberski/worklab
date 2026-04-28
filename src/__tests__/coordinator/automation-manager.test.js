@@ -19,12 +19,12 @@ function seedAgent(db, name = "maintainer") {
   `).run(name, name, now, now);
 }
 
-function seedTask(db, { id = "task_1", owner = "maintainer", stage = "execute" } = {}) {
+function seedTask(db, { id = "task_1", owner = "maintainer", planner = null, stage = "execute" } = {}) {
   const now = Date.now();
   db.prepare(`
-    INSERT INTO tasks (id, root_task_id, title, stage, owner_agent, created_at, updated_at)
-    VALUES (?, ?, 'Scheduled task', ?, ?, ?, ?)
-  `).run(id, id, stage, owner, now, now);
+    INSERT INTO tasks (id, root_task_id, title, stage, owner_agent, planner_agent, created_at, updated_at)
+    VALUES (?, ?, 'Scheduled task', ?, ?, ?, ?, ?)
+  `).run(id, id, stage, owner, planner, now, now);
   return id;
 }
 
@@ -149,6 +149,47 @@ describe("automation manager", () => {
     expect(db.prepare("SELECT task_id, mode FROM task_runs WHERE id = 'run_task_auto'").get()).toMatchObject({ task_id: taskId, mode: "execute" });
     expect(db.prepare("SELECT automation_id, trigger_type FROM automation_runs WHERE run_id = 'run_task_auto'").get()).toMatchObject({ automation_id: "auto_task", trigger_type: "automatic" });
     expect(db.prepare("SELECT task_id, run_id, outcome FROM automation_triggers WHERE automation_id = 'auto_task'").get()).toMatchObject({ task_id: taskId, run_id: "run_task_auto", outcome: "started" });
+  });
+
+  it("allows task automation planning with an explicit planner but no owner", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const now = Date.UTC(2026, 0, 5, 9, 0, 0, 0);
+    seedAgent(db, "planner");
+    const taskId = seedTask(db, { stage: "plan", owner: null, planner: "planner" });
+    const watcher = {
+      handleRunRequested: vi.fn(async (id) => {
+        const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+        const runId = "run_plan_auto";
+        db.prepare(`
+          INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+          VALUES (?, ?, 'plan', ?, ?, ?, 'running', 'running')
+        `).run(runId, id, task.stage, task.planner_agent, now);
+        return { runId };
+      }),
+      isActive: () => false,
+    };
+    db.prepare(`
+      INSERT INTO automations (
+        id, task_id, title, instructions, agent_name, tags, trigger_json,
+        enabled, next_fire_at, created_at, updated_at
+      ) VALUES (?, ?, ?, '', NULL, '[]', ?, 1, ?, ?, ?)
+    `).run(
+      "auto_plan",
+      taskId,
+      "Planning task",
+      JSON.stringify({ type: "daily", hour: 9, minute: 0 }),
+      now,
+      now - 10_000,
+      now - 10_000,
+    );
+
+    const manager = createAutomationManager({ db, broker, watcher, spawn: spawnFake });
+    const result = await manager.tick(now);
+
+    expect(watcher.handleRunRequested).toHaveBeenCalledWith(taskId);
+    expect(result.started).toMatchObject([{ automationId: "auto_plan", runId: "run_plan_auto", skipped: false }]);
+    expect(db.prepare("SELECT agent_name FROM task_runs WHERE id = 'run_plan_auto'").get().agent_name).toBe("planner");
   });
 
   it("skips non-runnable task automations and advances the schedule", async () => {

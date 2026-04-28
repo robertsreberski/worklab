@@ -22,14 +22,14 @@ function seedAgent(db, name = "coder") {
   ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
-function seedTask(db, { owner = null, reviewer = null, stage = "execute", runPolicy = "manual" } = {}) {
+function seedTask(db, { owner = null, planner = null, reviewer = null, stage = "execute", runPolicy = "manual" } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
     `INSERT INTO tasks
-      (id, root_task_id, title, stage, owner_agent, reviewer_agent, run_policy, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, id, "t", stage, owner, reviewer, runPolicy, now, now);
+      (id, root_task_id, title, stage, owner_agent, planner_agent, reviewer_agent, run_policy, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, id, "t", stage, owner, planner, reviewer, runPolicy, now, now);
   return id;
 }
 
@@ -128,6 +128,37 @@ describe("task-watcher", () => {
     const spawn = vi.fn();
     const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
     await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/no owner/i);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("uses planner assignment for plan runs and falls back to owner", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "owner");
+    seedAgent(db, "planner");
+    const plannedTaskId = seedTask(db, { owner: "owner", planner: "planner", stage: "plan" });
+    const fallbackTaskId = seedTask(db, { owner: "owner", stage: "plan" });
+    const broker = stubBroker();
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise(() => {}),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(plannedTaskId);
+    await watcher.handleRunRequested(fallbackTaskId);
+
+    expect(spawn.mock.calls[0][0].args).toEqual(["--task", plannedTaskId, "--mode", "plan", "--agent", "planner"]);
+    expect(spawn.mock.calls[1][0].args).toEqual(["--task", fallbackTaskId, "--mode", "plan", "--agent", "owner"]);
+  });
+
+  it("rejects plan run_requested without planner or owner", async () => {
+    const db = makeTestDb();
+    const taskId = seedTask(db, { stage: "plan" });
+    const broker = stubBroker();
+    const spawn = vi.fn();
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/no planner or owner/i);
     expect(spawn).not.toHaveBeenCalled();
   });
 
