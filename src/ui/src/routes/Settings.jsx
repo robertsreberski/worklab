@@ -16,6 +16,11 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Icon } from "../components/Icon.jsx";
+import {
+  browserNotificationSettings,
+  disableBrowserNotifications,
+  requestAndEnableBrowserNotifications,
+} from "../lib/browserNotifications.js";
 
 const LOG_LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"].map((value) => ({ value, label: value }));
 const MCP_TRANSPORT_OPTIONS = [
@@ -150,6 +155,19 @@ function FieldNote({ label, value, mono = false }) {
   );
 }
 
+function notificationStatus(settings) {
+  if (!settings?.supported) return { status: "disabled", label: "Unsupported" };
+  if (settings.permission === "denied") return { status: "error", label: "Blocked" };
+  if (settings.enabled) return { status: "enabled", label: "On" };
+  return { status: "disabled", label: "Off" };
+}
+
+function notificationDescription(settings) {
+  if (!settings?.supported) return "This browser does not support notifications.";
+  if (settings.permission === "denied") return "Browser permission is blocked for this site.";
+  return "Task run starts, completions, and errors in background tabs.";
+}
+
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
@@ -163,6 +181,8 @@ export function Settings() {
   const [mcpRows, setMcpRows] = useState([]);
   const [mcpBaselineRows, setMcpBaselineRows] = useState([]);
   const [restarting, setRestarting] = useState(false);
+  const [notificationSettingsState, setNotificationSettingsState] = useState(() => browserNotificationSettings());
+  const [notificationBusy, setNotificationBusy] = useState(false);
 
   const loadSettings = useCallback(async () => {
     const response = await api.getSettings();
@@ -288,6 +308,30 @@ export function Settings() {
     }]);
   }
 
+  async function updateBrowserNotifications(enabled) {
+    setNotificationBusy(true);
+    try {
+      if (enabled) {
+        const next = await requestAndEnableBrowserNotifications();
+        setNotificationSettingsState(next);
+        if (next.enabled) {
+          pushToast("Browser notifications enabled.", { variant: "success" });
+        } else {
+          pushToast("Browser notifications are blocked.", { variant: "error" });
+        }
+      } else {
+        const next = disableBrowserNotifications();
+        setNotificationSettingsState(next);
+        pushToast("Browser notifications disabled.", { variant: "info" });
+      }
+    } catch (err) {
+      setNotificationSettingsState(browserNotificationSettings());
+      pushToast(`Notifications failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setNotificationBusy(false);
+    }
+  }
+
   if (!settings || !runtimeDraft) {
     return (
       <AppShell route="settings">
@@ -305,6 +349,7 @@ export function Settings() {
       Save
     </Button>
   );
+  const notificationMeta = notificationStatus(notificationSettingsState);
 
   return (
     <AppShell route="settings">
@@ -387,6 +432,19 @@ export function Settings() {
                 />
               </FormField>
             </FormGrid>
+          </FormSection>
+
+          <FormSection kicker="Browser" title="Notifications" description="Browser-local notification preference for this Worklab origin.">
+            <div class="settings-admin-row compact">
+              <Switch
+                checked={!!notificationSettingsState.enabled}
+                disabled={notificationBusy || !notificationSettingsState.supported}
+                onChange={updateBrowserNotifications}
+                label="Browser notifications"
+                description={notificationDescription(notificationSettingsState)}
+              />
+              <StatusPill status={notificationMeta.status} label={notificationMeta.label} />
+            </div>
           </FormSection>
 
           <FormSection kicker="Search" title="Embeddings" description="Controls which embedding model is used to index knowledge and journals.">

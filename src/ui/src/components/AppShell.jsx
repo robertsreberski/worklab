@@ -8,7 +8,9 @@ import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { useSSE } from "../lib/useSSE.js";
 import { navigateHash } from "../lib/navigation.js";
+import { maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
 
 export const ROUTE_GROUPS = [
   {
@@ -42,6 +44,15 @@ export function AppShell({ route, mobileActionDock, children }) {
     "?": () => setHelpOpen(true),
     "N": () => { navigateHash("#/tasks/new"); },
     "Escape": () => { if (helpOpen) setHelpOpen(false); },
+  });
+  useSSE("global", (event) => {
+    maybeShowRunNotification(event, {
+      onClick: (runEvent) => {
+        const route = runNotificationRoute(runEvent);
+        window.focus?.();
+        if (route) navigateHash(route);
+      },
+    });
   });
 
   return (
