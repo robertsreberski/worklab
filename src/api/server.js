@@ -25,7 +25,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
-  registerTaskRoutes(app, { db, broker, logger, watcher });
+  registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker, dataDir, watcher });
