@@ -149,10 +149,15 @@ export function maybeShowRunNotification(event, {
     return { shown: false, reason: "duplicate" };
   }
   const api = notificationApi(env);
-  const instance = new api(notification.title, {
-    body: notification.body,
-    tag: `worklab-${event.runId || dedupeKey}`,
-  });
+  let instance;
+  try {
+    instance = new api(notification.title, {
+      body: notification.body,
+      tag: `worklab-${event.runId || dedupeKey}`,
+    });
+  } catch (error) {
+    return { shown: false, reason: "error", error };
+  }
   if (onClick) {
     instance.onclick = (clickEvent) => {
       clickEvent?.preventDefault?.();
