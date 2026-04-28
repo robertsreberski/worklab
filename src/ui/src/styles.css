@@ -4406,14 +4406,14 @@ select,
 }
 .settings-overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
-  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-4);
 }
 .settings-overview-card {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--sp-3);
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-3) var(--sp-4);
   min-width: 0;
   padding: var(--sp-4);
   border: 1px solid var(--border);
@@ -4432,8 +4432,8 @@ select,
   border-radius: var(--radius-sm);
 }
 .settings-overview-icon {
-  width: 34px;
-  height: 34px;
+  width: 40px;
+  height: 40px;
 }
 .settings-overview-copy {
   display: flex;
@@ -4444,20 +4444,22 @@ select,
 .settings-overview-copy span,
 .settings-overview-copy small {
   min-width: 0;
-  overflow: hidden;
   color: var(--text-muted);
   font-size: var(--text-xs);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 .settings-overview-copy strong {
   min-width: 0;
-  overflow: hidden;
   color: var(--text);
   font-size: var(--text-md);
   font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.settings-overview-card > .status-pill {
+  grid-column: 2;
+  justify-self: start;
 }
 .settings-section-nav {
   position: sticky;
@@ -4552,8 +4554,8 @@ select,
 }
 .settings-panel-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: var(--sp-4);
 }
 .settings-panel-grid > .span-2 {
   grid-column: span 2;
