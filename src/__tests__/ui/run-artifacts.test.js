@@ -93,6 +93,29 @@ describe("run artifact extraction", () => {
     expect(runArtifactSummary(artifacts).pending_files).toBe(1);
   });
 
+  it("normalizes object-shaped file edit kinds in artifacts", () => {
+    const artifacts = extractRunArtifacts([
+      {
+        type: "tool_result",
+        content: {
+          status: "completed",
+          changes: [{
+            path: "src/exact_slack_catchup.py",
+            kind: { type: "update", move_path: null },
+            line_stats: { before_lines: 10, after_lines: 13, added_lines: 4, removed_lines: 1 },
+          }],
+        },
+      },
+    ]);
+
+    expect(artifacts[0]).toMatchObject({
+      kind: "update",
+      display_path: "src/exact_slack_catchup.py",
+      added_lines: 4,
+      removed_lines: 1,
+    });
+  });
+
   it("aggregates repeated completed edits by path", () => {
     const artifacts = extractRunArtifacts([
       {
