@@ -150,11 +150,13 @@ describe("buildExecuteSystemPrompt", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
     expect(p).toContain("Worklab needs one final `worklab.v2` JSON object");
+    expect(p).toContain("Do not preface the final JSON with process narration");
     expect(p).toContain("the final valid result supersedes earlier structured progress");
     expect(p).toContain("Put the human-facing final comment in `final_text`");
+    expect(p).toContain("For plan-stage runs, put the complete implementation plan in `details` / the plan body");
     expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
     expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
-    expect(p).toContain('"final_text": "Human-facing final comment."');
+    expect(p).toContain('"final_text": "Concise human-facing final comment."');
     expect(p).toContain("For \"advance\", \"approve\", and \"reject\", keep both `pending_actions` and `subtasks` empty.");
     expect(p.trim().endsWith('and "block" when you cannot continue.')).toBe(true);
   });
@@ -187,6 +189,8 @@ describe("buildPlanSystemPrompt", () => {
     });
     expect(p).toContain("Plan this task.");
     expect(p).toContain("Do not do implementation work during planning.");
+    expect(p).toContain('"details": "Complete implementation plan."');
+    expect(p).toContain('"final_text": "Short human-facing plan status."');
     expect(p).toContain('Use decision "advance" when the plan is ready');
   });
 });

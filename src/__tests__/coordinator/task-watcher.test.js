@@ -414,6 +414,51 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe("Created it.");
   });
 
+  it("prefers structured final_text over process-prefaced final JSON comments", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "File created",
+      details: "Created `/tmp/test.txt`.",
+      final_text: "Done. Created `/tmp/test.txt`.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `Now I'll output the final structured Worklab result.\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe("Done. Created `/tmp/test.txt`.");
+  });
+
   it("falls back to structured result comments when final text is only JSON", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
@@ -498,5 +543,101 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
     const task = db.prepare("SELECT plan_body FROM tasks WHERE id = ?").get(taskId);
     expect(task.plan_body).toBe("Plan A.");
+  });
+
+  it("stores markdown plan output while posting the structured final_text comment", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", stage: "plan" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Plan ready",
+      details: "Compressed planning metadata.",
+      final_text: "Plan ready. Moving to execute.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const plan = "## Plan\n\n1. Read inputs.\n2. Write output.\n\n**Test Plan**\n\nRun focused tests.";
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${plan}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT stage, plan_body FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.plan_body).toBe(plan);
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe("Plan ready. Moving to execute.");
+  });
+
+  it("falls back to structured plan details when final text is only structured JSON", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", stage: "plan" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Plan ready",
+      details: "## Plan\n\n1. Build it.",
+      final_text: "Plan ready. Moving to execute.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT plan_body FROM tasks WHERE id = ?").get(taskId);
+    expect(task.plan_body).toBe("## Plan\n\n1. Build it.");
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe("Plan ready. Moving to execute.");
   });
 });

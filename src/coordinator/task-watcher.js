@@ -75,10 +75,26 @@ function sanitizeAgentText(text) {
   return collapseDuplicateParagraphs(stripWorklabResultJson(text));
 }
 
+function structuredFinalText(result) {
+  const value = result?.worklab_result || result;
+  if (!value || value.schema !== "worklab.v2") return "";
+  return sanitizeAgentText(value.final_text || "");
+}
+
 function agentCommentBody(result, finalText) {
+  const structured = structuredFinalText(result);
+  if (structured) return structured;
   const delivered = sanitizeAgentText(finalText);
   if (delivered) return delivered;
   return sanitizeAgentText(formatWorklabResultText(result));
+}
+
+function looksLikePlanBody(text) {
+  const body = String(text || "").trim();
+  if (!body) return false;
+  return /^#{1,3}\s+Plan\b/im.test(body)
+    || /^\*\*Plan\b/im.test(body)
+    || /\b(?:Approach|Implementation|Test Plan|Risks?|Caveats?|Out of scope)\b/i.test(body);
 }
 
 // In-memory cycle check across a freshly-delegated batch of subtasks. Each
@@ -376,7 +392,9 @@ export function createTaskWatcher({
   }
 
   function planBodyFromRun(result, finalText) {
-    for (const candidate of [result?.details, result?.summary, finalText]) {
+    const rawPlan = sanitizeAgentText(finalText);
+    if (looksLikePlanBody(rawPlan)) return rawPlan;
+    for (const candidate of [result?.details, result?.summary, rawPlan]) {
       const body = sanitizeAgentText(candidate);
       if (body) return body;
     }
