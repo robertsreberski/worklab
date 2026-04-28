@@ -5,10 +5,12 @@ import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../co
 import { openDb, runMigrations } from "../core/db.js";
 import { search, indexPath, removeSource } from "../core/embeddings.js";
 import { kbCreate, kbUpdate, kbDelete, kbRead, kbList, kbPath } from "../core/kb.js";
+import { readRunLog } from "../core/run-logs.js";
 
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
 export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
 export const memoryReadSchema = z.object({});
+export const runLogReadSchema = z.object({ run_id: z.string().min(1, "run_id is required") });
 
 // KB schemas
 export const kbCreateSchema = z.object({
@@ -95,6 +97,11 @@ export function createToolHandlers(context) {
       return { content: readFileSync(path, "utf8") };
     },
 
+    async run_log_read(input) {
+      const { run_id: targetRunId } = runLogReadSchema.parse(input);
+      return await withDb(dataDir, (db) => readRunLog({ db, dataDir, runId: targetRunId }));
+    },
+
     async kb_create(input) {
       const { slug, title, body, tags, category, pinned } = kbCreateSchema.parse(input);
       // author is always sourced from context.agent — never from caller input
@@ -179,6 +186,18 @@ export const toolDefinitions = [
     description:
       "Read this agent's consolidated MEMORY.md for Procedures / Facts / Gotchas.",
     inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "run_log_read",
+    description:
+      "Read the full raw JSONL log for a prior Worklab run on demand. Use when compact prior-run summaries are insufficient for debugging or review.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run_id: { type: "string", description: "Task run id to inspect" },
+      },
+      required: ["run_id"],
+    },
   },
   {
     name: "kb_create",
