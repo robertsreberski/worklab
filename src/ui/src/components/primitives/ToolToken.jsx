@@ -2,6 +2,7 @@
 // text event. Mono label truncated at 320px (256 compact). Trailing status glyph.
 import { Icon } from "../Icon.jsx";
 import { normalizeCodexItemType } from "../../../../core/codex-events.js";
+import { fileEditChangeLabel } from "../../lib/fileEditDisplay.js";
 
 const STATUS_GLYPH = {
   running: "◐",
@@ -19,23 +20,10 @@ function previewValue(value) {
   }
 }
 
-function shortPath(value) {
-  return String(value || "").split(/[\\/]/).filter(Boolean).pop() || String(value || "");
-}
-
-function lineDelta(stats = {}) {
-  const added = Number(stats.added_lines);
-  const removed = Number(stats.removed_lines);
-  if (Number.isFinite(added) || Number.isFinite(removed)) {
-    return ` (+${Number.isFinite(added) ? added : 0} -${Number.isFinite(removed) ? removed : 0})`;
-  }
-  return "";
-}
-
 function fileChangeLabel(changes = []) {
   const list = Array.isArray(changes) ? changes : [];
   return list
-    .map((change) => `${change?.kind || "change"} ${shortPath(change?.path || "")}${lineDelta(change?.line_stats)}`.trim())
+    .map((change) => fileEditChangeLabel(change))
     .filter(Boolean)
     .join(", ");
 }

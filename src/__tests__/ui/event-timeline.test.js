@@ -408,6 +408,29 @@ describe("compact run event labels", () => {
     });
   });
 
+  it("labels object-shaped file edit kinds without leaking object strings", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "tool_result",
+        tool_use_id: "file-1",
+        content: {
+          status: "completed",
+          changes: [{
+            path: "/workspace/catching-up/slack/scripts/exact_slack_catchup.py",
+            kind: { type: "update", move_path: null },
+            line_stats: { added_lines: 4, removed_lines: 1 },
+          }],
+        },
+        is_error: false,
+      }),
+    ).toEqual({
+      type: "tool_use",
+      name: "file_edit",
+      arg: "update exact_slack_catchup.py (+4 -1)",
+      status: "done",
+    });
+  });
+
   it("labels completed file edit tool results with line stats", () => {
     expect(
       normalizeToolTokenEvent({

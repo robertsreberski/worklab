@@ -1,4 +1,5 @@
 import { normalizeCodexItemEvent } from "../../../core/codex-events.js";
+import { fileEditKindLabel } from "./fileEditDisplay.js";
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -76,9 +77,10 @@ function mergeArtifact(map, change, payloadStatus, isError = false) {
   const rawPath = normalizePath(change?.path);
   if (!rawPath) return;
   const stats = change?.line_stats || {};
+  const kind = fileEditKindLabel(change?.kind);
   const existing = map.get(rawPath) || {
     path: rawPath,
-    kind: change?.kind || "change",
+    kind,
     status: "in_progress",
     added_lines: 0,
     removed_lines: 0,
@@ -93,7 +95,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false) {
   const after = lineNumber(stats.after_lines);
   map.set(rawPath, {
     ...existing,
-    kind: change?.kind || existing.kind,
+    kind: kind || existing.kind,
     status: mergeStatus(existing.status, isError ? "failed" : (payloadStatus || existing.status)),
     added_lines: existing.added_lines + (added || 0),
     removed_lines: existing.removed_lines + (removed || 0),

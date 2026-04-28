@@ -119,4 +119,15 @@ describe("agent event timeline normalization", () => {
       }],
     })).toBe("update build_wp_p2_tree.py (+12 -3)");
   });
+
+  it("summarizes object-shaped file edit kinds", () => {
+    expect(fileEditSummary({
+      status: "completed",
+      changes: [{
+        path: "/workspace/catching-up/slack/scripts/exact_slack_catchup.py",
+        kind: { type: "update", move_path: null },
+        line_stats: { added_lines: 4, removed_lines: 1 },
+      }],
+    })).toBe("update exact_slack_catchup.py (+4 -1)");
+  });
 });

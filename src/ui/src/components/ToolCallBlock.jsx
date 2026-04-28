@@ -6,6 +6,7 @@ import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { StructuredValue } from "./StructuredValue.jsx";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
+import { fileEditChangeLabel, fileEditKindLabel, fileEditLineDelta, shortFilePath } from "../lib/fileEditDisplay.js";
 import { rawJsonText } from "../lib/structuredValue.js";
 
 function inputAsText(input) {
@@ -13,25 +14,9 @@ function inputAsText(input) {
   return rawJsonText(input);
 }
 
-function shortPath(value) {
-  return String(value || "").split(/[\\/]/).filter(Boolean).pop() || String(value || "");
-}
-
 function fileEditChanges(value) {
   const payload = value && typeof value === "object" ? value : {};
   return Array.isArray(payload.changes) ? payload.changes : [];
-}
-
-function lineDelta(stats = {}) {
-  const added = Number(stats.added_lines);
-  const removed = Number(stats.removed_lines);
-  if (Number.isFinite(added) || Number.isFinite(removed)) {
-    return `+${Number.isFinite(added) ? added : 0} -${Number.isFinite(removed) ? removed : 0}`;
-  }
-  const before = Number(stats.before_lines);
-  const after = Number(stats.after_lines);
-  if (Number.isFinite(before) && Number.isFinite(after)) return `${before}->${after} lines`;
-  return "";
 }
 
 export function fileEditSummary(value) {
@@ -47,8 +32,7 @@ export function fileEditSummary(value) {
     return `${changes.length} files${delta}`;
   }
   const change = changes[0];
-  const delta = lineDelta(change?.line_stats);
-  return `${change?.kind || "change"} ${shortPath(change?.path || "")}${delta ? ` (${delta})` : ""}`.trim();
+  return fileEditChangeLabel(change);
 }
 
 function FileEditResult({ value }) {
@@ -65,11 +49,11 @@ function FileEditResult({ value }) {
       {changes.length ? (
         <ul class="file-edit-list">
           {changes.map((change, index) => {
-            const delta = lineDelta(change?.line_stats);
+            const delta = fileEditLineDelta(change?.line_stats);
             return (
               <li key={`${change?.path || "change"}-${index}`}>
-                <span class="file-edit-kind">{change?.kind || "change"}</span>
-                <code title={change?.path || ""}>{shortPath(change?.path || "")}</code>
+                <span class="file-edit-kind">{fileEditKindLabel(change?.kind)}</span>
+                <code title={change?.path || ""}>{shortFilePath(change?.path || "")}</code>
                 {delta && <span class="file-edit-delta">{delta}</span>}
                 {change?.line_stats?.unavailable_reason && (
                   <span class="file-edit-muted">{change.line_stats.unavailable_reason}</span>
