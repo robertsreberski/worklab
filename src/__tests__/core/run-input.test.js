@@ -84,6 +84,60 @@ describe("run input assembly", () => {
     });
   });
 
+  it("surfaces run-start human comments as current run guidance", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status)
+        VALUES ('run-prev', ?, 'execute', 'execute', 'owner', 1000, 2000, 'cancelled', 'cancelled')
+      `).run(task.id);
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('run-current', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running')
+      `).run(task.id);
+      db.prepare(`
+        INSERT INTO task_comments
+          (id, task_id, author_type, body, created_at)
+        VALUES (?, ?, 'human', ?, ?)
+      `).run("comment-old", task.id, "Older guidance from the prior run.", 1500);
+      db.prepare(`
+        INSERT INTO task_comments
+          (id, task_id, author_type, body, created_at)
+        VALUES (?, ?, 'human', ?, ?)
+      `).run("comment-current", task.id, "Remove all contents of the slack subdir and start over.", 3000);
+      db.prepare(`
+        INSERT INTO task_comments
+          (id, task_id, author_type, body, created_at)
+        VALUES (?, ?, 'human', ?, ?)
+      `).run("comment-live", task.id, "Live input after the run started.", 3001);
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-current",
+        mode: "execute",
+      });
+
+      expect(input.currentRunComments.map((comment) => comment.body)).toEqual([
+        "Remove all contents of the slack subdir and start over.",
+      ]);
+      const guidanceStart = input.systemPrompt.indexOf("## Current Run Guidance");
+      const taskStart = input.systemPrompt.indexOf("## Task");
+      const guidanceSection = input.systemPrompt.slice(guidanceStart, taskStart);
+      expect(guidanceStart).toBeGreaterThan(0);
+      expect(guidanceStart).toBeLessThan(taskStart);
+      expect(guidanceSection).toContain("newest current-run comment wins");
+      expect(guidanceSection).toContain("Remove all contents of the slack subdir and start over.");
+      expect(guidanceSection).not.toContain("Older guidance from the prior run.");
+      expect(guidanceSection).not.toContain("Live input after the run started.");
+    });
+  });
+
   it("uses the same assembled payload for plan previews and worker input", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "planner", "Plan as owner.");

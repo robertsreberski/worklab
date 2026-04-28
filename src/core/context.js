@@ -118,6 +118,16 @@ function formatComments(comments) {
     .join("\n\n");
 }
 
+function formatCurrentRunGuidance(comments) {
+  if (!comments?.length) return "";
+  return [
+    "Treat these human comments as the active instruction for this run.",
+    "Apply them before older comments and prior run history. If they conflict with older instructions, the newest current-run comment wins.",
+    "",
+    formatComments(comments),
+  ].join("\n");
+}
+
 function formatPinnedKb(pinnedKb) {
   if (!pinnedKb?.length) return "";
   return pinnedKb
@@ -221,13 +231,14 @@ function buildAutomationBody(automation) {
   ].filter(Boolean).join("\n");
 }
 
-function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, priorRuns }) {
+function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, currentRunComments, pinnedKb, priorRuns }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));
   parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
   parts.push(renderSkills(skills));
   parts.push(section("Memory", memory || ""));
   parts.push(section("Recent journal", journalTail || ""));
+  parts.push(section("Current Run Guidance", formatCurrentRunGuidance(currentRunComments)));
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
   parts.push(section("Available run logs", formatAvailableRunLogs(priorRuns)));
@@ -249,15 +260,16 @@ export function buildExecuteSystemPrompt(input) {
   return parts.filter(Boolean).join("\n");
 }
 
-// NOTE: the first 6 sections MUST match buildExecuteSystemPrompt byte-for-byte
+// NOTE: the first shared context sections MUST match buildExecuteSystemPrompt byte-for-byte
 // (T13 e2e verifies pinned KB + skills appear identically in both modes).
-export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTail, comments, pinnedKb, execution }) {
+export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTail, comments, currentRunComments, pinnedKb, execution }) {
   const parts = [];
   parts.push(section("Role", agent.instructions || ""));
   parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
   parts.push(renderSkills(skills));
   parts.push(section("Memory", memory || ""));
   parts.push(section("Recent journal", journalTail || ""));
+  parts.push(section("Current Run Guidance", formatCurrentRunGuidance(currentRunComments)));
   parts.push(section("Task", buildTaskBody(task, comments)));
   parts.push(formatWorkOutput(execution || {}));
   parts.push(section("Available run logs", formatReviewRunLogs(execution)));
