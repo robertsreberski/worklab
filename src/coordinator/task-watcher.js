@@ -125,6 +125,7 @@ export function createTaskWatcher({
   runIdleWarningMs = 120 * 1000,
   logInlineLimit = 12_000,
   maxFailures = DEFAULT_MAX_FAILURES,
+  events,
 }) {
   const active = new Map();
   const activeByRunId = new Map();
@@ -629,7 +630,9 @@ export function createTaskWatcher({
       handleFailedExit(taskId, runId, res, task, run);
     }
 
-    broker.broadcast("global", buildRunLifecycleEvent(db, "run_ended", runId, { taskId }));
+    const endedEvent = buildRunLifecycleEvent(db, "run_ended", runId, { taskId });
+    broker.broadcast("global", endedEvent);
+    events?.emit?.("run:ended", endedEvent);
   }
 
   function cancel(taskId) {

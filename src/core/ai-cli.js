@@ -327,7 +327,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const prompt = promptFromMessages(options.messages);
   const dir = mkdtempSync(join(tmpdir(), "worklab-cli-"));
   const schemaPath = join(dir, "worklab-result.schema.json");
-  writeFileSync(schemaPath, JSON.stringify(WORKLAB_RESULT_JSON_SCHEMA));
+  writeFileSync(schemaPath, JSON.stringify(options.outputSchema || WORKLAB_RESULT_JSON_SCHEMA));
   const mcpServers = options.mcpServers || {};
   const mcpConfigPath = hasEntries(mcpServers) && resolved.sdk === "claude-code"
     ? join(dir, "mcp.json")

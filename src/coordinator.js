@@ -15,6 +15,7 @@ import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";
 import { createAutomationManager } from "./coordinator/automation-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
+import { createWorklabSlackService } from "./integrations/slack/service.js";
 
 export function createWatcherProxy(watcherHolder) {
   return {
@@ -74,6 +75,10 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     runNow: (...args) => automationManagerHolder.current.runNow(...args),
     isActive: (...args) => automationManagerHolder.current.isActive(...args),
   };
+  const slackHolder = { current: null };
+  const slackProxy = {
+    status: (...args) => slackHolder.current?.status?.(...args),
+  };
   const events = new EventEmitter();
   const { app, broker } = createServer({
     db,
@@ -85,6 +90,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     automationManager: automationManagerProxy,
     events,
     config,
+    slack: slackProxy,
   });
 
   watcherHolder.current = createTaskWatcher({
@@ -93,6 +99,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
+    events,
   });
   consolidationHolder.current = createConsolidationManager({
     db, broker, spawn: spawnWorker, workerBinary, logger,
@@ -111,6 +118,8 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   });
   automationManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
+  slackHolder.current = createWorklabSlackService({ db, config, logger, events });
+  await slackHolder.current.start();
 
   const uiDist = join(config.repoRoot, "src/ui/dist");
   if (existsSync(uiDist)) {
@@ -153,6 +162,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
     try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
+    try { await slackHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "slack shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
     try { http.closeIdleConnections(); } catch {}
@@ -177,5 +187,6 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     consolidation: consolidationHolder.current,
     automationManager: automationManagerHolder.current,
     searchIndexer,
+    slack: slackHolder.current,
   };
 }

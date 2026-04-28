@@ -86,3 +86,21 @@ export function writeMemory({ dataDir, agent, content }) {
   renameSync(tmp, path);
   return path;
 }
+
+export function appendMemoryFacts({ dataDir, agent, runId, facts, now = new Date() }) {
+  const cleanFacts = (facts || []).map((fact) => String(fact || "").trim()).filter(Boolean);
+  if (!cleanFacts.length) return null;
+  const path = agentMemoryPath(dataDir, agent);
+  ensureDir(path);
+  if (!existsSync(path)) {
+    writeFileSync(path, "# Worklab Memory\n\n## Procedures\n\n## Facts\n\n## Gotchas\n");
+  }
+  const lines = [
+    "",
+    `### ${isoTimestamp(now)} - run ${runId}`,
+    ...cleanFacts.map((fact) => `- ${fact.replace(/\n+/g, " ")}`),
+    "",
+  ];
+  appendFileSync(path, lines.join("\n"));
+  return path;
+}

@@ -15,7 +15,8 @@ describe("openDb + runMigrations", () => {
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
         "custom_providers", "custom_models", "embeddings", "settings",
         "agent_consolidations", "task_dependencies", "automations", "automation_runs",
-        "automation_triggers", "task_edges",
+        "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
+        "slack_agent_logs", "slack_delivery_log",
       ]),
     );
   });

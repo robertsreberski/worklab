@@ -13,9 +13,10 @@ import { registerProviderRoutes } from "./routes-providers.js";
 import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 import { registerAutomationRoutes } from "./routes-automations.js";
+import { registerSlackRoutes } from "./routes-slack.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -37,6 +38,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerModelRoutes(app, { db, dataDir });
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
   registerAutomationRoutes(app, { db, broker, automationManager });
+  registerSlackRoutes(app, { db, config, slack });
   if (config) registerAdminMcpRoutes(app, { config, logger });
 
   app.use("/api", (_req, res) => {

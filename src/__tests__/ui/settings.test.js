@@ -42,9 +42,11 @@ describe("settings UI duration conversions", () => {
       journal_tail_lines: 80,
       kb_pinned_limit: 10,
       default_embedding_model: "",
+      slack_run_timeout_ms: minutesToMs("2"),
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
     expect(payload.cancel_grace_ms).toBe(5000);
+    expect(payload.slack_run_timeout_ms).toBe(120000);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {
@@ -56,7 +58,9 @@ describe("settings UI duration conversions", () => {
       timezone: "",
       runIdleWarningMs: minutesToMs("2"),
       logInlineLimit: 12000,
+      slackBotToken: "xoxb-secret",
     });
     expect(payload.runIdleWarningMs).toBe(120000);
+    expect(payload.slackBotToken).toBe("xoxb-secret");
   });
 });

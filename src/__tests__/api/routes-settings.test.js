@@ -53,10 +53,23 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({
       consolidation_hour: 5,
       default_embedding_model: "openai:text-embedding-3-small",
+      slack_enabled: true,
+      slack_user_id: "UROBERT",
+      slack_agent_name: "mickey",
+      slack_model: "codex:gpt-5.5",
+      slack_effort: "xhigh",
+      slack_channel_ids: ["C1", "C2"],
+      slack_run_timeout_ms: 60000,
+      slack_notify_task_completed: true,
+      slack_notify_task_errors: false,
     }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
     expect(res.body.settings.consolidation_hour).toBe(5);
     expect(res.body.settings.default_embedding_model).toBe("openai:text-embedding-3-small");
+    expect(res.body.settings.slack_enabled).toBe(true);
+    expect(res.body.settings.slack_user_id).toBe("UROBERT");
+    expect(res.body.settings.slack_channel_ids).toEqual(["C1", "C2"]);
+    expect(res.body.settings.slack_notify_task_errors).toBe(false);
   });
 
   it("PATCH rejects unknown keys", async () => {
@@ -97,6 +110,7 @@ describe("settings", () => {
       logLevel: "debug",
       timezone: "Europe/Amsterdam",
       runIdleWarningMs: 600000,
+      slackBotToken: "xoxb-secret",
     }).expect(200);
     const res = await agent.get("/api/settings/runtime").expect(200);
     const envPath = res.body.runtime.envPath;
@@ -105,7 +119,10 @@ describe("settings", () => {
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_LOG_LEVEL=debug");
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_TIMEZONE=Europe/Amsterdam");
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_RUN_IDLE_WARNING_MS=600000");
+    expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_SLACK_BOT_TOKEN=xoxb-secret");
     expect(res.body.runtime.desired.port).toBe(9000);
+    expect(res.body.runtime.desired.slackBotToken).toBe("");
+    expect(res.body.runtime.secrets.slackBotToken.desiredPresent).toBe(true);
     expect(res.body.runtime.restartRequired).toBe(true);
   });
 
