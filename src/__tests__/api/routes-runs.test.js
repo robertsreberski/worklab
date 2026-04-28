@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
+import { createWatcherProxy } from "../../coordinator.js";
 
 describe("GET /api/runs/:id", () => {
   it("returns 404 for missing run", async () => {
@@ -122,6 +123,38 @@ describe("POST /api/runs/:id/messages", () => {
       body: "Please inspect the migration path.",
     });
     expect(broker.size("global")).toBe(0);
+  });
+
+  it("delivers live run messages through the coordinator watcher proxy", async () => {
+    const deliveries = [];
+    const watcherHolder = {
+      current: {
+        handleRunRequested: async () => ({ runId: "fake-run" }),
+        cancel: () => true,
+        shutdown: async () => {},
+        isActive: () => true,
+        isRunActive: () => true,
+        getRunLiveInputState: () => ({ supported: true, active: true, reason: null }),
+        sendRunMessage: async (runId, message) => {
+          deliveries.push({ runId, message });
+          return { ok: true };
+        },
+        maybeAutoStart: () => {},
+        maybeAutoStartDependents: () => {},
+      },
+    };
+    const { agent, db } = makeTestServer({ watcher: createWatcherProxy(watcherHolder) });
+    const { runId } = seedRun(db, { providerKind: "codex" });
+
+    await agent.post(`/api/runs/${runId}/messages`)
+      .send({ body: "Steer through the proxy." })
+      .expect(202);
+
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      runId,
+      message: { body: "Steer through the proxy.", authorType: "human" },
+    });
   });
 
   it("rejects unsupported providers before creating a comment", async () => {
