@@ -8,6 +8,7 @@ import {
   stripWorklabResultJson,
 } from "./worklab-result.js";
 import { normalizeCodexItemEvent } from "./codex-events.js";
+import { createFileChangePayload } from "./file-change-stats.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -264,6 +265,13 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   let resolveTurn;
   let resolveTurnReady;
   let turnReadyResolved = false;
+  const fileChangeSnapshots = new Map();
+  const codexItemContext = {
+    fileChangePayload: (raw) => createFileChangePayload(raw, {
+      cwd: options.cwd || process.cwd(),
+      snapshots: fileChangeSnapshots,
+    }),
+  };
   const turnDone = new Promise((resolve) => { resolveTurn = resolve; });
   const turnReady = new Promise((resolve) => { resolveTurnReady = resolve; });
 
@@ -349,7 +357,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
           if (method === "item/completed") handleAgentText(text);
           return;
         }
-        if (raw) emitEvent(normalizeCodexItemEvent(raw) || raw);
+        if (raw) emitEvent(normalizeCodexItemEvent(raw, codexItemContext) || raw);
       }
     },
   });
