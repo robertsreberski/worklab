@@ -48,24 +48,95 @@ function formatRunPolicy(value) {
   return value === "auto_plan_execute" ? "Auto" : "Manual";
 }
 
+const RUN_PREVIEW_METADATA_FIELDS = [
+  ["Task", ["task_key", "task_id"]],
+  ["Stage", ["stage"]],
+  ["Mode", ["mode"]],
+  ["Agent", ["agent_name"]],
+  ["Model", ["model"]],
+  ["Effort", ["effort"]],
+];
+
+function pickMetadataValue(metadata, keys) {
+  for (const key of keys) {
+    const value = metadata?.[key];
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return null;
+}
+
+function normalizeRunPreviewInput(preview) {
+  const input = preview?.input || {};
+  const metadata = {
+    task_id: input.metadata?.task_id ?? preview?.task_id ?? null,
+    task_key: input.metadata?.task_key ?? preview?.task_key ?? null,
+    stage: input.metadata?.stage ?? preview?.stage ?? null,
+    mode: input.metadata?.mode ?? preview?.mode ?? null,
+    agent_name: input.metadata?.agent_name ?? preview?.agent_name ?? null,
+    model: input.metadata?.model ?? preview?.model ?? null,
+    effort: input.metadata?.effort ?? preview?.effort ?? null,
+    generated_at: input.metadata?.generated_at ?? preview?.generated_at ?? null,
+  };
+  const system = {
+    format: input.system?.format || "markdown",
+    content: input.system?.content ?? preview?.system_prompt ?? "",
+  };
+  const sourceMessages = Array.isArray(input.messages)
+    ? input.messages
+    : (Array.isArray(preview?.messages) ? preview.messages : []);
+  const messages = sourceMessages.map((message) => ({
+    role: message?.role || "user",
+    format: message?.format || "markdown",
+    content: message?.content ?? "",
+  }));
+  const tools = Array.isArray(input.tools) ? input.tools.filter((tool) => tool?.name) : [];
+  return { metadata, system, messages, tools };
+}
+
+function runPreviewMetadataItems(metadata) {
+  return RUN_PREVIEW_METADATA_FIELDS
+    .map(([label, keys]) => [label, pickMetadataValue(metadata, keys)])
+    .filter(([, value]) => value);
+}
+
+function codeFence(format, content) {
+  const lang = format === "json" ? "json" : (format === "markdown" ? "markdown" : "");
+  return [`\`\`\`${lang}`, content || "", "```"].join("\n");
+}
+
+function formatMessageForCopy(message, index) {
+  return [
+    `### ${message.role || "message"} message ${index + 1}`,
+    `- Format: ${message.format || "plain"}`,
+    "",
+    codeFence(message.format, message.content),
+  ].join("\n");
+}
+
 export function formatRunPreviewForCopy(preview) {
   if (!preview) return "";
-  const messages = JSON.stringify(preview.messages || [], null, 2);
-  const meta = [
-    `Task: ${preview.task_key || preview.task_id || ""}`,
-    `Stage: ${preview.stage || ""}`,
-    `Mode: ${preview.mode || ""}`,
-    `Agent: ${preview.agent_name || ""}`,
-    `Model: ${preview.model || ""}`,
-    `Effort: ${preview.effort || ""}`,
-  ].filter((line) => !line.endsWith(": "));
+  const input = normalizeRunPreviewInput(preview);
+  const meta = runPreviewMetadataItems(input.metadata)
+    .map(([label, value]) => `- ${label}: ${value}`);
+  const messages = input.messages.length
+    ? input.messages.map(formatMessageForCopy).join("\n\n")
+    : "_No user messages._";
+  const tools = input.tools.map((tool) => {
+    const purpose = tool.purpose ? `: ${tool.purpose}` : "";
+    return `- \`${tool.name}\`${purpose}`;
+  });
   return [
     "# Run input",
+    "## Metadata",
     meta.join("\n"),
-    "## System prompt",
-    preview.system_prompt || "",
+    "## System message",
+    `- Format: ${input.system.format || "plain"}`,
+    "",
+    codeFence(input.system.format, input.system.content),
     "## User messages",
     messages,
+    tools.length ? "## On-demand tools" : "",
+    tools.join("\n"),
   ].filter(Boolean).join("\n\n");
 }
 
@@ -181,15 +252,8 @@ function RunInputPreviewModal({
   error,
   onCopy,
 }) {
-  const messages = preview ? JSON.stringify(preview.messages || [], null, 2) : "";
-  const meta = preview ? [
-    ["Task", preview.task_key || preview.task_id],
-    ["Stage", preview.stage],
-    ["Mode", preview.mode],
-    ["Agent", preview.agent_name],
-    ["Model", preview.model],
-    ["Effort", preview.effort],
-  ].filter(([, value]) => value) : [];
+  const input = preview ? normalizeRunPreviewInput(preview) : null;
+  const meta = input ? runPreviewMetadataItems(input.metadata) : [];
 
   return (
     <Modal
@@ -225,27 +289,51 @@ function RunInputPreviewModal({
               ))}
             </div>
             <label class="run-input-preview-field">
-              <span>System prompt</span>
+              <span>System message</span>
               <Textarea
                 rows={14}
                 monospace
                 readOnly
                 class="run-input-preview-textarea"
-                aria-label="System prompt"
-                value={preview.system_prompt || ""}
+                aria-label="System message"
+                value={input.system.content || ""}
               />
             </label>
-            <label class="run-input-preview-field">
+            <div class="run-input-preview-field">
               <span>User messages</span>
-              <Textarea
-                rows={6}
-                monospace
-                readOnly
-                class="run-input-preview-textarea run-input-preview-messages"
-                aria-label="User messages"
-                value={messages}
-              />
-            </label>
+              <div class="run-input-preview-message-list">
+                {input.messages.map((message, index) => (
+                  <div key={`${message.role}-${index}`} class="run-input-preview-message">
+                    <div class="run-input-preview-message-head">
+                      <code>{message.role || "message"}</code>
+                      <span>{message.format || "plain"}</span>
+                    </div>
+                    <Textarea
+                      rows={6}
+                      monospace
+                      readOnly
+                      class="run-input-preview-textarea run-input-preview-messages"
+                      aria-label={`User message ${index + 1}`}
+                      value={message.content || ""}
+                    />
+                  </div>
+                ))}
+                {!input.messages.length && <div class="field-hint">No user messages.</div>}
+              </div>
+            </div>
+            {!!input.tools.length && (
+              <div class="run-input-preview-tools" aria-label="On-demand tools">
+                <span>On-demand tools</span>
+                <ul>
+                  {input.tools.map((tool) => (
+                    <li key={tool.name}>
+                      <code>{tool.name}</code>
+                      {tool.purpose && <span>{tool.purpose}</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
       </div>
