@@ -9,6 +9,27 @@ describe("commander task grouping", () => {
     })).toBe("done");
   });
 
+  it("groups done tasks with enabled schedules as automated", () => {
+    expect(groupKeyFor({
+      stage: "done",
+      automation_summary: { count: 1, enabled_count: 1, paused_count: 0 },
+    })).toBe("automated");
+  });
+
+  it("keeps done tasks with paused schedules in done", () => {
+    expect(groupKeyFor({
+      stage: "done",
+      automation_summary: { count: 1, enabled_count: 0, paused_count: 1 },
+    })).toBe("done");
+  });
+
+  it("uses runnable stages for tasks with enabled schedules", () => {
+    expect(groupKeyFor({
+      stage: "execute",
+      automation_summary: { count: 1, enabled_count: 1, paused_count: 0 },
+    })).toBe("execute");
+  });
+
   it("uses the saved task stage even when dependencies are unresolved", () => {
     expect(groupKeyFor({
       stage: "execute",
