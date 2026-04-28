@@ -246,15 +246,15 @@ describe("worklab-tools KB handlers", () => {
 
   // ── toolDefinitions count ────────────────────────────────────────────────
 
-  it("toolDefinitions includes KB and search tools", () => {
-    const kbTools = ["kb_create", "kb_update", "kb_delete", "kb_read", "kb_list", "kb_search", "journal_search", "memory_search"];
+  it("toolDefinitions includes run log, KB, and search tools", () => {
+    const kbTools = ["run_log_read", "kb_create", "kb_update", "kb_delete", "kb_read", "kb_list", "kb_search", "journal_search", "memory_search"];
     const names = toolDefinitions.map((t) => t.name);
     for (const name of kbTools) {
       expect(names).toContain(name);
     }
   });
 
-  it("toolDefinitions has 11 total entries (3 existing + 5 KB + 3 search)", () => {
-    expect(toolDefinitions.length).toBe(11);
+  it("toolDefinitions has 12 total entries (4 existing + 5 KB + 3 search)", () => {
+    expect(toolDefinitions.length).toBe(12);
   });
 });
