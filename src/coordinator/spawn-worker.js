@@ -4,6 +4,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { newAgentLogId } from "../core/ids.js";
 import { processStatusToLegacyStatus } from "../core/state-machine.js";
+import { normalizeLiveInputBody } from "../core/live-input.js";
 
 function makeRawLogPath(dataDir, runId) {
   if (!dataDir || !runId) return null;
@@ -99,7 +100,7 @@ export function spawnWorker({
 }) {
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
   });
 
   const events = [];
@@ -192,6 +193,7 @@ export function spawnWorker({
   }
 
   function terminateChild() {
+    try { child.stdin?.end?.(); } catch { /* already closed */ }
     try { child.kill("SIGTERM"); } catch { /* already gone */ }
     if (!sigkillTimer) {
       sigkillTimer = setTimeout(() => {
@@ -257,6 +259,49 @@ export function spawnWorker({
     if (cancelRequested) return;
     cancelRequested = true;
     terminateChild();
+  }
+
+  function writeControlMessage(payload) {
+    return new Promise((resolve, reject) => {
+      if (finalized || child.stdin?.destroyed || child.stdin?.writableEnded) {
+        reject(new Error("run is no longer accepting input"));
+        return;
+      }
+      child.stdin.write(`${JSON.stringify(payload)}\n`, (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
+  async function sendLiveMessage(message) {
+    const normalized = normalizeLiveInputBody(message?.body);
+    if (!normalized.ok) return { ok: false, code: normalized.code, message: normalized.error };
+    const payload = {
+      type: "live_user_message",
+      id: message.id,
+      body: normalized.body,
+      created_at: message.createdAt || Date.now(),
+      author_type: message.authorType || "human",
+    };
+    try {
+      await writeControlMessage(payload);
+    } catch (err) {
+      return {
+        ok: false,
+        code: "delivery_failed",
+        message: err?.message || "failed to deliver message to worker",
+      };
+    }
+    emitEvent({
+      type: "live_user_message",
+      message_id: payload.id || null,
+      body: payload.body,
+      created_at: payload.created_at,
+      author_type: payload.author_type,
+      ts: Date.now(),
+    });
+    return { ok: true };
   }
 
   const done = new Promise((resolve) => {
@@ -361,5 +406,5 @@ export function spawnWorker({
     });
   });
 
-  return { pid: child.pid, done, cancel };
+  return { pid: child.pid, done, cancel, sendLiveMessage };
 }

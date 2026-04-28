@@ -40,6 +40,7 @@ describe("GET /api/runs/:id", () => {
     const res = await agent.get(`/api/runs/${runId}`).expect(200);
 
     expect(res.body.run.process_status).toBe("running");
+    expect(res.body.run.live_input).toMatchObject({ supported: false, active: false });
     expect(res.body.log.events).toEqual([{ type: "text", text: "still working", _event_seq: 1 }]);
   });
 
@@ -64,6 +65,118 @@ describe("GET /api/runs/:id", () => {
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("POST /api/runs/:id/messages", () => {
+  function seedRun(db, { providerKind = "claude", status = "running", processStatus = "running" } = {}) {
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare(
+      `INSERT INTO task_runs
+        (id, task_id, mode, agent_name, provider_kind, started_at, status, process_status)
+       VALUES (?, ?, 'execute', 'a', ?, ?, ?, ?)`,
+    ).run(runId, taskId, providerKind, now, status, processStatus);
+    return { taskId, runId };
+  }
+
+  it("persists and delivers a live run message", async () => {
+    const deliveries = [];
+    const watcher = {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => true,
+      isRunActive: () => true,
+      getRunLiveInputState: () => ({ supported: true, active: true, reason: null }),
+      sendRunMessage: async (runId, message) => {
+        deliveries.push({ runId, message });
+        return { ok: true };
+      },
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+    };
+    const { agent, db, broker } = makeTestServer({ watcher });
+    const { taskId, runId } = seedRun(db);
+
+    const res = await agent.post(`/api/runs/${runId}/messages`)
+      .send({ body: "Please inspect the migration path." })
+      .expect(202);
+
+    expect(res.body.delivered).toBe(true);
+    expect(deliveries).toHaveLength(1);
+    expect(deliveries[0]).toMatchObject({
+      runId,
+      message: {
+        id: res.body.message.id,
+        body: "Please inspect the migration path.",
+        authorType: "human",
+      },
+    });
+    const comment = db.prepare("SELECT * FROM task_comments WHERE task_id = ?").get(taskId);
+    expect(comment).toMatchObject({
+      id: res.body.message.id,
+      author_type: "human",
+      body: "Please inspect the migration path.",
+    });
+    expect(broker.size("global")).toBe(0);
+  });
+
+  it("rejects unsupported providers before creating a comment", async () => {
+    const { agent, db } = makeTestServer();
+    const { taskId, runId } = seedRun(db, { providerKind: "openai" });
+
+    await agent.post(`/api/runs/${runId}/messages`)
+      .send({ body: "Guide this." })
+      .expect(409);
+
+    const comments = db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId);
+    expect(comments).toHaveLength(0);
+  });
+
+  it("rejects inactive runs before creating a comment", async () => {
+    const { agent, db } = makeTestServer();
+    const { taskId, runId } = seedRun(db, { providerKind: "claude", status: "complete", processStatus: "succeeded" });
+
+    await agent.post(`/api/runs/${runId}/messages`)
+      .send({ body: "Too late." })
+      .expect(409);
+
+    expect(db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId)).toHaveLength(0);
+  });
+
+  it("validates empty and oversized message bodies", async () => {
+    const { agent, db } = makeTestServer();
+    const { runId } = seedRun(db, { providerKind: "claude" });
+
+    await agent.post(`/api/runs/${runId}/messages`).send({ body: "   " }).expect(400);
+    await agent.post(`/api/runs/${runId}/messages`).send({ body: "x".repeat(8001) }).expect(400);
+  });
+
+  it("returns a delivery failure when persistence succeeds but worker delivery fails", async () => {
+    const watcher = {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => true,
+      isRunActive: () => true,
+      getRunLiveInputState: () => ({ supported: true, active: true, reason: null }),
+      sendRunMessage: async () => ({ ok: false, code: "delivery_failed", message: "stdin closed" }),
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+    };
+    const { agent, db } = makeTestServer({ watcher });
+    const { taskId, runId } = seedRun(db);
+
+    const res = await agent.post(`/api/runs/${runId}/messages`)
+      .send({ body: "Try another path." })
+      .expect(409);
+
+    expect(res.body.delivered).toBe(false);
+    expect(res.body.error.code).toBe("delivery_failed");
+    expect(db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId)).toHaveLength(1);
   });
 });
 

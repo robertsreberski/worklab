@@ -106,6 +106,57 @@ describe("spawnWorker", () => {
     expect(rows[0].status).toBe("complete");
   });
 
+  it("delivers live user messages over worker stdin and logs the accepted message", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [{ type: "started", runId }],
+      echoControls: true,
+      exitCode: 0,
+      exitAfterMs: 500,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+
+    const delivery = await handle.sendLiveMessage({
+      id: "comment-1",
+      body: "Please focus on the failing test.",
+      createdAt: 123,
+    });
+
+    expect(delivery).toEqual({ ok: true });
+
+    let controlEvent = null;
+    for (let i = 0; i < 20; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      controlEvent = broker.broadcasts.find((item) => item.ch === runId && item.p.type === "control_seen");
+      if (controlEvent) break;
+    }
+
+    expect(controlEvent?.p.message).toMatchObject({
+      type: "live_user_message",
+      id: "comment-1",
+      body: "Please focus on the failing test.",
+      created_at: 123,
+      author_type: "human",
+    });
+    const liveEvent = broker.broadcasts.find((item) => item.ch === runId && item.p.type === "live_user_message");
+    expect(liveEvent?.p).toMatchObject({
+      message_id: "comment-1",
+      body: "Please focus on the failing test.",
+      created_at: 123,
+      author_type: "human",
+    });
+
+    await handle.done;
+  });
+
   it("records error status on nonzero exit", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

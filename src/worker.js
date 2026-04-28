@@ -15,9 +15,40 @@ import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllo
 import { readSettings } from "./core/settings.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { createInterface } from "node:readline";
+import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
+}
+
+const liveInput = createLiveInputQueue();
+
+function startControlReader() {
+  const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
+  rl.on("line", (line) => {
+    if (!line.trim()) return;
+    let message;
+    try {
+      message = JSON.parse(line);
+    } catch {
+      emit({ type: "runtime_warning", warning_kind: "live_input_parse", message: "Ignored malformed live input message." });
+      return;
+    }
+    if (message?.type !== "live_user_message") return;
+    const normalized = normalizeLiveInputBody(message.body);
+    if (!normalized.ok) {
+      emit({ type: "runtime_warning", warning_kind: "live_input_invalid", message: normalized.error });
+      return;
+    }
+    liveInput.push({
+      id: message.id || null,
+      body: normalized.body,
+      createdAt: message.created_at || Date.now(),
+      authorType: message.author_type || "human",
+    });
+  });
+  rl.on("close", () => liveInput.close());
 }
 
 function validateRuntimeResult(result) {
@@ -245,6 +276,8 @@ function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
 }
 
 async function main() {
+  startControlReader();
+
   const { values } = parseArgs({
     options: {
       task: { type: "string" },
@@ -404,6 +437,7 @@ async function main() {
         permissionMode: "bypassPermissions",
         maxTurns: maxTurnsForModel(model, 30),
         abortSignal: ac.signal,
+        liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {
@@ -489,6 +523,7 @@ async function main() {
         permissionMode: "bypassPermissions",
         maxTurns: maxTurnsForModel(model, 30),
         abortSignal: ac.signal,
+        liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {

@@ -28,7 +28,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   registerTaskRoutes(app, { db, broker, logger, watcher });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });
-  registerRunRoutes(app, { db, broker, dataDir });
+  registerRunRoutes(app, { db, broker, dataDir, watcher });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });
   if (dataDir) registerSkillRoutes(app, { dataDir, db });
   if (dataDir) registerMcpRoutes(app, { dataDir, repoRoot });

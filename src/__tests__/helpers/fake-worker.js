@@ -11,6 +11,24 @@ function emit(obj) {
 let aborted = false;
 process.on("SIGTERM", () => { aborted = true; });
 
+if (script.echoControls) {
+  let buffer = "";
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk.toString();
+    while (buffer.includes("\n")) {
+      const index = buffer.indexOf("\n");
+      const line = buffer.slice(0, index);
+      buffer = buffer.slice(index + 1);
+      if (!line.trim()) continue;
+      try {
+        emit({ type: "control_seen", message: JSON.parse(line) });
+      } catch {
+        emit({ type: "control_seen", malformed: line });
+      }
+    }
+  });
+}
+
 async function run() {
   for (const e of script.events) {
     if (aborted) { emit({ type: "cancelled" }); process.exit(130); }

@@ -1,23 +1,101 @@
 import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+import { newCommentId } from "../core/ids.js";
+import { normalizeLiveInputBody, supportsLiveInputProvider } from "../core/live-input.js";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-export function registerRunRoutes(app, { db, broker, dataDir }) {
+function normalizeRun(row, liveInputState = null) {
+  const processStatus = row.status !== "running" && row.process_status === "running"
+    ? legacyRunStatusToProcessStatus(row.status)
+    : row.process_status;
+  const supported = supportsLiveInputProvider(row.provider_kind);
+  return {
+    ...row,
+    process_status: processStatus,
+    artifact_paths: JSON.parse(row.artifact_paths_json || "[]"),
+    result: row.result_json ? JSON.parse(row.result_json) : null,
+    live_input: {
+      supported,
+      active: !!(supported && liveInputState?.active),
+      reason: supported ? (liveInputState?.reason || null) : "unsupported_provider",
+    },
+  };
+}
+
+function runProcessStatus(row) {
+  return row.status !== "running" && row.process_status === "running"
+    ? legacyRunStatusToProcessStatus(row.status)
+    : row.process_status;
+}
+
+export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
   app.get("/api/runs/:id", (req, res) => {
     const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
-    const processStatus = row.status !== "running" && row.process_status === "running"
-      ? legacyRunStatusToProcessStatus(row.status)
-      : row.process_status;
-    const run = {
-      ...row,
-      process_status: processStatus,
-      artifact_paths: JSON.parse(row.artifact_paths_json || "[]"),
-      result: row.result_json ? JSON.parse(row.result_json) : null,
-    };
+    const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
+    const run = normalizeRun(row, liveInputState);
     const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(req.params.id);
     const log = logRow ? { ...logRow, events: JSON.parse(logRow.events || "[]") } : null;
     res.json({ run, log });
+  });
+
+  app.post("/api/runs/:id/messages", async (req, res, next) => {
+    try {
+      const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
+      if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
+
+      const normalized = normalizeLiveInputBody(req.body?.body);
+      if (!normalized.ok) {
+        return res.status(400).json({ error: { code: normalized.code, message: normalized.error } });
+      }
+      if (!row.task_id) {
+        return res.status(409).json({ error: { code: "run_not_task_bound", message: "run is not attached to a task" } });
+      }
+      if (runProcessStatus(row) !== "running") {
+        return res.status(409).json({ error: { code: "run_not_active", message: "run is not running" } });
+      }
+      if (!supportsLiveInputProvider(row.provider_kind)) {
+        return res.status(409).json({
+          error: { code: "live_input_unsupported", message: "live input is not supported for this provider" },
+        });
+      }
+      if (typeof watcher?.sendRunMessage !== "function") {
+        return res.status(409).json({ error: { code: "live_input_unavailable", message: "live input is unavailable" } });
+      }
+      const state = watcher.getRunLiveInputState?.(row.id);
+      if (state && !state.active) {
+        return res.status(409).json({ error: { code: "run_not_active", message: "run is not active" } });
+      }
+
+      const now = Date.now();
+      const commentId = newCommentId();
+      db.prepare(
+        `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+         VALUES (?, ?, 'human', ?, ?)`,
+      ).run(commentId, row.task_id, normalized.body, now);
+      broker.broadcast("global", { type: "task_updated", id: row.task_id });
+
+      const delivery = await watcher.sendRunMessage(row.id, {
+        id: commentId,
+        body: normalized.body,
+        createdAt: now,
+        authorType: "human",
+      });
+      const message = { id: commentId, body: normalized.body, created_at: now };
+      if (!delivery?.ok) {
+        return res.status(409).json({
+          delivered: false,
+          message,
+          error: {
+            code: delivery?.code || "delivery_failed",
+            message: delivery?.message || "failed to deliver message to worker",
+          },
+        });
+      }
+      res.status(202).json({ delivered: true, message });
+    } catch (err) {
+      next(err);
+    }
   });
 
   app.get("/api/runs/:id/raw-log", (req, res) => {
