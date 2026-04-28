@@ -135,7 +135,7 @@ function mcpServersFromRows(rows = []) {
 }
 
 export function runtimePayload(runtimeDraft = {}) {
-  const payload = {
+  return {
     host: runtimeDraft.host,
     port: Number(runtimeDraft.port),
     workspace: runtimeDraft.workspace,
@@ -144,9 +144,6 @@ export function runtimePayload(runtimeDraft = {}) {
     runIdleWarningMs: Number(runtimeDraft.runIdleWarningMs),
     logInlineLimit: Number(runtimeDraft.logInlineLimit),
   };
-  if (runtimeDraft.slackBotToken) payload.slackBotToken = runtimeDraft.slackBotToken;
-  if (runtimeDraft.slackAppToken) payload.slackAppToken = runtimeDraft.slackAppToken;
-  return payload;
 }
 
 export function settingsPayload(settings = {}) {
@@ -242,8 +239,6 @@ export function Settings() {
         timezone: "",
         runIdleWarningMs: 120000,
         logInlineLimit: 12000,
-        slackBotToken: "",
-        slackAppToken: "",
       };
       setRuntime(null);
       setRuntimeDraft(fallback);
@@ -511,7 +506,7 @@ export function Settings() {
             </div>
           </FormSection>
 
-          <FormSection kicker="Slack" title="Bot integration" description="Socket Mode bot for Slack triage and Worklab task notifications. Token changes apply after restart.">
+          <FormSection kicker="Slack" title="Bot integration" description="Socket Mode bot for Slack triage and Worklab task notifications. Tokens are read from the Worklab .env file.">
             <FormGrid columns={3}>
               <FormField switchInside>
                 <Switch
@@ -559,24 +554,6 @@ export function Settings() {
                   value={settings.slack_effort || "xhigh"}
                   options={SLACK_EFFORT_OPTIONS}
                   onChange={(value) => setSettings({ ...settings, slack_effort: value })}
-                />
-              </FormField>
-              <FormField label="Bot token">
-                <Input
-                  type="password"
-                  autocomplete="new-password"
-                  value={runtimeDraft.slackBotToken || ""}
-                  placeholder={runtime?.secrets?.slackBotToken?.desiredPresent ? "Configured" : "xoxb-..."}
-                  onInput={(event) => setRuntimeDraft({ ...runtimeDraft, slackBotToken: event.target.value })}
-                />
-              </FormField>
-              <FormField label="App token">
-                <Input
-                  type="password"
-                  autocomplete="new-password"
-                  value={runtimeDraft.slackAppToken || ""}
-                  placeholder={runtime?.secrets?.slackAppToken?.desiredPresent ? "Configured" : "xapp-..."}
-                  onInput={(event) => setRuntimeDraft({ ...runtimeDraft, slackAppToken: event.target.value })}
                 />
               </FormField>
               <FormField label="Status">

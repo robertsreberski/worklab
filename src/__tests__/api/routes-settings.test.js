@@ -110,7 +110,6 @@ describe("settings", () => {
       logLevel: "debug",
       timezone: "Europe/Amsterdam",
       runIdleWarningMs: 600000,
-      slackBotToken: "xoxb-secret",
     }).expect(200);
     const res = await agent.get("/api/settings/runtime").expect(200);
     const envPath = res.body.runtime.envPath;
@@ -119,10 +118,7 @@ describe("settings", () => {
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_LOG_LEVEL=debug");
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_TIMEZONE=Europe/Amsterdam");
     expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_RUN_IDLE_WARNING_MS=600000");
-    expect(readFileSync(envPath, "utf8")).toContain("WORKLAB_SLACK_BOT_TOKEN=xoxb-secret");
     expect(res.body.runtime.desired.port).toBe(9000);
-    expect(res.body.runtime.desired.slackBotToken).toBe("");
-    expect(res.body.runtime.secrets.slackBotToken.desiredPresent).toBe(true);
     expect(res.body.runtime.restartRequired).toBe(true);
   });
 
@@ -130,6 +126,7 @@ describe("settings", () => {
     const { agent } = runtimeServer();
     await agent.patch("/api/settings/runtime").send({ port: 70000 }).expect(400);
     await agent.patch("/api/settings/runtime").send({ timezone: "Not/AZone" }).expect(400);
+    await agent.patch("/api/settings/runtime").send({ slackBotToken: "xoxb-secret" }).expect(400);
     await agent.patch("/api/settings/runtime").send({ bogus: true }).expect(400);
   });
 
