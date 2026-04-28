@@ -10,7 +10,6 @@ import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
@@ -210,6 +209,102 @@ function slackStatusMeta(status, settings) {
   if (status.connected) return { status: "enabled", label: "Connected" };
   if (status.reason === "start_failed") return { status: "error", label: "Start failed" };
   return { status: "running", label: "Configured" };
+}
+
+export function serviceStatusMeta(runtime) {
+  if (!runtime) return { status: "error", label: "Unavailable" };
+  if (runtime.restartRequired) return { status: "running", label: "Restart pending" };
+  if (runtime.service?.installed) {
+    return {
+      status: "enabled",
+      label: runtime.service.platform ? `Installed (${runtime.service.platform})` : "Installed",
+    };
+  }
+  return { status: "disabled", label: "Not installed" };
+}
+
+export function searchIndexMeta(status) {
+  if (!status) return { status: "disabled", label: "Unknown" };
+  if (Number(status.errors || 0) > 0) return { status: "error", label: "Has errors" };
+  if (status.model && status.ready === false) return { status: "running", label: "Paused" };
+  if (status.ready) return { status: "enabled", label: "Ready" };
+  if (!status.model) return { status: "disabled", label: "No model" };
+  return { status: "running", label: "Indexing" };
+}
+
+export function mcpAvailabilitySummary(status = {}, rows = []) {
+  const servers = status?.servers || [];
+  const unavailable = servers.filter((server) => server.available === false).length;
+  const builtin = servers.filter((server) => server.source === "builtin").length;
+  const user = rows.length;
+  if (status?.config_error) return { status: "error", label: "Config error", builtin, user, unavailable };
+  if (unavailable) return { status: "error", label: `${unavailable} unavailable`, builtin, user, unavailable };
+  return { status: "enabled", label: "Available", builtin, user, unavailable };
+}
+
+function scrollToSettingsSection(id) {
+  if (typeof document === "undefined") return;
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function SettingsOverviewCard({ icon, title, value, detail, status, statusLabel }) {
+  return (
+    <div class="settings-overview-card">
+      <div class="settings-overview-icon"><Icon name={icon} size={18} /></div>
+      <div class="settings-overview-copy">
+        <span>{title}</span>
+        <strong>{value || "-"}</strong>
+        {detail && <small>{detail}</small>}
+      </div>
+      {status && <StatusPill status={status} label={statusLabel} size="sm" />}
+    </div>
+  );
+}
+
+function SettingsSection({ id, kicker, title, description, aside, children }) {
+  return (
+    <section id={id} class="settings-section-shell">
+      <header class="settings-section-head">
+        <div class="settings-section-copy">
+          {kicker && <span class="form-section-kicker">{kicker}</span>}
+          {title && <h2>{title}</h2>}
+          {description && <p>{description}</p>}
+        </div>
+        {aside && <div class="settings-section-aside">{aside}</div>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function SettingPanel({ icon, title, meta, status, statusLabel, children, class: className = "" }) {
+  return (
+    <div class={`settings-panel ${className}`.trim()}>
+      <header class="settings-panel-head">
+        <div class="settings-panel-title">
+          {icon && <span class="settings-panel-icon"><Icon name={icon} size={16} /></span>}
+          <div>
+            <h3>{title}</h3>
+            {meta && <p>{meta}</p>}
+          </div>
+        </div>
+        {status && <StatusPill status={status} label={statusLabel} size="sm" />}
+      </header>
+      <div class="settings-panel-body">{children}</div>
+    </div>
+  );
+}
+
+function AdvancedSettings({ summary, count, defaultOpen = false, children }) {
+  return (
+    <details class="settings-advanced" open={defaultOpen}>
+      <summary>
+        <span>{summary}</span>
+        {typeof count === "number" && <em>{count}</em>}
+      </summary>
+      <div class="settings-advanced-body">{children}</div>
+    </details>
+  );
 }
 
 export function Settings() {
@@ -423,11 +518,39 @@ export function Settings() {
     </Button>
   );
   const notificationMeta = notificationStatus(notificationSettingsState);
+  const serviceMeta = serviceStatusMeta(runtime);
+  const searchMeta = searchIndexMeta(indexStatus);
+  const mcpSummary = mcpAvailabilitySummary(mcpStatus, mcpRows);
+  const builtinMcpServers = (mcpStatus?.servers || []).filter((server) => server.source === "builtin");
+  const userMcpStatusByName = new Map(
+    (mcpStatus?.servers || [])
+      .filter((server) => server.source === "user")
+      .map((server) => [server.name, server]),
+  );
+  const endpointLabel = runtimeDraft.host || runtimeDraft.port
+    ? `${runtimeDraft.host || "-"}:${runtimeDraft.port || "-"}`
+    : "-";
+  const sectionLinks = [
+    { id: "settings-runtime", label: "Runtime", icon: "settings" },
+    { id: "settings-execution", label: "Execution", icon: "clock" },
+    { id: "settings-notifications", label: "Notifications", icon: "message-circle" },
+    { id: "settings-slack", label: "Slack", icon: "message-square" },
+    { id: "settings-search", label: "Search", icon: "database" },
+    { id: "settings-tools", label: "Tools", icon: "terminal" },
+  ];
 
   return (
     <AppShell route="settings">
-      <div class="page-wrap">
-        <div class="page-actions toolbar">{pageActions}</div>
+      <div class="page-wrap settings-page">
+        <header class="settings-page-head">
+          <div class="settings-page-title">
+            <span class="form-section-kicker">Settings</span>
+            <h1>Settings</h1>
+            <p>Service, workers, integrations, search, and MCP tools.</p>
+          </div>
+          <div class="page-actions toolbar">{pageActions}</div>
+        </header>
+
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
@@ -447,68 +570,156 @@ export function Settings() {
           />
         )}
 
+        <div class="settings-overview-grid">
+          <SettingsOverviewCard
+            icon="settings"
+            title="Service"
+            value={serviceMeta.label}
+            detail={endpointLabel}
+            status={serviceMeta.status}
+            statusLabel={serviceMeta.label}
+          />
+          <SettingsOverviewCard
+            icon="clock"
+            title="Execution"
+            value={`${minutesValue(settings.worker_timeout_ms) || "-"} min timeout`}
+            detail={settings.consolidation_enabled ? `Memory at ${settings.consolidation_hour}:00` : "Memory refresh off"}
+            status={settings.consolidation_enabled ? "enabled" : "disabled"}
+            statusLabel={settings.consolidation_enabled ? "Memory on" : "Memory off"}
+          />
+          <SettingsOverviewCard
+            icon="message-circle"
+            title="Notifications"
+            value={`Browser ${notificationMeta.label.toLowerCase()}`}
+            detail={`Slack ${slackMeta.label.toLowerCase()}`}
+            status={notificationMeta.status === "error" || slackMeta.status === "error" ? "error" : slackMeta.status}
+            statusLabel={slackMeta.label}
+          />
+          <SettingsOverviewCard
+            icon="database"
+            title="Search"
+            value={searchMeta.label}
+            detail={indexStatus ? `${indexStatus.vectorized || 0}/${indexStatus.total || 0} vectorized` : "Index status unknown"}
+            status={searchMeta.status}
+            statusLabel={searchMeta.label}
+          />
+          <SettingsOverviewCard
+            icon="terminal"
+            title="MCP"
+            value={mcpSummary.label}
+            detail={`${mcpSummary.builtin} built-in / ${mcpSummary.user} external`}
+            status={mcpSummary.status}
+            statusLabel={mcpSummary.label}
+          />
+        </div>
+
+        <nav class="settings-section-nav" aria-label="Settings sections">
+          {sectionLinks.map((item) => (
+            <button type="button" key={item.id} onClick={() => scrollToSettingsSection(item.id)}>
+              <Icon name={item.icon} size={14} />
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </nav>
+
         <div class="settings-sections">
-          <FormSection kicker="Runtime" title="Service runtime" description="Values written here apply after the Worklab service restarts.">
-            <FormGrid columns={3}>
-              <FormField label="Host">
-                <Input disabled={!!runtimeError} value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
-              </FormField>
-              <FormField label="Port">
-                <Input disabled={!!runtimeError} type="number" min="1" max="65535" value={runtimeDraft.port} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(event.target.value) })} />
-              </FormField>
-              <FormField label="Log level">
-                <Select disabled={!!runtimeError} variant="native" value={runtimeDraft.logLevel} options={LOG_LEVEL_OPTIONS} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logLevel: value })} />
-              </FormField>
-              <FormField label="Workspace" class="span-2">
-                <Input disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
-              </FormField>
-              <FormField label="Timezone">
-                <Input disabled={!!runtimeError} value={runtimeDraft.timezone || ""} placeholder="system local time" onInput={(event) => setRuntimeDraft({ ...runtimeDraft, timezone: event.target.value })} />
-              </FormField>
-              <FormField label="Idle warning (minutes)">
-                <Input disabled={!!runtimeError} type="number" min="0" step="0.01" value={minutesValue(runtimeDraft.runIdleWarningMs)} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: minutesToMs(event.target.value) })} />
-              </FormField>
-              <FormField label="Inline log limit (chars)">
-                <Input disabled={!!runtimeError} type="number" min="0" value={runtimeDraft.logInlineLimit} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(event.target.value) })} />
-              </FormField>
-            </FormGrid>
-            <div class="settings-note-grid">
-              <FieldNote label="Data directory" value={runtime?.readOnly?.dataDir} mono />
-              <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
-              <FieldNote label="Service" value={runtime?.service?.installed ? `installed (${runtime.service.platform})` : "not installed"} />
+          <SettingsSection
+            id="settings-runtime"
+            kicker="Runtime"
+            title="Service runtime"
+            description="Service boot values are written to the Worklab data-dir .env file."
+            aside={<StatusPill status={serviceMeta.status} label={serviceMeta.label} />}
+          >
+            <div class="settings-panel-grid">
+              <SettingPanel icon="folder" title="Workspace" meta="Agent working directory. Requires restart." class="span-2">
+                <FormField label="Workspace">
+                  <Input disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
+                </FormField>
+              </SettingPanel>
+              <SettingPanel icon="database" title="Environment snapshot" meta="Read-only runtime locations.">
+                <div class="settings-note-grid single">
+                  <FieldNote label="Data directory" value={runtime?.readOnly?.dataDir} mono />
+                  <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
+                  <FieldNote label="Service" value={serviceMeta.label} />
+                </div>
+              </SettingPanel>
             </div>
-          </FormSection>
+            <AdvancedSettings summary="Network and process settings" count={4}>
+              <FormGrid columns={3}>
+                <FormField label="Host" hint="Requires restart.">
+                  <Input disabled={!!runtimeError} value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
+                </FormField>
+                <FormField label="Port" hint="Requires restart.">
+                  <Input disabled={!!runtimeError} type="number" min="1" max="65535" value={runtimeDraft.port} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(event.target.value) })} />
+                </FormField>
+                <FormField label="Log level" hint="Requires restart.">
+                  <Select disabled={!!runtimeError} variant="native" value={runtimeDraft.logLevel} options={LOG_LEVEL_OPTIONS} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logLevel: value })} />
+                </FormField>
+                <FormField label="Timezone" hint="Requires restart.">
+                  <Input disabled={!!runtimeError} value={runtimeDraft.timezone || ""} placeholder="system local time" onInput={(event) => setRuntimeDraft({ ...runtimeDraft, timezone: event.target.value })} />
+                </FormField>
+              </FormGrid>
+            </AdvancedSettings>
+          </SettingsSection>
 
-          <FormSection kicker="Execution" title="Workers and memory" description="Global limits and context controls used by new agent runs.">
-            <FormGrid columns={3}>
-              <FormField label="Worker timeout (minutes)">
-                <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.worker_timeout_ms)} onInput={(event) => setSettings({ ...settings, worker_timeout_ms: minutesToMs(event.target.value) })} />
-              </FormField>
-              <FormField label="Cancel grace (seconds)">
-                <Input type="number" min="0" step="1" value={secondsValue(settings.cancel_grace_ms)} onInput={(event) => setSettings({ ...settings, cancel_grace_ms: secondsToMs(event.target.value) })} />
-              </FormField>
-              <FormField label="Consolidation hour">
-                <Input type="number" min="0" max="23" value={settings.consolidation_hour} onInput={(event) => setSettings({ ...settings, consolidation_hour: event.target.value })} />
-              </FormField>
-              <FormField label="Journal tail lines">
-                <Input type="number" min="0" max="1000" value={settings.journal_tail_lines} onInput={(event) => setSettings({ ...settings, journal_tail_lines: event.target.value })} />
-              </FormField>
-              <FormField label="Pinned KB limit">
-                <Input type="number" min="0" max="100" value={settings.kb_pinned_limit} onInput={(event) => setSettings({ ...settings, kb_pinned_limit: event.target.value })} />
-              </FormField>
-              <FormField switchInside>
-                <Switch
-                  checked={!!settings.consolidation_enabled}
-                  onChange={(next) => setSettings({ ...settings, consolidation_enabled: next })}
-                  label="Nightly consolidation"
-                  description="Refresh agent memory once per day."
-                />
-              </FormField>
-            </FormGrid>
-          </FormSection>
+          <SettingsSection
+            id="settings-execution"
+            kicker="Execution"
+            title="Workers and memory"
+            description="Run limits and context controls used by new agent runs."
+            aside={<StatusPill status={settings.consolidation_enabled ? "enabled" : "disabled"} label={settings.consolidation_enabled ? "Memory on" : "Memory off"} />}
+          >
+            <div class="settings-panel-grid">
+              <SettingPanel icon="clock" title="Run limits" meta="Global timeout behavior for spawned workers.">
+                <FormGrid columns={2}>
+                  <FormField label="Worker timeout (minutes)">
+                    <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.worker_timeout_ms)} onInput={(event) => setSettings({ ...settings, worker_timeout_ms: minutesToMs(event.target.value) })} />
+                  </FormField>
+                  <FormField label="Cancel grace (seconds)">
+                    <Input type="number" min="0" step="1" value={secondsValue(settings.cancel_grace_ms)} onInput={(event) => setSettings({ ...settings, cancel_grace_ms: secondsToMs(event.target.value) })} />
+                  </FormField>
+                </FormGrid>
+              </SettingPanel>
+              <SettingPanel icon="book" title="Memory refresh" meta="Nightly consolidation for agent memory.">
+                <div class="settings-switch-stack">
+                  <Switch
+                    checked={!!settings.consolidation_enabled}
+                    onChange={(next) => setSettings({ ...settings, consolidation_enabled: next })}
+                    label="Nightly consolidation"
+                    description="Refresh agent memory once per day."
+                  />
+                  <FormField label="Consolidation hour">
+                    <Input type="number" min="0" max="23" value={settings.consolidation_hour} onInput={(event) => setSettings({ ...settings, consolidation_hour: event.target.value })} />
+                  </FormField>
+                </div>
+              </SettingPanel>
+            </div>
+            <AdvancedSettings summary="Context and logging limits" count={4}>
+              <FormGrid columns={3}>
+                <FormField label="Journal tail lines">
+                  <Input type="number" min="0" max="1000" value={settings.journal_tail_lines} onInput={(event) => setSettings({ ...settings, journal_tail_lines: event.target.value })} />
+                </FormField>
+                <FormField label="Pinned KB limit">
+                  <Input type="number" min="0" max="100" value={settings.kb_pinned_limit} onInput={(event) => setSettings({ ...settings, kb_pinned_limit: event.target.value })} />
+                </FormField>
+                <FormField label="Idle warning (minutes)" hint="Requires restart.">
+                  <Input disabled={!!runtimeError} type="number" min="0" step="0.01" value={minutesValue(runtimeDraft.runIdleWarningMs)} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: minutesToMs(event.target.value) })} />
+                </FormField>
+                <FormField label="Inline log limit (chars)" hint="Requires restart.">
+                  <Input disabled={!!runtimeError} type="number" min="0" value={runtimeDraft.logInlineLimit} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(event.target.value) })} />
+                </FormField>
+              </FormGrid>
+            </AdvancedSettings>
+          </SettingsSection>
 
-          <FormSection kicker="Browser" title="Notifications" description="Browser-local notification preference for this Worklab origin.">
-            <div class="settings-admin-row compact">
+          <SettingsSection
+            id="settings-notifications"
+            kicker="Browser"
+            title="Notifications"
+            description="Browser-local notification preference for this Worklab origin."
+            aside={<StatusPill status={notificationMeta.status} label={notificationMeta.label} />}
+          >
+            <SettingPanel icon="message-circle" title="Browser notifications" meta={notificationDescription(notificationSettingsState)} status={notificationMeta.status} statusLabel={notificationMeta.label}>
               <Switch
                 checked={!!notificationSettingsState.enabled}
                 disabled={notificationBusy || !notificationSettingsState.supported}
@@ -516,82 +727,96 @@ export function Settings() {
                 label="Browser notifications"
                 description={notificationDescription(notificationSettingsState)}
               />
-              <StatusPill status={notificationMeta.status} label={notificationMeta.label} />
-            </div>
-          </FormSection>
+            </SettingPanel>
+          </SettingsSection>
 
-          <FormSection kicker="Slack" title="Bot integration" description="Socket Mode bot for Slack triage and Worklab task notifications. Tokens are read from the Worklab .env file.">
-            <FormGrid columns={3}>
-              <FormField switchInside>
-                <Switch
-                  checked={!!settings.slack_enabled}
-                  onChange={(next) => setSettings({ ...settings, slack_enabled: next })}
-                  label="Slack bot"
-                  description="Receive Slack messages and send task complete/error DMs."
-                />
-              </FormField>
-              <FormField switchInside>
-                <Switch
-                  checked={!!settings.slack_notify_task_completed}
-                  onChange={(next) => setSettings({ ...settings, slack_notify_task_completed: next })}
-                  label="Task completions"
-                  description="DM when a task reaches done."
-                />
-              </FormField>
-              <FormField switchInside>
-                <Switch
-                  checked={!!settings.slack_notify_task_errors}
-                  onChange={(next) => setSettings({ ...settings, slack_notify_task_errors: next })}
-                  label="Task errors"
-                  description="DM when a task run fails or blocks."
-                />
-              </FormField>
-              <FormField label="Human Slack user ID" hint="Used for DMs and task notifications. This must be your Slack user ID, not the bot user ID.">
-                <Input value={settings.slack_user_id || ""} placeholder="U..." onInput={(event) => setSettings({ ...settings, slack_user_id: event.target.value })} />
-              </FormField>
-              <FormField label="Bot memory name">
-                <Input value={settings.slack_agent_name || ""} placeholder="assistant" onInput={(event) => setSettings({ ...settings, slack_agent_name: event.target.value })} />
-              </FormField>
-              <FormField label="Run timeout (minutes)">
-                <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.slack_run_timeout_ms)} onInput={(event) => setSettings({ ...settings, slack_run_timeout_ms: minutesToMs(event.target.value) })} />
-              </FormField>
-              <FormField label="Default model" class="span-2">
-                <Select
-                  value={currentSlackModel}
-                  options={slackModelOptions}
-                  onChange={(value) => setSettings({ ...settings, slack_model: value })}
-                />
-              </FormField>
-              <FormField label="Effort">
-                <Select
-                  variant="native"
-                  value={settings.slack_effort || "xhigh"}
-                  options={SLACK_EFFORT_OPTIONS}
-                  onChange={(value) => setSettings({ ...settings, slack_effort: value })}
-                />
-              </FormField>
-              <FormField label="Status">
-                <div class="settings-admin-row-head">
-                  <StatusPill status={slackMeta.status} label={slackMeta.label} />
-                  {slackStatus?.bot_user_id && <span class="settings-inline-status">{slackStatus.bot_user_id}</span>}
+          <SettingsSection
+            id="settings-slack"
+            kicker="Slack"
+            title="Bot integration"
+            description="Socket Mode bot for Slack triage and Worklab task notifications."
+            aside={(
+              <div class="settings-section-status">
+                <StatusPill status={slackMeta.status} label={slackMeta.label} />
+                {slackStatus?.bot_user_id && <span class="settings-inline-status">{slackStatus.bot_user_id}</span>}
+              </div>
+            )}
+          >
+            <div class="settings-panel-grid">
+              <SettingPanel icon="message-square" title="Delivery" meta="Bot intake and outbound DMs." status={slackMeta.status} statusLabel={slackMeta.label}>
+                <div class="settings-switch-stack">
+                  <Switch
+                    checked={!!settings.slack_enabled}
+                    onChange={(next) => setSettings({ ...settings, slack_enabled: next })}
+                    label="Slack bot"
+                    description="Receive Slack messages and send task complete/error DMs."
+                  />
+                  <Switch
+                    checked={!!settings.slack_notify_task_completed}
+                    onChange={(next) => setSettings({ ...settings, slack_notify_task_completed: next })}
+                    label="Task completions"
+                    description="DM when a task reaches done."
+                  />
+                  <Switch
+                    checked={!!settings.slack_notify_task_errors}
+                    onChange={(next) => setSettings({ ...settings, slack_notify_task_errors: next })}
+                    label="Task errors"
+                    description="DM when a task run fails or blocks."
+                  />
                 </div>
-              </FormField>
-              <FormField label="Channel allowlist" class="span-3" hint="Optional. Leave empty to accept all non-DM channels where the bot receives events.">
-                <Textarea
-                  rows={3}
-                  monospace
-                  value={textFromList(settings.slack_channel_ids)}
-                  placeholder={"C123...\nC456..."}
-                  onInput={(event) => setSettings({ ...settings, slack_channel_ids: listFromText(event.target.value) })}
-                />
-              </FormField>
-            </FormGrid>
-            <div class="settings-note-grid">
-              <FieldNote label="Last inbound" value={slackStatus?.last_inbound?.received_at ? new Date(slackStatus.last_inbound.received_at).toLocaleString() : "-"} />
-              <FieldNote label="Last rejected" value={slackRejectedSenderLabel(slackStatus)} mono />
-              <FieldNote label="Last run" value={slackStatus?.last_run?.status || "-"} />
-              <FieldNote label="Last delivery" value={slackStatus?.last_delivery?.status || "-"} />
+              </SettingPanel>
+              <SettingPanel icon="user" title="Identity" meta="Human recipient for DMs and commands." status={slackUserIsBot ? "error" : undefined} statusLabel={slackUserIsBot ? "Bot ID" : undefined}>
+                <FormField label="Human Slack user ID" hint="This must be your Slack user ID, not the bot user ID.">
+                  <Input value={settings.slack_user_id || ""} placeholder="U..." onInput={(event) => setSettings({ ...settings, slack_user_id: event.target.value })} />
+                </FormField>
+              </SettingPanel>
+              <SettingPanel icon="sparkles" title="Run behavior" meta="Default model used for Slack-triggered runs.">
+                <FormGrid columns={2}>
+                  <FormField label="Default model" class="span-2">
+                    <Select
+                      value={currentSlackModel}
+                      options={slackModelOptions}
+                      onChange={(value) => setSettings({ ...settings, slack_model: value })}
+                    />
+                  </FormField>
+                  <FormField label="Effort">
+                    <Select
+                      variant="native"
+                      value={settings.slack_effort || "xhigh"}
+                      options={SLACK_EFFORT_OPTIONS}
+                      onChange={(value) => setSettings({ ...settings, slack_effort: value })}
+                    />
+                  </FormField>
+                </FormGrid>
+              </SettingPanel>
             </div>
+            <AdvancedSettings summary="Routing and run tuning" count={3}>
+              <FormGrid columns={3}>
+                <FormField label="Bot memory name">
+                  <Input value={settings.slack_agent_name || ""} placeholder="assistant" onInput={(event) => setSettings({ ...settings, slack_agent_name: event.target.value })} />
+                </FormField>
+                <FormField label="Run timeout (minutes)">
+                  <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.slack_run_timeout_ms)} onInput={(event) => setSettings({ ...settings, slack_run_timeout_ms: minutesToMs(event.target.value) })} />
+                </FormField>
+                <FormField label="Channel allowlist" class="span-3" hint="Optional. Leave empty to accept all non-DM channels where the bot receives events.">
+                  <Textarea
+                    rows={3}
+                    monospace
+                    value={textFromList(settings.slack_channel_ids)}
+                    placeholder={"C123...\nC456..."}
+                    onInput={(event) => setSettings({ ...settings, slack_channel_ids: listFromText(event.target.value) })}
+                  />
+                </FormField>
+              </FormGrid>
+            </AdvancedSettings>
+            <AdvancedSettings summary="Slack diagnostics" count={4} defaultOpen={!!slackStatus?.last_error || slackUserIsBot}>
+              <div class="settings-note-grid">
+                <FieldNote label="Last inbound" value={slackStatus?.last_inbound?.received_at ? new Date(slackStatus.last_inbound.received_at).toLocaleString() : "-"} />
+                <FieldNote label="Last rejected" value={slackRejectedSenderLabel(slackStatus)} mono />
+                <FieldNote label="Last run" value={slackStatus?.last_run?.status || "-"} />
+                <FieldNote label="Last delivery" value={slackStatus?.last_delivery?.status || "-"} />
+              </div>
+            </AdvancedSettings>
             {slackUserIsBot && (
               <Banner
                 variant="error"
@@ -600,41 +825,94 @@ export function Settings() {
               />
             )}
             {slackStatus?.last_error && <Banner variant="error" title="Slack error" detail={slackStatus.last_error} />}
-          </FormSection>
+          </SettingsSection>
 
-          <FormSection kicker="Search" title="Embeddings" description="Controls which embedding model is used to index knowledge and journals.">
-            <FormField
-              label="Embedding model"
-              hint='Disabled skips vectorization. Run "Discover" on a provider, then enable an embedding model to select it here.'
-            >
-              <Select
-                value={currentEmbedding}
-                options={embeddingOptions}
-                onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
-              />
-            </FormField>
-            {indexStatus && (
-              <div class={`settings-index-status ${indexStatus.errors ? "has-errors" : ""}`}>
-                Search index: {indexStatus.total} chunks / {indexStatus.vectorized} vectorized / {indexStatus.errors} errors / {indexStatus.model || "-"}
-                {indexStatus.model && !indexStatus.ready && ` / paused (${indexStatus.reason || "provider not configured"})`}
+          <SettingsSection
+            id="settings-search"
+            kicker="Search"
+            title="Embeddings"
+            description="Embedding model selection and index health."
+            aside={<StatusPill status={searchMeta.status} label={searchMeta.label} />}
+          >
+            <SettingPanel icon="database" title="Knowledge search" meta="Controls vectorization for knowledge and journals." status={searchMeta.status} statusLabel={searchMeta.label}>
+              <FormField
+                label="Embedding model"
+                hint='Disabled skips vectorization. Run "Discover" on a provider, then enable an embedding model to select it here.'
+              >
+                <Select
+                  value={currentEmbedding}
+                  options={embeddingOptions}
+                  onChange={(value) => setSettings({ ...settings, default_embedding_model: value })}
+                />
+              </FormField>
+              <div class={`settings-index-status ${indexStatus?.errors ? "has-errors" : ""}`}>
+                <FieldNote label="Chunks" value={indexStatus ? indexStatus.total : "-"} />
+                <FieldNote label="Vectorized" value={indexStatus ? indexStatus.vectorized : "-"} />
+                <FieldNote label="Errors" value={indexStatus ? indexStatus.errors : "-"} />
+                <FieldNote label="Model" value={indexStatus?.model || "-"} mono />
               </div>
-            )}
-          </FormSection>
+              {indexStatus?.model && !indexStatus.ready && (
+                <div class="settings-inline-warning">Paused: {indexStatus.reason || "provider not configured"}</div>
+              )}
+            </SettingPanel>
+          </SettingsSection>
 
-          <FormSection kicker="Tools" title="MCP servers" description="Built-in servers are read-only. User servers are saved to the MCP config file.">
+          <SettingsSection
+            id="settings-tools"
+            kicker="Tools"
+            title="MCP servers"
+            description="Built-in servers are read-only. User servers are saved to the MCP config file."
+            aside={<StatusPill status={mcpSummary.status} label={mcpSummary.label} />}
+          >
             {mcpStatus?.config_error && <Banner variant="error" title="MCP config error" detail={mcpStatus.config_error} />}
-            <div class="settings-list">
-              {(mcpStatus?.servers || []).filter((server) => server.source === "builtin").map((server) => (
-                <div class="settings-admin-row compact" key={server.name}>
-                  <div>
-                    <strong>{server.name}</strong>
-                    <div class="settings-row-sub">{server.transport} / built-in</div>
-                  </div>
-                  <StatusPill status={server.available === false ? "error" : "enabled"} label={server.available === false ? "Unavailable" : "Available"} />
-                </div>
+            <div class="settings-panel-grid">
+              {builtinMcpServers.map((server) => (
+                <SettingPanel
+                  key={server.name}
+                  icon="terminal"
+                  title={server.name}
+                  meta={`${server.transport} / built-in`}
+                  status={server.available === false ? "error" : "enabled"}
+                  statusLabel={server.available === false ? "Unavailable" : "Available"}
+                >
+                  <div class="settings-inline-status">{server.unavailable_reason || "Ready for agent MCP allowlists."}</div>
+                </SettingPanel>
               ))}
-              {mcpRows.map((row) => (
-                <div class="settings-admin-row" key={row.id}>
+              {builtinMcpServers.length === 0 && (
+                <SettingPanel icon="terminal" title="Built-in servers" meta="No built-in MCP servers reported." status="disabled" statusLabel="None">
+                  <div class="settings-inline-status">No built-in MCP servers are available.</div>
+                </SettingPanel>
+              )}
+            </div>
+            <div class="settings-list-head">
+              <div>
+                <h3>External MCP servers</h3>
+                <p>{mcpRows.length ? `${mcpRows.length} configured` : "No external servers configured"}</p>
+              </div>
+              <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
+            </div>
+            <div class="settings-list">
+              {mcpRows.length === 0 && <div class="settings-empty-note">External MCP servers can be added when an agent needs tools outside Worklab.</div>}
+              {mcpRows.map((row) => {
+                const serverStatus = userMcpStatusByName.get(row.name);
+                const status = row.name
+                  ? (serverStatus?.available === false ? "error" : "enabled")
+                  : "disabled";
+                const statusLabel = row.name
+                  ? (serverStatus?.available === false ? "Unavailable" : "Configured")
+                  : "Draft";
+                return (
+                <div class="settings-admin-row settings-mcp-row" key={row.id}>
+                  <div class="settings-mcp-head">
+                    <div>
+                      <strong>{row.name || "New MCP server"}</strong>
+                      <div class="settings-row-sub">{row.transport} / external</div>
+                    </div>
+                    <div class="settings-row-actions">
+                      <StatusPill status={status} label={statusLabel} size="sm" />
+                      <Button variant="destructive" size="sm" iconLeft={<Icon name="trash" size={12} />} onClick={() => setMcpRows((rows) => rows.filter((item) => item.id !== row.id))}>Delete</Button>
+                    </div>
+                  </div>
                   <FormGrid columns={3}>
                     <FormField label="Name">
                       <Input value={row.name} onInput={(event) => updateMcpRow(row.id, { name: event.target.value })} />
@@ -642,9 +920,9 @@ export function Settings() {
                     <FormField label="Transport">
                       <Select variant="native" value={row.transport} options={MCP_TRANSPORT_OPTIONS} onChange={(value) => updateMcpRow(row.id, { transport: value })} />
                     </FormField>
-                    <FormField label="Action">
-                      <Button variant="destructive" size="sm" onClick={() => setMcpRows((rows) => rows.filter((item) => item.id !== row.id))}>Delete</Button>
-                    </FormField>
+                  </FormGrid>
+                  <AdvancedSettings summary="Connection details" count={row.transport === "stdio" ? 3 : 2} defaultOpen={!row.name || row.id.startsWith("new-")}>
+                    <FormGrid columns={3}>
                     {row.transport === "stdio" ? (
                       <>
                         <FormField label="Command" class="span-2">
@@ -667,12 +945,14 @@ export function Settings() {
                         </FormField>
                       </>
                     )}
-                  </FormGrid>
+                    </FormGrid>
+                    {serverStatus?.unavailable_reason && <div class="settings-inline-warning">{serverStatus.unavailable_reason}</div>}
+                  </AdvancedSettings>
                 </div>
-              ))}
+                );
+              })}
             </div>
-            <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
-          </FormSection>
+          </SettingsSection>
 
         </div>
       </div>
