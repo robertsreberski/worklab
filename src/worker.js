@@ -1,14 +1,14 @@
 import { parseArgs } from "node:util";
 import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
-import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
+import { readFullJournal, writeMemory } from "./core/journal.js";
+import { readAgentMemoryContent, readAgentMemoryContext } from "./core/memory.js";
 import { buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
 import { kbListPinned } from "./core/kb.js";
 import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
 import { readSettings } from "./core/settings.js";
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
@@ -148,9 +148,11 @@ function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
   const settings = readSettings(db);
 
-  const memoryPath = agentMemoryPath(config.dataDir, agentName);
-  const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
-  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: settings.journal_tail_lines });
+  const { memory, journalTail } = readAgentMemoryContext({
+    dataDir: config.dataDir,
+    agent: agentName,
+    maxJournalLines: settings.journal_tail_lines,
+  });
   const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
     config,
     agent,
@@ -202,8 +204,7 @@ async function main() {
   if (mode === "consolidate") {
     const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
     if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
-    const memoryPath = agentMemoryPath(config.dataDir, agentName);
-    const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
+    const memory = readAgentMemoryContent({ dataDir: config.dataDir, agent: agentName });
     const journal = readFullJournal({ dataDir: config.dataDir, agent: agentName });
     if (!journal.trim()) {
       emit({ type: "error", message: `agent ${agentName} has no journal entries to consolidate` });

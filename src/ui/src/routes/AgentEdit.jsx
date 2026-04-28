@@ -3,8 +3,9 @@
 // 3–5 options, Select otherwise. If `reasoningMode === 'none'`, renders muted
 // placeholder (§6.5 rule).
 
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { useSSE } from "../lib/useSSE.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
@@ -108,6 +109,72 @@ function normalizedNames(list) {
 
 function allowlistMode(mode) {
   return mode === "custom" ? "custom" : "all";
+}
+
+export function memoryFreshnessLabel(memory) {
+  switch (memory?.freshness) {
+    case "current":
+      return "Current";
+    case "stale":
+      return "Needs consolidation";
+    case "not_consolidated":
+      return memory?.exists ? "Needs consolidation" : "No memory yet";
+    case "no_journal":
+      return "No journal yet";
+    case "consolidating":
+      return "Consolidating";
+    default:
+      return "Loading";
+  }
+}
+
+export function memoryFreshnessStatus(memory) {
+  switch (memory?.freshness) {
+    case "current":
+      return "complete";
+    case "stale":
+    case "not_consolidated":
+      return "review";
+    case "consolidating":
+      return "running";
+    case "no_journal":
+    default:
+      return "disabled";
+  }
+}
+
+export function formatMemoryBytes(bytes) {
+  const value = Math.max(0, Number(bytes) || 0);
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatMemoryTime(value) {
+  return value ? new Date(value).toLocaleString() : "Never";
+}
+
+export function memoryMetaItems(memory) {
+  if (!memory) return [{ label: "State", value: "Loading" }];
+  const journalValue = !memory.journal_exists
+    ? "No journal"
+    : memory.journal_changed
+      ? "Changed"
+      : "Matched";
+  return [
+    { label: "State", value: memoryFreshnessLabel(memory), mono: false },
+    { label: "Memory", value: memory.exists ? formatMemoryBytes(memory.size_bytes) : "Not written", mono: false },
+    { label: "Updated", value: formatMemoryTime(memory.updated_at), mono: false },
+    { label: "Consolidated", value: formatMemoryTime(memory.last_consolidated_at), mono: false },
+    { label: "Journal", value: journalValue, mono: false },
+    memory.last_run_id ? { label: "Run", value: memory.last_run_id, mono: true } : null,
+  ].filter(Boolean);
+}
+
+export function memoryContentPlaceholder(memory) {
+  if (!memory) return "Loading memory...";
+  if (!memory.exists) return "No consolidated memory has been written yet.";
+  return "";
 }
 
 function CapabilityGroup({
@@ -214,6 +281,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const [skills, setSkills] = useState([]);
   const [mcpServers, setMcpServers] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
+  const [memoryState, setMemoryState] = useState(null);
+  const [memoryError, setMemoryError] = useState(null);
   const [consolidating, setConsolidating] = useState(false);
   const [notice, setNotice] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -229,6 +298,22 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const selectedModelUnavailable = optionUnavailable(selectedModel);
   const modelSaveBlocked = (isNew || modelChanged) && selectedModelUnavailable;
 
+  const loadMemory = useCallback(async () => {
+    if (isNew) {
+      setMemoryState(null);
+      setMemoryError(null);
+      return;
+    }
+    try {
+      const res = await api.getAgentMemory(name);
+      setMemoryState(res.memory || null);
+      setMemoryError(null);
+    } catch (err) {
+      setMemoryState(null);
+      setMemoryError(err?.message || "Memory state unavailable");
+    }
+  }, [isNew, name]);
+
   useEffect(() => {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
     api.getMcpStatus().then(r => setMcpServers(r.servers || [])).catch(() => setMcpServers([]));
@@ -240,6 +325,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       setBaseline(emptyAgent);
     }
   }, [name, isNew]);
+
+  useEffect(() => { loadMemory(); }, [loadMemory]);
 
   const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
@@ -285,6 +372,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+  });
+
+  useSSE("global", (evt) => {
+    if (isNew || !name) return;
+    const isThisAgent = evt.agent === name || evt.name === name;
+    if (isThisAgent && (evt.type === "agent_consolidated" || (evt.type === "run_started" && evt.mode === "consolidate"))) {
+      loadMemory();
+    }
   });
 
   if (!agent) return <LoadingState caption="Loading agent…" />;
@@ -352,6 +447,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     try {
       const res = await api.consolidateAgent(name);
       setNotice(res.skipped ? "Memory is already current." : `Consolidation started: ${res.runId}`);
+      await loadMemory();
     } catch (err) {
       pushToast(`Consolidate failed: ${err.message}`, { variant: "error" });
     } finally {
@@ -402,6 +498,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       mono: false,
     },
   ];
+  const memoryLabel = memoryFreshnessLabel(memoryState);
+  const memoryStatus = memoryFreshnessStatus(memoryState);
 
   return (
     <>
@@ -590,15 +688,39 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             </Card>
 
             {!isNew && (
-              <Card collapsible={{ summary: "More actions", count: 2 }} class="entity-rail-card">
-                <Button
-                  variant="secondary"
-                  iconLeft={<Icon name="refresh-cw" size={13} />}
-                  onClick={consolidateNow}
-                  loading={consolidating}
-                >
-                  Consolidate memory
-                </Button>
+              <Card
+                variant="spacious"
+                title="Long-term memory"
+                headerRight={<StatusPill status={memoryStatus} label={memoryLabel} size="sm" />}
+                class="entity-rail-card agent-memory-card"
+              >
+                {memoryError && <div class="agent-memory-error">{memoryError}</div>}
+                <EntityMetaList items={memoryMetaItems(memoryState)} />
+                <Textarea
+                  rows={10}
+                  monospace
+                  readOnly
+                  class="agent-memory-textarea"
+                  aria-label="Long-term memory"
+                  value={memoryState?.content || ""}
+                  placeholder={memoryContentPlaceholder(memoryState)}
+                />
+                <div class="agent-memory-actions">
+                  <Button
+                    variant="secondary"
+                    iconLeft={<Icon name="refresh-cw" size={13} />}
+                    onClick={consolidateNow}
+                    loading={consolidating || memoryState?.freshness === "consolidating"}
+                    disabled={memoryState?.freshness === "consolidating"}
+                  >
+                    Consolidate memory
+                  </Button>
+                </div>
+              </Card>
+            )}
+
+            {!isNew && (
+              <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
                 <Button
                   variant="destructive"
                   iconLeft={<Icon name="trash" size={13} />}

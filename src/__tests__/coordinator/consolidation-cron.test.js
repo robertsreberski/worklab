@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createConsolidationManager } from "../../coordinator/consolidation-cron.js";
 import { writeSettings } from "../../core/settings.js";
+import { writeMemory } from "../../core/journal.js";
+import { buildTaskRunInput } from "../../core/run-input.js";
 
 describe("consolidation manager", () => {
   const dirs = [];
@@ -13,7 +15,7 @@ describe("consolidation manager", () => {
     dirs.length = 0;
   });
 
-  function fixture() {
+  function fixture({ onComplete } = {}) {
     const dataDir = join(mkdtemp(), "data");
     mkdirSync(join(dataDir, "agents", "alice"), { recursive: true });
     writeFileSync(join(dataDir, "agents", "alice", "JOURNAL.md"), "## first\n- remember the rollback checklist\n");
@@ -27,6 +29,7 @@ describe("consolidation manager", () => {
     const broker = { broadcast: vi.fn((channel, event) => broadcasts.push({ channel, event })) };
     const spawn = vi.fn(({ db: workerDb, runId }) => {
       const done = Promise.resolve().then(() => {
+        onComplete?.({ dataDir, runId });
         workerDb.prepare("UPDATE task_runs SET status = 'complete', ended_at = ?, exit_code = 0 WHERE id = ?")
           .run(Date.now(), runId);
         return { status: "complete" };
@@ -109,5 +112,43 @@ describe("consolidation manager", () => {
     const nextDay = manager.tick(new Date("2026-04-23T03:10:00Z"));
     expect(nextDay.started).toEqual([]);
     expect(db.prepare("SELECT COUNT(*) AS count FROM task_runs").get().count).toBe(1);
+  });
+
+  it("makes consolidated memory available to the next task run prompt", async () => {
+    const { dataDir, db, spawn, manager } = fixture({
+      onComplete: () => {
+        writeMemory({
+          dataDir,
+          agent: "alice",
+          content: "# Facts\n- Rollback checklist lives in MEMORY.md.",
+        });
+      },
+    });
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, title, instructions, stage, owner_agent, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("task-1", "T-1", "task-1", "Use memory", "Use stored facts.", "execute", "alice", now, now);
+
+    const result = manager.runNow("alice");
+    await spawn.mock.results[0].value.done;
+    await Promise.resolve();
+
+    const consolidation = db.prepare("SELECT last_run_id FROM agent_consolidations WHERE agent_name = ?").get("alice");
+    expect(consolidation.last_run_id).toBe(result.runId);
+
+    const input = buildTaskRunInput({
+      db,
+      config: { dataDir, repoRoot: dataDir, workspace: dataDir },
+      taskId: "task-1",
+      agentName: "alice",
+      runId: "run-next",
+      mode: "execute",
+    });
+
+    expect(input.memory).toContain("Rollback checklist lives in MEMORY.md.");
+    expect(input.systemPrompt).toContain("## Memory");
+    expect(input.systemPrompt).toContain("Rollback checklist lives in MEMORY.md.");
   });
 });

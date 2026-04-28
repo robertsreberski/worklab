@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { buildNextTaskRunPreview, buildTaskRunInput } from "../../core/run-input.js";
+import { appendJournalEntry, writeMemory } from "../../core/journal.js";
 
 function withRunInputDb(fn) {
   const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-input-"));
@@ -131,6 +132,41 @@ describe("run input assembly", () => {
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
       expect(preview.messages).toEqual(input.messages);
+    });
+  });
+
+  it("injects consolidated memory and recent journal from agent files", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Use stored procedures.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      writeMemory({
+        dataDir: config.dataDir,
+        agent: "owner",
+        content: "# Procedures\n- Always run the release checklist.",
+      });
+      appendJournalEntry({
+        dataDir: config.dataDir,
+        agent: "owner",
+        runId: "run-journal",
+        taskId: task.id,
+        taskTitle: task.title,
+        bullet: "The staging deploy uses the release checklist.",
+      });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-next",
+        mode: "execute",
+      });
+
+      expect(input.memory).toContain("Always run the release checklist.");
+      expect(input.journalTail).toContain("The staging deploy uses the release checklist.");
+      expect(input.systemPrompt).toContain("## Memory\n\n# Procedures\n- Always run the release checklist.");
+      expect(input.systemPrompt).toContain("## Recent journal");
+      expect(input.systemPrompt).toContain("- The staging deploy uses the release checklist.");
     });
   });
 });

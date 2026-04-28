@@ -1,9 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { loadSkills } from "./skills.js";
 import { enrichCommentRows } from "./comments.js";
 import { getAvailableMcpServers } from "./mcp-config.js";
-import { readJournalTail, agentMemoryPath } from "./journal.js";
+import { readAgentMemoryContext } from "./memory.js";
 import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt } from "./context.js";
 import { WORKLAB_BUILTIN_TOOLS, resolveModel } from "./ai.js";
 import { extractExecutionFromEvents } from "./review-exec.js";
@@ -168,9 +167,11 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId),
   );
 
-  const memoryPath = agentMemoryPath(config.dataDir, agentName);
-  const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
-  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: settings.journal_tail_lines });
+  const { memory, journalTail } = readAgentMemoryContext({
+    dataDir: config.dataDir,
+    agent: agentName,
+    maxJournalLines: settings.journal_tail_lines,
+  });
   const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
     config,
     agent,
