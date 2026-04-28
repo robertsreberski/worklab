@@ -896,8 +896,13 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   app.delete("/api/tasks/:id/comments/:commentId", (req, res) => {
     try {
       const existing = taskOr404(db, req.params.id);
-      const comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
-        .get(req.params.commentId, existing.id);
+      const requestedCommentId = String(req.params.commentId || "");
+      let comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
+        .get(requestedCommentId, existing.id);
+      if (!comment && requestedCommentId.startsWith("c-")) {
+        comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
+          .get(requestedCommentId.slice(2), existing.id);
+      }
       if (!comment) throw routeError(404, "not_found", "comment not found");
       if (comment.author_type !== "human") {
         throw routeError(403, "forbidden", "only human comments can be deleted");
