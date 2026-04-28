@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  mcpAvailabilitySummary,
   minutesToMs,
   minutesValue,
   runtimePayload,
+  searchIndexMeta,
   secondsToMs,
   secondsValue,
+  serviceStatusMeta,
   settingsPayload,
   slackRejectedSenderLabel,
   slackUserMatchesBot,
@@ -75,5 +78,43 @@ describe("settings UI duration conversions", () => {
       last_rejected: { reason: "wrong_dm_user", user: "U02NXLR1NPL" },
     })).toBe("wrong_dm_user / U02NXLR1NPL");
     expect(slackRejectedSenderLabel({})).toBe("-");
+  });
+
+  it("summarizes runtime service status for overview cards", () => {
+    expect(serviceStatusMeta(null)).toEqual({ status: "error", label: "Unavailable" });
+    expect(serviceStatusMeta({ restartRequired: true })).toEqual({ status: "running", label: "Restart pending" });
+    expect(serviceStatusMeta({ service: { installed: true, platform: "launchd" } })).toEqual({
+      status: "enabled",
+      label: "Installed (launchd)",
+    });
+  });
+
+  it("summarizes search index health for the settings overview", () => {
+    expect(searchIndexMeta(null)).toEqual({ status: "disabled", label: "Unknown" });
+    expect(searchIndexMeta({ errors: 2, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "error", label: "Has errors" });
+    expect(searchIndexMeta({ errors: 0, ready: false, model: "openai:text-embedding-3-small" })).toEqual({ status: "running", label: "Paused" });
+    expect(searchIndexMeta({ errors: 0, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "enabled", label: "Ready" });
+  });
+
+  it("summarizes MCP availability without counting draft rows as unavailable", () => {
+    expect(mcpAvailabilitySummary({
+      servers: [
+        { source: "builtin", available: true },
+        { source: "user", available: false },
+      ],
+    }, [{ name: "external" }, { name: "" }])).toEqual({
+      status: "error",
+      label: "1 unavailable",
+      builtin: 1,
+      user: 2,
+      unavailable: 1,
+    });
+    expect(mcpAvailabilitySummary({ config_error: "bad json", servers: [] }, [])).toEqual({
+      status: "error",
+      label: "Config error",
+      builtin: 0,
+      user: 0,
+      unavailable: 0,
+    });
   });
 });
