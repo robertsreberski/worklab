@@ -50,18 +50,26 @@ function mcpResultContent(item) {
   return item?.result || "";
 }
 
-export function normalizeCodexItemEvent(raw) {
+function fileChangePayload(raw, item, context = {}) {
+  if (typeof context.fileChangePayload === "function") {
+    const payload = context.fileChangePayload(raw, item);
+    if (payload) return payload;
+  }
+  return {
+    changes: Array.isArray(item.changes) ? item.changes : [],
+    status: itemStatus(item, raw),
+    ...(item.summary ? { summary: item.summary } : {}),
+  };
+}
+
+export function normalizeCodexItemEvent(raw, context = {}) {
   if (!raw || !CODEX_ITEM_EVENTS.has(raw.type) || !raw.item) return null;
   const item = raw.item;
   const type = normalizeCodexItemType(item.type);
 
   if (type === "file_change") {
     const id = itemId(item, "file_change");
-    const payload = {
-      changes: Array.isArray(item.changes) ? item.changes : [],
-      status: itemStatus(item, raw),
-      ...(item.summary ? { summary: item.summary } : {}),
-    };
+    const payload = fileChangePayload(raw, item, context);
     if (!isCompleted(raw)) {
       return {
         type: "assistant",

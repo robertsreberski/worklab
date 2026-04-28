@@ -33,9 +33,15 @@ function complete(detail) {
   send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "commandExecution", id: "cmd1", command: "pwd", cwd: "/repo", processId: null, source: "exec", status: "completed", commandActions: [], aggregatedOutput: "/repo\\n", exitCode: 0, durationMs: 3 } } });
   send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "mcpToolCall", id: "mcp1", server: "worklab", tool: "journal_append", status: "inProgress", arguments: { bullet: "checked pwd" }, result: null, error: null, durationMs: null } } });
   send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "mcpToolCall", id: "mcp1", server: "worklab", tool: "journal_append", status: "completed", arguments: { bullet: "checked pwd" }, result: { content: [{ type: "text", text: "{\\"ok\\":true}" }], structuredContent: null, _meta: null }, error: null, durationMs: 2 } } });
-  send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "agentMessage", id: "msg1", text: resultText(detail), phase: null, memoryCitation: null } } });
-  send({ method: "thread/tokenUsage/updated", params: { threadId: "thread1", turnId: "turn1", tokenUsage: { total: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, last: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, modelContextWindow: 1000 } } });
-  send({ method: "turn/completed", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "completed", error: null, startedAt: 1, completedAt: 2, durationMs: 10 } } });
+  if (!fs.existsSync("artifact.txt")) fs.writeFileSync("artifact.txt", "one\\ntwo\\nthree\\n");
+  send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "fileChange", id: "file1", status: "inProgress", changes: [{ path: "artifact.txt", kind: "update" }] } } });
+  setTimeout(() => {
+    fs.writeFileSync("artifact.txt", "one\\nTWO\\nthree\\nfour\\n");
+    send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "fileChange", id: "file1", status: "completed", changes: [{ path: "artifact.txt", kind: "update" }] } } });
+    send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "agentMessage", id: "msg1", text: resultText(detail), phase: null, memoryCitation: null } } });
+    send({ method: "thread/tokenUsage/updated", params: { threadId: "thread1", turnId: "turn1", tokenUsage: { total: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, last: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, modelContextWindow: 1000 } } });
+    send({ method: "turn/completed", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "completed", error: null, startedAt: 1, completedAt: 2, durationMs: 10 } } });
+  }, 10);
 }
 rl.on("line", (line) => {
   if (!line.trim()) return;
@@ -135,6 +141,31 @@ describe("generateCodexAppResponse", () => {
       expect(events).toContainEqual({
         type: "user",
         message: { content: [{ type: "tool_result", tool_use_id: "mcp1", content: [{ type: "text", text: "{\"ok\":true}" }], is_error: false }] },
+      });
+      expect(events).toContainEqual({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "file1",
+            content: {
+              changes: [{
+                path: "artifact.txt",
+                kind: "update",
+                line_stats: {
+                  before_lines: 3,
+                  after_lines: 4,
+                  added_lines: 2,
+                  removed_lines: 1,
+                  changed_lines: 3,
+                },
+              }],
+              status: "completed",
+              summary: { files: 1, added_lines: 2, removed_lines: 1, changed_lines: 3, unavailable_count: 0 },
+            },
+            is_error: false,
+          }],
+        },
       });
     } finally {
       liveInput.close();
