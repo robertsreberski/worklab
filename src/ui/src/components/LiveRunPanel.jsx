@@ -7,15 +7,23 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
+import { Button } from "./primitives/Button.jsx";
+import { Textarea } from "./primitives/Textarea.jsx";
+import { Icon } from "./Icon.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { useRunStream } from "../lib/useRunStream.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
+import { api } from "../lib/api.js";
 
 export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel }) {
-  const { events: streamedEvents, loading } = useRunStream(run?.id, { subscribe: isStreaming });
+  const { events: streamedEvents, run: streamedRun, loading } = useRunStream(run?.id, { subscribe: isStreaming });
+  const effectiveRun = streamedRun || run;
   const visibleEvents = events.length ? events : streamedEvents;
   const prevCountRef = useRef(0);
   const [newestTick, setNewestTick] = useState(0);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if ((visibleEvents?.length || 0) > prevCountRef.current) {
@@ -24,8 +32,32 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
     prevCountRef.current = visibleEvents?.length || 0;
   }, [visibleEvents]);
 
-  const runStatus = run?.status || (isStreaming ? "running" : "complete");
-  const metrics = runMetricItems(run);
+  const runStatus = effectiveRun?.process_status || effectiveRun?.status || (isStreaming ? "running" : "complete");
+  const metrics = runMetricItems(effectiveRun);
+  const liveInput = effectiveRun?.live_input || {};
+  const canSend = Boolean(isStreaming && liveInput.supported && liveInput.active && effectiveRun?.id);
+  const trimmedMessage = message.trim();
+
+  async function submitMessage(event) {
+    event.preventDefault();
+    if (!canSend || !trimmedMessage || sending) return;
+    setSending(true);
+    setError("");
+    try {
+      await api.sendRunMessage(effectiveRun.id, trimmedMessage);
+      setMessage("");
+    } catch (err) {
+      setError(err?.message || "Message was not delivered.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  function handleKeyDown(event) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      submitMessage(event);
+    }
+  }
 
   return (
     <section class="card card-spacious task-live-panel">
@@ -37,7 +69,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
             <span class="task-live-header-label">{isStreaming ? "Live run" : "Latest run"}</span>
           </span>
           <span class="task-live-header-meta">
-            {[formatMode(run?.mode), agentLabel || run?.agent_name].filter(Boolean).join(" · ")}
+            {[formatMode(effectiveRun?.mode), agentLabel || effectiveRun?.agent_name].filter(Boolean).join(" · ")}
           </span>
         </div>
         <StatusPill status={runStatus} size="sm" />
@@ -59,6 +91,31 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           <EventTimeline events={visibleEvents} streaming={isStreaming} />
         )}
       </div>
+      {canSend && (
+        <form class="task-live-composer" onSubmit={submitMessage}>
+          <Textarea
+            rows={1}
+            autoGrow
+            class="task-live-composer-input"
+            placeholder="Guide this run..."
+            value={message}
+            disabled={sending}
+            onInput={(event) => setMessage(event.target.value)}
+            onKeyDown={handleKeyDown}
+            aria-label="Live run message"
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="sm"
+            loading={sending}
+            disabled={!trimmedMessage || sending}
+            iconLeft={<Icon name="send" size={14} />}
+            aria-label="Send live run message"
+          />
+          {error && <div class="task-live-composer-error">{error}</div>}
+        </form>
+      )}
     </section>
   );
 }

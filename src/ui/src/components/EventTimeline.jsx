@@ -109,6 +109,13 @@ function normalizeCliEvent(ev) {
 function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (!ev) return null;
   if (ev.type === "sdk_event") return normalizeWorklabEvent(ev.event, { compactFinal });
+  if (ev.type === "live_user_message") {
+    return {
+      type: "live_user_message",
+      text: ev.body || ev.text || "",
+      created_at: ev.created_at || null,
+    };
+  }
   if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
   if (ev.type === "cli_event") return normalizeCliEvent(ev);

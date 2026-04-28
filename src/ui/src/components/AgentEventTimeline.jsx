@@ -279,6 +279,15 @@ function TimelineEvent({ event, isLast, streaming }) {
         maxHeight={5000}
       />
     );
+  } else if (type === "live_user_message") {
+    railIcon = <RailIcon name="user" tone="accent" />;
+    content = (
+      <StructuredContent
+        content={event.text || ""}
+        className="agentlog-event-live-input doc-content"
+        maxHeight={2000}
+      />
+    );
   } else if (type === "thinking") {
     railIcon = <RailIcon name="sparkles" />;
     content = <ThinkingBlock text={event.text || ""} streaming={event.streaming || streaming} />;

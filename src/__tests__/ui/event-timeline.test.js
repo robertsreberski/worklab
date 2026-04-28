@@ -219,6 +219,16 @@ describe("worklab event timeline normalization", () => {
       },
     ]);
   });
+
+  it("keeps live user messages visible as guidance rows", () => {
+    const events = normalizeWorklabEvents([
+      { type: "live_user_message", body: "Please focus on the API route.", created_at: 123 },
+    ]);
+
+    expect(events).toEqual([
+      { type: "live_user_message", text: "Please focus on the API route.", created_at: 123 },
+    ]);
+  });
 });
 
 describe("run event merging", () => {
