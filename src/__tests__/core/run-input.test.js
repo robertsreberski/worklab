@@ -36,13 +36,14 @@ function seedTask(db, patch = {}) {
     instructions: patch.instructions || "Do the work.",
     stage: patch.stage || "execute",
     owner_agent: patch.owner_agent || "owner",
+    planner_agent: patch.planner_agent || null,
     reviewer_agent: patch.reviewer_agent || null,
   };
   db.prepare(`
     INSERT INTO tasks
-      (id, task_key, root_task_id, title, instructions, stage, owner_agent, reviewer_agent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(row.id, row.task_key, row.id, row.title, row.instructions, row.stage, row.owner_agent, row.reviewer_agent, now, now);
+      (id, task_key, root_task_id, title, instructions, stage, owner_agent, planner_agent, reviewer_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.task_key, row.id, row.title, row.instructions, row.stage, row.owner_agent, row.planner_agent, row.reviewer_agent, now, now);
   return row;
 }
 
@@ -156,6 +157,30 @@ describe("run input assembly", () => {
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
       expect(preview.messages).toEqual(input.messages);
+    });
+  });
+
+  it("uses an explicit planner for plan previews before falling back to owner", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Own the work.");
+      seedAgent(db, "planner", "Plan as specialist.");
+      const task = seedTask(db, { stage: "plan", owner_agent: "owner", planner_agent: "planner" });
+      const now = 11111;
+
+      const preview = buildNextTaskRunPreview({ db, config, taskId: task.id, now });
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "planner",
+        runId: `preview-${now}`,
+        mode: "plan",
+      });
+
+      expect(preview.agent_name).toBe("planner");
+      expect(preview.system_prompt).toBe(input.systemPrompt);
+      expect(preview.system_prompt).toContain("Plan as specialist.");
+      expect(preview.system_prompt).not.toContain("Own the work.");
     });
   });
 

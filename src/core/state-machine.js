@@ -209,8 +209,8 @@ export function nextStage(currentStage, event) {
         ]);
       }
 
-      // Plan advance means the owner has finished planning and the task is
-      // ready for actual work.
+      // Plan advance means the planner (or owner fallback) has finished
+      // planning and the task is ready for actual work.
       if (event.stage === "plan") {
         return change("execute", [
           { type: "clear_error_text" },

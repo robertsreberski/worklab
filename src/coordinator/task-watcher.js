@@ -14,14 +14,10 @@ import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 import { readSettings } from "../core/settings.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
+import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
-}
-
-function agentForStage(task, stage) {
-  if (stage === "review") return task.reviewer_agent;
-  return task.owner_agent;
 }
 
 function modeForStage(stage) {
@@ -144,7 +140,7 @@ export function createTaskWatcher({
     const stage = taskStage(task);
     if (task.run_policy !== AUTO_RUN_POLICY) return false;
     if (!["plan", "execute", "review"].includes(stage)) return false;
-    if (!agentForStage(task, stage)) return false;
+    if (!agentForTaskStage(task, stage)) return false;
     if (active.has(taskId) || pendingStarts.has(taskId)) return false;
     if (hasOpenBlocker(taskId)) return false;
     return true;
@@ -344,8 +340,8 @@ export function createTaskWatcher({
     if (blocker) throw new Error(`task is blocked by "${blocker.title}"`);
 
     const mode = options.mode || modeForStage(stage);
-    const agentName = options.agentName || agentForStage(task, stage);
-    if (!agentName) throw new Error(mode === "review" ? "no reviewer assigned" : "no owner assigned");
+    const agentName = options.agentName || agentForTaskStage(task, stage);
+    if (!agentName) throw new Error(missingAgentMessageForTaskStage(stage));
 
     const result = nextStage(stage, { type: "run_requested", stage, mode, agentName });
     const errorSideEffect = result.sideEffects.find((sideEffect) => sideEffect.type === "error");
