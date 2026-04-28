@@ -1,5 +1,13 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
 import { randomUUID } from "node:crypto";
+import { resolve } from "node:path";
+import {
+  createFileEditToolResultEvent,
+  createFileEditToolUseEvent,
+  fileChangeSummary,
+  readFileChangeSnapshot,
+  statsForCompletedChange,
+} from "./file-change-stats.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -60,6 +68,129 @@ function makeRuntimeWarning(message) {
   };
 }
 
+const CLAUDE_FILE_EDIT_MATCHER = "Edit|Write|NotebookEdit";
+
+function mergeHookMatchers(existing = {}, additions = {}) {
+  const merged = {};
+  for (const [name, groups] of Object.entries(existing || {})) {
+    if (Array.isArray(groups)) merged[name] = [...groups];
+  }
+  for (const [name, groups] of Object.entries(additions || {})) {
+    if (!Array.isArray(groups) || !groups.length) continue;
+    merged[name] = [...(merged[name] || []), ...groups];
+  }
+  return merged;
+}
+
+function objectInput(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function claudeEditPath(toolName, toolInput) {
+  const input = objectInput(toolInput);
+  if (toolName === "NotebookEdit") return input.notebook_path || input.file_path || "";
+  return input.file_path || "";
+}
+
+function claudeEditKind(toolName, before) {
+  if (toolName === "Write" && before && !before.exists) return "add";
+  return "update";
+}
+
+function fileEditStateKey(input, toolUseID, path) {
+  return toolUseID || input?.tool_use_id || input?.toolUseID || `${input?.tool_name || "file_edit"}:${path}`;
+}
+
+function fileEditPayload(change, { status, before, after, error } = {}) {
+  const lineStats = statsForCompletedChange(change, before, after);
+  const completedChange = lineStats ? { ...change, line_stats: lineStats } : change;
+  const summary = fileChangeSummary([completedChange]);
+  return {
+    changes: [completedChange],
+    status,
+    ...(summary ? { summary } : {}),
+    ...(error ? { error } : {}),
+  };
+}
+
+function createClaudeFileEditHooks({ cwd, emitEvent }) {
+  const edits = new Map();
+  const runCwd = cwd || process.cwd();
+
+  function createState(input, toolUseID, { readBefore = true } = {}) {
+    const toolName = input?.tool_name;
+    const path = claudeEditPath(toolName, input?.tool_input);
+    if (!path) return null;
+    const resolvedPath = resolve(runCwd, path);
+    const key = fileEditStateKey(input, toolUseID, resolvedPath);
+    const before = readBefore ? readFileChangeSnapshot(resolvedPath) : null;
+    return {
+      key,
+      id: `file_edit:${key}`,
+      path: resolvedPath,
+      change: { path: resolvedPath, kind: claudeEditKind(toolName, before) },
+      before,
+      started: false,
+    };
+  }
+
+  function emitStart(state) {
+    if (!state || state.started) return;
+    emitEvent(createFileEditToolUseEvent(state.id, {
+      changes: [state.change],
+      status: "in_progress",
+    }));
+    state.started = true;
+  }
+
+  function complete(input, toolUseID, { status, error } = {}) {
+    const directKey = toolUseID || input?.tool_use_id || input?.toolUseID;
+    const fallback = createState(input, toolUseID, { readBefore: false });
+    const state = (directKey && edits.get(directKey)) || (fallback?.key && edits.get(fallback.key)) || fallback;
+    if (!state) return;
+    emitStart(state);
+    const after = readFileChangeSnapshot(state.path);
+    const payload = fileEditPayload(state.change, {
+      status,
+      before: state.before,
+      after,
+      error,
+    });
+    emitEvent(createFileEditToolResultEvent(state.id, payload, { isError: status === "failed" }));
+    edits.delete(state.key);
+  }
+
+  return {
+    PreToolUse: [{
+      matcher: CLAUDE_FILE_EDIT_MATCHER,
+      hooks: [async (input, toolUseID) => {
+        const state = createState(input, toolUseID);
+        if (!state) return {};
+        edits.set(state.key, state);
+        emitStart(state);
+        return {};
+      }],
+    }],
+    PostToolUse: [{
+      matcher: CLAUDE_FILE_EDIT_MATCHER,
+      hooks: [async (input, toolUseID) => {
+        complete(input, toolUseID, { status: "completed" });
+        return {};
+      }],
+    }],
+    PostToolUseFailure: [{
+      matcher: CLAUDE_FILE_EDIT_MATCHER,
+      hooks: [async (input, toolUseID) => {
+        complete(input, toolUseID, {
+          status: "failed",
+          error: stringifyError(input?.error) || "tool failed",
+        });
+        return {};
+      }],
+    }],
+  };
+}
+
 function promptStringFromMessages(messages) {
   return Array.isArray(messages)
     ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
@@ -95,6 +226,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     mcpServers,
     allowedTools,
     disallowedTools,
+    hooks,
     permissionMode = "bypassPermissions",
     maxTurns,
     abortSignal,
@@ -104,6 +236,14 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const thinkingOpts = thinkingForEffort(effort);
 
   const promptString = promptStringFromMessages(messages);
+  const runtimeWarnings = [];
+  const capturedEvents = [];
+
+  function emitEvent(event) {
+    if (!event) return;
+    capturedEvents.push(event);
+    onEvent(event);
+  }
 
   const queryOptions = {
     systemPrompt,
@@ -113,6 +253,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     allowedTools,
     disallowedTools,
     mcpServers,
+    hooks: mergeHookMatchers(hooks, createClaudeFileEditHooks({ cwd, emitEvent })),
     ...thinkingOpts,
   };
   if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) {
@@ -134,8 +275,6 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let failureKind = null;
   let successfulResultSeen = false;
   let postSuccessErrorSeen = false;
-  const runtimeWarnings = [];
-  const capturedEvents = [];
 
   const finalText = () => resultText || text;
 
@@ -160,8 +299,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
   try {
     for await (const event of stream) {
-      capturedEvents.push(event);
-      onEvent(event);
+      emitEvent(event);
       if (event.type === "assistant") text += extractText(event);
       else if (event.type === "error") {
         const message = event.error?.message || event.error || "sdk stream error";

@@ -11,7 +11,7 @@ function splitFileLines(text) {
   return lines;
 }
 
-function readFileChangeSnapshot(path) {
+export function readFileChangeSnapshot(path) {
   try {
     if (!path || !existsSync(path)) return { exists: false, line_count: 0 };
     const stat = statSync(path);
@@ -65,7 +65,7 @@ function lineDiffCounts(beforeContent, afterContent) {
   };
 }
 
-function statsForCompletedChange(change, before, after) {
+export function statsForCompletedChange(change, before, after) {
   const kind = change?.kind || "change";
   if (before?.unavailable_reason || after?.unavailable_reason) {
     return {
@@ -95,7 +95,7 @@ function statsForCompletedChange(change, before, after) {
   return null;
 }
 
-function fileChangeSummary(changes) {
+export function fileChangeSummary(changes) {
   const stats = changes.map((change) => change?.line_stats).filter(Boolean);
   if (!stats.length) return null;
   return {
@@ -133,5 +133,26 @@ export function createFileChangePayload(raw, { cwd = process.cwd(), snapshots = 
     changes,
     status: item.status || (raw.type === "item.completed" ? "completed" : "in_progress"),
     ...(summary ? { summary } : {}),
+  };
+}
+
+export function createFileEditToolUseEvent(id, payload) {
+  return {
+    type: "assistant",
+    message: { content: [{ type: "tool_use", id, name: "file_edit", input: payload }] },
+  };
+}
+
+export function createFileEditToolResultEvent(id, payload, { isError = false } = {}) {
+  return {
+    type: "user",
+    message: {
+      content: [{
+        type: "tool_result",
+        tool_use_id: id,
+        content: payload,
+        is_error: isError,
+      }],
+    },
   };
 }
