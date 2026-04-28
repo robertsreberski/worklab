@@ -1271,6 +1271,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const fabRect = fab?.getBoundingClientRect();
     const navRect = nav?.getBoundingClientRect();
     const navElement = document.querySelector(".app-nav");
+    const railStyles = nav ? getComputedStyle(nav) : null;
+    const navStyles = navElement ? getComputedStyle(navElement) : null;
     const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
     const navWidths = [...document.querySelectorAll(".app-nav a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
@@ -1285,6 +1287,10 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       navMinWidth: Math.min(...navWidths),
       navMaxWidth: Math.max(...navWidths),
       navOverflow: navElement ? Math.round(navElement.scrollWidth - navElement.clientWidth) : 0,
+      railOverflow: nav ? Math.round(nav.scrollWidth - nav.clientWidth) : 0,
+      railOverflowX: railStyles?.overflowX || "",
+      navDisplay: navStyles?.display || "",
+      navOverflowX: navStyles?.overflowX || "",
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       viewportMeta,
@@ -1316,6 +1322,10 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
   expect(metrics.navOverflow).toBeLessThanOrEqual(0);
+  expect(metrics.railOverflow).toBeLessThanOrEqual(0);
+  expect(["clip", "hidden"]).toContain(metrics.railOverflowX);
+  expect(metrics.navDisplay).toBe("grid");
+  expect(["clip", "hidden"]).toContain(metrics.navOverflowX);
   expect(metrics.viewportMeta).toContain("maximum-scale=1");
   expect(metrics.viewportMeta).toContain("user-scalable=no");
   expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
