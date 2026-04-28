@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const mockQuery = vi.fn();
 vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
@@ -25,6 +28,45 @@ function mockStreamWithThrow(events, error) {
     },
     return: vi.fn(async () => ({ done: true })),
   };
+}
+
+function hookMatches(matcher, toolName) {
+  if (!matcher || matcher === "*") return true;
+  return String(matcher).split("|").includes(toolName);
+}
+
+async function runSdkHooks(options, eventName, input, toolUseID) {
+  const groups = options?.hooks?.[eventName] || [];
+  const signal = new AbortController().signal;
+  for (const group of groups) {
+    if (!hookMatches(group.matcher, input.tool_name)) continue;
+    for (const hook of group.hooks || []) {
+      await hook(input, toolUseID, { signal });
+    }
+  }
+}
+
+function hookInput(eventName, dir, toolName, toolInput, extra = {}) {
+  return {
+    session_id: "session-1",
+    transcript_path: join(dir, "transcript.jsonl"),
+    cwd: dir,
+    hook_event_name: eventName,
+    tool_name: toolName,
+    tool_input: toolInput,
+    tool_use_id: "toolu_edit",
+    ...extra,
+  };
+}
+
+function mockQueryWithHookedStream(run, events = [{ type: "result", usage: {}, duration_ms: 0, num_turns: 1 }]) {
+  mockQuery.mockImplementation((params = {}) => ({
+    async *[Symbol.asyncIterator]() {
+      await run(params.options);
+      for (const event of events) yield event;
+    },
+    return: vi.fn(async () => ({ done: true })),
+  }));
 }
 
 describe("generateClaudeResponse", () => {
@@ -235,6 +277,154 @@ describe("generateClaudeResponse", () => {
     expect(options.allowedTools).toEqual(["Read", "Bash"]);
     expect(options.maxTurns).toBe(50);
     expect(options.mcpServers.worklab.command).toBe("/bin/sh");
+  });
+
+  it("emits canonical file_edit events for successful Edit hooks", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-edit-"));
+    const filePath = join(dir, "target.txt");
+    writeFileSync(filePath, "one\ntwo\n");
+    mockQueryWithHookedStream(async (options) => {
+      await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "Edit", {
+        file_path: filePath,
+        old_string: "two",
+        new_string: "two\nthree",
+      }), "toolu_edit");
+      writeFileSync(filePath, "one\ntwo\nthree\n");
+      await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "Edit", {
+        file_path: filePath,
+        old_string: "two",
+        new_string: "two\nthree",
+      }, { tool_response: { ok: true } }), "toolu_edit");
+    });
+
+    try {
+      const events = [];
+      const result = await generateClaudeResponse("sys", {
+        messages: [{ role: "user", content: "edit file" }],
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        effort: "medium",
+        cwd: dir,
+        onEvent: (event) => events.push(event),
+      });
+
+      expect(result.error).toBeNull();
+      expect(events).toContainEqual({
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "file_edit:toolu_edit",
+            name: "file_edit",
+            input: { changes: [{ path: filePath, kind: "update" }], status: "in_progress" },
+          }],
+        },
+      });
+      expect(events).toContainEqual({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "file_edit:toolu_edit",
+            content: {
+              changes: [{
+                path: filePath,
+                kind: "update",
+                line_stats: {
+                  before_lines: 2,
+                  after_lines: 3,
+                  added_lines: 1,
+                  removed_lines: 0,
+                  changed_lines: 1,
+                },
+              }],
+              status: "completed",
+              summary: { files: 1, added_lines: 1, removed_lines: 0, changed_lines: 1, unavailable_count: 0 },
+            },
+            is_error: false,
+          }],
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("marks Claude Write hooks to new files as file_edit additions", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-write-"));
+    const filePath = join(dir, "created.md");
+    mockQueryWithHookedStream(async (options) => {
+      await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "Write", {
+        file_path: filePath,
+        content: "alpha\nbeta\n",
+      }), "toolu_edit");
+      writeFileSync(filePath, "alpha\nbeta\n");
+      await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "Write", {
+        file_path: filePath,
+        content: "alpha\nbeta\n",
+      }, { tool_response: { ok: true } }), "toolu_edit");
+    });
+
+    try {
+      const events = [];
+      await generateClaudeResponse("sys", {
+        messages: [{ role: "user", content: "write file" }],
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        effort: "medium",
+        cwd: dir,
+        onEvent: (event) => events.push(event),
+      });
+
+      const resultEvent = events.find((event) => event?.message?.content?.[0]?.tool_use_id === "file_edit:toolu_edit");
+      expect(resultEvent.message.content[0].content.changes[0]).toMatchObject({
+        path: filePath,
+        kind: "add",
+        line_stats: { before_lines: 0, after_lines: 2, added_lines: 2, removed_lines: 0 },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits failed file_edit results for Claude edit hook failures", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-edit-fail-"));
+    const filePath = join(dir, "target.txt");
+    writeFileSync(filePath, "old\n");
+    mockQueryWithHookedStream(async (options) => {
+      await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "Edit", {
+        file_path: filePath,
+        old_string: "missing",
+        new_string: "new",
+      }), "toolu_edit");
+      await runSdkHooks(options, "PostToolUseFailure", hookInput("PostToolUseFailure", dir, "Edit", {
+        file_path: filePath,
+        old_string: "missing",
+        new_string: "new",
+      }, { error: "old_string not found" }), "toolu_edit");
+    });
+
+    try {
+      const events = [];
+      await generateClaudeResponse("sys", {
+        messages: [{ role: "user", content: "bad edit" }],
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        effort: "medium",
+        cwd: dir,
+        onEvent: (event) => events.push(event),
+      });
+
+      const resultEvent = events.find((event) => event?.message?.content?.[0]?.tool_use_id === "file_edit:toolu_edit");
+      expect(resultEvent.message.content[0]).toMatchObject({
+        type: "tool_result",
+        is_error: true,
+        content: {
+          status: "failed",
+          error: "old_string not found",
+          changes: [{ path: filePath, kind: "update" }],
+        },
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("accumulates text across multiple assistant events", async () => {
