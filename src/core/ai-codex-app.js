@@ -7,6 +7,7 @@ import {
   formatWorklabResultText,
   stripWorklabResultJson,
 } from "./worklab-result.js";
+import { normalizeCodexItemEvent } from "./codex-events.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -348,7 +349,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
           if (method === "item/completed") handleAgentText(text);
           return;
         }
-        if (raw) emitEvent(raw);
+        if (raw) emitEvent(normalizeCodexItemEvent(raw) || raw);
       }
     },
   });

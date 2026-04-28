@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { groupAgentTimelineEvents, normaliseAgentTimelineEvents } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
+import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
 
 describe("agent event timeline normalization", () => {
   it("coalesces consecutive thinking fragments", () => {
@@ -60,6 +61,26 @@ describe("agent event timeline normalization", () => {
     expect(items[0]._toolCall).toBe(true);
     expect(items[0].toolUse.name).toBe("file_edit");
     expect(items[0].toolResult.is_error).toBe(false);
+  });
+
+  it("pairs direct Codex command app-server events after Worklab normalization", () => {
+    const items = groupAgentTimelineEvents(normalizeWorklabEvents([
+      { type: "item.started", item: { type: "command_execution", id: "cmd1", command: "pwd", status: "inProgress" } },
+      { type: "item.completed", item: { type: "command_execution", id: "cmd1", command: "pwd", aggregated_output: "/repo\n", exit_code: 0, status: "completed" } },
+    ]));
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse).toMatchObject({
+      tool_use_id: "cmd1",
+      name: "command_execution",
+      input: { command: "pwd" },
+    });
+    expect(items[0].toolResult).toMatchObject({
+      tool_use_id: "cmd1",
+      output: "/repo\n",
+      is_error: false,
+    });
   });
 
   it("summarizes file edits with captured line stats", () => {

@@ -1,6 +1,7 @@
 // §3.16 ToolToken — compact representation of one tool call / thought / handoff /
 // text event. Mono label truncated at 320px (256 compact). Trailing status glyph.
 import { Icon } from "../Icon.jsx";
+import { normalizeCodexItemType } from "../../../../core/codex-events.js";
 
 const STATUS_GLYPH = {
   running: "◐",
@@ -40,7 +41,7 @@ function fileChangeLabel(changes = []) {
 }
 
 function normalizeFileChangeToken(event) {
-  if ((event?.type !== "item.started" && event?.type !== "item.completed") || event.item?.type !== "file_change") return null;
+  if ((event?.type !== "item.started" && event?.type !== "item.completed") || normalizeCodexItemType(event.item?.type) !== "file_change") return null;
   return {
     type: "tool_use",
     name: "file_edit",
@@ -49,12 +50,51 @@ function normalizeFileChangeToken(event) {
   };
 }
 
+function itemStatus(event) {
+  const status = String(event?.item?.status || "").toLowerCase();
+  const exitCode = event?.item?.exit_code ?? event?.item?.exitCode;
+  if (event?.type !== "item.completed") return "running";
+  if (
+    event.item?.error ||
+    status === "failed" ||
+    status === "errored" ||
+    status === "error" ||
+    (typeof exitCode === "number" && exitCode !== 0)
+  ) return "error";
+  return "done";
+}
+
+function normalizeCodexItemToken(event) {
+  if (event?.type !== "item.started" && event?.type !== "item.completed") return null;
+  const item = event.item || {};
+  const type = normalizeCodexItemType(item.type);
+  if (type === "command_execution") {
+    return {
+      type: "tool_use",
+      name: "command_execution",
+      arg: previewValue(item.command || ""),
+      status: itemStatus(event),
+    };
+  }
+  if (type === "mcp_tool_call") {
+    return {
+      type: "tool_use",
+      name: item.server && item.tool ? `mcp__${item.server}__${item.tool}` : item.tool || "mcp_tool_call",
+      arg: previewValue(item.arguments || {}),
+      status: itemStatus(event),
+    };
+  }
+  return null;
+}
+
 export function normalizeToolTokenEvent(event) {
   if (!event) return null;
   if (event.type === "sdk_event") return normalizeToolTokenEvent(event.event);
   if (event.type === "worklab_result_candidate") return null;
   const fileChange = normalizeFileChangeToken(event);
   if (fileChange) return fileChange;
+  const codexItem = normalizeCodexItemToken(event);
+  if (codexItem) return codexItem;
 
   const content = event.message?.content || event.content;
   if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {

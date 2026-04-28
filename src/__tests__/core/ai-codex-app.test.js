@@ -29,6 +29,10 @@ function resultText(detail) {
   });
 }
 function complete(detail) {
+  send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "commandExecution", id: "cmd1", command: "pwd", cwd: "/repo", processId: null, source: "exec", status: "inProgress", commandActions: [], aggregatedOutput: "", exitCode: null, durationMs: null } } });
+  send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "commandExecution", id: "cmd1", command: "pwd", cwd: "/repo", processId: null, source: "exec", status: "completed", commandActions: [], aggregatedOutput: "/repo\\n", exitCode: 0, durationMs: 3 } } });
+  send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "mcpToolCall", id: "mcp1", server: "worklab", tool: "journal_append", status: "inProgress", arguments: { bullet: "checked pwd" }, result: null, error: null, durationMs: null } } });
+  send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "mcpToolCall", id: "mcp1", server: "worklab", tool: "journal_append", status: "completed", arguments: { bullet: "checked pwd" }, result: { content: [{ type: "text", text: "{\\"ok\\":true}" }], structuredContent: null, _meta: null }, error: null, durationMs: 2 } } });
   send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "agentMessage", id: "msg1", text: resultText(detail), phase: null, memoryCitation: null } } });
   send({ method: "thread/tokenUsage/updated", params: { threadId: "thread1", turnId: "turn1", tokenUsage: { total: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, last: { totalTokens: 8, inputTokens: 5, cachedInputTokens: 1, outputTokens: 3, reasoningOutputTokens: 0 }, modelContextWindow: 1000 } } });
   send({ method: "turn/completed", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "completed", error: null, startedAt: 1, completedAt: 2, durationMs: 10 } } });
@@ -116,6 +120,22 @@ describe("generateCodexAppResponse", () => {
       expect(result.worklabResult.summary).toBe("Done");
       expect(result.worklabResult.details).toBe("Guided: Please narrow the scope.");
       expect(result.usage).toMatchObject({ input_tokens: 5, output_tokens: 3, cache_read_tokens: 1 });
+      expect(events).toContainEqual({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "cmd1", name: "command_execution", input: { command: "pwd" } }] },
+      });
+      expect(events).toContainEqual({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "cmd1", content: "/repo\n", is_error: false }] },
+      });
+      expect(events).toContainEqual({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "mcp1", name: "mcp__worklab__journal_append", input: { bullet: "checked pwd" } }] },
+      });
+      expect(events).toContainEqual({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "mcp1", content: [{ type: "text", text: "{\"ok\":true}" }], is_error: false }] },
+      });
     } finally {
       liveInput.close();
       rmSync(dir, { recursive: true, force: true });
