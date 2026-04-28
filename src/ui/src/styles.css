@@ -2383,6 +2383,70 @@ select,
   font-size: var(--text-sm);
 }
 .task-hero-actions { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.run-input-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.run-input-preview-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--sp-2);
+}
+.run-input-preview-meta-item {
+  min-width: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.run-input-preview-meta-item span {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.run-input-preview-meta-item strong {
+  display: block;
+  margin-top: 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.run-input-preview-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.run-input-preview-field > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.run-input-preview-textarea {
+  min-height: 280px;
+  max-height: 46vh;
+  line-height: 1.45;
+  resize: vertical;
+}
+.run-input-preview-messages {
+  min-height: 140px;
+  max-height: 240px;
+}
+.run-input-preview-error {
+  padding: var(--sp-3);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-sm);
+  background: var(--status-error-bg-10);
+  color: var(--status-error);
+}
 /* §6.3 Hero Instructions inset (matches DS prototype TaskInstructions). */
 .task-hero-instructions {
   position: relative;

@@ -48,6 +48,27 @@ function formatRunPolicy(value) {
   return value === "auto_plan_execute" ? "Auto" : "Manual";
 }
 
+export function formatRunPreviewForCopy(preview) {
+  if (!preview) return "";
+  const messages = JSON.stringify(preview.messages || [], null, 2);
+  const meta = [
+    `Task: ${preview.task_key || preview.task_id || ""}`,
+    `Stage: ${preview.stage || ""}`,
+    `Mode: ${preview.mode || ""}`,
+    `Agent: ${preview.agent_name || ""}`,
+    `Model: ${preview.model || ""}`,
+    `Effort: ${preview.effort || ""}`,
+  ].filter((line) => !line.endsWith(": "));
+  return [
+    "# Run input",
+    meta.join("\n"),
+    "## System prompt",
+    preview.system_prompt || "",
+    "## User messages",
+    messages,
+  ].filter(Boolean).join("\n\n");
+}
+
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
 
 const AUTOMATION_TRIGGER_OPTIONS = [
@@ -149,6 +170,86 @@ function RunMetric({ label, value }) {
       <span class="run-metric-label">{label}</span>
       <span class="run-metric-value">{value}</span>
     </span>
+  );
+}
+
+function RunInputPreviewModal({
+  open,
+  onClose,
+  preview,
+  loading,
+  error,
+  onCopy,
+}) {
+  const messages = preview ? JSON.stringify(preview.messages || [], null, 2) : "";
+  const meta = preview ? [
+    ["Task", preview.task_key || preview.task_id],
+    ["Stage", preview.stage],
+    ["Mode", preview.mode],
+    ["Agent", preview.agent_name],
+    ["Model", preview.model],
+    ["Effort", preview.effort],
+  ].filter(([, value]) => value) : [];
+
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title="Run input"
+      size="lg"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+          <Button
+            variant="primary"
+            iconLeft={<Icon name="copy" size={13} />}
+            onClick={onCopy}
+            disabled={!preview || loading}
+          >
+            Copy all
+          </Button>
+        </>
+      }
+    >
+      <div class="run-input-preview">
+        {loading && <div class="field-hint">Loading run input...</div>}
+        {error && <div class="run-input-preview-error">{error}</div>}
+        {preview && (
+          <>
+            <div class="run-input-preview-meta">
+              {meta.map(([label, value]) => (
+                <div key={label} class="run-input-preview-meta-item">
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+            <label class="run-input-preview-field">
+              <span>System prompt</span>
+              <Textarea
+                rows={14}
+                monospace
+                readOnly
+                class="run-input-preview-textarea"
+                aria-label="System prompt"
+                value={preview.system_prompt || ""}
+              />
+            </label>
+            <label class="run-input-preview-field">
+              <span>User messages</span>
+              <Textarea
+                rows={6}
+                monospace
+                readOnly
+                class="run-input-preview-textarea run-input-preview-messages"
+                aria-label="User messages"
+                value={messages}
+              />
+            </label>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -818,6 +919,10 @@ export function TaskDetail({ id, runParam = null }) {
   const [subtaskSaving, setSubtaskSaving] = useState(false);
   const [taskAutomations, setTaskAutomations] = useState(null);
   const [automationsLoading, setAutomationsLoading] = useState(false);
+  const [runPreviewOpen, setRunPreviewOpen] = useState(false);
+  const [runPreview, setRunPreview] = useState(null);
+  const [runPreviewLoading, setRunPreviewLoading] = useState(false);
+  const [runPreviewError, setRunPreviewError] = useState(null);
   const runTargetRefs = useRef(new Map());
   const lastScrolledRunRef = useRef(null);
 
@@ -846,6 +951,10 @@ export function TaskDetail({ id, runParam = null }) {
     setSubtaskTitle("");
     setTaskAutomations(null);
     setCommentRerun(true);
+    setRunPreviewOpen(false);
+    setRunPreview(null);
+    setRunPreviewError(null);
+    setRunPreviewLoading(false);
   }, [id, runParam]);
 
   useEffect(() => {
@@ -1121,6 +1230,33 @@ export function TaskDetail({ id, runParam = null }) {
     }
   }
 
+  async function openRunPreview() {
+    setRunPreviewOpen(true);
+    setRunPreviewLoading(true);
+    setRunPreviewError(null);
+    setRunPreview(null);
+    try {
+      const response = await api.previewTaskRun(operationTaskId);
+      setRunPreview(response.preview || null);
+    } catch (error) {
+      const message = error?.message || "Preview failed";
+      setRunPreviewError(message);
+      pushToast(`Preview failed: ${message}`, { variant: "error" });
+    } finally {
+      setRunPreviewLoading(false);
+    }
+  }
+
+  async function copyRunPreview() {
+    if (!runPreview) return;
+    try {
+      await navigator.clipboard.writeText(formatRunPreviewForCopy(runPreview));
+      pushToast("Run input copied", { variant: "success" });
+    } catch {
+      pushToast("Copy failed", { variant: "error" });
+    }
+  }
+
   // §6.3 primary action cluster per stage
   const runnableStages = ["plan", "execute", "review"];
   const selectedAgent = stage === "review" ? task?.reviewer_agent : task?.owner_agent;
@@ -1142,6 +1278,7 @@ export function TaskDetail({ id, runParam = null }) {
     },
   }[stage];
   const canRun = selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
+  const canPreviewRunInput = task && runnableStages.includes(stage) && !runningRun;
   const runDisabledReason = !selectedAgent
     ? (runCopy?.missing || "No run action in this stage")
     : unresolvedBlockedBy.length > 0
@@ -1246,6 +1383,11 @@ export function TaskDetail({ id, runParam = null }) {
   const taskActions = task && (
     <>
       {renderPrimaryAction()}
+      {canPreviewRunInput && (
+        <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
+          Run input
+        </Button>
+      )}
       <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
         Edit
       </Button>
@@ -1254,6 +1396,11 @@ export function TaskDetail({ id, runParam = null }) {
   const mobileActionDock = task && (
     <>
       {renderPrimaryAction()}
+      {canPreviewRunInput && (
+        <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
+          Run input
+        </Button>
+      )}
       <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
         Edit
       </Button>
@@ -1662,6 +1809,15 @@ export function TaskDetail({ id, runParam = null }) {
       >
         <p>This permanently removes the task and its runs. This action cannot be undone.</p>
       </Modal>
+
+      <RunInputPreviewModal
+        open={runPreviewOpen}
+        onClose={() => setRunPreviewOpen(false)}
+        preview={runPreview}
+        loading={runPreviewLoading}
+        error={runPreviewError}
+        onCopy={copyRunPreview}
+      />
     </AppShell>
   );
 }
