@@ -47,7 +47,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("13");
+    expect(row.value).toBe("14");
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {
@@ -116,7 +116,7 @@ describe("openDb + runMigrations", () => {
       root_task_id: "t1",
       run_policy: "manual",
     });
-    expect(taskCols).toEqual(expect.arrayContaining(["task_key", "stage", "owner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body", "run_policy"]));
+    expect(taskCols).toEqual(expect.arrayContaining(["task_key", "stage", "owner_agent", "planner_agent", "parent_task_id", "pending_actions_json", "client_request_id", "plan_body", "run_policy"]));
   });
 
   it("backfills task keys by creation order and advances the counter", () => {

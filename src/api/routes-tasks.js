@@ -11,8 +11,8 @@ import { buildRunLifecycleEvent } from "../core/run-events.js";
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
-const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "tags", "run_policy"];
-const BULK_PATCHABLE = ["stage", "owner_agent", "reviewer_agent", "run_policy"];
+const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "planner_agent", "tags", "run_policy"];
+const BULK_PATCHABLE = ["stage", "owner_agent", "planner_agent", "reviewer_agent", "run_policy"];
 
 function rowToTask(row) {
   if (!row) return null;
@@ -26,6 +26,7 @@ function rowToTask(row) {
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,
     owner_agent: row.owner_agent || null,
+    planner_agent: row.planner_agent || null,
     delegated_to_agent: row.delegated_to_agent || null,
     delegated_by_run_id: row.delegated_by_run_id || null,
     plan_body: row.plan_body || "",
@@ -48,6 +49,7 @@ function compactTaskSummary(row) {
     stage: task.stage,
     updated_at: task.updated_at,
     owner_agent: task.owner_agent,
+    planner_agent: task.planner_agent,
     reviewer_agent: task.reviewer_agent,
     run_policy: task.run_policy,
   };
@@ -616,8 +618,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       params.push(req.query.stage);
     }
     if (req.query.agent) {
-      where.push("(owner_agent = ? OR reviewer_agent = ?)");
-      params.push(req.query.agent, req.query.agent);
+      where.push("(owner_agent = ? OR planner_agent = ? OR reviewer_agent = ?)");
+      params.push(req.query.agent, req.query.agent, req.query.agent);
     }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
@@ -641,6 +643,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       instructions = "",
       reviewer_agent = null,
       owner_agent = null,
+      planner_agent = null,
       stage = "plan",
       run_policy = DEFAULT_RUN_POLICY,
       tags = [],
@@ -674,8 +677,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const insertTask = db.prepare(`
       INSERT INTO tasks
         (id, task_key, root_task_id, client_request_id, title, instructions, stage, owner_agent,
-         reviewer_agent, run_policy, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         planner_agent, reviewer_agent, run_policy, tags, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let id;
     try {
@@ -690,6 +693,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           instructions,
           stage,
           owner_agent,
+          planner_agent,
           reviewer_agent,
           normalizedRunPolicy,
           JSON.stringify(tags),
@@ -791,6 +795,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     }
     const instructions = typeof body.instructions === "string" ? body.instructions : "";
     const ownerAgent = nullableAgentName(body.owner_agent, parent.owner_agent || null);
+    const plannerAgent = nullableAgentName(body.planner_agent, parent.planner_agent || null);
     const reviewerAgent = nullableAgentName(body.reviewer_agent, parent.reviewer_agent || null);
     const required = body.required === false ? 0 : 1;
     const now = Date.now();
@@ -804,16 +809,17 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       db.transaction(() => {
         db.prepare(`
           INSERT INTO tasks
-            (id, task_key, root_task_id, parent_task_id, owner_agent, reviewer_agent,
+            (id, task_key, root_task_id, parent_task_id, owner_agent, planner_agent, reviewer_agent,
              title, instructions, stage, run_policy, join_policy, subtask_order, required,
              tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
         `).run(
           childId,
           nextTaskKey(db),
           rootTaskId,
           parent.id,
           ownerAgent,
+          plannerAgent,
           reviewerAgent,
           title,
           instructions,

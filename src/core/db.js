@@ -124,6 +124,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "delegated_by_run_id", "delegated_by_run_id TEXT");
   addColumnIfMissing(db, "tasks", "delegated_to_agent", "delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "owner_agent", "owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "planner_agent", "planner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "client_request_id", "client_request_id TEXT");
   addColumnIfMissing(db, "tasks", "stage", "stage TEXT NOT NULL DEFAULT 'plan'");
   addColumnIfMissing(db, "tasks", "stage_reason", "stage_reason TEXT");
@@ -251,6 +252,7 @@ function rebuildTaskWorkflowTables(db) {
         delegated_by_run_id TEXT,
         delegated_to_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         owner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+        planner_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         client_request_id TEXT,
         title TEXT NOT NULL,
         instructions TEXT NOT NULL DEFAULT '',
@@ -275,7 +277,7 @@ function rebuildTaskWorkflowTables(db) {
         completed_at INTEGER
       );
       INSERT INTO tasks__new (
-        id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent,
+        id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent, planner_agent,
         client_request_id, title, instructions, stage, stage_reason, run_policy, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
         plan_source_run_id, reviewer_agent, tags,
@@ -289,6 +291,7 @@ function rebuildTaskWorkflowTables(db) {
         delegated_by_run_id,
         delegated_to_agent,
         ${ownerExpression},
+        ${taskColumn("planner_agent")},
         client_request_id,
         title,
         instructions,

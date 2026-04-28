@@ -54,6 +54,7 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.stage).toBe("plan");
     expect(res.body.task.run_policy).toBe("auto_plan_execute");
     expect(res.body.task.root_task_id).toBe(res.body.task.id);
+    expect(res.body.task.planner_agent).toBeNull();
     expect(res.body.task.plan_body).toBe("");
     expect(res.body.task.plan_updated_at).toBeNull();
     expect(res.body.task.plan_updated_by).toBeNull();
@@ -336,20 +337,25 @@ describe("PATCH /api/tasks/:id", () => {
     expect(got).toEqual({ type: "task_updated", id: task.id, taskKey: task.task_key });
   });
 
-  it("stores owner assignment", async () => {
+  it("stores owner and planner assignments", async () => {
     const { agent, db } = makeTestServer();
     const now = Date.now();
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("coder", "Coder", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("planner", "Planner", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task } } = await agent.post("/api/tasks").send({
       title: "owned",
       owner_agent: "coder",
+      planner_agent: "planner",
     }).expect(201);
     expect(task.owner_agent).toBe("coder");
+    expect(task.planner_agent).toBe("planner");
     expect(task.executor_agent).toBeUndefined();
 
-    const res = await agent.patch(`/api/tasks/${task.id}`).send({ owner_agent: null }).expect(200);
+    const res = await agent.patch(`/api/tasks/${task.id}`).send({ owner_agent: null, planner_agent: null }).expect(200);
     expect(res.body.task.owner_agent).toBeNull();
+    expect(res.body.task.planner_agent).toBeNull();
     expect(res.body.task.executor_agent).toBeUndefined();
   });
 
@@ -436,11 +442,13 @@ describe("PATCH /api/tasks/:id stage", () => {
 });
 
 describe("POST /api/tasks/bulk", () => {
-  it("bulk patches owner, reviewer, and run policy", async () => {
+  it("bulk patches owner, planner, reviewer, and run policy", async () => {
     const { agent, db } = makeTestServer();
     const now = Date.now();
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("owner", "Owner", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("planner", "Planner", "claude", "claude:claude-sonnet-4-6", now, now);
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("reviewer", "Reviewer", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: a } } = await agent.post("/api/tasks").send({ title: "a" }).expect(201);
@@ -451,6 +459,7 @@ describe("POST /api/tasks/bulk", () => {
       operation: "patch",
       patch: {
         owner_agent: "owner",
+        planner_agent: "planner",
         reviewer_agent: "reviewer",
         run_policy: "auto_plan_execute",
       },
@@ -459,10 +468,10 @@ describe("POST /api/tasks/bulk", () => {
     expect(res.body.summary).toEqual({ requested: 2, succeeded: 2, failed: 0 });
     expect(res.body.results.map((result) => result.task_id).sort()).toEqual([a.id, b.id].sort());
     expect(res.body.results.every((result) => result.ok)).toBe(true);
-    const rows = db.prepare("SELECT owner_agent, reviewer_agent, run_policy FROM tasks ORDER BY title").all();
+    const rows = db.prepare("SELECT owner_agent, planner_agent, reviewer_agent, run_policy FROM tasks ORDER BY title").all();
     expect(rows).toEqual([
-      { owner_agent: "owner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
-      { owner_agent: "owner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
+      { owner_agent: "owner", planner_agent: "planner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
+      { owner_agent: "owner", planner_agent: "planner", reviewer_agent: "reviewer", run_policy: "auto_plan_execute" },
     ]);
   });
 
@@ -516,9 +525,12 @@ describe("POST /api/tasks/:id/subtasks", () => {
     const now = Date.now();
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("owner", "Owner", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("planner", "Planner", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: parent } } = await agent.post("/api/tasks").send({
       title: "Parent",
       owner_agent: "owner",
+      planner_agent: "planner",
     }).expect(201);
 
     const res = await agent.post(`/api/tasks/${parent.task_key}/subtasks`).send({ title: "Child" }).expect(201);
@@ -529,6 +541,7 @@ describe("POST /api/tasks/:id/subtasks", () => {
       parent_task_id: parent.id,
       root_task_id: parent.id,
       owner_agent: "owner",
+      planner_agent: "planner",
       stage: "plan",
       run_policy: "auto_plan_execute",
       required: true,
@@ -985,18 +998,20 @@ describe("GET /api/tasks with filters", () => {
     expect(res.body.tasks[0].id).toBe(b.id);
   });
 
-  it("filters by agent (owner OR reviewer match)", async () => {
+  it("filters by agent (owner, planner, or reviewer match)", async () => {
     const { agent, db } = makeTestServer();
     const now = Date.now();
     db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run("alice", "Alice", "claude", "claude:claude-sonnet-4-6", now, now);
     const { body: { task: t1 } } = await agent.post("/api/tasks").send({ title: "x" });
     const { body: { task: t2 } } = await agent.post("/api/tasks").send({ title: "y" });
+    const { body: { task: t3 } } = await agent.post("/api/tasks").send({ title: "z" });
     await agent.patch(`/api/tasks/${t1.id}`).send({ owner_agent: "alice" });
     await agent.patch(`/api/tasks/${t2.id}`).send({ reviewer_agent: "alice" });
+    await agent.patch(`/api/tasks/${t3.id}`).send({ planner_agent: "alice" });
     await agent.post("/api/tasks").send({ title: "unrelated" });
     const res = await agent.get("/api/tasks?agent=alice").expect(200);
-    expect(res.body.tasks.map(t => t.id).sort()).toEqual([t1.id, t2.id].sort());
+    expect(res.body.tasks.map(t => t.id).sort()).toEqual([t1.id, t2.id, t3.id].sort());
   });
 
   it("combines filters", async () => {
