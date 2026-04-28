@@ -631,13 +631,13 @@ export function Settings() {
             aside={<StatusPill status={serviceMeta.status} label={serviceMeta.label} />}
           >
             <div class="settings-panel-grid">
-              <SettingPanel icon="folder" title="Workspace" meta="Agent working directory. Requires restart." class="span-2">
+              <SettingPanel icon="folder" title="Workspace" meta="Agent working directory. Requires restart.">
                 <FormField label="Workspace">
                   <Input disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
                 </FormField>
               </SettingPanel>
               <SettingPanel icon="database" title="Environment snapshot" meta="Read-only runtime locations.">
-                <div class="settings-note-grid single">
+                <div class="settings-note-grid">
                   <FieldNote label="Data directory" value={runtime?.readOnly?.dataDir} mono />
                   <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
                   <FieldNote label="Service" value={serviceMeta.label} />
