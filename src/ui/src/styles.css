@@ -3401,11 +3401,13 @@ select,
   font-size: var(--text-base);
   line-height: 1.5;
   white-space: pre-wrap;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--accent) 8%, var(--surface));
 }
+.agentlog-event-live-input p { margin: 0; }
+.agentlog-event-live-input p + p { margin-top: var(--sp-1); }
 .agentlog-event-text.doc-content { line-height: 1.55; }
 .agentlog-event-text.doc-content p { margin: var(--sp-1) 0; }
 .agentlog-event-text.doc-content pre {
