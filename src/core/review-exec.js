@@ -17,6 +17,7 @@ import { formatWorklabResultText, stripWorklabResultJson } from "./worklab-resul
  * @param {{ agent_name: string }} priorRun - The task_runs row for the prior run.
  *   If null/undefined, throws a TypeError (caller should guard).
  * @returns {{
+ *   runId: string | null,
  *   agentName: string,
  *   finalText: string,
  *   events: Array,
@@ -39,6 +40,7 @@ export function extractExecutionFromEvents(priorEvents, priorRun) {
     : "");
 
   return {
+    runId: priorRun.id ?? null,
     agentName: priorRun.agent_name ?? "unknown",
     finalText,
     events,

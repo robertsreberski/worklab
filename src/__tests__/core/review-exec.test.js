@@ -7,6 +7,7 @@ describe("extractExecutionFromEvents", () => {
   it("empty events → safe defaults", () => {
     const result = extractExecutionFromEvents([], AGENT_ROW);
     expect(result).toEqual({
+      runId: null,
       agentName: "owner-bot",
       finalText: "",
       events: [],
@@ -23,6 +24,7 @@ describe("extractExecutionFromEvents", () => {
     ];
     const result = extractExecutionFromEvents(events, AGENT_ROW);
     expect(result).toEqual({
+      runId: null,
       agentName: "owner-bot",
       finalText: "Done!",
       events,

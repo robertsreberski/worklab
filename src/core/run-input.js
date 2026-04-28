@@ -79,9 +79,39 @@ export function assertAgentRunnable(db, agentName) {
 
 export function buildTaskRunMessages({ mode, task }) {
   if (mode === "review") {
-    return [{ role: "user", content: `Review task "${task.title}". Respond with your verdict.` }];
+    return [{
+      role: "user",
+      content: [
+        "# Review task",
+        "",
+        `Task: "${task.title}"`,
+        "",
+        "Review this task against the instructions and respond with your verdict.",
+      ].join("\n"),
+    }];
   }
-  return [{ role: "user", content: `${mode === "plan" ? "Plan" : "Work on"} task "${task.title}".` }];
+  if (mode === "plan") {
+    return [{
+      role: "user",
+      content: [
+        "# Plan task",
+        "",
+        `Task: "${task.title}"`,
+        "",
+        "Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks.",
+      ].join("\n"),
+    }];
+  }
+  return [{
+    role: "user",
+    content: [
+      "# Work on task",
+      "",
+      `Task: "${task.title}"`,
+      "",
+      "Do the task work requested by the instructions.",
+    ].join("\n"),
+  }];
 }
 
 export function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
@@ -170,6 +200,7 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
     const priorEvents = logRow ? parseEvents(logRow.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, run);
     return {
+      id: run.id,
       mode: run.mode,
       status: run.status,
       agentName: run.agent_name ?? "unknown",
@@ -257,7 +288,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
     priorRunId,
   });
 
-  return {
+  const metadata = {
     task_id: task.id,
     task_key: task.task_key || null,
     stage,
@@ -266,7 +297,29 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
     model: agent.model,
     effort: agent.effort || "medium",
     generated_at: now,
+  };
+  const tools = [
+    {
+      name: "run_log_read",
+      purpose: "Read a full prior run JSONL log on demand when compact summaries are insufficient.",
+    },
+  ];
+
+  return {
+    ...metadata,
     system_prompt: runInput.systemPrompt,
     messages: runInput.messages,
+    input: {
+      metadata,
+      system: {
+        format: "markdown",
+        content: runInput.systemPrompt,
+      },
+      messages: runInput.messages.map((message) => ({
+        ...message,
+        format: "markdown",
+      })),
+      tools,
+    },
   };
 }

@@ -79,6 +79,7 @@ describe("buildExecuteSystemPrompt", () => {
       pinnedKb: [],
       priorRuns: [
         {
+          id: "run-prior",
           mode: "execute",
           status: "error",
           agentName: "assistant",
@@ -96,8 +97,12 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("Please retry this.\n\n- use the clarifying comment\n- double-check the last run");
     expect(prompt).toContain("## Prior run history");
     expect(prompt).toContain("### Run 1 - execute by assistant (error)");
+    expect(prompt).toContain("- Run id: run-prior");
     expect(prompt).toContain("- Error: timeout");
     expect(prompt).toContain("**Final output:**\nTried a first pass fix.");
+    expect(prompt).toContain("## Available run logs");
+    expect(prompt).toContain("call `run_log_read` with a `run_id`");
+    expect(prompt).toContain("`run-prior`");
   });
 
   it("normalizes raw Worklab JSON comments and prior run output before prompting", () => {
@@ -260,6 +265,24 @@ describe("buildReviewSystemPrompt", () => {
       execution: { ...baseExecution, agentName: "coder", numTurns: 4, durationMs: 250 },
     });
     expect(p).toContain("## Work output (by coder, 4 turns, 250ms)");
+  });
+
+  it("includes the reviewed run id and run_log_read guidance", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: { ...baseExecution, runId: "run-exec" },
+    });
+
+    expect(p).toContain("Run id: `run-exec`");
+    expect(p).toContain("## Available run logs");
+    expect(p).toContain('run_id: "run-exec"');
+    expect(p).toContain("`run_log_read`");
   });
 
   it("formats duration <1000ms as `<N>ms`", () => {
