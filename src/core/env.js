@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(__dirname, "..", "..");
 
 export function defaultDataDir() {
   return join(homedir(), ".worklab");
@@ -44,8 +48,15 @@ export function resolveDataDirFromEnv(env = process.env) {
   return env.WORKLAB_DATA_DIR ? resolve(env.WORKLAB_DATA_DIR) : defaultDataDir();
 }
 
-export function bootstrapWorklabEnv({ env = process.env, createDataDir = false } = {}) {
+export function bootstrapWorklabEnv({ env = process.env, createDataDir = false, repoEnvPath = join(repoRoot, ".env") } = {}) {
+  const repoEnv = loadEnvFile(repoEnvPath, { override: false, env });
   const dataDir = resolveDataDirFromEnv(env);
   if (createDataDir) mkdirSync(dataDir, { recursive: true });
-  return loadEnvFile(join(dataDir, ".env"), { override: false, env });
+  const dataEnv = loadEnvFile(join(dataDir, ".env"), { override: false, env });
+  return {
+    loaded: repoEnv.loaded || dataEnv.loaded,
+    path: dataEnv.path,
+    keys: [...repoEnv.keys, ...dataEnv.keys],
+    files: [repoEnv, dataEnv],
+  };
 }

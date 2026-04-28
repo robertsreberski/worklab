@@ -36,8 +36,21 @@ describe("env loading", () => {
     const env = { WORKLAB_DATA_DIR: dir };
     writeFileSync(join(dir, ".env"), "WORKLAB_PORT=9090\n");
 
-    bootstrapWorklabEnv({ env });
+    bootstrapWorklabEnv({ env, repoEnvPath: join(dir, "missing.env") });
 
     expect(env.WORKLAB_PORT).toBe("9090");
+  });
+
+  it("bootstraps from the repository .env before the data-dir .env", () => {
+    const dir = tmp();
+    const repoDir = tmp();
+    const repoEnv = join(repoDir, ".env");
+    const env = { WORKLAB_DATA_DIR: dir };
+    writeFileSync(repoEnv, "WORKLAB_SLACK_BOT_TOKEN=xoxb-test\nWORKLAB_PORT=9000\n");
+    writeFileSync(join(dir, ".env"), "WORKLAB_PORT=9090\n");
+    bootstrapWorklabEnv({ env, repoEnvPath: repoEnv });
+
+    expect(env.WORKLAB_SLACK_BOT_TOKEN).toBe("xoxb-test");
+    expect(env.WORKLAB_PORT).toBe("9000");
   });
 });

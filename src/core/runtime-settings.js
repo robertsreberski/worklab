@@ -9,8 +9,6 @@ export const RUNTIME_SETTING_FIELDS = {
   timezone: { env: "WORKLAB_TIMEZONE", label: "Timezone" },
   runIdleWarningMs: { env: "WORKLAB_RUN_IDLE_WARNING_MS", label: "Idle warning" },
   logInlineLimit: { env: "WORKLAB_LOG_INLINE_LIMIT", label: "Inline log limit" },
-  slackBotToken: { env: "WORKLAB_SLACK_BOT_TOKEN", label: "Slack bot token", secret: true },
-  slackAppToken: { env: "WORKLAB_SLACK_APP_TOKEN", label: "Slack app token", secret: true },
 };
 
 const FIELD_BY_ENV = Object.fromEntries(
@@ -90,9 +88,6 @@ export function validateRuntimeSetting(field, value) {
       return integerInRange(field, value, { min: 0, max: Number.MAX_SAFE_INTEGER });
     case "logInlineLimit":
       return integerInRange(field, value, { min: 0, max: Number.MAX_SAFE_INTEGER });
-    case "slackBotToken":
-    case "slackAppToken":
-      return String(value || "").trim();
     default:
       throw new Error(`unknown runtime setting: ${field}`);
   }
@@ -141,33 +136,10 @@ function pickEffective(config = {}) {
     timezone: config.timezone || "",
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
-    slackBotToken: config.slackBotToken || "",
-    slackAppToken: config.slackAppToken || "",
   };
 }
 
-const SECRET_FIELDS = Object.entries(RUNTIME_SETTING_FIELDS)
-  .filter(([, spec]) => spec.secret)
-  .map(([field]) => field);
-
-function redactSecrets(values = {}) {
-  const out = { ...values };
-  for (const field of SECRET_FIELDS) out[field] = "";
-  return out;
-}
-
-function secretState(effective = {}, desired = {}) {
-  const out = {};
-  for (const field of SECRET_FIELDS) {
-    out[field] = {
-      effectivePresent: !!effective[field],
-      desiredPresent: !!desired[field],
-    };
-  }
-  return out;
-}
-
-export function readRuntimeSettings({ dataDir, config, redact = true }) {
+export function readRuntimeSettings({ dataDir, config }) {
   const effective = pickEffective(config);
   const envFile = readRuntimeEnvFile(dataDir);
   const desired = { ...effective, ...envFile.values };
@@ -175,8 +147,8 @@ export function readRuntimeSettings({ dataDir, config, redact = true }) {
     String(desired[field] ?? "") !== String(effective[field] ?? "")
   );
   return {
-    effective: redact ? redactSecrets(effective) : effective,
-    desired: redact ? redactSecrets(desired) : desired,
+    effective,
+    desired,
     editable: RUNTIME_SETTING_FIELDS,
     readOnly: {
       dataDir: config?.dataDir || dataDir,
@@ -184,7 +156,6 @@ export function readRuntimeSettings({ dataDir, config, redact = true }) {
     },
     envPath: envFile.path,
     envErrors: envFile.errors,
-    secrets: secretState(effective, desired),
     restartRequired,
   };
 }

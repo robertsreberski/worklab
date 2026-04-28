@@ -58,9 +58,8 @@ describe("settings UI duration conversions", () => {
       timezone: "",
       runIdleWarningMs: minutesToMs("2"),
       logInlineLimit: 12000,
-      slackBotToken: "xoxb-secret",
     });
     expect(payload.runIdleWarningMs).toBe(120000);
-    expect(payload.slackBotToken).toBe("xoxb-secret");
+    expect(payload).not.toHaveProperty("slackBotToken");
   });
 });
