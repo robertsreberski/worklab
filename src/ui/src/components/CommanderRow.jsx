@@ -1,6 +1,6 @@
 // §4.4 CommanderRow — the canonical dense task row.
 // Dense grid:
-//   checkbox · id · title+live · deps-chip · owner→reviewer · status-pill · age
+//   checkbox · id · title+live · deps-chip · planner/owner/reviewer · status-pill · age
 // Error chip policy (§5.3): derived from last_run.status === 'error'.
 // "Stuck" chip: running_run_id && is_locked===false (§5.2).
 
@@ -60,6 +60,7 @@ export function CommanderRow({
   const runnerName = task.owner_agent;
   const runnerRole = "Owner";
   const runnerLabel = agentDisplayName(agents, runnerName, "Unassigned");
+  const plannerLabel = agentDisplayName(agents, task.planner_agent, null);
   const reviewerLabel = agentDisplayName(agents, task.reviewer_agent, null);
 
   const blockedCount = Array.isArray(task.blocked_by)
@@ -156,9 +157,22 @@ export function CommanderRow({
       </div>
       <div class="commander-cell-deps">{depsChip}</div>
       <div class="commander-cell-assignees">
+        {task.planner_agent && (
+          <>
+            <AgentAvatar
+              name={task.planner_agent}
+              label={plannerLabel}
+              role="planner"
+              size={20}
+              title={`Planner: ${plannerLabel}`}
+            />
+            <Icon name="arrow-right" size={10} class="commander-cell-arrow" />
+          </>
+        )}
         <AgentAvatar
           name={runnerName}
           label={runnerLabel}
+          role="owner"
           size={20}
           title={`${runnerRole}: ${runnerLabel}`}
         />
@@ -168,6 +182,7 @@ export function CommanderRow({
             <AgentAvatar
               name={task.reviewer_agent}
               label={reviewerLabel}
+              role="reviewer"
               size={20}
               title={`Reviewer: ${reviewerLabel}`}
             />

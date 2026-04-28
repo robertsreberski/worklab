@@ -786,10 +786,14 @@ function AgentRailRow({ role, value, onChange, agents, caption: captionOverride 
   const unassigned = !value;
   const roleLabel = role === "owner"
     ? "Owner"
-    : "Reviewer";
+    : role === "planner"
+      ? "Planner"
+      : "Reviewer";
   const caption = captionOverride || (role === "owner"
-    ? (unassigned ? "Required to run plan or work" : "Plans, delegates, and runs work")
-    : (unassigned ? "Optional" : "Runs review"));
+    ? (unassigned ? "Required for work" : "Runs work")
+    : role === "planner"
+      ? (unassigned ? "Falls back to owner" : "Runs planning")
+      : (unassigned ? "Optional" : "Runs review"));
   return (
     <div class={`rail-agent-row${unassigned ? " unassigned" : ""}`}>
       <div class="rail-agent-row-head">
@@ -1378,12 +1382,16 @@ export function TaskDetail({ id, runParam = null }) {
 
   // §6.3 primary action cluster per stage
   const runnableStages = ["plan", "execute", "review"];
-  const selectedAgent = stage === "review" ? task?.reviewer_agent : task?.owner_agent;
+  const selectedAgent = stage === "review"
+    ? task?.reviewer_agent
+    : stage === "plan"
+      ? (task?.planner_agent || task?.owner_agent)
+      : task?.owner_agent;
   const runCopy = {
     plan: {
       label: "Run plan",
-      title: "Owner plans the task, may delegate subtasks, then moves it to Execute.",
-      missing: "Assign an owner to run plan",
+      title: "Planner plans the task, falling back to owner when no planner is assigned.",
+      missing: "Assign a planner or owner to run plan",
     },
     execute: {
       label: "Run work",
@@ -1806,7 +1814,13 @@ export function TaskDetail({ id, runParam = null }) {
                 value={task.owner_agent || ""}
                 onChange={(value) => updateAssignee("owner_agent", value)}
                 agents={agents}
-                caption={task.owner_agent ? "Plans and runs" : undefined}
+                caption={task.owner_agent ? "Runs work" : undefined}
+              />
+              <AgentRailRow
+                role="planner"
+                value={task.planner_agent || ""}
+                onChange={(value) => updateAssignee("planner_agent", value)}
+                agents={agents}
               />
               <AgentRailRow
                 role="reviewer"
@@ -1883,6 +1897,7 @@ export function TaskDetail({ id, runParam = null }) {
                       title: `Copy of ${task.title}`,
                       instructions: task.instructions,
                       owner_agent: task.owner_agent,
+                      planner_agent: task.planner_agent,
                       reviewer_agent: task.reviewer_agent,
                       run_policy: task.run_policy || DEFAULT_RUN_POLICY,
                       tags: task.tags,

@@ -45,6 +45,20 @@ export function groupKeyFor(task) {
   return "execute";
 }
 
+export function taskMatchesCommanderQuery(task, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  return (
+    task.title?.toLowerCase().includes(q) ||
+    task.instructions?.toLowerCase().includes(q) ||
+    task.task_key?.toLowerCase().includes(q) ||
+    task.id?.toLowerCase().includes(q) ||
+    task.owner_agent?.toLowerCase().includes(q) ||
+    task.planner_agent?.toLowerCase().includes(q) ||
+    task.reviewer_agent?.toLowerCase().includes(q)
+  );
+}
+
 const TABS = [
   { value: "all", label: "All" },
   { value: "plan", label: "Plan" },
@@ -133,6 +147,16 @@ function BulkTaskBar({
           class="bulk-action-select"
           variant="menu"
           value=""
+          placeholder="Planner"
+          ariaLabel="Bulk assign planner"
+          disabled={busy}
+          options={agentOptions}
+          onChange={(value) => onPatch({ planner_agent: value === "__unassigned__" ? null : value })}
+        />
+        <Select
+          class="bulk-action-select"
+          variant="menu"
+          value=""
           placeholder="Reviewer"
           ariaLabel="Bulk assign reviewer"
           disabled={busy}
@@ -212,18 +236,9 @@ export function Commander() {
   }, [withGroup]);
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return withGroup.filter(({ task, group }) => {
       if (statusFilter !== "all" && group !== statusFilter) return false;
-      if (!q) return true;
-      return (
-        task.title?.toLowerCase().includes(q) ||
-        task.instructions?.toLowerCase().includes(q) ||
-        task.task_key?.toLowerCase().includes(q) ||
-        task.id?.toLowerCase().includes(q) ||
-        task.owner_agent?.toLowerCase().includes(q) ||
-        task.reviewer_agent?.toLowerCase().includes(q)
-      );
+      return taskMatchesCommanderQuery(task, query);
     });
   }, [withGroup, statusFilter, query]);
 

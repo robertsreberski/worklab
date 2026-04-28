@@ -27,7 +27,7 @@ export function AgentAvatar({
   size = 24,
   title,
   compact = false,
-  role, // "owner" | "reviewer" | undefined — renders a small O/R sub-chip.
+  role, // "owner" | "planner" | "reviewer" | undefined — renders a small role sub-chip.
   class: className = "",
 }) {
   const display = label || name || "Unassigned";
@@ -47,7 +47,7 @@ export function AgentAvatar({
       <span>{unassigned ? "?" : initials(display)}</span>
       {role && (
         <span class="agent-avatar-role-chip" aria-hidden="true">
-          {role === "owner" ? "O" : role === "reviewer" ? "R" : ""}
+          {role === "owner" ? "O" : role === "planner" ? "P" : role === "reviewer" ? "R" : ""}
         </span>
       )}
     </span>

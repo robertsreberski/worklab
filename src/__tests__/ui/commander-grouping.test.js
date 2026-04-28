@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupKeyFor } from "../../ui/src/routes/Commander.jsx";
+import { groupKeyFor, taskMatchesCommanderQuery } from "../../ui/src/routes/Commander.jsx";
 
 describe("commander task grouping", () => {
   it("uses the saved task stage even when the latest run errored", () => {
@@ -39,5 +39,14 @@ describe("commander task grouping", () => {
 
   it("falls back to execute for unknown stages", () => {
     expect(groupKeyFor({ stage: "legacy" })).toBe("execute");
+  });
+
+  it("matches planner assignments in commander search", () => {
+    expect(taskMatchesCommanderQuery({
+      title: "Build",
+      owner_agent: "owner",
+      planner_agent: "planning-specialist",
+      reviewer_agent: "reviewer",
+    }, "planning-specialist")).toBe(true);
   });
 });
