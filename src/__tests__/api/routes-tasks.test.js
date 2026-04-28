@@ -1,5 +1,39 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
+
+async function withPreviewServer(fn) {
+  const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-preview-"));
+  const server = makeTestServer({
+    dataDir,
+    config: { dataDir, repoRoot: process.cwd(), workspace: process.cwd() },
+  });
+  try {
+    return await fn(server);
+  } finally {
+    rmSync(dataDir, { recursive: true, force: true });
+  }
+}
+
+function seedAgent(db, name, patch = {}) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO agents
+      (name, display_name, sdk, model, effort, instructions, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    name,
+    patch.displayName || name,
+    patch.sdk || "claude",
+    patch.model || "claude:claude-sonnet-4-6",
+    patch.effort || "medium",
+    patch.instructions || `Instructions for ${name}`,
+    now,
+    now,
+  );
+}
 
 describe("GET /api/tasks", () => {
   it("returns empty list initially", async () => {
@@ -727,6 +761,137 @@ describe("GET /api/tasks/:id/runs", () => {
       output_tokens: 5,
       duration_ms: 250,
       num_turns: 1,
+    });
+  });
+});
+
+describe("GET /api/tasks/:id/run-preview", () => {
+  it("returns the next plan run system prompt and user message", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "planner", { instructions: "Plan carefully." });
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Preview task",
+        instructions: "Inspect the current prompt.",
+        stage: "plan",
+        owner_agent: "planner",
+      }).expect(201);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(200);
+
+      expect(res.body.preview).toMatchObject({
+        task_id: task.id,
+        task_key: task.task_key,
+        stage: "plan",
+        mode: "plan",
+        agent_name: "planner",
+        model: "claude:claude-sonnet-4-6",
+        effort: "medium",
+        messages: [{ role: "user", content: 'Plan task "Preview task".' }],
+      });
+      expect(res.body.preview.system_prompt).toContain("Plan carefully.");
+      expect(res.body.preview.system_prompt).toContain("Inspect the current prompt.");
+      expect(res.body.preview.system_prompt).toContain("Plan this task.");
+    });
+  });
+
+  it("returns execute preview with prior run history", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "owner", { instructions: "Ship the change." });
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Retry preview",
+        instructions: "Finish the work.",
+        stage: "execute",
+        owner_agent: "owner",
+      }).expect(201);
+      db.prepare(
+        "INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status) VALUES (?, ?, 'execute', 'execute', 'owner', ?, ?, 'error', 'failed')",
+      ).run("run-old", task.id, 1000, 2000);
+      db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'error', ?)")
+        .run("log-old", "run-old", JSON.stringify([{ type: "final", text: "Tried a first pass fix.", numTurns: 2, durationMs: 1000 }]), 2000);
+
+      const res = await agent.get(`/api/tasks/${task.task_key}/run-preview`).expect(200);
+
+      expect(res.body.preview.mode).toBe("execute");
+      expect(res.body.preview.messages).toEqual([{ role: "user", content: 'Work on task "Retry preview".' }]);
+      expect(res.body.preview.system_prompt).toContain("## Prior run history");
+      expect(res.body.preview.system_prompt).toContain("Tried a first pass fix.");
+      expect(res.body.preview.system_prompt).toContain("Do the task work requested by the instructions.");
+    });
+  });
+
+  it("returns review preview with the prior execute output", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "owner", { instructions: "Implement." });
+      seedAgent(db, "reviewer", { instructions: "Review strictly." });
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Review preview",
+        instructions: "Check the patch.",
+        stage: "review",
+        owner_agent: "owner",
+        reviewer_agent: "reviewer",
+      }).expect(201);
+      db.prepare(
+        "INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status) VALUES (?, ?, 'execute', 'execute', 'owner', ?, ?, 'complete', 'succeeded')",
+      ).run("run-exec", task.id, 1000, 2000);
+      db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+        .run("log-exec", "run-exec", JSON.stringify([{ type: "final", text: "Implemented the requested change.", numTurns: 3, durationMs: 1500 }]), 2000);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(200);
+
+      expect(res.body.preview).toMatchObject({
+        stage: "review",
+        mode: "review",
+        agent_name: "reviewer",
+        messages: [{ role: "user", content: 'Review task "Review preview". Respond with your verdict.' }],
+      });
+      expect(res.body.preview.system_prompt).toContain("Review strictly.");
+      expect(res.body.preview.system_prompt).toContain("## Work output (by owner");
+      expect(res.body.preview.system_prompt).toContain("Implemented the requested change.");
+    });
+  });
+
+  it("rejects preview when no runnable agent is assigned", async () => {
+    await withPreviewServer(async ({ agent }) => {
+      const { body: { task } } = await agent.post("/api/tasks").send({ title: "Needs owner", stage: "plan" }).expect(201);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(400);
+
+      expect(res.body.error).toMatchObject({ code: "invalid_state", message: "no owner assigned" });
+    });
+  });
+
+  it("rejects preview when an unresolved dependency blocks the task", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "owner");
+      const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Blocked",
+        stage: "execute",
+        owner_agent: "owner",
+        blocked_by_ids: [blocker.id],
+      }).expect(201);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(400);
+
+      expect(res.body.error).toMatchObject({ code: "invalid_state" });
+      expect(res.body.error.message).toContain('task is blocked by "Blocker"');
+    });
+  });
+
+  it("rejects review preview without a prior execute run", async () => {
+    await withPreviewServer(async ({ agent, db }) => {
+      seedAgent(db, "owner");
+      seedAgent(db, "reviewer");
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Review without work",
+        stage: "review",
+        owner_agent: "owner",
+        reviewer_agent: "reviewer",
+      }).expect(201);
+
+      const res = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(400);
+
+      expect(res.body.error).toMatchObject({ code: "invalid_state", message: "no execute run to review" });
     });
   });
 });

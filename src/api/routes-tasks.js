@@ -5,6 +5,7 @@ import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
+import { buildNextTaskRunPreview } from "../core/run-input.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -597,7 +598,7 @@ function taskOr404(db, value) {
   return task;
 }
 
-export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
+export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
   app.get("/api/tasks", (req, res) => {
     const where = [];
     const params = [];
@@ -896,6 +897,25 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger }) {
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id), watcher);
     res.json({ runs });
+  });
+
+  app.get("/api/tasks/:id/run-preview", (req, res) => {
+    try {
+      const taskRow = taskOr404(db, req.params.id);
+      const preview = buildNextTaskRunPreview({
+        db,
+        taskId: taskRow.id,
+        config: {
+          ...(config || {}),
+          dataDir: config?.dataDir || dataDir,
+          repoRoot: config?.repoRoot || repoRoot,
+        },
+      });
+      res.json({ preview });
+    } catch (error) {
+      if (error?.status) return sendRouteError(res, error);
+      throw error;
+    }
   });
 
   app.post("/api/tasks/:id/run", async (req, res) => {

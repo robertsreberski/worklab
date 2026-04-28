@@ -1,22 +1,18 @@
 import { parseArgs } from "node:util";
 import { openDb } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
-import { loadSkills } from "./core/skills.js";
-import { enrichCommentRows } from "./core/comments.js";
-import { getAvailableMcpServers } from "./core/mcp-config.js";
 import { readJournalTail, readFullJournal, writeMemory, agentMemoryPath } from "./core/journal.js";
-import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt, buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
-import { WORKLAB_BUILTIN_TOOLS, resolveModel, generateResponse } from "./core/ai.js";
+import { buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
+import { resolveModel, generateResponse } from "./core/ai.js";
 import { parseVerdict } from "./core/review.js";
-import { extractExecutionFromEvents } from "./core/review-exec.js";
 import { kbListPinned } from "./core/kb.js";
 import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
-import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "./core/agent-allowlists.js";
 import { readSettings } from "./core/settings.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
+import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -145,84 +141,6 @@ function emitRuntimeWarnings(response) {
   }
 }
 
-function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
-  const availableSkills = loadSkills(join(config.dataDir, "skills")).filter((skill) => skill.enabled !== false);
-  const skills = resolveAllowlist({
-    mode: agent.skills_allowlist_mode,
-    allowlist: parseStoredAllowlist(agent.skills_allowlist),
-    all: availableSkills,
-    getName: (skill) => skill.name,
-  });
-
-  const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
-  const mcpServers = resolveAllowlistMap({
-    mode: agent.mcp_allowlist_mode,
-    allowlist: parseStoredAllowlist(agent.mcp_allowlist),
-    all: allMcpServers,
-  });
-
-  if (mcpServers.worklab) {
-    mcpServers.worklab = {
-      ...mcpServers.worklab,
-      env: {
-        ...(mcpServers.worklab.env || {}),
-        WORKLAB_DATA_DIR: config.dataDir,
-        WORKLAB_AGENT_NAME: agentName,
-        WORKLAB_RUN_ID: runId,
-        ...env,
-      },
-    };
-  }
-
-  const builtinMode = storedAllowlistMode(agent.builtin_allowlist_mode);
-  const allowedTools = builtinMode === "all"
-    ? [...WORKLAB_BUILTIN_TOOLS]
-    : parseStoredAllowlist(agent.builtin_allowlist).filter((tool) => WORKLAB_BUILTIN_TOOLS.includes(tool));
-  const disallowedTools = builtinMode === "custom" && allowedTools.length === 0
-    ? [...WORKLAB_BUILTIN_TOOLS]
-    : [];
-
-  return { skills, mcpServers, allowedTools, disallowedTools };
-}
-
-/**
- * Load the shared setup required by both execute and review modes:
- * agent row, task row, comments, skills, memory, journal tail, and MCP servers.
- *
- * Returns { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools }
- * or calls emit({ type:"error" }) + process.exit(1) on any missing required data.
- */
-function loadCommonSetup({ config, db, taskId, agentName, runId }) {
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-  if (!task) { emit({ type: "error", message: `task ${taskId} not found` }); process.exit(1); }
-  const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
-  if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
-  const settings = readSettings(db);
-
-  const commentRows = enrichCommentRows(
-    db,
-    db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId),
-  );
-
-  const memoryPath = agentMemoryPath(config.dataDir, agentName);
-  const memory = existsSync(memoryPath) ? readFileSync(memoryPath, "utf8") : "";
-  const journalTail = readJournalTail({ dataDir: config.dataDir, agent: agentName, maxLines: settings.journal_tail_lines });
-  const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
-    config,
-    agent,
-    agentName,
-    runId,
-    env: {
-      WORKLAB_TASK_ID: taskId,
-      WORKLAB_TASK_TITLE: task.title,
-    },
-  });
-
-  const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
-
-  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
-}
-
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   const automation = db.prepare("SELECT * FROM automations WHERE id = ?").get(automationId);
   if (!automation) { emit({ type: "error", message: `automation ${automationId} not found` }); process.exit(1); }
@@ -247,32 +165,6 @@ function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
 
   return { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
-}
-
-function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
-  const runs = db.prepare(
-    `SELECT * FROM task_runs
-      WHERE task_id = ? AND id != ?
-      ORDER BY started_at DESC, rowid DESC
-      LIMIT ?`,
-  ).all(taskId, currentRunId, limit);
-
-  return runs.map((run) => {
-    const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(run.id);
-    const priorEvents = logRow ? JSON.parse(logRow.events || "[]") : [];
-    const execution = extractExecutionFromEvents(priorEvents, run);
-    return {
-      mode: run.mode,
-      status: run.status,
-      agentName: run.agent_name ?? "unknown",
-      startedAt: run.started_at ?? null,
-      endedAt: run.ended_at ?? null,
-      errorText: run.error_text ?? null,
-      finalText: execution.finalText,
-      numTurns: execution.numTurns,
-      durationMs: execution.durationMs,
-    };
-  });
 }
 
 async function main() {
@@ -410,16 +302,27 @@ async function main() {
     }
   }
 
-  const setup = loadCommonSetup({ config, db, taskId, agentName, runId });
-  const { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb } = setup;
+  function loadTaskRunInputOrExit(options) {
+    try {
+      return buildTaskRunInput(options);
+    } catch (err) {
+      emit({ type: "error", message: err.message || String(err) });
+      process.exit(1);
+    }
+  }
 
   // ── Plan / execute modes ────────────────────────────────────────────────────
   if (mode === "plan" || mode === "execute") {
-    const priorRuns = loadPriorRunSummaries(db, taskId, runId);
-    const promptInput = { agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, priorRuns };
-    const systemPrompt = mode === "plan"
-      ? buildPlanSystemPrompt(promptInput)
-      : buildExecuteSystemPrompt(promptInput);
+    const {
+      task,
+      agent,
+      skills,
+      mcpServers,
+      allowedTools,
+      disallowedTools,
+      systemPrompt,
+      messages,
+    } = loadTaskRunInputOrExit({ config, db, taskId, agentName, runId, mode });
     const model = resolveModel(agent.model);
 
     try {
@@ -429,7 +332,7 @@ async function main() {
         db,
         dataDir: config.dataDir,
         skills,
-        messages: [{ role: "user", content: `${mode === "plan" ? "Plan" : "Work on"} task "${task.title}".` }],
+        messages,
         cwd: config.workspace,
         mcpServers,
         allowedTools,
@@ -486,25 +389,22 @@ async function main() {
   // Review mode has the same tool allowlist as execute. We document — but do not enforce — that
   // reviewers should not call kb_delete. Enforcement via per-tool permissions is Phase 4+.
   if (mode === "review") {
-    const priorRunId = process.env.WORKLAB_PRIOR_RUN_ID;
-    if (!priorRunId) {
-      emit({ type: "error", message: "WORKLAB_PRIOR_RUN_ID is required for review mode" });
-      process.exit(1);
-    }
-
-    const priorRun = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(priorRunId);
-    if (!priorRun) {
-      emit({ type: "error", message: `prior run ${priorRunId} not found` });
-      process.exit(1);
-    }
-
-    const priorLog = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(priorRun.id);
-    const priorEvents = priorLog ? JSON.parse(priorLog.events) : [];
-
-    const execution = extractExecutionFromEvents(priorEvents, priorRun);
-
-    const systemPrompt = buildReviewSystemPrompt({
-      agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, execution,
+    const {
+      agent,
+      skills,
+      mcpServers,
+      allowedTools,
+      disallowedTools,
+      systemPrompt,
+      messages,
+    } = loadTaskRunInputOrExit({
+      config,
+      db,
+      taskId,
+      agentName,
+      runId,
+      mode,
+      priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
     });
     const model = resolveModel(agent.model);
 
@@ -515,7 +415,7 @@ async function main() {
         db,
         dataDir: config.dataDir,
         skills,
-        messages: [{ role: "user", content: `Review task "${task.title}". Respond with your verdict.` }],
+        messages,
         cwd: config.workspace,
         mcpServers,
         allowedTools,
