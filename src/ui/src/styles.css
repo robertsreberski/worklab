@@ -2099,6 +2099,9 @@ select,
   font-size: var(--text-sm);
   white-space: nowrap;
 }
+.commander-new-task-fab {
+  display: none;
+}
 .commander-bulkbar {
   display: flex;
   align-items: center;
@@ -5774,9 +5777,27 @@ select,
     padding: 0 var(--sp-3);
   }
   .commander-filter-actions {
-    width: 100%;
-    margin-left: 0;
-    justify-content: space-between;
+    display: none;
+  }
+  .commander-list {
+    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+  }
+  .commander-new-task-inline {
+    display: none;
+  }
+  .commander .commander-new-task-fab.button {
+    position: fixed;
+    right: max(var(--sp-4), env(safe-area-inset-right));
+    bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    z-index: 32;
+    display: inline-flex;
+    width: 56px;
+    min-width: 56px;
+    height: 56px;
+    min-height: 56px;
+    padding: 0;
+    border-radius: 999px;
+    box-shadow: var(--shadow-lg);
   }
   .commander-bulkbar {
     align-items: stretch;
@@ -6018,7 +6039,7 @@ select,
     padding-bottom: var(--sp-1);
   }
   .commander-list {
-    padding-bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
   }
   .commander-row {
     margin: 0 var(--sp-2);
@@ -6032,8 +6053,10 @@ select,
   }
   .commander-row.selected {
     padding-left: calc(var(--sp-3) - 2px);
-    border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface) 70%, transparent));
+    border-color: transparent;
+    border-left-color: var(--accent);
+    border-left-width: 2px;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
   }
   .commander-cell-checkbox .checkbox-box {
     width: 15px;

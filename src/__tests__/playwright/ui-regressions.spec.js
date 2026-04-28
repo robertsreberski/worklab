@@ -1252,13 +1252,22 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
+  await expect(page.locator(".commander-row.selected").first()).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const row = document.querySelector(".commander-row");
+    const selectedRow = document.querySelector(".commander-row.selected");
     const id = row?.querySelector(".commander-cell-id");
     const state = row?.querySelector(".commander-cell-state");
     const filter = document.querySelector(".commander-filter");
     const pill = row?.querySelector(".status-pill");
+    const inlineNewTask = document.querySelector(".commander-new-task-inline");
+    const fab = document.querySelector(".commander-new-task-fab");
+    const nav = document.querySelector(".app-rail");
+    const selectedStyles = selectedRow ? getComputedStyle(selectedRow) : null;
+    const fabStyles = fab ? getComputedStyle(fab) : null;
+    const fabRect = fab?.getBoundingClientRect();
+    const navRect = nav?.getBoundingClientRect();
     const navWidths = [...document.querySelectorAll(".app-nav a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
     const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
@@ -1272,6 +1281,17 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       navMinWidth: Math.min(...navWidths),
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
+      inlineNewTaskDisplay: inlineNewTask ? getComputedStyle(inlineNewTask).display : "",
+      selectedBorderLeftWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderLeftWidth)) : 0,
+      selectedBorderTopColor: selectedStyles?.borderTopColor || "",
+      selectedBorderRightColor: selectedStyles?.borderRightColor || "",
+      selectedBorderBottomWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderBottomWidth)) : -1,
+      fabDisplay: fabStyles?.display || "",
+      fabLabel: fab?.getAttribute("aria-label") || "",
+      fabWidth: fabRect ? Math.round(fabRect.width) : 0,
+      fabHeight: fabRect ? Math.round(fabRect.height) : 0,
+      fabRadius: fabStyles ? Math.round(parseFloat(fabStyles.borderRadius)) : 0,
+      fabBottomBeforeNav: fabRect && navRect ? Math.round(fabRect.bottom) <= Math.round(navRect.top) + 1 : false,
     };
   });
 
@@ -1284,6 +1304,20 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.filterHeight).toBeLessThanOrEqual(92);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.inlineNewTaskDisplay).toBe("none");
+  expect(metrics.selectedBorderLeftWidth).toBe(2);
+  expect(metrics.selectedBorderTopColor).toBe("rgba(0, 0, 0, 0)");
+  expect(metrics.selectedBorderRightColor).toBe("rgba(0, 0, 0, 0)");
+  expect(metrics.selectedBorderBottomWidth).toBe(0);
+  expect(metrics.fabDisplay).toBe("flex");
+  expect(metrics.fabLabel).toBe("New task");
+  expect(metrics.fabWidth).toBe(56);
+  expect(metrics.fabHeight).toBe(56);
+  expect(metrics.fabRadius).toBeGreaterThanOrEqual(28);
+  expect(metrics.fabBottomBeforeNav).toBe(true);
+
+  await page.locator(".commander-new-task-fab").click();
+  await expect(page).toHaveURL(/#\/tasks\/new/);
 });
 
 test("mobile task detail keeps activity first with a compact premium composer", async ({ page }) => {
