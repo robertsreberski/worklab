@@ -363,7 +363,7 @@ export function Commander() {
             />
             <div class="commander-filter-actions">
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
-              <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
+              <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                 New task
               </Button>
             </div>
@@ -443,6 +443,14 @@ export function Commander() {
             ))}
           </div>
         )}
+        <Button
+          class="commander-new-task-fab"
+          variant="primary"
+          iconLeft={<Icon name="plus" size={22} />}
+          aria-label="New task"
+          title="New task"
+          onClick={() => { navigateHash("#/tasks/new"); }}
+        />
       </div>
       <Modal
         open={bulkDeleteOpen}
