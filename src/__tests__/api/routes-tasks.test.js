@@ -1038,7 +1038,16 @@ describe("POST /api/tasks/:id/cancel", () => {
     expect(t.stage_reason).toBe("abandoned");
     expect(t.error_text).toBe("Previous run did not finish");
 
-    expect(events.some((e) => e.p?.type === "run_ended")).toBe(true);
+    const endEvent = events.find((e) => e.p?.type === "run_ended")?.p;
+    expect(endEvent).toMatchObject({
+      runId: "stale1",
+      taskId: task.id,
+      taskTitle: "t",
+      status: "error",
+      processStatus: "abandoned",
+      failureKind: "abandoned",
+      errorText: "worker exited",
+    });
     expect(events.some((e) => e.p?.type === "task_updated")).toBe(true);
   });
 });

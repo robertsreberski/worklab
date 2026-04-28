@@ -13,6 +13,7 @@ import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 import { readSettings } from "../core/settings.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
+import { buildRunLifecycleEvent } from "../core/run-events.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -316,7 +317,7 @@ export function createTaskWatcher({
     db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
     active.set(task.id, { runId, handle });
     activeByRunId.set(runId, { taskId: task.id, handle, providerKind });
-    broker.broadcast("global", { type: "run_started", runId, taskId: task.id });
+    broker.broadcast("global", buildRunLifecycleEvent(db, "run_started", runId, { taskId: task.id }));
 
     handle.done
       .then((result) => onWorkerExit(task.id, runId, result))
@@ -632,7 +633,7 @@ export function createTaskWatcher({
       handleFailedExit(taskId, runId, res, task, run);
     }
 
-    broker.broadcast("global", { type: "run_ended", runId, taskId });
+    broker.broadcast("global", buildRunLifecycleEvent(db, "run_ended", runId, { taskId }));
   }
 
   function cancel(taskId) {
