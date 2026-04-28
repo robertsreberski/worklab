@@ -59,6 +59,7 @@ export const api = {
   // agents
   listAgents: () => request("GET", "/agents"),
   getAgent: (name) => request("GET", `/agents/${name}`),
+  getAgentMemory: (name) => request("GET", `/agents/${name}/memory`),
   createAgent: (data) => request("POST", "/agents", data),
   patchAgent: (name, patch) => request("PATCH", `/agents/${name}`, patch),
   deleteAgent: (name) => request("DELETE", `/agents/${name}`),

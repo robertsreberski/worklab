@@ -5,6 +5,7 @@ import { isValidSlug, uniqueSlug } from "../core/slugs.js";
 import { getBuiltinProviderAvailability } from "../core/credentials.js";
 import { loadSkills } from "../core/skills.js";
 import { getMcpServerStatuses } from "../core/mcp-config.js";
+import { readAgentMemoryState } from "../core/memory.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -274,6 +275,19 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(req.params.name);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     res.json({ agent: rowToAgent(row) });
+  });
+
+  app.get("/api/agents/:name/memory", (req, res) => {
+    if (!dataDir) return res.status(501).json({ error: { code: "not_configured", message: "data directory not configured" } });
+    const row = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
+    if (!row) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const memory = readAgentMemoryState({
+      db,
+      dataDir,
+      agent: req.params.name,
+      consolidating: Boolean(consolidation?.isActive?.(req.params.name)),
+    });
+    res.json({ memory });
   });
 
   app.post("/api/agents/:name/consolidate", (req, res) => {

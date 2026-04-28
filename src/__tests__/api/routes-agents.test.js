@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
+import { appendJournalEntry, writeMemory } from "../../core/journal.js";
+import { agentJournalHash } from "../../core/memory.js";
 
 const ENV_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CODEX_API_KEY", "PATH"];
 const savedEnv = {};
@@ -93,6 +95,74 @@ describe("agents CRUD", () => {
     expect(res.body.agent.mcp_allowlist_mode).toBe("all");
     expect(res.body.agent.builtin_allowlist).toEqual([]);
     expect(res.body.agent.builtin_allowlist_mode).toBe("all");
+  });
+
+  it("GET /api/agents/:name/memory returns current memory state", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-memory-"));
+    tempDirs.push(dataDir);
+    const { agent, db } = makeTestServer({ dataDir });
+    await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);
+    appendJournalEntry({
+      dataDir,
+      agent: "coder",
+      runId: "run-1",
+      taskId: "task-1",
+      taskTitle: "Memory route",
+      bullet: "Use the compact memory panel.",
+    });
+    writeMemory({ dataDir, agent: "coder", content: "# Facts\n- Memory panel is compact." });
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status)
+      VALUES (?, NULL, 'consolidate', ?, ?, 'complete')
+    `).run("run-1", "coder", 1234);
+    db.prepare(`
+      INSERT INTO agent_consolidations (agent_name, last_journal_hash, last_consolidated_at, last_run_id)
+      VALUES (?, ?, ?, ?)
+    `).run("coder", agentJournalHash({ dataDir, agent: "coder" }), 1234, "run-1");
+
+    const res = await agent.get("/api/agents/coder/memory").expect(200);
+
+    expect(res.body.memory).toMatchObject({
+      agent: "coder",
+      exists: true,
+      journal_exists: true,
+      journal_changed: false,
+      freshness: "current",
+      last_consolidated_at: 1234,
+      last_run_id: "run-1",
+    });
+    expect(res.body.memory.content).toContain("Memory panel is compact.");
+  });
+
+  it("GET /api/agents/:name/memory reflects active consolidation", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-memory-active-"));
+    tempDirs.push(dataDir);
+    const consolidation = { runNow: vi.fn(), isActive: vi.fn(() => true) };
+    const { agent } = makeTestServer({ dataDir, consolidation });
+    await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);
+    appendJournalEntry({
+      dataDir,
+      agent: "coder",
+      runId: "run-1",
+      taskId: "task-1",
+      taskTitle: "Memory route",
+      bullet: "Consolidation is running.",
+    });
+
+    const res = await agent.get("/api/agents/coder/memory").expect(200);
+
+    expect(consolidation.isActive).toHaveBeenCalledWith("coder");
+    expect(res.body.memory).toMatchObject({
+      freshness: "consolidating",
+      journal_exists: true,
+    });
+  });
+
+  it("GET /api/agents/:name/memory rejects missing agents", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-agent-memory-missing-"));
+    tempDirs.push(dataDir);
+    const { agent } = makeTestServer({ dataDir });
+    await agent.get("/api/agents/missing/memory").expect(404);
   });
 
   it("PATCH updates fields including allowlists (arrays)", async () => {
