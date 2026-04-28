@@ -51,6 +51,7 @@ function emptyDraft() {
     title: "",
     instructions: "",
     owner_agent: null,
+    planner_agent: null,
     reviewer_agent: null,
     stage: "plan",
     run_policy: DEFAULT_RUN_POLICY,
@@ -95,6 +96,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           title: data.task.title || "",
           instructions: data.task.instructions || "",
           owner_agent: data.task.owner_agent || null,
+          planner_agent: data.task.planner_agent || null,
           reviewer_agent: data.task.reviewer_agent || null,
           stage: data.task.stage || "plan",
           run_policy: data.task.run_policy || DEFAULT_RUN_POLICY,
@@ -132,6 +134,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       title: draft.title.trim(),
       instructions: draft.instructions,
       owner_agent: draft.owner_agent,
+      planner_agent: draft.planner_agent,
       reviewer_agent: draft.reviewer_agent,
       stage: draft.stage || "plan",
       run_policy: draft.run_policy || DEFAULT_RUN_POLICY,
@@ -364,12 +367,23 @@ export function TaskEdit({ mode = "create", id = null }) {
                   </div>
                 </FormField>
 
-                <FormField label="Owner" hint="Required to run.">
+                <FormField label="Owner" hint="Required for work. Also plans when no planner is set.">
                   <AgentPicker
                     value={draft.owner_agent}
                     onChange={(name) => update({ owner_agent: name })}
                     agents={agents}
                     placeholder="Pick an owner"
+                    role="owner"
+                  />
+                </FormField>
+
+                <FormField label="Planner" hint="Optional. Falls back to owner.">
+                  <AgentPicker
+                    value={draft.planner_agent}
+                    onChange={(name) => update({ planner_agent: name })}
+                    agents={agents}
+                    placeholder="Pick a planner"
+                    role="planner"
                   />
                 </FormField>
 
@@ -389,6 +403,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                     onChange={(name) => update({ reviewer_agent: name })}
                     agents={agents}
                     placeholder="Pick a reviewer"
+                    role="reviewer"
                   />
                 </FormField>
 

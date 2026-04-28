@@ -6,7 +6,7 @@ import { agentModelEffortLabel, humanizeSlug } from "../lib/display.js";
 
 function normalizeRoleForAvatar(role) {
   const normalized = String(role || "").trim().toLowerCase();
-  if (normalized === "owner" || normalized === "reviewer") return normalized;
+  if (normalized === "owner" || normalized === "planner" || normalized === "reviewer") return normalized;
   return undefined;
 }
 
