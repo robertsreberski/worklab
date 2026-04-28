@@ -8,6 +8,7 @@ import {
   readFileChangeSnapshot,
   statsForCompletedChange,
 } from "./file-change-stats.js";
+import { formatLiveInputGuidance } from "./live-input.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -213,7 +214,7 @@ function makeSdkUserMessage(body, sessionId, uuid = randomUUID()) {
 async function* livePromptMessages({ initialPrompt, liveInput, sessionId }) {
   yield makeSdkUserMessage(initialPrompt, sessionId);
   for await (const message of liveInput) {
-    yield makeSdkUserMessage(message.body, sessionId, message.id || randomUUID());
+    yield makeSdkUserMessage(formatLiveInputGuidance(message.body), sessionId, message.id || randomUUID());
   }
 }
 

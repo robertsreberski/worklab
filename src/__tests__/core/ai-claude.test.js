@@ -9,7 +9,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 
 const { generateClaudeResponse } = await import("../../core/ai-claude.js");
-const { createLiveInputQueue } = await import("../../core/live-input.js");
+const { createLiveInputQueue, formatLiveInputGuidance } = await import("../../core/live-input.js");
 
 function mockStream(events) {
   return {
@@ -532,7 +532,7 @@ describe("generateClaudeResponse", () => {
     expect(followup.value).toMatchObject({
       type: "user",
       uuid: "comment-1",
-      message: { role: "user", content: "Please focus the answer." },
+      message: { role: "user", content: formatLiveInputGuidance("Please focus the answer.") },
     });
     liveInput.close();
     expect(await iterator.next()).toEqual({ value: undefined, done: true });

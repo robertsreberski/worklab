@@ -9,6 +9,7 @@ import {
 } from "./worklab-result.js";
 import { normalizeCodexItemEvent } from "./codex-events.js";
 import { createFileChangePayload } from "./file-change-stats.js";
+import { formatLiveInputGuidance } from "./live-input.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -30,16 +31,6 @@ function finalTextFromOutput(worklabResult, texts) {
 
 function userTextInput(text) {
   return [{ type: "text", text: String(text || ""), text_elements: [] }];
-}
-
-function liveGuidanceText(text) {
-  return [
-    "Live guidance from the user:",
-    String(text || ""),
-    "",
-    "Continue satisfying the original Worklab task, existing comments, and current run objective.",
-    "Treat this as additive guidance, not a replacement for the task. Do not narrow the final answer to only this message unless the user explicitly asks to replace the task.",
-  ].join("\n");
 }
 
 function sandboxForPermissionMode(permissionMode) {
@@ -394,7 +385,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
         ]);
         if (turnCompleted || !turnReadyResolved) break;
       }
-      const input = userTextInput(liveGuidanceText(message.body));
+      const input = userTextInput(formatLiveInputGuidance(message.body));
       try {
         const response = await client.request("turn/steer", {
           threadId,

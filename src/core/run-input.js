@@ -215,18 +215,47 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
   });
 }
 
+export function selectCurrentRunComments(db, taskId, currentRunId, comments = []) {
+  const currentRun = db.prepare(
+    "SELECT started_at FROM task_runs WHERE id = ? AND task_id = ?",
+  ).get(currentRunId, taskId);
+  if (!currentRun?.started_at) return [];
+
+  const previousRun = db.prepare(
+    `SELECT started_at, ended_at
+      FROM task_runs
+      WHERE task_id = ?
+        AND id != ?
+        AND started_at <= ?
+      ORDER BY started_at DESC, rowid DESC
+      LIMIT 1`,
+  ).get(taskId, currentRunId, currentRun.started_at);
+
+  const boundary = Number(previousRun?.ended_at ?? previousRun?.started_at ?? 0);
+  const currentStartedAt = Number(currentRun.started_at);
+  return (comments || []).filter((comment) => {
+    const authorType = comment?.author_type || comment?.author?.type;
+    const createdAt = Number(comment?.created_at);
+    return authorType === "human"
+      && Number.isFinite(createdAt)
+      && createdAt > boundary
+      && createdAt <= currentStartedAt;
+  });
+}
+
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
   const { agent, task, skills, memory, journalTail, commentRows, pinnedKb } = setup;
   const messages = buildTaskRunMessages({ mode, task });
+  const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
-    const promptInput = { agent, task, skills, memory, journalTail, comments: commentRows, pinnedKb, priorRuns };
+    const promptInput = { agent, task, skills, memory, journalTail, comments: commentRows, currentRunComments, pinnedKb, priorRuns };
     const systemPrompt = mode === "plan"
       ? buildPlanSystemPrompt(promptInput)
       : buildExecuteSystemPrompt(promptInput);
-    return { ...setup, mode, systemPrompt, messages, priorRuns };
+    return { ...setup, mode, systemPrompt, messages, currentRunComments, priorRuns };
   }
 
   if (mode === "review") {
@@ -247,10 +276,11 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       memory,
       journalTail,
       comments: commentRows,
+      currentRunComments,
       pinnedKb,
       execution,
     });
-    return { ...setup, mode, systemPrompt, messages, priorRun, priorEvents, execution };
+    return { ...setup, mode, systemPrompt, messages, currentRunComments, priorRun, priorEvents, execution };
   }
 
   throw runInputError(400, "invalid_state", `mode ${mode} not implemented`);

@@ -91,8 +91,9 @@ function expectedLiveGuidance(text) {
     "Live guidance from the user:",
     text,
     "",
-    "Continue satisfying the original Worklab task, existing comments, and current run objective.",
-    "Treat this as additive guidance, not a replacement for the task. Do not narrow the final answer to only this message unless the user explicitly asks to replace the task.",
+    "Apply this guidance before continuing. It may correct, narrow, or override your current approach.",
+    "Keep satisfying the original Worklab task and existing comments except where this live guidance conflicts with them.",
+    "When there is a conflict, the newest human live guidance wins. Do not discard the broader task unless the user explicitly asks to replace it.",
   ].join("\n");
 }
 
