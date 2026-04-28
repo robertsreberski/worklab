@@ -3078,6 +3078,32 @@ select,
   background: var(--surface-sunken);
   border-top: 1px solid var(--border);
 }
+.task-live-composer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 36px;
+  gap: var(--sp-2);
+  align-items: end;
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+.task-live-composer-input {
+  min-height: 34px;
+  max-height: 160px;
+  resize: none;
+}
+.task-live-composer .button {
+  width: 36px;
+  min-width: 36px;
+  height: 34px;
+  padding: 0;
+  justify-content: center;
+}
+.task-live-composer-error {
+  grid-column: 1 / -1;
+  color: var(--status-error);
+  font-size: var(--text-xs);
+}
 
 .code-panel {
   background: var(--surface-sunken);
@@ -3301,6 +3327,16 @@ select,
   animation: wl-caret 1s steps(2) infinite;
 }
 .agentlog-event-text { color: var(--text); font-size: var(--text-base); line-height: 1.55; white-space: pre-wrap; }
+.agentlog-event-live-input {
+  color: var(--text);
+  font-size: var(--text-base);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+}
 .agentlog-event-text.doc-content { line-height: 1.55; }
 .agentlog-event-text.doc-content p { margin: var(--sp-1) 0; }
 .agentlog-event-text.doc-content pre {

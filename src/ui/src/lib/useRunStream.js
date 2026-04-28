@@ -33,6 +33,7 @@ export function mergeRunEvents(current = [], incoming = []) {
 
 export function useRunStream(runId, { subscribe = true } = {}) {
   const [events, setEvents] = useState([]);
+  const [run, setRun] = useState(null);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const esRef = useRef(null);
@@ -40,18 +41,21 @@ export function useRunStream(runId, { subscribe = true } = {}) {
   useEffect(() => {
     if (!runId) {
       setEvents([]);
+      setRun(null);
       setDone(false);
       setLoading(false);
       return;
     }
-    setEvents([]); setDone(false); setLoading(true);
+    setEvents([]); setRun(null); setDone(false); setLoading(true);
     const controller = new AbortController();
     let cancelled = false;
     // Preload any already-recorded events (run may have ended before we connected)
     fetch(`/api/runs/${runId}`, { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
       if (cancelled) return;
+      if (data?.run) setRun(data.run);
       if (data?.log?.events?.length) setEvents((prev) => mergeRunEvents(prev, data.log.events));
-      if (data?.run?.status && data.run.status !== "running") setDone(true);
+      const status = data?.run?.process_status || data?.run?.status;
+      if (status && status !== "running") setDone(true);
     }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
     if (!subscribe) return () => { cancelled = true; controller.abort(); };
     const es = new EventSource(`/api/runs/${runId}/stream`);
@@ -67,5 +71,5 @@ export function useRunStream(runId, { subscribe = true } = {}) {
     return () => { cancelled = true; controller.abort(); es.close(); };
   }, [runId, subscribe]);
 
-  return { events, done, loading };
+  return { events, run, done, loading };
 }
