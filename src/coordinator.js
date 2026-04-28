@@ -16,6 +16,19 @@ import { createConsolidationManager } from "./coordinator/consolidation-cron.js"
 import { createAutomationManager } from "./coordinator/automation-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 
+export function createWatcherProxy(watcherHolder) {
+  return {
+    handleRunRequested: (...args) => watcherHolder.current.handleRunRequested(...args),
+    cancel: (...args) => watcherHolder.current.cancel(...args),
+    shutdown: (...args) => watcherHolder.current.shutdown(...args),
+    isActive: (...args) => watcherHolder.current.isActive(...args),
+    getRunLiveInputState: (...args) => watcherHolder.current.getRunLiveInputState(...args),
+    sendRunMessage: (...args) => watcherHolder.current.sendRunMessage(...args),
+    maybeAutoStart: (...args) => watcherHolder.current.maybeAutoStart(...args),
+    maybeAutoStartDependents: (...args) => watcherHolder.current.maybeAutoStartDependents(...args),
+  };
+}
+
 export async function startCoordinator({ config = loadConfig() } = {}) {
   mkdirSync(config.dataDir, { recursive: true });
   mkdirSync(config.workspace, { recursive: true });
@@ -48,14 +61,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   // Holder pattern: server needs watcher, but watcher needs broker (from server).
   // Use a proxy that dereferences at call time.
   const watcherHolder = { current: null };
-  const watcherProxy = {
-    handleRunRequested: (...args) => watcherHolder.current.handleRunRequested(...args),
-    cancel: (...args) => watcherHolder.current.cancel(...args),
-    shutdown: (...args) => watcherHolder.current.shutdown(...args),
-    isActive: (...args) => watcherHolder.current.isActive(...args),
-    maybeAutoStart: (...args) => watcherHolder.current.maybeAutoStart(...args),
-    maybeAutoStartDependents: (...args) => watcherHolder.current.maybeAutoStartDependents(...args),
-  };
+  const watcherProxy = createWatcherProxy(watcherHolder);
   const consolidationHolder = { current: null };
   const consolidationProxy = {
     runNow: (...args) => consolidationHolder.current.runNow(...args),
