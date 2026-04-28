@@ -70,6 +70,7 @@ describe("provider routes", () => {
     expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.4-mini");
     expect(res.body.models.map((m) => m.value)).not.toContain("codex:gpt-5.4-nano");
     expect(res.body.models.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:${model.model_name}`);
+    expect(res.body.groups.find((g) => g.id === "codex").label).toBe("Codex SDK");
     expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
     expect(typeof res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").disabled).toBe("boolean");
     expect(res.body.models.find((m) => m.value === "claude-code:claude-sonnet-4-6").supports_mcp).toBe(true);

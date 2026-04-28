@@ -202,7 +202,7 @@ const CLI_MODEL_GROUPS = [
   },
   {
     id: "codex",
-    label: "Codex CLI",
+    label: "Codex SDK",
     models: BUILTIN_CODEX_MODELS.map((model) => ({
       value: `codex:${model}`,
       label: `Codex ${MODEL_SHORT_LABELS[model] || model}`,
