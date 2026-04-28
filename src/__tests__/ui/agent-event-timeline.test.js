@@ -17,6 +17,32 @@ describe("agent event timeline normalization", () => {
     ]);
   });
 
+  it("deduplicates Codex completed thinking snapshots after streamed fragments", () => {
+    const fullText = "**Correcting structure output**\n\nI realized I emitted a structured progress object.";
+    const events = normaliseAgentTimelineEvents([
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: "**Correcting structure output**\n\nI" }] },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: " realized" }] },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: " I emitted a structured progress object." }] },
+      },
+      {
+        type: "assistant",
+        message: { content: [{ type: "thinking", text: fullText }] },
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "thinking", text: fullText },
+    ]);
+  });
+
   it("flattens assistant message envelopes and normalizes tool ids", () => {
     const events = normaliseAgentTimelineEvents([
       {

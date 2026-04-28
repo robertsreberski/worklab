@@ -80,6 +80,23 @@ function normaliseBlock(block) {
   return block;
 }
 
+function mergeThinkingText(current, next) {
+  const left = current || "";
+  const right = next || "";
+  if (!right) return left;
+  if (!left) return right;
+  if (left === right) return left;
+
+  const leftTrimmed = left.trim();
+  const rightTrimmed = right.trim();
+  if (leftTrimmed && rightTrimmed) {
+    if (leftTrimmed === rightTrimmed) return left;
+    if (rightTrimmed.length >= leftTrimmed.length && rightTrimmed.startsWith(leftTrimmed)) return right;
+  }
+
+  return `${left}${right}`;
+}
+
 function flattenEvents(events) {
   const flat = [];
   for (const event of events || []) {
@@ -99,7 +116,7 @@ function flattenEvents(events) {
   for (const event of flat) {
     const last = coalesced[coalesced.length - 1];
     if (event?.type === "thinking" && last?.type === "thinking") {
-      last.text = `${last.text || ""}${event.text || ""}`;
+      last.text = mergeThinkingText(last.text, event.text);
     } else {
       coalesced.push(event);
     }
