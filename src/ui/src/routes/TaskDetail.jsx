@@ -18,6 +18,7 @@ import { Breadcrumb } from "../components/primitives/Breadcrumb.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { Button } from "../components/primitives/Button.jsx";
+import { IconButton } from "../components/primitives/IconButton.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { EventTimeline } from "../components/EventTimeline.jsx";
@@ -970,6 +971,7 @@ function buildActivity({ comments = [], runs = [] }) {
       authorType: c.author_type || c.author?.type || "human",
       authorId: c.author_id || c.author?.id || null,
       body: normalizeCommentText(c.body || c.content || ""),
+      commentId: c.id || null,
       id: `c-${c.id || c.created_at}`,
     });
   }
@@ -995,6 +997,8 @@ export function TaskDetail({ id, runParam = null }) {
   const [runError, setRunError] = useState(null);
   const [statusModal, setStatusModal] = useState(null); // pending transition
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [commentDeleteTarget, setCommentDeleteTarget] = useState(null);
+  const [commentDeleting, setCommentDeleting] = useState(false);
   const [commentSaving, setCommentSaving] = useState(false);
   const [showOlderActivity, setShowOlderActivity] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
@@ -1039,6 +1043,8 @@ export function TaskDetail({ id, runParam = null }) {
     setSubtaskTitle("");
     setTaskAutomations(null);
     setCommentRerun(true);
+    setCommentDeleteTarget(null);
+    setCommentDeleting(false);
     setRunPreviewOpen(false);
     setRunPreview(null);
     setRunPreviewError(null);
@@ -1244,6 +1250,21 @@ export function TaskDetail({ id, runParam = null }) {
       navigateHash("#/tasks");
     } catch (err) {
       pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  async function deleteComment() {
+    if (!commentDeleteTarget?.commentId || commentDeleting) return;
+    setCommentDeleting(true);
+    try {
+      await api.deleteComment(operationTaskId, commentDeleteTarget.commentId);
+      setCommentDeleteTarget(null);
+      reload();
+      pushToast("Comment deleted", { variant: "success" });
+    } catch (err) {
+      pushToast(`Delete failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setCommentDeleting(false);
     }
   }
 
@@ -1728,6 +1749,7 @@ export function TaskDetail({ id, runParam = null }) {
                       </div>
                     );
                   }
+                  const canDeleteComment = item.authorType === "human" && item.commentId;
                   return (
                     <div key={item.id} class={`activity-feed-entry comment ${item.authorType || "human"}`}>
                       <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
@@ -1735,6 +1757,17 @@ export function TaskDetail({ id, runParam = null }) {
                         <div class="activity-item-head">
                           <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>
                           <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
+                          {canDeleteComment && (
+                            <IconButton
+                              class="activity-comment-delete"
+                              size="sm"
+                              variant="ghost"
+                              icon={<Icon name="trash" size={13} />}
+                              aria-label="Delete comment"
+                              title="Delete comment"
+                              onClick={() => setCommentDeleteTarget(item)}
+                            />
+                          )}
                         </div>
                         {item.body && (
                           <div class="activity-item-body"><StructuredContent content={item.body} maxHeight={200} /></div>
@@ -1896,6 +1929,21 @@ export function TaskDetail({ id, runParam = null }) {
         }
       >
         <p>This permanently removes the task and its runs. This action cannot be undone.</p>
+      </Modal>
+
+      <Modal
+        open={!!commentDeleteTarget}
+        onClose={() => !commentDeleting && setCommentDeleteTarget(null)}
+        title="Delete comment?"
+        size="sm"
+        footer={
+          <>
+            <Button variant="ghost" disabled={commentDeleting} onClick={() => setCommentDeleteTarget(null)}>Cancel</Button>
+            <Button variant="destructive" loading={commentDeleting} onClick={deleteComment}>Delete</Button>
+          </>
+        }
+      >
+        <p>This permanently removes this human comment from the task and future run prompts.</p>
       </Modal>
 
       <RunInputPreviewModal

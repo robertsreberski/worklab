@@ -732,6 +732,60 @@ describe("POST /api/tasks/:id/comments", () => {
   });
 });
 
+describe("DELETE /api/tasks/:id/comments/:commentId", () => {
+  it("deletes a human comment by task key, broadcasts, and removes it from future run prompts", async () => {
+    await withPreviewServer(async ({ agent, db, broker }) => {
+      seedAgent(db, "planner", { instructions: "Plan carefully." });
+      const { body: { task } } = await agent.post("/api/tasks").send({
+        title: "Preview task",
+        stage: "plan",
+        owner_agent: "planner",
+      }).expect(201);
+      const { body: { comment } } = await agent.post(`/api/tasks/${task.id}/comments`)
+        .send({ body: "Remove this obsolete guidance." })
+        .expect(201);
+      const before = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(200);
+      expect(before.body.preview.system_prompt).toContain("Remove this obsolete guidance.");
+
+      const events = [];
+      broker.broadcast = (ch, p) => { if (ch === "global") events.push(p); };
+
+      await agent.delete(`/api/tasks/${task.task_key}/comments/${comment.id}`).expect(204);
+
+      expect(db.prepare("SELECT COUNT(*) AS count FROM task_comments WHERE id = ?").get(comment.id).count).toBe(0);
+      const detail = await agent.get(`/api/tasks/${task.id}`).expect(200);
+      expect(detail.body.comments.map((row) => row.id)).not.toContain(comment.id);
+      expect(events).toContainEqual({ type: "task_updated", id: task.id, taskKey: task.task_key });
+      const after = await agent.get(`/api/tasks/${task.id}/run-preview`).expect(200);
+      expect(after.body.preview.system_prompt).not.toContain("Remove this obsolete guidance.");
+    });
+  });
+
+  it("rejects non-human comments without deleting them", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" }).expect(201);
+    db.prepare("INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'system', ?, ?)")
+      .run("comment-system", task.id, "System history", Date.now());
+    db.prepare("INSERT INTO task_comments (id, task_id, author_type, body, created_at) VALUES (?, ?, 'agent', ?, ?)")
+      .run("comment-agent", task.id, "Agent history", Date.now());
+
+    const system = await agent.delete(`/api/tasks/${task.id}/comments/comment-system`).expect(403);
+    const agentComment = await agent.delete(`/api/tasks/${task.id}/comments/comment-agent`).expect(403);
+
+    expect(system.body.error.code).toBe("forbidden");
+    expect(agentComment.body.error.code).toBe("forbidden");
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_comments WHERE task_id = ?").get(task.id).count).toBe(2);
+  });
+
+  it("returns 404 for a missing task or missing comment", async () => {
+    const { agent } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" }).expect(201);
+
+    await agent.delete("/api/tasks/missing/comments/comment-missing").expect(404);
+    await agent.delete(`/api/tasks/${task.id}/comments/comment-missing`).expect(404);
+  });
+});
+
 describe("GET /api/tasks/:id/runs", () => {
   it("returns empty list for new task", async () => {
     const { agent } = makeTestServer();

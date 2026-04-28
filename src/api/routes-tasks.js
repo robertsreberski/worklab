@@ -893,6 +893,27 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     res.status(201).json(payload);
   });
 
+  app.delete("/api/tasks/:id/comments/:commentId", (req, res) => {
+    try {
+      const existing = taskOr404(db, req.params.id);
+      const comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
+        .get(req.params.commentId, existing.id);
+      if (!comment) throw routeError(404, "not_found", "comment not found");
+      if (comment.author_type !== "human") {
+        throw routeError(403, "forbidden", "only human comments can be deleted");
+      }
+      const now = Date.now();
+      db.transaction(() => {
+        db.prepare("DELETE FROM task_comments WHERE id = ? AND task_id = ?").run(comment.id, existing.id);
+        db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
+      })();
+      broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
+      res.status(204).end();
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+  });
+
   app.get("/api/tasks/:id/runs", (req, res) => {
     const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
