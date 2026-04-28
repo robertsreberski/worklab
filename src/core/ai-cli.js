@@ -12,6 +12,7 @@ import {
   parseStandaloneWorklabResultText,
   stripWorklabResultJson,
 } from "./worklab-result.js";
+import { normalizeCodexItemEvent } from "./codex-events.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -241,43 +242,8 @@ function normalizeCliEvent(raw, context = {}) {
     }
     return { type: "assistant", message: { content: [{ type: "text", text: raw.item.text }] } };
   }
-  if ((raw.type === "item.started" || raw.type === "item.completed") && raw.item?.type === "mcp_tool_call") {
-    const item = raw.item;
-    const id = item.id || `${item.server || "mcp"}:${item.tool || "tool"}`;
-    const name = item.server && item.tool ? `mcp__${item.server}__${item.tool}` : item.tool || "mcp_tool_call";
-    if (raw.type === "item.started") {
-      return { type: "assistant", message: { content: [{ type: "tool_use", id, name, input: item.arguments || {} }] } };
-    }
-    return {
-      type: "user",
-      message: {
-        content: [{
-          type: "tool_result",
-          tool_use_id: id,
-          content: item.error || item.result?.content || item.result || "",
-          is_error: !!item.error,
-        }],
-      },
-    };
-  }
-  if ((raw.type === "item.started" || raw.type === "item.completed") && raw.item?.type === "command_execution") {
-    const item = raw.item;
-    const id = item.id || item.command || "command_execution";
-    if (raw.type === "item.started") {
-      return { type: "assistant", message: { content: [{ type: "tool_use", id, name: "command_execution", input: { command: item.command } }] } };
-    }
-    return {
-      type: "user",
-      message: {
-        content: [{
-          type: "tool_result",
-          tool_use_id: id,
-          content: item.aggregated_output || "",
-          is_error: typeof item.exit_code === "number" && item.exit_code !== 0,
-        }],
-      },
-    };
-  }
+  const codexItem = normalizeCodexItemEvent(raw);
+  if (codexItem) return codexItem;
   if (raw.type === "tool_call") {
     return { type: "assistant", message: { content: [{ type: "tool_use", id: raw.id, name: raw.name, input: raw.input || raw.arguments }] } };
   }

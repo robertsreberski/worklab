@@ -171,6 +171,120 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("normalizes direct Codex app-server command item events as tool calls", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "item.started",
+          item: {
+            type: "command_execution",
+            id: "cmd1",
+            command: "/bin/zsh -lc 'memory_pressure -Q'",
+            aggregated_output: "",
+            exit_code: null,
+            status: "inProgress",
+          },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "item.completed",
+          item: {
+            type: "command_execution",
+            id: "cmd1",
+            command: "/bin/zsh -lc 'memory_pressure -Q'",
+            aggregated_output: "System-wide memory free percentage: 68%\n",
+            exit_code: 0,
+            status: "completed",
+          },
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "cmd1",
+            name: "command_execution",
+            input: { command: "/bin/zsh -lc 'memory_pressure -Q'" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "cmd1",
+            content: "System-wide memory free percentage: 68%\n",
+            is_error: false,
+          }],
+        },
+      },
+    ]);
+  });
+
+  it("normalizes direct Codex app-server MCP item events as tool calls", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "item.started",
+        item: {
+          type: "mcp_tool_call",
+          id: "mcp1",
+          server: "worklab",
+          tool: "journal_append",
+          arguments: { bullet: "checked memory" },
+          result: null,
+          error: null,
+          status: "inProgress",
+        },
+      },
+      {
+        type: "item.completed",
+        item: {
+          type: "mcp_tool_call",
+          id: "mcp1",
+          server: "worklab",
+          tool: "journal_append",
+          arguments: { bullet: "checked memory" },
+          result: { content: [{ type: "text", text: "{\"ok\":true}" }], structuredContent: null },
+          error: null,
+          status: "completed",
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "mcp1",
+            name: "mcp__worklab__journal_append",
+            input: { bullet: "checked memory" },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "mcp1",
+            content: [{ type: "text", text: "{\"ok\":true}" }],
+            is_error: false,
+          }],
+        },
+      },
+    ]);
+  });
+
   it("normalizes provider result errors as visible errors", () => {
     const events = normalizeWorklabEvents([
       {
@@ -313,6 +427,42 @@ describe("compact run event labels", () => {
       type: "tool_use",
       name: "file_edit",
       arg: "update build_wp_p2_tree.py (+12 -3)",
+      status: "done",
+    });
+  });
+
+  it("labels direct Codex app-server command and MCP item events", () => {
+    expect(
+      normalizeToolTokenEvent({
+        type: "sdk_event",
+        event: {
+          type: "item.started",
+          item: { type: "command_execution", id: "cmd1", command: "pwd", status: "inProgress" },
+        },
+      }),
+    ).toMatchObject({
+      type: "tool_use",
+      name: "command_execution",
+      arg: "pwd",
+      status: "running",
+    });
+
+    expect(
+      normalizeToolTokenEvent({
+        type: "item.completed",
+        item: {
+          type: "mcp_tool_call",
+          id: "mcp1",
+          server: "worklab",
+          tool: "journal_append",
+          arguments: { bullet: "checked memory" },
+          status: "completed",
+        },
+      }),
+    ).toMatchObject({
+      type: "tool_use",
+      name: "mcp__worklab__journal_append",
+      arg: "{\"bullet\":\"checked memory\"}",
       status: "done",
     });
   });
