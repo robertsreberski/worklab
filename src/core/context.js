@@ -5,10 +5,12 @@ const CADENCE = `Journal as you work — call \`journal_append\` for facts you d
 
 const RESULT_FIELD_RULES = `Structured result rules:
 - Worklab needs one final \`worklab.v2\` JSON object when the task is complete. Treat \`worklab.v2\` as final-result data, not progress output.
+- Do not preface the final JSON with process narration such as "now I will output the result"; put user-facing text in \`final_text\`.
 - During the run, use normal prose or journal entries for progress. If a structured progress object appears before completion, keep going; the final valid result supersedes earlier structured progress.
-- Put the human-facing final comment in \`final_text\`. For structured-only runtimes, this is the text Worklab will post as the final comment.
+- Put the human-facing final comment in \`final_text\`. Keep it concise; for structured-only runtimes, this is the text Worklab will post as the final comment.
 - Keep \`summary\` and \`details\` as structured metadata for Worklab, not as the main user-visible answer.
-- Put plans, execution steps, and completed-work notes in \`details\` / the plan body, not in \`pending_actions\`.
+- For plan-stage runs, put the complete implementation plan in \`details\` / the plan body and use \`final_text\` only for a short status comment.
+- Put execution steps and completed-work notes in \`details\`, not in \`pending_actions\`.
 - Use \`pending_actions\` only with decision "pause", for exact actions the human must take before the task can continue.
 - Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
 - For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
@@ -22,8 +24,8 @@ Return a structured Worklab result as JSON when you finish:
   "stage": "plan",
   "decision": "advance",
   "summary": "Short outcome.",
-  "details": "Optional planning notes.",
-  "final_text": "Human-facing final comment.",
+  "details": "Complete implementation plan.",
+  "final_text": "Short human-facing plan status.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
@@ -44,7 +46,7 @@ Return a structured Worklab result as JSON when you finish:
   "decision": "advance",
   "summary": "Short outcome.",
   "details": "Optional implementation notes.",
-  "final_text": "Human-facing final comment.",
+  "final_text": "Concise human-facing final comment.",
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
