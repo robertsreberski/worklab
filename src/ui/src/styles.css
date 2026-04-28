@@ -4960,6 +4960,9 @@ select,
   color: var(--text-muted);
   border-top: 1px solid color-mix(in srgb, var(--border) 54%, transparent);
 }
+.skill-file-tree-row.has-meta {
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+}
 .skill-file-tree-root > .skill-file-tree-item:first-child > .skill-file-tree-row {
   border-top: 0;
 }
@@ -4970,6 +4973,13 @@ select,
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+}
+.skill-file-tree-meta {
+  min-width: max-content;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 650;
 }
 .skill-file-tree-item.is-folder > .skill-file-tree-row {
   color: var(--text);
