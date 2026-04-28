@@ -375,6 +375,10 @@ export async function generateResponse(systemPrompt, options) {
     const { generateVercelResponse } = await import("./ai-vercel.js");
     return generateVercelResponse(systemPrompt, nextOptions);
   }
+  if (resolved.sdk === "codex" && options.liveInput) {
+    const { generateCodexAppResponse } = await import("./ai-codex-app.js");
+    return generateCodexAppResponse(systemPrompt, nextOptions);
+  }
   if (resolved.sdk === "claude-code" || resolved.sdk === "codex") {
     const { generateCliResponse } = await import("./ai-cli.js");
     return generateCliResponse(systemPrompt, nextOptions);
