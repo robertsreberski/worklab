@@ -279,6 +279,11 @@ test.beforeAll(async () => {
       (id, task_id, author_type, author_id, body, created_at)
      VALUES (?, ?, 'human', NULL, ?, ?)`,
   ).run("comment-newest-existing", taskId, "Newest seeded comment", now - 1_000);
+  db.prepare(
+    `INSERT INTO task_comments
+      (id, task_id, author_type, author_id, body, created_at)
+     VALUES (?, ?, 'system', NULL, ?, ?)`,
+  ).run("comment-system-existing", taskId, "System seeded comment", now - 15_000);
   const completeRunResult = {
     schema: "worklab.v2",
     stage: "execute",
@@ -584,7 +589,7 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".activity-rerun-checkbox input")).toBeChecked();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Newest seeded comment");
   await expect(page.locator(".run-summary-metrics").first()).toBeVisible();
-  await expect(page.locator(".activity-feed-entry")).toHaveCount(3);
+  await expect(page.locator(".activity-feed-entry")).toHaveCount(4);
   const runCard = page.locator(".activity-feed-entry.run .run-card").first();
   await expect(runCard.locator(".run-result-decision")).toContainText("advance");
   await expect(runCard.locator(".run-result-summary")).toContainText("Implemented regression run summary.");
@@ -593,6 +598,24 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(runCard.locator(".run-summary-status .status-pill")).toHaveCount(0);
   await expect(runCard.locator(".run-summary-title")).toHaveCount(0);
   await expect(runCard.locator(".run-card-summary")).not.toContainText("Execute ·");
+  await expect(page.locator(".activity-feed-entry.comment.system")).toContainText("System seeded comment");
+  const systemDot = await page.locator(".activity-feed-entry.comment.system .activity-feed-dot").evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      className: node.className,
+      classList: [...node.classList],
+      width: Math.round(node.getBoundingClientRect().width),
+      height: Math.round(node.getBoundingClientRect().height),
+      paddingTop: style.paddingTop,
+      borderRadius: style.borderRadius,
+    };
+  });
+  expect(systemDot.className).toContain("comment-dot");
+  expect(systemDot.classList).not.toContain("comment");
+  expect(systemDot.width).toBe(systemDot.height);
+  expect(systemDot.width).toBeLessThanOrEqual(18);
+  expect(systemDot.paddingTop).toBe("0px");
+  expect(systemDot.borderRadius).toBe("50%");
 
   const order = await page.evaluate(() => {
     const composer = document.querySelector(".activity-composer");

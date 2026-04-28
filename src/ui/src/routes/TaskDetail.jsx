@@ -205,14 +205,15 @@ function ActivityRailDot({ item, agentLabel }) {
   }
   if (commentAgent) {
     return (
-      <span class={`activity-feed-dot avatar comment agent`}>
+      <span class="activity-feed-dot avatar comment-dot agent">
         <AgentAvatar name={commentAgent} label={commentAuthorLabel(item)} size={20} compact />
       </span>
     );
   }
   const icon = item.type === "run" ? "zap" : "message-circle";
+  const typeClass = item.type === "comment" ? "comment-dot" : item.type;
   return (
-    <span class={`activity-feed-dot ${item.type} ${tone || ""}`}>
+    <span class={`activity-feed-dot ${typeClass} ${tone || ""}`}>
       {item.authorType === "human" ? <span class="activity-feed-human-mark">@</span> : <Icon name={icon} size={12} />}
     </span>
   );

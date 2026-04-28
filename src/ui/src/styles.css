@@ -2834,6 +2834,11 @@ select,
   background: color-mix(in srgb, var(--status-todo-bg-10) 34%, transparent);
   border-color: color-mix(in srgb, var(--status-todo-border) 36%, var(--border));
 }
+.activity-feed-dot.system {
+  color: var(--status-muted);
+  background: color-mix(in srgb, var(--status-muted-bg-10) 48%, transparent);
+  border-color: color-mix(in srgb, var(--status-muted-border) 42%, var(--border));
+}
 .activity-feed-content { min-width: 0; }
 .activity-item {
   padding: 2px 0 var(--sp-2);
