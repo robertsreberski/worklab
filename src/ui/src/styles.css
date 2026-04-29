@@ -4955,17 +4955,27 @@ select,
 }
 .ds-catalog {
   max-width: 1280px;
+  min-width: 0;
 }
 .ds-catalog-section {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  min-width: 0;
 }
 .ds-catalog-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-2);
+  min-width: 0;
+}
+.ds-catalog .card,
+.ds-catalog .pane-detail,
+.ds-catalog .pane-detail-body,
+.ds-catalog .form-grid,
+.ds-catalog .field {
+  min-width: 0;
 }
 .ds-rubric-grid {
   display: grid;
@@ -4992,6 +5002,36 @@ select,
   margin-top: var(--sp-1);
   color: var(--text-muted);
   font-size: var(--text-sm);
+}
+.ds-catalog .filter-bar {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
+.ds-catalog .filter-bar-filters,
+.ds-catalog .filter-bar-presets,
+.ds-catalog .filter-bar-actions {
+  justify-content: flex-start;
+}
+.ds-catalog .filter-bar-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  width: 100%;
+}
+.ds-catalog .workflow-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "hero"
+    "main"
+    "rail";
+  gap: var(--sp-4);
+}
+.ds-catalog .date-time-picker,
+.ds-catalog .date-range-fields,
+.ds-catalog .schedule-builder-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+.ds-catalog .date-picker-popover {
+  width: min(292px, calc(100vw - var(--sp-6)));
 }
 .ds-swatch-grid {
   display: grid;

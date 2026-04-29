@@ -78,6 +78,7 @@ export function PathOrUrlInput({
   disabled,
   kind = "path",
   class: className = "",
+  ...rest
 }) {
   return (
     <div class={`path-url-input ${className}`.trim()}>
@@ -88,6 +89,7 @@ export function PathOrUrlInput({
         placeholder={placeholder}
         disabled={disabled}
         class="path-url-input-control"
+        {...rest}
       />
     </div>
   );
@@ -103,13 +105,17 @@ export function TagInput({
   const [draft, setDraft] = useState("");
   const tags = Array.isArray(value) ? value : [];
 
-  function addTag() {
-    const next = draft.trim();
-    if (!next || tags.includes(next)) {
+  function addTags(raw = draft) {
+    const nextTags = String(raw || "")
+      .split(",")
+      .map((tag) => tag.trim())
+      .filter(Boolean);
+    if (!nextTags.length) {
       setDraft("");
       return;
     }
-    onChange?.([...tags, next]);
+    const unique = nextTags.filter((tag) => !tags.includes(tag));
+    if (unique.length) onChange?.([...tags, ...unique]);
     setDraft("");
   }
 
@@ -135,16 +141,17 @@ export function TagInput({
           placeholder={placeholder}
           disabled={disabled}
           onInput={(event) => setDraft(event.currentTarget.value)}
+          onBlur={() => addTags()}
           onKeyDown={(event) => {
-            if (event.key === "Enter") {
+            if (event.key === "Enter" || event.key === ",") {
               event.preventDefault();
-              addTag();
+              addTags();
             } else if (event.key === "Backspace" && !draft && tags.length) {
               removeTag(tags[tags.length - 1]);
             }
           }}
         />
-        <Button size="sm" variant="secondary" disabled={disabled || !draft.trim()} onClick={addTag}>Add</Button>
+        <Button size="sm" variant="secondary" disabled={disabled || !draft.trim()} onClick={() => addTags()}>Add</Button>
       </div>
     </div>
   );
