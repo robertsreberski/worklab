@@ -14,7 +14,8 @@ export const runLogReadSchema = z.object({ run_id: z.string().min(1, "run_id is 
 export const listChildrenSchema = z.object({ task_id: z.string().optional() });
 export const getChildResultSchema = z.object({ child_task_id: z.string().min(1, "child_task_id is required") });
 
-// KB schemas
+// Knowledge Base schemas. Tool names use `kb` as a short prefix for
+// Knowledge Base, not as a kilobyte unit.
 export const kbCreateSchema = z.object({
   slug: z.string().min(1, "slug is required"),
   title: z.string().min(1, "title is required"),
@@ -305,7 +306,7 @@ export const toolDefinitions = [
   {
     name: "kb_create",
     description:
-      "Create a new knowledge-base entry. Use this to preserve substantial task deliverables, research reports, runbooks, decisions, and reusable analysis. The author is set automatically from the calling agent context.",
+      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve substantial task deliverables, research reports, runbooks, decisions, and reusable analysis. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -329,7 +330,7 @@ export const toolDefinitions = [
   {
     name: "kb_update",
     description:
-      "Update fields of an existing knowledge-base entry by slug. Only title, body, tags, category, and pinned may be patched; unknown keys are rejected.",
+      "Update fields of an existing Worklab Knowledge Base entry by slug. Only title, body, tags, category, and pinned may be patched; unknown keys are rejected.",
     inputSchema: {
       type: "object",
       properties: {
@@ -352,7 +353,7 @@ export const toolDefinitions = [
   },
   {
     name: "kb_delete",
-    description: "Delete a knowledge-base entry by slug. Throws not_found if the entry does not exist.",
+    description: "Delete a Worklab Knowledge Base entry by slug. Throws not_found if the entry does not exist.",
     inputSchema: {
       type: "object",
       properties: {
@@ -364,7 +365,7 @@ export const toolDefinitions = [
   {
     name: "kb_read",
     description:
-      "Read a knowledge-base entry by slug, returning its frontmatter metadata and body. Throws not_found if missing.",
+      "Read a Worklab Knowledge Base entry by slug, returning its frontmatter metadata and body. Throws not_found if missing.",
     inputSchema: {
       type: "object",
       properties: {
@@ -376,7 +377,7 @@ export const toolDefinitions = [
   {
     name: "kb_list",
     description:
-      "List knowledge-base entries, optionally filtered by tag, category, or pinned status. Returns metadata only (no body). Sorted: pinned first, then by updated_at descending.",
+      "List Worklab Knowledge Base entries, optionally filtered by tag, category, or pinned status. Returns metadata only (no body). Sorted: pinned first, then by updated_at descending.",
     inputSchema: {
       type: "object",
       properties: {
@@ -388,7 +389,7 @@ export const toolDefinitions = [
   },
   {
     name: "kb_search",
-    description: "Search the knowledge base with hybrid FTS/semantic search. Returns compact snippets.",
+    description: "Search the Worklab Knowledge Base with hybrid FTS/semantic search. Returns compact snippets.",
     inputSchema: {
       type: "object",
       properties: {
