@@ -9051,12 +9051,8 @@ html.assistant-resizing * {
   position: relative;
   flex: 0 0 auto;
   align-items: center;
-  height: calc(44px + env(safe-area-inset-top));
-  padding:
-    env(safe-area-inset-top)
-    max(var(--sp-3), env(safe-area-inset-right))
-    0
-    max(var(--sp-3), env(safe-area-inset-left));
+  height: 44px;
+  padding: 0 var(--sp-3);
   border-bottom: 1px solid var(--border);
   background: var(--surface);
 }
@@ -9463,6 +9459,7 @@ html.assistant-resizing * {
   .app.responsive .app-body {
     height: 100dvh;
     min-height: 0;
+    padding-top: env(safe-area-inset-top, 0px);
     padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
   .app.responsive.has-dock .app-body {
@@ -9709,8 +9706,11 @@ html.assistant-resizing * {
     display: none;
   }
   .assistant-dock-head {
-    min-height: 52px;
-    padding: var(--sp-3) var(--sp-4);
+    min-height: calc(52px + env(safe-area-inset-top, 0px));
+    padding:
+      calc(var(--sp-3) + env(safe-area-inset-top, 0px))
+      var(--sp-4)
+      var(--sp-3);
   }
   .assistant-thread {
     padding: var(--sp-3);
