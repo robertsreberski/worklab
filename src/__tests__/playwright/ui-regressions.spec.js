@@ -602,6 +602,7 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
       - parseFloat(bodyStyle.paddingRight);
     const columns = gridStyle.gridTemplateColumns.split(" ").filter(Boolean);
     return {
+      bodyWidth: Math.round(body.getBoundingClientRect().width),
       bodyContentWidth: Math.round(bodyContentWidth),
       gridWidth: Math.round(grid.getBoundingClientRect().width),
       columnCount: columns.length,
@@ -609,6 +610,7 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
     };
   });
   expect(metrics).not.toBeNull();
+  expect(metrics.bodyWidth).toBeLessThanOrEqual(1180);
   expect(Math.abs(metrics.gridWidth - metrics.bodyContentWidth)).toBeLessThanOrEqual(2);
   expect(metrics.columnCount).toBe(2);
   expect(metrics.railWidth).toBeGreaterThanOrEqual(300);
@@ -636,8 +638,9 @@ test("task detail renders two-column layout", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).toBeVisible();
-  await expect(page.locator(".card-title", { hasText: "Agents" })).toBeVisible();
-  await expect(page.locator(".card-title", { hasText: "Context" })).toBeVisible();
+  await expect(page.locator(".task-detail-rail .card-title", { hasText: "Roles" })).toBeVisible();
+  await expect(page.locator(".task-detail-rail .card-title", { hasText: "Metadata" })).toBeVisible();
+  await expect(page.locator(".task-detail-rail .card-title", { hasText: "Maintenance" })).toBeVisible();
 });
 
 test("task detail polish keeps details, agent picker, and newest-first comments clear", async ({ page }) => {
@@ -648,9 +651,10 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
   await expect(page.locator(".task-context-row", { hasText: "Next scheduled run" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
-  await expect(page.locator(".run-artifacts-card")).toContainText("Artifacts");
-  await expect(page.locator(".run-artifacts-card")).toContainText("TaskDetail.jsx");
-  await expect(page.locator(".run-artifacts-card")).toContainText("+10 -2");
+  await expect(page.locator(".task-metadata-card")).toContainText("Artifacts");
+  await expect(page.locator(".task-metadata-card")).toContainText("TaskDetail.jsx");
+  await expect(page.locator(".task-metadata-card")).toContainText("+10 -2");
+  await expect(page.locator(".run-artifacts-card")).toHaveCount(0);
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(3);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
   await expect(page.locator(".activity-composer")).toBeVisible();
@@ -763,7 +767,7 @@ test("desktop task detail states keep actions and context obvious without clippe
       title: "Desktop blocked task",
       status: "Execute",
       actions: [{ label: "Run work", enabled: false }],
-      contextText: "Dependencies",
+      contextText: "Blocked by",
     },
     {
       label: "running",
@@ -790,8 +794,9 @@ test("desktop task detail states keep actions and context obvious without clippe
       await expect(page.locator(".task-hero-title", { hasText: state.title })).toBeVisible();
       await expect(page.locator(".status-menu-trigger")).toContainText(state.status);
       await expect(page.locator(".card-title", { hasText: "Activity" })).toBeVisible();
-      await expect(page.locator(".card-title", { hasText: "Agents" })).toBeVisible();
-      await expect(page.locator(".card-title", { hasText: "Context" })).toBeVisible();
+      await expect(page.locator(".task-detail-rail .card-title", { hasText: "Roles" })).toBeVisible();
+      await expect(page.locator(".task-detail-rail .card-title", { hasText: "Metadata" })).toBeVisible();
+      await expect(page.locator(".task-detail-rail .card-title", { hasText: "Maintenance" })).toBeVisible();
       await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
 
       for (const action of state.actions) {
@@ -807,6 +812,8 @@ test("desktop task detail states keep actions and context obvious without clippe
       });
       const expectedColumns = viewport.width >= 1180 ? 2 : 1;
       expect(columnCount, `${viewport.label} ${state.label} responsive detail columns`).toBe(expectedColumns);
+      const detailWidth = await page.locator(".task-detail").evaluate((node) => Math.round(node.getBoundingClientRect().width));
+      expect(detailWidth, `${viewport.label} ${state.label} detail max width`).toBeLessThanOrEqual(1180);
       const headerToBriefGap = await page.locator(".task-detail-shell").evaluate((node) => {
         const head = node.querySelector(".detail-head");
         const brief = node.querySelector("#task-brief");
@@ -847,7 +854,7 @@ test("task detail context shows completion and run mode", async ({ page }) => {
 
 test("task detail shows linked dependencies when the graph exists", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${blockedTaskId}`);
-  await expect(page.locator(".card-title", { hasText: "Dependencies" })).toBeVisible();
+  await expect(page.locator(".task-metadata-card")).toContainText("Blocked by");
   await expect(page.locator(".blocked-link", { hasText: "Dependency blocker" })).toBeVisible();
 });
 
@@ -1432,7 +1439,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   const beforeFocus = await page.evaluate(() => {
     const activity = document.querySelector(".activity-card");
     const agents = document.querySelector(".rail-agents-card");
-    const context = document.querySelector(".task-context-card");
+    const context = document.querySelector(".task-metadata-card");
     const composer = document.querySelector(".activity-composer-form");
     const input = document.querySelector(".activity-composer-input");
     const shortcut = document.querySelector(".activity-composer-shortcut");
