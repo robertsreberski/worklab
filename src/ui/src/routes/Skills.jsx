@@ -227,6 +227,7 @@ export function Skills({ selectedName = null }) {
           listBody={listBody}
           detail={detail}
           hasSelection={!!selectedName}
+          detailOwnsMobileBack={!!selectedName}
           onBack={() => navigateHash("#/skills")}
           backLabel="All skills"
         />

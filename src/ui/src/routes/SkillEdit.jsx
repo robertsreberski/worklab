@@ -1,5 +1,5 @@
 // §6.6 SkillEdit — metadata (display name, priority, enabled) · trigger · body.
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
@@ -20,7 +20,7 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { FileTree } from "../components/FileTree.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { DetailHeader } from "../components/layout/index.js";
+import { EditHeader } from "../components/layout/index.js";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
@@ -48,9 +48,6 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
     }
   }, [name, isNew]);
 
-  const isDirty = useMemo(() => baseline ? JSON.stringify(skill) !== JSON.stringify(baseline) : true, [skill, baseline]);
-  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
-
   const formSave = useFormSave(async () => {
     const payload = {
       meta: { ...skill.meta, trigger: skill.meta.trigger, enabled: !!skill.meta.enabled },
@@ -72,9 +69,15 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
       onSaved?.(name);
     }
   });
+  const isDirty = useMemo(() => baseline ? JSON.stringify(skill) !== JSON.stringify(baseline) : true, [skill, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
+  const cancel = useCallback(() => {
+    guard.requestNavigation("#/skills");
+  }, [guard.requestNavigation]);
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+    Escape: () => cancel(),
   });
 
   if (!skill) return <LoadingState caption="Loading skill…" />;
@@ -107,11 +110,34 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
     !isNew ? { label: "Used by", value: `${usageCount} explicit agent${usageCount === 1 ? "" : "s"}`, mono: false } : null,
     !isNew ? { label: "Files", value: `${fileCount} root item${fileCount === 1 ? "" : "s"}`, mono: false } : null,
   ];
+  const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
+  const saveButtonLabel = isNew ? "Create" : "Save";
+  const saveDisabled = !(skill.meta.display_name || skill.name);
+  const headerActions = (
+    <>
+      {!isNew && <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />}
+      <Button variant="ghost" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+        onClick={() => formSave.save().catch(() => {})}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
 
   return (
     <>
-      <DetailHeader
-        class="skill-detail-head"
+      <EditHeader
+        class="skill-detail-head entity-edit-head"
+        backLabel="All skills"
+        onBack={cancel}
+        breadcrumbs={[
+          { label: "Skills", href: "#/skills" },
+          { label: isNew ? "New" : "Edit" },
+        ]}
         icon={<Icon name="sparkles" size={16} />}
         iconClass="skill-detail-icon"
         kicker={isNew ? "Create skill" : "Skill"}
@@ -129,19 +155,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
             )}
           </>
         )}
-        actions={(
-          <>
-          {!isNew && <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />}
-          <Button
-            variant={isDirty || isNew ? "primary" : "secondary"}
-            loading={formSave.saving}
-            disabled={!(skill.meta.display_name || skill.name)}
-            onClick={() => formSave.save().catch(() => {})}
-          >
-            {isNew ? "Create" : "Save"}
-          </Button>
-          </>
-        )}
+        actions={headerActions}
       />
       <div class="pane-detail-body entity-detail-body skill-detail-body">
         {formSave.error && (
@@ -232,6 +246,18 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
             )}
           </aside>
         </div>
+      </div>
+
+      <div class="entity-edit-mobile-dock" aria-label="Skill edit actions">
+        <Button variant="secondary" onClick={cancel}>Cancel</Button>
+        <Button
+          variant={saveButtonVariant}
+          loading={formSave.saving}
+          disabled={saveDisabled}
+          onClick={() => formSave.save().catch(() => {})}
+        >
+          {saveButtonLabel}
+        </Button>
       </div>
 
       <Modal

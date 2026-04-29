@@ -12,6 +12,7 @@ export function PaneLayout({
   hasSelection = false,
   onBack,
   backLabel = "Back",
+  detailOwnsMobileBack = false,
   class: className = "",
 }) {
   const [compactView, setCompactView] = useState(
@@ -32,7 +33,7 @@ export function PaneLayout({
       <div class={`two-pane two-pane-compact ${className}`.trim()}>
         {hasSelection ? (
           <div class="pane-detail pane-detail-compact">
-            {onBack && (
+            {onBack && !detailOwnsMobileBack && (
               <div class="pane-mobile-back">
                 <Button
                   variant="ghost"

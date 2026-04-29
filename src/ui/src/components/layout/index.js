@@ -10,6 +10,7 @@ export {
   EntityEditorLayout,
   RailStack,
 } from "./Detail.jsx";
+export { EditHeader } from "./EditShell.jsx";
 export { PaneListHeader } from "./PaneListHeader.jsx";
 export {
   ActionDock,

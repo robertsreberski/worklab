@@ -164,6 +164,7 @@ export function Agents({ selectedName = null }) {
         listBody={listBody}
         detail={detail}
         hasSelection={!!selectedName}
+        detailOwnsMobileBack={!!selectedName}
         onBack={() => navigateHash("#/agents")}
         backLabel="All agents"
       />
