@@ -136,6 +136,10 @@ function truncateDisplayEvent(event, options) {
   return next;
 }
 
+function isCancellationExit(code, signal) {
+  return code === 130 || signal === "SIGTERM" || signal === "SIGINT";
+}
+
 export function spawnWorker({
   binary,
   args,
@@ -169,6 +173,8 @@ export function spawnWorker({
   let resultError = null;
   let explicitFailureKind = null;
   let exitCode = null;
+  let exitSignal = null;
+  let workerCancelSignal = null;
   let cancelRequested = false;
   let cancelInitiator = null;
   let cancelReason = null;
@@ -311,6 +317,11 @@ export function spawnWorker({
       errorMessage = rawEvent.message;
       explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
     }
+    if (rawEvent.type === "cancelled") {
+      cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
+      cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
+      workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
+    }
     if (rawEvent.type === "worklab_result_error") {
       resultError = rawEvent.message || "invalid worklab_result";
       explicitFailureKind = "invalid_result";
@@ -386,7 +397,7 @@ export function spawnWorker({
   }
 
   const done = new Promise((resolve) => {
-    function finalize(code) {
+    function finalize(code, signal = null) {
       if (finalized) return;
       finalized = true;
       if (exitFallbackTimer) {
@@ -412,7 +423,8 @@ export function spawnWorker({
       const durationMs = Date.now() - startedAt;
       let processStatus = "succeeded";
       if (timedOut) processStatus = "failed";
-      else if (cancelRequested || code === 130) processStatus = "cancelled";
+      else if (cancelRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
+      else if (signal === "SIGKILL" && !code) processStatus = "abandoned";
       else if (code !== 0 || resultError) processStatus = "failed";
       const status = processStatusToLegacyStatus(processStatus);
       const failureKind = processStatus === "succeeded"
@@ -424,6 +436,7 @@ export function spawnWorker({
             timedOut,
             cancelRequested,
             cancelInitiator,
+            signal,
             resultParseError: !!resultError,
             hint: explicitFailureKind,
           }) || "spawn");
@@ -450,6 +463,8 @@ export function spawnWorker({
         warning_count: allWarnings.length,
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,
+        ...(signal ? { exit_signal: signal } : {}),
+        ...(workerCancelSignal ? { worker_cancel_signal: workerCancelSignal } : {}),
         ...(stderrTailText ? { stderr_tail: stderrTailText } : {}),
         ...(failureKind ? { failure_kind: failureKind } : {}),
       };
@@ -528,8 +543,9 @@ export function spawnWorker({
       });
     }
 
-    child.on("exit", (code) => {
+    child.on("exit", (code, signal) => {
       exitCode = code;
+      exitSignal = signal || null;
       // Prefer close so stdout/stderr buffers have drained. The fallback keeps
       // tests and unusual child behavior from hanging forever if close is lost.
       // We give close `exitCloseGraceMs` to fire before forcing finalization,
@@ -545,13 +561,13 @@ export function spawnWorker({
           message: `worker emitted exit but not close within ${exitCloseGraceMs}ms; finalizing anyway`,
           ts: Date.now(),
         });
-        finalize(exitCode);
+        finalize(exitCode, exitSignal);
       }, exitCloseGraceMs);
       exitFallbackTimer.unref?.();
     });
 
-    child.on("close", (code) => {
-      finalize(code ?? exitCode);
+    child.on("close", (code, signal) => {
+      finalize(code ?? exitCode, signal || exitSignal);
     });
   });
 

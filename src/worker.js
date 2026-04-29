@@ -225,8 +225,23 @@ async function main() {
   const db = openDb(join(config.dataDir, "worklab.db"));
 
   const ac = new AbortController();
-  process.on("SIGTERM", () => { ac.abort(); });
-  process.on("SIGINT", () => { ac.abort(); });
+  let signalReceived = null;
+  function handleSignal(signal) {
+    signalReceived = signalReceived || signal;
+    ac.abort();
+  }
+  function emitCancelledAndExit() {
+    const event = { type: "cancelled" };
+    if (signalReceived) {
+      event.initiator = "worker_signal";
+      event.signal = signalReceived;
+      event.reason = `worker received ${signalReceived}`;
+    }
+    emit(event);
+    process.exit(130);
+  }
+  process.on("SIGTERM", () => { handleSignal("SIGTERM"); });
+  process.on("SIGINT", () => { handleSignal("SIGINT"); });
 
   if (mode === "consolidate") {
     const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
@@ -257,8 +272,7 @@ async function main() {
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {
-        emit({ type: "cancelled" });
-        process.exit(130);
+        emitCancelledAndExit();
       }
       if (result.error) {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
@@ -306,8 +320,7 @@ async function main() {
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {
-        emit({ type: "cancelled" });
-        process.exit(130);
+        emitCancelledAndExit();
       }
       if (result.error) {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
@@ -378,8 +391,7 @@ async function main() {
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {
-        emit({ type: "cancelled" });
-        process.exit(130);
+        emitCancelledAndExit();
       }
       if (result.error) {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
@@ -468,8 +480,7 @@ async function main() {
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
       if (result.cancelled) {
-        emit({ type: "cancelled" });
-        process.exit(130);
+        emitCancelledAndExit();
       }
       if (result.error) {
         emit({ type: "error", message: result.error, failureKind: result.failureKind });
