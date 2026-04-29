@@ -596,6 +596,294 @@ select,
   letter-spacing: 0.08em;
 }
 
+/* §3.6.1 Date, time, and schedule inputs */
+.date-picker,
+.date-time-picker,
+.date-range-picker,
+.time-picker,
+.number-stepper,
+.duration-input,
+.secret-input,
+.json-field,
+.path-url-input,
+.tag-input {
+  min-width: 0;
+}
+.date-picker {
+  position: relative;
+  display: block;
+}
+.date-picker-trigger.input {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  cursor: pointer;
+  text-align: left;
+}
+.date-picker-trigger span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.date-picker-placeholder { color: var(--text-subtle); }
+.date-picker-chev { color: var(--text-muted); flex: 0 0 auto; }
+.date-picker-popover {
+  position: absolute;
+  top: calc(100% + var(--sp-1));
+  left: 0;
+  z-index: 60;
+  width: 292px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 19px, var(--paper-line) 19px 20px),
+    var(--surface);
+  box-shadow: var(--elev-float);
+  animation: wl-float-in var(--dur-std) var(--ease-snap);
+}
+.date-picker-head,
+.date-picker-foot,
+.date-range-presets {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.date-picker-head {
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.date-picker-month {
+  color: var(--text);
+  font-weight: 800;
+}
+.date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: var(--sp-1);
+}
+.date-picker-weekdays {
+  margin-bottom: var(--sp-1);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-align: center;
+}
+.date-picker-day {
+  width: 100%;
+  height: 32px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+.date-picker-day:hover,
+.date-picker-day:focus-visible {
+  border-color: var(--border-focus);
+  background: var(--surface-elevated);
+}
+.date-picker-day.muted { color: var(--text-subtle); }
+.date-picker-day.today { border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
+.date-picker-day.selected {
+  color: var(--text-inverse);
+  border-color: var(--accent);
+  background: var(--accent);
+  font-weight: 800;
+}
+.date-picker-foot {
+  justify-content: flex-end;
+  margin-top: var(--sp-3);
+}
+.date-time-picker,
+.date-range-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(128px, auto);
+  gap: var(--sp-2);
+}
+.date-range-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.date-range-presets {
+  flex-wrap: wrap;
+}
+.time-picker,
+.number-stepper,
+.duration-input,
+.secret-input,
+.path-url-input,
+.tag-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.time-picker {
+  height: 32px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.time-picker:focus-within,
+.number-stepper:focus-within,
+.secret-input:focus-within,
+.path-url-input:focus-within {
+  border-color: var(--border-focus);
+}
+.time-picker-icon,
+.path-url-input-icon {
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.time-picker-input {
+  width: 54px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-family: var(--font-mono);
+  outline: none;
+}
+.time-picker-steps,
+.number-stepper-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: auto;
+}
+.time-picker-steps button {
+  width: 18px;
+  height: 22px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.time-picker-steps button:hover { color: var(--text); border-color: var(--border-strong); }
+.number-stepper {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.number-stepper-input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.number-stepper-buttons {
+  flex-direction: column;
+  padding-right: var(--sp-1);
+  gap: 0;
+}
+.number-stepper-buttons .icon-button {
+  width: 22px;
+  height: 15px;
+}
+.duration-input-unit,
+.schedule-builder-zone,
+.json-field-status {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+.secret-input,
+.path-url-input {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.secret-input .input,
+.path-url-input .input {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.secret-input-toggle { margin-right: var(--sp-1); }
+.path-url-input-icon { margin-left: var(--sp-3); }
+.json-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.json-field.invalid .textarea {
+  border-color: var(--status-error);
+}
+.json-field.invalid .json-field-status {
+  color: var(--status-error);
+}
+.tag-input {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.tag-input-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.tag-input-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: var(--sp-1);
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.schedule-builder {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.schedule-builder-type {
+  align-self: flex-start;
+}
+.schedule-builder-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.schedule-builder-label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.schedule-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--sp-1);
+}
+.schedule-weekdays .checkbox {
+  min-height: 30px;
+  justify-content: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.schedule-weekdays .checkbox-copy { display: block; }
+.schedule-weekdays .checkbox-label { font-size: var(--text-xs); font-weight: 800; }
+
 /* §3.7 Switch */
 .switch {
   display: inline-grid;
@@ -4536,6 +4824,104 @@ select,
 .ds-panel-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
 }
+.filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.filter-bar-search,
+.filter-bar-filters,
+.filter-bar-presets,
+.filter-bar-actions {
+  min-width: 0;
+}
+.filter-bar-filters,
+.filter-bar-presets,
+.filter-bar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.filter-bar-actions {
+  justify-content: flex-end;
+}
+.filter-bar-count {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.action-dock {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.action-dock-primary,
+.action-dock-secondary,
+.action-dock-overflow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.action-dock-primary { order: 3; }
+.action-dock-overflow { order: 2; }
+.action-dock-secondary { order: 1; }
+.workflow-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    "hero hero"
+    "main rail";
+  gap: var(--sp-5);
+  min-width: 0;
+}
+.workflow-hero { grid-area: hero; min-width: 0; }
+.workflow-main { grid-area: main; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-5); }
+.workflow-rail { grid-area: rail; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-4); }
+.inline-editor-panel {
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 19px, var(--paper-line) 19px 20px),
+    var(--surface-sunken);
+}
+.inline-editor-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}
+.inline-editor-panel-head h4 {
+  margin: 0;
+  font-size: var(--text-md);
+}
+.inline-editor-panel-head p {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.inline-editor-panel-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.inline-editor-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.settings-matrix {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-3);
+}
 .ds-detail-head .pane-detail-head-copy {
   display: flex;
   align-items: center;
@@ -5388,6 +5774,40 @@ select,
 }
 
 @media (max-width: 760px) {
+  .filter-bar,
+  .workflow-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .filter-bar {
+    align-items: stretch;
+  }
+  .filter-bar-filters,
+  .filter-bar-presets,
+  .filter-bar-actions,
+  .action-dock {
+    justify-content: flex-start;
+  }
+  .workflow-layout {
+    grid-template-areas:
+      "hero"
+      "main"
+      "rail";
+    gap: var(--sp-4);
+  }
+  .date-time-picker,
+  .date-range-fields,
+  .schedule-builder-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .date-picker-popover {
+    width: min(292px, calc(100vw - var(--sp-6)));
+  }
+  .date-picker-day {
+    height: 36px;
+  }
+  .schedule-weekdays {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
   .capability-panel {
     grid-template-columns: minmax(0, 1fr);
     gap: var(--sp-3);
