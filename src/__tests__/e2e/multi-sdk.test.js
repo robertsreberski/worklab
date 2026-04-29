@@ -202,6 +202,30 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("normalizes nested Codex context overflow errors", async () => {
+    const providerError = {
+      type: "error",
+      error: {
+        type: "invalid_request_error",
+        code: "context_length_exceeded",
+        message: "Your input exceeds the context window of this model. Please adjust your input and try again.",
+        param: "input",
+      },
+      sequence_number: 2,
+    };
+    const result = await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: errorStream(`Codex error: ${JSON.stringify(providerError)}`),
+    });
+
+    expect(result.sdk).toBe("codex");
+    expect(result.error).toBe("Your input exceeds the context window of this model. Please adjust your input and try again.");
+    expect(result.error).not.toContain("invalid_request_error");
+    expect(result.failureKind).toBe("usage_limit");
+  });
+
   it("captures provider thinking snapshots when no thinking deltas were emitted", async () => {
     const events = [];
     const result = await generateResponse("sys", {

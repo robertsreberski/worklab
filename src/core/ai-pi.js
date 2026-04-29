@@ -283,6 +283,27 @@ function finalTextFromStructured(structuredResult, worklabResult) {
   return null;
 }
 
+function tryParseJson(text) {
+  try { return JSON.parse(text); } catch { return null; }
+}
+
+export function normalizePiErrorMessage(message) {
+  const text = String(message || "").trim();
+  if (!text) return null;
+  const codexMatch = /^Codex error:\s*(\{[\s\S]*\})$/i.exec(text);
+  const parsed = tryParseJson(codexMatch ? codexMatch[1] : text);
+  const nested = parsed?.error || parsed;
+  if (typeof nested?.message === "string" && nested.message.trim()) return nested.message.trim();
+  if (typeof nested?.error?.message === "string" && nested.error.message.trim()) return nested.error.message.trim();
+  return text;
+}
+
+export function isContextLimitError(message) {
+  const text = String(message || "");
+  if (/rate limit|too many requests/i.test(text)) return false;
+  return /context[_ ]length[_ ]exceeded|exceeds the context window|too many tokens|maximum context length|token limit exceeded|prompt is too long/i.test(text);
+}
+
 export async function generatePiResponse(systemPrompt, options = {}) {
   const resolved = options.model;
   const start = Date.now();
@@ -471,9 +492,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       outputTokens: usage.output,
       cachedTokens: usage.cacheRead,
     });
-    const errorMessage = maxTurnsHit
+    const rawErrorMessage = maxTurnsHit
       ? "Pi agent stopped before final output: max turns reached"
       : (lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted" ? lastAssistant.errorMessage || agent.state.errorMessage : null);
+    const errorMessage = normalizePiErrorMessage(rawErrorMessage);
     cancelled ||= !!options.abortSignal?.aborted || lastAssistant?.stopReason === "aborted";
 
     return {
@@ -495,11 +517,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       sdk: resolved.sdk,
       cancelled,
       error: errorMessage,
-      failureKind: errorMessage ? (maxTurnsHit ? "usage_limit" : "provider_unavailable") : null,
+      failureKind: errorMessage ? (maxTurnsHit || isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable") : null,
       runtimeWarnings,
       ...(worklabResult ? { worklabResult, structuredResultSource: structuredResult ? "StructuredOutput" : "message" } : {}),
     };
   } catch (err) {
+    const errorMessage = normalizePiErrorMessage(err?.message || String(err));
     return {
       text: assistantTexts.join("") || null,
       events,
@@ -510,8 +533,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       effort: options.effort || null,
       sdk: resolved?.sdk || "pi",
       cancelled: cancelled || !!options.abortSignal?.aborted,
-      error: err?.message || String(err),
-      failureKind: "provider_unavailable",
+      error: errorMessage,
+      failureKind: isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable",
       runtimeWarnings,
     };
   } finally {
