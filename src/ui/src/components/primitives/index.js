@@ -12,6 +12,7 @@ export { JsonField, PathOrUrlInput, SecretInput, TagInput } from "./SpecialInput
 export { Kbd } from "./Kbd.jsx";
 export { Link } from "./Link.jsx";
 export { StatusPill, StatusDot, statusMeta } from "./StatusPill.jsx";
+export { StageToken, taskStageMeta, TASK_STAGE_META } from "./StageToken.jsx";
 export { LivePulse } from "./LivePulse.jsx";
 export { RadioGroup } from "./RadioGroup.jsx";
 export { SearchField } from "./SearchField.jsx";
