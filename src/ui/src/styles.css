@@ -3347,7 +3347,6 @@ html.assistant-resizing * {
 /* §6.3 Hero Instructions inset (matches DS prototype TaskInstructions). */
 .task-hero-instructions {
   position: relative;
-  margin-top: var(--sp-3);
   padding: var(--sp-3) var(--sp-4);
   background: var(--surface-sunken);
   border: 1px solid var(--border);
