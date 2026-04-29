@@ -32,6 +32,12 @@ describe("classifyFailure", () => {
     expect(classifyFailure({ cancelRequested: true, cancelInitiator: "coordinator_shutdown" })).toBe("cancelled_stale");
   });
 
+  it("classifies raw cancellation exits and signals", () => {
+    expect(classifyFailure({ exitCode: 130 })).toBe("cancelled_signal");
+    expect(classifyFailure({ signal: "SIGTERM" })).toBe("cancelled_signal");
+    expect(classifyFailure({ signal: "SIGINT" })).toBe("cancelled_signal");
+  });
+
   it("classifies SIGKILL with no code as abandoned", () => {
     expect(classifyFailure({ signal: "SIGKILL" })).toBe("abandoned");
   });
@@ -64,7 +70,7 @@ describe("classifyFailure", () => {
 
   it("FAILURE_KINDS includes the new entries", () => {
     expect(FAILURE_KINDS).toEqual(expect.arrayContaining([
-      "budget_exceeded", "child_failed", "cancelled_user", "cancelled_stale",
+      "budget_exceeded", "child_failed", "cancelled_user", "cancelled_stale", "cancelled_signal",
     ]));
   });
 });
