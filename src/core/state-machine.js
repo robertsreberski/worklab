@@ -290,11 +290,19 @@ export function nextStage(currentStage, event) {
     }
 
     case "run_cancelled": {
-      // User-initiated cancellation. Treat distinctly from failure: do not
-      // increment failure_count, do not write error_text. Leave a system
-      // comment trail and a stage_reason so the UI can render an amber chip.
+      // Cancellation is distinct from failure: do not increment failure_count
+      // and do not write error_text. Preserve provenance when available so an
+      // unattributed runtime abort is not rendered as a user action.
       const message = event.message || "Run cancelled.";
-      const initiator = event.cancelInitiator || "user";
+      const failureKind = event.failureKind || "";
+      const initiator = event.cancelInitiator
+        || (failureKind === "cancelled_signal"
+          ? "signal"
+          : failureKind === "cancelled_stale"
+            ? "stale_reconcile"
+            : failureKind === "cancelled_user"
+              ? "user"
+              : "runtime");
       const reasonLabel = event.cancelReason
         ? `${initiator}: ${event.cancelReason}`
         : initiator;

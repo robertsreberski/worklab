@@ -8,6 +8,7 @@ export const FAILURE_KINDS = [
   "provider_unavailable",
   "child_failed",
   "budget_exceeded",
+  "cancelled",
   "cancelled_user",
   "cancelled_stale",
   "cancelled_signal",
@@ -46,7 +47,9 @@ export function classifyFailure({
     if (cancelInitiator === "stale_reconcile" || cancelInitiator === "coordinator_shutdown") {
       return "cancelled_stale";
     }
-    return "cancelled_user";
+    if (cancelInitiator === "worker_signal") return "cancelled_signal";
+    if (cancelInitiator === "user" || cancelInitiator === "api_cancel") return "cancelled_user";
+    return "cancelled";
   }
   if (exitCode === 130 || signal === "SIGTERM" || signal === "SIGINT") return "cancelled_signal";
   if (signal === "SIGKILL" && !exitCode) return "abandoned";

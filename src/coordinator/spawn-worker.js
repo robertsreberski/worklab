@@ -204,6 +204,7 @@ export function spawnWorker({
   let finalPayload = null;
   let errorMessage = null;
   let resultError = null;
+  let workerDiagnostics = null;
   let explicitFailureKind = null;
   let exitCode = null;
   let exitSignal = null;
@@ -296,6 +297,14 @@ export function spawnWorker({
     resetIdleTimer();
     if (contextWarning) emitEvent(contextWarning);
     return { rawEvent, event };
+  }
+
+  function mergeWorkerDiagnostics(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    workerDiagnostics = {
+      ...(workerDiagnostics || {}),
+      ...value,
+    };
   }
 
   function recordContextPayload(rawEvent) {
@@ -447,6 +456,7 @@ export function spawnWorker({
       return;
     }
     const { rawEvent } = emitEvent(parsed);
+    mergeWorkerDiagnostics(rawEvent.diagnostics);
     if (rawEvent.type === "final") finalPayload = rawEvent;
     if (rawEvent.type === "error") {
       errorMessage = rawEvent.message;
@@ -593,6 +603,7 @@ export function spawnWorker({
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
         ...contextBloatDiagnostics(),
+        ...(workerDiagnostics || {}),
         ...(finalPayload?.diagnostics || {}),
         provider_session_id: providerSessionId,
         execenv_path: execenvPath,

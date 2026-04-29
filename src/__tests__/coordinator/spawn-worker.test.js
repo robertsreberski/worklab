@@ -454,6 +454,42 @@ describe("spawnWorker", () => {
     });
   });
 
+  it("classifies raw unattributed worker cancellation as signal cancellation, not user cancellation", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [{ type: "cancelled" }],
+      exitCode: 130,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+    expect(result.processStatus).toBe("cancelled");
+    expect(result.failureKind).toBe("cancelled_signal");
+    expect(result.cancelInitiator).toBeNull();
+    expect(result.cancelReason).toBeNull();
+
+    const run = db.prepare(
+      "SELECT process_status, failure_kind, cancel_initiator, cancel_reason, diagnostics_json FROM task_runs WHERE id = ?",
+    ).get(runId);
+    expect(run).toMatchObject({
+      process_status: "cancelled",
+      failure_kind: "cancelled_signal",
+      cancel_initiator: null,
+      cancel_reason: null,
+    });
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      failure_kind: "cancelled_signal",
+    });
+  });
+
   it("collects runtime_warning events into warnings_json and persists diagnostics", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

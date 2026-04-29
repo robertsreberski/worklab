@@ -24,7 +24,8 @@ describe("classifyFailure", () => {
 
   it("classifies user cancellation", () => {
     expect(classifyFailure({ cancelRequested: true, cancelInitiator: "user" })).toBe("cancelled_user");
-    expect(classifyFailure({ cancelRequested: true })).toBe("cancelled_user");
+    expect(classifyFailure({ cancelRequested: true, cancelInitiator: "api_cancel" })).toBe("cancelled_user");
+    expect(classifyFailure({ cancelRequested: true })).toBe("cancelled");
   });
 
   it("classifies stale cancel as cancelled_stale", () => {
@@ -70,7 +71,7 @@ describe("classifyFailure", () => {
 
   it("FAILURE_KINDS includes the new entries", () => {
     expect(FAILURE_KINDS).toEqual(expect.arrayContaining([
-      "budget_exceeded", "child_failed", "cancelled_user", "cancelled_stale", "cancelled_signal",
+      "budget_exceeded", "child_failed", "cancelled", "cancelled_user", "cancelled_stale", "cancelled_signal",
     ]));
   });
 });

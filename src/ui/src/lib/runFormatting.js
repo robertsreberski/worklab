@@ -65,6 +65,9 @@ function cancellationSummary(run = {}) {
   if (initiator && reason) return `Run cancelled (${initiator}: ${reason})`;
   if (reason) return `Run cancelled (${reason})`;
   if (initiator) return `Run cancelled (${initiator})`;
+  if (run?.failure_kind === "cancelled_signal") return "Run cancelled (signal)";
+  if (run?.failure_kind === "cancelled_stale") return "Run cancelled (stale)";
+  if (run?.failure_kind === "cancelled") return "Run cancelled (runtime)";
   return "Run cancelled";
 }
 
