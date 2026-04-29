@@ -10,6 +10,7 @@ export const FAILURE_KINDS = [
   "budget_exceeded",
   "cancelled_user",
   "cancelled_stale",
+  "cancelled_signal",
   "abandoned",
 ];
 
@@ -47,6 +48,7 @@ export function classifyFailure({
     }
     return "cancelled_user";
   }
+  if (exitCode === 130 || signal === "SIGTERM" || signal === "SIGINT") return "cancelled_signal";
   if (signal === "SIGKILL" && !exitCode) return "abandoned";
 
   if (hint && FAILURE_KINDS.includes(hint)) return hint;
