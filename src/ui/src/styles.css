@@ -7308,6 +7308,92 @@ html.assistant-resizing * {
     radial-gradient(circle at 32% 22%, color-mix(in srgb, var(--accent) 28%, transparent), transparent 42%),
     color-mix(in srgb, var(--surface-elevated) 78%, transparent);
 }
+.knowledge-read-body {
+  container-type: inline-size;
+  container-name: knowledge-read;
+}
+.knowledge-read-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  justify-content: center;
+  align-items: start;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+.knowledge-read-main,
+.knowledge-read-section {
+  min-width: 0;
+}
+.knowledge-read-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.knowledge-read-article {
+  min-width: 0;
+  padding: var(--sp-1) 0 var(--sp-8);
+}
+.knowledge-read-markdown {
+  max-width: 72ch;
+  font-size: var(--text-md);
+  line-height: 1.72;
+}
+.knowledge-read-markdown h1 {
+  margin-bottom: var(--sp-5);
+  font-family: var(--font-display);
+  font-size: var(--text-2xl);
+  font-weight: 400;
+}
+.knowledge-read-markdown h2 {
+  margin-top: var(--sp-7);
+  padding-top: var(--sp-1);
+}
+.knowledge-read-markdown p,
+.knowledge-read-markdown ul,
+.knowledge-read-markdown ol,
+.knowledge-read-markdown blockquote,
+.knowledge-read-markdown pre,
+.knowledge-read-markdown table {
+  margin-bottom: var(--sp-4);
+}
+.knowledge-read-markdown > :last-child {
+  margin-bottom: 0;
+}
+.knowledge-read-rail-content,
+.knowledge-usage-groups,
+.knowledge-usage-group {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.knowledge-read-rail-content {
+  gap: var(--sp-4);
+}
+.knowledge-usage-groups {
+  gap: var(--sp-4);
+}
+.knowledge-usage-group {
+  gap: var(--sp-2);
+}
+.knowledge-read-usage-list li {
+  align-items: flex-start;
+}
+@media (max-width: 1180px) {
+  .knowledge-read-layout {
+    grid-template-columns: minmax(0, min(760px, 100%));
+  }
+  .knowledge-read-rail {
+    position: static;
+  }
+}
+@container knowledge-read (max-width: 900px) {
+  .knowledge-read-layout {
+    grid-template-columns: minmax(0, min(760px, 100%));
+  }
+  .knowledge-read-rail {
+    position: static;
+  }
+}
 
 /* §6.8 Providers — model card layout */
 .provider-model-row {

@@ -23,7 +23,7 @@ import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
-import { useUnsavedChangesGuard } from "../lib/navigation.js";
+import { proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
 
 const KB_EDIT_SECTIONS = [
@@ -64,7 +64,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     return raw.split(",").map((t) => t.trim()).filter(Boolean);
   }
 
-  const formSave = useFormSave(async () => {
+  const formSave = useFormSave(async ({ navigateOnSuccess = true } = {}) => {
     if (!entry.title.trim()) throw new Error("Title is required.");
     const payload = {
       title: entry.title.trim(),
@@ -75,19 +75,22 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     };
     if (isNew) {
       const res = await api.createKb(payload);
+      const savedSlug = res.entry?.meta?.slug || res.entry?.slug;
       pushToast("Entry created", { variant: "success" });
       setBaseline(entry);
-      onSaved?.(res.entry.slug);
+      onSaved?.(savedSlug);
+      if (navigateOnSuccess && savedSlug) proceedToHash(`#/knowledge/${savedSlug}`);
     } else {
       await api.patchKb(slug, payload);
       pushToast("Saved.", { variant: "success" });
       setBaseline(entry);
       onSaved?.(slug);
+      if (navigateOnSuccess) proceedToHash(`#/knowledge/${slug}`);
     }
   });
   const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
-  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
-  const cancel = () => guard.requestNavigation("#/knowledge");
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save({ navigateOnSuccess: false }) });
+  const cancel = () => guard.requestNavigation(isNew ? "#/knowledge" : `#/knowledge/${slug}`);
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },

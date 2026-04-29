@@ -552,7 +552,12 @@ test("desktop task list keeps every task state legible without clipped controls"
 test("knowledge entry loads via the two-pane URL", async ({ page }) => {
   await page.goto(`${baseUrl}/#/knowledge/welcome`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Welcome guide" })).toBeVisible();
-  await expect(page.locator("textarea")).toHaveValue(/nested KB route shape/);
+  await expect(page.locator(".knowledge-read-markdown h1", { hasText: "Welcome" })).toBeVisible();
+  await expect(page.locator(".knowledge-detail-body textarea")).toHaveCount(0);
+
+  await page.locator(".pane-detail-head .button", { hasText: "Edit" }).click();
+  await expect(page).toHaveURL(/#\/knowledge\/welcome\/edit$/);
+  await expect(page.locator(".knowledge-detail-body textarea")).toHaveValue(/nested KB route shape/);
 });
 
 test("agents two-pane: clicking a list row selects inline editor via URL", async ({ page }) => {
@@ -1071,7 +1076,7 @@ test("multi-line selection controls center against their copy", async ({ page })
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/agents/regression-agent",
-	    "#/knowledge/welcome",
+	    "#/knowledge/welcome/edit",
 	    `#/providers/${providerId}`,
 	    `#/skills/${skillName}`,
 	  ]) {
@@ -1154,7 +1159,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       title: "Mobile layout reference",
       rowText: "Mobile layout reference",
       detailText: "mobile-layout-reference",
-      entityEditor: true,
+      readArticle: true,
     },
   ];
 
@@ -1172,20 +1177,28 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
         await expect(page.locator(".entity-editor-layout")).toBeVisible();
         await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
         await expect(page.locator(".entity-editor-rail .card-title").first()).toBeVisible();
+      } else if (route.readArticle) {
+        await expect(page.locator(".knowledge-read-layout")).toBeVisible();
+        await expect(page.locator(".knowledge-read-markdown")).toBeVisible();
+        await expect(page.locator(".knowledge-read-rail .card-title").first()).toBeVisible();
       } else {
         await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
       }
 
-      const paneMetrics = await page.evaluate(({ entityEditor, flatBody }) => {
+      const paneMetrics = await page.evaluate(({ entityEditor, flatBody, readArticle }) => {
         const row = document.querySelector(".pane-row.active");
         const detailHead = document.querySelector(".pane-detail-head");
         const body = document.querySelector(".pane-detail-body");
         const list = document.querySelector(".pane-list");
         const title = detailHead?.querySelector("h2");
-        const formSection = entityEditor
+        const formSection = readArticle
+          ? document.querySelector(".knowledge-read-article")
+          : entityEditor
           ? document.querySelector(".entity-editor-main > .form-section")
           : document.querySelector(".pane-detail-body > .form-section");
-        const editor = document.querySelector(".entity-editor-layout");
+        const editor = readArticle
+          ? document.querySelector(".knowledge-read-layout")
+          : document.querySelector(".entity-editor-layout");
         const sectionStyle = formSection ? getComputedStyle(formSection) : null;
         const capabilityPanel = flatBody ? document.querySelector(".agent-editor-layout .capability-panel") : null;
         const capabilityStyle = capabilityPanel ? getComputedStyle(capabilityPanel) : null;
@@ -1207,14 +1220,16 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
           capabilityBackground: capabilityStyle?.backgroundColor || "",
           editorColumns: editor ? getComputedStyle(editor).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
         };
-      }, { entityEditor: !!route.entityEditor, flatBody: !!route.flatBody });
+      }, { entityEditor: !!route.entityEditor, flatBody: !!route.flatBody, readArticle: !!route.readArticle });
       expect(paneMetrics.rowHeight, `${viewport.label} ${route.hash} row height`).toBeGreaterThanOrEqual(56);
       expect(paneMetrics.headHeight, `${viewport.label} ${route.hash} head height`).toBeGreaterThanOrEqual(68);
       expect(paneMetrics.bodyStartsAfterHead, `${viewport.label} ${route.hash} body starts after head`).toBeGreaterThanOrEqual(0);
       expect(paneMetrics.titleBottomDelta, `${viewport.label} ${route.hash} title stays inside head`).toBeLessThanOrEqual(0);
       expect(paneMetrics.bodyWidth, `${viewport.label} ${route.hash} body width`).toBeGreaterThan(0);
       expect(paneMetrics.listWidth, `${viewport.label} ${route.hash} list width`).toBeGreaterThanOrEqual(300);
-      if (route.flatBody) {
+      if (route.readArticle) {
+        expect(paneMetrics.editorColumns, `${viewport.label} ${route.hash} read columns`).toBeGreaterThanOrEqual(1);
+      } else if (route.flatBody) {
         expect(paneMetrics.sectionRadius, `${viewport.label} ${route.hash} flat section radius`).toBe(0);
         expect(paneMetrics.sectionBorderWidth, `${viewport.label} ${route.hash} flat section border`).toBe(0);
         expect(paneMetrics.sectionBackground, `${viewport.label} ${route.hash} flat section background`).toBe("rgba(0, 0, 0, 0)");
@@ -1242,6 +1257,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
           ".pane-row-meta",
           ".entity-meta-row dt",
           ".entity-meta-row dd",
+          ".knowledge-read-markdown",
           ".kb-category-badge",
           ".chip",
         ].join(", "),
@@ -1256,15 +1272,19 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
   const routes = [
     { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true, flatBody: true },
     { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
-    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", entityEditor: true },
+    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", readArticle: true },
   ];
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
-    if (route.entityEditor) {
+    if (route.entityEditor || route.readArticle) {
       await expect(page.locator(".pane-mobile-back")).toHaveCount(0);
       await expect(page.locator(".mobile-topbar-back").first()).toBeVisible();
+    }
+    if (route.entityEditor) {
       await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toBeVisible();
+    } else if (route.readArticle) {
+      await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toHaveCount(0);
     } else {
       await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
     }
@@ -1275,18 +1295,24 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
       await expect(page.locator(".entity-editor-rail.is-mobile-drawer-source").first()).toBeHidden();
       await expect(page.locator(".rail-summary-pill").first()).toBeVisible();
+    } else if (route.readArticle) {
+      await expect(page.locator(".knowledge-read-layout")).toBeVisible();
+      await expect(page.locator(".knowledge-read-rail.is-mobile-drawer-source").first()).toBeHidden();
+      await expect(page.locator(".rail-summary-pill").first()).toBeVisible();
     } else {
       await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
     }
 
-    const mobileMetrics = await page.evaluate((entityEditor) => {
+    const mobileMetrics = await page.evaluate(({ entityEditor, readArticle }) => {
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
       const body = document.querySelector(".pane-detail-body");
       const title = head?.querySelector("h2");
       const dock = document.querySelector(".entity-edit-mobile-dock");
       const tabbar = document.querySelector(".app-tabbar");
-      const formSection = entityEditor
+      const formSection = readArticle
+        ? document.querySelector(".knowledge-read-article")
+        : entityEditor
         ? document.querySelector(".entity-editor-main > .form-section")
         : document.querySelector(".pane-detail-body > .form-section");
       const icon = document.querySelector(".pane-detail-icon, .agent-avatar");
@@ -1311,12 +1337,13 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
         iconWidth: icon ? Math.round(icon.getBoundingClientRect().width) : 0,
         railPosition: rail ? getComputedStyle(rail).position : "",
       };
-    }, !!route.entityEditor);
+    }, { entityEditor: !!route.entityEditor, readArticle: !!route.readArticle });
     expect(mobileMetrics.headWidth).toBeLessThanOrEqual(390);
     expect(mobileMetrics.bodyStartsAfterHead).toBeGreaterThanOrEqual(0);
     expect(mobileMetrics.titleBottomDelta).toBeLessThanOrEqual(0);
     expect(mobileMetrics.toolbarTop === 0 || mobileMetrics.toolbarTop >= mobileMetrics.headTop).toBe(true);
-    if (route.flatBody) expect(mobileMetrics.sectionRadius).toBe(0);
+    if (route.readArticle) expect(mobileMetrics.sectionRadius).toBe(0);
+    else if (route.flatBody) expect(mobileMetrics.sectionRadius).toBe(0);
     else expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
     expect(mobileMetrics.iconWidth === 0 || mobileMetrics.iconWidth >= 28).toBe(true);
     if (route.entityEditor) {
@@ -1325,6 +1352,11 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       expect(mobileMetrics.dockDisplay).toBe("flex");
       expect(mobileMetrics.dockBottomBeforeNav).toBe(true);
       expect(mobileMetrics.tabbarDisplay).toBe("none");
+    } else if (route.readArticle) {
+      expect(mobileMetrics.railPosition).toBe("static");
+      expect(mobileMetrics.toolbarDisplay).toBe("none");
+      expect(mobileMetrics.dockDisplay).toBe("");
+      expect(mobileMetrics.tabbarDisplay).toBe("grid");
     }
 
     await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
@@ -1337,6 +1369,7 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
         ".pane-detail-head .button",
         ".form-section-title",
         ".form-field-label",
+        ".knowledge-read-markdown",
         ".kb-category-badge",
         ".chip",
       ].join(", "),

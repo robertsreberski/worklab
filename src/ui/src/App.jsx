@@ -70,7 +70,7 @@ export function App() {
   } else if (route === "skills") {
     body = <Skills selectedName={rest[0] || null} />;
   } else if (route === "knowledge") {
-    body = <Knowledge selectedSlug={rest[0] || null} />;
+    body = <Knowledge selectedSlug={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "providers") {
     body = <Providers selectedId={rest[0] || null} />;
   } else if (route === "activity") {

@@ -11,6 +11,7 @@ import { PaneRow } from "../components/PaneRow.jsx";
 import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { KbEdit } from "./KbEdit.jsx";
+import { KbDetail } from "./KbDetail.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
@@ -49,7 +50,7 @@ export function knowledgeTimestamp(value) {
   return Date.parse(value);
 }
 
-export function Knowledge({ selectedSlug = null }) {
+export function Knowledge({ selectedSlug = null, mode = null }) {
   const [entries, setEntries] = useState([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -150,13 +151,18 @@ export function Knowledge({ selectedSlug = null }) {
     })
   );
 
+  const isEditing = selectedSlug === "new" || mode === "edit";
   const detail = selectedSlug ? (
-    <KbEdit
-      key={selectedSlug}
-      slug={selectedSlug}
-      onSaved={(slug) => { reload(); if (selectedSlug === "new") window.location.hash = `#/knowledge/${slug}`; }}
-      onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
-    />
+    isEditing ? (
+      <KbEdit
+        key={`${selectedSlug}:${mode || "create"}`}
+        slug={selectedSlug}
+        onSaved={() => { reload(); }}
+        onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
+      />
+    ) : (
+      <KbDetail key={selectedSlug} slug={selectedSlug} />
+    )
   ) : (
       <div class="pane-empty">
         <Icon name="book" size={28} />
