@@ -315,7 +315,7 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.text).toBe("Implemented.");
     expect(result.worklabResult).toMatchObject(worklabResult);
     expect(result.events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.name === "StructuredOutput")).toBe(true);
-    expect(result.events.some((event) => event.type === "structured_output" && event.worklab_result?.final_text === "Implemented.")).toBe(true);
+    expect(result.events.some((event) => event.type === "structured_output")).toBe(false);
   });
 });
 
