@@ -4904,6 +4904,9 @@ html.assistant-resizing * {
     repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px),
     var(--bg);
 }
+.task-edit > .detail-head {
+  flex: 0 0 auto;
+}
 .task-edit-head {
   position: sticky;
   top: 0;
@@ -9527,11 +9530,15 @@ html.assistant-resizing * {
   }
   .detail-head .title-row {
     flex-direction: column;
+    flex-wrap: nowrap;
     gap: var(--sp-3);
   }
   .detail-head .title-block {
     width: 100%;
     gap: var(--sp-3);
+  }
+  .detail-head .title-block.pane-detail-head-copy {
+    flex: 0 1 auto;
   }
   .detail-head .title-icon {
     width: 36px;
