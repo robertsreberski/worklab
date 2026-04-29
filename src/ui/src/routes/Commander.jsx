@@ -145,11 +145,13 @@ function BulkTaskBar({
   const agentOptions = useMemo(() => agentBulkOptions(agents), [agents]);
   const projectOptions = useMemo(() => [
     { value: "__none__", label: "No project" },
-    ...(projects || []).map((project) => ({
-      value: project.id,
-      label: project.name,
-      description: project.slug,
-    })),
+    ...(projects || [])
+      .filter((project) => !project.archived)
+      .map((project) => ({
+        value: project.id,
+        label: project.name,
+        description: project.slug,
+      })),
   ], [projects]);
 
   return (
