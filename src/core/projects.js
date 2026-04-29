@@ -67,6 +67,13 @@ export function projectFromRow(row) {
   };
 }
 
+/**
+ * Compact summary suitable for embedding in task list/detail responses.
+ * Intentionally drops `context` and `updated_at`, so passing this into
+ * `projectContextHash` would compute a stale hash. Use `projectFromRow`
+ * for any code path that needs the full project state (system prompt,
+ * cache key, hash recomputation).
+ */
 export function compactProject(row) {
   const project = projectFromRow(row);
   if (!project) return null;
@@ -92,6 +99,14 @@ export function resolveProjectId(db, value) {
   return row.id;
 }
 
+/**
+ * Hash all the project fields that affect the rendered system prompt or
+ * the worker's resolved workdir, so changes invalidate the prompt cache.
+ *
+ * Requires the full project shape (`context_markdown` and `updated_at`
+ * present). Pass the result of `projectFromRow` — never `compactProject`,
+ * which strips both fields and would yield a stale hash.
+ */
 export function projectContextHash(project) {
   if (!project) return null;
   return createHash("sha256")
