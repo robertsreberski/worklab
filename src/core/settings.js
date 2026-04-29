@@ -9,6 +9,9 @@ export const DEFAULT_SETTINGS = {
   kb_pinned_limit: 10,
   worker_timeout_ms: 1800000,
   cancel_grace_ms: 5000,
+  daily_budget_usd: 0,
+  max_failure_streak: 3,
+  max_rejection_streak: 3,
   slack_enabled: false,
   slack_user_id: "",
   slack_agent_name: "assistant",
@@ -72,6 +75,14 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     case "cancel_grace_ms":
       return integerInRange(key, value, { min: 0, max: Number.MAX_SAFE_INTEGER });
+    case "daily_budget_usd": {
+      const n = Number(value);
+      if (!Number.isFinite(n) || n < 0) throw new Error(`${key} must be a non-negative number`);
+      return n;
+    }
+    case "max_failure_streak":
+    case "max_rejection_streak":
+      return integerInRange(key, value, { min: 1, max: 100 });
     case "slack_enabled":
     case "slack_notify_task_completed":
     case "slack_notify_task_errors":

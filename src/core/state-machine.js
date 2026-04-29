@@ -43,6 +43,11 @@ export const FAILURE_KINDS = [
 // Override per-event via `event.maxFailures` from the watcher.
 export const DEFAULT_MAX_FAILURES = 3;
 
+// Default reviewer-rejection streak before the task escalates to `blocked`.
+// Tracked separately from `retry_count` (executor failures) so a flaky reviewer
+// can be diagnosed without poisoning execute-side retry budgets.
+export const DEFAULT_MAX_REJECTIONS = 3;
+
 export function legacyRunStatusToProcessStatus(status) {
   switch (status) {
     case "complete":
@@ -150,13 +155,27 @@ export function nextStage(currentStage, event) {
           ]);
         }
         if (decision === "reject") {
-          return change("execute", [
+          const rejectionCount = (event.rejectionCount ?? 0) + 1;
+          const maxRejections = event.maxRejections ?? DEFAULT_MAX_REJECTIONS;
+          const rejectionEffects = [
             { type: "clear_completed_at" },
             { type: "clear_error_text" },
             ...RESET_USER_ARRAYS,
+            { type: "set_rejection_count", count: rejectionCount },
+            { type: "set_last_failure_kind", kind: "review_rejected" },
             { type: "set_stage_reason", reason: "review requested changes" },
             { type: "post_review_comment", notes: result.details || result.summary || "" },
-          ]);
+          ];
+          if (rejectionCount >= maxRejections) {
+            return change("blocked", [
+              ...rejectionEffects,
+              {
+                type: "set_blocking_issues",
+                blockingIssues: [`Reached max review rejections (${rejectionCount}). Latest reviewer notes: ${result.details || result.summary || "—"}`],
+              },
+            ]);
+          }
+          return change("execute", rejectionEffects);
         }
         return unchanged(current, [
           { type: "error", message: `review must return approve or reject (got "${decision}")` },
@@ -243,11 +262,13 @@ export function nextStage(currentStage, event) {
       const retryStage = event.retryStage || current;
       const failureCount = (event.failureCount ?? 0) + 1;
       const maxFailures = event.maxFailures ?? DEFAULT_MAX_FAILURES;
+      const failureKind = event.failureKind || "run_failed";
       const baseEffects = [
         { type: "post_error_comment", message },
         { type: "set_error_text", message },
-        { type: "set_stage_reason", reason: event.failureKind || "run_failed" },
+        { type: "set_stage_reason", reason: failureKind },
         { type: "set_failure_count", count: failureCount },
+        { type: "set_last_failure_kind", kind: failureKind },
       ];
       if (failureCount >= maxFailures) {
         return change("blocked", [
@@ -266,9 +287,13 @@ export function nextStage(currentStage, event) {
       // increment failure_count, do not write error_text. Leave a system
       // comment trail and a stage_reason so the UI can render an amber chip.
       const message = event.message || "Run cancelled.";
+      const initiator = event.cancelInitiator || "user";
+      const reasonLabel = event.cancelReason
+        ? `${initiator}: ${event.cancelReason}`
+        : initiator;
       return change(event.retryStage || current, [
         { type: "clear_error_text" },
-        { type: "set_stage_reason", reason: "cancelled" },
+        { type: "set_stage_reason", reason: `cancelled (${reasonLabel})` },
         { type: "post_cancellation_comment", message },
       ]);
     }
@@ -282,6 +307,7 @@ export function nextStage(currentStage, event) {
         { type: "post_error_comment", message },
         { type: "set_error_text", message },
         { type: "set_stage_reason", reason: "abandoned" },
+        { type: "set_last_failure_kind", kind: "abandoned" },
       ]);
     }
 
@@ -314,6 +340,8 @@ export function nextStage(currentStage, event) {
         sideEffects.push({ type: "set_completed_at" });
         sideEffects.push(...RESET_USER_ARRAYS);
         sideEffects.push({ type: "reset_failure_count" });
+        sideEffects.push({ type: "reset_rejection_count" });
+        sideEffects.push({ type: "clear_last_failure_kind" });
       } else {
         // Moving to anything other than done: clear arrays whose semantics
         // belong to states the user is leaving behind.
@@ -328,7 +356,11 @@ export function nextStage(currentStage, event) {
       if (target !== "blocked") sideEffects.push({ type: "clear_error_text" });
       // Manually moving back into a runnable stage clears the failure budget;
       // the user is explicitly choosing to retry.
-      if (canStartRun(target)) sideEffects.push({ type: "reset_failure_count" });
+      if (canStartRun(target)) {
+        sideEffects.push({ type: "reset_failure_count" });
+        sideEffects.push({ type: "reset_rejection_count" });
+        sideEffects.push({ type: "clear_last_failure_kind" });
+      }
       return change(target, sideEffects);
     }
 

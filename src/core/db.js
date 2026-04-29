@@ -343,6 +343,18 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "skills_allowlist_mode", "skills_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "mcp_allowlist_mode", "mcp_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
+  addColumnIfMissing(db, "agents", "allow_self_review", "allow_self_review INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "agents", "daily_budget_usd", "daily_budget_usd REAL");
+  addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
+  addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
+  addColumnIfMissing(db, "task_runs", "cancel_initiator", "cancel_initiator TEXT");
+  addColumnIfMissing(db, "task_runs", "cancel_reason", "cancel_reason TEXT");
+  addColumnIfMissing(db, "task_runs", "warnings_json", "warnings_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "task_runs", "diagnostics_json", "diagnostics_json TEXT");
+  addColumnIfMissing(db, "task_runs", "provider_session_id", "provider_session_id TEXT");
+  addColumnIfMissing(db, "task_runs", "execenv_path", "execenv_path TEXT");
+  addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");
