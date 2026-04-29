@@ -148,7 +148,7 @@
   --rail-w: 304px;
   --shell-rail-w: 224px;
   --shell-rail-collapsed: 64px;
-  --assistant-w: 380px;
+  --assistant-w: 320px;
   --content-max: 1560px;
 
   /* §3.7 / §3.19 component tokens (named magic numbers) */
@@ -310,6 +310,36 @@ select,
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wl-hide-scrollbar::-webkit-scrollbar { display: none; }
 .wl-hide-scrollbar { scrollbar-width: none; }
+.wl-scrollbar {
+  scrollbar-color: color-mix(in srgb, var(--text-subtle) 58%, transparent) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.wl-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.wl-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.wl-scrollbar::-webkit-scrollbar-thumb {
+  min-height: 44px;
+  border: 3px solid transparent;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-subtle) 44%, transparent);
+  background-clip: padding-box;
+}
+.wl-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 54%, transparent);
+  background-clip: padding-box;
+}
+.wl-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--accent) 46%, var(--text-muted));
+  background-clip: padding-box;
+}
+.wl-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
 .muted { color: var(--text-muted); }
 
 /* legacy eyebrow → migrate to .all-caps */
@@ -2478,6 +2508,64 @@ select,
   box-shadow: -16px 0 36px -34px var(--ink-shadow);
 }
 .assistant-dock.open { display: grid; }
+.assistant-resize-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -6px;
+  z-index: 4;
+  width: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  touch-action: none;
+}
+.assistant-resize-handle::before {
+  content: "";
+  position: absolute;
+  inset: 0 5px;
+  background: transparent;
+  transition: background var(--dur-snap) var(--ease-snap);
+}
+.assistant-resize-handle::after {
+  content: "";
+  width: 3px;
+  height: 48px;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--text-subtle) 42%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-strong) 82%, transparent);
+  opacity: 0;
+  transform: scaleY(0.92);
+  transition:
+    background var(--dur-snap) var(--ease-snap),
+    box-shadow var(--dur-snap) var(--ease-snap),
+    opacity var(--dur-snap) var(--ease-snap),
+    transform var(--dur-snap) var(--ease-snap);
+}
+.assistant-resize-handle:hover::before,
+.assistant-resize-handle:focus-visible::before,
+html.assistant-resizing .assistant-resize-handle::before {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+.assistant-resize-handle:hover::after,
+.assistant-resize-handle:focus-visible::after,
+html.assistant-resizing .assistant-resize-handle::after {
+  background: color-mix(in srgb, var(--accent) 62%, var(--text-muted));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 32%, transparent),
+    0 8px 24px -18px var(--accent);
+  opacity: 1;
+  transform: scaleY(1);
+}
+.assistant-resize-handle:focus-visible {
+  outline: none;
+}
+html.assistant-resizing,
+html.assistant-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
 .assistant-dock-head {
   display: flex;
   align-items: center;
@@ -9342,6 +9430,9 @@ select,
   }
   .assistant-dock.open {
     transform: translateX(0);
+  }
+  .assistant-resize-handle {
+    display: none;
   }
   .assistant-dock-head {
     min-height: 52px;
