@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { newAgentLogId } from "../core/ids.js";
 import { processStatusToLegacyStatus } from "../core/state-machine.js";
 import { normalizeLiveInputBody } from "../core/live-input.js";
+import { classifyFailure, createStderrTail } from "../core/failure-kind.js";
 
 function makeRawLogPath(dataDir, runId) {
   if (!dataDir || !runId) return null;
@@ -97,6 +98,9 @@ export function spawnWorker({
   runTimeoutMs = 30 * 60 * 1000,
   runIdleWarningMs = 120 * 1000,
   logInlineLimit = 12_000,
+  exitCloseGraceMs = 1000,
+  stderrTailLimit = 8 * 1024,
+  diagnosticsSeed = null,
 }) {
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
@@ -104,15 +108,20 @@ export function spawnWorker({
   });
 
   const events = [];
+  const warnings = [];
+  const stderrTail = createStderrTail({ limit: stderrTailLimit });
   let finalPayload = null;
   let errorMessage = null;
   let resultError = null;
   let explicitFailureKind = null;
   let exitCode = null;
   let cancelRequested = false;
+  let cancelInitiator = null;
+  let cancelReason = null;
   let sigkillTimer = null;
   let finalized = false;
   let exitFallbackTimer = null;
+  let exitWatchdogFired = false;
   let persistTimer = null;
   let timeoutTimer = null;
   let idleTimer = null;
@@ -171,6 +180,14 @@ export function spawnWorker({
     appendRawEvent(rawEvent);
     const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
     events.push(event);
+    if (rawEvent.type === "runtime_warning") {
+      warnings.push({
+        kind: rawEvent.warning_kind || "runtime",
+        source: rawEvent.source || null,
+        message: typeof rawEvent.message === "string" ? rawEvent.message : "",
+        ts: rawEvent.ts || Date.now(),
+      });
+    }
     schedulePersist();
     broker.broadcast(runId, event);
     resetIdleTimer();
@@ -208,10 +225,13 @@ export function spawnWorker({
       if (finalized) return;
       timedOut = true;
       cancelRequested = true;
-      errorMessage = errorMessage || `run timed out after ${runTimeoutMs}ms`;
+      cancelInitiator = cancelInitiator || "worker_timeout";
+      cancelReason = cancelReason || `run timed out after ${runTimeoutMs}ms`;
+      errorMessage = errorMessage || cancelReason;
       emitEvent({
         type: "runtime_warning",
         warning_kind: "timeout",
+        source: "worker",
         message: errorMessage,
         ts: Date.now(),
       });
@@ -244,7 +264,9 @@ export function spawnWorker({
   });
 
   child.stderr.on("data", (chunk) => {
-    logger?.info?.({ runId, stderr: chunk.toString() }, "worker stderr");
+    const text = chunk.toString();
+    stderrTail.push(text);
+    logger?.info?.({ runId, stderr: text }, "worker stderr");
   });
 
   // Capture spawn failures (ENOENT on the binary, EACCES, etc). Without this
@@ -255,9 +277,11 @@ export function spawnWorker({
     logger?.error?.({ err, runId }, "worker child process error");
   });
 
-  function cancel() {
+  function cancel(options = {}) {
     if (cancelRequested) return;
     cancelRequested = true;
+    cancelInitiator = options.initiator || cancelInitiator || "user";
+    cancelReason = options.reason ?? cancelReason ?? null;
     terminateChild();
   }
 
@@ -334,14 +358,52 @@ export function spawnWorker({
       else if (cancelRequested || code === 130) processStatus = "cancelled";
       else if (code !== 0 || resultError) processStatus = "failed";
       const status = processStatusToLegacyStatus(processStatus);
-      const failureKind = timedOut ? "timeout" : resultError ? "invalid_result" : (processStatus === "failed" ? explicitFailureKind || "spawn" : null);
+      const failureKind = processStatus === "succeeded"
+        ? null
+        : (classifyFailure({
+            exitCode: code,
+            errorText: errorMessage || resultError || "",
+            stderrTail: stderrTail.toString(),
+            timedOut,
+            cancelRequested,
+            cancelInitiator,
+            resultParseError: !!resultError,
+            hint: explicitFailureKind,
+          }) || "spawn");
       const result = finalPayload?.worklab_result || null;
+      const finalWarnings = Array.isArray(finalPayload?.warnings) ? finalPayload.warnings : [];
+      const allWarnings = [...warnings, ...finalWarnings];
+      const providerSessionId = finalPayload?.provider_session_id
+        || finalPayload?.providerSessionId
+        || null;
+      const execenvPath = env.WORKLAB_EXECENV_PATH || null;
+      const costUsd = numberOrNull(
+        finalPayload?.cost_usd
+          ?? finalPayload?.costUsd
+          ?? finalPayload?.usage?.cost_usd
+          ?? finalPayload?.usage?.costUsd,
+      );
+      const stderrTailText = stderrTail.toString();
+      const diagnostics = {
+        ...(diagnosticsSeed || {}),
+        ...(finalPayload?.diagnostics || {}),
+        provider_session_id: providerSessionId,
+        execenv_path: execenvPath,
+        warning_count: allWarnings.length,
+        cancel_initiator: cancelInitiator,
+        cancel_reason: cancelReason,
+        ...(stderrTailText ? { stderr_tail: stderrTailText } : {}),
+        ...(failureKind ? { failure_kind: failureKind } : {}),
+      };
 
       db.prepare(
         `UPDATE task_runs
          SET status = ?, process_status = ?, ended_at = ?, exit_code = ?,
              error_text = ?, decision = ?, failure_kind = ?, summary = ?,
-             details = ?, result_json = ?
+             details = ?, result_json = ?,
+             cancel_initiator = ?, cancel_reason = ?,
+             warnings_json = ?, diagnostics_json = ?,
+             provider_session_id = ?, execenv_path = ?, cost_usd = ?
          WHERE id = ?`,
       ).run(
         status,
@@ -354,6 +416,13 @@ export function spawnWorker({
         result?.summary || null,
         result?.details || null,
         result ? JSON.stringify(result) : null,
+        cancelInitiator,
+        cancelReason,
+        JSON.stringify(allWarnings),
+        Object.keys(diagnostics).length ? JSON.stringify(diagnostics) : null,
+        providerSessionId,
+        execenvPath,
+        costUsd,
         runId,
       );
 
@@ -367,11 +436,11 @@ export function spawnWorker({
         JSON.stringify(events),
         finalPayload?.model || null,
         finalPayload?.effort || null,
-        finalPayload?.usage?.input_tokens ?? null,
-        finalPayload?.usage?.output_tokens ?? null,
-        finalPayload?.usage?.cache_read_tokens ?? null,
-        finalPayload?.usage?.cache_creation_tokens ?? null,
-        finalPayload?.usage?.cost_usd ?? null,
+        finalPayload?.usage?.input_tokens ?? finalPayload?.usage?.inputTokens ?? null,
+        finalPayload?.usage?.output_tokens ?? finalPayload?.usage?.outputTokens ?? null,
+        finalPayload?.usage?.cache_read_tokens ?? finalPayload?.usage?.cacheReadTokens ?? null,
+        finalPayload?.usage?.cache_creation_tokens ?? finalPayload?.usage?.cacheWriteTokens ?? null,
+        costUsd,
         finalPayload?.durationMs ?? durationMs,
         finalPayload?.numTurns ?? null,
         status,
@@ -383,9 +452,16 @@ export function spawnWorker({
       resolve({
         exitCode: code,
         events,
+        warnings: allWarnings,
+        diagnostics,
         finalText: finalPayload?.text || null,
         worklabResult: result,
         usage: finalPayload?.usage || {},
+        costUsd,
+        providerSessionId,
+        execenvPath,
+        cancelInitiator,
+        cancelReason,
         error: errorMessage || resultError,
         resultError,
         failureKind,
@@ -398,7 +474,22 @@ export function spawnWorker({
       exitCode = code;
       // Prefer close so stdout/stderr buffers have drained. The fallback keeps
       // tests and unusual child behavior from hanging forever if close is lost.
-      exitFallbackTimer = setTimeout(() => finalize(exitCode), 250);
+      // We give close `exitCloseGraceMs` to fire before forcing finalization,
+      // and emit a runtime_warning if the watchdog has to step in — that's a
+      // signal the child died with stdout still buffered.
+      exitFallbackTimer = setTimeout(() => {
+        if (finalized) return;
+        exitWatchdogFired = true;
+        emitEvent({
+          type: "runtime_warning",
+          warning_kind: "exit_without_close",
+          source: "worker",
+          message: `worker emitted exit but not close within ${exitCloseGraceMs}ms; finalizing anyway`,
+          ts: Date.now(),
+        });
+        finalize(exitCode);
+      }, exitCloseGraceMs);
+      exitFallbackTimer.unref?.();
     });
 
     child.on("close", (code) => {
@@ -406,5 +497,18 @@ export function spawnWorker({
     });
   });
 
-  return { pid: child.pid, done, cancel, sendLiveMessage };
+  return {
+    pid: child.pid,
+    done,
+    cancel,
+    sendLiveMessage,
+    get warnings() { return [...warnings]; },
+    get exitWatchdogFired() { return exitWatchdogFired; },
+  };
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }

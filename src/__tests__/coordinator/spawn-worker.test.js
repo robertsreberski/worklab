@@ -263,4 +263,61 @@ describe("spawnWorker", () => {
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log.status).toBe("cancelled");
   }, 10000);
+
+  it("persists cancel_initiator and cancel_reason on the run row", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = { events: [{ type: "started", runId, delayMs: 80 }], exitCode: 0, exitAfterMs: 2000 };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      cancelGraceMs: 500,
+    });
+    setTimeout(() => handle.cancel({ initiator: "api_cancel", reason: "user clicked cancel" }), 120);
+    const result = await handle.done;
+    expect(result.cancelInitiator).toBe("api_cancel");
+    expect(result.cancelReason).toBe("user clicked cancel");
+    const run = db.prepare("SELECT cancel_initiator, cancel_reason FROM task_runs WHERE id = ?").get(runId);
+    expect(run).toEqual({ cancel_initiator: "api_cancel", cancel_reason: "user clicked cancel" });
+  }, 10000);
+
+  it("collects runtime_warning events into warnings_json and persists diagnostics", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "runtime_warning", warning_kind: "mcp_init_failed", source: "mcp_init", message: "linear unreachable" },
+        { type: "final", text: "ok", usage: { input_tokens: 1, output_tokens: 1 }, provider_session_id: "sess-42", cost_usd: 0.0001 },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId, WORKLAB_EXECENV_PATH: "/tmp/execenv-42" },
+      runId, taskId, broker, db,
+    });
+    const result = await handle.done;
+    expect(result.warnings.length).toBeGreaterThanOrEqual(1);
+    expect(result.warnings.find((w) => w.kind === "mcp_init_failed")).toBeTruthy();
+    expect(result.providerSessionId).toBe("sess-42");
+    expect(result.execenvPath).toBe("/tmp/execenv-42");
+    expect(result.costUsd).toBeCloseTo(0.0001);
+    const run = db.prepare(`
+      SELECT warnings_json, diagnostics_json, provider_session_id, execenv_path, cost_usd
+      FROM task_runs WHERE id = ?
+    `).get(runId);
+    const stored = JSON.parse(run.warnings_json);
+    expect(stored.find((w) => w.kind === "mcp_init_failed").message).toContain("linear");
+    const diag = JSON.parse(run.diagnostics_json);
+    expect(diag.warning_count).toBeGreaterThanOrEqual(1);
+    expect(diag.provider_session_id).toBe("sess-42");
+    expect(run.provider_session_id).toBe("sess-42");
+    expect(run.execenv_path).toBe("/tmp/execenv-42");
+    expect(run.cost_usd).toBeCloseTo(0.0001);
+  });
 });
