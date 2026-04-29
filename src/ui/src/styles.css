@@ -4326,6 +4326,26 @@ select,
   font-size: var(--text-xs);
   line-height: 1.4;
 }
+.agent-editor-layout .entity-editor-main > .form-section {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.agent-editor-layout .capability-panel {
+  overflow: visible;
+  padding: var(--sp-4) 0 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.agent-editor-layout .capability-panel:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
 .entity-meta-list {
   margin: 0;
   display: flex;
