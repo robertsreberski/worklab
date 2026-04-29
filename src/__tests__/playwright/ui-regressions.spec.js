@@ -2183,6 +2183,77 @@ test("mobile assistant pane opens full width", async ({ page }) => {
   expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
+test("assistant thread remains scrollable with long history", async ({ page }) => {
+  const now = Date.now();
+  await page.route("**/api/assistant", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        thread: { id: "personal", title: "Long assistant thread", created_at: now, updated_at: now },
+        active_run: null,
+        messages: Array.from({ length: 28 }, (_, index) => ({
+          id: `assistant-scroll-${index}`,
+          role: index % 2 === 0 ? "user" : "assistant",
+          body: `Scrollable assistant message ${index + 1}. This seeded text makes the assistant thread taller than the viewport so the dock must keep the message list as the scroll container.`,
+          status: "complete",
+          created_at: now + index,
+          updated_at: now + index,
+        })),
+      }),
+    });
+  });
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 820, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${baseUrl}/#/tasks`);
+    await expect(page.locator(".commander-row").first()).toBeVisible();
+
+    const launcher = page.locator(".assistant-launcher");
+    if (await launcher.isVisible()) await launcher.click();
+    await expect(page.locator(".assistant-dock.open")).toBeVisible();
+    await expect(page.locator(".assistant-message").last()).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const thread = document.querySelector(".assistant-thread");
+      if (!thread) return null;
+      thread.scrollTop = 0;
+      const initialScrollTop = thread.scrollTop;
+      thread.scrollTop = 120;
+      return {
+        clientHeight: Math.round(thread.clientHeight),
+        scrollHeight: Math.round(thread.scrollHeight),
+        initialScrollTop,
+        afterScrollTop: Math.round(thread.scrollTop),
+        overflowY: getComputedStyle(thread).overflowY,
+      };
+    });
+
+    expect(metrics?.overflowY, `${viewport.width} assistant thread overflow`).toBe("auto");
+    expect(metrics?.scrollHeight, `${viewport.width} assistant thread content height`).toBeGreaterThan(metrics?.clientHeight || 0);
+    expect(metrics?.afterScrollTop, `${viewport.width} assistant thread scrollTop`).toBeGreaterThan(metrics?.initialScrollTop || 0);
+
+    await page.locator(".assistant-thread").evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+    });
+    const beforeWheel = await page.locator(".assistant-thread").evaluate((node) => node.scrollTop);
+    const threadBox = await page.locator(".assistant-thread").boundingBox();
+    expect(threadBox).not.toBeNull();
+    await page.mouse.move((threadBox?.x || 0) + (threadBox?.width || 0) / 2, (threadBox?.y || 0) + (threadBox?.height || 0) / 2);
+    await page.mouse.wheel(0, -500);
+    await page.waitForTimeout(50);
+    const afterWheel = await page.locator(".assistant-thread").evaluate((node) => node.scrollTop);
+    expect(afterWheel, `${viewport.width} assistant thread wheel scroll`).toBeLessThan(beforeWheel);
+
+    await page.locator(".assistant-dock.open [aria-label='Collapse assistant']").click();
+    await expect(page.locator(".assistant-launcher")).toBeVisible();
+  }
+});
+
 test("desktop unsaved changes modal keeps content and actions inside the dialog", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);

@@ -2491,8 +2491,10 @@ select,
   z-index: 2;
   height: 100dvh;
   min-width: 0;
+  min-height: 0;
   display: none;
   grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
   border-left: 1px solid var(--border);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 26%, transparent), transparent 42%),
@@ -2610,7 +2612,11 @@ html.assistant-resizing * {
 }
 .assistant-thread {
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
@@ -2631,6 +2637,7 @@ html.assistant-resizing * {
 }
 .assistant-message {
   display: flex;
+  flex: 0 0 auto;
   min-width: 0;
   flex-direction: column;
   gap: var(--sp-1);
