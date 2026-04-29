@@ -1277,6 +1277,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const railStyles = nav ? getComputedStyle(nav) : null;
     const navStyles = navElement ? getComputedStyle(navElement) : null;
     const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
+    const bodyStyles = getComputedStyle(document.body);
+    const rowStyles = row ? getComputedStyle(row) : null;
     const navWidths = [...document.querySelectorAll(".app-nav a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
     const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
@@ -1297,6 +1299,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       viewportMeta,
+      bodyTouchAction: bodyStyles.touchAction,
+      rowTouchAction: rowStyles?.touchAction || "",
       inlineNewTaskDisplay: inlineNewTask ? getComputedStyle(inlineNewTask).display : "",
       selectedBorderLeftWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderLeftWidth)) : 0,
       selectedBorderTopColor: selectedStyles?.borderTopColor || "",
@@ -1331,6 +1335,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(["clip", "hidden"]).toContain(metrics.navOverflowX);
   expect(metrics.viewportMeta).toContain("maximum-scale=1");
   expect(metrics.viewportMeta).toContain("user-scalable=no");
+  expect(metrics.bodyTouchAction).toBe("manipulation");
+  expect(metrics.rowTouchAction).toBe("manipulation");
   expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.inlineNewTaskDisplay).toBe("none");
   expect(metrics.selectedBorderLeftWidth).toBe(2);

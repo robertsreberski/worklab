@@ -206,7 +206,10 @@
 /* 3. Base / reset --------------------------------------------- */
 * { box-sizing: border-box; }
 
-html, body, #app { min-height: 100%; }
+html, body, #app {
+  min-height: 100%;
+  touch-action: manipulation;
+}
 
 body {
   margin: 0;
@@ -240,6 +243,7 @@ textarea,
 select,
 [role="button"] {
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 /* §8.4 sr-only */
