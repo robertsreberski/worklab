@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { groupAgentTimelineEvents, normaliseAgentTimelineEvents } from "../../ui/src/components/AgentEventTimeline.jsx";
+import { groupAgentTimelineEvents, isActiveStreamingTimelineItem, normaliseAgentTimelineEvents } from "../../ui/src/components/AgentEventTimeline.jsx";
 import { fileEditSummary } from "../../ui/src/components/ToolCallBlock.jsx";
 import { normalizeWorklabEvents } from "../../ui/src/components/EventTimeline.jsx";
 
@@ -41,6 +41,12 @@ describe("agent event timeline normalization", () => {
     expect(events).toEqual([
       { type: "thinking", text: fullText },
     ]);
+  });
+
+  it("marks only the tail timeline item as actively streaming", () => {
+    expect(isActiveStreamingTimelineItem({ streaming: true, index: 1, length: 3 })).toBe(false);
+    expect(isActiveStreamingTimelineItem({ streaming: true, index: 2, length: 3 })).toBe(true);
+    expect(isActiveStreamingTimelineItem({ streaming: false, index: 2, length: 3 })).toBe(false);
   });
 
   it("flattens assistant message envelopes and normalizes tool ids", () => {
