@@ -9,32 +9,38 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { AppShell } from "../components/AppShell.jsx";
+import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
+import { StageToken } from "../components/primitives/StageToken.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
-import { Tooltip } from "../components/primitives/Tooltip.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { EditHeader } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 
 // Stage grid in the right rail.
 const STATUS_OPTIONS = [
-  { value: "plan", label: "Plan", icon: "◉", color: "var(--accent)" },
-  { value: "execute", label: "Execute", icon: "○", color: "var(--status-todo)" },
-  { value: "review", label: "Review", icon: "◉", color: "var(--status-review)" },
-  { value: "awaiting_children", label: "Waiting", icon: "◐", color: "var(--status-progress)" },
-  { value: "awaiting_user", label: "Needs input", icon: "▲", color: "var(--status-error)" },
-  { value: "blocked", label: "Blocked", icon: "▲", color: "var(--status-error)" },
-  { value: "done", label: "Done", icon: "●", color: "var(--status-done)" },
+  { value: "plan" },
+  { value: "execute" },
+  { value: "review" },
+  { value: "awaiting_children" },
+  { value: "awaiting_user" },
+  { value: "blocked" },
+  { value: "done" },
+];
+
+const TASK_EDIT_SECTIONS = [
+  { id: "task-edit-title", num: "01", label: "Title", meta: "Required" },
+  { id: "task-edit-instructions", num: "02", label: "Instructions", meta: "Markdown" },
+  { id: "task-edit-dependencies", num: "03", label: "Dependencies", meta: "Blockers" },
 ];
 
 const RUN_POLICY_OPTIONS = [
@@ -193,6 +199,12 @@ export function TaskEdit({ mode = "create", id = null }) {
   const idDisplay = mode === "edit" && id ? taskDisplayKey(loadedTask || id) : null;
   const saveButtonVariant = isDirty || mode === "create" ? "primary" : "secondary";
   const saveButtonLabel = mode === "create" ? "Create task" : "Save";
+  const titleMeta = (
+    <>
+      {mode === "edit" && idDisplay && <span>{idDisplay}</span>}
+      <span>{isDirty ? "Unsaved changes" : "Saved"}</span>
+    </>
+  );
   const mobileActionDock = (
     <>
       <Button variant="secondary" onClick={cancel}>Cancel</Button>
@@ -206,31 +218,116 @@ export function TaskEdit({ mode = "create", id = null }) {
       </Button>
     </>
   );
+  const railCardCount = 6;
+
+  function renderTaskEditRail() {
+    return (
+      <div class="task-edit-rail-content">
+        <FormField label="Stage">
+          <div class="stage-grid status-grid">
+            {STATUS_OPTIONS.map((opt) => (
+              <StageToken
+                key={opt.value}
+                stage={opt.value}
+                variant="grid"
+                active={draft.stage === opt.value}
+                onClick={() => update({ stage: opt.value })}
+              />
+            ))}
+          </div>
+        </FormField>
+
+        <FormField label="Owner" hint="Required for work. Also plans when no planner is set.">
+          <AgentPicker
+            value={draft.owner_agent}
+            onChange={(name) => update({ owner_agent: name })}
+            agents={agents}
+            placeholder="Pick an owner"
+            role="owner"
+          />
+        </FormField>
+
+        <FormField label="Planner" hint="Optional. Falls back to owner.">
+          <AgentPicker
+            value={draft.planner_agent}
+            onChange={(name) => update({ planner_agent: name })}
+            agents={agents}
+            placeholder="Pick a planner"
+            role="planner"
+          />
+        </FormField>
+
+        <FormField label="Run mode" hint="Auto mode starts eligible stages after blockers clear.">
+          <Select
+            variant="native"
+            value={draft.run_policy || DEFAULT_RUN_POLICY}
+            onChange={(value) => update({ run_policy: value })}
+            options={RUN_POLICY_OPTIONS}
+            ariaLabel="Run mode"
+          />
+        </FormField>
+
+        <FormField label="Reviewer" hint="Optional verifier.">
+          <AgentPicker
+            value={draft.reviewer_agent}
+            onChange={(name) => update({ reviewer_agent: name })}
+            agents={agents}
+            placeholder="Pick a reviewer"
+            role="reviewer"
+          />
+        </FormField>
+
+        <FormField label="Tags" hint="Press Enter to add.">
+          <TagInput
+            value={draft.tags || []}
+            onChange={(tags) => update({ tags })}
+            placeholder="Add tag..."
+          />
+        </FormField>
+      </div>
+    );
+  }
 
   return (
-    <AppShell route="tasks" mobileActionDock={mobileActionDock}>
+    <AppShell
+      route="tasks"
+      mobileActionDock={mobileActionDock}
+      mobileTopbar={<MobileTopbar title={mode === "create" ? "New task" : idDisplay || "Edit task"} backLabel="Tasks" onBack={cancel} />}
+      drawerTitle="Settings"
+      drawerKicker={mode === "create" ? "New task" : idDisplay || "Task"}
+      drawerContent={!loading && !notFound ? renderTaskEditRail() : null}
+      sections={TASK_EDIT_SECTIONS}
+    >
       <div class="task-edit">
-        <EditHeader
+        <DetailHead
           ariaLabel={heading}
           backLabel="Back"
           onBack={cancel}
-          breadcrumbs={[
+          crumbs={[
             { label: "Tasks", href: "#/tasks" },
             ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}` }] : []),
             { label: mode === "create" ? "New" : "Edit" },
           ]}
           class="task-edit-task-head"
+          kicker={mode === "create" ? "New task" : "Task editor"}
+          idPrefix={idDisplay}
+          title={draft.title}
+          titlePlaceholder="Untitled task"
+          meta={titleMeta}
+          hint
+          glyph="T"
+          subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={TASK_EDIT_SECTIONS} />}
           actions={(
             <>
-            <Button variant="ghost" onClick={cancel}>Cancel</Button>
-            <Button
-              variant={saveButtonVariant}
-              onClick={() => save().catch(() => {})}
-              loading={formSave.saving}
-              disabled={!draft.title.trim()}
-            >
-              {saveButtonLabel}
-            </Button>
+              <Button variant="ghost" onClick={cancel}>Cancel</Button>
+              <Button
+                variant={saveButtonVariant}
+                onClick={() => save().catch(() => {})}
+                loading={formSave.saving}
+                disabled={!draft.title.trim()}
+              >
+                {saveButtonLabel}
+              </Button>
             </>
           )}
         />
@@ -244,19 +341,9 @@ export function TaskEdit({ mode = "create", id = null }) {
           )}
           {loading && <LoadingState caption="Loading task…" />}
           {!loading && !notFound && (
-            <div class="task-edit-grid">
+            <div class="task-edit-grid editor-body">
               {/* Left column — identity & instructions & deps */}
-              <div class="task-edit-main">
-                <div class="task-edit-eyebrow-block">
-                  <div class="all-caps task-edit-eyebrow">
-                    {mode === "create" ? "New task" : "Editing task"}
-                  </div>
-                  <h2 class="task-edit-title">
-                    {idDisplay && <span class="mono task-edit-title-id">{idDisplay}</span>}
-                    {draft.title || <span class="task-edit-title-placeholder">Untitled task</span>}
-                  </h2>
-                </div>
-
+              <div class="task-edit-main editor-main">
                 {formSave.error && (
                   <Banner
                     variant="error"
@@ -266,135 +353,71 @@ export function TaskEdit({ mode = "create", id = null }) {
                   />
                 )}
 
-                <FormField label="Title" required>
-                  <Input
-                    placeholder="Short, actionable title"
-                    value={draft.title}
-                    onInput={(e) => update({ title: e.target.value })}
-                    autoFocus={mode === "create"}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Instructions"
-                  hint="Sent to the owner. Markdown supported."
-                >
-                  <Textarea
-                    rows={10}
-                    monospace
-                    autoGrow
-                    placeholder="What should the owner do?"
-                    value={draft.instructions}
-                    onInput={(e) => update({ instructions: e.target.value })}
-                  />
-                </FormField>
-
-                <FormField
-                  label="Depends on"
-                  hint="Optional blockers. A task cannot run until every dependency is done."
-                >
-                  <div class="dependency-picker">
-                    {draft.blocked_by_ids.length > 0 && (
-                      <div class="dependency-chip-list">
-                        {draft.blocked_by_ids.map((dependencyId) => {
-                          const dependency = selectedDependencyMap.get(dependencyId);
-                          const label = dependency?.title || dependencyId;
-                          return (
-                            <Chip key={dependencyId} variant="tag" onRemove={() => removeDependency(dependencyId)}>
-                              {label}
-                            </Chip>
-                          );
-                        })}
-                      </div>
-                    )}
-                    <Select
-                      value={dependencyDraft}
-                      onChange={addDependency}
-                      options={dependencyOptions}
-                      placeholder="Link another task…"
-                      ariaLabel="Add dependency"
-                      searchable
+                <section class="task-edit-section" aria-labelledby="task-edit-title">
+                  <SectionMarker id="task-edit-title" num="01" kicker="Title" meta="Required" />
+                  <FormField label="Title" required>
+                    <Input
+                      placeholder="Short, actionable title"
+                      value={draft.title}
+                      onInput={(e) => update({ title: e.target.value })}
+                      autoFocus={mode === "create"}
                     />
-                  </div>
-                </FormField>
+                  </FormField>
+                </section>
+
+                <section class="task-edit-section" aria-labelledby="task-edit-instructions">
+                  <SectionMarker id="task-edit-instructions" num="02" kicker="Instructions" meta="Markdown" />
+                  <FormField
+                    label="Instructions"
+                    hint="Sent to the owner. Markdown supported."
+                  >
+                    <Textarea
+                      rows={10}
+                      monospace
+                      autoGrow
+                      placeholder="What should the owner do?"
+                      value={draft.instructions}
+                      onInput={(e) => update({ instructions: e.target.value })}
+                    />
+                  </FormField>
+                </section>
+
+                <section class="task-edit-section" aria-labelledby="task-edit-dependencies">
+                  <SectionMarker id="task-edit-dependencies" num="03" kicker="Dependencies" meta="Blockers" />
+                  <FormField
+                    label="Depends on"
+                    hint="Optional blockers. A task cannot run until every dependency is done."
+                  >
+                    <div class="dependency-picker">
+                      {draft.blocked_by_ids.length > 0 && (
+                        <div class="dependency-chip-list">
+                          {draft.blocked_by_ids.map((dependencyId) => {
+                            const dependency = selectedDependencyMap.get(dependencyId);
+                            const label = dependency?.title || dependencyId;
+                            return (
+                              <Chip key={dependencyId} variant="tag" onRemove={() => removeDependency(dependencyId)}>
+                                {label}
+                              </Chip>
+                            );
+                          })}
+                        </div>
+                      )}
+                      <Select
+                        value={dependencyDraft}
+                        onChange={addDependency}
+                        options={dependencyOptions}
+                        placeholder="Link another task..."
+                        ariaLabel="Add dependency"
+                        searchable
+                      />
+                    </div>
+                  </FormField>
+                </section>
               </div>
 
               {/* Right rail — assignment & stage */}
-              <aside class="task-edit-rail">
-                <FormField label="Stage">
-                  <div class="status-grid">
-                    {STATUS_OPTIONS.map((opt) => {
-                      const active = draft.stage === opt.value;
-                      const btn = (
-                        <button
-                          key={opt.value}
-                          type="button"
-                          class={`status-grid-btn ${active ? "active" : ""}`}
-                          style={{ "--status-color": opt.color }}
-                          aria-pressed={active}
-                          disabled={opt.disabled}
-                          onClick={() => !opt.disabled && update({ stage: opt.value })}
-                        >
-                          <span class="status-grid-icon" aria-hidden="true">{opt.icon}</span>
-                          <span class="status-grid-label">{opt.label}</span>
-                        </button>
-                      );
-                      return opt.disabled ? (
-                        <Tooltip key={opt.value} label={opt.disabledHint} placement="top">
-                          {btn}
-                        </Tooltip>
-                      ) : btn;
-                    })}
-                  </div>
-                </FormField>
-
-                <FormField label="Owner" hint="Required for work. Also plans when no planner is set.">
-                  <AgentPicker
-                    value={draft.owner_agent}
-                    onChange={(name) => update({ owner_agent: name })}
-                    agents={agents}
-                    placeholder="Pick an owner"
-                    role="owner"
-                  />
-                </FormField>
-
-                <FormField label="Planner" hint="Optional. Falls back to owner.">
-                  <AgentPicker
-                    value={draft.planner_agent}
-                    onChange={(name) => update({ planner_agent: name })}
-                    agents={agents}
-                    placeholder="Pick a planner"
-                    role="planner"
-                  />
-                </FormField>
-
-                <FormField label="Run mode" hint="Auto mode starts eligible stages after blockers clear.">
-                  <Select
-                    variant="native"
-                    value={draft.run_policy || DEFAULT_RUN_POLICY}
-                    onChange={(value) => update({ run_policy: value })}
-                    options={RUN_POLICY_OPTIONS}
-                    ariaLabel="Run mode"
-                  />
-                </FormField>
-
-                <FormField label="Reviewer" hint="Optional verifier.">
-                  <AgentPicker
-                    value={draft.reviewer_agent}
-                    onChange={(name) => update({ reviewer_agent: name })}
-                    agents={agents}
-                    placeholder="Pick a reviewer"
-                    role="reviewer"
-                  />
-                </FormField>
-
-                <FormField label="Tags" hint="Press Enter to add.">
-                  <TagInput
-                    value={draft.tags || []}
-                    onChange={(tags) => update({ tags })}
-                    placeholder="Add tag..."
-                  />
-                </FormField>
+              <aside class="task-edit-rail editor-rail">
+                {renderTaskEditRail()}
               </aside>
             </div>
           )}

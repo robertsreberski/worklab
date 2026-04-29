@@ -8163,14 +8163,30 @@ select,
   gap: var(--sp-6);
 }
 .task-detail-rail-content,
+.task-edit-rail-content,
 .task-workflow-section,
 .task-brief-section,
 .task-plan-section,
-.task-activity-section {
+.task-activity-section,
+.task-edit-section {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--sp-4);
+}
+.task-edit .task-edit-body {
+  padding: 0;
+  overflow: visible;
+}
+.task-edit-grid.editor-body {
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  gap: 0;
+  align-items: stretch;
+}
+.task-edit-main.editor-main,
+.task-edit-rail.editor-rail {
+  position: static;
+  top: auto;
 }
 .field-row {
   display: grid;
