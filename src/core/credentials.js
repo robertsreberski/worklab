@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
+import { hasPiOAuthCredentials } from "./pi-oauth.js";
 
 const PROBE_TTL_MS = 10_000;
 const probeCache = new Map();
@@ -87,22 +88,69 @@ function codexAuthAvailable({ env, commandAvailable, execImpl }) {
   };
 }
 
+const PI_ENV_KEYS = {
+  openai: ["OPENAI_API_KEY"],
+  "openai-codex": ["OPENAI_CODEX_API_KEY", "CODEX_API_KEY"],
+  "github-copilot": ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"],
+  google: ["GEMINI_API_KEY"],
+  "google-gemini-cli": ["GEMINI_API_KEY"],
+  deepseek: ["DEEPSEEK_API_KEY"],
+  groq: ["GROQ_API_KEY"],
+  mistral: ["MISTRAL_API_KEY"],
+  xai: ["XAI_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  "vercel-ai-gateway": ["AI_GATEWAY_API_KEY"],
+};
+
+function piAuthAvailable(provider, { env, dataDir }) {
+  const keys = PI_ENV_KEYS[provider] || [];
+  const found = keys.find((key) => env[key]);
+  if (found) return { available: true, auth: found.toLowerCase(), reason: null };
+  if (hasPiOAuthCredentials(provider, { dataDir, env })) {
+    return { available: true, auth: "pi-oauth", reason: null };
+  }
+  const first = keys[0];
+  const reason = first
+    ? `Set ${first}${provider === "openai-codex" ? " or authenticate pi-ai OpenAI Codex OAuth." : "."}`
+    : `Authenticate provider ${provider} for pi-ai.`;
+  return { available: false, auth: "missing-auth", reason };
+}
+
 export function getBuiltinProviderAvailability({
   env = process.env,
   path = env.PATH ?? process.env.PATH ?? "",
   execImpl = execFileSync,
+  dataDir = null,
 } = {}) {
   const claudeEnv = !!(env.ANTHROPIC_API_KEY
     || env.ANTHROPIC_AUTH_TOKEN
     || env.CLAUDE_CODE_OAUTH_TOKEN);
   const openaiEnv = !!env.OPENAI_API_KEY;
   const claudeCli = commandOnPath("claude", path);
-  const codexCli = commandOnPath("codex", path);
   const probeEnv = { ...process.env, ...env, PATH: path };
   const claudeVersion = claudeCli ? cleanVersion(runProbe(execImpl, "claude", ["--version"], { timeoutMs: 1200, env: probeEnv }).output) : null;
-  const codexVersion = codexCli ? cleanVersion(runProbe(execImpl, "codex", ["--version"], { timeoutMs: 1200, env: probeEnv }).output) : null;
   const claudeCodeAuth = claudeAuthAvailable({ env: probeEnv, commandAvailable: claudeCli, execImpl });
-  const codexAuth = codexAuthAvailable({ env: probeEnv, commandAvailable: codexCli, execImpl });
+  const codexAuth = piAuthAvailable("openai-codex", { env: probeEnv, dataDir });
+  const piProviders = [
+    "github-copilot",
+    "google-gemini-cli",
+    "google",
+    "deepseek",
+    "groq",
+    "mistral",
+    "xai",
+    "openrouter",
+    "vercel-ai-gateway",
+  ];
+  const piAvailability = Object.fromEntries(piProviders.map((provider) => {
+    const auth = piAuthAvailable(provider, { env: probeEnv, dataDir });
+    return [`pi:${provider}`, {
+      available: auth.available,
+      reason: auth.reason,
+      runtime_kind: "pi-agent",
+      auth: auth.auth,
+    }];
+  }));
   return {
     claude: {
       available: claudeEnv,
@@ -113,26 +161,30 @@ export function getBuiltinProviderAvailability({
     openai: {
       available: openaiEnv,
       reason: openaiEnv ? null : "Set OPENAI_API_KEY.",
-      runtime_kind: "sdk",
+      runtime_kind: "pi-agent",
       auth: openaiEnv ? "env" : "missing-auth",
     },
     "claude-code": {
-      available: claudeCli && claudeCodeAuth.available,
-      reason: claudeCli ? claudeCodeAuth.reason : "Install Claude Code and ensure `claude` is on PATH.",
-      runtime_kind: "cli",
-      command: "claude",
+      available: claudeEnv || claudeCodeAuth.available,
+      reason: claudeEnv ? null : claudeCodeAuth.reason,
+      runtime_kind: "sdk",
+      command: claudeCli ? "claude" : null,
       command_available: claudeCli,
       version: claudeVersion,
-      auth: claudeCodeAuth.auth,
+      auth: claudeEnv ? "env" : claudeCodeAuth.auth,
     },
     codex: {
-      available: codexCli && codexAuth.available,
-      reason: codexCli ? codexAuth.reason : "Install Codex CLI and ensure `codex` is on PATH.",
-      runtime_kind: "cli",
-      command: "codex",
-      command_available: codexCli,
-      version: codexVersion,
+      available: codexAuth.available,
+      reason: codexAuth.reason,
+      runtime_kind: "pi-agent",
       auth: codexAuth.auth,
     },
+    pi: {
+      available: true,
+      reason: null,
+      runtime_kind: "pi-agent",
+      auth: "provider-specific",
+    },
+    ...piAvailability,
   };
 }

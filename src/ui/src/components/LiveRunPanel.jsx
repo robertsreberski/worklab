@@ -15,7 +15,7 @@ import { useRunStream } from "../lib/useRunStream.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { api } from "../lib/api.js";
 
-const LIVE_INPUT_PROVIDER_KINDS = new Set(["claude", "codex"]);
+const LIVE_INPUT_PROVIDER_KINDS = new Set(["claude", "openai", "vercel", "codex", "pi"]);
 
 export function liveRunComposerState(run, isStreaming = false) {
   const liveInput = run?.live_input || {};

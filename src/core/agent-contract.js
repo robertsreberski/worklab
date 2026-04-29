@@ -30,6 +30,7 @@ export const PROVIDER_KINDS = [
   "vercel",
   "claude-code",
   "codex",
+  "pi",
 ];
 
 export class RunResultInvalid extends Error {

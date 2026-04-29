@@ -1,6 +1,4 @@
 import net from "node:net";
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { createOllama as createAiSdkOllama } from "ai-sdk-ollama";
 import { encrypt, decrypt } from "./crypto.js";
 import { newProviderId, newModelId } from "./ids.js";
 import { WORKLAB_BUILTIN_TOOLS } from "./ai.js";
@@ -532,25 +530,31 @@ export function defaultOllamaNumCtx(parameterSize) {
 
 export function createVercelClient(provider, { modelName = "", capabilities = {} } = {}) {
   const baseUrl = provider.base_url.replace(/\/+$/, "");
-  if (provider.provider_type === "ollama") {
-    const root = rootUrl(baseUrl);
-    const resolved = resolveReasoningCapabilities(provider.provider_type, modelName, capabilities);
-    if (resolved.reasoning_mode === "effort") {
-      const compat = createOpenAICompatible({ name: "ollama", baseURL: `${root}/v1`, apiKey: provider.api_key || "ollama" });
-      return (nextModelName) => compat.chatModel(nextModelName);
-    }
-    const ollama = createAiSdkOllama({ baseURL: root, ...(provider.api_key ? { apiKey: provider.api_key } : {}) });
-    return (nextModelName, settings = {}) => ollama.chat(nextModelName, settings);
-  }
-  if (!isOpenAICompatibleProviderType(provider.provider_type)) {
+  if (provider.provider_type !== "ollama" && !isOpenAICompatibleProviderType(provider.provider_type)) {
     throw unsupportedProviderTypeError(provider);
   }
-  const compat = createOpenAICompatible({
-    name: provider.provider_type,
-    baseURL: /\/v\d+$/.test(baseUrl) ? baseUrl : `${baseUrl}/v1`,
-    apiKey: provider.api_key || "ollama",
+  const resolved = resolveReasoningCapabilities(provider.provider_type, modelName, capabilities);
+  const modelBaseUrl = provider.provider_type === "ollama"
+    ? `${rootUrl(baseUrl)}/v1`
+    : (/\/v\d+$/.test(baseUrl) ? baseUrl : `${baseUrl}/v1`);
+  return (nextModelName) => ({
+    id: nextModelName,
+    name: nextModelName,
+    api: "openai-completions",
+    provider: `worklab-${provider.id || provider.provider_type}`,
+    baseUrl: modelBaseUrl,
+    reasoning: !!resolved.reasoning,
+    input: resolved.vision === false ? ["text"] : ["text", "image"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: Number(resolved.context_window || resolved.num_ctx) || 128000,
+    maxTokens: Number(resolved.max_tokens) || 16384,
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: !isPrivateBaseUrl(provider.base_url),
+      supportsReasoningEffort: resolved.reasoning_mode === "effort",
+      maxTokensField: "max_tokens",
+    },
   });
-  return (nextModelName) => compat.chatModel(nextModelName);
 }
 
 export function resolveVercelModel({ db, dataDir, providerId, modelName }) {

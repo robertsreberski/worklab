@@ -9,7 +9,13 @@ import { writeRuntimeConfig } from "./core/execenv.js";
 import { join } from "node:path";
 import { parseVerdict } from "./core/review.js";
 import { kbListPinned } from "./core/kb.js";
-import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
+import {
+  normalizeWorklabResult,
+  parseWorklabResultFromText,
+  synthesizeWorklabResult,
+  validateWorklabResultSemantics,
+  WORKLAB_RESULT_JSON_SCHEMA,
+} from "./core/worklab-result.js";
 import { readSettings } from "./core/settings.js";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
@@ -126,7 +132,7 @@ function reviewResultFromResponse(response) {
 }
 
 function maxTurnsForModel(model, fallback) {
-  if (["claude", "claude-code", "codex"].includes(model?.sdk)) return undefined;
+  if (["claude", "claude-code"].includes(model?.sdk)) return undefined;
   return fallback;
 }
 
@@ -365,6 +371,7 @@ async function main() {
         disallowedTools,
         permissionMode: "bypassPermissions",
         maxTurns: maxTurnsForModel(model, 30),
+        outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
         abortSignal: ac.signal,
         liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),
@@ -453,6 +460,7 @@ async function main() {
         disallowedTools,
         permissionMode: "bypassPermissions",
         maxTurns: maxTurnsForModel(model, 30),
+        outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
         abortSignal: ac.signal,
         liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),

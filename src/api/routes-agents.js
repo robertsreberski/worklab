@@ -57,9 +57,10 @@ function validateModelForAgent({ db, dataDir, model }) {
   if (resolved.sdk !== "vercel") {
     const builtin = getBuiltinModelByReference(resolved.reference);
     if (!builtin) throw new Error(`unknown built-in model: ${resolved.reference}`);
-    const availability = getBuiltinProviderAvailability()[resolved.sdk];
+    const availabilityKey = resolved.sdk === "pi" ? `pi:${resolved.provider}` : resolved.sdk;
+    const availability = getBuiltinProviderAvailability({ dataDir })[availabilityKey];
     if (availability?.available === false) {
-      throw new Error(`${resolved.sdk} unavailable: ${availability.reason || "provider unavailable"}`);
+      throw new Error(`${availabilityKey} unavailable: ${availability.reason || "provider unavailable"}`);
     }
     return resolved;
   }

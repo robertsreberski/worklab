@@ -1,3 +1,5 @@
+import { getModel as getPiModel, getModels as getPiModels, supportsXhigh } from "@mariozechner/pi-ai";
+
 export const BUILTIN_CLAUDE_MODELS = [
   "claude-haiku-4-5-20251001",
   "claude-sonnet-4-6",
@@ -17,8 +19,32 @@ export const BUILTIN_CODEX_MODELS = [
   "gpt-5.4-mini",
 ];
 
-export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex"];
+export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex", "pi"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+
+const EXTRA_PI_PROVIDER_IDS = [
+  "github-copilot",
+  "google-gemini-cli",
+  "google",
+  "deepseek",
+  "groq",
+  "mistral",
+  "xai",
+  "openrouter",
+  "vercel-ai-gateway",
+];
+
+const PI_PROVIDER_LABELS = {
+  "github-copilot": "GitHub Copilot",
+  "google-gemini-cli": "Gemini CLI",
+  google: "Google Gemini",
+  deepseek: "DeepSeek",
+  groq: "Groq",
+  mistral: "Mistral",
+  xai: "xAI",
+  openrouter: "OpenRouter",
+  "vercel-ai-gateway": "Vercel AI Gateway",
+};
 
 const MODEL_SHORT_LABELS = {
   "claude-haiku-4-5-20251001": "Haiku 4.5",
@@ -111,6 +137,71 @@ function openaiReasoningCapabilities(model, runtime = "sdk") {
   };
 }
 
+function piReasoningLevels(model) {
+  if (!model?.reasoning) return undefined;
+  return ["none", "low", "medium", "high", ...(supportsXhigh(model) ? ["xhigh"] : [])];
+}
+
+function piModelCapabilities(model, runtimeKind = "pi-agent") {
+  return {
+    tool_use: true,
+    vision: Array.isArray(model?.input) ? model.input.includes("image") : true,
+    json_mode: true,
+    reasoning: !!model?.reasoning,
+    reasoning_mode: model?.reasoning ? "effort" : "none",
+    reasoning_levels: piReasoningLevels(model),
+    reasoning_disable_supported: !!model?.reasoning,
+    context_window: Number(model?.contextWindow) || undefined,
+    max_tokens: Number(model?.maxTokens) || undefined,
+    ...runtimeMetadata({
+      runtimeKind,
+      supportsMcp: true,
+      supportsSkills: true,
+      supportsWorklabTools: true,
+      mcpMode: "sdk",
+      skillsMode: "read-skill-tool",
+    }),
+  };
+}
+
+function piModelMetadata(provider, modelId, sdk, { labelPrefix = "", description = null } = {}) {
+  let model;
+  try {
+    model = getPiModel(provider, modelId);
+  } catch {
+    model = null;
+  }
+  const label = [labelPrefix, model?.name || MODEL_SHORT_LABELS[modelId] || modelId].filter(Boolean).join(" ");
+  return {
+    value: `${sdk}:${modelId}`,
+    label,
+    description: description || model?.name || null,
+    sdk,
+    model: modelId,
+    capabilities: model ? piModelCapabilities(model) : openaiReasoningCapabilities(modelId),
+    ...(model?.cost ? { pricing: model.cost } : {}),
+  };
+}
+
+function piProviderModels(provider) {
+  let models = [];
+  try {
+    models = getPiModels(provider);
+  } catch {
+    return [];
+  }
+  return models.map((model) => ({
+    value: `pi:${provider}:${model.id}`,
+    label: model.name || model.id,
+    description: `${PI_PROVIDER_LABELS[provider] || provider} / ${model.id}`,
+    sdk: "pi",
+    provider,
+    model: model.id,
+    capabilities: piModelCapabilities(model),
+    pricing: model.cost || null,
+  }));
+}
+
 const BUILTIN_MODEL_GROUPS = [
   {
     id: "claude",
@@ -145,79 +236,41 @@ const BUILTIN_MODEL_GROUPS = [
   {
     id: "openai",
     label: "OpenAI",
-    models: [
-      {
-        value: "openai:gpt-5.5",
-        label: "GPT-5.5",
-        description: "Flagship",
-        sdk: "openai",
-        model: "gpt-5.5",
-        capabilities: openaiReasoningCapabilities("gpt-5.5"),
-      },
-      {
-        value: "openai:gpt-5.4",
-        label: "GPT-5.4",
-        description: "Fallback flagship",
-        sdk: "openai",
-        model: "gpt-5.4",
-        capabilities: openaiReasoningCapabilities("gpt-5.4"),
-      },
-      {
-        value: "openai:gpt-5.4-mini",
-        label: "GPT-5.4 Mini",
-        description: "Fallback mini",
-        sdk: "openai",
-        model: "gpt-5.4-mini",
-        capabilities: openaiReasoningCapabilities("gpt-5.4-mini"),
-      },
-      {
-        value: "openai:gpt-5.4-nano",
-        label: "GPT-5.4 Nano",
-        description: "Fallback nano",
-        sdk: "openai",
-        model: "gpt-5.4-nano",
-        capabilities: openaiReasoningCapabilities("gpt-5.4-nano"),
-      },
-    ],
-  },
-];
-
-const CLI_MODEL_GROUPS = [
-  {
-    id: "claude-code",
-    label: "Claude Code CLI",
-    models: BUILTIN_CLAUDE_MODELS.map((model) => ({
-      value: `claude-code:${model}`,
-      label: `Claude Code ${MODEL_SHORT_LABELS[model] || model}`,
-      description: "Runs through the local `claude` command",
-      sdk: "claude-code",
-      model,
-      capabilities: {
-        ...claudeReasoningCapabilities(model, "cli"),
-        runtime: "cli",
-      },
-      builtin_tools: [...WORKLAB_BUILTIN_TOOLS],
-      supports_builtin_tools: true,
+    models: BUILTIN_OPENAI_MODELS.map((model) => piModelMetadata("openai", model, "openai", {
+      description: model === "gpt-5.5" ? "Flagship" : null,
     })),
   },
   {
     id: "codex",
-    label: "Codex SDK",
-    models: BUILTIN_CODEX_MODELS.map((model) => ({
-      value: `codex:${model}`,
-      label: `Codex ${MODEL_SHORT_LABELS[model] || model}`,
-      description: "Runs through the local `codex exec` command",
-      sdk: "codex",
-      model,
-      capabilities: {
-        ...openaiReasoningCapabilities(model, "cli"),
-        runtime: "cli",
-      },
-      builtin_tools: [],
-      supports_builtin_tools: false,
+    label: "OpenAI Codex",
+    models: BUILTIN_CODEX_MODELS.map((model) => piModelMetadata("openai-codex", model, "codex", {
+      labelPrefix: "Codex",
+      description: "ChatGPT OAuth via pi-ai",
     })),
   },
 ];
+
+function getPiProviderGroups() {
+  return EXTRA_PI_PROVIDER_IDS
+    .map((provider) => ({
+      id: `pi:${provider}`,
+      label: PI_PROVIDER_LABELS[provider] || provider,
+      sdk: "pi",
+      provider,
+      models: piProviderModels(provider),
+    }))
+    .filter((group) => group.models.length > 0);
+}
+
+const HIDDEN_LEGACY_MODELS = BUILTIN_CLAUDE_MODELS.map((model) => ({
+  value: `claude-code:${model}`,
+  label: `Claude Code ${MODEL_SHORT_LABELS[model] || model}`,
+  description: "Legacy alias routed through the Claude Agent SDK.",
+  sdk: "claude-code",
+  model,
+  capabilities: claudeReasoningCapabilities(model),
+  deprecated: true,
+}));
 
 function withBuiltinToolMetadata(model) {
   if (Array.isArray(model?.builtin_tools)) {
@@ -235,14 +288,17 @@ function withBuiltinToolMetadata(model) {
 }
 
 export function getBuiltinModelGroups() {
-  return [...BUILTIN_MODEL_GROUPS, ...CLI_MODEL_GROUPS].map((group) => ({
+  return [...BUILTIN_MODEL_GROUPS, ...getPiProviderGroups()].map((group) => ({
     ...group,
     models: group.models.map(withBuiltinToolMetadata),
   }));
 }
 
 export function getBuiltinModels() {
-  return getBuiltinModelGroups().flatMap((group) => group.models);
+  return [
+    ...getBuiltinModelGroups().flatMap((group) => group.models),
+    ...HIDDEN_LEGACY_MODELS.map(withBuiltinToolMetadata),
+  ];
 }
 
 export function getBuiltinModelByReference(reference) {
@@ -252,7 +308,19 @@ export function getBuiltinModelByReference(reference) {
 function inferFallbackCapabilities(resolved) {
   if (!resolved?.sdk) return null;
   if (resolved.sdk === "openai" || resolved.sdk === "codex") {
-    return openaiReasoningCapabilities(resolved.model, resolved.sdk === "codex" ? "cli" : "sdk");
+    const provider = resolved.sdk === "codex" ? "openai-codex" : "openai";
+    try {
+      return piModelCapabilities(getPiModel(provider, resolved.model));
+    } catch {
+      return openaiReasoningCapabilities(resolved.model);
+    }
+  }
+  if (resolved.sdk === "pi") {
+    try {
+      return piModelCapabilities(getPiModel(resolved.provider, resolved.model));
+    } catch {
+      return openaiReasoningCapabilities(resolved.model);
+    }
   }
   if (resolved.sdk === "claude" || resolved.sdk === "claude-code") {
     return claudeReasoningCapabilities(resolved.model, resolved.sdk === "claude-code" ? "cli" : "sdk");
@@ -330,6 +398,17 @@ export function parseModelReference(value) {
     return { sdk: "vercel", model: modelName, providerId, modelName, reference: value };
   }
 
+  if (value.startsWith("pi:")) {
+    const rest = value.slice("pi:".length);
+    const i = rest.indexOf(":");
+    if (i <= 0 || i === rest.length - 1) {
+      throw new Error("invalid pi model reference; expected pi:<providerId>:<modelName>");
+    }
+    const provider = requireModelPart(rest.slice(0, i), "provider id required");
+    const model = requireModelPart(rest.slice(i + 1), "model id required");
+    return { sdk: "pi", provider, model, reference: value };
+  }
+
   const i = value.indexOf(":");
   if (i <= 0 || i === value.length - 1) {
     throw new Error("invalid model reference; expected <sdk>:<modelId>");
@@ -360,11 +439,11 @@ export function resolveModel(value) {
 
 async function loadBackend(sdk, { liveInput = false } = {}) {
   if (sdk === "claude") return (await import("./ai-claude.js")).claudeSdkBackend;
-  if (sdk === "openai") return (await import("./ai-openai.js")).openAiSdkBackend;
-  if (sdk === "vercel") return (await import("./ai-vercel.js")).vercelSdkBackend;
-  if (sdk === "claude-code") return (await import("./ai-cli.js")).claudeCodeBackend;
-  if (sdk === "codex" && liveInput) return (await import("./ai-codex-app.js")).codexAppBackend;
-  if (sdk === "codex") return (await import("./ai-cli.js")).codexCliBackend;
+  if (sdk === "claude-code") return (await import("./ai-claude.js")).claudeSdkBackend;
+  if (sdk === "openai") return (await import("./ai-pi.js")).piOpenAiBackend;
+  if (sdk === "vercel") return (await import("./ai-pi.js")).piVercelBackend;
+  if (sdk === "codex") return (await import("./ai-pi.js")).piCodexBackend;
+  if (sdk === "pi") return (await import("./ai-pi.js")).piGenericBackend;
   throw new Error(`unsupported sdk: ${sdk}`);
 }
 
