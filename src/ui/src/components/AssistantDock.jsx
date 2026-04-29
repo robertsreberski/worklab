@@ -97,7 +97,7 @@ function AssistantRun({ run, active, onDone }) {
           <Icon name="chevron-down" size={14} class="assistant-run-chevron" />
         </span>
       </summary>
-      <div class="assistant-run-events">
+      <div class="assistant-run-events wl-scrollbar">
         <EventTimeline events={events} streaming={streaming} />
       </div>
     </details>
@@ -125,7 +125,16 @@ function AssistantMessage({ message, active, onRunDone }) {
   );
 }
 
-export function AssistantDock({ open, onToggle }) {
+export function AssistantDock({
+  open,
+  onToggle,
+  width,
+  minWidth,
+  maxWidth,
+  onResize,
+  onResizeBy,
+  onResizeTo,
+}) {
   const [thread, setThread] = useState(null);
   const [messages, setMessages] = useState([]);
   const [activeRun, setActiveRun] = useState(null);
@@ -134,6 +143,7 @@ export function AssistantDock({ open, onToggle }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const scrollRef = useRef(null);
+  const resizeCleanupRef = useRef(null);
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
   const canSend = draft.trim().length > 0 && !sending && !activeRunId;
@@ -156,6 +166,8 @@ export function AssistantDock({ open, onToggle }) {
   useEffect(() => {
     loadAssistant();
   }, []);
+
+  useEffect(() => () => resizeCleanupRef.current?.(), []);
 
   useEffect(() => {
     if (!open) return;
@@ -199,8 +211,65 @@ export function AssistantDock({ open, onToggle }) {
     }
   }
 
+  function startResize(event) {
+    if (!onResize || event.button !== 0) return;
+    event.preventDefault();
+    resizeCleanupRef.current?.();
+    onResize(event.clientX);
+    document.documentElement.classList.add("assistant-resizing");
+
+    const move = (moveEvent) => {
+      moveEvent.preventDefault();
+      onResize(moveEvent.clientX);
+    };
+    const stop = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", stop);
+      document.removeEventListener("pointercancel", stop);
+      document.documentElement.classList.remove("assistant-resizing");
+      resizeCleanupRef.current = null;
+    };
+
+    resizeCleanupRef.current = stop;
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", stop);
+    document.addEventListener("pointercancel", stop);
+  }
+
+  function resizeKeyDown(event) {
+    if (!onResizeBy || !onResizeTo) return;
+    const step = event.shiftKey ? 64 : 24;
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      onResizeBy(step);
+    } else if (event.key === "ArrowRight") {
+      event.preventDefault();
+      onResizeBy(-step);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      onResizeTo("min");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      onResizeTo("max");
+    }
+  }
+
   const body = (
     <aside class={`assistant-dock ${open ? "open" : ""}`.trim()} aria-label="Worklab assistant" aria-hidden={!open}>
+      {onResize && (
+        <span
+          class="assistant-resize-handle"
+          role="separator"
+          tabIndex={open ? 0 : -1}
+          aria-label="Resize assistant"
+          aria-orientation="vertical"
+          aria-valuemin={minWidth}
+          aria-valuemax={maxWidth}
+          aria-valuenow={Math.round(width || 0)}
+          onPointerDown={startResize}
+          onKeyDown={resizeKeyDown}
+        />
+      )}
       <header class="assistant-dock-head">
         <div class="assistant-title">
           <span class="assistant-title-icon"><Icon name="sparkles" size={15} /></span>
@@ -224,7 +293,7 @@ export function AssistantDock({ open, onToggle }) {
           />
         </div>
       </header>
-      <div class="assistant-thread" ref={scrollRef}>
+      <div class="assistant-thread wl-scrollbar" ref={scrollRef}>
         {loading && !messages.length ? (
           <div class="assistant-empty">Loading assistant...</div>
         ) : messages.length ? (

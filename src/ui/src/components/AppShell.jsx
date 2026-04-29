@@ -13,6 +13,13 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { navigateHash } from "../lib/navigation.js";
 import { maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
+import {
+  ASSISTANT_WIDTH_MIN,
+  ASSISTANT_WIDTH_STORAGE_KEY,
+  assistantInitialWidth,
+  assistantMaxWidthForViewport,
+  clampAssistantWidth,
+} from "../lib/assistantLayout.js";
 
 export const ROUTE_GROUPS = [
   {
@@ -157,7 +164,7 @@ function RightDrawer({ open, onClose, kicker, title, children }) {
             <Icon name="x" size={16} />
           </button>
         </header>
-        <div class="app-right-drawer-body">{children}</div>
+        <div class="app-right-drawer-body wl-scrollbar">{children}</div>
       </aside>
     </div>
   );
@@ -202,6 +209,10 @@ export function AppShell({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sectionSheetOpen, setSectionSheetOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(assistantInitialOpen);
+  const [assistantWidth, setAssistantWidth] = useState(assistantInitialWidth);
+  const [viewportWidth, setViewportWidth] = useState(
+    typeof window === "undefined" ? 0 : window.innerWidth,
+  );
   const chromeContext = useMemo(() => ({ setChrome: setRegisteredChrome }), []);
   const activeDock = registeredChrome.mobileActionDock ?? mobileActionDock;
   const activeTopbar = registeredChrome.mobileTopbar ?? mobileTopbar;
@@ -230,6 +241,43 @@ export function AppShell({
     window.localStorage?.setItem?.(ASSISTANT_PREF_KEY, assistantOpen ? "open" : "closed");
   }, [assistantOpen]);
 
+  useEffect(() => {
+    try {
+      window.localStorage?.setItem?.(ASSISTANT_WIDTH_STORAGE_KEY, String(assistantWidth));
+    } catch {}
+  }, [assistantWidth]);
+
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+
+  useEffect(() => {
+    setAssistantWidth((current) => clampAssistantWidth(current, viewportWidth));
+  }, [viewportWidth]);
+
+  const assistantMaxWidth = assistantMaxWidthForViewport(viewportWidth);
+
+  function currentViewportWidth() {
+    return typeof window === "undefined" ? viewportWidth : window.innerWidth;
+  }
+
+  function resizeAssistantFromClientX(clientX) {
+    const currentWidth = currentViewportWidth();
+    setAssistantWidth(clampAssistantWidth(currentWidth - clientX, currentWidth));
+  }
+
+  function resizeAssistantBy(delta) {
+    const currentWidth = currentViewportWidth();
+    setAssistantWidth((current) => clampAssistantWidth(current + delta, currentWidth));
+  }
+
+  function resizeAssistantTo(edge) {
+    const currentWidth = currentViewportWidth();
+    setAssistantWidth(edge === "max" ? assistantMaxWidthForViewport(currentWidth) : ASSISTANT_WIDTH_MIN);
+  }
+
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
     "N": () => { navigateHash("#/tasks/new"); },
@@ -247,7 +295,10 @@ export function AppShell({
 
   return (
     <AppChromeContext.Provider value={chromeContext}>
-      <div class={`app responsive ${activeDock ? "has-mobile-action-dock has-dock" : ""} ${assistantOpen ? "assistant-open" : ""}`.trim()}>
+      <div
+        class={`app responsive ${activeDock ? "has-mobile-action-dock has-dock" : ""} ${assistantOpen ? "assistant-open" : ""}`.trim()}
+        style={{ "--assistant-w": `${assistantWidth}px` }}
+      >
         <a href="#main" class="skip-link">Skip to main content</a>
         <aside class="app-rail">
           <a
@@ -302,7 +353,7 @@ export function AppShell({
         </aside>
         <div class="app-body app-content">
           {activeTopbar}
-          <main id="main" class="app-main scrollable-body">{children}</main>
+          <main id="main" class="app-main scrollable-body wl-scrollbar">{children}</main>
           {activeDock && (
             <div class="app-mobile-action-dock mobile-action-dock entity-edit-mobile-dock" aria-label="Page actions">
               {activeDock}
@@ -322,7 +373,16 @@ export function AppShell({
             sections={activeSections}
           />
         </div>
-        <AssistantDock open={assistantOpen} onToggle={() => setAssistantOpen((current) => !current)} />
+        <AssistantDock
+          open={assistantOpen}
+          onToggle={() => setAssistantOpen((current) => !current)}
+          width={assistantWidth}
+          minWidth={ASSISTANT_WIDTH_MIN}
+          maxWidth={assistantMaxWidth}
+          onResize={resizeAssistantFromClientX}
+          onResizeBy={resizeAssistantBy}
+          onResizeTo={resizeAssistantTo}
+        />
         <AppTabbar route={route} />
         <ToastHost />
         <KeyboardHelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />

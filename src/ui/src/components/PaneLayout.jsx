@@ -50,7 +50,7 @@ export function PaneLayout({
         ) : (
           <div class="pane-list">
             <div class="pane-list-head">{listHeader}</div>
-            <div class="pane-list-body">{listBody}</div>
+            <div class="pane-list-body wl-scrollbar">{listBody}</div>
           </div>
         )}
       </div>
@@ -61,7 +61,7 @@ export function PaneLayout({
     <div class={`two-pane ${className}`.trim()}>
       <aside class="pane-list">
         {listHeader && <div class="pane-list-head">{listHeader}</div>}
-        <div class="pane-list-body">{listBody}</div>
+        <div class="pane-list-body wl-scrollbar">{listBody}</div>
       </aside>
       <section class="pane-detail">{detail}</section>
     </div>
