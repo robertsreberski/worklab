@@ -269,6 +269,12 @@ function nullableAgentName(value, fallback = null) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function safeParseJson(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
 function rowToRun(row) {
   if (!row) return null;
   const {
@@ -283,6 +289,8 @@ function rowToRun(row) {
     log_duration_ms,
     log_num_turns,
     log_status,
+    warnings_json,
+    diagnostics_json,
     ...run
   } = row;
   const hasLog = Boolean(log_id);
@@ -294,6 +302,9 @@ function rowToRun(row) {
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
     artifact_paths: JSON.parse(run.artifact_paths_json || "[]"),
     result: run.result_json ? JSON.parse(run.result_json) : null,
+    warnings: safeParseJson(warnings_json, []),
+    diagnostics: safeParseJson(diagnostics_json, null),
+    cost_usd: run.cost_usd ?? log_cost_usd ?? null,
     log: hasLog ? {
       id: log_id,
       model: log_model,
@@ -955,6 +966,28 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
     try {
       const taskRow = taskOr404(db, req.params.id);
+      const result = await watcher.handleRunRequested(taskRow.id);
+      res.json(result);
+    } catch (err) {
+      res.status(err.status || 400).json({ error: { code: err.code || "invalid_state", message: err.message } });
+    }
+  });
+
+  app.post("/api/tasks/:id/retry", async (req, res) => {
+    if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
+    try {
+      const taskRow = taskOr404(db, req.params.id);
+      const currentStage = taskStage(taskRow);
+      if (["blocked", "awaiting_user"].includes(currentStage)) {
+        const transition = nextStage(currentStage, { type: "human_move", target: "execute", reason: "retry from API" });
+        const errorSideEffect = transition.sideEffects.find((se) => se.type === "error");
+        if (errorSideEffect) {
+          return res.status(400).json({ error: { code: "invalid_transition", message: errorSideEffect.message } });
+        }
+        applyRouteSideEffects(db, broker, logger, taskRow.id, transition.sideEffects, currentStage, transition.stage);
+      } else if (!["plan", "execute", "review"].includes(currentStage)) {
+        return res.status(400).json({ error: { code: "invalid_state", message: `cannot retry from ${currentStage}` } });
+      }
       const result = await watcher.handleRunRequested(taskRow.id);
       res.json(result);
     } catch (err) {
