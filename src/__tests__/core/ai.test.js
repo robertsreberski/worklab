@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
+import { getModels as getPiModels } from "@mariozechner/pi-ai";
 import {
   getBuiltinModelByReference,
+  getBuiltinModelGroups,
   getBuiltinModels,
   isValidModelReference,
   normalizeReasoningEffortForModel,
@@ -84,17 +86,14 @@ describe("explicit model references", () => {
     expect(codex.builtin_tools).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
   });
 
-  it("advertises GPT-5.5 with GPT-5.4 fallback variants", () => {
-    const values = getBuiltinModels().map((model) => model.value);
+  it("advertises the current pi-ai OpenAI and Codex catalogues", () => {
+    const groups = getBuiltinModelGroups();
+    const openaiValues = groups.find((group) => group.id === "openai")?.models.map((model) => model.value);
+    const codexValues = groups.find((group) => group.id === "codex")?.models.map((model) => model.value);
 
-    expect(values).toContain("openai:gpt-5.5");
-    expect(values).toContain("openai:gpt-5.4");
-    expect(values).toContain("openai:gpt-5.4-mini");
-    expect(values).toContain("openai:gpt-5.4-nano");
-    expect(values).toContain("codex:gpt-5.5");
-    expect(values).toContain("codex:gpt-5.4");
-    expect(values).toContain("codex:gpt-5.4-mini");
-    expect(values).not.toContain("codex:gpt-5.4-nano");
+    expect(openaiValues).toEqual(getPiModels("openai").map((model) => `openai:${model.id}`));
+    expect(codexValues).toEqual(getPiModels("openai-codex").map((model) => `codex:${model.id}`));
+    expect(getBuiltinModels().map((model) => model.value)).toContain("codex:gpt-5.5");
   });
 
   it("advertises per-model reasoning effort levels", () => {

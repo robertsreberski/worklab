@@ -22,6 +22,7 @@ import {
   disableBrowserNotifications,
   requestAndEnableBrowserNotifications,
 } from "../lib/browserNotifications.js";
+import { modelOptionDescription } from "../lib/display.js";
 
 const LOG_LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fatal", "silent"].map((value) => ({ value, label: value }));
 const SLACK_EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"].map((value) => ({ value, label: value }));
@@ -263,7 +264,7 @@ function modelSelectOptions(modelGroups, currentModel) {
       options: (g.models || []).map((m) => ({
         value: m.value,
         label: m.label || m.value,
-        description: g.available === false ? (g.unavailable_reason || "Unavailable") : (m.description || m.unavailable_reason || undefined),
+        description: modelOptionDescription(m, g),
         disabled: g.available === false || m.available === false || m.disabled === true,
       })),
     })),

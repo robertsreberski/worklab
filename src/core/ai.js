@@ -6,18 +6,30 @@ export const BUILTIN_CLAUDE_MODELS = [
   "claude-opus-4-7",
 ];
 
-export const BUILTIN_OPENAI_MODELS = [
+const FALLBACK_OPENAI_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
   "gpt-5.4-nano",
 ];
 
-export const BUILTIN_CODEX_MODELS = [
+const FALLBACK_CODEX_MODELS = [
   "gpt-5.5",
   "gpt-5.4",
   "gpt-5.4-mini",
 ];
+
+function piModelIds(provider, fallback) {
+  try {
+    const ids = getPiModels(provider).map((model) => model.id).filter(Boolean);
+    return ids.length ? ids : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export const BUILTIN_OPENAI_MODELS = piModelIds("openai", FALLBACK_OPENAI_MODELS);
+export const BUILTIN_CODEX_MODELS = piModelIds("openai-codex", FALLBACK_CODEX_MODELS);
 
 export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex", "pi"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -177,6 +189,7 @@ function piModelMetadata(provider, modelId, sdk, { labelPrefix = "", description
     label,
     description: description || model?.name || null,
     sdk,
+    provider,
     model: modelId,
     capabilities: model ? piModelCapabilities(model) : openaiReasoningCapabilities(modelId),
     ...(model?.cost ? { pricing: model.cost } : {}),
@@ -245,7 +258,7 @@ const BUILTIN_MODEL_GROUPS = [
     label: "OpenAI Codex",
     models: BUILTIN_CODEX_MODELS.map((model) => piModelMetadata("openai-codex", model, "codex", {
       labelPrefix: "Codex",
-      description: "ChatGPT OAuth via pi-ai",
+      description: `ChatGPT OAuth via pi-ai / ${model}`,
     })),
   },
 ];

@@ -71,6 +71,28 @@ export function modelDisplayName(value, options = []) {
   return parts[parts.length - 1] || raw;
 }
 
+function includesPart(parts, value) {
+  const needle = String(value || "").toLowerCase();
+  return !!needle && parts.some((part) => String(part || "").toLowerCase().includes(needle));
+}
+
+export function modelOptionDescription(model = {}, group = {}) {
+  const unavailable = group.available === false
+    ? group.unavailable_reason || "Unavailable"
+    : (model.available === false || model.disabled === true)
+      ? model.unavailable_reason || "Unavailable"
+      : null;
+  if (unavailable) return unavailable;
+
+  const parts = [];
+  if (model.description) parts.push(model.description);
+  const runtime = model.runtime_kind || model.capabilities?.runtime_kind || group.runtime_kind;
+  if (runtime && !includesPart(parts, runtime)) parts.push(runtime);
+  const provider = model.provider_name || model.provider || model.provider_type || group.provider || group.provider_type;
+  if (provider && !includesPart(parts, provider)) parts.push(provider);
+  return parts.join(" / ") || undefined;
+}
+
 export function shortDate(value) {
   if (!value) return "-";
   return new Date(value).toLocaleDateString(undefined, { month: "short", day: "numeric" });
