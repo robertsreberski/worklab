@@ -311,7 +311,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
         open={guard.promptOpen}
         onClose={guard.keepEditing}
         title="You have unsaved changes"
-        size="sm"
+        size="md"
         footer={
           <>
             <Button variant="ghost" onClick={guard.keepEditing}>Keep editing</Button>

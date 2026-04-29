@@ -143,6 +143,48 @@ async function expectNoCriticalHorizontalClipping(page, selector, label = "") {
   expect(clipped, `${label}: critical UI clipped`).toEqual([]);
 }
 
+async function modalLayoutMetrics(page) {
+  return await page.evaluate(() => {
+    const modal = document.querySelector(".modal");
+    const body = document.querySelector(".modal-body");
+    const footer = document.querySelector(".modal-foot");
+    const buttons = [...document.querySelectorAll(".modal-foot .button")];
+    const modalRect = modal?.getBoundingClientRect();
+    const bodyRect = body?.getBoundingClientRect();
+    const footerRect = footer?.getBoundingClientRect();
+    const buttonRects = buttons.map((button) => {
+      const rect = button.getBoundingClientRect();
+      return {
+        text: (button.textContent || "").trim(),
+        left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+        scrollWidth: button.scrollWidth,
+        clientWidth: button.clientWidth,
+      };
+    });
+    const inside = (child, parent) => !!child && !!parent
+      && child.left >= parent.left - 1
+      && child.right <= parent.right + 1
+      && child.top >= parent.top - 1
+      && child.bottom <= parent.bottom + 1;
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      width: modalRect ? Math.round(modalRect.width) : 0,
+      bodyText: (body?.textContent || "").replace(/\s+/g, " ").trim(),
+      bodyVisible: !!bodyRect && bodyRect.width > 0 && bodyRect.height > 0,
+      footerDisplay: footer ? getComputedStyle(footer).display : "",
+      minButtonHeight: buttonRects.length ? Math.min(...buttonRects.map((button) => button.height)) : 0,
+      maxButtonWidth: buttonRects.length ? Math.max(...buttonRects.map((button) => button.width)) : 0,
+      buttonOverflow: buttonRects.some((button) => button.scrollWidth > button.clientWidth + 1),
+      buttonsInsideFooter: footerRect ? buttons.every((button) => inside(button.getBoundingClientRect(), footerRect)) : false,
+      buttonsInsideModal: modalRect ? buttons.every((button) => inside(button.getBoundingClientRect(), modalRect)) : false,
+      buttonLabels: buttonRects.map((button) => button.text),
+    };
+  });
+}
+
 test.beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), "worklab-ui-data-"));
   workspaceDir = mkdtempSync(join(tmpdir(), "worklab-ui-workspace-"));
@@ -1856,6 +1898,32 @@ test("mobile assistant pane opens full width", async ({ page }) => {
   expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
+test("desktop unsaved changes modal keeps content and actions inside the dialog", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
+  const titleInput = page.locator('input[placeholder*="actionable"]');
+  await titleInput.fill("UI regression task with unsaved desktop edit");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".modal", { hasText: "You have unsaved changes" })).toBeVisible();
+
+  const metrics = await modalLayoutMetrics(page);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+  expect(metrics.width).toBeGreaterThanOrEqual(440);
+  expect(metrics.width).toBeLessThanOrEqual(500);
+  expect(metrics.bodyText).toContain("Your changes have not been saved.");
+  expect(metrics.bodyVisible).toBe(true);
+  expect(metrics.footerDisplay).toBe("flex");
+  expect(metrics.buttonLabels).toEqual(["Keep editing", "Discard", "Save & leave"]);
+  expect(metrics.buttonOverflow).toBe(false);
+  expect(metrics.buttonsInsideFooter).toBe(true);
+  expect(metrics.buttonsInsideModal).toBe(true);
+  await expectNoCriticalHorizontalClipping(
+    page,
+    [".modal-head h2", ".modal-body", ".modal-foot .button"].join(", "),
+    "desktop unsaved modal",
+  );
+});
+
 test("mobile overlays keep drawer and modal controls reachable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
@@ -1891,27 +1959,18 @@ test("mobile overlays keep drawer and modal controls reachable", async ({ page }
   await page.keyboard.press("Escape");
   await expect(page.locator(".modal", { hasText: "You have unsaved changes" })).toBeVisible();
 
-  const modalMetrics = await page.evaluate(() => {
-    const modal = document.querySelector(".modal");
-    const footer = document.querySelector(".modal-foot");
-    const buttons = [...document.querySelectorAll(".modal-foot .button")];
-    return {
-      overflow: document.documentElement.scrollWidth - window.innerWidth,
-      width: modal ? Math.round(modal.getBoundingClientRect().width) : 0,
-      footerDisplay: footer ? getComputedStyle(footer).display : "",
-      minButtonHeight: buttons.length
-        ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height)))
-        : 0,
-      maxButtonWidth: buttons.length
-        ? Math.max(...buttons.map((button) => Math.round(button.getBoundingClientRect().width)))
-        : 0,
-    };
-  });
+  const modalMetrics = await modalLayoutMetrics(page);
   expect(modalMetrics.overflow).toBeLessThanOrEqual(0);
   expect(modalMetrics.width).toBeLessThanOrEqual(390);
+  expect(modalMetrics.bodyText).toContain("Your changes have not been saved.");
+  expect(modalMetrics.bodyVisible).toBe(true);
   expect(modalMetrics.footerDisplay).toBe("grid");
   expect(modalMetrics.minButtonHeight).toBeGreaterThanOrEqual(44);
   expect(modalMetrics.maxButtonWidth).toBeLessThanOrEqual(390);
+  expect(modalMetrics.buttonLabels).toEqual(["Keep editing", "Discard", "Save & leave"]);
+  expect(modalMetrics.buttonOverflow).toBe(false);
+  expect(modalMetrics.buttonsInsideFooter).toBe(true);
+  expect(modalMetrics.buttonsInsideModal).toBe(true);
   await expectNoCriticalHorizontalClipping(
     page,
     [".modal-head h2", ".modal-body", ".modal-foot .button"].join(", "),

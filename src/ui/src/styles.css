@@ -1715,6 +1715,7 @@ select,
   padding: var(--sp-3) var(--sp-5);
   border-top: 1px solid var(--border);
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--sp-2);
 }
