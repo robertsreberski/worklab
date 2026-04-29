@@ -660,7 +660,7 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
   expect(metrics.bodyWidth).toBeLessThanOrEqual(1180);
   expect(Math.abs(metrics.gridWidth - metrics.bodyContentWidth)).toBeLessThanOrEqual(2);
   expect(metrics.columnCount).toBe(2);
-  expect(metrics.railWidth).toBeGreaterThanOrEqual(300);
+  expect(metrics.railWidth).toBeGreaterThanOrEqual(340);
 });
 
 test("creating a task is single-save and does not show a false unsaved warning", async ({ page }) => {
@@ -688,13 +688,19 @@ test("task detail renders two-column layout", async ({ page }) => {
   await expect(page.locator(".task-detail-rail .card-title", { hasText: "Roles" })).toBeVisible();
   await expect(page.locator(".task-detail-rail .card-title", { hasText: "Metadata" })).toBeVisible();
   await expect(page.locator(".task-detail-rail .card-title", { hasText: "Maintenance" })).toBeVisible();
+  const railWidth = await page.locator(".task-detail").evaluate((node) => {
+    const columns = getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean);
+    return Math.round(parseFloat(columns.at(-1) || "0"));
+  });
+  expect(railWidth).toBeGreaterThanOrEqual(340);
 });
 
 test("task detail polish keeps details, agent picker, and newest-first comments clear", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-detail-tile")).toHaveCount(0);
-  await expect(page.locator(".task-metadata-card .task-meta-list dt")).toHaveCount(4);
+  await expect(page.locator(".task-metadata-card .task-meta-list dt")).toHaveCount(5);
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Completed" })).toHaveCount(0);
+  await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Workdir" })).toBeVisible();
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Run mode" })).toBeVisible();
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Next scheduled run" })).toBeVisible();
   const metadata = await page.locator(".task-metadata-card .task-meta-list").evaluate((list) => {
