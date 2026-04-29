@@ -473,13 +473,14 @@ Return only one JSON object with this exact schema:
     });
     tx();
 
-    const activeEntry = { promise: null, cancel: null };
+    const activeEntry = { promise: null, cancel: null, cancelFallback: null };
     this.active.set(runId, activeEntry);
     const promise = this.processRun({ runId, threadId: thread.id, userMessageId, assistantMessageId, input: text, logPath })
       .catch((err) => {
         this.logger?.error?.({ err, runId }, "assistant run failed");
       })
       .finally(() => {
+        if (activeEntry.cancelFallback) clearTimeout(activeEntry.cancelFallback);
         this.active.delete(runId);
       });
     activeEntry.promise = promise;
@@ -534,6 +535,7 @@ Return only one JSON object with this exact schema:
     };
 
     const recordEvent = (event) => {
+      if (!this.isRunRunning(runId)) return;
       const raw = { ...event, _event_seq: events.length };
       appendFileSync(logPath, `${JSON.stringify(raw)}\n`);
       const next = truncateAssistantEvent(raw, { rawLogPath: logPath });
@@ -812,8 +814,26 @@ Return only one JSON object with this exact schema:
     const active = this.active.get(runId);
     const initiator = options.initiator || "api_cancel";
     const reason = options.reason || "user requested cancellation";
-    if (active?.cancel) active.cancel({ initiator, reason });
-    else this.finishCancelled({
+    if (active?.cancel) {
+      active.cancel({ initiator, reason });
+      if (!active.cancelFallback) {
+        const settings = readSettings(this.db);
+        const graceMs = Number(settings.cancel_grace_ms ?? 5000);
+        active.cancelFallback = setTimeout(() => {
+          if (!this.isRunRunning(runId)) return;
+          this.finishCancelled({
+            runId,
+            threadId: row.thread_id,
+            assistantMessageId: row.assistant_message_id,
+            message: "Assistant run cancelled",
+            initiator,
+            reason: `${reason}; reconciled after cancel grace`,
+            events: this.getRunEvents(runId).events,
+          });
+        }, Number.isFinite(graceMs) && graceMs >= 0 ? graceMs : 5000);
+        active.cancelFallback.unref?.();
+      }
+    } else this.finishCancelled({
       runId,
       threadId: row.thread_id,
       assistantMessageId: row.assistant_message_id,
