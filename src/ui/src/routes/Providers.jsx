@@ -25,7 +25,7 @@ import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama" },
@@ -582,7 +582,7 @@ export function Providers({ selectedId = null }) {
       .then((response) => { if (!controller.signal.aborted) setProviders(response.providers || []); })
       .catch((err) => { if (err?.name !== "AbortError") setProviders([]); });
   }, []);
-  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadSoon = useThrottledCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);

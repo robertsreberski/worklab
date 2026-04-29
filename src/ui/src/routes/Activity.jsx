@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -129,7 +129,7 @@ export function Activity() {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, [agentFilter, dateRange.from, dateRange.to, statusFilter]);
-  const loadSoon = useCoalescedCallback(() => load(), 100);
+  const loadSoon = useThrottledCallback(() => load(), 100);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => () => loadAbortRef.current?.abort?.(), []);

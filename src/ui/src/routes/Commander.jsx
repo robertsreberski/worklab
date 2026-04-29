@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { formatCost } from "../lib/runFormatting.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -272,7 +272,7 @@ export function Commander() {
         setError(e.message || "Failed to load tasks");
       });
   }, []);
-  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadSoon = useThrottledCallback(reload, 100);
   const reloadProjects = useCallback(() => {
     projectsReloadAbortRef.current?.abort?.();
     const controller = new AbortController();
@@ -281,7 +281,7 @@ export function Commander() {
       .then((r) => { if (!controller.signal.aborted) setProjects(r.projects || []); })
       .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
   }, []);
-  const reloadProjectsSoon = useCoalescedCallback(reloadProjects, 100);
+  const reloadProjectsSoon = useThrottledCallback(reloadProjects, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {

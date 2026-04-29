@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -66,7 +66,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
       .then((r) => { if (!controller.signal.aborted) setEntries(r.entries || []); })
       .catch((err) => { if (err?.name !== "AbortError") setEntries([]); });
   }, []);
-  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadSoon = useThrottledCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);

@@ -4,7 +4,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -47,7 +47,7 @@ export function Agents({ selectedName = null }) {
       .then((r) => { if (!controller.signal.aborted) setAgents(r.agents || []); })
       .catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
   }, []);
-  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadSoon = useThrottledCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);

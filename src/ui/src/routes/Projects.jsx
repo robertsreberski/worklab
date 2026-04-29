@@ -3,7 +3,7 @@ import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -398,8 +398,8 @@ export function Projects({ selectedId = null, mode = null }) {
       .then((res) => { if (!controller.signal.aborted) setProjects(res.projects || []); })
       .catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
   }, [includeArchived]);
-  const reloadSoon = useCoalescedCallback(reload, 100);
-  const reloadEventually = useCoalescedCallback(reload, 1500);
+  const reloadSoon = useThrottledCallback(reload, 100);
+  const reloadEventually = useThrottledCallback(reload, 1500);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
