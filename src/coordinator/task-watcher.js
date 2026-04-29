@@ -207,7 +207,9 @@ export function createTaskWatcher({
       const markRun = db.prepare(
         `UPDATE task_runs
          SET process_status = 'abandoned', status = 'error', ended_at = ?,
-             failure_kind = 'abandoned', error_text = ?
+             failure_kind = 'abandoned', error_text = ?,
+             cancel_initiator = COALESCE(cancel_initiator, 'stale_reconcile'),
+             cancel_reason = COALESCE(cancel_reason, 'coordinator restarted while run was active')
          WHERE id = ?`,
       );
       const markTask = db.prepare(
@@ -653,10 +655,13 @@ export function createTaskWatcher({
     events?.emit?.("run:ended", endedEvent);
   }
 
-  function cancel(taskId) {
+  function cancel(taskId, options = {}) {
     const entry = active.get(taskId);
     if (!entry) return false;
-    entry.handle.cancel();
+    entry.handle.cancel({
+      initiator: options.initiator || "user",
+      reason: options.reason || null,
+    });
     return true;
   }
 
@@ -691,7 +696,10 @@ export function createTaskWatcher({
   async function shutdown() {
     const promises = [];
     for (const entry of active.values()) {
-      entry.handle.cancel();
+      entry.handle.cancel({
+        initiator: "coordinator_shutdown",
+        reason: "coordinator stopping",
+      });
       promises.push(entry.handle.done);
     }
     await Promise.allSettled(promises);

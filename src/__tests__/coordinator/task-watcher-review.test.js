@@ -239,7 +239,7 @@ describe("task-watcher v2 workflow", () => {
     // Cancel is user-initiated and must not be conflated with failure: no
     // error_text, no retry_count bump, distinct stage_reason. UI renders an
     // amber chip from the stage_reason rather than a red error chip.
-    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled", error_text: null, retry_count: 0 });
+    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (user)", error_text: null, retry_count: 0 });
     const cancelComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body = 'Run cancelled.'").get(taskId);
     expect(cancelComment).toBeTruthy();
   });

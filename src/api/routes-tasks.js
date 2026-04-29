@@ -967,7 +967,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const taskRow = resolveTaskRow(db, req.params.id);
     if (!taskRow) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const taskId = taskRow.id;
-    const cancelled = watcher.cancel(taskId);
+    const reasonInput = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
+    const reason = reasonInput || null;
+    const cancelled = watcher.cancel(taskId, { initiator: "api_cancel", reason });
     if (cancelled) return res.status(204).end();
 
     // No live worker — check for a stale `running` row left behind by a crashed
@@ -984,9 +986,11 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       db.prepare(
         `UPDATE task_runs
          SET status = 'error', process_status = 'abandoned', ended_at = ?,
-             failure_kind = 'abandoned', error_text = ?
+             failure_kind = 'abandoned', error_text = ?,
+             cancel_initiator = COALESCE(cancel_initiator, 'stale_reconcile'),
+             cancel_reason = COALESCE(cancel_reason, ?)
          WHERE id = ?`
-      ).run(now, "worker exited", staleRun.id);
+      ).run(now, "worker exited", reason || "stale run reconciled by API cancel", staleRun.id);
       const retryStage = staleRun.stage || "execute";
       db.prepare(
         `UPDATE tasks SET stage = CASE WHEN stage = 'done' THEN stage ELSE ? END,
