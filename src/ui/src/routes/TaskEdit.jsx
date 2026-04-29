@@ -128,8 +128,12 @@ export function TaskEdit({ mode = "create", id = null }) {
       pushToast("Task created", { variant: "success" });
       return taskRouteId(r.task);
     } else {
-      await api.patchTask(id, patch);
-      pushToast("Saved.", { variant: "success" });
+      const r = await api.patchTask(id, patch);
+      const cascaded = Number(r?.task?.cascade?.project_id_descendants || 0);
+      const message = cascaded > 0
+        ? `Saved. Project also applied to ${cascaded} subtask${cascaded === 1 ? "" : "s"}.`
+        : "Saved.";
+      pushToast(message, { variant: "success" });
       setBaseline(draft);
       return loadedTask ? taskRouteId(loadedTask) : id;
     }
