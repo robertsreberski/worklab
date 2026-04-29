@@ -114,6 +114,28 @@ describe("POST /api/tasks", () => {
     expect(res.body.tasks.map(t => t.task_key).sort()).toEqual(["T-1", "T-2"]);
   });
 
+  it("assigns tasks to projects and filters by project", async () => {
+    const { agent } = makeTestServer();
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Backend",
+      context: "Backend-only context.",
+    }).expect(201);
+
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Project task",
+      project_id: project.slug,
+    }).expect(201);
+
+    expect(task.project_id).toBe(project.id);
+    expect(task.project).toMatchObject({ id: project.id, slug: "backend", name: "Backend" });
+
+    const filtered = await agent.get(`/api/tasks?project=${project.slug}`).expect(200);
+    expect(filtered.body.tasks.map((row) => row.id)).toEqual([task.id]);
+
+    const unassigned = await agent.get("/api/tasks?project=none").expect(200);
+    expect(unassigned.body.tasks.map((row) => row.id)).not.toContain(task.id);
+  });
+
   it("deduplicates create retries with the same client request id", async () => {
     const { agent, db } = makeTestServer();
     const body = { title: "a", client_request_id: "create-once" };
@@ -391,6 +413,19 @@ describe("PATCH /api/tasks/:id", () => {
     expect(res.body.task.executor_agent).toBeUndefined();
   });
 
+  it("patches project assignment and cascades to unassigned descendants", async () => {
+    const { agent } = makeTestServer();
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Project Cascade" }).expect(201);
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent" }).expect(201);
+    const { body: { task: child } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    const patched = await agent.patch(`/api/tasks/${parent.id}`).send({ project_id: project.id }).expect(200);
+
+    expect(patched.body.task.project_id).toBe(project.id);
+    const childDetail = await agent.get(`/api/tasks/${child.id}`).expect(200);
+    expect(childDetail.body.task.project_id).toBe(project.id);
+  });
+
   it("updates run policy and rejects invalid values", async () => {
     const { agent } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({
@@ -581,6 +616,20 @@ describe("POST /api/tasks/:id/subtasks", () => {
     expect(res.body.parent).toMatchObject({ id: parent.id, stage: "awaiting_children", stage_reason: "waiting for manual subtasks" });
     const edge = db.prepare("SELECT required, created_by_run_id FROM task_edges WHERE parent_task_id = ? AND child_task_id = ?").get(parent.id, res.body.task.id);
     expect(edge).toMatchObject({ required: 1, created_by_run_id: null });
+  });
+
+  it("manual subtasks inherit the parent project", async () => {
+    const { agent } = makeTestServer();
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Subtask Project" }).expect(201);
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({
+      title: "Parent",
+      project_id: project.id,
+    }).expect(201);
+
+    const res = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    expect(res.body.task.project_id).toBe(project.id);
+    expect(res.body.task.project.slug).toBe(project.slug);
   });
 
   it("optional manual subtasks do not make the parent wait", async () => {

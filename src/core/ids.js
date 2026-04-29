@@ -7,6 +7,7 @@ const nid12 = customAlphabet(alpha, 12);
 export const newTaskId = () => nid21();
 export const newCommentId = () => nid21();
 export const newRunId = () => nid21();
+export const newProjectId = () => nid12();
 export const newAgentLogId = () => nid21();
 export const newEmbeddingId = () => nid21();
 export const newProviderId = () => nid12();

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 17;
+export const SCHEMA_VERSION = 18;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -31,9 +31,24 @@ CREATE TABLE IF NOT EXISTS agents (
   updated_at INTEGER NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  context_markdown TEXT NOT NULL DEFAULT '',
+  workdir TEXT,
+  tags_json TEXT NOT NULL DEFAULT '[]',
+  archived INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_projects_archived_updated ON projects(archived, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   task_key TEXT,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   delegated_by_run_id TEXT,
@@ -67,6 +82,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS task_dependencies (
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -102,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, created_a
 CREATE TABLE IF NOT EXISTS task_runs (
   id TEXT PRIMARY KEY,
   task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
   mode TEXT NOT NULL,
   stage TEXT NOT NULL DEFAULT 'execute',
@@ -128,9 +145,12 @@ CREATE TABLE IF NOT EXISTS task_runs (
   diagnostics_json TEXT,
   provider_session_id TEXT,
   execenv_path TEXT,
+  workdir TEXT,
+  project_context_hash TEXT,
   cost_usd REAL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_logs (
   id TEXT PRIMARY KEY,

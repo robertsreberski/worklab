@@ -7,13 +7,14 @@ import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildNextTaskRunPreview } from "../core/run-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
+import { compactProject, resolveProjectId, resolveProjectRow } from "../core/projects.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
 const RUNNABLE_STAGES = ["plan", "execute", "review"];
-const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "planner_agent", "tags", "run_policy"];
-const BULK_PATCHABLE = ["stage", "owner_agent", "planner_agent", "reviewer_agent", "run_policy"];
+const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "planner_agent", "tags", "run_policy", "project_id"];
+const BULK_PATCHABLE = ["stage", "owner_agent", "planner_agent", "reviewer_agent", "run_policy", "project_id"];
 
 function rowToTask(row) {
   if (!row) return null;
@@ -24,6 +25,7 @@ function rowToTask(row) {
     tags: JSON.parse(row.tags || "[]"),
     retry_count: row.retry_count ?? 0,
     run_policy: row.run_policy || DEFAULT_RUN_POLICY,
+    project_id: row.project_id || null,
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,
     owner_agent: row.owner_agent || null,
@@ -53,6 +55,7 @@ function compactTaskSummary(row) {
     planner_agent: task.planner_agent,
     reviewer_agent: task.reviewer_agent,
     run_policy: task.run_policy,
+    project_id: task.project_id || null,
   };
 }
 
@@ -191,8 +194,19 @@ function attachAutomationSummary(db, task) {
   };
 }
 
-function enrichTask(db, task) {
-  return attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task)));
+function attachProject(db, task, config = null) {
+  if (!task) return task;
+  const projectRow = task.project_id ? resolveProjectRow(db, task.project_id) : null;
+  const project = compactProject(projectRow);
+  return {
+    ...task,
+    project,
+    effective_workdir: project?.workdir || config?.workspace || null,
+  };
+}
+
+function enrichTask(db, task, config = null) {
+  return attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config);
 }
 
 function normaliseDependencyIds(value) {
@@ -241,6 +255,30 @@ function validateDependencyIds(db, taskId, dependencyIds) {
     resolvedIds.push(dependencyId);
   }
   return [...new Set(resolvedIds)];
+}
+
+function normalizeProjectPatchValue(db, value) {
+  if (value === "__none__" || value === "none") return null;
+  return resolveProjectId(db, value);
+}
+
+function cascadeProjectToEligibleDescendants(db, taskId, previousProjectId, nextProjectId, now) {
+  db.prepare(`
+    WITH RECURSIVE descendants(id) AS (
+      SELECT child_task_id
+      FROM task_edges
+      WHERE parent_task_id = ? AND edge_type = 'subtask'
+      UNION
+      SELECT e.child_task_id
+      FROM task_edges e
+      JOIN descendants d ON e.parent_task_id = d.id
+      WHERE e.edge_type = 'subtask'
+    )
+    UPDATE tasks
+    SET project_id = ?, updated_at = ?
+    WHERE id IN (SELECT id FROM descendants)
+      AND (project_id IS NULL OR project_id IS ?)
+  `).run(taskId, nextProjectId, now, previousProjectId);
 }
 
 function replaceTaskDependencies(db, taskId, dependencyIds) {
@@ -440,7 +478,7 @@ async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
   }
 }
 
-function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} }) {
+function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, config = null }) {
   const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
   if (!existing) throw routeError(404, "not_found", "task not found");
   if ("executor_agent" in (patch || {})) {
@@ -459,6 +497,13 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
     if (k in patch) {
       fields.push(`${k} = ?`);
       if (k === "tags") values.push(JSON.stringify(patch[k] ?? []));
+      else if (k === "project_id") {
+        try {
+          values.push(normalizeProjectPatchValue(db, patch[k]));
+        } catch (error) {
+          throw routeError(error.status || 400, error.code || "validation", error.message);
+        }
+      }
       else if (k === "run_policy") {
         try {
           values.push(normalizeRunPolicy(patch[k], existing.run_policy || DEFAULT_RUN_POLICY));
@@ -510,16 +555,22 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
   }
 
   if (fields.length === 0 && !stageTransition) {
-    return enrichTask(db, rowToTask(existing));
+    return enrichTask(db, rowToTask(existing), config);
   }
 
   if (fields.length > 0) {
+    const projectIdChanged = "project_id" in patch;
+    const nextProjectId = projectIdChanged ? normalizeProjectPatchValue(db, patch.project_id) : null;
+    const updatedAt = Date.now();
     if (!fields.includes("updated_at = ?")) {
       fields.push("updated_at = ?");
-      values.push(Date.now());
+      values.push(updatedAt);
     }
     values.push(taskId);
     db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+    if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
+      cascadeProjectToEligibleDescendants(db, taskId, existing.project_id || null, nextProjectId, updatedAt);
+    }
     broker?.broadcast?.("global", { type: "task_updated", id: taskId, taskKey: existing.task_key || null });
   }
 
@@ -549,7 +600,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {} })
   watcher?.maybeAutoStart?.(taskId);
 
   const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-  return enrichTask(db, rowToTask(row));
+  return enrichTask(db, rowToTask(row), config);
 }
 
 function deleteTaskById({ db, broker, watcher, taskId }) {
@@ -674,9 +725,22 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       where.push("(owner_agent = ? OR planner_agent = ? OR reviewer_agent = ?)");
       params.push(req.query.agent, req.query.agent, req.query.agent);
     }
+    const projectFilter = req.query.project_id || req.query.project;
+    if (projectFilter) {
+      if (projectFilter === "none" || projectFilter === "__none__") {
+        where.push("project_id IS NULL");
+      } else {
+        try {
+          where.push("project_id = ?");
+          params.push(resolveProjectId(db, projectFilter));
+        } catch (error) {
+          return sendRouteError(res, error);
+        }
+      }
+    }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
-    const tasks = rows.map(rowToTask).map((t) => enrichTask(db, t));
+    const tasks = rows.map(rowToTask).map((t) => enrichTask(db, t, config));
     res.json({ tasks });
   });
 
@@ -702,11 +766,12 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       tags = [],
       blocked_by_ids = [],
       client_request_id = null,
+      project_id = null,
     } = req.body || {};
     const requestId = normaliseClientRequestId(client_request_id);
     if (requestId) {
       const existing = db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
-      if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing)) });
+      if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing), config) });
     }
     if (!title || typeof title !== "string") {
       return res.status(400).json({ error: { code: "validation", message: "title is required" } });
@@ -721,17 +786,19 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
     let dependencyIds = [];
+    let projectId = null;
     try {
       dependencyIds = validateDependencyIds(db, null, blocked_by_ids);
+      projectId = normalizeProjectPatchValue(db, project_id);
     } catch (error) {
       return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
     const now = Date.now();
     const insertTask = db.prepare(`
       INSERT INTO tasks
-        (id, task_key, root_task_id, client_request_id, title, instructions, stage, owner_agent,
+        (id, task_key, project_id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
          planner_agent, reviewer_agent, run_policy, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     let id;
     try {
@@ -740,6 +807,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         insertTask.run(
           id,
           nextTaskKey(db),
+          projectId,
           id,
           requestId,
           title,
@@ -758,12 +826,12 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     } catch (error) {
       if (requestId && String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
         const existing = db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
-        if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing)) });
+        if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing), config) });
       }
       throw error;
     }
     const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
-    const task = enrichTask(db, rowToTask(row));
+    const task = enrichTask(db, rowToTask(row), config);
     broker.broadcast("global", { type: "task_created", id, taskKey: task.task_key || null });
     watcher?.maybeAutoStart?.(id);
     res.status(201).json({ task });
@@ -793,6 +861,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
             logger,
             taskId: taskRow.id,
             patch: req.body.patch,
+            config,
           });
           return { id: inputId, task_id: taskRow.id, ok: true, task };
         } catch (error) {
@@ -813,7 +882,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
       .all(row.id));
     const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id), watcher);
-    const task = enrichTask(db, rowToTask(row));
+    const task = enrichTask(db, rowToTask(row), config);
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
     task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
@@ -830,6 +899,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         logger,
         taskId: taskRow.id,
         patch: req.body || {},
+        config,
       });
       res.json({ task });
     } catch (error) {
@@ -863,9 +933,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         db.prepare(`
           INSERT INTO tasks
             (id, task_key, root_task_id, parent_task_id, owner_agent, planner_agent, reviewer_agent,
-             title, instructions, stage, run_policy, join_policy, subtask_order, required,
+             project_id, title, instructions, stage, run_policy, join_policy, subtask_order, required,
              tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
         `).run(
           childId,
           nextTaskKey(db),
@@ -874,6 +944,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           ownerAgent,
           plannerAgent,
           reviewerAgent,
+          parent.project_id || null,
           title,
           instructions,
           parent.run_policy || DEFAULT_RUN_POLICY,
@@ -911,8 +982,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       throw error;
     }
 
-    const child = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(childId)));
-    const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)));
+    const child = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(childId)), config);
+    const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)), config);
     broker.broadcast("global", { type: "task_created", id: childId, taskKey: child.task_key || null });
     broker.broadcast("global", { type: "task_updated", id: parent.id, taskKey: updatedParent.task_key || null });
     watcher?.maybeAutoStart?.(childId);
