@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
-import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
+import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
@@ -1042,8 +1042,8 @@ export function TaskDetail({ id, runParam = null }) {
       .catch((err) => { if (err?.name !== "AbortError") setTaskAutomations([]); })
       .finally(() => { if (!controller.signal.aborted) setAutomationsLoading(false); });
   }, [id]);
-  const reloadSoon = useCoalescedCallback(reload, 100);
-  const reloadAutomationsSoon = useCoalescedCallback(reloadAutomations, 100);
+  const reloadSoon = useThrottledCallback(reload, 100);
+  const reloadAutomationsSoon = useThrottledCallback(reloadAutomations, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { reloadAutomations(); }, [reloadAutomations]);
