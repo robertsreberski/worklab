@@ -216,6 +216,55 @@ function firstKnowledgeSlugFromText(text) {
   return match?.[1] || null;
 }
 
+function toolBlocksFromRunEvents(events = []) {
+  const blocks = [];
+  for (const wrapper of Array.isArray(events) ? events : []) {
+    const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
+    const content = event?.message?.content;
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "tool_use" || block?.type === "tool_result") blocks.push(block);
+    }
+  }
+  return blocks;
+}
+
+function compactUsageLimitRunSummary({ runId, res }) {
+  const diagnostics = res?.diagnostics || {};
+  const blocks = toolBlocksFromRunEvents(res?.events);
+  const changedFiles = [];
+  const actions = [];
+  const failures = [];
+  for (const block of blocks) {
+    if (block.type === "tool_use") {
+      const input = block.input || {};
+      const path = input.file_path || input.path || input.command || input.pattern || "";
+      actions.push(`${block.name || "tool"}${path ? `: ${String(path).slice(0, 180)}` : ""}`);
+      if (["Write", "Edit"].includes(block.name) && input.file_path) changedFiles.push(input.file_path);
+    }
+    if (block.type === "tool_result" && block.is_error) {
+      const content = typeof block.content === "string" ? block.content : JSON.stringify(block.content || {});
+      failures.push(content.slice(0, 240));
+    }
+    const changes = block.content?.changes || block.raw_result?.changes || [];
+    for (const change of Array.isArray(changes) ? changes : []) {
+      if (change?.path) changedFiles.push(change.path);
+    }
+  }
+  const largest = Array.isArray(diagnostics.largest_tool_events) ? diagnostics.largest_tool_events[0] : null;
+  const broadScan = Array.isArray(diagnostics.broad_scan_events) ? diagnostics.broad_scan_events[0] : null;
+  const uniqueFiles = [...new Set(changedFiles)].slice(0, 12);
+  const lines = [
+    `Previous run \`${runId}\` hit the model context limit.`,
+    largest ? `Largest tool payload: ${largest.tool || "unknown tool"} ${largest.role || "event"} (${largest.chars || 0} chars).` : "",
+    broadScan ? `Broad scan detected: ${broadScan.tool || "tool"} ${broadScan.pattern || ""} ${broadScan.path || ""}`.trim() : "",
+    uniqueFiles.length ? `Files touched before the failure:\n- ${uniqueFiles.join("\n- ")}` : "",
+    failures.length ? `Tool failures before retry:\n- ${failures.join("\n- ")}` : "",
+    actions.length ? `Recent tool actions:\n- ${actions.slice(-10).join("\n- ")}` : "",
+  ].filter(Boolean);
+  return lines.join("\n\n");
+}
+
 function parseMaybeJson(value) {
   if (typeof value === "string") {
     const text = value.trim();
@@ -506,7 +555,7 @@ export function createTaskWatcher({
     `).get(taskId)?.id || null;
   }
 
-  function spawnRun({ task, stage, mode, agentName, parentRunId = null }) {
+  function spawnRun({ task, stage, mode, agentName, parentRunId = null, diagnosticsSeed = null }) {
     const { providerKind } = assertAgentRunnable(agentName);
     const settings = readSettings(db);
     const projectRunContext = resolveTaskProjectRunContext({
@@ -538,6 +587,10 @@ export function createTaskWatcher({
       projectRunContext.effectiveWorkdir || null,
       projectRunContext.projectContextHash,
     );
+    if (diagnosticsSeed && typeof diagnosticsSeed === "object") {
+      db.prepare("UPDATE task_runs SET diagnostics_json = ? WHERE id = ?")
+        .run(JSON.stringify(diagnosticsSeed), runId);
+    }
 
     let execenvPath = null;
     if (dataDir) {
@@ -579,6 +632,7 @@ export function createTaskWatcher({
       runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
       runIdleWarningMs,
       logInlineLimit,
+      diagnosticsSeed,
     });
 
     db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
@@ -840,6 +894,68 @@ export function createTaskWatcher({
     ).run(newCommentId(), taskId, body, Date.now());
   }
 
+  function patchRunDiagnostics(runId, patch) {
+    const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    if (!row) return;
+    const existing = safeParseJson(row.diagnostics_json, {});
+    db.prepare("UPDATE task_runs SET diagnostics_json = ? WHERE id = ?").run(
+      JSON.stringify({
+        ...(existing && typeof existing === "object" && !Array.isArray(existing) ? existing : {}),
+        ...patch,
+      }),
+      runId,
+    );
+  }
+
+  function maybeStartUsageLimitContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
+    if (failureKind !== "usage_limit" || processStatus !== "failed") return null;
+    if (!["plan", "execute"].includes(stage)) return null;
+    if (nextStageValue === "blocked") return null;
+    if (run.parent_run_id) return null;
+    const existing = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ? LIMIT 1").get(runId);
+    if (existing) return null;
+
+    const agentName = run.agent_name || agentForTaskStage(task, stage);
+    if (!agentName) return null;
+    const budget = checkBudget({ agentName, taskId });
+    if (!budget.ok) {
+      postSystemComment(taskId, `Automatic continuation skipped: ${budget.message}`);
+      return null;
+    }
+
+    const summary = compactUsageLimitRunSummary({ runId, res });
+    postSystemComment(taskId, [
+      "Automatic continuation after context-window overflow.",
+      "",
+      summary,
+      "",
+      "Continue from the current workspace state. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
+    ].join("\n").trim());
+    applySideEffects(taskId, [
+      { type: "clear_error_text" },
+      { type: "set_stage_reason", reason: "continuing after usage_limit" },
+    ], nextStageValue, nextStageValue, { running: true });
+
+    try {
+      const continuation = spawnRun({
+        task: { ...task, stage: nextStageValue },
+        stage,
+        mode: run.mode || modeForStage(stage),
+        agentName,
+        parentRunId: runId,
+        diagnosticsSeed: {
+          continuation_of_run_id: runId,
+          continuation_reason: "usage_limit",
+        },
+      });
+      patchRunDiagnostics(runId, { continuation_run_id: continuation.runId });
+      return continuation;
+    } catch (err) {
+      postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
+      return null;
+    }
+  }
+
   function createDelegatedSubtasks(parentTask, runId, subtasks) {
     if (!Array.isArray(subtasks) || subtasks.length === 0) return [];
 
@@ -1057,6 +1173,17 @@ export function createTaskWatcher({
        SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, ?)
        WHERE id = ?`,
     ).run(failureKind, stage, runId);
+    maybeStartUsageLimitContinuation({
+      taskId,
+      runId,
+      res,
+      task,
+      run,
+      stage,
+      failureKind,
+      processStatus,
+      nextStageValue: sm.stage,
+    });
     // Wake parents on every child terminal-ish exit. maybeResumeWaitingParents
     // is idempotent and per-child only fires when the child is `blocked` or
     // all required children are `done`, so this is safe even when the child
