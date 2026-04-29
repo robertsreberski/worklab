@@ -8,6 +8,7 @@ import { Skills } from "./routes/Skills.jsx";
 import { Knowledge } from "./routes/Knowledge.jsx";
 import { Providers } from "./routes/Providers.jsx";
 import { Activity } from "./routes/Activity.jsx";
+import { DesignSystem } from "./routes/DesignSystem.jsx";
 import { consumeAllowedHash, getNavigationGuard, navigateHash, normalizeHash } from "./lib/navigation.js";
 
 function parseHash() {
@@ -76,6 +77,8 @@ export function App() {
     body = <Activity />;
   } else if (route === "settings") {
     body = <Settings />;
+  } else if (route === "design-system") {
+    body = <DesignSystem />;
   } else if (route === "automations") {
     body = <Commander />;
   } else {
