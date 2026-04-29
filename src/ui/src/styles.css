@@ -7461,11 +7461,251 @@ html.assistant-resizing * {
 .project-description {
   max-width: 72ch;
 }
-.project-task-list {
-  max-width: 760px;
+.project-task-progress {
+  width: min(100%, 920px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
 }
-.project-task-list li {
+.project-task-progress-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.project-task-progress-copy {
+  display: flex;
+  align-items: baseline;
   gap: var(--sp-2);
+  color: var(--text-muted);
+}
+.project-task-progress-copy strong {
+  color: var(--text);
+  font-size: var(--text-2xl);
+  line-height: 1;
+}
+.project-task-progress-counts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.project-task-progress-counts > span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  white-space: nowrap;
+}
+.project-task-count-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-pill);
+  background: var(--status-muted);
+}
+.project-task-progress-counts [data-group="todo"] .project-task-count-dot { background: color-mix(in srgb, var(--text-muted) 60%, transparent); }
+.project-task-progress-counts [data-group="in_progress"] .project-task-count-dot { background: var(--status-progress); }
+.project-task-progress-counts [data-group="done"] .project-task-count-dot { background: var(--status-done); }
+.project-task-progress-bar {
+  display: flex;
+  align-items: stretch;
+  height: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface-sunken);
+}
+.project-task-progress-segment {
+  min-width: 0;
+  height: 100%;
+}
+.project-task-progress-segment.is-todo { background: color-mix(in srgb, var(--text-muted) 34%, var(--surface-sunken)); }
+.project-task-progress-segment.is-in_progress { background: var(--status-progress); }
+.project-task-progress-segment.is-done { background: var(--status-done); }
+.project-task-progress-segment.is-empty { width: 100%; background: transparent; }
+.project-task-attention-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--status-error-border);
+  border-radius: var(--radius-sm);
+  background: var(--status-error-bg-10);
+}
+.project-task-attention-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--status-error);
+}
+.project-task-attention-list {
+  display: grid;
+  gap: var(--sp-2);
+}
+.project-task-attention-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text);
+  text-decoration: none;
+}
+.project-task-attention-more {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.project-task-groups {
+  display: grid;
+  gap: var(--sp-4);
+}
+.project-task-group {
+  min-width: 0;
+}
+.project-task-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 0 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+}
+.project-task-group-list {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--surface);
+}
+.project-task-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr) minmax(0, auto) 48px;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3);
+  color: var(--text);
+  text-decoration: none;
+  border-top: 1px solid var(--border);
+}
+.project-task-row:first-child {
+  border-top: 0;
+}
+.project-task-row:hover {
+  background: var(--surface-elevated);
+}
+.project-task-row-key,
+.project-task-row-age {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.project-task-row-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--sp-1);
+}
+.project-task-row-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: var(--font-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-task-row-meta {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.project-task-row-meta > .truncate {
+  min-width: 0;
+}
+.project-task-row-age {
+  text-align: right;
+  white-space: nowrap;
+}
+.project-task-attention-chips {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+.project-task-attention-chip {
+  max-width: 180px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-task-attention-chip.is-error {
+  color: var(--status-error);
+  border-color: var(--status-error-border);
+  background: var(--status-error-bg-10);
+}
+.project-task-attention-chip.is-warn {
+  color: var(--status-progress);
+  border-color: var(--status-progress-border);
+  background: var(--status-progress-bg-10);
+}
+.project-task-attention-chip.is-muted {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+}
+.project-task-group-empty {
+  padding: var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+@media (max-width: 720px) {
+  .project-task-progress-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .project-task-progress-counts {
+    justify-content: flex-start;
+  }
+  .project-task-attention-item {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+  .project-task-attention-item .project-task-attention-chips {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+  .project-task-row {
+    grid-template-columns: minmax(48px, max-content) minmax(0, 1fr) 44px;
+    align-items: start;
+  }
+  .project-task-row-main {
+    grid-column: 2;
+  }
+  .project-task-row .project-task-attention-chips {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
+  .project-task-row-age {
+    grid-column: 3;
+    grid-row: 1;
+  }
 }
 .project-workdir-row {
   display: flex;

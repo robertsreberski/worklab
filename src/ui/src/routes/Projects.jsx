@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
-import { taskRouteId } from "../lib/display.js";
+import { taskDisplayKey, taskRouteId } from "../lib/display.js";
+import { buildProjectTaskProgress } from "../lib/projectTaskProgress.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
@@ -73,6 +74,123 @@ function formatProjectAge(value) {
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h`;
   if (ms < 86_400_000 * 7) return `${Math.floor(ms / 86_400_000)}d`;
   return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function ProjectTaskAttentionChips({ items = [], limit = 3 }) {
+  const visible = items.slice(0, limit);
+  const extra = items.length - visible.length;
+  if (!visible.length) return null;
+  return (
+    <span class="project-task-attention-chips">
+      {visible.map((item) => (
+        <span
+          key={item.key}
+          class={`project-task-attention-chip is-${item.tone || "warn"}`}
+          title={item.title || item.label}
+        >
+          {item.tone === "error" && <Icon name="alert-triangle" size={10} />}
+          {item.label}
+        </span>
+      ))}
+      {extra > 0 && <span class="project-task-attention-chip is-muted">+{extra}</span>}
+    </span>
+  );
+}
+
+function ProjectTaskRow({ task }) {
+  const displayStage = task.running_run_id ? "running" : (task.stage || "plan");
+  const reason = task.stage_reason || task.error_text || task.last_run?.summary || "";
+  return (
+    <a class="project-task-row" href={`#/tasks/${taskRouteId(task)}`}>
+      <span class="project-task-row-key pane-row-mono">{taskDisplayKey(task)}</span>
+      <span class="project-task-row-main">
+        <span class="project-task-row-title">{task.title}</span>
+        <span class="project-task-row-meta">
+          <StatusPill status={displayStage} size="sm" />
+          {task.owner_agent && <span>{task.owner_agent}</span>}
+          {reason && <span class="truncate">{reason}</span>}
+        </span>
+      </span>
+      <ProjectTaskAttentionChips items={task.attention || []} />
+      <span class="project-task-row-age">{formatProjectAge(task.updated_at)}</span>
+    </a>
+  );
+}
+
+function ProjectTaskProgress({ tasks = [] }) {
+  const progress = useMemo(() => buildProjectTaskProgress(tasks), [tasks]);
+  const total = progress.total;
+  const attentionCount = progress.attention_tasks.length;
+  return (
+    <div class="project-task-progress">
+      <div class="project-task-progress-head">
+        <div class="project-task-progress-copy">
+          <strong>{progress.percent_done}%</strong>
+          <span>complete</span>
+        </div>
+        <div class="project-task-progress-counts" aria-label="Project task counts">
+          {progress.groups.map((group) => (
+            <span key={group.key} data-group={group.key}>
+              <span class="project-task-count-dot" aria-hidden="true" />
+              {group.label}: {progress.counts[group.key] || 0}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div class="project-task-progress-bar" role="img" aria-label={`${progress.percent_done}% complete across ${total} project tasks`}>
+        {total > 0 ? progress.groups.map((group) => {
+          const count = progress.counts[group.key] || 0;
+          if (count === 0) return null;
+          return (
+            <span
+              key={group.key}
+              class={`project-task-progress-segment is-${group.key}`}
+              style={{ width: `${(count / total) * 100}%` }}
+              title={`${group.label}: ${count}`}
+            />
+          );
+        }) : <span class="project-task-progress-segment is-empty" />}
+      </div>
+
+      {attentionCount > 0 && (
+        <div class="project-task-attention-panel" role="status">
+          <div class="project-task-attention-head">
+            <Icon name="alert-triangle" size={14} />
+            <strong>{attentionCount} requiring attention</strong>
+          </div>
+          <div class="project-task-attention-list">
+            {progress.attention_tasks.slice(0, 4).map((task) => (
+              <a key={task.id} href={`#/tasks/${taskRouteId(task)}`} class="project-task-attention-item">
+                <span class="pane-row-mono">{taskDisplayKey(task)}</span>
+                <span class="truncate">{task.title}</span>
+                <ProjectTaskAttentionChips items={task.attention || []} limit={1} />
+              </a>
+            ))}
+            {attentionCount > 4 && <span class="project-task-attention-more">+{attentionCount - 4} more</span>}
+          </div>
+        </div>
+      )}
+
+      <div class="project-task-groups">
+        {progress.groups.map((group) => (
+          <section key={group.key} class="project-task-group" data-group={group.key}>
+            <div class="project-task-group-head">
+              <span>{group.label}</span>
+              <span>{group.tasks.length}</span>
+            </div>
+            {group.tasks.length ? (
+              <div class="project-task-group-list">
+                {group.tasks.map((task) => <ProjectTaskRow key={task.id} task={task} />)}
+              </div>
+            ) : (
+              <div class="project-task-group-empty">No {group.label.toLowerCase()} tasks.</div>
+            )}
+          </section>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function ProjectEditor({ selectedId, onSaved }) {
@@ -411,14 +529,7 @@ function ProjectDetail({ selectedId, onChanged }) {
             <section class="knowledge-read-section" aria-labelledby="project-tasks">
               <SectionMarker id="project-tasks" num="02" kicker="Tasks" meta={`${project.tasks?.length || 0} linked`} />
               {project.tasks?.length ? (
-                <ul class="usage-list project-task-list">
-                  {project.tasks.map((task) => (
-                    <li key={task.id}>
-                      <a href={`#/tasks/${taskRouteId(task)}`}>{task.title}</a>{" "}
-                      <StatusPill status={task.stage || "plan"} size="sm" />
-                    </li>
-                  ))}
-                </ul>
+                <ProjectTaskProgress tasks={project.tasks} />
               ) : (
                 <div class="task-plan-empty">No tasks are assigned to this project.</div>
               )}
