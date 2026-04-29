@@ -208,6 +208,16 @@ export function TaskEdit({ mode = "create", id = null }) {
     })),
   ], [projects]);
 
+  const selectedProject = useMemo(
+    () => projects.find((project) => project.id === draft.project_id) || null,
+    [projects, draft.project_id],
+  );
+  const truncatedProjectContext = useMemo(() => {
+    const text = selectedProject?.context || "";
+    if (!text) return "";
+    return text.length > 240 ? `${text.slice(0, 240).trimEnd()}…` : text;
+  }, [selectedProject]);
+
   function addDependency(taskId) {
     if (!taskId || draft.blocked_by_ids.includes(taskId)) return;
     update({ blocked_by_ids: [...draft.blocked_by_ids, taskId] });
@@ -299,6 +309,21 @@ export function TaskEdit({ mode = "create", id = null }) {
             ariaLabel="Project"
             searchable
           />
+          {selectedProject && (
+            <div class="task-edit-project-preview">
+              <div class="task-edit-project-preview-row">
+                <span class="task-edit-project-preview-label">Workdir</span>
+                <span class="task-edit-project-preview-value mono">
+                  {selectedProject.workdir || "Default workspace"}
+                </span>
+              </div>
+              {selectedProject.context && (
+                <div class="task-edit-project-preview-context">
+                  {truncatedProjectContext}
+                </div>
+              )}
+            </div>
+          )}
         </FormField>
 
         <FormField label="Reviewer" hint="Optional verifier.">
