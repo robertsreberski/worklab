@@ -10,6 +10,7 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
@@ -20,11 +21,20 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { FileTree } from "../components/FileTree.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { EditHeader } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
+const SKILL_EDIT_SECTIONS = [
+  { id: "skill-edit-activation", num: "01", label: "Activation", meta: "Trigger" },
+  { id: "skill-edit-body", num: "02", label: "Body", meta: "Playbook" },
+];
+
+function EntityChromeBridge({ chrome }) {
+  useAppChrome(chrome, [chrome]);
+  return null;
+}
 
 export function SkillFileTree({ files = [] }) {
   return <FileTree files={files} ariaLabel="Skill files" emptyText="No files found." highlightSkillFile />;
@@ -127,14 +137,75 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
       </Button>
     </>
   );
+  const mobileActionDock = (
+    <>
+      <Button variant="secondary" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+        onClick={() => formSave.save().catch(() => {})}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+
+  function renderSkillRail() {
+    return (
+      <div class="entity-editor-rail-content">
+        <Card variant="spacious" title="Context" class="entity-rail-card">
+          <EntityMetaList items={contextMeta} />
+        </Card>
+
+        {!isNew && (
+          <Card variant="spacious" title="File tree" class="entity-rail-card skill-files-card">
+            <SkillFileTree files={skill.files || []} />
+          </Card>
+        )}
+
+        {!isNew && usage && usage.explicit?.length > 0 && (
+          <Card variant="spacious" title="Used by agents" class="entity-rail-card">
+            <ul class="usage-list">
+              {usage.explicit.map((a) => (
+                <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
+              ))}
+            </ul>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete skill
+            </Button>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
-      <EditHeader
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={isNew ? "New skill" : slugLabel} backLabel="Skills" onBack={cancel} />,
+          mobileActionDock,
+          drawerTitle: "Settings",
+          drawerKicker: slugLabel,
+          drawerContent: renderSkillRail(),
+          sections: SKILL_EDIT_SECTIONS,
+        }}
+      />
+      <DetailHead
         class="skill-detail-head entity-edit-head"
         backLabel="All skills"
         onBack={cancel}
-        breadcrumbs={[
+        crumbs={[
           { label: "Skills", href: "#/skills" },
           { label: isNew ? "New" : "Edit" },
         ]}
@@ -156,6 +227,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           </>
         )}
         actions={headerActions}
+        subBar={<MobilePillRow railLabel="Settings" railCount={isNew ? 1 : 3} sections={SKILL_EDIT_SECTIONS} />}
       />
       <div class="pane-detail-body entity-detail-body skill-detail-body">
         {formSave.error && (
@@ -164,6 +236,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
 
         <div class="entity-editor-layout skill-editor-layout">
           <main class="entity-editor-main">
+            <SectionMarker id="skill-edit-activation" num="01" kicker="Activation" meta="Trigger" />
             <FormSection kicker="Definition" title="Activation">
               <FormGrid columns={2}>
                 <FormField label="Display name" required class="span-2">
@@ -200,6 +273,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
               </FormGrid>
             </FormSection>
 
+            <SectionMarker id="skill-edit-body" num="02" kicker="Body" meta="Playbook" />
             <FormSection kicker="Playbook" title="Skill body">
               <Textarea
                 class="skill-body-editor"
@@ -212,52 +286,10 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
             </FormSection>
           </main>
 
-          <aside class="entity-editor-rail">
-            <Card variant="spacious" title="Context" class="entity-rail-card">
-              <EntityMetaList items={contextMeta} />
-            </Card>
-
-            {!isNew && (
-              <Card variant="spacious" title="File tree" class="entity-rail-card skill-files-card">
-                <SkillFileTree files={skill.files || []} />
-              </Card>
-            )}
-
-            {!isNew && usage && usage.explicit?.length > 0 && (
-              <Card variant="spacious" title="Used by agents" class="entity-rail-card">
-                <ul class="usage-list">
-                  {usage.explicit.map((a) => (
-                    <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
-                  ))}
-                </ul>
-              </Card>
-            )}
-
-            {!isNew && (
-              <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
-                <Button
-                  variant="destructive"
-                  iconLeft={<Icon name="trash" size={13} />}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  Delete skill
-                </Button>
-              </Card>
-            )}
+          <aside class="entity-editor-rail is-mobile-drawer-source">
+            {renderSkillRail()}
           </aside>
         </div>
-      </div>
-
-      <div class="entity-edit-mobile-dock" aria-label="Skill edit actions">
-        <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <Button
-          variant={saveButtonVariant}
-          loading={formSave.saving}
-          disabled={saveDisabled}
-          onClick={() => formSave.save().catch(() => {})}
-        >
-          {saveButtonLabel}
-        </Button>
       </div>
 
       <Modal
