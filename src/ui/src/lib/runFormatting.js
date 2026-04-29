@@ -59,11 +59,22 @@ function failureDecision(status) {
   return "";
 }
 
+function cancellationSummary(run = {}) {
+  const initiator = cleanText(run?.cancel_initiator);
+  const reason = cleanText(run?.cancel_reason);
+  if (initiator && reason) return `Run cancelled (${initiator}: ${reason})`;
+  if (reason) return `Run cancelled (${reason})`;
+  if (initiator) return `Run cancelled (${initiator})`;
+  return "Run cancelled";
+}
+
 export function runResultPreview(run = {}) {
   const processStatus = cleanText(run?.process_status) || cleanText(run?.status);
   const failedDecision = failureDecision(processStatus);
   if (failedDecision) {
-    const summary = cleanText(run?.error_text) || cleanText(run?.failure_kind) || (failedDecision === "cancelled" ? "Run cancelled" : "Run failed");
+    const summary = failedDecision === "cancelled"
+      ? cancellationSummary(run)
+      : cleanText(run?.error_text) || cleanText(run?.failure_kind) || "Run failed";
     return {
       decision: failedDecision,
       summary,

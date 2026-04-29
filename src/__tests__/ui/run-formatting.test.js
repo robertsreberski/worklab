@@ -100,6 +100,28 @@ describe("run formatting helpers", () => {
     });
   });
 
+  it("does not show stale spawn failure kinds for cancelled runs", () => {
+    expect(runResultPreview({
+      process_status: "cancelled",
+      failure_kind: "spawn",
+    })).toEqual({
+      decision: "cancelled",
+      summary: "Run cancelled",
+      details: "",
+      tone: "",
+      hasResult: true,
+    });
+  });
+
+  it("summarizes cancellation initiator and reason when available", () => {
+    expect(runResultPreview({
+      process_status: "cancelled",
+      failure_kind: "cancelled_signal",
+      cancel_initiator: "worker_signal",
+      cancel_reason: "worker received SIGTERM",
+    }).summary).toBe("Run cancelled (worker_signal: worker received SIGTERM)");
+  });
+
   it("keeps neutral decision tones neutral", () => {
     expect(runResultPreview({ decision: "delegate", summary: "Split work" }).tone).toBe("");
   });
