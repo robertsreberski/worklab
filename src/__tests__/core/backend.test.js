@@ -4,8 +4,9 @@ import { backendCapabilities, backendUsesExecenvConfig, backendSupportsSessionRe
 describe("backendCapabilities", () => {
   it("resolves by sdk kind", () => {
     expect(backendCapabilities("claude")).toMatchObject({ kind: "claude", runtime: "sdk" });
-    expect(backendCapabilities("claude-code")).toMatchObject({ kind: "claude-code", runtime: "cli", native_runtime_config: "CLAUDE.md" });
-    expect(backendCapabilities("codex")).toMatchObject({ kind: "codex", native_runtime_config: "AGENTS.md" });
+    expect(backendCapabilities("claude-code")).toMatchObject({ kind: "claude-code", runtime: "sdk", native_runtime_config: null });
+    expect(backendCapabilities("codex")).toMatchObject({ kind: "codex", runtime: "pi-agent", native_runtime_config: null });
+    expect(backendCapabilities("pi")).toMatchObject({ kind: "pi", runtime: "pi-agent" });
   });
 
   it("resolves by model reference string", () => {
@@ -23,9 +24,9 @@ describe("backendCapabilities", () => {
 });
 
 describe("backendUsesExecenvConfig", () => {
-  it("only CLI backends have a native runtime config", () => {
-    expect(backendUsesExecenvConfig("claude-code")).toBe(true);
-    expect(backendUsesExecenvConfig("codex")).toBe(true);
+  it("pi and SDK backends do not need native runtime config files", () => {
+    expect(backendUsesExecenvConfig("claude-code")).toBe(false);
+    expect(backendUsesExecenvConfig("codex")).toBe(false);
     expect(backendUsesExecenvConfig("claude")).toBe(false);
     expect(backendUsesExecenvConfig("openai")).toBe(false);
     expect(backendUsesExecenvConfig("vercel")).toBe(false);
@@ -33,8 +34,8 @@ describe("backendUsesExecenvConfig", () => {
 });
 
 describe("backendSupportsSessionResume", () => {
-  it("only Claude Code CLI claims session resume today", () => {
-    expect(backendSupportsSessionResume("claude-code")).toBe(true);
+  it("does not claim session resume for SDK-backed providers", () => {
+    expect(backendSupportsSessionResume("claude-code")).toBe(false);
     expect(backendSupportsSessionResume("claude")).toBe(false);
     expect(backendSupportsSessionResume("codex")).toBe(false);
   });
@@ -43,7 +44,7 @@ describe("backendSupportsSessionResume", () => {
 describe("BACKEND_CAPABILITIES", () => {
   it("covers every PROVIDER_KIND", () => {
     expect(Object.keys(BACKEND_CAPABILITIES).sort()).toEqual(
-      ["claude", "claude-code", "codex", "openai", "vercel"],
+      ["claude", "claude-code", "codex", "openai", "pi", "vercel"],
     );
   });
 });

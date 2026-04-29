@@ -53,7 +53,7 @@ describe("explicit model references", () => {
     expect(isValidModelReference("vercel:p1:")).toBe(false);
   });
 
-  it("advertises CLI tool, skill, and MCP support accurately", () => {
+  it("advertises pi-agent tool, skill, and MCP support accurately", () => {
     const claudeCode = getBuiltinModelByReference("claude-code:claude-sonnet-4-6");
     const codex = getBuiltinModelByReference("codex:gpt-5.5");
 
@@ -63,8 +63,8 @@ describe("explicit model references", () => {
       capabilities: {
         supports_mcp: true,
         supports_skills: true,
-        supports_worklab_tools: false,
-        mcp_mode: "per-run-json",
+        supports_worklab_tools: true,
+        mcp_mode: "sdk",
         skills_mode: "prompt-index",
       },
     });
@@ -72,16 +72,16 @@ describe("explicit model references", () => {
 
     expect(codex).toMatchObject({
       sdk: "codex",
-      supports_builtin_tools: false,
-      builtin_tools: [],
+      supports_builtin_tools: true,
       capabilities: {
         supports_mcp: true,
         supports_skills: true,
-        supports_worklab_tools: false,
-        mcp_mode: "inline-config",
-        skills_mode: "prompt-index",
+        supports_worklab_tools: true,
+        mcp_mode: "sdk",
+        skills_mode: "read-skill-tool",
       },
     });
+    expect(codex.builtin_tools).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
   });
 
   it("advertises GPT-5.5 with GPT-5.4 fallback variants", () => {

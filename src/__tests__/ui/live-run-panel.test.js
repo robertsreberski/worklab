@@ -10,8 +10,16 @@ describe("live run composer visibility", () => {
     });
   });
 
-  it("hides for unsupported streaming providers", () => {
+  it("shows for streaming pi-agent OpenAI runs", () => {
     expect(liveRunComposerState({ id: "run-1", provider_kind: "openai" }, true)).toEqual({
+      visible: true,
+      canEdit: true,
+      canSend: true,
+    });
+  });
+
+  it("hides for unsupported streaming providers", () => {
+    expect(liveRunComposerState({ id: "run-1", provider_kind: "unknown" }, true)).toEqual({
       visible: false,
       canEdit: false,
       canSend: false,
