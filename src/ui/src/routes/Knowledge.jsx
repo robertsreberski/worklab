@@ -173,6 +173,7 @@ export function Knowledge({ selectedSlug = null }) {
         listBody={listBody}
         detail={detail}
         hasSelection={!!selectedSlug}
+        detailOwnsMobileBack={!!selectedSlug}
         onBack={() => navigateHash("#/knowledge")}
         backLabel="All entries"
       />
