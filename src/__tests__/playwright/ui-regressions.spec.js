@@ -952,7 +952,13 @@ test("task detail shows linked dependencies when the graph exists", async ({ pag
 
 test("task detail live panel hydrates existing run events", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${runningTaskId}`);
+  await expect(page.locator(".task-hero-status-row .live-pulse")).toHaveCount(0);
+  await expect(page.locator(".task-hero-status-row .status-menu-trigger")).toContainText("Running");
+  await expect(page.locator(".task-hero-status-row .status-pill")).toHaveCount(1);
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
+  await expect(page.locator(".task-live-header .live-pulse")).toHaveCount(0);
+  await expect(page.locator(".task-live-header .status-pill")).toHaveCount(1);
+  await expect(page.locator(".task-live-header .status-pill")).toContainText("Running");
   await expect(page.locator(".task-live-panel .tool-call", { hasText: "shell" })).toBeVisible();
   await expect(page.locator(".task-live-panel .tool-call-progress")).toBeVisible();
   const toolCallAnimation = await page.locator(".task-live-panel .tool-call-progress").evaluate((node) => {

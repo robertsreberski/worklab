@@ -15,7 +15,6 @@ import { selectHighlightedRunId } from "./taskDetailRuns.js";
 
 import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { IconButton } from "../components/primitives/IconButton.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -1523,7 +1522,6 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const detailMeta = task && (
     <span class="task-hero-status-row">
-      {runningRun && <LivePulse size={10} />}
       <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
       {hasLastRunError && (
         <span class="chip chip-error">

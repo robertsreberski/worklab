@@ -5,7 +5,6 @@
 
 import { useState } from "preact/hooks";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
-import { LivePulse } from "./primitives/LivePulse.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { Textarea } from "./primitives/Textarea.jsx";
@@ -72,7 +71,6 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
       <header class="task-live-header">
         <div class="task-live-header-copy">
           <span class="task-live-header-info">
-            {isStreaming ? <LivePulse size={10} /> : null}
             <span class="task-live-header-label">{isStreaming ? "Live run" : "Latest run"}</span>
           </span>
           <span class="task-live-header-meta">
