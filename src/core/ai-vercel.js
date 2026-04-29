@@ -7,6 +7,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { estimateCost } from "./cost.js";
 import { defaultOllamaNumCtx, resolveReasoningCapabilities, resolveVercelModel } from "./providers.js";
 import { getVercelTools } from "./ai-vercel-tools.js";
+import { backendCapabilities } from "./backend.js";
 
 function jsonSchemaToZod(schema) {
   if (!schema || schema.type !== "object") return z.object({}).passthrough();
@@ -258,3 +259,9 @@ export async function generateVercelResponse(systemPrompt, options = {}) {
     await closeMcpClients(mcpClients);
   }
 }
+
+export const vercelSdkBackend = {
+  kind: "vercel",
+  capabilities: backendCapabilities("vercel"),
+  execute: generateVercelResponse,
+};

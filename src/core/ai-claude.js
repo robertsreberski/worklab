@@ -10,6 +10,7 @@ import {
 } from "./file-change-stats.js";
 import { formatLiveInputGuidance } from "./live-input.js";
 import { estimateCost } from "./cost.js";
+import { backendCapabilities } from "./backend.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -375,9 +376,16 @@ export async function generateClaudeResponse(systemPrompt, options) {
     numTurns,
     model: model.model,
     effort,
+    sdk: "claude",
     cancelled,
     error: errorMessage,
     failureKind,
     runtimeWarnings,
   };
 }
+
+export const claudeSdkBackend = {
+  kind: "claude",
+  capabilities: backendCapabilities("claude"),
+  execute: generateClaudeResponse,
+};
