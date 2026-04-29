@@ -77,6 +77,25 @@ describe("task-watcher v2 workflow", () => {
     expect(comment.body).toBe("ERROR: boom");
   });
 
+  it("owner failure uses the configured max_failure_streak", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("max_failure_streak", JSON.stringify(1));
+    const taskId = seedTask(db, { owner: "coder" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({ exitCode: 1, status: "error", processStatus: "failed", error: "boom" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT stage, retry_count, last_failure_kind, blocking_issues_json FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("blocked");
+    expect(task.retry_count).toBe(1);
+    expect(task.last_failure_kind).toBe("spawn");
+    expect(JSON.parse(task.blocking_issues_json)[0]).toMatch(/Reached max failures/);
+  });
+
   it("owner advance with no reviewer goes straight to done with completed_at set", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
@@ -199,6 +218,67 @@ describe("task-watcher v2 workflow", () => {
     expect(systemComment).toBeTruthy();
   });
 
+  it("review rejection streak accumulates across execute retries and blocks at the configured limit", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("max_rejection_streak", JSON.stringify(2));
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
+    resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "rejected", worklabResult: rejectResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    let task = db.prepare("SELECT stage, rejection_streak, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({ stage: "execute", rejection_streak: 1, last_failure_kind: "review_rejected" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[2]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner retry", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
+    resolvers[3]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "rejected again", worklabResult: rejectResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    task = db.prepare("SELECT stage, rejection_streak, last_failure_kind, blocking_issues_json FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("blocked");
+    expect(task.rejection_streak).toBe(2);
+    expect(task.last_failure_kind).toBe("review_rejected");
+    expect(JSON.parse(task.blocking_issues_json)[0]).toMatch(/Reached max review rejections \(2\)/);
+    expect(spawn).toHaveBeenCalledTimes(4);
+  });
+
+  it("review approval clears rejection metadata after a prior reject", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
+    resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "rejected", worklabResult: rejectResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[2]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner retry", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+    await watcher.handleRunRequested(taskId);
+    resolvers[3]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "approved", worklabResult: approveResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT stage, rejection_streak, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({ stage: "done", rejection_streak: 0, last_failure_kind: null });
+    expect(spawn).toHaveBeenCalledTimes(4);
+  });
+
   it("missing review result is invalid_result and remains retryable in review", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
@@ -242,6 +322,33 @@ describe("task-watcher v2 workflow", () => {
     expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (user)", error_text: null, retry_count: 0 });
     const cancelComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body = 'Run cancelled.'").get(taskId);
     expect(cancelComment).toBeTruthy();
+  });
+
+  it("cancel metadata from the worker reaches the task stage reason", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const { resolvers, spawn } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({
+      exitCode: 130,
+      status: "cancelled",
+      processStatus: "cancelled",
+      error: "Run cancelled.",
+      cancelInitiator: "api_cancel",
+      cancelReason: "user clicked cancel",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "execute",
+      stage_reason: "cancelled (api_cancel: user clicked cancel)",
+      error_text: null,
+      retry_count: 0,
+    });
   });
 
   it("delegate result creates child tasks and parent waits", async () => {

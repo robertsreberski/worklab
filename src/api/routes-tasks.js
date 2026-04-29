@@ -11,6 +11,7 @@ import { buildRunLifecycleEvent } from "../core/run-events.js";
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
+const RUNNABLE_STAGES = ["plan", "execute", "review"];
 const PATCHABLE = ["title", "instructions", "reviewer_agent", "owner_agent", "planner_agent", "tags", "run_policy"];
 const BULK_PATCHABLE = ["stage", "owner_agent", "planner_agent", "reviewer_agent", "run_policy"];
 
@@ -387,6 +388,19 @@ function rerunResponseError(error, fallbackCode = "invalid_state") {
       message: error?.message || "rerun failed",
     },
   };
+}
+
+function latestRetryStage(db, taskId, fallback = "execute") {
+  const row = db.prepare(`
+    SELECT retry_stage, stage
+    FROM task_runs
+    WHERE task_id = ?
+      AND (retry_stage IN ('plan', 'execute', 'review') OR stage IN ('plan', 'execute', 'review'))
+    ORDER BY COALESCE(ended_at, started_at, 0) DESC, started_at DESC, rowid DESC
+    LIMIT 1
+  `).get(taskId);
+  const stage = row?.retry_stage || row?.stage || fallback;
+  return RUNNABLE_STAGES.includes(stage) ? stage : fallback;
 }
 
 async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
@@ -1007,7 +1021,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       const taskRow = taskOr404(db, req.params.id);
       const currentStage = taskStage(taskRow);
       if (["blocked", "awaiting_user"].includes(currentStage)) {
-        const transition = nextStage(currentStage, { type: "human_move", target: "execute", reason: "retry from API" });
+        const targetStage = latestRetryStage(db, taskRow.id, "execute");
+        const transition = nextStage(currentStage, { type: "human_move", target: targetStage, reason: "retry from API" });
         const errorSideEffect = transition.sideEffects.find((se) => se.type === "error");
         if (errorSideEffect) {
           return res.status(400).json({ error: { code: "invalid_transition", message: errorSideEffect.message } });

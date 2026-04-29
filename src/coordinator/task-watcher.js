@@ -1,5 +1,6 @@
 import {
   DEFAULT_MAX_FAILURES,
+  DEFAULT_MAX_REJECTIONS,
   legacyRunStatusToProcessStatus,
   nextStage,
   processStatusToLegacyStatus,
@@ -141,7 +142,7 @@ export function createTaskWatcher({
   runTimeoutMs = 30 * 60 * 1000,
   runIdleWarningMs = 120 * 1000,
   logInlineLimit = 12_000,
-  maxFailures = DEFAULT_MAX_FAILURES,
+  maxFailures = null,
   events,
 }) {
   const active = new Map();
@@ -240,6 +241,16 @@ export function createTaskWatcher({
     applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage, { logger });
   });
 
+  function maxFailureLimit() {
+    const settings = readSettings(db);
+    return Number(maxFailures ?? settings.max_failure_streak ?? DEFAULT_MAX_FAILURES);
+  }
+
+  function maxRejectionLimit() {
+    const settings = readSettings(db);
+    return Number(settings.max_rejection_streak ?? DEFAULT_MAX_REJECTIONS);
+  }
+
   function applySideEffects(taskId, sideEffects, currentStage, newStage, options = {}) {
     applyTx(taskId, sideEffects, currentStage, newStage, options);
     broker.broadcast("global", { type: "task_updated", id: taskId });
@@ -255,7 +266,7 @@ export function createTaskWatcher({
       failureKind,
       message,
       failureCount: task.retry_count || 0,
-      maxFailures,
+      maxFailures: maxFailureLimit(),
     });
     applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage);
   }
@@ -670,6 +681,8 @@ export function createTaskWatcher({
       stage,
       result,
       reviewerAgent: stage === "review" ? null : (task.reviewer_agent || null),
+      rejectionCount: task.rejection_streak || 0,
+      maxRejections: maxRejectionLimit(),
     });
     const errorSideEffect = next.sideEffects.find((sideEffect) => sideEffect.type === "error");
     if (errorSideEffect) {
@@ -716,7 +729,9 @@ export function createTaskWatcher({
       failureKind,
       message: res.error || (processStatus === "cancelled" ? "Run cancelled." : "run failed"),
       failureCount: task.retry_count || 0,
-      maxFailures,
+      maxFailures: maxFailureLimit(),
+      cancelInitiator: res.cancelInitiator || res.cancel_initiator || null,
+      cancelReason: res.cancelReason || res.cancel_reason || null,
     });
     applySideEffects(taskId, sm.sideEffects, taskStage(task), sm.stage);
     db.prepare(

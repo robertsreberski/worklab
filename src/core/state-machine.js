@@ -151,6 +151,8 @@ export function nextStage(currentStage, event) {
             { type: "clear_stage_reason" },
             ...RESET_USER_ARRAYS,
             { type: "reset_failure_count" },
+            { type: "reset_rejection_count" },
+            { type: "clear_last_failure_kind" },
             { type: "set_completed_at" },
           ]);
         }
@@ -253,6 +255,8 @@ export function nextStage(currentStage, event) {
         { type: "clear_stage_reason" },
         ...RESET_USER_ARRAYS,
         { type: "reset_failure_count" },
+        { type: "reset_rejection_count" },
+        { type: "clear_last_failure_kind" },
         { type: "set_completed_at" },
       ]);
     }
