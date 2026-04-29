@@ -2211,7 +2211,8 @@ select,
   color: var(--text);
   text-decoration: none;
 }
-.commander-row:hover { background: color-mix(in srgb, var(--surface-elevated) 58%, transparent); }
+.commander-row:hover,
+.commander-row:active { background: color-mix(in srgb, var(--surface-elevated) 58%, transparent); }
 .commander-row.selected {
   background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
   border-left: 2px solid var(--accent);
@@ -2258,6 +2259,7 @@ select,
   transition: opacity var(--dur-snap) var(--ease-snap), color var(--dur-snap) var(--ease-snap);
 }
 .commander-row:hover .commander-cell-id,
+.commander-row:active .commander-cell-id,
 .commander-row.selected .commander-cell-id {
   color: var(--text);
   opacity: 0.92;
@@ -6384,7 +6386,8 @@ select,
     border-bottom: 0;
     border-radius: var(--radius-md);
   }
-  .commander-row:hover {
+  .commander-row:hover,
+  .commander-row:active {
     background: color-mix(in srgb, var(--surface) 62%, transparent);
   }
   .commander-row.selected {
