@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
-import { AppShell } from "../components/AppShell.jsx";
+import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -19,7 +19,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { DetailHeader, PaneListHeader } from "../components/layout/index.js";
+import { DetailHead, PaneListHeader, SectionMarker } from "../components/layout/index.js";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -58,6 +58,16 @@ const EMPTY_FORM = {
   trust_public_url: PRESETS.ollama.trust_public_url,
   enabled: true,
 };
+
+const PROVIDER_EDIT_SECTIONS = [
+  { id: "provider-edit-settings", num: "01", label: "Settings", meta: "Connection" },
+  { id: "provider-edit-models", num: "02", label: "Models", meta: "Discovery" },
+];
+
+function EntityChromeBridge({ chrome }) {
+  useAppChrome(chrome, [chrome]);
+  return null;
+}
 
 function providerTypeLabel(value) {
   return PROVIDER_TYPE_OPTIONS.find((option) => option.value === value)?.label || value;
@@ -219,12 +229,14 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   });
 
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
+  const cancel = () => guard.requestNavigation("#/providers");
 
   useGlobalShortcuts({
     cmds: (event) => {
       event.preventDefault();
       formSave.save().catch(() => {});
     },
+    Escape: () => cancel(),
   });
 
   if (!provider) return <LoadingState caption="Loading provider…" />;
@@ -238,6 +250,120 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   }
 
   const preset = PRESETS[provider.provider_type] || PRESETS.openai_compat;
+  const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
+  const saveButtonLabel = isNew ? "Create" : "Save";
+  const saveDisabled = !provider.name || !provider.base_url;
+  const headerActions = (
+    <>
+      {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
+      <Button variant="ghost" onClick={cancel}>Cancel</Button>
+      {!isNew && (
+        <Button
+          variant="secondary"
+          loading={connectionStatus?.kind === "testing"}
+          onClick={() => testProviderConnection()}
+          disabled={isDirty}
+          title={isDirty ? "Save provider changes before testing." : undefined}
+        >
+          Test
+        </Button>
+      )}
+      {!isNew && (
+        <Button
+          variant="secondary"
+          loading={discoveryStatus?.kind === "discovering"}
+          onClick={() => discoverProviderModels()}
+          disabled={isDirty}
+          title={isDirty ? "Save provider changes before discovering models." : undefined}
+        >
+          Discover
+        </Button>
+      )}
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        onClick={() => formSave.save().catch(() => {})}
+        disabled={saveDisabled}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+  const mobileActionDock = (
+    <>
+      <Button variant="secondary" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        onClick={() => formSave.save().catch(() => {})}
+        disabled={saveDisabled}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+
+  function renderProviderRail() {
+    return (
+      <div class="entity-editor-rail-content">
+        <Card variant="spacious" title="Connection" class="entity-rail-card">
+          <div class="task-context-list">
+            <div class="task-context-row">
+              <span class="task-context-icon"><Icon name={providerIcon(provider.provider_type)} size={13} /></span>
+              <span class="task-context-copy">
+                <span class="task-context-label">Type</span>
+                <span class="task-context-value">{providerTypeLabel(provider.provider_type)}</span>
+              </span>
+            </div>
+            <div class="task-context-row">
+              <span class="task-context-icon"><Icon name="terminal" size={13} /></span>
+              <span class="task-context-copy">
+                <span class="task-context-label">Models</span>
+                <span class="task-context-value">{models.length}</span>
+              </span>
+            </div>
+          </div>
+        </Card>
+
+        {!isNew && (
+          <Card variant="spacious" title="Provider actions" class="entity-rail-card">
+            <div class="task-actions-stack">
+              <Button
+                variant="secondary"
+                loading={connectionStatus?.kind === "testing"}
+                onClick={() => testProviderConnection()}
+                disabled={isDirty}
+                title={isDirty ? "Save provider changes before testing." : undefined}
+              >
+                Test connection
+              </Button>
+              <Button
+                variant="secondary"
+                loading={discoveryStatus?.kind === "discovering"}
+                onClick={() => discoverProviderModels()}
+                disabled={isDirty}
+                title={isDirty ? "Save provider changes before discovering models." : undefined}
+              >
+                Discover models
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete provider
+            </Button>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   async function removeProvider() {
     try {
@@ -251,7 +377,17 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 
   return (
     <>
-      <DetailHeader
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={isNew ? "New provider" : provider.name} backLabel="Providers" onBack={cancel} />,
+          mobileActionDock,
+          drawerTitle: "Details",
+          drawerKicker: provider.provider_type || "provider",
+          drawerContent: renderProviderRail(),
+          sections: PROVIDER_EDIT_SECTIONS,
+        }}
+      />
+      <DetailHead
         icon={<Icon name="terminal" size={16} />}
         kicker={isNew ? "Create provider" : "Provider"}
         title={isNew ? "New provider" : provider.name}
@@ -266,44 +402,11 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
             )}
           </>
         )}
-        actions={(
-          <>
-          {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
-          {!isNew && (
-            <Button
-              variant="secondary"
-              loading={connectionStatus?.kind === "testing"}
-              onClick={() => testProviderConnection()}
-              disabled={isDirty}
-              title={isDirty ? "Save provider changes before testing." : undefined}
-            >
-              Test
-            </Button>
-          )}
-          {!isNew && (
-            <Button
-              variant="secondary"
-              loading={discoveryStatus?.kind === "discovering"}
-              onClick={() => discoverProviderModels()}
-              disabled={isDirty}
-              title={isDirty ? "Save provider changes before discovering models." : undefined}
-            >
-              Discover
-            </Button>
-          )}
-          <Button
-            variant={isDirty || isNew ? "primary" : "secondary"}
-            loading={formSave.saving}
-            onClick={() => formSave.save().catch(() => {})}
-            disabled={!provider.name || !provider.base_url}
-          >
-            {isNew ? "Create" : "Save"}
-          </Button>
-          </>
-        )}
+        actions={headerActions}
+        subBar={<MobilePillRow railLabel="Details" railCount={isNew ? 1 : 3} sections={PROVIDER_EDIT_SECTIONS} />}
       />
 
-      <div class="pane-detail-body">
+      <div class="pane-detail-body entity-detail-body provider-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
@@ -334,98 +437,98 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
           <Banner variant="error" title="Discovery failed" detail={discoveryStatus.message} />
         )}
 
-        <FormSection kicker="Identity" title="Provider settings">
-          <FormField label="Type">
-            <div class="provider-type-select">
-              <Select
-                variant="native"
-                value={provider.provider_type}
-                onChange={(value) => setProvider((current) => applyPreset(current, value))}
-                options={PROVIDER_TYPE_OPTIONS}
-                ariaLabel="Provider type"
-              />
-            </div>
-          </FormField>
-          <FormGrid columns={2}>
-            <FormField label="Name" required>
-              <Input value={provider.name} onInput={(event) => setProvider({ ...provider, name: event.target.value })} />
-            </FormField>
-            <FormField label="Base URL" required>
-              <PathOrUrlInput kind="url" value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
-            </FormField>
-            <FormField label="API key" hint={preset.api_key_hint} class="span-2">
-              <SecretInput autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
-            </FormField>
-            <FormField switchInside>
-              <Switch
-                checked={!!provider.trust_public_url}
-                onChange={(value) => setProvider({ ...provider, trust_public_url: value })}
-                label="Trust public HTTPS URL"
-                description="Required for hosted providers that enforce HTTPS."
-              />
-            </FormField>
-            <FormField switchInside>
-              <Switch
-                checked={!!provider.enabled}
-                onChange={(value) => setProvider({ ...provider, enabled: value })}
-                label="Show in model pickers"
-                description="Disable to hide all this provider's models without removing them."
-              />
-            </FormField>
-          </FormGrid>
-        </FormSection>
+        <div class="entity-editor-layout provider-editor-layout">
+          <main class="entity-editor-main">
+            <SectionMarker id="provider-edit-settings" num="01" kicker="Settings" meta="Connection" />
+            <FormSection kicker="Identity" title="Provider settings">
+              <FormField label="Type">
+                <div class="provider-type-select">
+                  <Select
+                    variant="native"
+                    value={provider.provider_type}
+                    onChange={(value) => setProvider((current) => applyPreset(current, value))}
+                    options={PROVIDER_TYPE_OPTIONS}
+                    ariaLabel="Provider type"
+                  />
+                </div>
+              </FormField>
+              <FormGrid columns={2}>
+                <FormField label="Name" required>
+                  <Input value={provider.name} onInput={(event) => setProvider({ ...provider, name: event.target.value })} />
+                </FormField>
+                <FormField label="Base URL" required>
+                  <PathOrUrlInput kind="url" value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
+                </FormField>
+                <FormField label="API key" hint={preset.api_key_hint} class="span-2">
+                  <SecretInput autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!provider.trust_public_url}
+                    onChange={(value) => setProvider({ ...provider, trust_public_url: value })}
+                    label="Trust public HTTPS URL"
+                    description="Required for hosted providers that enforce HTTPS."
+                  />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!provider.enabled}
+                    onChange={(value) => setProvider({ ...provider, enabled: value })}
+                    label="Show in model pickers"
+                    description="Disable to hide all this provider's models without removing them."
+                  />
+                </FormField>
+              </FormGrid>
+            </FormSection>
 
-        {!isNew && (
-          <FormSection kicker="Models" title="Discovered models" description="Opening a provider tests the connection and refreshes this list automatically. Use the visible Test and Discover buttons to retry.">
-            {(models || []).length === 0 ? (
-              <div class="field-hint">No models yet. Discovery runs automatically when the provider opens; use Discover above to retry.</div>
-            ) : (
-              <div class="provider-model-grid">
-                {models.map((model) => {
-                  const capabilities = model.capabilities || {};
-                  const embeddingOnly = isEmbeddingOnlyModel(capabilities);
-                  return (
-                    <div key={model.id} class={`card card-inset provider-model-card ${embeddingOnly ? "is-embedding" : ""}`.trim()}>
-                      <div class="provider-model-row">
-                        <div class="provider-model-info">
-                          <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
-                          <div class="mono muted provider-model-id">{model.model_name}</div>
-                          <div class="provider-model-caps">
-                            {modelCapabilityTags(model).map((tag) => (
-                              <Chip key={tag.label} variant={tag.variant}>{tag.label}</Chip>
-                            ))}
+            {!isNew && (
+              <>
+                <SectionMarker id="provider-edit-models" num="02" kicker="Models" meta="Discovery" />
+                <FormSection kicker="Models" title="Discovered models" description="Opening a provider tests the connection and refreshes this list automatically. Use the visible Test and Discover buttons to retry.">
+                  {(models || []).length === 0 ? (
+                    <div class="field-hint">No models yet. Discovery runs automatically when the provider opens; use Discover above to retry.</div>
+                  ) : (
+                    <div class="provider-model-grid">
+                      {models.map((model) => {
+                        const capabilities = model.capabilities || {};
+                        const embeddingOnly = isEmbeddingOnlyModel(capabilities);
+                        return (
+                          <div key={model.id} class={`card card-inset provider-model-card ${embeddingOnly ? "is-embedding" : ""}`.trim()}>
+                            <div class="provider-model-row">
+                              <div class="provider-model-info">
+                                <strong class="provider-model-name">{model.display_name || model.model_name}</strong>
+                                <div class="mono muted provider-model-id">{model.model_name}</div>
+                                <div class="provider-model-caps">
+                                  {modelCapabilityTags(model).map((tag) => (
+                                    <Chip key={tag.label} variant={tag.variant}>{tag.label}</Chip>
+                                  ))}
+                                </div>
+                                <div class="provider-model-purpose">{modelPurpose(model)}</div>
+                              </div>
+                              <Switch
+                                checked={!!model.enabled}
+                                onChange={() => {
+                                  api.patchProviderModel(providerId, model.id, { enabled: !model.enabled })
+                                    .then(() => loadModels(providerId))
+                                    .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
+                                }}
+                                label={modelSwitchLabel(model)}
+                              />
+                            </div>
                           </div>
-                          <div class="provider-model-purpose">{modelPurpose(model)}</div>
-                        </div>
-                        <Switch
-                          checked={!!model.enabled}
-                          onChange={() => {
-                            api.patchProviderModel(providerId, model.id, { enabled: !model.enabled })
-                              .then(() => loadModels(providerId))
-                              .catch((error) => pushToast(`Model update failed: ${error.message}`, { variant: "error" }));
-                          }}
-                          label={modelSwitchLabel(model)}
-                        />
-                      </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
+                  )}
+                </FormSection>
+              </>
             )}
-          </FormSection>
-        )}
+          </main>
 
-        {!isNew && (
-          <Card collapsible={{ summary: "More actions", count: 1 }}>
-            <Button
-              variant="destructive"
-              iconLeft={<Icon name="trash" size={13} />}
-              onClick={() => setDeleteOpen(true)}
-            >
-              Delete provider
-            </Button>
-          </Card>
-        )}
+          <aside class="entity-editor-rail is-mobile-drawer-source">
+            {renderProviderRail()}
+          </aside>
+        </div>
       </div>
 
       <Modal
@@ -571,6 +674,7 @@ export function Providers({ selectedId = null }) {
         listBody={listBody}
         detail={detail}
         hasSelection={!!selectedId}
+        detailOwnsMobileBack={!!selectedId}
         onBack={() => navigateHash("#/providers")}
         backLabel="All providers"
       />

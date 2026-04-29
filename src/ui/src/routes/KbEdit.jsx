@@ -10,6 +10,7 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
+import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
@@ -18,11 +19,23 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { DetailHeader } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
+
+const KB_EDIT_SECTIONS = [
+  { id: "kb-edit-details", num: "01", label: "Details", meta: "Metadata" },
+  { id: "kb-edit-body", num: "02", label: "Body", meta: "Markdown" },
+  { id: "kb-edit-references", num: "03", label: "References", meta: "Usage" },
+];
+
+function EntityChromeBridge({ chrome }) {
+  useAppChrome(chrome, [chrome]);
+  return null;
+}
 
 export function KbEdit({ slug, onSaved, onDeleted }) {
   const isNew = slug === "new";
@@ -46,9 +59,6 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     api.kbUsage(slug).then((r) => { if (!cancelled) setUsage(r); }).catch(() => {});
     return () => { cancelled = true; };
   }, [slug, isNew]);
-
-  const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
-  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
 
   function parseTags(raw) {
     return raw.split(",").map((t) => t.trim()).filter(Boolean);
@@ -75,9 +85,13 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
       onSaved?.(slug);
     }
   });
+  const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
+  const cancel = () => guard.requestNavigation("#/knowledge");
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+    Escape: () => cancel(),
   });
 
   if (!entry) return <LoadingState caption="Loading entry…" />;
@@ -106,10 +120,83 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     : null;
   const tagCount = parseTags(entry.tags || "").length;
   const slugLabel = isNew ? "Slug after create" : slug;
+  const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
+  const saveButtonLabel = isNew ? "Create" : "Save";
+  const saveDisabled = !entry.title.trim();
+  const usageTaskCount = usage?.tasks?.length || 0;
+  const usageAgentCount = usage?.agents?.length || 0;
+  const contextMeta = [
+    { label: "Slug", value: slugLabel },
+    { label: "Category", value: entry.category || "Uncategorized", mono: false },
+    { label: "Tags", value: `${tagCount}`, mono: false },
+    { label: "Pinned", value: entry.pinned ? "Yes" : "No", mono: false },
+    !isNew ? { label: "Used by tasks", value: `${usageTaskCount}`, mono: false } : null,
+    !isNew ? { label: "Used by agents", value: `${usageAgentCount}`, mono: false } : null,
+  ].filter(Boolean);
+  const headerActions = (
+    <>
+      {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
+      {categoryAttr && <span class="kb-category-badge" data-category={categoryAttr}>{entry.category}</span>}
+      <Button variant="ghost" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+        onClick={() => formSave.save().catch(() => {})}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+  const mobileActionDock = (
+    <>
+      <Button variant="secondary" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+        onClick={() => formSave.save().catch(() => {})}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+
+  function renderKbRail() {
+    return (
+      <div class="entity-editor-rail-content">
+        <Card variant="spacious" title="Context" class="entity-rail-card">
+          <EntityMetaList items={contextMeta} />
+        </Card>
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete entry
+            </Button>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
-      <DetailHeader
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={isNew ? "New entry" : slugLabel} backLabel="Knowledge" onBack={cancel} />,
+          mobileActionDock,
+          drawerTitle: "Details",
+          drawerKicker: slugLabel,
+          drawerContent: renderKbRail(),
+          sections: KB_EDIT_SECTIONS,
+        }}
+      />
+      <DetailHead
         class="knowledge-detail-head"
         icon={<Icon name={entry.pinned ? "pin" : "book"} size={16} />}
         iconClass={`knowledge-detail-icon ${entry.pinned ? "pinned" : ""}`.trim()}
@@ -122,92 +209,81 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
             <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
           </>
         )}
-        actions={(
-          <>
-          {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
-          {categoryAttr && <span class="kb-category-badge" data-category={categoryAttr}>{entry.category}</span>}
-          <Button
-            variant={isDirty || isNew ? "primary" : "secondary"}
-            loading={formSave.saving}
-            disabled={!entry.title.trim()}
-            onClick={() => formSave.save().catch(() => {})}
-          >
-            {isNew ? "Create" : "Save"}
-          </Button>
-          </>
-        )}
+        actions={headerActions}
+        subBar={<MobilePillRow railLabel="Details" railCount={isNew ? 1 : 2} sections={KB_EDIT_SECTIONS} />}
       />
-      <div class="pane-detail-body">
+      <div class="pane-detail-body entity-detail-body knowledge-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
 
-        <FormSection kicker="Metadata" title="Entry details">
-          <FormGrid columns={2}>
-            <FormField label="Title" required>
-              <Input value={entry.title} onInput={(e) => setEntry({ ...entry, title: e.target.value })} placeholder="Entry title" />
-            </FormField>
-            <FormField label="Category">
-              <Input value={entry.category} onInput={(e) => setEntry({ ...entry, category: e.target.value })} placeholder="reference, howto, policy" />
-            </FormField>
-            <FormField label="Tags" hint="Comma-separated">
-              <Input value={entry.tags} onInput={(e) => setEntry({ ...entry, tags: e.target.value })} placeholder="api, setup, tutorial" />
-            </FormField>
-            <FormField switchInside>
-              <Switch
-                checked={!!entry.pinned}
-                onChange={(next) => setEntry({ ...entry, pinned: next })}
-                label="Pinned in agent context"
-                description="Pinned entries are inserted into agent context."
-              />
-            </FormField>
-          </FormGrid>
-          <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : slug }]} />
-        </FormSection>
+        <div class="entity-editor-layout knowledge-editor-layout">
+          <main class="entity-editor-main">
+            <SectionMarker id="kb-edit-details" num="01" kicker="Details" meta="Metadata" />
+            <FormSection kicker="Metadata" title="Entry details">
+              <FormGrid columns={2}>
+                <FormField label="Title" required>
+                  <Input value={entry.title} onInput={(e) => setEntry({ ...entry, title: e.target.value })} placeholder="Entry title" />
+                </FormField>
+                <FormField label="Category">
+                  <Input value={entry.category} onInput={(e) => setEntry({ ...entry, category: e.target.value })} placeholder="reference, howto, policy" />
+                </FormField>
+                <FormField label="Tags" hint="Comma-separated">
+                  <Input value={entry.tags} onInput={(e) => setEntry({ ...entry, tags: e.target.value })} placeholder="api, setup, tutorial" />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!entry.pinned}
+                    onChange={(next) => setEntry({ ...entry, pinned: next })}
+                    label="Pinned in agent context"
+                    description="Pinned entries are inserted into agent context."
+                  />
+                </FormField>
+              </FormGrid>
+              <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : slug }]} />
+            </FormSection>
 
-        <FormSection kicker="Content" title="Body (Markdown)">
-          <Textarea rows={22} monospace autoGrow value={entry.body} onInput={(e) => setEntry({ ...entry, body: e.target.value })} />
-        </FormSection>
+            <SectionMarker id="kb-edit-body" num="02" kicker="Body" meta="Markdown" />
+            <FormSection kicker="Content" title="Body (Markdown)">
+              <Textarea rows={22} monospace autoGrow value={entry.body} onInput={(e) => setEntry({ ...entry, body: e.target.value })} />
+            </FormSection>
 
-        {!isNew && usage && (usage.tasks?.length || usage.agents?.length) > 0 && (
-          <FormSection kicker="References" title="Used by">
-            {usage.tasks?.length > 0 && (
-              <FormField label={`Tasks (${usage.tasks.length})`}>
-                <ul class="usage-list">
-                  {usage.tasks.map((t) => (
-                    <li key={t.id}>
-                      <a href={`#/tasks/${taskRouteId(t)}`}>{t.title}</a>{" "}
-                      <StatusPill status={t.stage || "plan"} size="sm" />
-                    </li>
-                  ))}
-                </ul>
-              </FormField>
+            {!isNew && usage && (usage.tasks?.length || usage.agents?.length) > 0 && (
+              <>
+                <SectionMarker id="kb-edit-references" num="03" kicker="References" meta="Usage" />
+                <FormSection kicker="References" title="Used by">
+                  {usage.tasks?.length > 0 && (
+                    <FormField label={`Tasks (${usage.tasks.length})`}>
+                      <ul class="usage-list">
+                        {usage.tasks.map((t) => (
+                          <li key={t.id}>
+                            <a href={`#/tasks/${taskRouteId(t)}`}>{t.title}</a>{" "}
+                            <StatusPill status={t.stage || "plan"} size="sm" />
+                          </li>
+                        ))}
+                      </ul>
+                    </FormField>
+                  )}
+                  {usage.agents?.length > 0 && (
+                    <FormField label={`Agents (${usage.agents.length})`}>
+                      <ul class="usage-list">
+                        {usage.agents.map((a) => (
+                          <li key={a.name}>
+                            <a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a>
+                          </li>
+                        ))}
+                      </ul>
+                    </FormField>
+                  )}
+                </FormSection>
+              </>
             )}
-            {usage.agents?.length > 0 && (
-              <FormField label={`Agents (${usage.agents.length})`}>
-                <ul class="usage-list">
-                  {usage.agents.map((a) => (
-                    <li key={a.name}>
-                      <a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a>
-                    </li>
-                  ))}
-                </ul>
-              </FormField>
-            )}
-          </FormSection>
-        )}
+          </main>
 
-        {!isNew && (
-          <Card collapsible={{ summary: "More actions", count: 1 }}>
-            <Button
-              variant="destructive"
-              iconLeft={<Icon name="trash" size={13} />}
-              onClick={() => setDeleteOpen(true)}
-            >
-              Delete entry
-            </Button>
-          </Card>
-        )}
+          <aside class="entity-editor-rail is-mobile-drawer-source">
+            {renderKbRail()}
+          </aside>
+        </div>
       </div>
 
       <Modal
