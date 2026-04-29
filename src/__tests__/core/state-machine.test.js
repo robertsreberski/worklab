@@ -163,7 +163,7 @@ describe("workflow stage reducer", () => {
     const r = nextStage("execute", { type: "run_cancelled", retryStage: "execute", message: "user cancel" });
     expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
-    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled" });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled (user)" });
     expect(r.sideEffects).toContainEqual({ type: "post_cancellation_comment", message: "user cancel" });
     // crucially: no set_failure_count on cancel
     expect(r.sideEffects.some((sideEffect) => sideEffect.type === "set_failure_count")).toBe(false);

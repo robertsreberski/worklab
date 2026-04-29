@@ -62,6 +62,22 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
         fields.push("retry_count = ?");
         values.push(0);
         break;
+      case "set_rejection_count":
+        fields.push("rejection_streak = ?");
+        values.push(sideEffect.count ?? 0);
+        break;
+      case "reset_rejection_count":
+        fields.push("rejection_streak = ?");
+        values.push(0);
+        break;
+      case "set_last_failure_kind":
+        fields.push("last_failure_kind = ?");
+        values.push(sideEffect.kind || null);
+        break;
+      case "clear_last_failure_kind":
+        fields.push("last_failure_kind = ?");
+        values.push(null);
+        break;
       case "post_error_comment":
         db.prepare(
           `INSERT INTO task_comments (id, task_id, author_type, body, created_at)

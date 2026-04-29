@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 14;
+export const SCHEMA_VERSION = 15;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -23,6 +23,9 @@ CREATE TABLE IF NOT EXISTS agents (
   mcp_allowlist_mode TEXT NOT NULL DEFAULT 'all',
   builtin_allowlist TEXT NOT NULL DEFAULT '[]',
   builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all',
+  allow_self_review INTEGER NOT NULL DEFAULT 0,
+  daily_budget_usd REAL,
+  per_run_budget_usd REAL,
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
@@ -56,6 +59,8 @@ CREATE TABLE IF NOT EXISTS tasks (
   tags TEXT NOT NULL DEFAULT '[]',
   error_text TEXT,
   retry_count INTEGER NOT NULL DEFAULT 0,
+  rejection_streak INTEGER NOT NULL DEFAULT 0,
+  last_failure_kind TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   completed_at INTEGER
@@ -116,7 +121,14 @@ CREATE TABLE IF NOT EXISTS task_runs (
   details TEXT,
   raw_output_path TEXT,
   artifact_paths_json TEXT NOT NULL DEFAULT '[]',
-  result_json TEXT
+  result_json TEXT,
+  cancel_initiator TEXT,
+  cancel_reason TEXT,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  diagnostics_json TEXT,
+  provider_session_id TEXT,
+  execenv_path TEXT,
+  cost_usd REAL
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 
