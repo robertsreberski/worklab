@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import {
   DEFAULT_MAX_FAILURES,
   DEFAULT_MAX_REJECTIONS,
@@ -19,6 +20,7 @@ import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task
 import { prepareExecenv } from "../core/execenv.js";
 import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
+import { resolveTaskProjectRunContext } from "../core/projects.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -507,14 +509,35 @@ export function createTaskWatcher({
   function spawnRun({ task, stage, mode, agentName, parentRunId = null }) {
     const { providerKind } = assertAgentRunnable(agentName);
     const settings = readSettings(db);
+    const projectRunContext = resolveTaskProjectRunContext({
+      db,
+      config: { workspace, repoRoot },
+      task,
+    });
+    if (projectRunContext.effectiveWorkdir) {
+      mkdirSync(projectRunContext.effectiveWorkdir, { recursive: true });
+    }
     const runId = newRunId();
     const now = Date.now();
     db.prepare(
       `INSERT INTO task_runs
-        (id, task_id, parent_run_id, mode, stage, agent_name, provider_kind,
-         started_at, status, process_status, retry_stage)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?)`,
-    ).run(runId, task.id, parentRunId, mode, stage, agentName, providerKind, now, stage);
+        (id, task_id, project_id, parent_run_id, mode, stage, agent_name, provider_kind,
+         started_at, status, process_status, retry_stage, workdir, project_context_hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?)`,
+    ).run(
+      runId,
+      task.id,
+      projectRunContext.project?.id || null,
+      parentRunId,
+      mode,
+      stage,
+      agentName,
+      providerKind,
+      now,
+      stage,
+      projectRunContext.effectiveWorkdir || null,
+      projectRunContext.projectContextHash,
+    );
 
     let execenvPath = null;
     if (dataDir) {
@@ -532,7 +555,12 @@ export function createTaskWatcher({
       WORKLAB_RUN_ID: runId,
       WORKLAB_DATA_DIR: dataDir || "",
       WORKLAB_REPO_ROOT: repoRoot || "",
-      WORKLAB_WORKSPACE: workspace || repoRoot || "",
+      WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir || workspace || repoRoot || "",
+      ...(projectRunContext.project ? {
+        WORKLAB_PROJECT_ID: projectRunContext.project.id,
+        WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
+        WORKLAB_PROJECT_NAME: projectRunContext.project.name,
+      } : {}),
       ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
     };
     if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
@@ -850,9 +878,9 @@ export function createTaskWatcher({
         db.prepare(`
           INSERT INTO tasks
             (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
-             owner_agent, title, instructions, stage, run_policy, join_policy, subtask_order,
+             owner_agent, project_id, title, instructions, stage, run_policy, join_policy, subtask_order,
              required, reviewer_agent, tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
           taskKey,
@@ -861,6 +889,7 @@ export function createTaskWatcher({
           runId,
           agentName,
           agentName,
+          parentTask.project_id || null,
           subtask.title.trim(),
           subtask.instructions || "",
           parentTask.run_policy || "manual",

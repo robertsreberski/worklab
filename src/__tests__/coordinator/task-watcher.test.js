@@ -27,15 +27,33 @@ function seedAgent(db, name = "coder") {
   ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
-function seedTask(db, { owner = null, planner = null, reviewer = null, stage = "execute", runPolicy = "manual" } = {}) {
+function seedTask(db, { owner = null, planner = null, reviewer = null, stage = "execute", runPolicy = "manual", projectId = null } = {}) {
   const id = newTaskId();
   const now = Date.now();
   db.prepare(
     `INSERT INTO tasks
-      (id, root_task_id, title, stage, owner_agent, planner_agent, reviewer_agent, run_policy, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(id, id, "t", stage, owner, planner, reviewer, runPolicy, now, now);
+      (id, root_task_id, project_id, title, stage, owner_agent, planner_agent, reviewer_agent, run_policy, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, id, projectId, "t", stage, owner, planner, reviewer, runPolicy, now, now);
   return id;
+}
+
+function seedProject(db, patch = {}) {
+  const now = Date.now();
+  const project = {
+    id: patch.id || "project-1",
+    slug: patch.slug || "project-one",
+    name: patch.name || "Project One",
+    description: patch.description || "Project description.",
+    context: patch.context || "Project context.",
+    workdir: patch.workdir || null,
+  };
+  db.prepare(`
+    INSERT INTO projects
+      (id, slug, name, description, context_markdown, workdir, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(project.id, project.slug, project.name, project.description, project.context, project.workdir, now, now);
+  return project;
 }
 
 function tempDataDir() {
@@ -210,6 +228,73 @@ describe("task-watcher", () => {
 
     expect(spawn.mock.calls[0][0].args).toEqual(["--task", plannedTaskId, "--mode", "plan", "--agent", "planner"]);
     expect(spawn.mock.calls[1][0].args).toEqual(["--task", fallbackTaskId, "--mode", "plan", "--agent", "owner"]);
+  });
+
+  it("uses project workdir and records project metadata when spawning a run", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const workdir = mkdtempSync(join(tmpdir(), "worklab-project-workdir-"));
+    const project = seedProject(db, { workdir, context: "Always use the project checkout." });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    const spawn = vi.fn(() => ({ pid: 1, done: new Promise(() => {}), cancel: vi.fn() }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0][0].env).toMatchObject({
+      WORKLAB_WORKSPACE: workdir,
+      WORKLAB_PROJECT_ID: project.id,
+      WORKLAB_PROJECT_SLUG: project.slug,
+      WORKLAB_PROJECT_NAME: project.name,
+    });
+    const run = db.prepare("SELECT project_id, workdir, project_context_hash FROM task_runs WHERE id = ?").get(runId);
+    expect(run).toMatchObject({ project_id: project.id, workdir });
+    expect(run.project_context_hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("delegated subtasks inherit the parent project", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const project = seedProject(db);
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "Child work", instructions: "Do child work." }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const child = db.prepare("SELECT project_id, title FROM tasks WHERE parent_task_id = ?").get(taskId);
+    expect(child).toMatchObject({ project_id: project.id, title: "Child work" });
   });
 
   it("rejects plan run_requested without planner or owner", async () => {

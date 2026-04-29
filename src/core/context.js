@@ -235,6 +235,17 @@ function buildTaskBody(task, comments) {
   ].filter(Boolean).join("\n");
 }
 
+function buildProjectBody(project, effectiveWorkdir) {
+  if (!project) return "";
+  return [
+    `**Name:** ${project.name}`,
+    project.slug ? `**Slug:** ${project.slug}` : "",
+    project.description ? `\n**Description:**\n${project.description}` : "",
+    effectiveWorkdir ? `\n**Workdir:** \`${effectiveWorkdir}\`` : "",
+    project.context ? `\n**Context:**\n${project.context}` : "",
+  ].filter(Boolean).join("\n");
+}
+
 function buildAutomationBody(automation) {
   return [
     `**Title:** ${automation.title}`,
@@ -354,6 +365,8 @@ export function buildSystemPrompt(input, mode) {
     parts.push(section("Automation", buildAutomationBody(input.automation)));
     sectionNames.push("Automation");
   } else {
+    parts.push(section("Project", buildProjectBody(input.project, input.effectiveWorkdir)));
+    if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments)));
     sectionNames.push("Task");
   }
