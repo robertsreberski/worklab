@@ -252,6 +252,7 @@ describe("worklab-tools KB handlers", () => {
     for (const name of kbTools) {
       expect(names).toContain(name);
     }
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve substantial task deliverables");
   });
 
   it("toolDefinitions has 14 total entries (4 existing + 5 KB + 3 search + 2 subtask graph)", () => {

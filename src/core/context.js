@@ -5,6 +5,12 @@ import { renderToolSurfaceMarkdown } from "../mcp/worklab-tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
+const DELIVERABLE_PERSISTENCE = `Preserve durable deliverables in Knowledge:
+- If the run produces a substantial user-facing deliverable such as a research report, guide, runbook, decision record, implementation notes, or reusable analysis, save the complete deliverable with \`kb_create\` or \`kb_update\` before your final result when Worklab KB tools are available.
+- Use a readable slug and title, Markdown body, useful tags, and an appropriate category such as \`run-results\`, \`research\`, \`runbook\`, or \`decision\`.
+- Mention the Knowledge slug or link in \`final_text\` so the task comment points to the full deliverable.
+- Keep \`final_text\` concise; do not squeeze long deliverables into \`final_text\`. If KB tools are unavailable or saving fails, still include enough final prose for Worklab to preserve it as a fallback.`;
+
 const RESULT_FIELD_RULES = `Structured result rules:
 - Worklab needs one final \`worklab.v2\` JSON object when the task is complete. Treat \`worklab.v2\` as final-result data, not progress output.
 - Do not preface the final JSON with process narration such as "now I will output the result"; put user-facing text in \`final_text\`.
@@ -364,6 +370,10 @@ export function buildSystemPrompt(input, mode) {
   if (mode !== "review") {
     parts.push(CADENCE);
     sectionNames.push("CADENCE");
+  }
+  if (mode === "execute" || mode === "automation") {
+    parts.push(DELIVERABLE_PERSISTENCE);
+    sectionNames.push("DELIVERABLE_PERSISTENCE");
   }
   parts.push(RESULT_FIELD_RULES);
   parts.push(modeDirective(mode));
