@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -77,26 +78,26 @@ function ProjectEditor({ selectedId, onSaved }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setError(null);
     if (isNew) {
       const empty = projectDraftFrom();
       setDraft(empty);
       setBaseline(empty);
       setLoading(false);
-      return () => { cancelled = true; };
+      return () => controller.abort();
     }
     setLoading(true);
-    api.getProject(selectedId)
+    api.getProject(selectedId, { signal: controller.signal })
       .then((res) => {
-        if (cancelled) return;
+        if (controller.signal.aborted) return;
         const next = projectDraftFrom(res.project);
         setDraft(next);
         setBaseline(next);
       })
-      .catch((err) => { if (!cancelled) setError(err.message || "Project not found"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .catch((err) => { if (err?.name !== "AbortError") setError(err.message || "Project not found"); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [isNew, selectedId]);
 
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
@@ -243,16 +244,21 @@ function ProjectEditor({ selectedId, onSaved }) {
 function ProjectDetail({ selectedId, onChanged }) {
   const [project, setProject] = useState(null);
   const [error, setError] = useState(null);
+  const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
     setProject(null);
     setError(null);
-    return api.getProject(selectedId)
-      .then((res) => setProject(res.project))
-      .catch((err) => setError(err.message || "Project not found"));
+    return api.getProject(selectedId, { signal: controller.signal })
+      .then((res) => { if (!controller.signal.aborted) setProject(res.project); })
+      .catch((err) => { if (err?.name !== "AbortError") setError(err.message || "Project not found"); });
   }, [selectedId]);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
 
   const rail = useMemo(() => {
     if (!project) return null;
@@ -382,16 +388,22 @@ export function Projects({ selectedId = null, mode = null }) {
   const [query, setQuery] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const searchRef = useRef(null);
+  const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
-    api.listProjects({ include_archived: includeArchived ? "true" : "" })
-      .then((res) => setProjects(res.projects || []))
-      .catch(() => setProjects([]));
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
+    api.listProjects({ include_archived: includeArchived ? "true" : "" }, { signal: controller.signal })
+      .then((res) => { if (!controller.signal.aborted) setProjects(res.projects || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
   }, [includeArchived]);
+  const reloadSoon = useCoalescedCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
   useSSE("global", (evt) => {
-    if (evt.type?.startsWith("project_") || evt.type?.startsWith("task_")) reload();
+    if (evt.type?.startsWith("project_") || evt.type?.startsWith("task_")) reloadSoon();
   });
   useGlobalShortcuts({
     "/": (event) => {

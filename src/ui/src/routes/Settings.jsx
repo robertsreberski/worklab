@@ -334,6 +334,7 @@ function AdvancedSettings({ summary, count, defaultOpen = false, children }) {
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [runtime, setRuntime] = useState(null);
   const [runtimeDraft, setRuntimeDraft] = useState(null);
   const [runtimeBaseline, setRuntimeBaseline] = useState(null);
@@ -349,10 +350,11 @@ export function Settings() {
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => browserNotificationSettings());
   const [notificationBusy, setNotificationBusy] = useState(false);
 
-  const loadSettings = useCallback(async () => {
-    const response = await api.getSettings();
+  const loadSettings = useCallback(async (options = {}) => {
+    const response = await api.getSettings(options);
     setSettings(response.settings);
     setBaseline(response.settings);
+    setLoadError(null);
   }, []);
 
   const loadRuntime = useCallback(async () => {
@@ -396,13 +398,19 @@ export function Settings() {
   }, []);
 
   useEffect(() => {
-    loadSettings().catch((err) => pushToast(`Settings failed: ${err.message}`, { variant: "error" }));
+    const controller = new AbortController();
+    loadSettings({ signal: controller.signal }).catch((err) => {
+      if (err?.name === "AbortError") return;
+      setLoadError(err.message || "Settings failed");
+      pushToast(`Settings failed: ${err.message}`, { variant: "error" });
+    });
     loadRuntime();
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     loadSlackStatus().catch(() => setSlackStatus(null));
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
+    return () => controller.abort();
   }, [loadMcp, loadRuntime, loadSettings, loadSlackStatus]);
 
   const settingsDirty = useMemo(() => baseline ? !jsonEqual(settings, baseline) : false, [settings, baseline]);
@@ -515,7 +523,18 @@ export function Settings() {
   if (!settings || !runtimeDraft) {
     return (
       <AppShell route="settings">
-        <Page><LoadingState caption="Loading settings..." /></Page>
+        <Page>
+          {loadError ? (
+            <Banner
+              variant="error"
+              title="Settings failed to load"
+              detail={loadError}
+              actions={<Button size="sm" variant="secondary" onClick={() => loadSettings().catch((err) => setLoadError(err.message || "Settings failed"))}>Retry</Button>}
+            />
+          ) : (
+            <LoadingState caption="Loading settings..." />
+          )}
+        </Page>
       </AppShell>
     );
   }

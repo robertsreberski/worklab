@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -55,13 +56,21 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const searchRef = useRef(null);
+  const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
-    api.listKb().then((r) => setEntries(r.entries || [])).catch(() => setEntries([]));
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
+    api.listKb(null, { signal: controller.signal })
+      .then((r) => { if (!controller.signal.aborted) setEntries(r.entries || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setEntries([]); });
   }, []);
+  const reloadSoon = useCoalescedCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
-  useSSE("global", (evt) => { if (evt.type?.startsWith("kb_")) reload(); });
+  useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
+  useSSE("global", (evt) => { if (evt.type?.startsWith("kb_")) reloadSoon(); });
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();

@@ -48,7 +48,7 @@ export function CommanderRow({
 }) {
   const runningRunId = runningRunIdFromTask(task);
   const isStreaming = !!runningRunId;
-  const { events } = useRunStream(runningRunId, { subscribe: isStreaming });
+  const { events } = useRunStream(runningRunId, { subscribe: isStreaming, initialEventLimit: 12 });
   const recentEvents = useMemo(() => {
     if (!isStreaming) return [];
     const initial = task.running_run?.last_event ? [task.running_run.last_event] : [];

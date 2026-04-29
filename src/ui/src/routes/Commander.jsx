@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { formatCost } from "../lib/runFormatting.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -253,23 +254,50 @@ export function Commander() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [listOwnsFocus, setListOwnsFocus] = useState(false);
   const searchRef = useRef(null);
+  const reloadAbortRef = useRef(null);
+  const projectsReloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
     setError(null);
-    return api.listTasks()
-      .then((r) => setTasks(r.tasks || []))
-      .catch((e) => { setTasks([]); setError(e.message || "Failed to load tasks"); });
+    return api.listTasks(null, { signal: controller.signal })
+      .then((r) => {
+        if (!controller.signal.aborted) setTasks(r.tasks || []);
+      })
+      .catch((e) => {
+        if (e?.name === "AbortError") return;
+        setTasks([]);
+        setError(e.message || "Failed to load tasks");
+      });
   }, []);
+  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadProjects = useCallback(() => {
+    projectsReloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    projectsReloadAbortRef.current = controller;
+    return api.listProjects(null, { signal: controller.signal })
+      .then((r) => { if (!controller.signal.aborted) setProjects(r.projects || []); })
+      .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
+  }, []);
+  const reloadProjectsSoon = useCoalescedCallback(reloadProjects, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
-    api.listProjects().then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
+    const controller = new AbortController();
+    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((e) => { if (e?.name !== "AbortError") setAgents([]); });
+    api.listProjects(null, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => () => {
+    reloadAbortRef.current?.abort?.();
+    projectsReloadAbortRef.current?.abort?.();
   }, []);
   useSSE("global", (evt) => {
-    if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reload();
+    if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reloadSoon();
     if (evt.type?.startsWith("project_")) {
-      api.listProjects().then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
+      reloadProjectsSoon();
     }
   });
 

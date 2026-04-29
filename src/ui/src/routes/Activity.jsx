@@ -1,7 +1,8 @@
 // §6.9 Activity — premium run activity dashboard.
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -99,8 +100,12 @@ export function Activity() {
   const [agentFilter, setAgentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const loadAbortRef = useRef(null);
 
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
+    loadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
     setLoading(true);
     try {
       const query = {};
@@ -109,21 +114,34 @@ export function Activity() {
       if (statusFilter) query.status = statusFilter;
       if (dateRange.from) query.from = dateRange.from;
       if (dateRange.to) query.to = dateRange.to;
-      const res = await api.listActivity(query);
+      const res = await api.listActivity(query, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setItems((prev) => append ? [...(prev || []), ...(res.items || [])] : (res.items || []));
       setSummary(res.summary || null);
       setNextCursor(res.nextCursor || null);
+    } catch (err) {
+      if (err?.name !== "AbortError") {
+        setItems([]);
+        setSummary(null);
+        setNextCursor(null);
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [agentFilter, dateRange.from, dateRange.to, statusFilter]);
+  const loadSoon = useCoalescedCallback(() => load(), 100);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => () => loadAbortRef.current?.abort?.(), []);
   useEffect(() => {
-    api.listAgents().then((response) => setAgents(response.agents || [])).catch(() => setAgents([]));
+    const controller = new AbortController();
+    api.listAgents({ signal: controller.signal }).then((response) => setAgents(response.agents || [])).catch((err) => {
+      if (err?.name !== "AbortError") setAgents([]);
+    });
+    return () => controller.abort();
   }, []);
   useSSE("global", (evt) => {
-    if (evt.type === "run_started" || evt.type === "run_ended" || evt.type === "agent_consolidated") load();
+    if (evt.type === "run_started" || evt.type === "run_ended" || evt.type === "agent_consolidated") loadSoon();
   });
 
   const stats = useMemo(() => {

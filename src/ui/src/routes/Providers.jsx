@@ -25,6 +25,7 @@ import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama" },
@@ -571,14 +572,22 @@ export function Providers({ selectedId = null }) {
   const [providers, setProviders] = useState([]);
   const [query, setQuery] = useState("");
   const searchRef = useRef(null);
+  const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
-    api.listProviders().then((response) => setProviders(response.providers || [])).catch(() => setProviders([]));
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
+    api.listProviders({ signal: controller.signal })
+      .then((response) => { if (!controller.signal.aborted) setProviders(response.providers || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setProviders([]); });
   }, []);
+  const reloadSoon = useCoalescedCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
+  useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
   useSSE("global", (event) => {
-    if (event.type?.startsWith("provider_")) reload();
+    if (event.type?.startsWith("provider_")) reloadSoon();
   });
   useGlobalShortcuts({
     "/": (event) => {

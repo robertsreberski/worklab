@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
@@ -1020,22 +1021,42 @@ export function TaskDetail({ id, runParam = null }) {
   const runTargetRefs = useRef(new Map());
   const lastScrolledRunRef = useRef(null);
   const commentDeletingRef = useRef(false);
+  const reloadAbortRef = useRef(null);
+  const automationsAbortRef = useRef(null);
 
   const reload = useCallback(() => {
-    api.getTask(id).then(setData).catch(() => setData({ notFound: true }));
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
+    return api.getTask(id, { signal: controller.signal })
+      .then((nextData) => { if (!controller.signal.aborted) setData(nextData); })
+      .catch((err) => { if (err?.name !== "AbortError") setData({ notFound: true }); });
   }, [id]);
   const reloadAutomations = useCallback(() => {
+    automationsAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    automationsAbortRef.current = controller;
     setAutomationsLoading(true);
-    api.listTaskAutomations(id)
-      .then((response) => setTaskAutomations(response.automations || []))
-      .catch(() => setTaskAutomations([]))
-      .finally(() => setAutomationsLoading(false));
+    api.listTaskAutomations(id, { signal: controller.signal })
+      .then((response) => { if (!controller.signal.aborted) setTaskAutomations(response.automations || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setTaskAutomations([]); })
+      .finally(() => { if (!controller.signal.aborted) setAutomationsLoading(false); });
   }, [id]);
+  const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadAutomationsSoon = useCoalescedCallback(reloadAutomations, 100);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { reloadAutomations(); }, [reloadAutomations]);
   useEffect(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    const controller = new AbortController();
+    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => {
+      if (err?.name !== "AbortError") setAgents([]);
+    });
+    return () => controller.abort();
+  }, []);
+  useEffect(() => () => {
+    reloadAbortRef.current?.abort?.();
+    automationsAbortRef.current?.abort?.();
   }, []);
   useEffect(() => {
     setHighlightedRunId(runParam || null);
@@ -1077,8 +1098,8 @@ export function TaskDetail({ id, runParam = null }) {
       && (evt.type === "run_started" || evt.type === "run_ended");
     const automationChanged = (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))
       && String(evt.type || "").startsWith("automation_");
-    if (taskChanged || runChanged || automationChanged) reload();
-    if (automationChanged || runChanged) reloadAutomations();
+    if (taskChanged || runChanged || automationChanged) reloadSoon();
+    if (automationChanged || runChanged) reloadAutomationsSoon();
     if (evt.type === "run_started" && (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))) {
       setHighlightedRunId(evt.runId);
     }
