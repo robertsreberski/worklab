@@ -311,7 +311,9 @@ export function AppShell({
               navigateHash("#/tasks");
             }}
           >
-            <span class="brand-mark" aria-hidden="true">W</span>
+            <span class="brand-mark" aria-hidden="true">
+              <img src="/icons/worklab-icon-180.png" alt="" width="32" height="32" />
+            </span>
             <span class="brand-copy">
               <strong>Worklab</strong>
               <span>Local agents</span>
