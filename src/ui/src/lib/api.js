@@ -69,7 +69,7 @@ export const api = {
   // assistant
   getAssistant: () => request("GET", "/assistant"),
   sendAssistantMessage: (body) => request("POST", "/assistant/messages", { body }),
-  getAssistantRun: (id) => request("GET", `/assistant/runs/${id}`),
+  getAssistantRun: (id, query, options) => request("GET", `/assistant/runs/${id}${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   cancelAssistantRun: (id) => request("POST", `/assistant/runs/${id}/cancel`),
   // agents
   listAgents: (options) => request("GET", "/agents", null, options),

@@ -101,7 +101,9 @@ describe("assistant routes", () => {
     expect(res.body.messages).toHaveLength(2);
     expect(res.body.messages[1].body).toBe("Created the task.");
     expect(res.body.messages[1].run.status).toBe("succeeded");
-    expect(res.body.messages[1].run.events.some((event) => event.type === "assistant")).toBe(true);
+    expect(res.body.messages[1].run).not.toHaveProperty("events");
+    const run = await agent.get(`/api/assistant/runs/${created.body.run.id}`).expect(200);
+    expect(run.body.run.events.some((event) => event.type === "assistant")).toBe(true);
     expect(db.prepare("SELECT COUNT(*) AS count FROM assistant_agent_logs").get().count).toBe(1);
 
     const journalPath = join(dataDir, "agents", "mickey", "JOURNAL.md");
@@ -146,6 +148,75 @@ describe("assistant routes", () => {
     await assistant.waitIdle();
     const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
     expect(run.body.run.status).toBe("cancelled");
+    expect(run.body.run.cancel_initiator).toBe("api_cancel");
+  });
+
+  it("marks assistant timeout aborts as failed timeouts", async () => {
+    const runAgent = vi.fn((_systemPrompt, options) => new Promise((resolve) => {
+      options.abortSignal.addEventListener("abort", () => resolve({
+        cancelled: true,
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 0,
+      }), { once: true });
+    }));
+    const { agent, assistant, db } = setup({ runAgent });
+    writeSettings(db, { assistant_run_timeout_ms: 1000 });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Take too long." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("failed");
+    expect(run.body.run.failure_kind).toBe("timeout");
+    expect(run.body.run.error_text).toMatch(/timed out/);
+  });
+
+  it("treats provider-side cancelled errors as failures", async () => {
+    const runAgent = vi.fn(async () => ({
+      cancelled: true,
+      error: "Pi agent stopped before final output: max turns reached",
+      failureKind: "usage_limit",
+      events: [],
+      usage: {},
+      durationMs: 1,
+      numTurns: 12,
+    }));
+    const { agent, assistant } = setup({ runAgent });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Create many items." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("failed");
+    expect(run.body.run.failure_kind).toBe("usage_limit");
+    expect(run.body.run.error_text).toMatch(/max turns/);
+  });
+
+  it("returns tail assistant run events with truncation metadata", async () => {
+    const { agent, assistant } = setup({
+      runAgent: vi.fn(async (_systemPrompt, options) => {
+        options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "One" }] } });
+        options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "Two" }] } });
+        options.onEvent?.({ type: "assistant", message: { content: [{ type: "thinking", text: "Three" }] } });
+        return {
+          text: assistantJson({ reply_text: "Done.", summary: "Done." }),
+          events: [],
+          usage: {},
+          durationMs: 1,
+          numTurns: 1,
+        };
+      }),
+    });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Stream a few events." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}?events=tail&limit=2`).expect(200);
+    expect(run.body.run.events).toHaveLength(2);
+    expect(run.body.run.event_count).toBeGreaterThan(2);
+    expect(run.body.run.events_truncated).toBe(true);
   });
 
   it("persists readable provider failures on assistant messages", async () => {

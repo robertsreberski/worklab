@@ -17,16 +17,18 @@ function runStatus(run) {
   return run?.status || "complete";
 }
 
-function useAssistantRunStream(runId, { subscribe = true } = {}) {
+function useAssistantRunStream(runId, { subscribe = true, hydrate = true, initialEventLimit = 100 } = {}) {
   const [events, setEvents] = useState([]);
   const [run, setRun] = useState(null);
   const [done, setDone] = useState(false);
+  const [donePayload, setDonePayload] = useState(null);
 
   useEffect(() => {
-    if (!runId) {
+    if (!runId || !hydrate) {
       setEvents([]);
       setRun(null);
       setDone(false);
+      setDonePayload(null);
       return undefined;
     }
     let cancelled = false;
@@ -34,8 +36,9 @@ function useAssistantRunStream(runId, { subscribe = true } = {}) {
     setEvents([]);
     setRun(null);
     setDone(false);
+    setDonePayload(null);
 
-    api.getAssistantRun(runId)
+    api.getAssistantRun(runId, { events: "tail", limit: String(initialEventLimit) }, { signal: controller.signal })
       .then((data) => {
         if (cancelled) return;
         if (data?.run) {
@@ -53,6 +56,8 @@ function useAssistantRunStream(runId, { subscribe = true } = {}) {
       try {
         const payload = JSON.parse(event.data);
         if (payload.type === "done") {
+          if (payload.run) setRun(payload.run);
+          setDonePayload(payload);
           setDone(true);
           es.close();
           return;
@@ -66,13 +71,19 @@ function useAssistantRunStream(runId, { subscribe = true } = {}) {
       controller.abort();
       es.close();
     };
-  }, [runId, subscribe]);
+  }, [runId, subscribe, hydrate, initialEventLimit]);
 
-  return { events, run, done };
+  return { events, run, done, donePayload };
 }
 
 function AssistantRun({ run, active, onDone }) {
-  const stream = useAssistantRunStream(run?.id, { subscribe: !!active });
+  const [open, setOpen] = useState(false);
+  const shouldHydrate = !!active || open;
+  const stream = useAssistantRunStream(run?.id, {
+    subscribe: !!active,
+    hydrate: shouldHydrate,
+    initialEventLimit: active ? 200 : 100,
+  });
   const effectiveRun = stream.run || run;
   const events = useMemo(
     () => mergeRunEvents(run?.events || [], stream.events || []),
@@ -81,12 +92,12 @@ function AssistantRun({ run, active, onDone }) {
   const streaming = !!(active && runStatus(effectiveRun) === "running" && !stream.done);
 
   useEffect(() => {
-    if (active && stream.done) onDone?.();
-  }, [active, stream.done, onDone]);
+    if (active && stream.done) onDone?.(stream.donePayload);
+  }, [active, stream.done, stream.donePayload, onDone]);
 
   if (!run?.id) return null;
   return (
-    <details class="assistant-run">
+    <details class="assistant-run" open={active || open} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary class="assistant-run-head">
         <span class="assistant-run-label">
           {streaming && <LivePulse size={8} />}
@@ -211,6 +222,17 @@ export function AssistantDock({
     }
   }
 
+  function handleRunDone(payload) {
+    if (payload?.message) {
+      setMessages((current) => current.map((message) => (
+        message.id === payload.message.id ? payload.message : message
+      )));
+      setActiveRun(null);
+      return;
+    }
+    loadAssistant();
+  }
+
   function startResize(event) {
     if (!onResize || event.button !== 0) return;
     event.preventDefault();
@@ -302,7 +324,7 @@ export function AssistantDock({
               key={messageKey(message)}
               message={message}
               active={message.id === activeMessageId}
-              onRunDone={loadAssistant}
+              onRunDone={handleRunDone}
             />
           ))
         ) : (
