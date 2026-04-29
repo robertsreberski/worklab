@@ -316,10 +316,10 @@ describe("task-watcher v2 workflow", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count FROM tasks WHERE id = ?").get(taskId);
-    // Cancel is user-initiated and must not be conflated with failure: no
-    // error_text, no retry_count bump, distinct stage_reason. UI renders an
-    // amber chip from the stage_reason rather than a red error chip.
-    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (user)", error_text: null, retry_count: 0 });
+    // Cancellation must not be conflated with failure: no error_text, no
+    // retry_count bump, distinct stage_reason. UI renders an amber chip from
+    // the stage_reason rather than a red error chip.
+    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (runtime)", error_text: null, retry_count: 0 });
     const cancelComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body = 'Run cancelled.'").get(taskId);
     expect(cancelComment).toBeTruthy();
   });

@@ -193,6 +193,24 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects.some((sideEffect) => sideEffect.type === "set_failure_count")).toBe(false);
   });
 
+  it("run_cancelled does not label unattributed runtime cancels as user cancels", () => {
+    const runtime = nextStage("execute", {
+      type: "run_cancelled",
+      retryStage: "execute",
+      message: "Run cancelled.",
+      failureKind: "cancelled",
+    });
+    expect(runtime.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled (runtime)" });
+
+    const signal = nextStage("execute", {
+      type: "run_cancelled",
+      retryStage: "execute",
+      message: "Run cancelled.",
+      failureKind: "cancelled_signal",
+    });
+    expect(signal.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled (signal)" });
+  });
+
   it("run_abandoned is treated as a non-retry-counting failure with error_text", () => {
     const r = nextStage("execute", { type: "run_abandoned", retryStage: "execute" });
     expect(r.stage).toBe("execute");

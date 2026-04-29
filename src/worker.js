@@ -132,7 +132,7 @@ function reviewResultFromResponse(response) {
 }
 
 function maxTurnsForModel(model, fallback) {
-  if (["claude", "claude-code"].includes(model?.sdk)) return undefined;
+  if (["claude", "claude-code", "openai", "codex", "vercel", "pi"].includes(model?.sdk)) return undefined;
   return fallback;
 }
 
@@ -230,15 +230,33 @@ async function main() {
     signalReceived = signalReceived || signal;
     ac.abort();
   }
-  function emitCancelledAndExit() {
+  function emitCancelledAndExit(result = {}) {
     const event = { type: "cancelled" };
     if (signalReceived) {
       event.initiator = "worker_signal";
       event.signal = signalReceived;
       event.reason = `worker received ${signalReceived}`;
+    } else {
+      event.initiator = result.initiator || result.cancel_initiator || "runtime_cancel";
+      event.reason = result.reason || result.cancel_reason || "runtime reported cancellation";
     }
     emit(event);
     process.exit(130);
+  }
+  function handleRuntimeStop(result) {
+    emitRuntimeWarnings(result);
+    if (result.error) {
+      emit({
+        type: "error",
+        message: result.error,
+        failureKind: result.failureKind,
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
+      });
+      process.exit(1);
+    }
+    if (result.cancelled) {
+      emitCancelledAndExit(result);
+    }
   }
   process.on("SIGTERM", () => { handleSignal("SIGTERM"); });
   process.on("SIGINT", () => { handleSignal("SIGINT"); });
@@ -271,14 +289,7 @@ async function main() {
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
-      if (result.cancelled) {
-        emitCancelledAndExit();
-      }
-      if (result.error) {
-        emit({ type: "error", message: result.error, failureKind: result.failureKind });
-        process.exit(1);
-      }
-      emitRuntimeWarnings(result);
+      handleRuntimeStop(result);
       const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
       emit({ type: "memory_written", agent: agentName, path });
       emit({
@@ -289,6 +300,7 @@ async function main() {
         numTurns: result.numTurns,
         model: result.model,
         effort: result.effort,
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
       });
       process.exit(0);
     } catch (err) {
@@ -319,14 +331,7 @@ async function main() {
         abortSignal: ac.signal,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
-      if (result.cancelled) {
-        emitCancelledAndExit();
-      }
-      if (result.error) {
-        emit({ type: "error", message: result.error, failureKind: result.failureKind });
-        process.exit(1);
-      }
-      emitRuntimeWarnings(result);
+      handleRuntimeStop(result);
       emit({
         type: "final",
         text: result.text,
@@ -335,6 +340,7 @@ async function main() {
         numTurns: result.numTurns,
         model: result.model,
         effort: result.effort,
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
       });
       process.exit(0);
     } catch (err) {
@@ -390,14 +396,7 @@ async function main() {
         liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
-      if (result.cancelled) {
-        emitCancelledAndExit();
-      }
-      if (result.error) {
-        emit({ type: "error", message: result.error, failureKind: result.failureKind });
-        process.exit(1);
-      }
-      emitRuntimeWarnings(result);
+      handleRuntimeStop(result);
       const parsedResult = resultFromResponseOrFallback(result, {
         stage: task.stage || mode,
         decision: "advance",
@@ -423,6 +422,7 @@ async function main() {
         numTurns: result.numTurns,
         model: result.model,
         effort: result.effort,
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
       });
       process.exit(0);
     } catch (err) {
@@ -479,14 +479,7 @@ async function main() {
         liveInput,
         onEvent: (event) => emit({ type: "sdk_event", event }),
       });
-      if (result.cancelled) {
-        emitCancelledAndExit();
-      }
-      if (result.error) {
-        emit({ type: "error", message: result.error, failureKind: result.failureKind });
-        process.exit(1);
-      }
-      emitRuntimeWarnings(result);
+      handleRuntimeStop(result);
       const parsedReview = reviewResultFromResponse(result);
       if (parsedReview.error) {
         emit({
@@ -508,6 +501,7 @@ async function main() {
         numTurns: result.numTurns,
         model: result.model,
         effort: result.effort,
+        ...(result.diagnostics ? { diagnostics: result.diagnostics } : {}),
       });
 
       // Always emit verdict (null is valid); process exit now reflects runtime

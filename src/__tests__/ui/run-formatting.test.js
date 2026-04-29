@@ -122,6 +122,17 @@ describe("run formatting helpers", () => {
     }).summary).toBe("Run cancelled (worker_signal: worker received SIGTERM)");
   });
 
+  it("summarizes cancellation failure kinds when no initiator was recorded", () => {
+    expect(runResultPreview({
+      process_status: "cancelled",
+      failure_kind: "cancelled_signal",
+    }).summary).toBe("Run cancelled (signal)");
+    expect(runResultPreview({
+      process_status: "cancelled",
+      failure_kind: "cancelled",
+    }).summary).toBe("Run cancelled (runtime)");
+  });
+
   it("keeps neutral decision tones neutral", () => {
     expect(runResultPreview({ decision: "delegate", summary: "Split work" }).tone).toBe("");
   });

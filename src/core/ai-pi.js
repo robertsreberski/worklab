@@ -316,7 +316,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let structuredResult = null;
   let mcpClients = [];
   let finalMessages = [];
-  let cancelled = false;
+  let externalAbort = false;
   let maxTurnsHit = false;
   let turnCount = 0;
 
@@ -435,11 +435,35 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     });
 
     const abortHandler = () => {
-      cancelled = true;
+      externalAbort = true;
       agent.abort();
     };
     if (options.abortSignal) {
-      if (options.abortSignal.aborted) abortHandler();
+      if (options.abortSignal.aborted) {
+        externalAbort = true;
+        return {
+          text: null,
+          thinking: "",
+          events,
+          usage: {},
+          durationMs: Date.now() - start,
+          numTurns: turnCount,
+          model: resolved?.reference || resolved?.model || null,
+          effort: options.effort || null,
+          sdk: resolved?.sdk || "pi",
+          cancelled: true,
+          error: null,
+          failureKind: null,
+          runtimeWarnings,
+          diagnostics: {
+            pi_stop_reason: "aborted",
+            max_turns_hit: false,
+            max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
+            turn_count: turnCount,
+            external_abort: true,
+          },
+        };
+      }
       else options.abortSignal.addEventListener("abort", abortHandler, { once: true });
     }
 
@@ -483,6 +507,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const structuredText = finalTextFromStructured(structuredResult, worklabResult);
     const text = structuredText ?? finalText;
     const usage = usageFromMessages(transcript);
+    const stopReason = lastAssistant?.stopReason || null;
+    externalAbort ||= !!options.abortSignal?.aborted;
     const reference = resolved.reference
       || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
     const estimatedCost = estimateCost({
@@ -492,11 +518,21 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       outputTokens: usage.output,
       cachedTokens: usage.cacheRead,
     });
-    const rawErrorMessage = maxTurnsHit
-      ? "Pi agent stopped before final output: max turns reached"
-      : (lastAssistant?.stopReason === "error" || lastAssistant?.stopReason === "aborted" ? lastAssistant.errorMessage || agent.state.errorMessage : null);
+    const rawErrorMessage = externalAbort
+      ? null
+      : maxTurnsHit
+        ? "Pi agent stopped before final output: max turns reached"
+        : (stopReason === "error" || stopReason === "aborted"
+            ? lastAssistant.errorMessage || agent.state.errorMessage || "Pi agent aborted before final output"
+            : null);
     const errorMessage = normalizePiErrorMessage(rawErrorMessage);
-    cancelled ||= !!options.abortSignal?.aborted || lastAssistant?.stopReason === "aborted";
+    const diagnostics = {
+      pi_stop_reason: stopReason,
+      max_turns_hit: maxTurnsHit,
+      max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
+      turn_count: turnCount || assistantMessages.length || finalMessages.length,
+      external_abort: externalAbort,
+    };
 
     return {
       text,
@@ -515,13 +551,15 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       model: resolved.sdk === "vercel" ? resolved.reference : runtime.model.id,
       effort: options.effort || null,
       sdk: resolved.sdk,
-      cancelled,
+      cancelled: externalAbort,
       error: errorMessage,
       failureKind: errorMessage ? (maxTurnsHit || isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable") : null,
       runtimeWarnings,
+      diagnostics,
       ...(worklabResult ? { worklabResult, structuredResultSource: structuredResult ? "StructuredOutput" : "message" } : {}),
     };
   } catch (err) {
+    externalAbort ||= !!options.abortSignal?.aborted;
     const errorMessage = normalizePiErrorMessage(err?.message || String(err));
     return {
       text: assistantTexts.join("") || null,
@@ -532,10 +570,17 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       model: resolved?.reference || resolved?.model || null,
       effort: options.effort || null,
       sdk: resolved?.sdk || "pi",
-      cancelled: cancelled || !!options.abortSignal?.aborted,
-      error: errorMessage,
-      failureKind: isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable",
+      cancelled: externalAbort,
+      error: externalAbort ? null : errorMessage,
+      failureKind: externalAbort ? null : (isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable"),
       runtimeWarnings,
+      diagnostics: {
+        pi_stop_reason: externalAbort ? "aborted" : "error",
+        max_turns_hit: maxTurnsHit,
+        max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
+        turn_count: turnCount,
+        external_abort: externalAbort,
+      },
     };
   } finally {
     await closePiMcpClients(mcpClients);
