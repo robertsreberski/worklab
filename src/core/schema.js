@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 18;
+export const SCHEMA_VERSION = 19;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -387,8 +387,13 @@ CREATE TABLE IF NOT EXISTS assistant_runs (
   num_turns INTEGER,
   summary TEXT,
   final_json TEXT,
+  failure_kind TEXT,
   error_text TEXT,
-  raw_output_path TEXT
+  raw_output_path TEXT,
+  cancel_initiator TEXT,
+  cancel_reason TEXT,
+  warnings_json TEXT NOT NULL DEFAULT '[]',
+  diagnostics_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_assistant_runs_thread ON assistant_runs(thread_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_assistant_runs_status ON assistant_runs(status, started_at DESC);
