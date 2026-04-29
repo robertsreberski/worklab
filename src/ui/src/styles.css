@@ -8286,8 +8286,8 @@ select,
   .app.responsive .app-mobile-action-dock .button {
     flex: 1 1 0;
     justify-content: center;
-    height: 40px;
-    min-height: 40px;
+    height: 44px;
+    min-height: 44px;
     min-width: 0;
   }
   .detail-head .sub-bar .section-jump-pill,

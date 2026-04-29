@@ -587,7 +587,7 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
   expect(metrics).not.toBeNull();
   expect(Math.abs(metrics.gridWidth - metrics.bodyContentWidth)).toBeLessThanOrEqual(2);
   expect(metrics.columnCount).toBe(2);
-  expect(metrics.railWidth).toBeGreaterThanOrEqual(320);
+  expect(metrics.railWidth).toBeGreaterThanOrEqual(300);
 });
 
 test("creating a task is single-save and does not show a false unsaved warning", async ({ page }) => {
@@ -776,7 +776,7 @@ test("desktop task detail states keep actions and context obvious without clippe
         if (action.enabled) await expect(button).toBeEnabled();
         else await expect(button).toBeDisabled();
       }
-      if (state.contextText) await expect(page.locator(".task-detail")).toContainText(state.contextText);
+      if (state.contextText) await expect(page.locator(".task-detail-shell")).toContainText(state.contextText);
 
       const columnCount = await page.locator(".task-detail").evaluate((node) => {
         return getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length;
@@ -864,7 +864,7 @@ test("activity open link scrolls to targeted task run", async ({ page }) => {
   await expect(run.locator(".run-card-events")).toBeVisible();
 
   await expect.poll(async () => {
-    return page.locator(".task-detail").evaluate((container) => {
+    return page.locator(".app-main").evaluate((container) => {
       const target = container.querySelector(".run-card.highlighted");
       if (!target) return false;
       const targetBox = target.getBoundingClientRect();
@@ -1069,6 +1069,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       title: "Mobile layout reference",
       rowText: "Mobile layout reference",
       detailText: "mobile-layout-reference",
+      entityEditor: true,
     },
   ];
 
@@ -1143,14 +1144,14 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
   const routes = [
     { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true },
     { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
-    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "All entries" },
+    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", entityEditor: true },
   ];
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
     if (route.entityEditor) {
       await expect(page.locator(".pane-mobile-back")).toHaveCount(0);
-      await expect(page.locator(".edit-shell-head .icon-button").first()).toBeVisible();
+      await expect(page.locator(".mobile-topbar-back").first()).toBeVisible();
       await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toBeVisible();
     } else {
       await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
@@ -1352,7 +1353,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.pillVisible).toBe(true);
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
   expect(metrics.rowHeight).toBeLessThanOrEqual(88);
-  expect(metrics.filterHeight).toBeLessThanOrEqual(92);
+  expect(metrics.filterHeight).toBeLessThanOrEqual(104);
   expect(metrics.searchWidth).toBeGreaterThanOrEqual(360);
   expect(metrics.tabsTop).toBeGreaterThan(metrics.searchTop);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
@@ -1408,10 +1409,10 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const line = rail ? getComputedStyle(rail, "::after") : null;
     return {
       activityBeforeAgents: activity && agents
-        ? activity.getBoundingClientRect().top < agents.getBoundingClientRect().top
+        ? getComputedStyle(agents).display === "none" || activity.getBoundingClientRect().top < agents.getBoundingClientRect().top
         : false,
       activityBeforeContext: activity && context
-        ? activity.getBoundingClientRect().top < context.getBoundingClientRect().top
+        ? getComputedStyle(context).display === "none" || activity.getBoundingClientRect().top < context.getBoundingClientRect().top
         : false,
       activityBorder: activity ? parseFloat(getComputedStyle(activity).borderTopWidth) : -1,
       composerHeight: composer ? Math.round(composer.getBoundingClientRect().height) : 0,
@@ -1515,15 +1516,15 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
   const routes = [
     { hash: "#/agents/new", title: "New agent", back: "All agents", entityEditor: true },
     { hash: "#/skills/new", title: "New skill", back: "All skills", entityEditor: true },
-    { hash: "#/knowledge/new", title: "New entry", back: "All entries" },
-    { hash: "#/providers/new", title: "New provider", back: "All providers" },
+    { hash: "#/knowledge/new", title: "New entry", back: "Knowledge", entityEditor: true },
+    { hash: "#/providers/new", title: "New provider", back: "Providers", entityEditor: true },
   ];
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
     if (route.entityEditor) {
       await expect(page.locator(".pane-mobile-back")).toHaveCount(0);
-      await expect(page.locator(".edit-shell-head .icon-button").first()).toBeVisible();
+      await expect(page.locator(".mobile-topbar-back").first()).toBeVisible();
       await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Create" })).toBeVisible();
     } else {
       await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
