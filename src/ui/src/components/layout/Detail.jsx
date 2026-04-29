@@ -4,12 +4,18 @@ export function DetailHeader({
   title,
   meta,
   actions,
+  iconFrame = true,
+  iconClass = "",
   class: className = "",
 }) {
   return (
     <header class={`pane-detail-head ds-detail-head ${className}`.trim()}>
       <div class="pane-detail-head-copy">
-        {icon && <div class="pane-detail-icon ds-detail-icon" aria-hidden="true">{icon}</div>}
+        {icon && (
+          iconFrame
+            ? <div class={`pane-detail-icon ds-detail-icon ${iconClass}`.trim()} aria-hidden="true">{icon}</div>
+            : <div class="ds-detail-identity" aria-hidden="true">{icon}</div>
+        )}
         <div class="pane-detail-head-titles">
           {kicker && <span class="form-section-kicker">{kicker}</span>}
           {title && <h2>{title}</h2>}

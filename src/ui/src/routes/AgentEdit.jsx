@@ -26,6 +26,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
+import { DetailHeader } from "../components/layout/index.js";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
@@ -503,22 +504,23 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   return (
     <>
-      <header class="pane-detail-head agent-detail-head">
-        <div class="pane-detail-head-copy">
-          {!isNew && <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} />}
-          <div class="pane-detail-head-titles">
-            <div class="all-caps">{isNew ? "Create agent" : "Agent"}</div>
-            <h2>{title}</h2>
-            <div class="pane-detail-subline">
-              <span class="pane-row-mono">{headerSlug}</span>
-              <span class="pane-row-dot">·</span>
-              <span>{headerModelLabel}</span>
-              <span class="pane-row-dot">·</span>
-              <span>{normalizedEffort} effort</span>
-            </div>
-          </div>
-        </div>
-        <div class="toolbar">
+      <DetailHeader
+        class="agent-detail-head"
+        icon={!isNew ? <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} /> : null}
+        iconFrame={false}
+        kicker={isNew ? "Create agent" : "Agent"}
+        title={title}
+        meta={(
+          <>
+            <span class="pane-row-mono">{headerSlug}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{headerModelLabel}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{normalizedEffort} effort</span>
+          </>
+        )}
+        actions={(
+          <>
           {!isNew && <StatusPill status={agent.enabled ? "enabled" : "disabled"} />}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
@@ -528,8 +530,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           >
             {isNew ? "Create" : "Save"}
           </Button>
-        </div>
-      </header>
+          </>
+        )}
+      />
       <div class="pane-detail-body entity-detail-body agent-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />

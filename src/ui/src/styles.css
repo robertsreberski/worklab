@@ -4400,6 +4400,12 @@ select,
   border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--border));
   border-radius: var(--radius-sm);
 }
+.ds-detail-identity {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
 .ds-rail-stack {
   display: flex;
   flex-direction: column;
