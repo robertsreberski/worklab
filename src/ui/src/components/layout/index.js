@@ -11,6 +11,7 @@ export {
   RailStack,
 } from "./Detail.jsx";
 export { EditHeader } from "./EditShell.jsx";
+export { DetailHead, SectionMarker } from "./DetailHead.jsx";
 export { PaneListHeader } from "./PaneListHeader.jsx";
 export {
   ActionDock,
