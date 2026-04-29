@@ -71,6 +71,28 @@ The name Kaisei appears to be a spelling mix-up with kaiseki. Booking should hap
 Open the booking page for Iharada first. If the preferred date is unavailable, move to Machiya Locals for a smaller group or Minokichi for a larger group.`;
 }
 
+function kbWriteEvents({ slug, toolName = "mcp__worklab__kb_create", isError = false } = {}) {
+  return [
+    {
+      type: "assistant",
+      message: {
+        content: [{ type: "tool_use", id: "kb-1", name: toolName, input: { slug, title: "Research", body: "Full report" } }],
+      },
+    },
+    {
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: "kb-1",
+          content: JSON.stringify(isError ? { ok: false, error: "failed" } : { ok: true, slug }),
+          is_error: isError,
+        }],
+      },
+    },
+  ];
+}
+
 const advanceResult = {
   schema: "worklab.v2",
   stage: "execute",
@@ -610,6 +632,162 @@ describe("task-watcher", () => {
     const entry = kbRead({ dataDir, slug });
     expect(entry.body).toContain("# Complete Restaurant Research");
     expect(entry.body).toContain("Source run:");
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+  });
+
+  it("does not create fallback knowledge when final text already links a knowledge entry", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const fullAnswer = richFinalAnswer();
+    const explicitSlug = "restaurant-research";
+    const linkedFinalText = `Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${explicitSlug})`;
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Restaurant research complete",
+      details: "Iharada is the top pick.",
+      final_text: linkedFinalText,
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${fullAnswer}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(kbRead({ dataDir, slug: slugify(`run-${runId}`, "run-result") })).toBeNull();
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(linkedFinalText);
+  });
+
+  it("links an explicit successful KB write instead of creating fallback knowledge", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const explicitSlug = "restaurant-research";
+    const fullAnswer = richFinalAnswer();
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Restaurant research complete",
+      details: "Iharada is the top pick.",
+      final_text: "Research complete. Iharada is the top pick.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${fullAnswer}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+      events: kbWriteEvents({ slug: explicitSlug }),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(kbRead({ dataDir, slug: slugify(`run-${runId}`, "run-result") })).toBeNull();
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${explicitSlug})`);
+  });
+
+  it("creates fallback knowledge when the explicit KB write failed", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const fullAnswer = richFinalAnswer();
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Restaurant research complete",
+      details: "Iharada is the top pick.",
+      final_text: "Research complete. Iharada is the top pick.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${fullAnswer}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+      events: kbWriteEvents({ slug: "restaurant-research", isError: true }),
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const slug = slugify(`run-${runId}`, "run-result");
+    expect(kbRead({ dataDir, slug })?.body).toContain("# Complete Restaurant Research");
     const agentComment = db
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
