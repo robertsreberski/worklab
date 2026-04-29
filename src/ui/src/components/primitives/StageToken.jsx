@@ -22,6 +22,7 @@ export function StageToken({
   disabled = false,
   label,
   onClick,
+  as,
   class: className = "",
   ...rest
 }) {
@@ -35,8 +36,9 @@ export function StageToken({
   );
   const cls = `stage-token stage-token-${variant} ${active ? "active" : ""} ${className}`.trim();
   const style = { "--stage-tone": meta.tone };
+  const isButton = as ? as === "button" : (variant === "grid" || variant === "menu" || onClick);
 
-  if (variant === "grid" || variant === "menu" || onClick) {
+  if (isButton) {
     return (
       <button
         type="button"
