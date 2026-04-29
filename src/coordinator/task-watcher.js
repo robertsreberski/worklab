@@ -17,6 +17,10 @@ import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
 import { prepareExecenv } from "../core/execenv.js";
+import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
+import { slugify } from "../core/slugs.js";
+
+const RICH_FINAL_MIN_CHARS = 800;
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -98,6 +102,107 @@ function agentCommentBody(result, finalText) {
   const delivered = sanitizeAgentText(finalText);
   if (delivered) return delivered;
   return sanitizeAgentText(formatWorklabResultText(result));
+}
+
+function normalizedComparableText(text) {
+  return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function firstMeaningfulParagraph(text, limit = 500) {
+  const paragraph = String(text || "")
+    .split(/\n{2,}/)
+    .map((part) => part.trim())
+    .find(Boolean) || "";
+  if (paragraph.length <= limit) return paragraph;
+  return `${paragraph.slice(0, limit - 3).trimEnd()}...`;
+}
+
+function assistantTextsFromEvents(events = []) {
+  const texts = [];
+  for (const wrapper of Array.isArray(events) ? events : []) {
+    const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
+    const content = event?.message?.content;
+    if (typeof content === "string") {
+      texts.push(content);
+      continue;
+    }
+    if (!Array.isArray(content)) continue;
+    for (const block of content) {
+      if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
+    }
+  }
+  return texts;
+}
+
+function isDistinctRichFinal(text, commentBody) {
+  const body = String(text || "").trim();
+  if (body.length < RICH_FINAL_MIN_CHARS) return false;
+  const comparableBody = normalizedComparableText(body);
+  const comparableComment = normalizedComparableText(commentBody);
+  if (!comparableBody) return false;
+  if (comparableBody === comparableComment) return false;
+  return true;
+}
+
+function richFinalAnswerFromRun({ finalText, events, commentBody }) {
+  const candidates = [
+    sanitizeAgentText(finalText),
+    ...assistantTextsFromEvents(events).reverse().map((text) => sanitizeAgentText(text)),
+  ];
+  for (const candidate of candidates) {
+    if (isDistinctRichFinal(candidate, commentBody)) return candidate;
+  }
+  return "";
+}
+
+function conciseCommentForLinkedAnswer(result, richText) {
+  const structured = structuredFinalText(result);
+  if (structured) return structured;
+  const summary = sanitizeAgentText(result?.summary || "");
+  if (summary) return summary;
+  return firstMeaningfulParagraph(richText);
+}
+
+function runResultKbSlug(runId) {
+  return slugify(`run-${runId}`, "run-result");
+}
+
+function runResultKbTags({ task, stage, agentName }) {
+  const taskRef = task?.task_key || task?.id || "task";
+  return [
+    "run-result",
+    `task-${slugify(taskRef, "task")}`,
+    slugify(stage || "run", "run"),
+    `agent-${slugify(agentName || "agent", "agent")}`,
+  ];
+}
+
+function runResultKbTitle({ task, agentName }) {
+  const taskRef = task?.task_key || task?.title || "Task";
+  return `${taskRef} final answer${agentName ? ` from ${agentName}` : ""}`;
+}
+
+function runResultKbBody({ task, runId, stage, agentName, richText }) {
+  const taskRef = task?.task_key || task?.id || "task";
+  const taskTitle = task?.title ? ` - ${task.title}` : "";
+  return [
+    `Source task: [${taskRef}${taskTitle}](#/tasks/${encodeURIComponent(taskRef)})`,
+    `Source run: [${runId}](/api/runs/${encodeURIComponent(runId)}/raw-log)`,
+    `Stage: ${stage || "execute"}`,
+    `Agent: ${agentName || "agent"}`,
+    "",
+    "---",
+    "",
+    richText,
+  ].join("\n");
+}
+
+function appendKbLink(body, slug) {
+  const clean = String(body || "").trim();
+  const link = `Full final answer: [Knowledge entry](#/knowledge/${slug})`;
+  if (!clean) return link;
+  if (clean.includes(`#/knowledge/${slug}`)) return clean;
+  return `${clean}\n\n${link}`;
 }
 
 function looksLikePlanBody(text) {
@@ -531,8 +636,44 @@ export function createTaskWatcher({
     return { ok: true };
   }
 
-  function postAgentFinalComment(taskId, agentName, result, finalText) {
-    const body = agentCommentBody(result, finalText);
+  function persistRunResultKnowledge({ task, runId, stage, agentName, result, finalText, events, commentBody }) {
+    if (!dataDir || stage !== "execute" || result?.decision !== "advance") return null;
+    const richText = richFinalAnswerFromRun({ finalText, events, commentBody });
+    if (!richText) return null;
+    const slug = runResultKbSlug(runId);
+    const title = runResultKbTitle({ task, agentName });
+    const body = runResultKbBody({ task, runId, stage, agentName, richText });
+    const patch = {
+      title,
+      body,
+      tags: runResultKbTags({ task, stage, agentName }),
+      category: "run-results",
+      pinned: false,
+    };
+    try {
+      if (kbRead({ dataDir, slug })) {
+        kbUpdate({ dataDir, slug, patch });
+      } else {
+        kbCreate({ dataDir, slug, author: agentName || "agent", ...patch });
+      }
+      broker?.broadcast?.("global", { type: "kb_updated", slug });
+      return { slug, title, richText };
+    } catch (err) {
+      logger?.warn?.({ err: err?.message || String(err), runId, slug }, "failed to persist rich final answer");
+      return null;
+    }
+  }
+
+  function postAgentFinalComment(taskId, agentName, result, finalText, options = {}) {
+    let body = agentCommentBody(result, finalText);
+    const kbEntry = persistRunResultKnowledge({
+      ...options,
+      agentName,
+      result,
+      finalText,
+      commentBody: body,
+    });
+    if (kbEntry) body = appendKbLink(conciseCommentForLinkedAnswer(result, kbEntry.richText) || body, kbEntry.slug);
     if (!body) return;
     db.prepare(
       `INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
@@ -725,7 +866,13 @@ export function createTaskWatcher({
     }
 
     updateRunResult(runId, result);
-    postAgentFinalComment(taskId, agentName, result, res.finalText);
+    postAgentFinalComment(taskId, agentName, result, res.finalText, {
+      task,
+      run,
+      runId,
+      stage,
+      events: res.events,
+    });
 
     const next = nextStage(taskStage(task), {
       type: "run_succeeded",
