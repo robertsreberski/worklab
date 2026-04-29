@@ -96,10 +96,11 @@ export function runTokenTotal(log = {}) {
 
 export function runMetricItems(run) {
   const log = run?.log || {};
+  const cost = run?.cost_usd ?? log.cost_usd;
   return [
     ["Duration", formatDuration(runDuration(run))],
     ["Turns", log.num_turns != null ? `${log.num_turns}` : null],
     ["Tokens", formatTokens(runTokenTotal(log))],
-    ["Cost", log.cost_usd != null ? formatCost(log.cost_usd) : null],
+    ["Cost", cost != null ? formatCost(cost) : null],
   ].filter(([, value]) => value);
 }
