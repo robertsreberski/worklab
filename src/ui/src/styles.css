@@ -9706,4 +9706,7 @@ html.assistant-resizing * {
     bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
     z-index: 72;
   }
+  .app.responsive:has(.commander-new-task-fab) .assistant-launcher {
+    bottom: calc(112px + var(--sp-4) + var(--sp-3) + env(safe-area-inset-bottom));
+  }
 }

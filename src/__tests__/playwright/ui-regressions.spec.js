@@ -1611,6 +1611,48 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   await expect(page).toHaveURL(/#\/tasks\/new/);
 });
 
+test("mobile task list stacks assistant launcher above new task", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+  await expect(page.locator(".commander-new-task-fab")).toBeVisible();
+  await expect(page.locator(".assistant-launcher")).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const fab = document.querySelector(".commander-new-task-fab");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const nav = document.querySelector(".app-tabbar");
+    const fabRect = fab?.getBoundingClientRect();
+    const assistantLauncherRect = assistantLauncher?.getBoundingClientRect();
+    const navRect = nav?.getBoundingClientRect();
+    const fabCenterTarget = fabRect
+      ? document.elementFromPoint(fabRect.left + fabRect.width / 2, fabRect.top + fabRect.height / 2)
+      : null;
+    return {
+      fabLabel: fab?.getAttribute("aria-label") || "",
+      assistantLauncherLabel: assistantLauncher?.getAttribute("aria-label") || "",
+      fabBottomBeforeNav: fabRect && navRect ? Math.round(fabRect.bottom) <= Math.round(navRect.top) + 1 : false,
+      assistantLauncherBottomBeforeFab: assistantLauncherRect && fabRect
+        ? Math.round(assistantLauncherRect.bottom) <= Math.round(fabRect.top) - 1
+        : false,
+      assistantLauncherRightAligned: assistantLauncherRect && fabRect
+        ? Math.abs(Math.round(assistantLauncherRect.right) - Math.round(fabRect.right)) <= 1
+        : false,
+      fabCenterTargetIsFab: !!fabCenterTarget?.closest?.(".commander-new-task-fab"),
+    };
+  });
+
+  expect(metrics.fabLabel).toBe("New task");
+  expect(metrics.assistantLauncherLabel).toBe("Open assistant");
+  expect(metrics.fabBottomBeforeNav).toBe(true);
+  expect(metrics.assistantLauncherBottomBeforeFab).toBe(true);
+  expect(metrics.assistantLauncherRightAligned).toBe(true);
+  expect(metrics.fabCenterTargetIsFab).toBe(true);
+
+  await page.locator(".commander-new-task-fab").click();
+  await expect(page).toHaveURL(/#\/tasks\/new/);
+});
+
 test("mobile task detail keeps activity first with a compact premium composer", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
