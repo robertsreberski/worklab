@@ -45,6 +45,28 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events).toEqual([{ type: "text", text: "still working", _event_seq: 1 }]);
   });
 
+  it("can return only the tail of run events", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'a', ?, 'complete')")
+      .run(runId, taskId, now);
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+      .run("log-tail", runId, JSON.stringify([
+        { type: "text", _event_seq: 1 },
+        { type: "text", _event_seq: 2 },
+        { type: "final", _event_seq: 3 },
+      ]), now);
+
+    const res = await agent.get(`/api/runs/${runId}?events=tail&limit=2`).expect(200);
+
+    expect(res.body.log.event_count).toBe(3);
+    expect(res.body.log.events_truncated).toBe(true);
+    expect(res.body.log.events.map((event) => event._event_seq)).toEqual([2, 3]);
+  });
+
   it("returns a run raw log when the path is inside the data dir", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-raw-log-"));
     try {

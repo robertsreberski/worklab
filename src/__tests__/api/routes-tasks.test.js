@@ -41,6 +41,18 @@ describe("GET /api/tasks", () => {
     const res = await agent.get("/api/tasks").expect(200);
     expect(res.body).toEqual({ tasks: [] });
   });
+
+  it("supports a lightweight summary view", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/tasks").send({ title: "summary task" }).expect(201);
+
+    const res = await agent.get("/api/tasks?view=summary").expect(200);
+
+    expect(res.body.tasks).toHaveLength(1);
+    expect(res.body.tasks[0]).toMatchObject({ title: "summary task", stage: "plan" });
+    expect(res.body.tasks[0].blocked_by).toBeUndefined();
+    await agent.get("/api/tasks?view=nope").expect(400);
+  });
 });
 
 describe("GET /api/runs/cost-summary", () => {
