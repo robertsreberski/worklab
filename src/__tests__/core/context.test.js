@@ -149,6 +149,9 @@ describe("buildExecuteSystemPrompt", () => {
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
+    expect(p).toContain("Preserve durable deliverables in Knowledge");
+    expect(p).toContain("save the complete deliverable with `kb_create` or `kb_update`");
+    expect(p).toContain("Mention the Knowledge slug or link in `final_text`");
     expect(p).toContain("Worklab needs one final `worklab.v2` JSON object");
     expect(p).toContain("Do not preface the final JSON with process narration");
     expect(p).toContain("the final valid result supersedes earlier structured progress");
@@ -192,6 +195,7 @@ describe("buildPlanSystemPrompt", () => {
     expect(p).toContain('"details": "Complete implementation plan."');
     expect(p).toContain('"final_text": "Short human-facing plan status."');
     expect(p).toContain('Use decision "advance" when the plan is ready');
+    expect(p).not.toContain("Preserve durable deliverables in Knowledge");
   });
 });
 

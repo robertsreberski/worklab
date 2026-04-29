@@ -305,7 +305,7 @@ export const toolDefinitions = [
   {
     name: "kb_create",
     description:
-      "Create a new knowledge-base entry. The author is set automatically from the calling agent context.",
+      "Create a new knowledge-base entry. Use this to preserve substantial task deliverables, research reports, runbooks, decisions, and reusable analysis. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {
