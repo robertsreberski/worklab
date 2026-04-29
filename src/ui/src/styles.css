@@ -2620,13 +2620,15 @@ select,
 }
 
 /* §4.4 CommanderRow — dense row:
-   checkbox · id · title+live · deps-chip · owner→reviewer · pill · age */
+   checkbox · id · title · deps-chip · planner→owner→reviewer · pill · age */
 .commander-row {
   display: grid;
-  grid-template-columns: 16px 58px 14px minmax(0, 1fr) minmax(0, 112px) 80px 104px 56px;
+  grid-template-columns: 18px 56px minmax(0, 1fr) fit-content(128px) max-content max-content 56px;
+  grid-auto-rows: auto;
   align-items: center;
-  column-gap: 10px;
-  padding: var(--sp-2) var(--sp-6);
+  column-gap: var(--sp-3);
+  row-gap: 4px;
+  padding: 10px var(--sp-6);
   border-bottom: 1px solid var(--border);
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--surface) 52%, transparent), transparent);
@@ -2697,7 +2699,7 @@ select,
   opacity: 0.92;
 }
 .commander-cell-state {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -2718,14 +2720,17 @@ select,
 .commander-cell-title-row {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--sp-1) var(--sp-2);
   min-width: 0;
   max-width: 100%;
 }
+.commander-cell-title-row > .chip {
+  flex: 0 0 auto;
+}
 .commander-title {
-  flex: 1 1 170px;
-  min-width: min(100%, 150px);
+  flex: 1 1 auto;
+  min-width: 0;
   color: var(--text);
   font-weight: 600;
   letter-spacing: 0;
@@ -2734,6 +2739,18 @@ select,
   white-space: nowrap;
 }
 .commander-live-line {
+  grid-column: 3 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--status-progress) 22%, var(--border));
+  border-left: 2px solid var(--status-progress);
+  border-radius: var(--radius-xs);
+  background: color-mix(in srgb, var(--status-progress) 8%, var(--surface-sunken));
   animation: wl-tick-in var(--dur-tick) linear;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2741,18 +2758,22 @@ select,
   font-size: var(--text-sm);
   color: var(--text-muted);
   font-family: var(--font-mono);
-  padding-left: 1px;
+}
+.commander-live-line .tool-token {
+  min-width: 0;
+  max-width: 100%;
 }
 .commander-cell-deps { min-width: 0; display: flex; align-items: center; gap: var(--sp-2); justify-content: flex-end; }
+.commander-cell-deps:empty { display: none; }
 .commander-cell-assignees {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: var(--sp-1);
-  min-width: 0;
+  justify-content: center;
+  gap: 4px;
+  min-width: max-content;
 }
 .commander-cell-arrow { color: var(--text-subtle); flex-shrink: 0; }
-.commander-cell-pill { min-width: 0; max-width: 104px; display: flex; }
+.commander-cell-pill { min-width: 0; display: flex; justify-content: flex-end; }
 .commander-cell-age {
   display: flex;
   align-items: center;
@@ -6628,10 +6649,11 @@ select,
     position: static;
   }
   .commander-row {
-    grid-template-columns: 16px 14px minmax(0, 1fr) minmax(0, 108px) 76px 100px 48px;
+    grid-template-columns: 16px minmax(0, 1fr) fit-content(112px) max-content max-content 48px;
     column-gap: var(--sp-2);
   }
   .commander-row > .commander-cell-id { display: none; }
+  .commander-live-line { grid-column: 2 / -1; }
   /* Commander collapses supplementary chip slot in title cluster — enforced in JSX */
 }
 
@@ -6835,8 +6857,8 @@ select,
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
-    gap: var(--sp-2);
-    padding: var(--sp-2);
+    gap: 6px;
+    padding: 7px var(--sp-2);
     border-color: var(--border);
     border-radius: var(--radius-md);
     background: color-mix(in srgb, var(--surface) 72%, transparent);
@@ -6847,14 +6869,20 @@ select,
     background: color-mix(in srgb, var(--surface) 86%, var(--surface-elevated));
   }
   .activity-composer-input {
+    height: 44px !important;
     min-height: 40px;
-    max-height: 112px;
+    max-height: 48px;
     padding: 9px var(--sp-2);
     font-size: 16px;
     line-height: 1.35;
+    overflow-y: hidden;
+    resize: none;
   }
   .activity-composer-form:focus-within .activity-composer-input {
+    height: 92px !important;
     min-height: 92px;
+    max-height: 112px;
+    overflow-y: auto;
   }
   .activity-composer-actions {
     align-items: center;
@@ -6994,35 +7022,43 @@ select,
   .task-subtask-meta {
     justify-content: flex-start;
   }
-  /* Commander row restacks into a two-line card (§7.5). Line 1 keeps the
-     protected cells (check/id/title/pill). Line 2 is a meta strip
-     with deps, assignees, and age — kept, not hidden. */
+  /* Commander row follows the mobile mockup: check/title/stage on line 1,
+     deps/age on line 2, live run on a full-width third line. */
   .commander-row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
+    grid-template-rows: auto auto auto;
     align-items: center;
-    column-gap: var(--sp-2);
-    row-gap: var(--sp-1);
+    gap: 6px var(--sp-3);
     min-height: 64px;
     padding: var(--sp-3) var(--sp-4);
-    grid-template-columns: none;
   }
   .commander-row::before {
-    content: "";
-    order: 5;
-    flex-basis: 100%;
-    height: 0;
-    margin: 0;
+    content: none;
+    display: none;
   }
-  .commander-row > .commander-cell-checkbox  { order: 1; }
-  .commander-row > .commander-cell-id        { order: 2; }
+  .commander-row > .commander-cell-checkbox  { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
+  .commander-row > .commander-cell-id        { display: none; }
   .commander-row > .commander-cell-state     { display: none; }
-  .commander-row > .commander-cell-title     { order: 3; flex: 1 1 0; min-width: 0; }
-  .commander-row > .commander-cell-pill      { order: 4; flex: 0 0 auto; justify-content: flex-end; }
-  .commander-row > .commander-cell-deps      { order: 7; font-size: var(--text-xs); }
+  .commander-row > .commander-cell-title     { grid-column: 2; grid-row: 1; min-width: 0; }
+  .commander-row > .commander-cell-pill      { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .commander-row > .commander-cell-deps      { grid-column: 2; grid-row: 2; justify-content: flex-start; font-size: var(--text-xs); }
   .commander-row > .commander-cell-deps:empty { display: none; }
-  .commander-row > .commander-cell-assignees { order: 8; flex: 1 1 auto; font-size: var(--text-xs); }
-  .commander-row > .commander-cell-age       { order: 9; font-size: var(--text-xs); justify-content: flex-end; }
+  .commander-row > .commander-cell-assignees { display: none; }
+  .commander-row > .commander-cell-age       { grid-column: 3; grid-row: 2; font-size: var(--text-xs); justify-content: flex-end; }
+  .commander-live-line {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-top: 4px;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .commander-live-line .tool-token,
+  .commander-live-line .tool-token-arg,
+  .commander-live-line .tool-token-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
   .commander-row.selected { padding-left: var(--sp-4); }
   .commander-group-header { padding: var(--sp-2) var(--sp-4); }
   .commander-filter {
@@ -7337,6 +7373,10 @@ select,
   .page-wrap { padding: var(--sp-3); }
   .task-hero-title { font-size: var(--text-2xl); }
   .task-detail { padding: var(--sp-3); }
+  .task-detail-shell .task-detail {
+    padding: var(--sp-3);
+    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+  }
   .commander-header { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .commander-filter {
     padding: 2px var(--sp-3) var(--sp-1);
@@ -7976,6 +8016,7 @@ select,
   height: calc(56px + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  overflow-x: clip;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(12px);
@@ -8151,11 +8192,16 @@ select,
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-sunken) 40%, transparent)),
     repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px);
 }
+.task-detail-shell > .detail-head {
+  z-index: 1;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface) 88%, transparent) 72%, var(--surface) 100%);
+}
 .task-detail-shell .task-detail {
   flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
   gap: 0;
-  padding: 0;
+  padding: var(--sp-6);
   min-height: 0;
   overflow: visible;
   background: transparent;
@@ -8229,6 +8275,8 @@ select,
     font-size: 32px;
   }
   .editor-body,
+  .task-detail-shell .task-detail,
+  .task-edit-grid.editor-body,
   .entity-editor-layout {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -8345,9 +8393,15 @@ select,
   }
   .editor-body,
   .task-detail,
+  .task-detail-shell .task-detail,
   .task-edit-grid,
+  .task-edit-grid.editor-body,
   .field-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .task-detail-shell .task-detail {
+    padding: var(--sp-4);
+    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
   }
   .editor-main,
   .editor-rail {
@@ -8365,8 +8419,10 @@ select,
     grid-template-columns: minmax(0, 1fr);
   }
   .commander-row {
+    display: grid;
     grid-template-columns: 14px minmax(0, 1fr) auto;
     grid-template-rows: auto auto auto;
+    gap: 6px var(--sp-3);
     min-height: 64px;
   }
   .commander-cell-id,
@@ -8380,6 +8436,16 @@ select,
   .commander-cell-deps { grid-column: 2; grid-row: 2; justify-content: flex-start; }
   .commander-cell-age { grid-column: 3; grid-row: 2; }
   .commander-live-line {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-top: 4px;
+    flex-wrap: wrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .commander-live-line .tool-token,
+  .commander-live-line .tool-token-arg,
+  .commander-live-line .tool-token-text {
     white-space: normal;
     overflow-wrap: anywhere;
   }

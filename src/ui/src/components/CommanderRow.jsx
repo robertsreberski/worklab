@@ -153,11 +153,6 @@ export function CommanderRow({
             </span>
           )}
         </div>
-        {isStreaming && event && (
-          <div class="commander-live-line" key={`${task.id}-${event.ts || event.t || 0}`}>
-            <ToolToken event={event} compact />
-          </div>
-        )}
       </div>
       <div class="commander-cell-deps">{depsChip}</div>
       <div class="commander-cell-assignees">
@@ -200,6 +195,11 @@ export function CommanderRow({
         <StageToken stage={task.running_run_id ? "running" : displayStage} />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
+      {isStreaming && event && (
+        <div class="commander-live-line" key={`${task.id}-${event.ts || event.t || 0}`}>
+          <ToolToken event={event} compact />
+        </div>
+      )}
     </div>
   );
 }
