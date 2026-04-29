@@ -8,10 +8,28 @@ describe("admin MCP tools", () => {
     expect(names).toContain("worklab_project_create");
     expect(names).toContain("worklab_project_archive");
     expect(names).toContain("worklab_task_create");
+    expect(names).toContain("worklab_task_create_many");
+    expect(names).toContain("worklab_task_bulk_update");
     expect(names).toContain("worklab_task_comment_delete");
+    expect(names).toContain("worklab_agent_create");
     expect(names).toContain("worklab_automation_create");
     expect(names).not.toContain("worklab_schedule_create");
     expect(names).toContain("worklab_service_restart");
+  });
+
+  it("defines create-agent with explicit MCP fields", () => {
+    const tool = adminToolDefinitions.find((definition) => definition.name === "worklab_agent_create");
+
+    expect(tool.inputSchema.required).toEqual(["display_name", "model"]);
+    expect(tool.inputSchema.properties).toMatchObject({
+      display_name: { type: "string" },
+      model: { type: "string" },
+      instructions: { type: "string" },
+      skills_allowlist: { type: "array" },
+      mcp_allowlist: { type: "array" },
+      builtin_allowlist: { type: "array" },
+      per_run_budget_usd: { type: "number" },
+    });
   });
 
   it("apiRequest restricts requests to /api paths", async () => {
@@ -106,6 +124,104 @@ describe("admin MCP tools", () => {
     });
     expect(result.agents[0]).not.toHaveProperty("instructions");
     expect(JSON.stringify(result)).not.toContain("Very long private instructions");
+  });
+
+  it("returns compact outputs for task and agent creation MCP helpers", async () => {
+    const fetchImpl = vi.fn(async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      if (path === "/api/tasks") {
+        return new Response(JSON.stringify({
+          task: {
+            id: "task-1",
+            task_key: "T-1",
+            title: "Build it",
+            instructions: "Long task instructions ".repeat(500),
+            stage: "plan",
+            run_policy: "manual",
+            owner_agent: "builder",
+            reviewer_agent: "reviewer",
+            dependency_ids: ["T-0"],
+          },
+        }), { status: 201, headers: { "content-type": "application/json" } });
+      }
+      if (path === "/api/agents") {
+        return new Response(JSON.stringify({
+          agent: {
+            name: "builder",
+            display_name: "Builder",
+            model: "codex:gpt-5.5",
+            effort: "high",
+            instructions: "Long private instructions ".repeat(500),
+            skills_allowlist: ["frontend"],
+            skills_allowlist_mode: "custom",
+            mcp_allowlist: [],
+            mcp_allowlist_mode: "all",
+            builtin_allowlist: [],
+            builtin_allowlist_mode: "all",
+            enabled: true,
+          },
+        }), { status: 201, headers: { "content-type": "application/json" } });
+      }
+      return new Response("{}", { status: 404 });
+    });
+    const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
+
+    const task = await handlers.worklab_task_create({ title: "Build it", instructions: "Long task instructions" });
+    const agent = await handlers.worklab_agent_create({ display_name: "Builder", model: "codex:gpt-5.5" });
+
+    expect(task.task).toMatchObject({ id: "task-1", task_key: "T-1", dependency_count: 1 });
+    expect(JSON.stringify(task)).not.toContain("Long task instructions");
+    expect(agent.agent).toMatchObject({
+      name: "builder",
+      model: "codex:gpt-5.5",
+      skills_allowlist: { mode: "custom", count: 1 },
+    });
+    expect(JSON.stringify(agent)).not.toContain("Long private instructions");
+    expect(fetchImpl).toHaveBeenCalledWith(new URL("http://localhost:7878/api/tasks"), expect.objectContaining({
+      method: "POST",
+    }));
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body)).toEqual({ title: "Build it", instructions: "Long task instructions" });
+  });
+
+  it("creates many tasks and bulk-updates tasks through compact MCP helpers", async () => {
+    const fetchImpl = vi.fn(async (url, init) => {
+      const path = new URL(String(url)).pathname;
+      const body = init.body ? JSON.parse(init.body) : {};
+      if (path === "/api/tasks/bulk") {
+        return new Response(JSON.stringify({
+          summary: { requested: 2, succeeded: 2, failed: 0 },
+          results: body.ids.map((id) => ({
+            id,
+            task_id: `internal-${id}`,
+            ok: true,
+            task: { id: `internal-${id}`, task_key: id, title: `Updated ${id}`, stage: body.patch.stage },
+          })),
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({
+        task: { id: body.client_request_id || body.title, task_key: "T-9", title: body.title, stage: "plan" },
+      }), { status: 201, headers: { "content-type": "application/json" } });
+    });
+    const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
+
+    const created = await handlers.worklab_task_create_many({
+      tasks: [{ title: "One", client_request_id: "one" }, { title: "Two", client_request_id: "two" }],
+    });
+    const updated = await handlers.worklab_task_bulk_update({ ids: ["T-1", "T-2"], patch: { stage: "execute" } });
+
+    expect(created.summary).toEqual({ requested: 2, succeeded: 2, failed: 0 });
+    expect(created.results.map((result) => result.task.id)).toEqual(["one", "two"]);
+    expect(updated.summary.succeeded).toBe(2);
+    expect(updated.results[0]).toMatchObject({
+      id: "T-1",
+      ok: true,
+      task: { task_key: "T-1", stage: "execute" },
+    });
+    expect(JSON.parse(fetchImpl.mock.calls.at(-1)[1].body)).toEqual({
+      operation: "patch",
+      ids: ["T-1", "T-2"],
+      patch: { stage: "execute" },
+    });
   });
 
   it("returns compact filtered model choices without raw catalogs", async () => {
