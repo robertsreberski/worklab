@@ -498,7 +498,9 @@ export function Projects({ selectedId = null, mode = null }) {
         )}
         trailing={(
           <span class="pane-row-summary pane-row-summary-metrics">
-            <span>{project.task_count || 0} task{project.task_count === 1 ? "" : "s"}</span>
+            <span title={`${project.active_task_count || 0} active of ${project.task_count || 0} total`}>
+              {project.active_task_count || 0}/{project.task_count || 0} task{project.task_count === 1 ? "" : "s"}
+            </span>
             <span>{formatProjectAge(project.updated_at)}</span>
           </span>
         )}
