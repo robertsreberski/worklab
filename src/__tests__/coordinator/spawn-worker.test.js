@@ -285,6 +285,68 @@ describe("spawnWorker", () => {
     }
   });
 
+  it("records context-bloat diagnostics for broad scans and large tool payloads", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const largeOutput = [
+      "/repo/src/app.js",
+      "/repo/node_modules/pkg/index.js",
+      "/repo/dist/assets/app.js.map",
+      "x".repeat(120),
+    ].join("\n");
+    const script = {
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{
+                type: "tool_use",
+                id: "glob-1",
+                name: "Glob",
+                input: { path: "/repo", pattern: "**/*" },
+              }],
+            },
+          },
+        },
+        {
+          type: "sdk_event",
+          event: {
+            type: "user",
+            message: {
+              content: [{ type: "tool_result", tool_use_id: "glob-1", content: largeOutput, is_error: false }],
+            },
+          },
+        },
+        { type: "final", text: "done" },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      contextBloatEventChars: 80,
+      contextBloatTotalChars: 80,
+      runIdleWarningMs: 0,
+    });
+    const result = await handle.done;
+
+    expect(result.warnings.find((warning) => warning.kind === "context_bloat")).toBeTruthy();
+    expect(broker.broadcasts.find((item) => item.ch === runId && item.p.warning_kind === "context_bloat")).toBeTruthy();
+
+    const run = db.prepare("SELECT diagnostics_json, warnings_json FROM task_runs WHERE id = ?").get(runId);
+    const diagnostics = JSON.parse(run.diagnostics_json);
+    expect(diagnostics.context_risk).toBe("high");
+    expect(diagnostics.tool_payload_chars).toBeGreaterThan(largeOutput.length);
+    expect(diagnostics.largest_tool_events[0]).toMatchObject({ tool: "Glob", role: "tool_result" });
+    expect(diagnostics.broad_scan_events[0]).toMatchObject({ tool: "Glob", pattern: "**/*", path: "/repo" });
+    expect(JSON.parse(run.warnings_json).find((warning) => warning.kind === "context_bloat")).toBeTruthy();
+  });
+
   it("marks a run failed when the worker exceeds the run timeout", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

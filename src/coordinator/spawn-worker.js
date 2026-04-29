@@ -7,6 +7,8 @@ import { processStatusToLegacyStatus } from "../core/state-machine.js";
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail } from "../core/failure-kind.js";
 
+const CONTEXT_BLOAT_TOP_EVENTS = 5;
+
 function makeRawLogPath(dataDir, runId) {
   if (!dataDir || !runId) return null;
   const dir = join(dataDir, "logs", "runs");
@@ -140,6 +142,35 @@ function isCancellationExit(code, signal) {
   return code === 130 || signal === "SIGTERM" || signal === "SIGINT";
 }
 
+function jsonCharLength(value) {
+  try {
+    return JSON.stringify(value)?.length || 0;
+  } catch {
+    return String(value || "").length;
+  }
+}
+
+function contentBlocksFromEvent(rawEvent) {
+  const target = rawEvent?.type === "sdk_event" && rawEvent.event ? rawEvent.event : rawEvent;
+  if (Array.isArray(target?.message?.content)) return target.message.content;
+  if (Array.isArray(target?.content)) return target.content;
+  return [];
+}
+
+function insertTopByChars(list, item, limit = CONTEXT_BLOAT_TOP_EVENTS) {
+  list.push(item);
+  list.sort((a, b) => (b.chars || b.payload_chars || 0) - (a.chars || a.payload_chars || 0));
+  if (list.length > limit) list.length = limit;
+}
+
+function isBroadGlobUse(block) {
+  if (block?.type !== "tool_use" || block.name !== "Glob") return false;
+  const input = block.input || {};
+  const pattern = String(input.pattern || "");
+  const targetPath = String(input.path || "");
+  return pattern === "**/*" || pattern === "**" || (pattern.includes("**") && !targetPath.includes("src"));
+}
+
 export function spawnWorker({
   binary,
   args,
@@ -155,6 +186,8 @@ export function spawnWorker({
   runTimeoutMs = 30 * 60 * 1000,
   runIdleWarningMs = 120 * 1000,
   logInlineLimit = 12_000,
+  contextBloatEventChars = 100_000,
+  contextBloatTotalChars = 500_000,
   exitCloseGraceMs = 1000,
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
@@ -189,6 +222,15 @@ export function spawnWorker({
   const startedAt = Date.now();
   const logId = newAgentLogId();
   let rawLogPath = null;
+  const toolUseNames = new Map();
+  const contextBloat = {
+    totalEventChars: 0,
+    totalToolPayloadChars: 0,
+    warningEmitted: false,
+    largestEvents: [],
+    largestToolEvents: [],
+    broadScanEvents: [],
+  };
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
   // O(N²) bytes written, which can stall WAL on a small disk. The final UPDATE
@@ -237,6 +279,7 @@ export function spawnWorker({
 
   function emitEvent(parsed) {
     const rawEvent = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
+    const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
     const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
     events.push(event);
@@ -251,7 +294,99 @@ export function spawnWorker({
     schedulePersist();
     broker.broadcast(runId, event);
     resetIdleTimer();
+    if (contextWarning) emitEvent(contextWarning);
     return { rawEvent, event };
+  }
+
+  function recordContextPayload(rawEvent) {
+    if (!rawEvent || rawEvent.type === "runtime_warning") return null;
+    const eventChars = jsonCharLength(rawEvent);
+    contextBloat.totalEventChars += eventChars;
+    insertTopByChars(contextBloat.largestEvents, {
+      seq: rawEvent._event_seq,
+      type: rawEvent.type || null,
+      inner_type: rawEvent.event?.type || null,
+      chars: eventChars,
+    });
+
+    let largestBlock = null;
+    for (const block of contentBlocksFromEvent(rawEvent)) {
+      if (block?.type === "tool_use") {
+        if (block.id && block.name) toolUseNames.set(block.id, block.name);
+        if (isBroadGlobUse(block)) {
+          const entry = {
+            seq: rawEvent._event_seq,
+            tool: block.name,
+            pattern: block.input?.pattern || null,
+            path: block.input?.path || null,
+            chars: jsonCharLength(block.input || {}),
+          };
+          contextBloat.broadScanEvents.push(entry);
+        }
+        const inputChars = jsonCharLength(block.input || {});
+        if (inputChars > 0) {
+          largestBlock = {
+            seq: rawEvent._event_seq,
+            role: "tool_use",
+            tool: block.name || null,
+            tool_use_id: block.id || null,
+            chars: inputChars,
+          };
+        }
+      }
+      if (block?.type === "tool_result") {
+        const payloadChars = jsonCharLength(block.content ?? block.output ?? block.result ?? "")
+          + jsonCharLength(block.raw_result || {});
+        contextBloat.totalToolPayloadChars += payloadChars;
+        largestBlock = {
+          seq: rawEvent._event_seq,
+          role: "tool_result",
+          tool: toolUseNames.get(block.tool_use_id) || block.raw_result?.details?.tool || null,
+          tool_use_id: block.tool_use_id || null,
+          chars: payloadChars,
+          is_error: !!block.is_error,
+        };
+      }
+    }
+    if (largestBlock) insertTopByChars(contextBloat.largestToolEvents, largestBlock);
+
+    const largeEvent = eventChars >= contextBloatEventChars;
+    const largeTotal = contextBloat.totalToolPayloadChars >= contextBloatTotalChars;
+    if (contextBloat.warningEmitted || (!largeEvent && !largeTotal)) return null;
+    contextBloat.warningEmitted = true;
+    const top = contextBloat.largestToolEvents[0] || contextBloat.largestEvents[0] || {};
+    const toolLabel = top.tool ? `${top.tool} ` : "";
+    return {
+      type: "runtime_warning",
+      warning_kind: "context_bloat",
+      source: "worker",
+      message: `${toolLabel}output is large enough to risk exhausting the model context; avoid broad repository scans and use targeted paths.`,
+      diagnostics: {
+        event_chars: eventChars,
+        total_tool_payload_chars: contextBloat.totalToolPayloadChars,
+        largest_tool_event: top,
+      },
+      ts: Date.now(),
+    };
+  }
+
+  function contextBloatDiagnostics() {
+    if (
+      contextBloat.totalEventChars === 0
+      && contextBloat.totalToolPayloadChars === 0
+      && contextBloat.broadScanEvents.length === 0
+    ) return {};
+    const highRisk = contextBloat.warningEmitted
+      || contextBloat.totalToolPayloadChars >= contextBloatTotalChars
+      || contextBloat.largestEvents.some((event) => event.chars >= contextBloatEventChars);
+    return {
+      context_risk: highRisk ? "high" : "normal",
+      event_chars: contextBloat.totalEventChars,
+      tool_payload_chars: contextBloat.totalToolPayloadChars,
+      largest_events: contextBloat.largestEvents,
+      largest_tool_events: contextBloat.largestToolEvents,
+      broad_scan_events: contextBloat.broadScanEvents.slice(0, CONTEXT_BLOAT_TOP_EVENTS),
+    };
   }
 
   function resetIdleTimer() {
@@ -457,6 +592,7 @@ export function spawnWorker({
       const diagnostics = {
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
+        ...contextBloatDiagnostics(),
         ...(finalPayload?.diagnostics || {}),
         provider_session_id: providerSessionId,
         execenv_path: execenvPath,
