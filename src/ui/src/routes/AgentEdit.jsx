@@ -57,6 +57,9 @@ const emptyAgent = {
   mcp_allowlist_mode: "all",
   builtin_allowlist: [],
   builtin_allowlist_mode: "all",
+  allow_self_review: false,
+  daily_budget_usd: null,
+  per_run_budget_usd: null,
   enabled: true,
 };
 
@@ -110,6 +113,17 @@ function normalizedNames(list) {
 
 function allowlistMode(mode) {
   return mode === "custom" ? "custom" : "all";
+}
+
+function budgetInputValue(value) {
+  return value == null ? "" : String(value);
+}
+
+function parseBudgetInput(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) && n >= 0 ? n : value;
 }
 
 export function memoryFreshnessLabel(memory) {
@@ -623,6 +637,39 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                   ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
                   : " · Reasoning: unavailable"}
               </div>
+            </FormSection>
+
+            <FormSection kicker="Policy" title="Review & budgets">
+              <FormGrid columns={3}>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!agent.allow_self_review}
+                    onChange={(next) => setAgent({ ...agent, allow_self_review: next })}
+                    label="Allow self-review"
+                    description="Reviewer may approve its own execute run."
+                  />
+                </FormField>
+                <FormField label="Daily budget">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={budgetInputValue(agent.daily_budget_usd)}
+                    placeholder="No cap"
+                    onInput={(e) => setAgent({ ...agent, daily_budget_usd: parseBudgetInput(e.target.value) })}
+                  />
+                </FormField>
+                <FormField label="Per-run budget">
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={budgetInputValue(agent.per_run_budget_usd)}
+                    placeholder="No cap"
+                    onInput={(e) => setAgent({ ...agent, per_run_budget_usd: parseBudgetInput(e.target.value) })}
+                  />
+                </FormField>
+              </FormGrid>
             </FormSection>
 
             <FormSection kicker="Behavior" title="Instructions">

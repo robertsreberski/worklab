@@ -27,6 +27,9 @@ function rowToAgent(row) {
     mcp_allowlist_mode: storedAllowlistMode(row.mcp_allowlist_mode),
     builtin_allowlist: parseStoredAllowlist(row.builtin_allowlist),
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
+    allow_self_review: !!row.allow_self_review,
+    daily_budget_usd: row.daily_budget_usd == null ? null : Number(row.daily_budget_usd),
+    per_run_budget_usd: row.per_run_budget_usd == null ? null : Number(row.per_run_budget_usd),
   };
 }
 
@@ -43,6 +46,9 @@ const PATCHABLE = [
   "mcp_allowlist_mode",
   "builtin_allowlist",
   "builtin_allowlist_mode",
+  "allow_self_review",
+  "daily_budget_usd",
+  "per_run_budget_usd",
   "enabled",
 ];
 
@@ -95,6 +101,19 @@ function normalizeAgentEffort({ db, dataDir, model, resolved, effort }) {
 
 function sameList(left, right) {
   return JSON.stringify(normalizeList(left)) === JSON.stringify(normalizeList(right));
+}
+
+function normalizeBooleanField(key, value, fallback = false) {
+  if (value === undefined) return fallback ? 1 : 0;
+  if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
+  return value ? 1 : 0;
+}
+
+function normalizeBudgetField(key, value) {
+  if (value === undefined || value === null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) throw new Error(`${key} must be a non-negative number`);
+  return n;
 }
 
 function existingAllowlist(row, key) {
@@ -253,18 +272,29 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
     }
     const enabled = req.body.enabled === false ? 0 : 1;
+    let allowSelfReview;
+    let dailyBudgetUsd;
+    let perRunBudgetUsd;
+    try {
+      allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, false);
+      dailyBudgetUsd = normalizeBudgetField("daily_budget_usd", req.body.daily_budget_usd);
+      perRunBudgetUsd = normalizeBudgetField("per_run_budget_usd", req.body.per_run_budget_usd);
+    } catch (err) {
+      return res.status(400).json({ error: { code: "validation", message: err.message } });
+    }
 
     db.prepare(`
       INSERT INTO agents
         (name, display_name, description, sdk, model, effort, instructions,
          skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
-         builtin_allowlist, builtin_allowlist_mode, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         builtin_allowlist, builtin_allowlist_mode, allow_self_review,
+         daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(finalName, display_name, description, resolved.sdk, model, effort, instructions,
            JSON.stringify(skillsAllow.list), skillsAllow.mode,
            JSON.stringify(mcpAllow.list), mcpAllow.mode,
            JSON.stringify(builtinAllow.list), builtinAllow.mode,
-           enabled, now, now);
+           allowSelfReview, dailyBudgetUsd, perRunBudgetUsd, enabled, now, now);
 
     broker.broadcast("global", { type: "agent_updated", name: finalName });
     const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(finalName);
@@ -340,6 +370,18 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           values.push(JSON.stringify(req.body[k] ?? []));
         } else if (k === "enabled") {
           values.push(req.body[k] ? 1 : 0);
+        } else if (k === "allow_self_review") {
+          try {
+            values.push(normalizeBooleanField(k, req.body[k], false));
+          } catch (err) {
+            return res.status(400).json({ error: { code: "validation", message: err.message } });
+          }
+        } else if (k === "daily_budget_usd" || k === "per_run_budget_usd") {
+          try {
+            values.push(normalizeBudgetField(k, req.body[k]));
+          } catch (err) {
+            return res.status(400).json({ error: { code: "validation", message: err.message } });
+          }
         } else {
           values.push(req.body[k]);
         }
