@@ -12,28 +12,44 @@ import {
   Button,
   Checkbox,
   Chip,
+  DatePicker,
+  DateRangePicker,
+  DateTimePicker,
   Divider,
+  DurationInput,
   IconButton,
   Input,
+  JsonField,
   Kbd,
+  NumberStepper,
+  PathOrUrlInput,
   RadioGroup,
   SearchField,
   Select,
+  SecretInput,
+  ScheduleBuilder,
   StatusDot,
   StatusPill,
   Switch,
   Tabs,
+  TagInput,
   Textarea,
+  TimePicker,
   Tooltip,
 } from "../components/primitives/index.js";
 import {
+  ActionDock,
   DetailHeader,
   EntityEditorLayout,
+  FilterBar,
+  InlineEditorPanel,
   Page,
   PanelGrid,
   RailStack,
+  SettingsMatrix,
   SummaryGrid,
   Toolbar,
+  WorkflowLayout,
 } from "../components/layout/index.js";
 
 const STATUS_TABS = [
@@ -70,6 +86,16 @@ export function DesignSystem() {
   const [provider, setProvider] = useState("codex");
   const [enabled, setEnabled] = useState(true);
   const [checked, setChecked] = useState(true);
+  const [date, setDate] = useState("2026-04-29");
+  const [time, setTime] = useState("09:15");
+  const [dateRange, setDateRange] = useState({ from: "2026-04-23", to: "2026-04-29" });
+  const [runAt, setRunAt] = useState(new Date(2026, 3, 29, 9, 15).getTime());
+  const [schedule, setSchedule] = useState({ type: "weekly", weekdays: [1, 3], hour: 9, minute: 15 });
+  const [duration, setDuration] = useState(30 * 60 * 1000);
+  const [limit, setLimit] = useState(80);
+  const [tags, setTags] = useState(["triage", "review"]);
+  const [secret, setSecret] = useState("sk-local-demo");
+  const [jsonText, setJsonText] = useState('{"Authorization":"Bearer token"}');
 
   return (
     <AppShell route="design-system">
@@ -85,6 +111,21 @@ export function DesignSystem() {
           </>
         )}
       >
+        <section class="ds-catalog-section">
+          <Card title="UX Rubric">
+            <SettingsMatrix>
+              <Metric label="Earns space" value="1" unit="job" />
+              <Metric label="Default" value="Next" unit="action" />
+              <Metric label="Hidden" value="Rare" unit="controls" />
+            </SettingsMatrix>
+            <div class="ds-rubric-grid">
+              <div><strong>Surface</strong><span>Show only the decision or action needed for the current state.</span></div>
+              <div><strong>Timing</strong><span>Reveal advanced fields after intent is declared.</span></div>
+              <div><strong>Input</strong><span>Use domain controls for dates, durations, secrets, JSON, and schedules.</span></div>
+            </div>
+          </Card>
+        </section>
+
         <section class="ds-catalog-section">
           <Card title="Tokens">
             <div class="ds-swatch-grid">
@@ -149,6 +190,49 @@ export function DesignSystem() {
         </section>
 
         <section class="ds-catalog-section">
+          <Card title="Domain Inputs">
+            <FormGrid columns={2}>
+              <FormField label="Date">
+                <DatePicker value={date} onChange={setDate} />
+              </FormField>
+              <FormField label="Time">
+                <TimePicker value={time} onChange={setTime} />
+              </FormField>
+              <FormField label="Date range" class="span-2">
+                <DateRangePicker value={dateRange} onChange={setDateRange} />
+              </FormField>
+              <FormField label="Run at" class="span-2">
+                <DateTimePicker value={runAt} onChange={setRunAt} />
+              </FormField>
+              <FormField label="Duration">
+                <DurationInput value={duration} onChange={setDuration} />
+              </FormField>
+              <FormField label="Limit">
+                <NumberStepper value={limit} min={0} max={100} onChange={setLimit} ariaLabel="Limit" />
+              </FormField>
+              <FormField label="Secret" class="span-2">
+                <SecretInput value={secret} onInput={(event) => setSecret(event.currentTarget.value)} />
+              </FormField>
+              <FormField label="Path or URL" class="span-2">
+                <PathOrUrlInput kind="url" value="http://localhost:3000/mcp" readOnly />
+              </FormField>
+              <FormField label="Tags" class="span-2">
+                <TagInput value={tags} onChange={setTags} />
+              </FormField>
+              <FormField label="JSON" class="span-2">
+                <JsonField value={jsonText} onInput={(event) => setJsonText(event.currentTarget.value)} />
+              </FormField>
+            </FormGrid>
+          </Card>
+        </section>
+
+        <section class="ds-catalog-section">
+          <Card title="Schedule Builder">
+            <ScheduleBuilder value={schedule} onChange={setSchedule} />
+          </Card>
+        </section>
+
+        <section class="ds-catalog-section">
           <Card title="Layouts">
             <SummaryGrid>
               <Metric label="Open" value="12" />
@@ -162,12 +246,28 @@ export function DesignSystem() {
                   <Tabs value={tab} onChange={setTab} tabs={STATUS_TABS} class="tabs-pills" ariaLabel="Status" />
                 </Toolbar>
               </Card>
+              <Card title="Filter Bar">
+                <FilterBar
+                  searchValue=""
+                  onSearch={() => {}}
+                  filters={<><Select value={provider} onChange={setProvider} options={SELECT_OPTIONS} /><DateRangePicker value={dateRange} onChange={setDateRange} /></>}
+                  activeCount={2}
+                  onClear={() => setDateRange({ from: "", to: "" })}
+                />
+              </Card>
               <Card title="Rows">
                 <PaneRow
                   title="Retro console migration"
                   leading={<AgentAvatar name="design-system" label="Design System" />}
                   sub={<span class="pane-row-description">Reusable row pattern with leading identity, title, meta, and status.</span>}
                   trailing={<StatusPill status="review" />}
+                />
+              </Card>
+              <Card title="Action Dock">
+                <ActionDock
+                  secondary={<Button variant="ghost">Cancel</Button>}
+                  overflow={<Button variant="secondary">Preview</Button>}
+                  primary={<Button variant="primary">Save</Button>}
                 />
               </Card>
             </PanelGrid>
@@ -204,6 +304,16 @@ export function DesignSystem() {
               />
             </div>
           </div>
+        </section>
+
+        <section class="ds-catalog-section">
+          <Card title="Workflow Layout">
+            <WorkflowLayout
+              hero={<DetailHeader icon={<Icon name="clock" size={16} />} title="Scheduled Work" meta="Primary action first" actions={<Button variant="primary">Run</Button>} />}
+              main={<InlineEditorPanel title="Inline editor" description="Appears only after the user chooses to edit."><ScheduleBuilder value={schedule} onChange={setSchedule} /></InlineEditorPanel>}
+              rail={<RailStack><Card title="Context">Only persistent context belongs in the rail.</Card><Card collapsible={{ summary: "Advanced", count: 2 }}>Rare actions stay collapsed.</Card></RailStack>}
+            />
+          </Card>
         </section>
       </Page>
     </AppShell>
