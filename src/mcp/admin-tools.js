@@ -84,7 +84,11 @@ export const adminToolDefinitions = [
   tool("worklab_task_run", "Start a task run.", object({ id: taskId }, ["id"])),
   tool("worklab_task_cancel", "Cancel or reconcile the active run for a task.", object({ id: taskId }, ["id"])),
 
-  tool("worklab_agent_list", "List agents."),
+  tool("worklab_agent_list", "List compact agent summaries. Use worklab_agent_get for full instructions and detailed allowlists.", object({
+    q: string("Search query"),
+    enabled: boolean("Filter by enabled state"),
+    limit: number("Max agents to return"),
+  })),
   tool("worklab_agent_get", "Get an agent.", object({ name: string("Agent name") }, ["name"])),
   tool("worklab_agent_create", "Create an agent.", object({}, ["display_name", "model"], true)),
   tool("worklab_agent_update", "Patch an agent. Use fields accepted by PATCH /api/agents/:name.", object({ name: string("Agent name"), patch }, ["name", "patch"])),
@@ -149,7 +153,12 @@ export const adminToolDefinitions = [
   tool("worklab_provider_discover", "Discover models for a custom provider.", object({ id }, ["id"])),
   tool("worklab_provider_models", "List models for a custom provider.", object({ id }, ["id"])),
   tool("worklab_provider_model_update", "Patch a provider model.", object({ id, modelId: string("Model row id"), patch }, ["id", "modelId", "patch"])),
-  tool("worklab_model_available", "List available built-in and custom models."),
+  tool("worklab_model_available", "List compact model choices. Use provider/model detail tools or worklab_api_request for full raw metadata.", object({
+    q: string("Search query"),
+    sdk: string("Filter by SDK/provider family, for example codex, openai, claude, vercel, or pi"),
+    available: boolean("Filter by availability"),
+    limit: number("Max models to return"),
+  })),
   tool("worklab_model_embeddings", "List embedding model options."),
 
   tool("worklab_settings_get", "Get Worklab settings."),
@@ -200,6 +209,134 @@ export async function apiRequest({ baseUrl, fetchImpl = fetch }, method, path, {
     throw new Error(`${init.method} ${path} failed (${res.status}): ${message}`);
   }
   return parsed;
+}
+
+function clampLimit(value, fallback, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), max);
+}
+
+function includesQuery(values, query) {
+  const q = String(query || "").trim().toLowerCase();
+  if (!q) return true;
+  return values.some((value) => String(value || "").toLowerCase().includes(q));
+}
+
+function compactAllowlist(row, listKey, modeKey) {
+  const list = Array.isArray(row?.[listKey]) ? row[listKey] : [];
+  return {
+    mode: row?.[modeKey] || "all",
+    count: list.length,
+  };
+}
+
+function compactAgent(row) {
+  return {
+    name: row.name,
+    display_name: row.display_name || row.name,
+    description: row.description || null,
+    sdk: row.sdk || null,
+    model: row.model || null,
+    effort: row.effort || null,
+    enabled: row.enabled !== false,
+    allow_self_review: !!row.allow_self_review,
+    skills_allowlist: compactAllowlist(row, "skills_allowlist", "skills_allowlist_mode"),
+    mcp_allowlist: compactAllowlist(row, "mcp_allowlist", "mcp_allowlist_mode"),
+    builtin_allowlist: compactAllowlist(row, "builtin_allowlist", "builtin_allowlist_mode"),
+    last_run_at: row.last_run_at || null,
+    run_count_30d: Number(row.run_count_30d) || 0,
+    avg_run_duration_ms: row.avg_run_duration_ms == null ? null : Number(row.avg_run_duration_ms),
+  };
+}
+
+function compactAgentList(result, input = {}) {
+  const all = Array.isArray(result?.agents) ? result.agents : [];
+  const filtered = all.filter((agent) => {
+    if (typeof input.enabled === "boolean" && (agent.enabled !== false) !== input.enabled) return false;
+    return includesQuery([
+      agent.name,
+      agent.display_name,
+      agent.description,
+      agent.sdk,
+      agent.model,
+      agent.effort,
+    ], input.q);
+  });
+  const limit = clampLimit(input.limit, 50, 200);
+  const agents = filtered.slice(0, limit).map(compactAgent);
+  return {
+    agents,
+    count: all.length,
+    matched: filtered.length,
+    returned: agents.length,
+    truncated: filtered.length > agents.length,
+    hint: "Use worklab_agent_get with a specific agent name for full instructions and detailed allowlists.",
+  };
+}
+
+function modelEntries(result) {
+  const groups = Array.isArray(result?.groups) ? result.groups : [];
+  if (groups.length) {
+    return groups.flatMap((group) => (group.models || []).map((model) => ({ group, model })));
+  }
+  return (result?.models || []).map((model) => ({ group: null, model }));
+}
+
+function compactModel({ group, model }) {
+  const capabilities = model.capabilities || {};
+  return {
+    value: model.value || null,
+    label: model.label || model.model || model.model_name || null,
+    description: model.description || null,
+    sdk: model.sdk || null,
+    provider: model.provider || model.provider_name || group?.id || null,
+    provider_label: group?.label || model.provider_name || null,
+    model: model.model || model.model_name || null,
+    available: model.available !== false && model.disabled !== true,
+    unavailable_reason: model.unavailable_reason || null,
+    runtime_kind: model.runtime_kind || capabilities.runtime_kind || group?.runtime_kind || null,
+    context_window: Number(capabilities.context_window || capabilities.num_ctx) || null,
+    max_tokens: Number(capabilities.max_tokens) || null,
+    reasoning: !!capabilities.reasoning,
+    reasoning_levels: Array.isArray(capabilities.reasoning_levels) ? capabilities.reasoning_levels : [],
+    supports_tools: capabilities.tool_use !== false && model.supports_builtin_tools !== false,
+    supports_mcp: model.supports_mcp !== false && capabilities.supports_mcp !== false,
+    supports_skills: model.supports_skills !== false && capabilities.supports_skills !== false,
+  };
+}
+
+function compactModelAvailable(result, input = {}) {
+  const all = modelEntries(result);
+  const sdkFilter = String(input.sdk || "").trim().toLowerCase();
+  const filtered = all.filter(({ group, model }) => {
+    const compact = compactModel({ group, model });
+    if (sdkFilter && ![compact.sdk, compact.provider, group?.id].some((value) => String(value || "").toLowerCase() === sdkFilter)) {
+      return false;
+    }
+    if (typeof input.available === "boolean" && compact.available !== input.available) return false;
+    return includesQuery([
+      compact.value,
+      compact.label,
+      compact.description,
+      compact.sdk,
+      compact.provider,
+      compact.provider_label,
+      compact.model,
+    ], input.q);
+  });
+  const limit = clampLimit(input.limit, 80, 300);
+  const models = filtered.slice(0, limit).map(compactModel);
+  const availableCount = all.filter((entry) => compactModel(entry).available).length;
+  return {
+    models,
+    count: all.length,
+    available_count: availableCount,
+    matched: filtered.length,
+    returned: models.length,
+    truncated: filtered.length > models.length,
+    hint: "This is compact MCP output. Use worklab_api_request GET /api/models/available only when full raw metadata is required.",
+  };
 }
 
 const specs = [
@@ -314,6 +451,16 @@ export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch } =
   handlers.worklab_service_status = async () => serviceStatus();
   handlers.worklab_service_restart = async () => queueCliCommand(config, "restart");
   handlers.worklab_service_stop = async () => queueCliCommand(config, "stop");
+
+  handlers.worklab_agent_list = async (input = {}) => compactAgentList(
+    await apiRequest(client, "GET", "/api/agents"),
+    input,
+  );
+
+  handlers.worklab_model_available = async (input = {}) => compactModelAvailable(
+    await apiRequest(client, "GET", "/api/models/available"),
+    input,
+  );
 
   handlers.worklab_search = async (input = {}) => apiRequest(client, "GET", "/api/search", {
     query: {
