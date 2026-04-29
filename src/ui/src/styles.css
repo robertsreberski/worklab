@@ -7572,7 +7572,7 @@ html.assistant-resizing * {
   padding: 0 0 var(--sp-2);
   color: var(--text-muted);
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: 500;
 }
 .project-task-group-list {
   display: grid;
@@ -7612,7 +7612,7 @@ html.assistant-resizing * {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-weight: var(--font-medium);
+  font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
