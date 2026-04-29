@@ -35,6 +35,9 @@ export const FAILURE_KINDS = [
   "invalid_result",
   "tool_failure",
   "cancelled",
+  "cancelled_user",
+  "cancelled_stale",
+  "cancelled_signal",
   "abandoned",
   "provider_unavailable",
 ];
