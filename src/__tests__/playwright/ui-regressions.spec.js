@@ -646,15 +646,23 @@ test("task detail renders two-column layout", async ({ page }) => {
 test("task detail polish keeps details, agent picker, and newest-first comments clear", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".task-detail-tile")).toHaveCount(0);
-  await expect(page.locator(".task-context-row")).toHaveCount(4);
-  await expect(page.locator(".task-context-row", { hasText: "Completed" })).toHaveCount(0);
-  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toBeVisible();
-  await expect(page.locator(".task-context-row", { hasText: "Next scheduled run" })).toBeVisible();
+  await expect(page.locator(".task-metadata-card .task-meta-list dt")).toHaveCount(4);
+  await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Completed" })).toHaveCount(0);
+  await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Run mode" })).toBeVisible();
+  await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Next scheduled run" })).toBeVisible();
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
   await expect(page.locator(".task-metadata-card")).toContainText("Artifacts");
   await expect(page.locator(".task-metadata-card")).toContainText("TaskDetail.jsx");
   await expect(page.locator(".task-metadata-card")).toContainText("+10 -2");
   await expect(page.locator(".run-artifacts-card")).toHaveCount(0);
+  await expect(page.locator(".rail-agent-row")).toHaveCount(3);
+  const railAgentBorderWidths = await page.locator(".rail-agent-row").evaluateAll((rows) => (
+    rows.map((row) => {
+      const style = getComputedStyle(row);
+      return [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth];
+    })
+  ));
+  expect(railAgentBorderWidths.flat()).toEqual(Array(12).fill("0px"));
   await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(3);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
   await expect(page.locator(".activity-composer")).toBeVisible();
@@ -862,8 +870,8 @@ test("desktop task detail states keep actions and context obvious without clippe
 
 test("task detail context shows completion and run mode", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${completedTaskId}`);
-  await expect(page.locator(".task-context-row", { hasText: "Completed" })).toBeVisible();
-  await expect(page.locator(".task-context-row", { hasText: "Run mode" })).toContainText("Auto");
+  await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Completed" })).toBeVisible();
+  await expect(page.locator(".task-metadata-card .task-meta-list")).toContainText("Auto");
 });
 
 test("task detail shows linked dependencies when the graph exists", async ({ page }) => {

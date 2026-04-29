@@ -292,34 +292,33 @@ function commentAuthorLabel(item) {
   return "You";
 }
 
-function ContextRow({ icon, label, value, href }) {
-  const content = href ? <a href={href}>{value}</a> : value;
-  return (
-    <div class="task-context-row">
-      <span class="task-context-icon"><Icon name={icon} size={13} /></span>
-      <span class="task-context-copy">
-        <span class="task-context-label">{label}</span>
-        <span class="task-context-value">{content}</span>
-      </span>
-    </div>
-  );
-}
-
 function TaskContextList({ task }) {
   const items = [
-    task.updated_at ? { icon: "clock", label: "Updated", value: formatDate(task.updated_at) } : null,
-    task.created_at ? { icon: "calendar", label: "Created", value: formatDate(task.created_at) } : null,
-    task.completed_at ? { icon: "check-circle", label: "Completed", value: formatDate(task.completed_at) } : null,
-    task.automation_summary?.next_fire_at ? { icon: "clock", label: "Next scheduled run", value: formatDate(task.automation_summary.next_fire_at) } : null,
-    { icon: "zap", label: "Run mode", value: formatRunPolicy(task.run_policy) },
+    task.updated_at ? { label: "Updated", value: formatDate(task.updated_at) } : null,
+    task.created_at ? { label: "Created", value: formatDate(task.created_at) } : null,
+    task.completed_at ? { label: "Completed", value: formatDate(task.completed_at) } : null,
+    task.automation_summary?.next_fire_at ? { label: "Next scheduled run", value: formatDate(task.automation_summary.next_fire_at) } : null,
+    { label: "Run mode", value: formatRunPolicy(task.run_policy), mono: false },
+    (task.tags || []).length ? {
+      label: "Tags",
+      value: (
+        <span class="task-meta-tags">
+          {(task.tags || []).map((tag) => <Chip key={tag} variant="tag">{tag}</Chip>)}
+        </span>
+      ),
+      mono: false,
+    } : null,
   ].filter(Boolean);
 
   if (items.length === 0) return null;
 
   return (
-    <div class="task-context-list">
-      {items.map((item) => <ContextRow key={item.label} {...item} />)}
-    </div>
+    <dl class="task-meta-list">
+      {items.flatMap((item) => [
+        <dt key={`${item.label}-label`}>{item.label}</dt>,
+        <dd key={`${item.label}-value`} class={item.mono === false ? "" : "mono"}>{item.value}</dd>,
+      ])}
+    </dl>
   );
 }
 
@@ -1514,7 +1513,6 @@ export function TaskDetail({ id, runParam = null }) {
       )}
     </span>
   );
-  const hasRailTags = (task?.tags || []).length > 0;
   const hasRailDependencies = ((task?.blocked_by || []).length > 0 || (task?.blocks || []).length > 0);
   const railCardCount = 3;
   const detailSubBar = task && (
@@ -1551,13 +1549,6 @@ export function TaskDetail({ id, runParam = null }) {
 
         <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">
           <TaskContextList task={task} />
-          {hasRailTags && (
-            <div class="task-tags">
-              {(task.tags || []).map((t) => (
-                <Chip key={t} variant="tag">{t}</Chip>
-              ))}
-            </div>
-          )}
           {hasRailDependencies && (
             <div class="task-dependencies-section">
               <div class="task-rail-section-head">
