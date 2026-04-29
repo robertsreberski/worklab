@@ -769,10 +769,13 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
       values.push(updatedAt);
     }
     values.push(taskId);
-    db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
-    if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
-      cascadeProjectToEligibleDescendants(db, taskId, existing.project_id || null, nextProjectId, updatedAt);
-    }
+    const updateSql = `UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`;
+    db.transaction(() => {
+      db.prepare(updateSql).run(...values);
+      if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
+        cascadeProjectToEligibleDescendants(db, taskId, existing.project_id || null, nextProjectId, updatedAt);
+      }
+    })();
     broker?.broadcast?.("global", { type: "task_updated", id: taskId, taskKey: existing.task_key || null });
   }
 
