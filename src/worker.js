@@ -314,6 +314,7 @@ async function main() {
 
   // ── Plan / execute modes ────────────────────────────────────────────────────
   if (mode === "plan" || mode === "execute") {
+    const runInput = loadTaskRunInputOrExit({ config, db, taskId, agentName, runId, mode });
     const {
       task,
       agent,
@@ -323,7 +324,9 @@ async function main() {
       disallowedTools,
       systemPrompt,
       messages,
-    } = loadTaskRunInputOrExit({ config, db, taskId, agentName, runId, mode });
+      promptDiagnostics,
+    } = runInput;
+    if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
     const model = resolveModel(agent.model);
 
     try {
@@ -390,15 +393,7 @@ async function main() {
   // Review mode has the same tool allowlist as execute. We document — but do not enforce — that
   // reviewers should not call kb_delete. Enforcement via per-tool permissions is Phase 4+.
   if (mode === "review") {
-    const {
-      agent,
-      skills,
-      mcpServers,
-      allowedTools,
-      disallowedTools,
-      systemPrompt,
-      messages,
-    } = loadTaskRunInputOrExit({
+    const reviewInput = loadTaskRunInputOrExit({
       config,
       db,
       taskId,
@@ -407,6 +402,17 @@ async function main() {
       mode,
       priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
     });
+    const {
+      agent,
+      skills,
+      mcpServers,
+      allowedTools,
+      disallowedTools,
+      systemPrompt,
+      messages,
+      promptDiagnostics,
+    } = reviewInput;
+    if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
     const model = resolveModel(agent.model);
 
     try {

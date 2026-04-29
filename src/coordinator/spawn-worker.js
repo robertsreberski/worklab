@@ -109,6 +109,7 @@ export function spawnWorker({
 
   const events = [];
   const warnings = [];
+  let promptDiagnostics = null;
   const stderrTail = createStderrTail({ limit: stderrTailLimit });
   let finalPayload = null;
   let errorMessage = null;
@@ -261,6 +262,9 @@ export function spawnWorker({
       resultError = rawEvent.message || "invalid worklab_result";
       explicitFailureKind = "invalid_result";
     }
+    if (rawEvent.type === "prompt_built" && rawEvent.diagnostics) {
+      promptDiagnostics = { ...(promptDiagnostics || {}), ...rawEvent.diagnostics };
+    }
   });
 
   child.stderr.on("data", (chunk) => {
@@ -386,6 +390,7 @@ export function spawnWorker({
       const stderrTailText = stderrTail.toString();
       const diagnostics = {
         ...(diagnosticsSeed || {}),
+        ...(promptDiagnostics || {}),
         ...(finalPayload?.diagnostics || {}),
         provider_session_id: providerSessionId,
         execenv_path: execenvPath,

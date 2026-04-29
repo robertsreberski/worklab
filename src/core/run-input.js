@@ -3,7 +3,7 @@ import { loadSkills } from "./skills.js";
 import { enrichCommentRows } from "./comments.js";
 import { getAvailableMcpServers } from "./mcp-config.js";
 import { readAgentMemoryContext } from "./memory.js";
-import { buildPlanSystemPrompt, buildExecuteSystemPrompt, buildReviewSystemPrompt } from "./context.js";
+import { buildSystemPrompt } from "./context.js";
 import { WORKLAB_BUILTIN_TOOLS, resolveModel } from "./ai.js";
 import { extractExecutionFromEvents } from "./review-exec.js";
 import { kbListPinned } from "./kb.js";
@@ -12,6 +12,7 @@ import { readSettings } from "./settings.js";
 import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
+import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -239,19 +240,68 @@ export function selectCurrentRunComments(db, taskId, currentRunId, comments = []
   });
 }
 
-export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null }) {
+function diagnosticsForPrompt(prompt, setup) {
+  const { skills = [], allowedTools = [], mcpServers = {}, disallowedTools = [] } = setup;
+  return {
+    prefixHash: prompt.prefixHash,
+    promptChars: prompt.text.length,
+    toolCount: {
+      skills: Array.isArray(skills) ? skills.length : 0,
+      builtin: Array.isArray(allowedTools) ? allowedTools.filter((tool) => !disallowedTools.includes(tool)).length : 0,
+      mcp: Object.keys(mcpServers || {}).length,
+    },
+  };
+}
+
+function makeSetupSignature(setup, { mode, priorRunId } = {}) {
+  const skillsSignature = (setup.skills || []).map((skill) => `${skill.name}:${skill.priority || ""}:${skill.enabled ? "1" : "0"}`);
+  const mcpSignature = Object.keys(setup.mcpServers || {});
+  const builtinSignature = setup.allowedTools || [];
+  const pinnedSignature = (setup.pinnedKb || []).map((entry) => `${entry.slug || entry.title || ""}:${entry.updatedAt || entry.updated_at || ""}`);
+  return makeContextCacheKey({
+    taskId: setup.task?.id || "",
+    agentName: setup.agent?.name || "",
+    mode: mode || "",
+    priorRunId: priorRunId || "",
+    agentUpdatedAt: setup.agent?.updated_at || 0,
+    taskUpdatedAt: setup.task?.updated_at || 0,
+    commentsHash: shortHash((setup.commentRows || []).map((c) => `${c.id}:${c.created_at}`).join("|")),
+    skillsHash: shortHash(skillsSignature.join("|")),
+    mcpHash: shortHash(mcpSignature.join("|")),
+    builtinHash: shortHash(builtinSignature.join("|")),
+    kbHash: shortHash(pinnedSignature.join("|")),
+    memoryHash: shortHash(setup.memory || ""),
+    journalHash: shortHash(setup.journalTail || ""),
+  });
+}
+
+export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
-  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb } = setup;
+  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools } = setup;
   const messages = buildTaskRunMessages({ mode, task });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
 
+  const cache = contextCache || getProcessContextCache();
+  const cacheKey = makeSetupSignature(
+    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb },
+    { mode, priorRunId },
+  );
+
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
-    const promptInput = { agent, task, skills, memory, journalTail, comments: commentRows, currentRunComments, pinnedKb, priorRuns };
-    const systemPrompt = mode === "plan"
-      ? buildPlanSystemPrompt(promptInput)
-      : buildExecuteSystemPrompt(promptInput);
-    return { ...setup, mode, systemPrompt, messages, currentRunComments, priorRuns };
+    const promptInput = {
+      agent, task, skills, memory, journalTail,
+      comments: commentRows, currentRunComments, pinnedKb, priorRuns,
+      allowedTools, disallowedTools, mcpServers,
+    };
+    const cached = cache.get(cacheKey);
+    const prompt = cached || buildSystemPrompt(promptInput, mode);
+    if (!cached) cache.set(cacheKey, prompt);
+    const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
+    return {
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns,
+      promptDiagnostics: diagnostics,
+    };
   }
 
   if (mode === "review") {
@@ -265,18 +315,18 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorLog = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(priorRun.id);
     const priorEvents = priorLog ? parseEvents(priorLog.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
-    const systemPrompt = buildReviewSystemPrompt({
-      agent,
-      task,
-      skills,
-      memory,
-      journalTail,
-      comments: commentRows,
-      currentRunComments,
-      pinnedKb,
-      execution,
-    });
-    return { ...setup, mode, systemPrompt, messages, currentRunComments, priorRun, priorEvents, execution };
+    const cached = cache.get(cacheKey);
+    const prompt = cached || buildSystemPrompt({
+      agent, task, skills, memory, journalTail,
+      comments: commentRows, currentRunComments, pinnedKb, execution,
+      allowedTools, disallowedTools, mcpServers,
+    }, "review");
+    if (!cached) cache.set(cacheKey, prompt);
+    const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
+    return {
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
+      priorRun, priorEvents, execution, promptDiagnostics: diagnostics,
+    };
   }
 
   throw runInputError(400, "invalid_state", `mode ${mode} not implemented`);
