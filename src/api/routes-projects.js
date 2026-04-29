@@ -8,6 +8,7 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../core/projects.js";
+import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -35,16 +36,60 @@ function projectOr404(db, value) {
   return row;
 }
 
+function safeJson(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizedProcessStatus(status, processStatus) {
+  if (status !== "running" && processStatus === "running") {
+    return legacyRunStatusToProcessStatus(status);
+  }
+  return processStatus || legacyRunStatusToProcessStatus(status);
+}
+
 function projectTaskSummary(row) {
   return {
     id: row.id,
     task_key: row.task_key || null,
     title: row.title,
     stage: row.stage || "plan",
+    stage_reason: row.stage_reason || null,
+    run_policy: row.run_policy || "auto_plan_execute",
     owner_agent: row.owner_agent || null,
     planner_agent: row.planner_agent || null,
     reviewer_agent: row.reviewer_agent || null,
     parent_task_id: row.parent_task_id || null,
+    pending_actions: safeJson(row.pending_actions_json, []),
+    blocking_issues: safeJson(row.blocking_issues_json, []),
+    retry_count: row.retry_count ?? 0,
+    rejection_streak: row.rejection_streak ?? 0,
+    last_failure_kind: row.last_failure_kind || null,
+    error_text: row.error_text || null,
+    unresolved_dependency_count: Number(row.unresolved_dependency_count || 0),
+    running_run_id: row.running_run_id || null,
+    running_run: row.running_run_id ? {
+      id: row.running_run_id,
+      status: row.running_run_status,
+      process_status: row.running_run_process_status || legacyRunStatusToProcessStatus(row.running_run_status),
+      started_at: row.running_run_started_at,
+    } : null,
+    last_run: row.last_run_id ? {
+      id: row.last_run_id,
+      status: row.last_run_status,
+      process_status: normalizedProcessStatus(row.last_run_status, row.last_run_process_status),
+      failure_kind: row.last_run_failure_kind || null,
+      ended_at: row.last_run_ended_at,
+      stage: row.last_run_stage || (row.last_run_mode === "review" ? "review" : "execute"),
+      decision: row.last_run_decision || null,
+      summary: row.last_run_summary || null,
+    } : null,
     updated_at: row.updated_at,
   };
 }
@@ -200,10 +245,47 @@ export function registerProjectRoutes(app, { db, broker }) {
     try {
       const row = projectOr404(db, req.params.id);
       const tasks = db.prepare(`
-        SELECT id, task_key, title, stage, owner_agent, planner_agent, reviewer_agent, parent_task_id, updated_at
-        FROM tasks
-        WHERE project_id = ?
-        ORDER BY updated_at DESC
+        SELECT
+          t.id, t.task_key, t.title, t.stage, t.stage_reason, t.run_policy,
+          t.owner_agent, t.planner_agent, t.reviewer_agent, t.parent_task_id,
+          t.pending_actions_json, t.blocking_issues_json, t.retry_count,
+          t.rejection_streak, t.last_failure_kind, t.error_text, t.updated_at,
+          (
+            SELECT COUNT(*)
+            FROM task_dependencies d
+            JOIN tasks dep ON dep.id = d.depends_on_task_id
+            WHERE d.task_id = t.id AND COALESCE(dep.stage, 'plan') <> 'done'
+          ) AS unresolved_dependency_count,
+          rr.id AS running_run_id,
+          rr.status AS running_run_status,
+          rr.process_status AS running_run_process_status,
+          rr.started_at AS running_run_started_at,
+          lr.id AS last_run_id,
+          lr.status AS last_run_status,
+          lr.process_status AS last_run_process_status,
+          lr.failure_kind AS last_run_failure_kind,
+          lr.ended_at AS last_run_ended_at,
+          lr.stage AS last_run_stage,
+          lr.mode AS last_run_mode,
+          lr.decision AS last_run_decision,
+          lr.summary AS last_run_summary
+        FROM tasks t
+        LEFT JOIN task_runs rr ON rr.id = (
+          SELECT r.id
+          FROM task_runs r
+          WHERE r.task_id = t.id AND r.status = 'running'
+          ORDER BY r.started_at DESC, r.rowid DESC
+          LIMIT 1
+        )
+        LEFT JOIN task_runs lr ON lr.id = (
+          SELECT r.id
+          FROM task_runs r
+          WHERE r.task_id = t.id AND r.status <> 'running'
+          ORDER BY r.started_at DESC, r.rowid DESC
+          LIMIT 1
+        )
+        WHERE t.project_id = ?
+        ORDER BY t.updated_at DESC
       `).all(row.id).map(projectTaskSummary);
       res.json({
         project: {
