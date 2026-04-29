@@ -456,8 +456,13 @@ export function Projects({ selectedId = null, mode = null }) {
       onAction={() => navigateHash("#/projects/new")}
     >
       <label class="project-archive-toggle">
-        <input type="checkbox" checked={includeArchived} onChange={(event) => setIncludeArchived(event.currentTarget.checked)} />
-        <span>Archived</span>
+        <input
+          type="checkbox"
+          checked={includeArchived}
+          onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
+          aria-label="Show archived projects"
+        />
+        <span>Show archived</span>
       </label>
     </PaneListHeader>
   );
