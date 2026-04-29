@@ -7465,6 +7465,35 @@ html.assistant-resizing * {
 .project-task-list li {
   gap: var(--sp-2);
 }
+.task-edit-project-preview {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.task-edit-project-preview-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.task-edit-project-preview-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.task-edit-project-preview-value {
+  color: var(--text);
+  word-break: break-all;
+}
+.task-edit-project-preview-context {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
 @media (max-width: 1180px) {
   .knowledge-read-layout {
     grid-template-columns: minmax(0, min(760px, 100%));
