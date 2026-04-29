@@ -514,8 +514,8 @@ export function createTaskWatcher({
       config: { workspace, repoRoot },
       task,
     });
-    if (projectRunContext.effectiveWorkdir) {
-      mkdirSync(projectRunContext.effectiveWorkdir, { recursive: true });
+    if (projectRunContext.project?.workdir) {
+      mkdirSync(projectRunContext.project.workdir, { recursive: true });
     }
     const runId = newRunId();
     const now = Date.now();
