@@ -221,7 +221,17 @@ export function registerProjectRoutes(app, { db, broker }) {
         }
       }
       const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(existing.id);
-      broker?.broadcast?.("global", { type: "project_updated", id: row.id, slug: row.slug });
+      const wasArchived = !!existing.archived;
+      const isArchived = !!row.archived;
+      if (wasArchived !== isArchived) {
+        broker?.broadcast?.("global", {
+          type: isArchived ? "project_archived" : "project_unarchived",
+          id: row.id,
+          slug: row.slug,
+        });
+      } else {
+        broker?.broadcast?.("global", { type: "project_updated", id: row.id, slug: row.slug });
+      }
       res.json({ project: projectFromRow(row) });
     } catch (error) {
       if (error?.status) return sendRouteError(res, error);
@@ -232,8 +242,11 @@ export function registerProjectRoutes(app, { db, broker }) {
   app.delete("/api/projects/:id", (req, res) => {
     try {
       const existing = projectOr404(db, req.params.id);
+      if (existing.archived) {
+        return res.status(204).end();
+      }
       db.prepare("UPDATE projects SET archived = 1, updated_at = ? WHERE id = ?").run(Date.now(), existing.id);
-      broker?.broadcast?.("global", { type: "project_updated", id: existing.id, slug: existing.slug });
+      broker?.broadcast?.("global", { type: "project_archived", id: existing.id, slug: existing.slug });
       res.status(204).end();
     } catch (error) {
       return sendRouteError(res, error);
