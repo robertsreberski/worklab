@@ -4967,6 +4967,32 @@ select,
   flex-wrap: wrap;
   gap: var(--sp-2);
 }
+.ds-rubric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
+}
+.ds-rubric-grid > div {
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.ds-rubric-grid strong,
+.ds-rubric-grid span {
+  display: block;
+}
+.ds-rubric-grid strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.ds-rubric-grid span {
+  margin-top: var(--sp-1);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
 .ds-swatch-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
