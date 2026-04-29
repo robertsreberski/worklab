@@ -1,6 +1,7 @@
 import { Agent, MCPServerStdio, MCPServerStreamableHttp, Runner, setTracingDisabled } from "@openai/agents";
 import { getOpenAITools } from "./ai-tools.js";
 import { estimateCost } from "./cost.js";
+import { backendCapabilities } from "./backend.js";
 
 process.env.OPENAI_AGENTS_DISABLE_TRACING ||= "1";
 process.env.OPENAI_AGENTS_DONT_LOG_MODEL_DATA ||= "1";
@@ -175,3 +176,9 @@ export async function generateOpenAIResponse(systemPrompt, options = {}) {
     await closeMcpServers(mcpServers);
   }
 }
+
+export const openAiSdkBackend = {
+  kind: "openai",
+  capabilities: backendCapabilities("openai"),
+  execute: generateOpenAIResponse,
+};

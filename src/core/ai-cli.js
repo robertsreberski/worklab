@@ -16,6 +16,7 @@ import { normalizeCodexItemEvent } from "./codex-events.js";
 import { createFileChangePayload } from "./file-change-stats.js";
 import { estimateCost } from "./cost.js";
 import { createStderrTail } from "./failure-kind.js";
+import { backendCapabilities } from "./backend.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -485,3 +486,15 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}
   }
 }
+
+export const claudeCodeBackend = {
+  kind: "claude-code",
+  capabilities: backendCapabilities("claude-code"),
+  execute: generateCliResponse,
+};
+
+export const codexCliBackend = {
+  kind: "codex-cli",
+  capabilities: backendCapabilities("codex"),
+  execute: generateCliResponse,
+};

@@ -11,6 +11,7 @@ import { normalizeCodexItemEvent } from "./codex-events.js";
 import { createFileChangePayload } from "./file-change-stats.js";
 import { formatLiveInputGuidance } from "./live-input.js";
 import { estimateCost } from "./cost.js";
+import { backendCapabilities } from "./backend.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -558,3 +559,9 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     client.close();
   }
 }
+
+export const codexAppBackend = {
+  kind: "codex",
+  capabilities: backendCapabilities("codex"),
+  execute: generateCodexAppResponse,
+};

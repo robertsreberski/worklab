@@ -358,30 +358,26 @@ export function resolveModel(value) {
   return parseModelReference(value);
 }
 
+async function loadBackend(sdk, { liveInput = false } = {}) {
+  if (sdk === "claude") return (await import("./ai-claude.js")).claudeSdkBackend;
+  if (sdk === "openai") return (await import("./ai-openai.js")).openAiSdkBackend;
+  if (sdk === "vercel") return (await import("./ai-vercel.js")).vercelSdkBackend;
+  if (sdk === "claude-code") return (await import("./ai-cli.js")).claudeCodeBackend;
+  if (sdk === "codex" && liveInput) return (await import("./ai-codex-app.js")).codexAppBackend;
+  if (sdk === "codex") return (await import("./ai-cli.js")).codexCliBackend;
+  throw new Error(`unsupported sdk: ${sdk}`);
+}
+
+export async function resolveBackendFor(modelRef, { liveInput = false } = {}) {
+  const resolved = typeof modelRef === "string" ? parseModelReference(modelRef) : modelRef;
+  return loadBackend(resolved.sdk, { liveInput });
+}
+
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
   const nextOptions = resolved.sdk === "vercel"
     ? { ...options, model: resolved }
     : { ...options, model: resolved, effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium") };
-  if (resolved.sdk === "claude") {
-    const { generateClaudeResponse } = await import("./ai-claude.js");
-    return generateClaudeResponse(systemPrompt, nextOptions);
-  }
-  if (resolved.sdk === "openai") {
-    const { generateOpenAIResponse } = await import("./ai-openai.js");
-    return generateOpenAIResponse(systemPrompt, nextOptions);
-  }
-  if (resolved.sdk === "vercel") {
-    const { generateVercelResponse } = await import("./ai-vercel.js");
-    return generateVercelResponse(systemPrompt, nextOptions);
-  }
-  if (resolved.sdk === "codex" && options.liveInput) {
-    const { generateCodexAppResponse } = await import("./ai-codex-app.js");
-    return generateCodexAppResponse(systemPrompt, nextOptions);
-  }
-  if (resolved.sdk === "claude-code" || resolved.sdk === "codex") {
-    const { generateCliResponse } = await import("./ai-cli.js");
-    return generateCliResponse(systemPrompt, nextOptions);
-  }
-  throw new Error(`unsupported sdk: ${resolved.sdk}`);
+  const backend = await loadBackend(resolved.sdk, { liveInput: !!options.liveInput });
+  return backend.execute(systemPrompt, nextOptions);
 }
