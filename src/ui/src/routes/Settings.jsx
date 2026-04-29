@@ -542,7 +542,7 @@ export function Settings() {
   ];
 
   return (
-    <AppShell route="settings">
+    <AppShell route="settings" mobileActionDock={isDirty || formSave.saving ? pageActions : null}>
       <Page
         class="settings-page"
         kicker="Settings"
