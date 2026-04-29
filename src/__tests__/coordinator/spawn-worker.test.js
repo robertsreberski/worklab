@@ -323,8 +323,11 @@ describe("spawnWorker", () => {
     setTimeout(() => handle.cancel(), 150);
     const result = await handle.done;
     expect([130, null]).toContain(result.exitCode);
+    expect(result.failureKind).toBe("cancelled_user");
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log.status).toBe("cancelled");
+    const run = db.prepare("SELECT process_status, failure_kind FROM task_runs WHERE id = ?").get(runId);
+    expect(run).toMatchObject({ process_status: "cancelled", failure_kind: "cancelled_user" });
   }, 10000);
 
   it("persists cancel_initiator and cancel_reason on the run row", async () => {
@@ -346,6 +349,48 @@ describe("spawnWorker", () => {
     const run = db.prepare("SELECT cancel_initiator, cancel_reason FROM task_runs WHERE id = ?").get(runId);
     expect(run).toEqual({ cancel_initiator: "api_cancel", cancel_reason: "user clicked cancel" });
   }, 10000);
+
+  it("classifies worker-reported raw signal cancellation without falling back to spawn", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [{
+        type: "cancelled",
+        initiator: "worker_signal",
+        signal: "SIGTERM",
+        reason: "worker received SIGTERM",
+      }],
+      exitCode: 130,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+    expect(result.processStatus).toBe("cancelled");
+    expect(result.failureKind).toBe("cancelled_signal");
+    expect(result.cancelInitiator).toBe("worker_signal");
+    expect(result.cancelReason).toBe("worker received SIGTERM");
+
+    const run = db.prepare(
+      "SELECT process_status, failure_kind, cancel_initiator, cancel_reason, diagnostics_json FROM task_runs WHERE id = ?",
+    ).get(runId);
+    expect(run).toMatchObject({
+      process_status: "cancelled",
+      failure_kind: "cancelled_signal",
+      cancel_initiator: "worker_signal",
+      cancel_reason: "worker received SIGTERM",
+    });
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      worker_cancel_signal: "SIGTERM",
+      failure_kind: "cancelled_signal",
+    });
+  });
 
   it("collects runtime_warning events into warnings_json and persists diagnostics", async () => {
     const db = makeTestDb();
