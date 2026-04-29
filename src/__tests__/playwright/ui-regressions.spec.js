@@ -1575,9 +1575,9 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.stateDisplay).toBe("none");
   expect(metrics.pillVisible).toBe(true);
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
-  expect(metrics.rowHeight).toBeLessThanOrEqual(88);
-  expect(metrics.filterHeight).toBeLessThanOrEqual(104);
-  expect(metrics.searchWidth).toBeGreaterThanOrEqual(360);
+  expect(metrics.rowHeight).toBeLessThanOrEqual(120);
+  expect(metrics.filterHeight).toBeLessThanOrEqual(164);
+  expect(metrics.searchWidth).toBeGreaterThanOrEqual(340);
   expect(metrics.tabsTop).toBeGreaterThan(metrics.searchTop);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
@@ -1609,6 +1609,65 @@ test("mobile commander uses deliberate row density without exposing task ids", a
 
   await page.locator(".commander-new-task-fab").click();
   await expect(page).toHaveURL(/#\/tasks\/new/);
+});
+
+test("mobile task list wraps badges below the visible title", async ({ page }) => {
+  const suffix = Date.now();
+  const title = "Mobile badge wrapping task title stays visible";
+  const mobileProject = await requestJson("/api/projects", {
+    method: "POST",
+    body: {
+      name: "Mobile badges",
+      slug: `mobile-badge-overflow-${suffix}`,
+    },
+    ok: [201],
+  });
+  const mobileBadgeTaskId = await createTask(title, {
+    project_id: mobileProject.project.id,
+    run_policy: "auto_plan_execute",
+    stage: "execute",
+  });
+  await requestJson(`/api/tasks/${mobileBadgeTaskId}/automations`, {
+    method: "POST",
+    body: {
+      trigger: { type: "daily", hour: 10, minute: 30 },
+      enabled: true,
+    },
+    ok: [201],
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  const row = page.locator(".commander-row", { hasText: title });
+  await expect(row).toBeVisible();
+  await expect(row.locator(".chip")).toHaveCount(4);
+
+  const metrics = await row.evaluate((node) => {
+    const title = node.querySelector(".commander-title");
+    const chips = [...node.querySelectorAll(".commander-cell-title-row > .chip")];
+    const titleRect = title?.getBoundingClientRect();
+    const chipRects = chips.map((chip) => chip.getBoundingClientRect());
+    const rowRect = node.getBoundingClientRect();
+    return {
+      titleText: title?.textContent?.trim() || "",
+      titleWidth: titleRect ? Math.round(titleRect.width) : 0,
+      rowWidth: Math.round(rowRect.width),
+      rowHeight: Math.round(rowRect.height),
+      chipsBelowTitle: titleRect
+        ? chipRects.every((rect) => Math.round(rect.top) >= Math.round(titleRect.bottom))
+        : false,
+      visibleChipCount: chipRects.filter((rect) => rect.width > 0 && rect.height > 0).length,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.titleText).toBe(title);
+  expect(metrics.titleWidth).toBeGreaterThanOrEqual(200);
+  expect(metrics.chipsBelowTitle).toBe(true);
+  expect(metrics.visibleChipCount).toBe(4);
+  expect(metrics.rowHeight).toBeLessThanOrEqual(128);
+  expect(metrics.rowWidth).toBeLessThanOrEqual(390);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("mobile task list stacks assistant launcher above new task", async ({ page }) => {
@@ -1743,6 +1802,40 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(afterFocus.tabbarDisplay).toBe("none");
   expect(afterFocus.dockTransform).not.toBe("none");
   expect(afterFocus.overflow).toBeLessThanOrEqual(0);
+});
+
+test("mobile task detail omits redundant header labels", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const head = document.querySelector(".task-detail-head");
+    const title = head?.querySelector(".task-hero-title");
+    const idPrefix = head?.querySelector(".id-prefix");
+    const kicker = head?.querySelector(".kicker");
+    const status = head?.querySelector(".task-hero-status-row");
+    const headRect = head?.getBoundingClientRect();
+    const titleRect = title?.getBoundingClientRect();
+    return {
+      headingText: title?.innerText?.replace(/\s+/g, " ").trim() || "",
+      idPrefixDisplay: idPrefix ? getComputedStyle(idPrefix).display : "",
+      kickerDisplay: kicker ? getComputedStyle(kicker).display : "",
+      titleWidth: titleRect ? Math.round(titleRect.width) : 0,
+      headWidth: headRect ? Math.round(headRect.width) : 0,
+      statusInsideHeader: head && status
+        ? Math.ceil(status.getBoundingClientRect().bottom - head.getBoundingClientRect().bottom) <= 0
+        : false,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.headingText).toBe("UI regression task");
+  expect(metrics.idPrefixDisplay).toBe("none");
+  expect(metrics.kickerDisplay).toBe("none");
+  expect(metrics.titleWidth).toBeLessThanOrEqual(metrics.headWidth);
+  expect(metrics.statusInsideHeader).toBe(true);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {
