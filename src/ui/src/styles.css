@@ -9145,21 +9145,28 @@ html.assistant-resizing * {
   background: color-mix(in srgb, var(--surface) 96%, transparent);
   backdrop-filter: blur(12px);
 }
-.app-tabbar a {
+.app-tabbar a,
+.app-tabbar button {
   display: flex;
   min-width: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
+  font: inherit;
   font-size: 10px;
   font-weight: 700;
+  cursor: pointer;
 }
-.app-tabbar a.active {
+.app-tabbar a.active,
+.app-tabbar button.active {
   color: var(--accent);
 }
-.app-tabbar a span {
+.app-tabbar a span,
+.app-tabbar button span {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9167,15 +9174,18 @@ html.assistant-resizing * {
 }
 
 .app-right-drawer,
-.app-section-sheet {
+.app-section-sheet,
+.app-more-sheet {
   display: none;
 }
 .app-right-drawer.open,
-.app-section-sheet.open {
+.app-section-sheet.open,
+.app-more-sheet.open {
   pointer-events: auto;
 }
 .app-right-drawer-scrim,
-.app-section-sheet-scrim {
+.app-section-sheet-scrim,
+.app-more-sheet-scrim {
   position: absolute;
   inset: 0;
   border: 0;
@@ -9184,7 +9194,8 @@ html.assistant-resizing * {
   transition: opacity var(--dur-std) var(--ease-snap);
 }
 .app-right-drawer.open .app-right-drawer-scrim,
-.app-section-sheet.open .app-section-sheet-scrim {
+.app-section-sheet.open .app-section-sheet-scrim,
+.app-more-sheet.open .app-more-sheet-scrim {
   opacity: 1;
 }
 .app-right-drawer-panel {
@@ -9204,7 +9215,8 @@ html.assistant-resizing * {
   transform: translateX(0);
 }
 .app-right-drawer-head,
-.app-section-sheet-panel h2 {
+.app-section-sheet-panel h2,
+.app-more-sheet-head h2 {
   margin: 0;
 }
 .app-right-drawer-head {
@@ -9216,13 +9228,15 @@ html.assistant-resizing * {
   border-bottom: 1px solid var(--border);
 }
 .app-right-drawer-head h2,
-.app-section-sheet-panel h2 {
+.app-section-sheet-panel h2,
+.app-more-sheet-head h2 {
   color: var(--text);
   font-family: var(--font-display);
   font-size: var(--text-xl);
   font-weight: 400;
 }
-.app-right-drawer-close {
+.app-right-drawer-close,
+.app-more-sheet-close {
   width: 32px;
   height: 32px;
   display: inline-flex;
@@ -9239,7 +9253,8 @@ html.assistant-resizing * {
   overflow: auto;
   padding: var(--sp-4);
 }
-.app-section-sheet-panel {
+.app-section-sheet-panel,
+.app-more-sheet-panel {
   position: absolute;
   left: 0;
   right: 0;
@@ -9252,16 +9267,59 @@ html.assistant-resizing * {
   transform: translateY(100%);
   transition: transform var(--dur-std) var(--ease-snap);
 }
-.app-section-sheet.open .app-section-sheet-panel {
+.app-section-sheet.open .app-section-sheet-panel,
+.app-more-sheet.open .app-more-sheet-panel {
   transform: translateY(0);
 }
-.app-section-sheet-grabber {
+.app-section-sheet-grabber,
+.app-more-sheet-grabber {
   display: block;
   width: 42px;
   height: 4px;
   margin: 0 auto var(--sp-3);
   border-radius: var(--radius-pill);
   background: var(--border-strong);
+}
+.app-more-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+.app-more-sheet-list {
+  list-style: none;
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+}
+.app-more-sheet-link {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 600;
+}
+.app-more-sheet-link:hover,
+.app-more-sheet-link.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent-soft) 72%, transparent);
+}
+.app-more-sheet-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: inherit;
+}
+.app-more-sheet-arrow {
+  justify-self: end;
+  color: var(--text-subtle);
 }
 .app-section-sheet-panel ul {
   list-style: none;
@@ -9502,7 +9560,8 @@ html.assistant-resizing * {
     display: block;
   }
   .app-right-drawer,
-  .app-section-sheet {
+  .app-section-sheet,
+  .app-more-sheet {
     position: fixed;
     inset: 0;
     z-index: 80;

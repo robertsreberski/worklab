@@ -4,7 +4,7 @@
 // ? opens the keyboard-help drawer globally.
 
 import { createContext } from "preact";
-import { useContext, useEffect, useMemo, useState } from "preact/hooks";
+import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
@@ -12,6 +12,7 @@ import { AssistantDock } from "./AssistantDock.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { navigateHash } from "../lib/navigation.js";
+import { useFocusTrap } from "../lib/useFocusTrap.js";
 import { maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
 import {
   ASSISTANT_WIDTH_MIN,
@@ -55,8 +56,11 @@ const TABBAR_ROUTES = [
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
   { id: "agents", label: "Agents", icon: "user", href: "#/agents" },
-  { id: "more", label: "More", icon: "more-horizontal", href: "#/knowledge" },
 ];
+const MORE_ROUTE_IDS = ["skills", "knowledge", "providers", "settings"];
+const MORE_ROUTES = ROUTES
+  .filter((route) => MORE_ROUTE_IDS.includes(route.id))
+  .map((route) => ({ ...route, href: `#/${route.id}` }));
 const EMPTY_SECTIONS = [];
 const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";
 
@@ -128,25 +132,98 @@ export function MobilePillRow({
   );
 }
 
-function AppTabbar({ route }) {
+function MobileMoreSheet({ open, route, onClose, onNavigate }) {
+  const panelRef = useRef(null);
+  useFocusTrap(panelRef, { active: open, onEscape: onClose });
+  if (!open) return null;
   return (
-    <nav class="app-tabbar" aria-label="Mobile navigation">
-      {TABBAR_ROUTES.map((item) => (
-        <a
-          key={item.id}
-          class={route === item.id || (item.id === "more" && ["skills", "knowledge", "providers", "settings"].includes(route)) ? "active" : ""}
-          href={item.href}
-          aria-label={item.label}
-          onClick={(event) => {
-            event.preventDefault();
-            navigateHash(item.href);
-          }}
+    <div id="app-more-sheet" class={`app-more-sheet ${open ? "open" : ""}`.trim()} aria-hidden={!open}>
+      <button type="button" class="app-more-sheet-scrim" aria-label="Close more navigation" onClick={onClose} />
+      <div ref={panelRef} class="app-more-sheet-panel" role="dialog" aria-modal="true" aria-label="More navigation">
+        <span class="app-more-sheet-grabber" aria-hidden="true" />
+        <header class="app-more-sheet-head">
+          <h2>More</h2>
+          <button type="button" class="app-more-sheet-close" aria-label="Close" onClick={onClose}>
+            <Icon name="x" size={16} />
+          </button>
+        </header>
+        <ul class="app-more-sheet-list">
+          {MORE_ROUTES.map((item) => (
+            <li key={item.id}>
+              <a
+                class={`app-more-sheet-link ${route === item.id ? "active" : ""}`.trim()}
+                href={item.href}
+                aria-current={route === item.id ? "page" : undefined}
+                onClick={(event) => {
+                  event.preventDefault();
+                  onNavigate(item.href);
+                }}
+              >
+                <span class="app-more-sheet-icon" aria-hidden="true">
+                  <Icon name={item.icon} size={17} />
+                </span>
+                <span>{item.label}</span>
+                <Icon name="chevron-right" size={15} class="app-more-sheet-arrow" />
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function AppTabbar({ route }) {
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreActive = MORE_ROUTE_IDS.includes(route);
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [route]);
+
+  function navigateFromTabbar(hash) {
+    navigateHash(hash);
+    setMoreOpen(false);
+  }
+
+  return (
+    <>
+      <nav class="app-tabbar" aria-label="Mobile navigation">
+        {TABBAR_ROUTES.map((item) => (
+          <a
+            key={item.id}
+            class={route === item.id ? "active" : ""}
+            href={item.href}
+            aria-label={item.label}
+            onClick={(event) => {
+              event.preventDefault();
+              navigateFromTabbar(item.href);
+            }}
+          >
+            <Icon name={item.icon} size={18} />
+            <span>{item.label}</span>
+          </a>
+        ))}
+        <button
+          type="button"
+          class={moreActive || moreOpen ? "active" : ""}
+          aria-label="More"
+          aria-haspopup="dialog"
+          aria-expanded={moreOpen ? "true" : "false"}
+          aria-controls="app-more-sheet"
+          onClick={() => setMoreOpen((current) => !current)}
         >
-          <Icon name={item.icon} size={18} />
-          <span>{item.label}</span>
-        </a>
-      ))}
-    </nav>
+          <Icon name="more-horizontal" size={18} />
+          <span>More</span>
+        </button>
+      </nav>
+      <MobileMoreSheet
+        open={moreOpen}
+        route={route}
+        onClose={() => setMoreOpen(false)}
+        onNavigate={navigateFromTabbar}
+      />
+    </>
   );
 }
 
