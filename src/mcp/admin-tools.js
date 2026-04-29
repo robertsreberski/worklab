@@ -22,6 +22,37 @@ const taskId = string("Task id or public task key");
 const projectId = string("Project id or slug");
 const slug = string("Slug");
 const patch = object({}, [], true);
+const taskCreateInput = object({
+  title: string("Task title"),
+  instructions: string("Task instructions"),
+  owner_agent: string("Owner agent name"),
+  planner_agent: string("Planner agent name"),
+  reviewer_agent: string("Reviewer agent name"),
+  stage: string("Initial workflow stage"),
+  run_policy: string("Run policy: manual or auto_plan_execute"),
+  project_id: string("Optional project id or slug"),
+  tags: arrayOfString("Tags"),
+  blocked_by_ids: arrayOfString("Dependency task ids or public task keys"),
+  client_request_id: string("Idempotency key"),
+}, ["title"]);
+const agentCreateInput = object({
+  name: string("Optional lowercase slug. If omitted, Worklab generates one from display_name."),
+  display_name: string("Agent display name"),
+  model: string("Explicit model reference, for example codex:gpt-5.5 or claude:claude-sonnet-4-6"),
+  effort: string("Reasoning effort: none, low, medium, high, xhigh, or max"),
+  description: string("Short description"),
+  instructions: string("Agent instructions"),
+  skills_allowlist: arrayOfString("Allowed skills when skills_allowlist_mode is custom"),
+  skills_allowlist_mode: string("Skill allowlist mode: all or custom"),
+  mcp_allowlist: arrayOfString("Allowed MCP servers when mcp_allowlist_mode is custom"),
+  mcp_allowlist_mode: string("MCP allowlist mode: all or custom"),
+  builtin_allowlist: arrayOfString("Allowed built-in tools when builtin_allowlist_mode is custom"),
+  builtin_allowlist_mode: string("Built-in allowlist mode: all or custom"),
+  allow_self_review: boolean("Whether the agent may review its own runs"),
+  daily_budget_usd: number("Daily budget in USD"),
+  per_run_budget_usd: number("Per-run budget in USD"),
+  enabled: boolean("Whether the agent is enabled"),
+}, ["display_name", "model"]);
 
 export const adminToolDefinitions = [
   tool("worklab_status", "Return Worklab health, service metadata, and configuration summary."),
@@ -52,20 +83,15 @@ export const adminToolDefinitions = [
     project: string("Project id, slug, or 'none'"),
   })),
   tool("worklab_task_get", "Get a task with comments, runs, and graph context.", object({ id: taskId }, ["id"])),
-  tool("worklab_task_create", "Create a task.", object({
-    title: string("Task title"),
-    instructions: string("Task instructions"),
-    owner_agent: string("Owner agent name"),
-    planner_agent: string("Planner agent name"),
-    reviewer_agent: string("Reviewer agent name"),
-    stage: string("Initial workflow stage"),
-    run_policy: string("Run policy: manual or auto_plan_execute"),
-    project_id: string("Optional project id or slug"),
-    tags: arrayOfString("Tags"),
-    blocked_by_ids: arrayOfString("Dependency task ids or public task keys"),
-    client_request_id: string("Idempotency key"),
-  }, ["title"])),
+  tool("worklab_task_create", "Create a task and return a compact task summary.", taskCreateInput),
+  tool("worklab_task_create_many", "Create multiple tasks sequentially and return compact summaries.", object({
+    tasks: { type: "array", items: taskCreateInput, description: "Tasks to create" },
+  }, ["tasks"])),
   tool("worklab_task_update", "Patch a task. Use the same fields accepted by PATCH /api/tasks/:id.", object({ id: taskId, patch }, ["id", "patch"])),
+  tool("worklab_task_bulk_update", "Patch multiple tasks by id or public task key.", object({
+    ids: { type: "array", items: taskId, description: "Task ids or public task keys" },
+    patch,
+  }, ["ids", "patch"])),
   tool("worklab_task_delete", "Delete a task.", object({ id: taskId }, ["id"])),
   tool("worklab_task_comment", "Add a human comment to a task.", object({ id: taskId, body: string("Comment body") }, ["id", "body"])),
   tool("worklab_task_comment_delete", "Delete a human comment from a task.", object({
@@ -90,7 +116,7 @@ export const adminToolDefinitions = [
     limit: number("Max agents to return"),
   })),
   tool("worklab_agent_get", "Get an agent.", object({ name: string("Agent name") }, ["name"])),
-  tool("worklab_agent_create", "Create an agent.", object({}, ["display_name", "model"], true)),
+  tool("worklab_agent_create", "Create an agent and return a compact agent summary.", agentCreateInput),
   tool("worklab_agent_update", "Patch an agent. Use fields accepted by PATCH /api/agents/:name.", object({ name: string("Agent name"), patch }, ["name", "patch"])),
   tool("worklab_agent_delete", "Delete an agent.", object({ name: string("Agent name") }, ["name"])),
   tool("worklab_agent_consolidate", "Start forced memory consolidation for an agent.", object({ name: string("Agent name") }, ["name"])),
@@ -229,6 +255,30 @@ function compactAllowlist(row, listKey, modeKey) {
     mode: row?.[modeKey] || "all",
     count: list.length,
   };
+}
+
+function compactTask(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    task_key: row.task_key || null,
+    title: row.title || "",
+    stage: row.stage || null,
+    run_policy: row.run_policy || null,
+    owner_agent: row.owner_agent || null,
+    planner_agent: row.planner_agent || null,
+    reviewer_agent: row.reviewer_agent || null,
+    project_id: row.project_id || row.project?.id || null,
+    client_request_id: row.client_request_id || null,
+    dependency_count: Array.isArray(row.dependency_ids)
+      ? row.dependency_ids.length
+      : (Array.isArray(row.blocked_by) ? row.blocked_by.length : 0),
+    updated_at: row.updated_at || null,
+  };
+}
+
+function compactTaskResponse(result) {
+  return { task: compactTask(result?.task) };
 }
 
 function compactAgent(row) {
@@ -435,6 +485,49 @@ export function createAdminToolHandlers({ baseUrl, config, fetchImpl = fetch } =
       body: bodyFor(bodyKind, input),
     });
   }
+
+  handlers.worklab_task_create = async (input = {}) => compactTaskResponse(
+    await apiRequest(client, "POST", "/api/tasks", { body: input }),
+  );
+
+  handlers.worklab_task_create_many = async (input = {}) => {
+    const tasks = Array.isArray(input.tasks) ? input.tasks : [];
+    const results = [];
+    for (const task of tasks) {
+      try {
+        const result = await apiRequest(client, "POST", "/api/tasks", { body: task });
+        results.push({ ok: true, task: compactTask(result.task) });
+      } catch (error) {
+        results.push({ ok: false, error: { message: error.message || String(error) } });
+      }
+    }
+    const succeeded = results.filter((result) => result.ok).length;
+    return {
+      summary: { requested: tasks.length, succeeded, failed: tasks.length - succeeded },
+      results,
+    };
+  };
+
+  handlers.worklab_task_bulk_update = async (input = {}) => {
+    const result = await apiRequest(client, "POST", "/api/tasks/bulk", {
+      body: { operation: "patch", ids: input.ids || [], patch: input.patch || {} },
+    });
+    return {
+      summary: result.summary,
+      results: (result.results || []).map((entry) => ({
+        id: entry.id,
+        task_id: entry.task_id || null,
+        ok: !!entry.ok,
+        ...(entry.task ? { task: compactTask(entry.task) } : {}),
+        ...(entry.error ? { error: entry.error } : {}),
+      })),
+    };
+  };
+
+  handlers.worklab_agent_create = async (input = {}) => {
+    const result = await apiRequest(client, "POST", "/api/agents", { body: input });
+    return { agent: compactAgent(result.agent) };
+  };
 
   handlers.worklab_status = async () => ({
     health: await apiRequest(client, "GET", "/api/health"),
