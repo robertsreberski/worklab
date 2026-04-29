@@ -7,6 +7,7 @@ import { getKeyFingerprint } from "../core/crypto.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
 import { testEmbeddingBackend } from "../core/embeddings.js";
 import { applyConfigArgs } from "./args.js";
+import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
 export async function doctor(args = []) {
   applyConfigArgs(args);
@@ -17,15 +18,22 @@ export async function doctor(args = []) {
   const [major] = process.versions.node.split(".").map(Number);
   if (major < 20) problems.push(`node ${process.versions.node} < 20 required`);
 
+  const serviceRuntime = inspectServiceRuntime(config);
+  for (const problem of serviceRuntimeProblems(serviceRuntime)) problems.push(problem);
+
   const dbPath = join(config.dataDir, "worklab.db");
   if (existsSync(dbPath)) {
-    db = openDb(dbPath);
     try {
-      runMigrations(db);
-      const rows = db.pragma("integrity_check");
-      if (rows[0]?.integrity_check !== "ok") problems.push(`db integrity: ${JSON.stringify(rows)}`);
+      db = openDb(dbPath);
+      try {
+        runMigrations(db);
+        const rows = db.pragma("integrity_check");
+        if (rows[0]?.integrity_check !== "ok") problems.push(`db integrity: ${JSON.stringify(rows)}`);
+      } catch (err) {
+        problems.push(`db check failed: ${err.message}`);
+      }
     } catch (err) {
-      problems.push(`db check failed: ${err.message}`);
+      problems.push(`db open failed: ${err.message}`);
     }
   }
 

@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { loadConfig, worklabBaseUrl } from "../core/config.js";
 import { ensureServiceInstalled, startUserService } from "./install-service.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
+import { assertServiceRuntimeReady, serviceErrorLogTail } from "./service-runtime.js";
 
 export function buildUi(config = loadConfig()) {
   execFileSync("npm", ["run", "build:ui"], {
@@ -31,7 +32,8 @@ export async function waitForHealth(config = loadConfig(), { timeoutMs = 15000 }
     }
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  throw new Error(`Worklab service did not become healthy at ${url}: ${lastError?.message || "timeout"}`);
+  const tail = serviceErrorLogTail(config);
+  throw new Error(`Worklab service did not become healthy at ${url}: ${lastError?.message || "timeout"}${tail ? `\nRecent service stderr:\n${tail}` : ""}`);
 }
 
 export async function serve(args = []) {
@@ -50,6 +52,7 @@ export async function start(args = []) {
     buildUi(config);
   }
   const installed = await ensureServiceInstalled({ config });
+  assertServiceRuntimeReady(config);
   await startUserService({ config });
   const health = await waitForHealth(config);
   console.log(`worklab: running at ${worklabBaseUrl(config)} (${installed.file})`);
