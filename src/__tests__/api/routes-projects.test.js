@@ -1,15 +1,31 @@
-import { describe, expect, it } from "vitest";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
 
+const cleanupDirs = [];
+
+function tempWorkdir(name) {
+  const root = mkdtempSync(join(tmpdir(), "worklab-project-api-"));
+  cleanupDirs.push(root);
+  return join(root, name);
+}
+
 describe("project API", () => {
+  afterEach(() => {
+    for (const dir of cleanupDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
   it("creates, lists, updates, reads, and archives projects", async () => {
     const { agent } = makeTestServer();
+    const workdir = tempWorkdir("mobile-app");
 
     const created = await agent.post("/api/projects").send({
       name: "Mobile App",
       description: "Customer app",
       context: "Use the mobile design system.",
-      workdir: "relative-mobile",
+      workdir,
       tags: ["ios", "mobile"],
     }).expect(201);
 
@@ -20,8 +36,9 @@ describe("project API", () => {
       context: "Use the mobile design system.",
       tags: ["ios", "mobile"],
       archived: false,
+      workdir,
     });
-    expect(created.body.project.workdir).toMatch(/relative-mobile$/);
+    expect(existsSync(workdir)).toBe(true);
 
     const list = await agent.get("/api/projects").expect(200);
     expect(list.body.projects.map((project) => project.slug)).toEqual(["mobile-app"]);
@@ -44,6 +61,30 @@ describe("project API", () => {
     expect((await agent.get("/api/projects").expect(200)).body.projects).toEqual([]);
     const archived = await agent.get("/api/projects?include_archived=true").expect(200);
     expect(archived.body.projects[0]).toMatchObject({ id: created.body.project.id, archived: true });
+  });
+
+  it("rejects relative project workdirs", async () => {
+    const { agent } = makeTestServer();
+    const response = await agent.post("/api/projects").send({
+      name: "Relative Project",
+      workdir: "relative-mobile",
+    }).expect(400);
+
+    expect(response.body.error).toMatchObject({
+      code: "validation",
+      message: "workdir must use an absolute path or ~/path",
+    });
+  });
+
+  it("creates a project workdir when updating", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/projects").send({ name: "Update Workdir" }).expect(201);
+    const workdir = tempWorkdir("patched-project");
+
+    const patched = await agent.patch(`/api/projects/${created.body.project.id}`).send({ workdir }).expect(200);
+
+    expect(patched.body.project.workdir).toBe(workdir);
+    expect(existsSync(workdir)).toBe(true);
   });
 
   it("deduplicates generated slugs", async () => {

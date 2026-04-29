@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { resolve } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, resolve } from "node:path";
 import { isValidSlug, uniqueSlug } from "./slugs.js";
 
 export function projectRouteError(status, code, message) {
@@ -25,7 +26,16 @@ export function normalizeProjectWorkdir(value, fallback = undefined) {
     throw projectRouteError(400, "validation", "workdir must be a string or null");
   }
   const trimmed = value.trim();
-  return trimmed ? resolve(trimmed) : null;
+  if (!trimmed) return null;
+  if (trimmed === "~") return resolve(homedir());
+  if (trimmed.startsWith("~/")) return resolve(homedir(), trimmed.slice(2));
+  if (trimmed.startsWith("~")) {
+    throw projectRouteError(400, "validation", "workdir must use an absolute path or ~/path");
+  }
+  if (!isAbsolute(trimmed)) {
+    throw projectRouteError(400, "validation", "workdir must use an absolute path or ~/path");
+  }
+  return resolve(trimmed);
 }
 
 export function normalizeProjectSlug(value) {
