@@ -807,6 +807,13 @@ test("desktop task detail states keep actions and context obvious without clippe
       });
       const expectedColumns = viewport.width >= 1180 ? 2 : 1;
       expect(columnCount, `${viewport.label} ${state.label} responsive detail columns`).toBe(expectedColumns);
+      const headerToBriefGap = await page.locator(".task-detail-shell").evaluate((node) => {
+        const head = node.querySelector(".detail-head");
+        const brief = node.querySelector("#task-brief");
+        if (!head || !brief) return 0;
+        return Math.round(brief.getBoundingClientRect().top - head.getBoundingClientRect().bottom);
+      });
+      expect(headerToBriefGap, `${viewport.label} ${state.label} header-to-brief gap`).toBeGreaterThanOrEqual(48);
       await expectNoHorizontalOverflow(page, `${viewport.label} task detail ${state.label}`);
       await expectNoCriticalHorizontalClipping(
         page,
@@ -1433,6 +1440,8 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const dock = document.querySelector(".app-mobile-action-dock");
     const heroActions = document.querySelector(".task-hero-actions");
     const tabbar = document.querySelector(".app-tabbar");
+    const head = document.querySelector(".task-detail-shell .detail-head");
+    const brief = document.querySelector("#task-brief");
     const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
     const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
     const line = rail ? getComputedStyle(rail, "::after") : null;
@@ -1457,6 +1466,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       dockBottomBeforeNav: dock
         ? Math.round(dock.getBoundingClientRect().bottom) <= window.innerHeight + 1
         : false,
+      headerToBriefGap: head && brief
+        ? Math.round(brief.getBoundingClientRect().top - head.getBoundingClientRect().bottom)
+        : 0,
       heroActionsDisplay: heroActions ? getComputedStyle(heroActions).display : "",
       railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
       dotWidth: dot ? Math.round(parseFloat(getComputedStyle(dot).getPropertyValue("--activity-dot-size")) || dot.getBoundingClientRect().width) : 0,
@@ -1474,6 +1486,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.dockDisplay).toBe("flex");
   expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(beforeFocus.dockBottomBeforeNav).toBe(true);
+  expect(beforeFocus.headerToBriefGap).toBeGreaterThanOrEqual(40);
   expect(beforeFocus.tabbarDisplay).toBe("none");
   expect(beforeFocus.heroActionsDisplay).toBe("none");
   expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
