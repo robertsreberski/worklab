@@ -3,12 +3,12 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
+import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { KbEdit } from "./KbEdit.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -92,11 +92,17 @@ export function Knowledge({ selectedSlug = null }) {
   const hasFilter = query.trim() || category !== "all";
 
   const listHeader = (
-    <>
-      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search knowledge…" inputRef={searchRef} />
+    <PaneListHeader
+      searchValue={query}
+      onSearch={setQuery}
+      searchPlaceholder="Search knowledge…"
+      searchAriaLabel="Search knowledge"
+      searchRef={searchRef}
+      actionLabel="New entry"
+      onAction={() => { navigateHash("#/knowledge/new"); }}
+    >
       <Tabs ariaLabel="Filter by category" value={category} onChange={setCategory} tabs={CATEGORY_TABS} />
-      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>
-    </>
+    </PaneListHeader>
   );
 
   const listBody = filtered.length === 0 ? (
