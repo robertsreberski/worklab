@@ -28,6 +28,7 @@ import {
   Select,
   SecretInput,
   ScheduleBuilder,
+  StageToken,
   StatusDot,
   StatusPill,
   Switch,
@@ -39,13 +40,14 @@ import {
 } from "../components/primitives/index.js";
 import {
   ActionDock,
-  DetailHeader,
+  DetailHead,
   EntityEditorLayout,
   FilterBar,
   InlineEditorPanel,
   Page,
   PanelGrid,
   RailStack,
+  SectionMarker,
   SettingsMatrix,
   SummaryGrid,
   Toolbar,
@@ -155,6 +157,9 @@ export function DesignSystem() {
               <StatusPill status="running" />
               <StatusPill status="done" />
               <StatusPill status="error" />
+              <StageToken stage="plan" />
+              <StageToken stage="running" />
+              <StageToken stage="review" variant="menu" />
               <StatusDot status="running" pulse />
               <Chip variant="accent">agent</Chip>
               <Chip variant="warn">queued</Chip>
@@ -276,17 +281,20 @@ export function DesignSystem() {
 
         <section class="ds-catalog-section">
           <div class="pane-detail">
-            <DetailHeader
+            <DetailHead
               icon={<Icon name="layout-grid" size={18} />}
+              crumbs={[{ label: "Design system", href: "#/design-system" }, { label: "Detail" }]}
               kicker="Entity"
               title="Reusable Detail Header"
               meta={<><span class="pane-row-mono">WL-DS</span><span class="pane-row-dot">·</span><span>Responsive</span></>}
               actions={<><Button variant="ghost">Cancel</Button><Button variant="primary">Save</Button></>}
+              subBar={<><StageToken stage="running" /><span class="soft-meta">Canonical header</span></>}
             />
             <div class="pane-detail-body entity-detail-body">
               <EntityEditorLayout
                 main={(
                   <>
+                    <SectionMarker num="01" kicker="Section marker" meta="Shared primitive" />
                     <Card title="Main Surface">
                       <p class="soft-meta">Entity editors use this grid before route-specific fields are added.</p>
                     </Card>
@@ -309,7 +317,7 @@ export function DesignSystem() {
         <section class="ds-catalog-section">
           <Card title="Workflow Layout">
             <WorkflowLayout
-              hero={<DetailHeader icon={<Icon name="clock" size={16} />} title="Scheduled Work" meta="Primary action first" actions={<Button variant="primary">Run</Button>} />}
+              hero={<DetailHead icon={<Icon name="clock" size={16} />} title="Scheduled Work" meta={<StageToken stage="plan" />} actions={<Button variant="primary">Run</Button>} />}
               main={<InlineEditorPanel title="Inline editor" description="Appears only after the user chooses to edit."><ScheduleBuilder value={schedule} onChange={setSchedule} /></InlineEditorPanel>}
               rail={<RailStack><Card title="Context">Only persistent context belongs in the rail.</Card><Card collapsible={{ summary: "Advanced", count: 2 }}>Rare actions stay collapsed.</Card></RailStack>}
             />
