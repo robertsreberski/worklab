@@ -39,6 +39,7 @@ describe("settings", () => {
     expect(res.body.settings.assistant_model).toBe("openai:gpt-5.5");
     expect(res.body.settings.assistant_effort).toBe("high");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(300000);
+    expect(res.body.settings.assistant_max_turns).toBe(32);
   });
 
   it("PATCH clears the embedding model when given empty string", async () => {
@@ -68,6 +69,7 @@ describe("settings", () => {
       assistant_model: "codex:gpt-5.4",
       assistant_effort: "medium",
       assistant_run_timeout_ms: 45000,
+      assistant_max_turns: 48,
     }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
     expect(res.body.settings.consolidation_hour).toBe(5);
@@ -79,6 +81,7 @@ describe("settings", () => {
     expect(res.body.settings.assistant_model).toBe("codex:gpt-5.4");
     expect(res.body.settings.assistant_effort).toBe("medium");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(45000);
+    expect(res.body.settings.assistant_max_turns).toBe(48);
   });
 
   it("PATCH rejects unknown keys", async () => {

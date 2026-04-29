@@ -50,7 +50,62 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("18");
+    expect(row.value).toBe("19");
+  });
+
+  it("migrates assistant run diagnostics columns", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE assistant_threads (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL DEFAULT 'Personal assistant',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE assistant_messages (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE,
+        role TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'complete',
+        run_id TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE assistant_runs (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE,
+        user_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL,
+        assistant_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        model TEXT,
+        effort TEXT,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        input_tokens INTEGER,
+        output_tokens INTEGER,
+        cache_read_tokens INTEGER,
+        cache_creation_tokens INTEGER,
+        cost_usd REAL,
+        duration_ms INTEGER,
+        num_turns INTEGER,
+        summary TEXT,
+        final_json TEXT,
+        error_text TEXT,
+        raw_output_path TEXT
+      );
+    `);
+
+    runMigrations(db);
+
+    const columns = db.prepare("PRAGMA table_info(assistant_runs)").all().map((row) => row.name);
+    expect(columns).toEqual(expect.arrayContaining([
+      "failure_kind",
+      "cancel_initiator",
+      "cancel_reason",
+      "warnings_json",
+      "diagnostics_json",
+    ]));
   });
 
   it("defaults new agents to allowing self-review", () => {

@@ -171,6 +171,7 @@ export function settingsPayload(settings = {}) {
     assistant_model: settings.assistant_model || "openai:gpt-5.5",
     assistant_effort: settings.assistant_effort || "high",
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
+    assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
   };
 }
 
@@ -794,6 +795,9 @@ export function Settings() {
                   </FormField>
                   <FormField label="Run timeout (minutes)">
                     <DurationInput value={settings.assistant_run_timeout_ms} min={0.02} step={0.25} onChange={(value) => setSettings({ ...settings, assistant_run_timeout_ms: value })} ariaLabel="Assistant run timeout" />
+                  </FormField>
+                  <FormField label="Max turns">
+                    <NumberStepper min={1} max={200} value={settings.assistant_max_turns ?? 32} ariaLabel="Assistant max turns" onChange={(value) => setSettings({ ...settings, assistant_max_turns: value })} />
                   </FormField>
                 </FormGrid>
               </SettingPanel>

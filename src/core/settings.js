@@ -24,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   assistant_model: "openai:gpt-5.5",
   assistant_effort: "high",
   assistant_run_timeout_ms: 300000,
+  assistant_max_turns: 32,
 };
 
 const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
@@ -120,6 +121,8 @@ export function validateSetting(key, value) {
     }
     case "assistant_run_timeout_ms":
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
+    case "assistant_max_turns":
+      return integerInRange(key, value, { min: 1, max: 200 });
     default:
       throw new Error(`unknown setting: ${key}`);
   }
