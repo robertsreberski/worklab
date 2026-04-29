@@ -6554,6 +6554,9 @@ select,
     font-size: 10px;
     overflow: hidden;
   }
+  .app-nav a::before {
+    display: none;
+  }
   .app-nav a span { display: none; }
   .app-nav a.active span {
     display: block;
@@ -6882,6 +6885,11 @@ select,
     flex-wrap: wrap;
     gap: 6px;
     align-items: stretch;
+  }
+  .commander-filter .search-field {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
   }
   .commander-filter .filter-divider { display: none; }
   .commander-filter .tabs {
