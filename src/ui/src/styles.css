@@ -6714,7 +6714,12 @@ select,
   .commander-row > .commander-cell-title {
     flex-basis: calc(100% - 130px);
   }
+  .commander-cell-title-row {
+    flex-wrap: nowrap;
+  }
   .commander-title {
+    flex-basis: auto;
+    min-width: 0;
     font-size: var(--text-md);
     font-weight: 700;
   }
