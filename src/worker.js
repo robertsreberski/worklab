@@ -5,11 +5,12 @@ import { readFullJournal, writeMemory } from "./core/journal.js";
 import { readAgentMemoryContent, readAgentMemoryContext } from "./core/memory.js";
 import { buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
 import { resolveModel, generateResponse } from "./core/ai.js";
+import { writeRuntimeConfig } from "./core/execenv.js";
+import { join } from "node:path";
 import { parseVerdict } from "./core/review.js";
 import { kbListPinned } from "./core/kb.js";
 import { normalizeWorklabResult, parseWorklabResultFromText, synthesizeWorklabResult, validateWorklabResultSemantics } from "./core/worklab-result.js";
 import { readSettings } from "./core/settings.js";
-import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
 import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
@@ -138,6 +139,26 @@ function emitRuntimeWarnings(response) {
       message: warning?.message || String(warning || "runtime warning"),
       ts: Date.now(),
     });
+  }
+}
+
+function materializeExecenvRuntimeConfig({ agent, task, systemPrompt }) {
+  const execenvPath = process.env.WORKLAB_EXECENV_PATH;
+  if (!execenvPath) return;
+  const providerKind = (() => {
+    try { return resolveModel(agent.model).sdk; } catch { return null; }
+  })();
+  if (!providerKind) return;
+  try {
+    writeRuntimeConfig({
+      workdir: join(execenvPath, "workdir"),
+      providerKind,
+      agent,
+      task,
+      systemPrompt,
+    });
+  } catch (err) {
+    emit({ type: "runtime_warning", warning_kind: "execenv_write_failed", source: "worker", message: err?.message || String(err) });
   }
 }
 
@@ -326,6 +347,7 @@ async function main() {
       messages,
       promptDiagnostics,
     } = runInput;
+    materializeExecenvRuntimeConfig({ agent, task, systemPrompt });
     if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
     const model = resolveModel(agent.model);
 
@@ -403,6 +425,7 @@ async function main() {
       priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
     });
     const {
+      task: reviewTask,
       agent,
       skills,
       mcpServers,
@@ -412,6 +435,7 @@ async function main() {
       messages,
       promptDiagnostics,
     } = reviewInput;
+    materializeExecenvRuntimeConfig({ agent, task: reviewTask, systemPrompt });
     if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
     const model = resolveModel(agent.model);
 

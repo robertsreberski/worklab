@@ -15,6 +15,7 @@ import { readSettings } from "../core/settings.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
+import { prepareExecenv } from "../core/execenv.js";
 
 function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
@@ -304,12 +305,24 @@ export function createTaskWatcher({
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?)`,
     ).run(runId, task.id, parentRunId, mode, stage, agentName, providerKind, now, stage);
 
+    let execenvPath = null;
+    if (dataDir) {
+      try {
+        const env = prepareExecenv({ dataDir, runId, agent: { name: agentName }, task, providerKind });
+        execenvPath = env.root;
+        db.prepare("UPDATE task_runs SET execenv_path = ? WHERE id = ?").run(execenvPath, runId);
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId }, "execenv preparation failed");
+      }
+    }
+
     const args = ["--task", task.id, "--mode", mode, "--agent", agentName];
     const env = {
       WORKLAB_RUN_ID: runId,
       WORKLAB_DATA_DIR: dataDir || "",
       WORKLAB_REPO_ROOT: repoRoot || "",
       WORKLAB_WORKSPACE: workspace || repoRoot || "",
+      ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
     };
     if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
 
