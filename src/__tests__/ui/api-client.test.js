@@ -61,6 +61,40 @@ describe("ui API client", () => {
       body: JSON.stringify({ body: "Create a task" }),
     });
   });
+
+  it("lists projects with query parameters", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ projects: [{ id: "project-1", name: "Launch" }] }),
+    }));
+
+    const result = await api.listProjects({ include_archived: "true", q: "launch" });
+
+    expect(result.projects[0].id).toBe("project-1");
+    expect(global.fetch).toHaveBeenCalledWith("/api/projects?include_archived=true&q=launch", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+  });
+
+  it("creates projects through a named helper", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 201,
+      json: async () => ({ project: { id: "project-1", name: "Launch" } }),
+    }));
+
+    const result = await api.createProject({ name: "Launch", context: "Shared notes" });
+
+    expect(result.project.name).toBe("Launch");
+    expect(global.fetch).toHaveBeenCalledWith("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: "Launch", context: "Shared notes" }),
+    });
+  });
 });
 
 describe("ui API call sites", () => {

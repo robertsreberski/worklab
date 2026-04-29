@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { Commander } from "./routes/Commander.jsx";
+import { Projects } from "./routes/Projects.jsx";
 import { TaskDetail } from "./routes/TaskDetail.jsx";
 import { TaskEdit } from "./routes/TaskEdit.jsx";
 import { Settings } from "./routes/Settings.jsx";
@@ -65,6 +66,8 @@ export function App() {
     else if (rest[1] === "edit") body = <TaskEdit mode="edit" id={rest[0]} />;
     else if (rest[0]) body = <TaskDetail key={rest[0]} id={rest[0]} runParam={query.run || null} />;
     else body = <Commander />;
+  } else if (route === "projects") {
+    body = <Projects selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "agents") {
     body = <Agents selectedName={rest[0] || null} />;
   } else if (route === "skills") {

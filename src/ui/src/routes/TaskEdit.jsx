@@ -59,6 +59,7 @@ function emptyDraft() {
     reviewer_agent: null,
     stage: "plan",
     run_policy: DEFAULT_RUN_POLICY,
+    project_id: null,
     tags: [],
     blocked_by_ids: [],
   };
@@ -73,6 +74,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
   const [agents, setAgents] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loadedTask, setLoadedTask] = useState(null);
   const [loading, setLoading] = useState(mode === "edit");
@@ -83,6 +85,7 @@ export function TaskEdit({ mode = "create", id = null }) {
 
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listProjects({ include_archived: "true" }).then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
     api.listTasks().then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
   }, []);
 
@@ -103,6 +106,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           reviewer_agent: data.task.reviewer_agent || null,
           stage: data.task.stage || "plan",
           run_policy: data.task.run_policy || DEFAULT_RUN_POLICY,
+          project_id: data.task.project_id || null,
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -141,6 +145,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       reviewer_agent: draft.reviewer_agent,
       stage: draft.stage || "plan",
       run_policy: draft.run_policy || DEFAULT_RUN_POLICY,
+      project_id: draft.project_id || null,
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
@@ -185,6 +190,19 @@ export function TaskEdit({ mode = "create", id = null }) {
       }));
   }, [draft.blocked_by_ids, id, loadedTask?.id, tasks]);
 
+  const projectOptions = useMemo(() => [
+    { value: "", label: "No project" },
+    ...projects.map((project) => ({
+      value: project.id,
+      label: project.name,
+      description: [
+        project.slug,
+        project.archived ? "archived" : null,
+        project.workdir ? "custom workdir" : null,
+      ].filter(Boolean).join(" · "),
+    })),
+  ], [projects]);
+
   function addDependency(taskId) {
     if (!taskId || draft.blocked_by_ids.includes(taskId)) return;
     update({ blocked_by_ids: [...draft.blocked_by_ids, taskId] });
@@ -218,7 +236,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       </Button>
     </>
   );
-  const railCardCount = 6;
+  const railCardCount = 7;
 
   function renderTaskEditRail() {
     return (
@@ -264,6 +282,17 @@ export function TaskEdit({ mode = "create", id = null }) {
             onChange={(value) => update({ run_policy: value })}
             options={RUN_POLICY_OPTIONS}
             ariaLabel="Run mode"
+          />
+        </FormField>
+
+        <FormField label="Project" hint="Adds shared context and optional workdir to runs.">
+          <Select
+            value={draft.project_id || ""}
+            onChange={(value) => update({ project_id: value || null })}
+            options={projectOptions}
+            placeholder="No project"
+            ariaLabel="Project"
+            searchable
           />
         </FormField>
 

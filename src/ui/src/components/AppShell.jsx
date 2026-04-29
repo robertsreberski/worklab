@@ -26,6 +26,7 @@ export const ROUTE_GROUPS = [
     label: "Work",
     routes: [
       { id: "tasks", label: "Tasks", icon: "layout-list" },
+      { id: "projects", label: "Projects", icon: "folder" },
       { id: "activity", label: "Activity", icon: "clock" },
     ],
   },
@@ -51,9 +52,9 @@ const AppChromeContext = createContext(null);
 
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
+  { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
   { id: "agents", label: "Agents", icon: "user", href: "#/agents" },
-  { id: "skills", label: "Skills", icon: "sparkles", href: "#/skills" },
   { id: "more", label: "More", icon: "more-horizontal", href: "#/knowledge" },
 ];
 const EMPTY_SECTIONS = [];
@@ -133,7 +134,7 @@ function AppTabbar({ route }) {
       {TABBAR_ROUTES.map((item) => (
         <a
           key={item.id}
-          class={route === item.id || (item.id === "more" && ["knowledge", "providers", "settings"].includes(route)) ? "active" : ""}
+          class={route === item.id || (item.id === "more" && ["skills", "knowledge", "providers", "settings"].includes(route)) ? "active" : ""}
           href={item.href}
           aria-label={item.label}
           onClick={(event) => {

@@ -19,6 +19,10 @@ describe("task run preview formatting", () => {
           task_key: "T-1",
           stage: "execute",
           mode: "execute",
+          project_id: "project-1",
+          project_slug: "demo-project",
+          project_name: "Demo Project",
+          workdir: "/tmp/demo-project",
           agent_name: "owner",
           model: "claude:claude-sonnet-4-6",
           effort: "medium",
@@ -38,6 +42,8 @@ describe("task run preview formatting", () => {
 
     expect(text).toContain("# Run input");
     expect(text).toContain("## Metadata\n\n- Task: T-1");
+    expect(text).toContain("- Project: Demo Project");
+    expect(text).toContain("- Workdir: /tmp/demo-project");
     expect(text).toContain("## System message\n\n- Format: markdown");
     expect(text).toContain("```markdown\n## Role\n\nDo work.\n```");
     expect(text).toContain("## User messages");

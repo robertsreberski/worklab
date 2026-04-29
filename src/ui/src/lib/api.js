@@ -25,6 +25,12 @@ async function uploadZip(path, file) {
 }
 
 export const api = {
+  // projects
+  listProjects: (query) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`),
+  getProject: (id) => request("GET", `/projects/${encodeURIComponent(id)}`),
+  createProject: (data) => request("POST", "/projects", data),
+  patchProject: (id, patch) => request("PATCH", `/projects/${encodeURIComponent(id)}`, patch),
+  archiveProject: (id) => request("DELETE", `/projects/${encodeURIComponent(id)}`),
   // tasks
   listTasks: (query) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`),
   getTask: (id) => request("GET", `/tasks/${id}`),

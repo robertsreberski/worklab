@@ -81,8 +81,14 @@ function formatRunPolicy(value) {
   return value === "auto_plan_execute" ? "Auto" : "Manual";
 }
 
+function projectRouteId(project) {
+  return encodeURIComponent(project?.slug || project?.id || "");
+}
+
 const RUN_PREVIEW_METADATA_FIELDS = [
   ["Task", ["task_key", "task_id"]],
+  ["Project", ["project_name", "project_slug", "project_id"]],
+  ["Workdir", ["workdir"]],
   ["Stage", ["stage"]],
   ["Mode", ["mode"]],
   ["Agent", ["agent_name"]],
@@ -105,6 +111,10 @@ function normalizeRunPreviewInput(preview) {
     task_key: input.metadata?.task_key ?? preview?.task_key ?? null,
     stage: input.metadata?.stage ?? preview?.stage ?? null,
     mode: input.metadata?.mode ?? preview?.mode ?? null,
+    project_id: input.metadata?.project_id ?? preview?.project_id ?? null,
+    project_slug: input.metadata?.project_slug ?? preview?.project_slug ?? null,
+    project_name: input.metadata?.project_name ?? preview?.project_name ?? null,
+    workdir: input.metadata?.workdir ?? preview?.workdir ?? null,
     agent_name: input.metadata?.agent_name ?? preview?.agent_name ?? null,
     model: input.metadata?.model ?? preview?.model ?? null,
     effort: input.metadata?.effort ?? preview?.effort ?? null,
@@ -326,6 +336,17 @@ function commentAuthorLabel(item) {
 
 function TaskContextList({ task }) {
   const items = [
+    task.project ? {
+      label: "Project",
+      value: (
+        <a href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link">
+          <Icon name="folder" size={12} />
+          <span>{task.project.name || task.project.slug}</span>
+        </a>
+      ),
+      mono: false,
+    } : null,
+    task.effective_workdir ? { label: "Workdir", value: task.effective_workdir, mono: true } : null,
     task.updated_at ? { label: "Updated", value: formatMetadataAge(task.updated_at) } : null,
     task.created_at ? { label: "Created", value: formatMetadataDateWithAge(task.created_at) } : null,
     task.completed_at ? { label: "Completed", value: formatMetadataDateWithAge(task.completed_at) } : null,
@@ -1523,6 +1544,11 @@ export function TaskDetail({ id, runParam = null }) {
   const detailMeta = task && (
     <span class="task-hero-status-row">
       <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
+      {task.project && (
+        <a class="chip chip-muted task-project-chip" href={`#/projects/${projectRouteId(task.project)}`} title={`Project: ${task.project.name || task.project.slug}`}>
+          <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
+        </a>
+      )}
       {hasLastRunError && (
         <span class="chip chip-error">
           <Icon name="alert-triangle" size={10} /> Error
@@ -1640,6 +1666,7 @@ export function TaskDetail({ id, runParam = null }) {
                     planner_agent: task.planner_agent,
                     reviewer_agent: task.reviewer_agent,
                     run_policy: task.run_policy || DEFAULT_RUN_POLICY,
+                    project_id: task.project_id || null,
                     tags: task.tags,
                   };
                   const r = await api.createTask(copy);
