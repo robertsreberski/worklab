@@ -48,10 +48,12 @@ describe("settings UI duration conversions", () => {
       kb_pinned_limit: 10,
       default_embedding_model: "",
       slack_run_timeout_ms: minutesToMs("2"),
+      assistant_run_timeout_ms: minutesToMs("5"),
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
     expect(payload.cancel_grace_ms).toBe(5000);
     expect(payload.slack_run_timeout_ms).toBe(120000);
+    expect(payload.assistant_run_timeout_ms).toBe(300000);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {

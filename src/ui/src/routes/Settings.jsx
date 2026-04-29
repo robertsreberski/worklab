@@ -167,6 +167,9 @@ export function settingsPayload(settings = {}) {
     slack_run_timeout_ms: Number(settings.slack_run_timeout_ms ?? 120000),
     slack_notify_task_completed: settings.slack_notify_task_completed !== false,
     slack_notify_task_errors: settings.slack_notify_task_errors !== false,
+    assistant_model: settings.assistant_model || "openai:gpt-5.5",
+    assistant_effort: settings.assistant_effort || "high",
+    assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
   };
 }
 
@@ -247,6 +250,24 @@ export function mcpAvailabilitySummary(status = {}, rows = []) {
 function scrollToSettingsSection(id) {
   if (typeof document === "undefined") return;
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function modelSelectOptions(modelGroups, currentModel) {
+  const allModelValues = modelGroups.flatMap((g) => (g.models || []).map((m) => m.value));
+  return [
+    ...(currentModel && !allModelValues.includes(currentModel)
+      ? [{ label: "Current", options: [{ value: currentModel, label: `${currentModel} (custom)` }] }]
+      : []),
+    ...modelGroups.map((g) => ({
+      label: g.available === false ? `${g.label} (credentials not set)` : g.label,
+      options: (g.models || []).map((m) => ({
+        value: m.value,
+        label: m.label || m.value,
+        description: g.available === false ? (g.unavailable_reason || "Unavailable") : (m.description || m.unavailable_reason || undefined),
+        disabled: g.available === false || m.available === false || m.disabled === true,
+      })),
+    })),
+  ];
 }
 
 function SettingsOverviewCard({ icon, title, value, detail, status, statusLabel }) {
@@ -414,21 +435,9 @@ export function Settings() {
   const currentEmbedding = settings?.default_embedding_model || "";
   const allEmbeddingValues = embeddingGroups.flatMap((g) => (g.models || []).map((m) => m.value));
   const currentSlackModel = settings?.slack_model || "codex:gpt-5.5";
-  const allModelValues = modelGroups.flatMap((g) => (g.models || []).map((m) => m.value));
-  const slackModelOptions = [
-    ...(currentSlackModel && !allModelValues.includes(currentSlackModel)
-      ? [{ label: "Current", options: [{ value: currentSlackModel, label: `${currentSlackModel} (custom)` }] }]
-      : []),
-    ...modelGroups.map((g) => ({
-      label: g.available === false ? `${g.label} (credentials not set)` : g.label,
-      options: (g.models || []).map((m) => ({
-        value: m.value,
-        label: m.label || m.value,
-        description: g.available === false ? (g.unavailable_reason || "Unavailable") : (m.description || m.unavailable_reason || undefined),
-        disabled: g.available === false || m.available === false || m.disabled === true,
-      })),
-    })),
-  ];
+  const currentAssistantModel = settings?.assistant_model || "openai:gpt-5.5";
+  const slackModelOptions = modelSelectOptions(modelGroups, currentSlackModel);
+  const assistantModelOptions = modelSelectOptions(modelGroups, currentAssistantModel);
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled - no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
@@ -536,6 +545,7 @@ export function Settings() {
     { id: "settings-runtime", label: "Runtime", icon: "settings" },
     { id: "settings-execution", label: "Execution", icon: "clock" },
     { id: "settings-notifications", label: "Notifications", icon: "message-circle" },
+    { id: "settings-assistant", label: "Assistant", icon: "sparkles" },
     { id: "settings-slack", label: "Slack", icon: "message-square" },
     { id: "settings-search", label: "Search", icon: "database" },
     { id: "settings-tools", label: "Tools", icon: "terminal" },
@@ -593,6 +603,14 @@ export function Settings() {
             detail={`Slack ${slackMeta.label.toLowerCase()}`}
             status={notificationMeta.status === "error" || slackMeta.status === "error" ? "error" : slackMeta.status}
             statusLabel={slackMeta.label}
+          />
+          <SettingsOverviewCard
+            icon="sparkles"
+            title="Assistant"
+            value={currentAssistantModel}
+            detail={`Memory ${settings.slack_agent_name || "mickey"}`}
+            status="enabled"
+            statusLabel="Available"
           />
           <SettingsOverviewCard
             icon="database"
@@ -727,6 +745,45 @@ export function Settings() {
                 description={notificationDescription(notificationSettingsState)}
               />
             </SettingPanel>
+          </SettingsSection>
+
+          <SettingsSection
+            id="settings-assistant"
+            kicker="Assistant"
+            title="Personal chat"
+            description="In-app assistant model and run behavior."
+            aside={<StatusPill status="enabled" label="Available" />}
+          >
+            <div class="settings-panel-grid">
+              <SettingPanel icon="sparkles" title="Run behavior" meta="Default model used by the assistant dock.">
+                <FormGrid columns={2}>
+                  <FormField label="Default model" class="span-2">
+                    <Select
+                      value={currentAssistantModel}
+                      options={assistantModelOptions}
+                      onChange={(value) => setSettings({ ...settings, assistant_model: value })}
+                    />
+                  </FormField>
+                  <FormField label="Effort">
+                    <Select
+                      variant="native"
+                      value={settings.assistant_effort || "high"}
+                      options={SLACK_EFFORT_OPTIONS}
+                      onChange={(value) => setSettings({ ...settings, assistant_effort: value })}
+                    />
+                  </FormField>
+                  <FormField label="Run timeout (minutes)">
+                    <DurationInput value={settings.assistant_run_timeout_ms} min={0.02} step={0.25} onChange={(value) => setSettings({ ...settings, assistant_run_timeout_ms: value })} ariaLabel="Assistant run timeout" />
+                  </FormField>
+                </FormGrid>
+              </SettingPanel>
+              <SettingPanel icon="database" title="Memory" meta="Uses the same durable identity as Slack.">
+                <div class="settings-note-grid">
+                  <FieldNote label="Memory name" value={settings.slack_agent_name || "mickey"} mono />
+                  <FieldNote label="Journal tail" value={`${settings.journal_tail_lines ?? 80} lines`} />
+                </div>
+              </SettingPanel>
+            </div>
           </SettingsSection>
 
           <SettingsSection
