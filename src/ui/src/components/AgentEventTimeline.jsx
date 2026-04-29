@@ -185,6 +185,10 @@ export function groupAgentTimelineEvents(events) {
   return groupEvents(events);
 }
 
+export function isActiveStreamingTimelineItem({ streaming, index, length }) {
+  return Boolean(streaming && length > 0 && index === length - 1);
+}
+
 function CollapsibleBlock({ title, text, value, expanded, onToggle, borderColor, muted }) {
   const payload = value !== undefined ? value : (text || "");
   const previewText = structuredPreview(payload) || "";
@@ -489,7 +493,9 @@ export function AgentEventTimeline({ events = [], streaming = false, messageStat
   return (
     <div class="agentlog-timeline">
       {items.map((item, index) => {
-        const isLast = !streaming && index === items.length - 1;
+        const isTail = index === items.length - 1;
+        const isLast = !streaming && isTail;
+        const itemStreaming = isActiveStreamingTimelineItem({ streaming, index, length: items.length });
         if (item?._cluster) return <PhaseClusterBlock key={`cluster-${index}`} cluster={item} isLast={isLast} />;
         if (item?._toolCall) {
           return (
@@ -503,7 +509,7 @@ export function AgentEventTimeline({ events = [], streaming = false, messageStat
             />
           );
         }
-        return <TimelineEvent key={index} event={item} isLast={isLast} streaming={streaming} />;
+        return <TimelineEvent key={index} event={item} isLast={isLast} streaming={itemStreaming} />;
       })}
     </div>
   );

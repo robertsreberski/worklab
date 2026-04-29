@@ -3,7 +3,7 @@
 // ShimmerBar at the top while the run is streaming and tracks incoming events so
 // that the newest row animates in via wl-tick-in.
 
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useState } from "preact/hooks";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
@@ -34,18 +34,9 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
   const { events: streamedEvents, run: streamedRun, loading } = useRunStream(run?.id, { subscribe: isStreaming });
   const effectiveRun = streamedRun || run;
   const visibleEvents = events.length ? events : streamedEvents;
-  const prevCountRef = useRef(0);
-  const [newestTick, setNewestTick] = useState(0);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if ((visibleEvents?.length || 0) > prevCountRef.current) {
-      setNewestTick((x) => x + 1);
-    }
-    prevCountRef.current = visibleEvents?.length || 0;
-  }, [visibleEvents]);
 
   const runStatus = effectiveRun?.process_status || effectiveRun?.status || (isStreaming ? "running" : "complete");
   const metrics = runMetricItems(effectiveRun);
@@ -100,7 +91,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           ))}
         </div>
       )}
-      <div class="task-live-events" key={`tl-${newestTick}`}>
+      <div class="task-live-events">
         {loading ? (
           <div class="run-card-events-loading">Loading events…</div>
         ) : (
