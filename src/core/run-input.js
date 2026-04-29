@@ -416,6 +416,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
     project_id: runInput.project?.id || null,
     project_slug: runInput.project?.slug || null,
     project_name: runInput.project?.name || null,
+    project_context_hash: runInput.projectContextHash || null,
     workdir: runInput.effectiveWorkdir || config.workspace || null,
     generated_at: now,
   };
