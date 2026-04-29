@@ -1,8 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
 import { writeSettings } from "../../core/settings.js";
+import { kbList, kbRead } from "../../core/kb.js";
+import { slugify } from "../../core/slugs.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -31,6 +36,39 @@ function seedTask(db, { owner = null, planner = null, reviewer = null, stage = "
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(id, id, "t", stage, owner, planner, reviewer, runPolicy, now, now);
   return id;
+}
+
+function tempDataDir() {
+  return mkdtempSync(join(tmpdir(), "worklab-rich-final-"));
+}
+
+function richFinalAnswer() {
+  return `# Complete Restaurant Research
+
+## Summary
+
+I researched several Kyoto kaiseki options and found a practical shortlist for the team dinner. The best fit is Iharada because it keeps the all-in price under the stated budget while still offering private rooms, online booking, and a serious seasonal menu.
+
+## Recommended options
+
+1. Iharada is the strongest fit for a team because the price is predictable, the location is reachable by taxi, and private rooms can handle a larger group.
+2. Machiya Locals is a useful fallback for smaller teams that want a simple English booking flow and prepaid confirmation.
+3. Minokichi is the safest large-group fallback when capacity matters more than a hidden-gem atmosphere.
+
+## Caveats
+
+The name Kaisei appears to be a spelling mix-up with kaiseki. Booking should happen quickly because the requested May dates are close. Dietary restrictions need confirmation before booking because traditional kaiseki menus may not adapt well at short notice.
+
+## Sources checked
+
+- Official restaurant pages
+- English booking platforms
+- Michelin and dining guide references
+- Platform pages with current price ranges
+
+## Next step
+
+Open the booking page for Iharada first. If the preferred date is unavailable, move to Machiya Locals for a smaller group or Minokichi for a larger group.`;
 }
 
 const advanceResult = {
@@ -457,6 +495,172 @@ describe("task-watcher", () => {
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
     expect(agentComment.body).toBe("Done. Created `/tmp/test.txt`.");
+  });
+
+  it("stores substantial final prose in knowledge and links it from the agent comment", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const fullAnswer = richFinalAnswer();
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Restaurant research complete",
+      details: "Iharada is the top pick.",
+      final_text: "Research complete. Iharada is the top pick.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${fullAnswer}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const slug = slugify(`run-${runId}`, "run-result");
+    const entry = kbRead({ dataDir, slug });
+    expect(entry.meta.category).toBe("run-results");
+    expect(entry.meta.tags).toEqual(expect.arrayContaining(["run-result", "execute", "agent-coder"]));
+    expect(entry.body).toContain("# Complete Restaurant Research");
+    expect(entry.body).toContain(`/api/runs/${runId}/raw-log`);
+    expect(entry.body).not.toContain('"schema": "worklab.v2"');
+
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+  });
+
+  it("stores Codex-style assistant prose in knowledge when finalText is only the structured comment", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const fullAnswer = richFinalAnswer();
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Restaurant research complete",
+      details: "Iharada is the top pick.",
+      final_text: "Research complete. Iharada is the top pick.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: worklabResult.final_text,
+      worklabResult,
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: { content: [{ type: "text", text: fullAnswer }] },
+          },
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const slug = slugify(`run-${runId}`, "run-result");
+    const entry = kbRead({ dataDir, slug });
+    expect(entry.body).toContain("# Complete Restaurant Research");
+    expect(entry.body).toContain("Source run:");
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+  });
+
+  it("does not create knowledge entries for short final comments", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "File created",
+      details: "Created `/tmp/test.txt`.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `Created it.\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(kbList({ dataDir })).toEqual([]);
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe("Created it.");
   });
 
   it("falls back to structured result comments when final text is only JSON", async () => {
