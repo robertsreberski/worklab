@@ -86,18 +86,21 @@ function AssistantRun({ run, active, onDone }) {
 
   if (!run?.id) return null;
   return (
-    <div class="assistant-run">
-      <div class="assistant-run-head">
+    <details class="assistant-run">
+      <summary class="assistant-run-head">
         <span class="assistant-run-label">
           {streaming && <LivePulse size={8} />}
           Agent run
         </span>
-        <StatusPill status={runStatus(effectiveRun)} size="sm" />
-      </div>
+        <span class="assistant-run-meta">
+          <StatusPill status={runStatus(effectiveRun)} size="sm" />
+          <Icon name="chevron-down" size={14} class="assistant-run-chevron" />
+        </span>
+      </summary>
       <div class="assistant-run-events">
         <EventTimeline events={events} streaming={streaming} />
       </div>
-    </div>
+    </details>
   );
 }
 
