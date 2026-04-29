@@ -97,8 +97,13 @@ export function serviceRuntimeProblems(runtime) {
   if (!runtime?.installed) return problems;
   if (!runtime.configuredNode) {
     problems.push(`service node is missing from ${runtime.file}`);
-  } else if (runtime.configuredNode !== runtime.expectedNode) {
-    problems.push(`service node ${runtime.configuredNode} differs from current CLI node ${runtime.expectedNode}`);
+  } else if (
+    runtime.configuredNode !== runtime.expectedNode
+    && runtime.configuredNodeInfo?.modules
+    && runtime.currentModules
+    && runtime.configuredNodeInfo.modules !== runtime.currentModules
+  ) {
+    problems.push(`service node ${runtime.configuredNode} uses NODE_MODULE_VERSION ${runtime.configuredNodeInfo.modules}, current CLI node ${runtime.expectedNode} uses ${runtime.currentModules}`);
   }
   if (runtime.configuredNodeInfo && !runtime.configuredNodeInfo.ok) {
     problems.push(`service node cannot run: ${runtime.configuredNodeInfo.error}`);

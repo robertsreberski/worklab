@@ -65,12 +65,13 @@ describe("service runtime diagnostics", () => {
       file: "/service.plist",
       configuredNode: "/old/node",
       expectedNode: "/new/node",
-      configuredNodeInfo: { ok: true },
+      currentModules: "137",
+      configuredNodeInfo: { ok: true, modules: "127" },
       nativeDependency: { ok: false, error: "wrong NODE_MODULE_VERSION" },
     });
 
     expect(problems).toEqual([
-      "service node /old/node differs from current CLI node /new/node",
+      "service node /old/node uses NODE_MODULE_VERSION 127, current CLI node /new/node uses 137",
       "better-sqlite3 cannot load under service node /old/node: wrong NODE_MODULE_VERSION",
     ]);
   });
