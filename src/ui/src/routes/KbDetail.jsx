@@ -151,6 +151,15 @@ export function KbDetail({ slug }) {
       <EntityChromeBridge
         chrome={{
           mobileTopbar: <MobileTopbar title={slug} backLabel="Knowledge" onBack={() => navigateHash("#/knowledge")} />,
+          mobileActionDock: (
+            <Button
+              variant="primary"
+              iconLeft={<Icon name="edit-3" size={13} />}
+              onClick={() => navigateHash(`#/knowledge/${slug}/edit`)}
+            >
+              Edit
+            </Button>
+          ),
           drawerTitle: "Details",
           drawerKicker: slug,
           drawerContent: rail,

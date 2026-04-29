@@ -9505,11 +9505,14 @@ html.assistant-resizing * {
 
 @media (max-width: 860px) {
   .app.responsive {
+    --mobile-tabbar-height: calc(56px + env(safe-area-inset-bottom, 0px));
+    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)));
+    --mobile-bottom-clearance: calc(var(--mobile-tabbar-height) + var(--sp-4));
     grid-template-columns: minmax(0, 1fr);
-    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: 0;
   }
   .app.responsive.has-dock {
-    padding-bottom: 0;
+    --mobile-bottom-clearance: calc(var(--mobile-action-dock-height) + var(--sp-4));
   }
   .app.responsive .app-rail {
     display: none;
@@ -9518,10 +9521,10 @@ html.assistant-resizing * {
     height: 100dvh;
     min-height: 0;
     padding-top: env(safe-area-inset-top, 0px);
-    padding-bottom: calc(56px + env(safe-area-inset-bottom));
   }
-  .app.responsive.has-dock .app-body {
-    padding-bottom: 0;
+  .app.responsive .app-main {
+    padding-bottom: var(--mobile-bottom-clearance);
+    scroll-padding-bottom: var(--mobile-bottom-clearance);
   }
   .mobile-topbar {
     display: flex;

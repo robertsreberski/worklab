@@ -323,6 +323,18 @@ function ProjectDetail({ selectedId, onChanged }) {
       <EntityChromeBridge
         chrome={{
           mobileTopbar: <MobileTopbar title={project.slug} backLabel="Projects" onBack={() => navigateHash("#/projects")} />,
+          mobileActionDock: (
+            <>
+              <Button variant="primary" iconLeft={<Icon name="edit-3" size={13} />} onClick={() => navigateHash(`#/projects/${projectRouteId(project)}/edit`)}>
+                Edit
+              </Button>
+              {!project.archived && (
+                <Button variant="secondary" iconLeft={<Icon name="minus-circle" size={13} />} onClick={archiveProject}>
+                  Archive
+                </Button>
+              )}
+            </>
+          ),
           drawerTitle: "Details",
           drawerKicker: project.slug,
           drawerContent: rail,
