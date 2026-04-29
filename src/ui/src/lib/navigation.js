@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 let activeGuard = null;
 const allowedHashes = new Set();
@@ -53,6 +53,8 @@ export function navigateHash(hash) {
 
 export function useUnsavedChangesGuard({ isDirty, onSave }) {
   const [pendingHash, setPendingHash] = useState(null);
+  const isDirtyRef = useRef(!!isDirty);
+  isDirtyRef.current = !!isDirty;
 
   useEffect(() => {
     if (!isDirty) {
@@ -62,11 +64,11 @@ export function useUnsavedChangesGuard({ isDirty, onSave }) {
 
   useEffect(() => {
     const unregister = registerNavigationGuard({
-      isDirty: () => !!isDirty,
+      isDirty: () => !!isDirtyRef.current,
       requestPrompt: (hash) => setPendingHash((current) => current || normalizeHash(hash)),
     });
     return unregister;
-  }, [isDirty]);
+  }, []);
 
   useEffect(() => {
     function onBeforeUnload(event) {
@@ -79,7 +81,15 @@ export function useUnsavedChangesGuard({ isDirty, onSave }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [isDirty]);
 
-  const requestNavigation = useCallback((hash) => navigateHash(hash), []);
+  const requestNavigation = useCallback((hash) => {
+    const target = normalizeHash(hash);
+    if (isDirtyRef.current) {
+      setPendingHash((current) => current || target);
+      return false;
+    }
+    proceedToHash(target);
+    return true;
+  }, []);
   const keepEditing = useCallback(() => setPendingHash(null), []);
   const discardAndLeave = useCallback(() => {
     const target = pendingHash;
