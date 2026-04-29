@@ -4,12 +4,14 @@ import { join } from "node:path";
 import { loadConfig, worklabBaseUrl } from "../core/config.js";
 import { serviceStatus } from "./install-service.js";
 import { applyConfigArgs } from "./args.js";
+import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
 export async function status(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
   const svc = await serviceStatus();
-  console.log(`service: ${JSON.stringify(svc)}`);
+  const runtime = inspectServiceRuntime(config);
+  console.log(`service: ${JSON.stringify({ ...svc, runtime, problems: serviceRuntimeProblems(runtime) })}`);
 
   const pidFile = join(config.dataDir, ".coordinator.pid");
   if (!existsSync(pidFile)) {
