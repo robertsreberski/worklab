@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareExecenv, teardownExecenv, execenvRoot, execenvBaseDir } from "../../core/execenv.js";
@@ -28,41 +28,25 @@ describe("prepareExecenv", () => {
     }
   });
 
-  it("writes CLAUDE.md for Claude Code CLI runs", () => {
+  it("does not write native runtime configs for pi-backed legacy providers", () => {
     const dataDir = makeDataDir();
     try {
-      const env = prepareExecenv({
+      const claudeCode = prepareExecenv({
         dataDir, runId: "run-cli",
         agent: { name: "coder", display_name: "Coder" },
         task: { title: "Implement feature", task_key: "T-1", stage: "execute" },
         providerKind: "claude-code",
         systemPrompt: "## Role\nyou are a coder",
       });
-      expect(env.runtimeConfigPath).toBe(join(env.workdir, "CLAUDE.md"));
-      const body = readFileSync(env.runtimeConfigPath, "utf8");
-      expect(body).toContain("Worklab task runtime");
-      expect(body).toContain("Coder");
-      expect(body).toContain("Implement feature");
-      expect(body).toContain("T-1");
-      expect(body).toContain("you are a coder");
-    } finally {
-      rmSync(dataDir, { recursive: true, force: true });
-    }
-  });
-
-  it("writes AGENTS.md for Codex CLI runs", () => {
-    const dataDir = makeDataDir();
-    try {
-      const env = prepareExecenv({
+      const codex = prepareExecenv({
         dataDir, runId: "run-codex",
         agent: { name: "ops", display_name: "Ops" },
         task: { title: "Sweep" },
         providerKind: "codex",
         systemPrompt: "## Capabilities",
       });
-      expect(env.runtimeConfigPath).toBe(join(env.workdir, "AGENTS.md"));
-      const body = readFileSync(env.runtimeConfigPath, "utf8");
-      expect(body).toContain("Worklab agent runtime");
+      expect(claudeCode.runtimeConfigPath).toBeNull();
+      expect(codex.runtimeConfigPath).toBeNull();
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }

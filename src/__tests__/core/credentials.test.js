@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getBuiltinProviderAvailability } from "../../core/credentials.js";
 
-const ENV_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY"];
+const ENV_KEYS = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_CODEX_API_KEY"];
 const dirs = [];
 
 function fakeCliPath() {
@@ -88,10 +88,10 @@ describe("getBuiltinProviderAvailability", () => {
       execImpl,
     });
     expect(result["claude-code"]).toMatchObject({ available: true, command_available: true, version: "2.1.0 (Claude Code)" });
-    expect(result.codex).toMatchObject({ available: true, command_available: true, version: "codex-cli 0.125.0" });
+    expect(result.codex).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "codex_api_key" });
   });
 
-  it("requires CLI authentication when only the command is installed", () => {
+  it("requires Claude CLI authentication when only the command is installed", () => {
     const execImpl = vi.fn((command, args) => {
       if (args[0] === "--version") return `${command} version\n`;
       throw Object.assign(new Error("not logged in"), { stderr: "not logged in" });
@@ -103,6 +103,16 @@ describe("getBuiltinProviderAvailability", () => {
     expect(result["claude-code"].available).toBe(false);
     expect(result["claude-code"].reason).toMatch(/claude auth login/i);
     expect(result.codex.available).toBe(false);
-    expect(result.codex.reason).toMatch(/codex login/i);
+    expect(result.codex.reason).toMatch(/OPENAI_CODEX_API_KEY/i);
+  });
+
+  it("marks Codex available from pi OAuth credentials", () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-pi-auth-"));
+    dirs.push(dir);
+    writeFileSync(join(dir, "pi-auth.json"), JSON.stringify({
+      "openai-codex": { access: "token", refresh: "refresh", expires: Date.now() + 60_000 },
+    }));
+    const result = getBuiltinProviderAvailability({ env: { PATH: "" }, dataDir: dir });
+    expect(result.codex).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "pi-oauth" });
   });
 });

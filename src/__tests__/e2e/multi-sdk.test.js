@@ -1,463 +1,268 @@
-// src/__tests__/e2e/multi-sdk.test.js
-//
-// Multi-SDK dispatch smoke tests for the non-Claude SDK paths.
-// Covers resolveModel + generateResponse routing to ai-openai.js and
-// ai-vercel.js, and asserts the return shape + estimateCost compatibility.
-//
-// Mocking strategy: vi.mock() is hoisted by vitest to before any imports,
-// so the module-level side-effects in ai-openai.js (Runner construction,
-// setTracingDisabled) consume the stubs rather than the real packages.
-// The ai path also needs `tool` mocked since ai-vercel-tools.js imports it.
-// providers.js is mocked so ai-vercel.js skips the real DB/factory lookup.
-
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { estimateCost } from "../../core/cost.js";
+import { openDb, runMigrations } from "../../core/db.js";
+import { generateResponse, resolveModel } from "../../core/ai.js";
+import { createProvider, setModelEnabled, upsertModel } from "../../core/providers.js";
 
-// ── @openai/agents mock ────────────────────────────────────────────────────
-// ai-openai.js creates a module-level `runner = new Runner(...)` so the mock
-// must wire up the constructor before the module loads.
+let db;
+let dataDir;
 
-const mockRun = vi.fn();
-
-vi.mock("@openai/agents", () => {
-  class Runner {
-    constructor() {}
-    run(...args) { return mockRun(...args); }
-  }
-  class Agent {
-    constructor(cfg) { this.cfg = cfg; }
-  }
-  class MCPServerStdio {
-    constructor() {}
-    async connect() {}
-    async close() {}
-  }
-  class MCPServerStreamableHttp {
-    constructor() {}
-    async connect() {}
-    async close() {}
-  }
-  function setTracingDisabled() {}
-  function tool({ name, description, parameters, execute }) {
-    return { name, description, parameters, execute };
-  }
-  return { Runner, Agent, MCPServerStdio, MCPServerStreamableHttp, setTracingDisabled, tool };
+beforeEach(() => {
+  dataDir = mkdtempSync(join(tmpdir(), "worklab-multi-sdk-"));
+  db = openDb(":memory:");
+  runMigrations(db);
 });
 
-// ── ai mock ────────────────────────────────────────────────────────────────
-// ai-vercel.js calls streamText() + consumes result.fullStream + result.text
-// + result.totalUsage. ai-vercel-tools.js imports `tool` from "ai".
-
-const mockStreamText = vi.fn();
-
-vi.mock("ai", () => {
-  function tool({ description, inputSchema, execute }) {
-    return { description, inputSchema, execute };
-  }
-  function stepCountIs(n) { return n; }
-  return { streamText: (...args) => mockStreamText(...args), tool, stepCountIs };
+afterEach(() => {
+  db.close();
+  rmSync(dataDir, { recursive: true, force: true });
 });
 
-// ── ai-sdk-ollama mock ─────────────────────────────────────────────────────
-vi.mock("ai-sdk-ollama", () => ({
-  createOllama: () => ({ chat: () => ({ id: "stub-ollama" }) }),
-}));
-
-// ── @ai-sdk/openai-compatible mock ────────────────────────────────────────
-vi.mock("@ai-sdk/openai-compatible", () => ({
-  createOpenAICompatible: () => ({ chatModel: () => ({ id: "stub-compat" }) }),
-}));
-
-// ── @modelcontextprotocol/sdk mock ────────────────────────────────────────
-vi.mock("@modelcontextprotocol/sdk/client/index.js", () => ({
-  Client: class {
-    async connect() {}
-    async close() {}
-    async listTools() { return { tools: [] }; }
-  },
-}));
-vi.mock("@modelcontextprotocol/sdk/client/stdio.js", () => ({
-  StdioClientTransport: class {
-    async close() {}
-  },
-}));
-vi.mock("@modelcontextprotocol/sdk/client/sse.js", () => ({
-  SSEClientTransport: class {
-    async close() {}
-  },
-}));
-vi.mock("@modelcontextprotocol/sdk/client/streamableHttp.js", () => ({
-  StreamableHTTPClientTransport: class {
-    async close() {}
-  },
-}));
-
-// ── providers.js mock ──────────────────────────────────────────────────────
-// resolveVercelModel is called inside generateVercelResponse. We stub it to
-// return a factory that produces a simple language-model placeholder.
-vi.mock("../../core/providers.js", async (importOriginal) => {
-  const actual = await importOriginal();
+function usage({ input = 20, output = 8, cacheRead = 0, cost = 0.001 } = {}) {
   return {
-    ...actual,
-    resolveVercelModel: vi.fn(({ providerId, modelName }) => ({
-      provider: { id: providerId, name: "stub", provider_type: "openai_compat", base_url: "http://localhost:11434" },
-      modelRow: { model_name: modelName, capabilities: {}, enabled: true },
-      modelFactory: () => ({ id: `stub-${modelName}` }),
-    })),
-    defaultOllamaNumCtx: actual.defaultOllamaNumCtx,
-  };
-});
-
-// ── helpers ────────────────────────────────────────────────────────────────
-
-function makeAsyncIterable(items) {
-  return {
-    async *[Symbol.asyncIterator]() {
-      for (const item of items) yield item;
-    },
+    input,
+    output,
+    cacheRead,
+    cacheWrite: 0,
+    totalTokens: input + output + cacheRead,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: cost },
   };
 }
 
-// ── module under test (imported after mocks are registered) ───────────────
+function textStream(text, nextUsage = usage()) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const start = {
+        role: "assistant",
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: nextUsage,
+        stopReason: "stop",
+        timestamp: Date.now(),
+      };
+      const done = { ...start, content: [{ type: "text", text }] };
+      stream.push({ type: "start", partial: start });
+      stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: done });
+      stream.push({ type: "done", reason: "stop", message: done });
+    });
+    return stream;
+  };
+}
 
-let generateResponse, resolveModel;
-beforeAll(async () => {
-  ({ generateResponse, resolveModel } = await import("../../core/ai.js"));
-});
+function errorStream(message) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const error = {
+        role: "assistant",
+        content: [{ type: "text", text: "" }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: usage({ input: 0, output: 0, cost: 0 }),
+        stopReason: "error",
+        errorMessage: message,
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "error", reason: "error", error });
+    });
+    return stream;
+  };
+}
 
-// ══════════════════════════════════════════════════════════════════════════
-// Scenario 1: OpenAI Agents SDK dispatch
-// ══════════════════════════════════════════════════════════════════════════
+function structuredOutputStream(payload) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const message = {
+        role: "assistant",
+        content: [{ type: "toolCall", id: "structured-1", name: "StructuredOutput", arguments: payload }],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: usage(),
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: message.content[0], partial: message });
+      stream.push({ type: "done", reason: "toolUse", message });
+    });
+    return stream;
+  };
+}
 
-describe("generateResponse → OpenAI Agents SDK path", () => {
-  it("resolveModel returns sdk:openai for openai:gpt-5.5", () => {
-    const m = resolveModel("openai:gpt-5.5");
-    expect(m.sdk).toBe("openai");
-    expect(m.model).toBe("gpt-5.5");
+function createCustomProviderModel(modelName = "gemma3:4b") {
+  const provider = createProvider({
+    db,
+    dataDir,
+    name: "local compat",
+    provider_type: "openai_compat",
+    base_url: "http://localhost:8000",
   });
+  const model = upsertModel({
+    db,
+    providerId: provider.id,
+    modelName,
+    displayName: modelName,
+    capabilities: { tool_use: true, reasoning: true },
+  });
+  setModelEnabled({ db, id: model.id, enabled: true });
+  return `vercel:${provider.id}:${modelName}`;
+}
 
-  it("dispatches to ai-openai.js, emits events, returns canonical shape", async () => {
-    // Build a scripted stream that matches the event types consumed in
-    // ai-openai.js: run_item_stream_event(message_output_created) for text,
-    // and raw_model_stream_event(response_done) for usage.
-    const scriptedStream = {
-      ...makeAsyncIterable([
-        {
-          type: "run_item_stream_event",
-          name: "message_output_created",
-          item: {
-            content: [{ type: "text", text: "Hello from OpenAI stub" }],
-            rawItem: { content: [{ type: "text", text: "Hello from OpenAI stub" }] },
-          },
-        },
-        {
-          type: "raw_model_stream_event",
-          data: {
-            type: "response_done",
-            response: {
-              usage: { inputTokens: 20, outputTokens: 8, input_tokens_details: null },
-            },
-          },
-        },
-      ]),
-      finalOutput: "Hello from OpenAI stub",
-      runContext: { usage: { inputTokens: 20, outputTokens: 8 } },
-    };
-
-    mockRun.mockResolvedValue(scriptedStream);
-
-    // Set env var required by generateOpenAIResponse
-    process.env.OPENAI_API_KEY = "test-key";
-
+describe("generateResponse pi-backed dispatch", () => {
+  it("resolves and runs openai: references through the pi agent runtime", async () => {
     const events = [];
     const result = await generateResponse("You are a test assistant.", {
       model: resolveModel("openai:gpt-5.5"),
       effort: "medium",
       messages: [{ role: "user", content: "hi" }],
-      onEvent: (e) => events.push(e),
+      streamFn: textStream("Hello from pi OpenAI"),
+      onEvent: (event) => events.push(event),
     });
 
-    // Basic shape assertions
-    expect(result.sdk).toBe("openai");
-    expect(result.model).toBe("gpt-5.5");
-    expect(typeof result.text).toBe("string");
-    expect(result.text.length).toBeGreaterThan(0);
-    expect(typeof result.durationMs).toBe("number");
-    expect(result.durationMs).toBeGreaterThanOrEqual(0);
-    expect(result.usage).toBeDefined();
-    expect(typeof result.usage.input_tokens).toBe("number");
-    expect(typeof result.usage.output_tokens).toBe("number");
-
-    // Events should include the assistant text event
-    expect(events.length).toBeGreaterThan(0);
-    const textEvent = events.find(
-      (e) => e.type === "assistant" &&
-        e.message?.content?.some((c) => c.type === "text"),
-    );
-    expect(textEvent).toBeDefined();
-    expect(textEvent.message.content[0].text).toBe("Hello from OpenAI stub");
-
-    // Cost estimation should not throw and should return a finite number
-    const cost = estimateCost({
+    expect(result).toMatchObject({ sdk: "openai", model: "gpt-5.5", text: "Hello from pi OpenAI" });
+    expect(result.usage.input_tokens).toBe(20);
+    expect(result.usage.output_tokens).toBe(8);
+    expect(events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.text === "Hello from pi OpenAI")).toBe(true);
+    expect(Number.isFinite(estimateCost({
       model: `openai:${result.model}`,
       inputTokens: result.usage.input_tokens,
       outputTokens: result.usage.output_tokens,
-    });
-    expect(Number.isFinite(cost)).toBe(true);
-    expect(cost).toBeGreaterThanOrEqual(0);
+    }))).toBe(true);
   });
 
-  it("returns an error field (not a throw) when runner.run rejects", async () => {
-    mockRun.mockRejectedValue(new Error("network timeout"));
-    process.env.OPENAI_API_KEY = "test-key";
-
+  it("returns an error field when the pi stream ends with an error", async () => {
     const result = await generateResponse("sys", {
       model: resolveModel("openai:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
-      onEvent: () => {},
+      streamFn: errorStream("network timeout"),
     });
 
     expect(result.sdk).toBe("openai");
     expect(result.error).toMatch(/network timeout/);
-    // Should not crash — graceful degradation
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
-  it("prefers OpenAI finalOutput over intermediate message events", async () => {
-    const scriptedStream = {
-      ...makeAsyncIterable([
-        {
-          type: "run_item_stream_event",
-          name: "message_output_created",
-          item: {
-            content: [{ type: "text", text: "Intermediate narration" }],
-            rawItem: { content: [{ type: "text", text: "Intermediate narration" }] },
-          },
-        },
-      ]),
-      finalOutput: "# Final Report\n\nDelivered answer.",
-      runContext: { usage: { inputTokens: 20, outputTokens: 8 } },
-    };
-
-    mockRun.mockResolvedValue(scriptedStream);
-    process.env.OPENAI_API_KEY = "test-key";
-
+  it("runs custom provider vercel: references through the same pi runtime", async () => {
+    const modelRef = createCustomProviderModel();
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
-      effort: "low",
-      messages: [{ role: "user", content: "hello" }],
-      onEvent: () => {},
-    });
-
-    expect(result.text).toBe("# Final Report\n\nDelivered answer.");
-  });
-
-  it("result.cancelled is true when abort signal fires before stream completes", async () => {
-    const ac = new AbortController();
-    // Immediately abort so the stream loop sees it
-    ac.abort();
-
-    const scriptedStream = {
-      ...makeAsyncIterable([]),
-      finalOutput: "",
-      runContext: {},
-    };
-    mockRun.mockResolvedValue(scriptedStream);
-    process.env.OPENAI_API_KEY = "test-key";
-
-    const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
-      effort: "low",
-      messages: [{ role: "user", content: "x" }],
-      abortSignal: ac.signal,
-      onEvent: () => {},
-    });
-
-    expect(result.cancelled).toBe(true);
-  });
-});
-
-// ══════════════════════════════════════════════════════════════════════════
-// Scenario 2: Vercel AI SDK dispatch
-// ══════════════════════════════════════════════════════════════════════════
-
-describe("generateResponse → Vercel AI SDK path", () => {
-  const PROVIDER_ID = "prov-abc123";
-  const MODEL_NAME = "gemma3:4b";
-  const MODEL_REF = `vercel:${PROVIDER_ID}:${MODEL_NAME}`;
-
-  it("resolveModel returns sdk:vercel with correct providerId/modelName", () => {
-    const m = resolveModel(MODEL_REF);
-    expect(m.sdk).toBe("vercel");
-    expect(m.providerId).toBe(PROVIDER_ID);
-    expect(m.modelName).toBe(MODEL_NAME);
-    expect(m.model).toBe(MODEL_NAME);
-  });
-
-  it("dispatches to ai-vercel.js, emits events, returns canonical shape", async () => {
-    // Build a scripted fullStream iterable.
-    // ai-vercel.js reads: text-delta, reasoning-delta; ignores others.
-    const scriptedFullStream = makeAsyncIterable([
-      { type: "text-delta", text: "Hello " },
-      { type: "text-delta", text: "from Vercel stub" },
-    ]);
-
-    // result.totalUsage and result.text are awaited as promises
-    const scriptedResult = {
-      fullStream: scriptedFullStream,
-      totalUsage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
-      usage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
-      text: Promise.resolve("Hello from Vercel stub"),
-    };
-
-    // onStepFinish is called internally by ai-vercel.js via streamText option;
-    // we need to invoke it to exercise the event-emit path. We'll call it from
-    // inside the streamText mock after building the result.
-    mockStreamText.mockImplementation((opts) => {
-      // Trigger onStepFinish synchronously so events are emitted before the
-      // for-await loop starts (which is fine — events array is populated first)
-      if (opts?.onStepFinish) {
-        opts.onStepFinish({
-          text: "Hello from Vercel stub",
-          toolCalls: [],
-          toolResults: [],
-          usage: { inputTokens: 15, outputTokens: 6 },
-        });
-      }
-      return scriptedResult;
-    });
-
-    const events = [];
-    const result = await generateResponse("You are a test assistant.", {
-      model: resolveModel(MODEL_REF),
+      db,
+      dataDir,
+      model: resolveModel(modelRef),
       effort: "medium",
       messages: [{ role: "user", content: "hi" }],
-      onEvent: (e) => events.push(e),
+      streamFn: textStream("Hello from custom provider"),
     });
 
-    // Basic shape assertions
-    expect(result.sdk).toBe("vercel");
-    expect(result.model).toBe(MODEL_REF);
-    expect(typeof result.text).toBe("string");
-    expect(result.text.length).toBeGreaterThan(0);
-    expect(typeof result.durationMs).toBe("number");
-    expect(result.durationMs).toBeGreaterThanOrEqual(0);
-    expect(result.usage).toBeDefined();
-    expect(typeof result.usage.input_tokens).toBe("number");
-    expect(typeof result.usage.output_tokens).toBe("number");
-
-    // Events: the onStepFinish text event should be emitted
-    expect(events.length).toBeGreaterThan(0);
-    const textEvent = events.find(
-      (e) => e.type === "assistant" &&
-        e.message?.content?.some((c) => c.type === "text"),
-    );
-    expect(textEvent).toBeDefined();
-
-    // Cost estimation with the vercel reference
-    const cost = estimateCost({
-      db: null,
-      model: result.model,
-      inputTokens: result.usage.input_tokens,
-      outputTokens: result.usage.output_tokens,
-    });
-    expect(Number.isFinite(cost)).toBe(true);
-    expect(cost).toBeGreaterThanOrEqual(0);
+    expect(result).toMatchObject({ sdk: "vercel", model: modelRef, text: "Hello from custom provider" });
+    expect(result.usage.input_tokens).toBe(20);
   });
 
-  it("returns an error field (not a throw) when streamText throws", async () => {
-    mockStreamText.mockImplementation(() => {
-      throw new Error("provider unreachable");
-    });
-
+  it("returns an error field when a custom provider is missing", async () => {
     const result = await generateResponse("sys", {
-      model: resolveModel(MODEL_REF),
-      effort: "low",
-      messages: [{ role: "user", content: "hi" }],
-      onEvent: () => {},
-    });
-
-    expect(result.sdk).toBe("vercel");
-    expect(result.error).toMatch(/provider unreachable/);
-    expect(result.durationMs).toBeGreaterThanOrEqual(0);
-  });
-
-  it("prefers Vercel result.text over step text", async () => {
-    const scriptedResult = {
-      fullStream: makeAsyncIterable([]),
-      totalUsage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
-      usage: Promise.resolve({ inputTokens: 15, outputTokens: 6 }),
-      text: Promise.resolve("# Final Report\n\nDelivered answer."),
-    };
-
-    mockStreamText.mockImplementation((opts) => {
-      opts?.onStepFinish?.({
-        text: "Intermediate narration",
-        toolCalls: [],
-        toolResults: [],
-        usage: { inputTokens: 15, outputTokens: 6 },
-      });
-      return scriptedResult;
-    });
-
-    const result = await generateResponse("sys", {
-      model: resolveModel(MODEL_REF),
-      effort: "low",
-      messages: [{ role: "user", content: "hi" }],
-      onEvent: () => {},
-    });
-
-    expect(result.text).toBe("# Final Report\n\nDelivered answer.");
-  });
-
-  it("returns an error field when resolveVercelModel throws (provider not found)", async () => {
-    const { resolveVercelModel } = await import("../../core/providers.js");
-    resolveVercelModel.mockImplementationOnce(() => {
-      throw new Error("provider not found: bad-id");
-    });
-
-    const result = await generateResponse("sys", {
+      db,
+      dataDir,
       model: resolveModel("vercel:bad-id:some-model"),
       effort: "low",
       messages: [{ role: "user", content: "hi" }],
-      onEvent: () => {},
+      streamFn: textStream("unused"),
     });
 
     expect(result.sdk).toBe("vercel");
     expect(result.error).toMatch(/provider not found/);
   });
-});
 
-// ══════════════════════════════════════════════════════════════════════════
-// Scenario 3: resolveModel parse coverage for all three SDK forms
-// ══════════════════════════════════════════════════════════════════════════
+  it("supports codex: references without the legacy Codex CLI path", async () => {
+    const result = await generateResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      effort: "high",
+      messages: [{ role: "user", content: "hi" }],
+      streamFn: textStream("Codex via pi"),
+    });
+
+    expect(result).toMatchObject({ sdk: "codex", model: "gpt-5.5", text: "Codex via pi" });
+  });
+
+  it("supports explicit pi:<provider>:<model> references", async () => {
+    const model = resolveModel("pi:google:gemini-2.5-pro");
+    expect(model).toMatchObject({ sdk: "pi", provider: "google", model: "gemini-2.5-pro" });
+
+    const result = await generateResponse("sys", {
+      model,
+      effort: "medium",
+      messages: [{ role: "user", content: "hi" }],
+      streamFn: textStream("Gemini via pi"),
+    });
+
+    expect(result).toMatchObject({ sdk: "pi", model: "gemini-2.5-pro", text: "Gemini via pi" });
+  });
+
+  it("captures StructuredOutput tool calls as Worklab results", async () => {
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done",
+      details: "Implementation complete.",
+      final_text: "Implemented.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const result = await generateResponse("sys", {
+      model: resolveModel("openai:gpt-5.5"),
+      effort: "medium",
+      messages: [{ role: "user", content: "hi" }],
+      outputSchema: {
+        type: "object",
+        additionalProperties: true,
+        required: ["schema"],
+        properties: { schema: { type: "string" } },
+      },
+      streamFn: structuredOutputStream(worklabResult),
+    });
+
+    expect(result.text).toBe("Implemented.");
+    expect(result.worklabResult).toMatchObject(worklabResult);
+    expect(result.events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.name === "StructuredOutput")).toBe(true);
+  });
+});
 
 describe("resolveModel parse coverage", () => {
   it("claude: form", () => {
-    const m = resolveModel("claude:claude-sonnet-4-6");
-    expect(m).toMatchObject({ sdk: "claude", model: "claude-sonnet-4-6" });
+    expect(resolveModel("claude:claude-sonnet-4-6")).toMatchObject({ sdk: "claude", model: "claude-sonnet-4-6" });
   });
 
   it("openai: form", () => {
-    const m = resolveModel("openai:gpt-5.5");
-    expect(m).toMatchObject({ sdk: "openai", model: "gpt-5.5" });
+    expect(resolveModel("openai:gpt-5.5")).toMatchObject({ sdk: "openai", model: "gpt-5.5" });
   });
 
   it("vercel: form preserves colons in model name", () => {
-    const m = resolveModel("vercel:abc123:gemma3:4b");
-    expect(m).toMatchObject({ sdk: "vercel", providerId: "abc123", modelName: "gemma3:4b" });
+    expect(resolveModel("vercel:abc123:gemma3:4b")).toMatchObject({ sdk: "vercel", providerId: "abc123", modelName: "gemma3:4b" });
   });
 
-  it("generateResponse throws for unknown sdk at runtime", async () => {
-    // parseModelReference rejects unknown sdks, so generateResponse should
-    // propagate that error (it calls parseModelReference internally when given
-    // a pre-resolved object with an unknown sdk).
+  it("pi: form preserves colons in model name", () => {
+    expect(resolveModel("pi:amazon-bedrock:anthropic.claude-sonnet-4-5-v1:0"))
+      .toMatchObject({ sdk: "pi", provider: "amazon-bedrock", model: "anthropic.claude-sonnet-4-5-v1:0" });
+  });
+
+  it("generateResponse rejects unknown sdk objects", async () => {
     await expect(
       generateResponse("sys", {
         model: { sdk: "unknown", model: "x" },
         messages: [{ role: "user", content: "hi" }],
-        onEvent: () => {},
+        streamFn: textStream("unused"),
       }),
     ).rejects.toThrow(/unsupported sdk/i);
   });
