@@ -19,6 +19,7 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Kbd } from "../components/primitives/Kbd.jsx";
+import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { Tooltip } from "../components/primitives/Tooltip.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { FormField } from "../components/FormField.jsx";
@@ -73,7 +74,6 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [loadedTask, setLoadedTask] = useState(null);
   const [loading, setLoading] = useState(mode === "edit");
   const [notFound, setNotFound] = useState(false);
-  const [tagDraft, setTagDraft] = useState("");
   const [dependencyDraft, setDependencyDraft] = useState("");
   const formRef = useRef(null);
   const createRequestIdRef = useRef(mode === "create" ? newClientRequestId() : null);
@@ -166,18 +166,6 @@ export function TaskEdit({ mode = "create", id = null }) {
     cmdenter: (e) => { e.preventDefault(); save().catch(() => {}); },
     Escape: () => cancel(),
   });
-
-  function commitTagDraft() {
-    const t = tagDraft.trim();
-    if (!t) return;
-    if (draft.tags.includes(t)) { setTagDraft(""); return; }
-    update({ tags: [...draft.tags, t] });
-    setTagDraft("");
-  }
-
-  function removeTag(t) {
-    update({ tags: draft.tags.filter((x) => x !== t) });
-  }
 
   const selectedDependencyMap = useMemo(
     () => new Map(tasks.map((task) => [task.id, task])),
@@ -408,26 +396,11 @@ export function TaskEdit({ mode = "create", id = null }) {
                 </FormField>
 
                 <FormField label="Tags" hint="Press Enter to add.">
-                  <div class="tag-input-row">
-                    {(draft.tags || []).map((t) => (
-                      <Chip key={t} variant="tag" onRemove={() => removeTag(t)}>{t}</Chip>
-                    ))}
-                    <Input
-                      size="sm"
-                      placeholder="Add tag…"
-                      value={tagDraft}
-                      onInput={(e) => setTagDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === ",") {
-                          e.preventDefault();
-                          commitTagDraft();
-                        } else if (e.key === "Backspace" && !tagDraft && draft.tags.length) {
-                          removeTag(draft.tags[draft.tags.length - 1]);
-                        }
-                      }}
-                      onBlur={commitTagDraft}
-                    />
-                  </div>
+                  <TagInput
+                    value={draft.tags || []}
+                    onChange={(tags) => update({ tags })}
+                    placeholder="Add tag..."
+                  />
                 </FormField>
               </aside>
             </div>

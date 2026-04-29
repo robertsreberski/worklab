@@ -5,6 +5,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
+import { PathOrUrlInput, SecretInput } from "../components/primitives/index.js";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Banner } from "../components/Banner.jsx";
@@ -350,10 +351,10 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
               <Input value={provider.name} onInput={(event) => setProvider({ ...provider, name: event.target.value })} />
             </FormField>
             <FormField label="Base URL" required>
-              <Input value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
+              <PathOrUrlInput kind="url" value={provider.base_url} onInput={(event) => setProvider({ ...provider, base_url: event.target.value })} placeholder={preset.base_url || "https://..."} />
             </FormField>
             <FormField label="API key" hint={preset.api_key_hint} class="span-2">
-              <Input type="password" autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
+              <SecretInput autocomplete="new-password" value={provider.api_key || ""} onInput={(event) => setProvider({ ...provider, api_key: event.target.value })} />
             </FormField>
             <FormField switchInside>
               <Switch

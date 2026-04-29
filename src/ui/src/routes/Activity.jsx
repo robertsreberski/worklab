@@ -8,12 +8,12 @@ import { Icon } from "../components/Icon.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
-import { Input } from "../components/primitives/Input.jsx";
+import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
 import { Metric } from "../components/Metric.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { Page, SummaryGrid } from "../components/layout/index.js";
+import { FilterBar, Page, SummaryGrid } from "../components/layout/index.js";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
@@ -51,8 +51,7 @@ export function Activity() {
   const [agents, setAgents] = useState([]);
   const [agentFilter, setAgentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
+  const [dateRange, setDateRange] = useState({ from: "", to: "" });
 
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
     setLoading(true);
@@ -61,15 +60,15 @@ export function Activity() {
       if (cursor) query.cursor = cursor;
       if (agentFilter) query.agent = agentFilter;
       if (statusFilter) query.status = statusFilter;
-      if (fromDate) query.from = fromDate;
-      if (toDate) query.to = toDate;
+      if (dateRange.from) query.from = dateRange.from;
+      if (dateRange.to) query.to = dateRange.to;
       const res = await api.listActivity(query);
       setItems((prev) => append ? [...(prev || []), ...(res.items || [])] : (res.items || []));
       setNextCursor(res.nextCursor || null);
     } finally {
       setLoading(false);
     }
-  }, [agentFilter, fromDate, statusFilter, toDate]);
+  }, [agentFilter, dateRange.from, dateRange.to, statusFilter]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -92,6 +91,7 @@ export function Activity() {
       Refresh
     </Button>
   );
+  const activeFilterCount = [agentFilter, statusFilter, dateRange.from, dateRange.to].filter(Boolean).length;
 
   return (
     <AppShell route="activity">
@@ -108,7 +108,16 @@ export function Activity() {
         </SummaryGrid>
 
         <Card title="Filters">
-          <div class="activity-filters">
+          <FilterBar
+            class="activity-filters"
+            activeCount={activeFilterCount}
+            onClear={() => {
+              setAgentFilter("");
+              setStatusFilter("");
+              setDateRange({ from: "", to: "" });
+            }}
+            filters={(
+              <>
             <Select
               variant="native"
               value={agentFilter}
@@ -132,9 +141,10 @@ export function Activity() {
               ]}
               ariaLabel="Filter by status"
             />
-            <Input type="date" value={fromDate} onInput={(e) => setFromDate(e.target.value)} ariaLabel="From date" />
-            <Input type="date" value={toDate} onInput={(e) => setToDate(e.target.value)} ariaLabel="To date" />
-          </div>
+            <DateRangePicker value={dateRange} onChange={setDateRange} class="activity-date-range" />
+              </>
+            )}
+          />
         </Card>
 
         {items === null && <LoadingState caption="Loading activity…" />}
