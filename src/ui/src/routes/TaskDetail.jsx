@@ -305,7 +305,7 @@ function ContextRow({ icon, label, value, href }) {
   );
 }
 
-function TaskContextCard({ task }) {
+function TaskContextList({ task }) {
   const items = [
     task.updated_at ? { icon: "clock", label: "Updated", value: formatDate(task.updated_at) } : null,
     task.created_at ? { icon: "calendar", label: "Created", value: formatDate(task.created_at) } : null,
@@ -317,11 +317,9 @@ function TaskContextCard({ task }) {
   if (items.length === 0) return null;
 
   return (
-    <Card variant="spacious" title="Context" class="task-context-card">
-      <div class="task-context-list">
-        {items.map((item) => <ContextRow key={item.label} {...item} />)}
-      </div>
-    </Card>
+    <div class="task-context-list">
+      {items.map((item) => <ContextRow key={item.label} {...item} />)}
+    </div>
   );
 }
 
@@ -867,7 +865,7 @@ function RunArtifactMeta({ node }) {
   return null;
 }
 
-function RunArtifactsCard({ run }) {
+function RunArtifactsSection({ run }) {
   const processStatus = run?.process_status || run?.status;
   const isStreaming = processStatus === "running";
   const { events, loading } = useRunStream(run?.id, { subscribe: isStreaming });
@@ -888,17 +886,16 @@ function RunArtifactsCard({ run }) {
 
   if (!run) return null;
   return (
-    <Card
-      variant="spacious"
-      title="Artifacts"
-      class="run-artifacts-card"
-      headerRight={summaryLabel && (
-        <span class="run-artifacts-summary">
-          <span>{summaryLabel}</span>
-          {lineLabel && <span class="run-artifacts-lines">{lineLabel}</span>}
-        </span>
-      )}
-    >
+    <div class="run-artifacts-section">
+      <div class="task-rail-section-head">
+        <span class="all-caps">Artifacts</span>
+        {summaryLabel && (
+          <span class="run-artifacts-summary">
+            <span>{summaryLabel}</span>
+            {lineLabel && <span class="run-artifacts-lines">{lineLabel}</span>}
+          </span>
+        )}
+      </div>
       <div class="run-artifacts-context" title={run.id}>{runArtifactsTitle(run)}</div>
       <FileTree
         files={tree}
@@ -907,7 +904,7 @@ function RunArtifactsCard({ run }) {
         renderMeta={(node) => <RunArtifactMeta node={node} />}
         getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
       />
-    </Card>
+    </div>
   );
 }
 
@@ -1519,21 +1516,7 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const hasRailTags = (task?.tags || []).length > 0;
   const hasRailDependencies = ((task?.blocked_by || []).length > 0 || (task?.blocks || []).length > 0);
-  const hasRailContext = Boolean(
-    task?.updated_at
-      || task?.created_at
-      || task?.completed_at
-      || task?.automation_summary?.next_fire_at
-      || task?.run_policy,
-  );
-  const railCardCount = [
-    true,
-    hasRailContext,
-    Boolean(artifactRun),
-    hasRailTags,
-    hasRailDependencies,
-    true,
-  ].filter(Boolean).length;
+  const railCardCount = 3;
   const detailSubBar = task && (
     <MobilePillRow railLabel="Details" railCount={railCardCount} sections={TASK_DETAIL_SECTIONS} />
   );
@@ -1542,7 +1525,7 @@ export function TaskDetail({ id, runParam = null }) {
     if (!task) return null;
     return (
       <div class="task-detail-rail-content">
-        <Card title="Agents" class="rail-agents-card">
+        <Card variant="spacious" kicker="Assignment" title="Roles" class="rail-agents-card">
           <div class="rail-agents-stack">
             <AgentRailRow
               role="owner"
@@ -1566,48 +1549,45 @@ export function TaskDetail({ id, runParam = null }) {
           </div>
         </Card>
 
-        <TaskContextCard task={task} />
-
-        {artifactRun && <RunArtifactsCard run={artifactRun} />}
-
-        {hasRailTags && (
-          <Card variant="spacious" title="Tags">
+        <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">
+          <TaskContextList task={task} />
+          {hasRailTags && (
             <div class="task-tags">
               {(task.tags || []).map((t) => (
                 <Chip key={t} variant="tag">{t}</Chip>
               ))}
             </div>
-          </Card>
-        )}
+          )}
+          {hasRailDependencies && (
+            <>
+              {(task.blocked_by || []).length > 0 && (
+                <div class="dependency-group">
+                  <div class="all-caps">Blocked by</div>
+                  {(task.blocked_by || []).map((dependency) => (
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
+                      <span class="truncate">{dependency.title}</span>
+                      <StatusPill status={dependency.stage || "plan"} size="sm" />
+                    </a>
+                  ))}
+                </div>
+              )}
+              {(task.blocks || []).length > 0 && (
+                <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
+                  <div class="all-caps">Blocks</div>
+                  {(task.blocks || []).map((dependency) => (
+                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
+                      <span class="truncate">{dependency.title}</span>
+                      <StatusPill status={dependency.stage || "plan"} size="sm" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+          {artifactRun && <RunArtifactsSection run={artifactRun} />}
+        </Card>
 
-        {hasRailDependencies && (
-          <Card variant="spacious" title="Dependencies">
-            {(task.blocked_by || []).length > 0 && (
-              <div class="dependency-group">
-                <div class="all-caps">Blocked by</div>
-                {(task.blocked_by || []).map((dependency) => (
-                  <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                    <span class="truncate">{dependency.title}</span>
-                    <StatusPill status={dependency.stage || "plan"} size="sm" />
-                  </a>
-                ))}
-              </div>
-            )}
-            {(task.blocks || []).length > 0 && (
-              <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
-                <div class="all-caps">Blocks</div>
-                {(task.blocks || []).map((dependency) => (
-                  <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                    <span class="truncate">{dependency.title}</span>
-                    <StatusPill status={dependency.stage || "plan"} size="sm" />
-                  </a>
-                ))}
-              </div>
-            )}
-          </Card>
-        )}
-
-        <Card collapsible={{ summary: "More actions", count: 3 }}>
+        <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
           <div class="task-actions-stack">
             <Button
               variant="secondary"

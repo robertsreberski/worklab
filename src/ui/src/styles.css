@@ -4370,6 +4370,7 @@ select,
   max-height: 360px;
   overflow: auto;
 }
+.run-artifacts-section .skill-file-tree-root,
 .run-artifacts-card .skill-file-tree-root {
   max-height: 360px;
   overflow: auto;
@@ -6255,6 +6256,26 @@ select,
   display: flex;
   flex-direction: column;
   gap: 0;
+}
+.task-metadata-card > .task-context-list,
+.task-metadata-card > .task-tags,
+.task-metadata-card > .dependency-group,
+.task-metadata-card > .run-artifacts-section {
+  min-width: 0;
+}
+.task-metadata-card > .task-tags,
+.task-metadata-card > .dependency-group,
+.task-metadata-card > .run-artifacts-section {
+  padding-top: var(--sp-3);
+  margin-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+.task-rail-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
 }
 .task-context-row {
   display: grid;
@@ -8199,6 +8220,8 @@ select,
 }
 .task-detail-shell .task-detail {
   flex: 1 1 auto;
+  width: min(100%, 1180px);
+  margin: 0 auto;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
   gap: 0;
   padding: var(--sp-8) var(--sp-6) var(--sp-6);
@@ -8223,6 +8246,8 @@ select,
   gap: var(--sp-4);
 }
 .task-edit .task-edit-body {
+  width: min(100%, 1180px);
+  margin: 0 auto;
   padding: 0;
   overflow: visible;
 }
