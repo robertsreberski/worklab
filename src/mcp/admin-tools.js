@@ -83,13 +83,13 @@ export const adminToolDefinitions = [
     to: string("End time filter"),
   })),
 
-  tool("worklab_kb_list", "List knowledge-base entries.", object({
+  tool("worklab_kb_list", "List Worklab Knowledge Base entries. In Worklab tool names, `kb` means Knowledge Base, not kilobytes.", object({
     tag: string("Tag filter"),
     category: string("Category filter"),
     pinned: boolean("Pinned filter"),
   })),
-  tool("worklab_kb_read", "Read a knowledge-base entry.", object({ slug }, ["slug"])),
-  tool("worklab_kb_create", "Create a knowledge-base entry.", object({
+  tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug }, ["slug"])),
+  tool("worklab_kb_create", "Create a Worklab Knowledge Base entry.", object({
     slug,
     title: string("Title"),
     body: string("Markdown body"),
@@ -97,9 +97,9 @@ export const adminToolDefinitions = [
     category: string("Category"),
     pinned: boolean("Pinned"),
   }, ["title"])),
-  tool("worklab_kb_update", "Patch a knowledge-base entry.", object({ slug, patch }, ["slug", "patch"])),
-  tool("worklab_kb_delete", "Delete a knowledge-base entry.", object({ slug }, ["slug"])),
-  tool("worklab_search", "Search KB, journals, and memories.", object({
+  tool("worklab_kb_update", "Patch a Worklab Knowledge Base entry.", object({ slug, patch }, ["slug", "patch"])),
+  tool("worklab_kb_delete", "Delete a Worklab Knowledge Base entry.", object({ slug }, ["slug"])),
+  tool("worklab_search", "Search the Worklab Knowledge Base, journals, and memories.", object({
     query: string("Search query"),
     kind: string("all, kb, journal, or memory"),
     agent: string("Optional agent scope"),

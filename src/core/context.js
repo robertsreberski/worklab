@@ -5,10 +5,11 @@ import { renderToolSurfaceMarkdown } from "../mcp/worklab-tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
-const DELIVERABLE_PERSISTENCE = `Preserve durable deliverables in Knowledge:
-- If the run produces a substantial user-facing deliverable such as a research report, guide, runbook, decision record, implementation notes, or reusable analysis, save the complete deliverable with \`kb_create\` or \`kb_update\` before your final result when Worklab KB tools are available.
+const DELIVERABLE_PERSISTENCE = `Preserve durable deliverables in the Worklab Knowledge Base:
+- In Worklab tool names, the \`kb_\` prefix means Knowledge Base, not kilobytes.
+- If the run produces a substantial user-facing deliverable such as a research report, guide, runbook, decision record, implementation notes, or reusable analysis, save the complete deliverable with \`kb_create\` or \`kb_update\` before your final result when Worklab Knowledge Base tools are available.
 - Use a readable slug and title, Markdown body, useful tags, and an appropriate category such as \`run-results\`, \`research\`, \`runbook\`, or \`decision\`.
-- Mention the Knowledge slug or link in \`final_text\` so the task comment points to the full deliverable.
+- Mention the Worklab Knowledge Base slug or link in \`final_text\` so the task comment points to the full deliverable.
 - Keep \`final_text\` concise; do not squeeze long deliverables into \`final_text\`. If KB tools are unavailable or saving fails, still include enough final prose for Worklab to preserve it as a fallback.`;
 
 const RESULT_FIELD_RULES = `Structured result rules:
