@@ -1,3 +1,4 @@
+import { mkdirSync } from "node:fs";
 import { newProjectId } from "../core/ids.js";
 import {
   normalizeProjectWorkdir,
@@ -17,6 +18,15 @@ function sendRouteError(res, error) {
 
 function isSqliteConstraint(error) {
   return String(error?.code || "").includes("SQLITE_CONSTRAINT");
+}
+
+function ensureProjectWorkdir(workdir) {
+  if (!workdir) return;
+  try {
+    mkdirSync(workdir, { recursive: true });
+  } catch (error) {
+    throw projectRouteError(400, "validation", `unable to create workdir: ${error.message}`);
+  }
 }
 
 function projectOr404(db, value) {
@@ -95,8 +105,10 @@ function normalizeProjectPatch(db, existing, body = {}) {
     values.push(typeof body.context === "string" ? body.context : "");
   }
   if ("workdir" in body) {
+    const workdir = normalizeProjectWorkdir(body.workdir, existing.workdir || null);
+    ensureProjectWorkdir(workdir);
     fields.push("workdir = ?");
-    values.push(normalizeProjectWorkdir(body.workdir, existing.workdir || null));
+    values.push(workdir);
   }
   if ("tags" in body) {
     fields.push("tags_json = ?");
@@ -161,6 +173,7 @@ export function registerProjectRoutes(app, { db, broker }) {
     };
     try {
       const project = normalizeProjectCreate(db, req.body || {});
+      ensureProjectWorkdir(project.workdir);
       let id;
       try {
         id = insertProjectRow(project);
