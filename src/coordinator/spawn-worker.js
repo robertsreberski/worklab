@@ -45,6 +45,44 @@ function truncateToolResultValue(value, options) {
   return { value, truncated: false, originalLength: 0 };
 }
 
+function truncateStructuredDisplayValue(value, options) {
+  if (!options.limit || options.limit < 1 || value == null) {
+    return { value, truncated: false, originalLength: 0 };
+  }
+  if (typeof value === "string") return truncateString(value, options);
+  let raw;
+  try {
+    raw = JSON.stringify(value, null, 2);
+  } catch {
+    raw = String(value);
+  }
+  if (raw.length <= options.limit) return { value, truncated: false, originalLength: raw.length };
+  const clipped = truncateString(raw, options);
+  return {
+    value: {
+      truncated: true,
+      original_length: raw.length,
+      raw_output_path: options.rawLogPath || null,
+      preview: clipped.value,
+    },
+    truncated: true,
+    originalLength: raw.length,
+  };
+}
+
+function truncateToolUseBlock(block, options) {
+  if (!block || typeof block !== "object" || block.type !== "tool_use" || !("input" in block)) return block;
+  const clipped = truncateStructuredDisplayValue(block.input, options);
+  if (!clipped.truncated) return block;
+  return {
+    ...block,
+    input: clipped.value,
+    input_truncated: true,
+    input_original_length: clipped.originalLength,
+    raw_output_path: options.rawLogPath || null,
+  };
+}
+
 function truncateToolResultBlock(block, options) {
   if (!block || typeof block !== "object" || block.type !== "tool_result") return block;
   let next = block;
@@ -55,6 +93,14 @@ function truncateToolResultBlock(block, options) {
     const clipped = truncateToolResultValue(next[key], options);
     if (clipped.truncated) {
       next = { ...next, [key]: clipped.value };
+      truncated = true;
+      originalLength = Math.max(originalLength, clipped.originalLength);
+    }
+  }
+  if ("raw_result" in next) {
+    const clipped = truncateStructuredDisplayValue(next.raw_result, options);
+    if (clipped.truncated) {
+      next = { ...next, raw_result: clipped.value };
       truncated = true;
       originalLength = Math.max(originalLength, clipped.originalLength);
     }
@@ -73,7 +119,14 @@ function truncateDisplayEvent(event, options) {
   const next = JSON.parse(JSON.stringify(event));
   const target = next.type === "sdk_event" && next.event ? next.event : next;
   if (Array.isArray(target?.message?.content)) {
-    target.message.content = target.message.content.map((block) => truncateToolResultBlock(block, options));
+    target.message.content = target.message.content
+      .map((block) => truncateToolUseBlock(block, options))
+      .map((block) => truncateToolResultBlock(block, options));
+  }
+  if (target?.type === "tool_use") {
+    const clipped = truncateToolUseBlock(target, options);
+    if (next.type === "sdk_event" && next.event) next.event = clipped;
+    else return clipped;
   }
   if (target?.type === "tool_result") {
     const clipped = truncateToolResultBlock(target, options);
