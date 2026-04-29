@@ -98,6 +98,71 @@ function isGenericStructuredOutputAck(value) {
   return String(value || "").trim() === "Structured output received.";
 }
 
+function isEmptyOutputValue(value) {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  if (Array.isArray(value)) return value.length === 0;
+  return false;
+}
+
+function ToolCallBody({
+  toolUse,
+  toolResult,
+  showStructuredResult,
+  structuredValue,
+  rawOutput,
+  outputIsEmpty,
+  isError,
+  isFileEdit,
+  truncated,
+  missing,
+}) {
+  const inputValue = showStructuredResult ? structuredValue : toolUse?.input;
+  const inputText = inputAsText(inputValue);
+  const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
+  const hasStructuredAck = isGenericStructuredOutputAck(rawOutput);
+  return (
+    <div class="tool-call-body chat-tool-body">
+      <div class="tool-call-section chat-tool-section">
+        <div class="tool-call-section-header chat-tool-section-header">
+          <span>{showStructuredResult ? "STRUCTURED OUTPUT" : "INPUT"}</span>
+          {inputText && <CopyButton text={inputText} label={showStructuredResult ? "Copy structured output" : "Copy tool input"} />}
+        </div>
+        {inputText ? (
+          <StructuredValue value={inputValue} hideRaw class="tool-call-structured" />
+        ) : (
+          <pre class="tool-call-pre">(empty)</pre>
+        )}
+      </div>
+      {toolResult && !(showStructuredResult && hasStructuredAck) && (
+        <div class="tool-call-section chat-tool-section">
+          <div class="tool-call-section-header chat-tool-section-header">
+            <span>{isError ? "ERROR" : "OUTPUT"}</span>
+            {!outputIsEmpty && <CopyButton text={outputText} label="Copy tool output" />}
+          </div>
+          {truncated && (
+            <div class="tool-call-truncated-note">
+              Output truncated for display. Full raw log is available from the run.
+            </div>
+          )}
+          {outputIsEmpty && !isError ? (
+            <div class="tool-call-missing-note">Tool returned empty output.</div>
+          ) : isFileEdit && rawOutput && !isError ? (
+            <FileEditResult value={rawOutput} />
+          ) : (
+            <StructuredValue value={rawOutput} hideRaw class={`tool-call-structured ${isError ? "tool-call-error" : ""}`} />
+          )}
+        </div>
+      )}
+      {missing && (
+        <div class="tool-call-section chat-tool-missing-note">
+          No result was captured for this tool call.
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageStatus }) {
   const [expanded, setExpanded] = useState(false);
   const pending = !toolResult && !structuredOutput && messageStatus === "streaming";
@@ -105,9 +170,7 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
   const truncated = Boolean(toolResult?.truncated);
   const rawOutput = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
-  const outputText = rawOutput == null ? "" : rawJsonText(rawOutput);
-  const inputText = inputAsText(toolUse?.input);
-  const outputIsEmpty = outputText.trim().length === 0;
+  const outputIsEmpty = isEmptyOutputValue(rawOutput);
   const isFileEdit = toolUse?.name === "file_edit";
   const isStructuredOutput = toolUse?.name === "StructuredOutput";
   const hasStructuredAck = isGenericStructuredOutputAck(rawOutput);
@@ -177,44 +240,18 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
       </button>
       {pending && <ShimmerBar height={2} class="tool-call-progress" />}
       {expanded && (
-        <div class="tool-call-body chat-tool-body">
-          <div class="tool-call-section chat-tool-section">
-            <div class="tool-call-section-header chat-tool-section-header">
-              <span>{showStructuredResult ? "STRUCTURED OUTPUT" : "INPUT"}</span>
-              {inputText && <CopyButton text={inputText} label={showStructuredResult ? "Copy structured output" : "Copy tool input"} />}
-            </div>
-            {inputText ? (
-              <StructuredValue value={showStructuredResult ? structuredValue : toolUse?.input} hideRaw class="tool-call-structured" />
-            ) : (
-              <pre class="tool-call-pre">(empty)</pre>
-            )}
-          </div>
-          {toolResult && !(showStructuredResult && hasStructuredAck) && (
-            <div class="tool-call-section chat-tool-section">
-              <div class="tool-call-section-header chat-tool-section-header">
-                <span>{isError ? "ERROR" : "OUTPUT"}</span>
-                {!outputIsEmpty && <CopyButton text={outputText} label="Copy tool output" />}
-              </div>
-              {truncated && (
-                <div class="tool-call-truncated-note">
-                  Output truncated for display. Full raw log is available from the run.
-                </div>
-              )}
-              {outputIsEmpty && !isError ? (
-                <div class="tool-call-missing-note">Tool returned empty output.</div>
-              ) : isFileEdit && rawOutput && !isError ? (
-                <FileEditResult value={rawOutput} />
-              ) : (
-                <StructuredValue value={rawOutput} hideRaw class={`tool-call-structured ${isError ? "tool-call-error" : ""}`} />
-              )}
-            </div>
-          )}
-          {missing && (
-            <div class="tool-call-section chat-tool-missing-note">
-              No result was captured for this tool call.
-            </div>
-          )}
-        </div>
+        <ToolCallBody
+          toolUse={toolUse}
+          toolResult={toolResult}
+          showStructuredResult={showStructuredResult}
+          structuredValue={structuredValue}
+          rawOutput={rawOutput}
+          outputIsEmpty={outputIsEmpty}
+          isError={isError}
+          isFileEdit={isFileEdit}
+          truncated={truncated}
+          missing={missing}
+        />
       )}
     </div>
   );
