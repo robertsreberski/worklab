@@ -89,6 +89,7 @@ function projectRouteId(project) {
 const RUN_PREVIEW_METADATA_FIELDS = [
   ["Task", ["task_key", "task_id"]],
   ["Project", ["project_name", "project_slug", "project_id"]],
+  ["Project context", ["project_context_hash"]],
   ["Workdir", ["workdir"]],
   ["Stage", ["stage"]],
   ["Mode", ["mode"]],
@@ -115,6 +116,7 @@ function normalizeRunPreviewInput(preview) {
     project_id: input.metadata?.project_id ?? preview?.project_id ?? null,
     project_slug: input.metadata?.project_slug ?? preview?.project_slug ?? null,
     project_name: input.metadata?.project_name ?? preview?.project_name ?? null,
+    project_context_hash: input.metadata?.project_context_hash ?? preview?.project_context_hash ?? null,
     workdir: input.metadata?.workdir ?? preview?.workdir ?? null,
     agent_name: input.metadata?.agent_name ?? preview?.agent_name ?? null,
     model: input.metadata?.model ?? preview?.model ?? null,
