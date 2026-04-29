@@ -1831,6 +1831,31 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   );
 });
 
+test("mobile assistant pane opens full width", async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 900 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  await page.locator(".assistant-launcher").click();
+  await expect(page.locator(".assistant-dock.open")).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const dock = document.querySelector(".assistant-dock.open");
+    const rect = dock?.getBoundingClientRect();
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      left: rect ? Math.round(rect.left) : null,
+      right: rect ? Math.round(rect.right) : null,
+      width: rect ? Math.round(rect.width) : null,
+      viewportWidth: window.innerWidth,
+    };
+  });
+  expect(metrics.left).toBe(0);
+  expect(metrics.right).toBe(metrics.viewportWidth);
+  expect(metrics.width).toBe(metrics.viewportWidth);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+});
+
 test("mobile overlays keep drawer and modal controls reachable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);

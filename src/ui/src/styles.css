@@ -9507,9 +9507,9 @@ html.assistant-resizing * {
     top: 0;
     right: 0;
     bottom: 0;
-    left: auto;
+    left: 0;
     z-index: 90;
-    width: min(100%, 420px);
+    width: auto;
     height: 100dvh;
     transform: translateX(100%);
     transition: transform var(--dur-std) var(--ease-snap);
