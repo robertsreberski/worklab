@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import { SCHEMA_VERSION } from "../core/schema.js";
 import { createSseBroker } from "./sse.js";
 import { registerTaskRoutes } from "./routes-tasks.js";
 import { registerSettingsRoutes } from "./routes-settings.js";
@@ -18,14 +19,89 @@ import { registerSlackRoutes } from "./routes-slack.js";
 import { registerAssistantRoutes } from "./routes-assistant.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
+const DEFAULT_SLOW_API_MS = 250;
+
+function slowApiThresholdMs() {
+  const value = Number(process.env.WORKLAB_SLOW_API_MS || DEFAULT_SLOW_API_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SLOW_API_MS;
+}
+
+function readSchemaVersion(db) {
+  if (!db) return null;
+  try {
+    return db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+function tableExists(db, table) {
+  if (!db) return false;
+  try {
+    return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
+  } catch {
+    return false;
+  }
+}
+
+function apiTimingMiddleware(logger) {
+  const threshold = slowApiThresholdMs();
+  return (req, res, next) => {
+    if (!logger || threshold === 0 || req.path.endsWith("/stream")) {
+      next();
+      return;
+    }
+
+    const start = process.hrtime.bigint();
+    let responseBytes = 0;
+    const originalWrite = res.write;
+    const originalEnd = res.end;
+
+    res.write = function writeWithSize(chunk, encoding, callback) {
+      if (chunk) responseBytes += Buffer.byteLength(chunk, encoding);
+      return originalWrite.call(this, chunk, encoding, callback);
+    };
+    res.end = function endWithSize(chunk, encoding, callback) {
+      if (chunk) responseBytes += Buffer.byteLength(chunk, encoding);
+      return originalEnd.call(this, chunk, encoding, callback);
+    };
+
+    res.on("finish", () => {
+      const durationMs = Number(process.hrtime.bigint() - start) / 1e6;
+      if (durationMs < threshold) return;
+      logger.warn({
+        method: req.method,
+        path: req.originalUrl || req.url,
+        status: res.statusCode,
+        duration_ms: Math.round(durationMs),
+        response_bytes: responseBytes,
+      }, "slow api request");
+    });
+    next();
+  };
+}
+
 export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack, assistant: assistantOptions }) {
   const app = express();
   const broker = createSseBroker();
 
   app.use(cors());
   app.use(express.json({ limit: "10mb" }));
+  app.use("/api", apiTimingMiddleware(logger));
 
-  app.get("/api/health", (_req, res) => res.json({ ok: true }));
+  app.get("/api/health", (_req, res) => res.json({
+    ok: true,
+    pid: process.pid,
+    node: process.version,
+    uptime_ms: Math.round(process.uptime() * 1000),
+    schema: {
+      expected: SCHEMA_VERSION,
+      actual: readSchemaVersion(db),
+    },
+    routes: {
+      projects: tableExists(db, "projects"),
+    },
+  }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
   registerProjectRoutes(app, { db, broker, config });

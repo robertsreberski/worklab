@@ -28,6 +28,26 @@ function runProcessStatus(row) {
     : row.process_status;
 }
 
+function runEventLimit(value) {
+  const parsed = Number(value || 200);
+  if (!Number.isInteger(parsed) || parsed < 1) return 200;
+  return Math.min(parsed, 500);
+}
+
+function shapeRunLog(logRow, query = {}) {
+  if (!logRow) return null;
+  const events = JSON.parse(logRow.events || "[]");
+  if (query.events !== "tail") return { ...logRow, events };
+  const limit = runEventLimit(query.limit);
+  const tail = events.slice(-limit);
+  return {
+    ...logRow,
+    events: tail,
+    event_count: events.length,
+    events_truncated: events.length > tail.length,
+  };
+}
+
 export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
   app.get("/api/runs/:id", (req, res) => {
     const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
@@ -35,7 +55,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
     const run = normalizeRun(row, liveInputState);
     const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(req.params.id);
-    const log = logRow ? { ...logRow, events: JSON.parse(logRow.events || "[]") } : null;
+    const log = shapeRunLog(logRow, req.query || {});
     res.json({ run, log });
   });
 
