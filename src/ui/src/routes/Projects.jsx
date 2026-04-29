@@ -369,6 +369,24 @@ function ProjectDetail({ selectedId, onChanged }) {
             <section class="knowledge-read-section" aria-labelledby="project-details">
               <SectionMarker id="project-details" num="01" kicker="Context" meta="Run input" />
               {project.description && <p class="soft-meta project-description">{project.description}</p>}
+              <div class="project-workdir-row">
+                <span class="project-workdir-label">Workdir</span>
+                <span class="project-workdir-value mono">{project.workdir || "Default workspace"}</span>
+                {project.workdir && (
+                  <Button
+                    variant="ghost"
+                    iconLeft={<Icon name="copy" size={11} />}
+                    onClick={() => {
+                      navigator.clipboard?.writeText(project.workdir).then(
+                        () => pushToast("Workdir copied", { variant: "success" }),
+                        () => pushToast("Copy failed", { variant: "error" }),
+                      );
+                    }}
+                  >
+                    Copy
+                  </Button>
+                )}
+              </div>
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
                   <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} />

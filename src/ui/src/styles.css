@@ -7465,6 +7465,26 @@ html.assistant-resizing * {
 .project-task-list li {
   gap: var(--sp-2);
 }
+.project-workdir-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: var(--sp-2) 0 var(--sp-4);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  font-size: var(--text-sm);
+}
+.project-workdir-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.project-workdir-value {
+  flex: 1;
+  color: var(--text);
+  word-break: break-all;
+}
 .task-edit-project-preview {
   margin-top: var(--sp-2);
   padding: var(--sp-2);
