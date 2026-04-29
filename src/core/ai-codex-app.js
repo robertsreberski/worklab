@@ -10,6 +10,7 @@ import {
 import { normalizeCodexItemEvent } from "./codex-events.js";
 import { createFileChangePayload } from "./file-change-stats.js";
 import { formatLiveInputGuidance } from "./live-input.js";
+import { estimateCost } from "./cost.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -503,15 +504,33 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       errorMessage = "codex app-server completed without final output";
       failureKind = "provider_unavailable";
     }
+    const reference = `codex:${resolved.model}`;
+    const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
+    const outputTokens = usage?.output_tokens ?? usage?.outputTokens ?? 0;
+    const cachedTokens = usage?.cache_read_tokens ?? usage?.cachedInputTokens ?? 0;
+    const costUsd = estimateCost({
+      db: options.db,
+      model: reference,
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+    });
+    const enrichedUsage = {
+      ...usage,
+      input_tokens: inputTokens || null,
+      output_tokens: outputTokens || null,
+      cache_read_tokens: cachedTokens || null,
+      cost_usd: costUsd,
+    };
     return {
       text,
       worklabResult,
       structuredResultSource,
       events,
-      usage,
+      usage: enrichedUsage,
       durationMs: Date.now() - start,
       numTurns: 1,
-      model: `codex:${resolved.model}`,
+      model: reference,
       effort: options.effort || null,
       sdk: "codex",
       cancelled: !!options.abortSignal?.aborted,

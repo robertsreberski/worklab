@@ -9,6 +9,7 @@ import {
   statsForCompletedChange,
 } from "./file-change-stats.js";
 import { formatLiveInputGuidance } from "./live-input.js";
+import { estimateCost } from "./cost.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -345,10 +346,31 @@ export async function generateClaudeResponse(systemPrompt, options) {
     if (abortSignal) abortSignal.removeEventListener?.("abort", abortHandler);
   }
 
+  const reference = model.reference || `claude:${model.model}`;
+  const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
+  const outputTokens = usage?.output_tokens ?? usage?.outputTokens ?? 0;
+  const cachedTokens = usage?.cache_read_input_tokens ?? usage?.cache_read_tokens ?? 0;
+  const cacheCreationTokens = usage?.cache_creation_input_tokens ?? usage?.cache_creation_tokens ?? 0;
+  const costUsd = estimateCost({
+    db: options.db,
+    model: reference,
+    inputTokens,
+    outputTokens,
+    cachedTokens,
+  });
+  const enrichedUsage = {
+    ...usage,
+    input_tokens: inputTokens || null,
+    output_tokens: outputTokens || null,
+    cache_read_tokens: cachedTokens || null,
+    cache_creation_tokens: cacheCreationTokens || null,
+    cost_usd: costUsd,
+  };
+
   return {
     text: finalText(),
     events: capturedEvents,
-    usage,
+    usage: enrichedUsage,
     durationMs,
     numTurns,
     model: model.model,

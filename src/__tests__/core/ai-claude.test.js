@@ -220,7 +220,8 @@ describe("generateClaudeResponse", () => {
     expect(r.error).toBeNull();
     expect(r.failureKind).toBeNull();
     expect(r.text).toBe("# Report\n\nFinal delivered answer.");
-    expect(r.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(r.usage).toMatchObject({ input_tokens: 10, output_tokens: 5 });
+    expect(typeof r.usage.cost_usd).toBe("number");
     expect(r.durationMs).toBe(100);
     expect(r.numTurns).toBe(2);
     expect(r.runtimeWarnings).toHaveLength(1);
@@ -564,7 +565,8 @@ describe("generateClaudeResponse", () => {
     liveInput.close();
 
     expect(r.text).toBe("# Report\n\nFinal delivered answer.");
-    expect(r.usage).toEqual({ input_tokens: 10, output_tokens: 5 });
+    expect(r.usage).toMatchObject({ input_tokens: 10, output_tokens: 5 });
+    expect(typeof r.usage.cost_usd).toBe("number");
     expect(r.durationMs).toBe(100);
     expect(r.numTurns).toBe(1);
     expect(r.error).toBeNull();
