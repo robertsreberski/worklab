@@ -1493,7 +1493,7 @@ export function TaskDetail({ id, runParam = null }) {
     </>
   );
   const detailMeta = task && (
-    <>
+    <span class="task-hero-status-row">
       {runningRun && <LivePulse size={10} />}
       <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
       {hasLastRunError && (
@@ -1515,7 +1515,7 @@ export function TaskDetail({ id, runParam = null }) {
           {hasEnabledSchedule ? "Scheduled" : "Schedule paused"}
         </span>
       )}
-    </>
+    </span>
   );
   const hasRailTags = (task?.tags || []).length > 0;
   const hasRailDependencies = ((task?.blocked_by || []).length > 0 || (task?.blocks || []).length > 0);
@@ -1714,6 +1714,7 @@ export function TaskDetail({ id, runParam = null }) {
           kicker="Task detail"
           idPrefix={taskKeyLabel}
           title={task.title}
+          titleClass="task-hero-title title-display"
           meta={detailMeta}
           actions={taskActions && <div class="task-hero-actions toolbar">{taskActions}</div>}
           subBar={detailSubBar}

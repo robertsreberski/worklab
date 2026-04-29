@@ -30,11 +30,12 @@ export function StageToken({
   const content = (
     <>
       <span class="stage-token-glyph" aria-hidden="true" />
-      <span class="stage-token-label">{label || meta.label}</span>
+      <span class="stage-token-label status-pill-label">{label || meta.label}</span>
       {variant === "menu" && <Icon name="chevron-down" size={12} class="stage-token-chevron" aria-hidden="true" />}
     </>
   );
-  const cls = `stage-token stage-token-${variant} ${active ? "active" : ""} ${className}`.trim();
+  const compatClass = variant === "grid" ? "status-grid-btn" : "status-pill";
+  const cls = `stage-token stage-token-${variant} ${compatClass} ${active ? "active" : ""} ${className}`.trim();
   const style = { "--stage-tone": meta.tone };
   const isButton = as ? as === "button" : (variant === "grid" || variant === "menu" || onClick);
 

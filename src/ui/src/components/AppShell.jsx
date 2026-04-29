@@ -48,6 +48,7 @@ const TABBAR_ROUTES = [
   { id: "skills", label: "Skills", icon: "sparkles", href: "#/skills" },
   { id: "more", label: "More", icon: "more-horizontal", href: "#/knowledge" },
 ];
+const EMPTY_SECTIONS = [];
 
 export function useAppChrome(chrome, deps = []) {
   const context = useContext(AppChromeContext);
@@ -132,7 +133,7 @@ function AppTabbar({ route }) {
 }
 
 function RightDrawer({ open, onClose, kicker, title, children }) {
-  if (!children) return null;
+  if (!children || !open) return null;
   return (
     <div class={`app-right-drawer ${open ? "open" : ""}`.trim()} aria-hidden={!open}>
       <button type="button" class="app-right-drawer-scrim" aria-label="Close drawer" onClick={onClose} />
@@ -153,7 +154,7 @@ function RightDrawer({ open, onClose, kicker, title, children }) {
 }
 
 function SectionSheet({ open, onClose, sections = [] }) {
-  if (!sections.length) return null;
+  if (!sections.length || !open) return null;
   return (
     <div class={`app-section-sheet ${open ? "open" : ""}`.trim()} aria-hidden={!open}>
       <button type="button" class="app-section-sheet-scrim" aria-label="Close sections" onClick={onClose} />
@@ -196,7 +197,7 @@ export function AppShell({
   const activeDrawerContent = registeredChrome.drawerContent ?? drawerContent;
   const activeDrawerTitle = registeredChrome.drawerTitle ?? drawerTitle;
   const activeDrawerKicker = registeredChrome.drawerKicker ?? drawerKicker;
-  const activeSections = registeredChrome.sections ?? sections ?? [];
+  const activeSections = registeredChrome.sections ?? sections ?? EMPTY_SECTIONS;
 
   useEffect(() => {
     const openDrawer = () => setDrawerOpen(true);
@@ -212,7 +213,7 @@ export function AppShell({
   useEffect(() => {
     setDrawerOpen(false);
     setSectionSheetOpen(false);
-  }, [route, activeDrawerContent, activeSections]);
+  }, [route]);
 
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
@@ -288,7 +289,7 @@ export function AppShell({
           {activeTopbar}
           <main id="main" class="app-main scrollable-body">{children}</main>
           {activeDock && (
-            <div class="app-mobile-action-dock mobile-action-dock" aria-label="Page actions">
+            <div class="app-mobile-action-dock mobile-action-dock entity-edit-mobile-dock" aria-label="Page actions">
               {activeDock}
             </div>
           )}

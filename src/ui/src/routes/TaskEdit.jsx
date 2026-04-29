@@ -308,7 +308,7 @@ export function TaskEdit({ mode = "create", id = null }) {
             ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}` }] : []),
             { label: mode === "create" ? "New" : "Edit" },
           ]}
-          class="task-edit-task-head"
+          class="task-edit-head task-edit-task-head"
           kicker={mode === "create" ? "New task" : "Task editor"}
           idPrefix={idDisplay}
           title={draft.title}
@@ -318,7 +318,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           glyph="T"
           subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={TASK_EDIT_SECTIONS} />}
           actions={(
-            <>
+            <div class="task-edit-toolbar">
               <Button variant="ghost" onClick={cancel}>Cancel</Button>
               <Button
                 variant={saveButtonVariant}
@@ -328,7 +328,7 @@ export function TaskEdit({ mode = "create", id = null }) {
               >
                 {saveButtonLabel}
               </Button>
-            </>
+            </div>
           )}
         />
         <form
