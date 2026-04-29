@@ -55,6 +55,8 @@ describe("workflow stage reducer", () => {
     });
     expect(r.stage).toBe("done");
     expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+    expect(r.sideEffects).toContainEqual({ type: "reset_rejection_count" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
     expect(r.sideEffects).not.toContainEqual({ type: "post_review_verdict", verdict: "APPROVE", notes: "ok" });
   });
 
@@ -63,9 +65,25 @@ describe("workflow stage reducer", () => {
       type: "run_succeeded",
       stage: "review",
       result: { decision: "reject", summary: "not ok", details: "fix tests" },
+      rejectionCount: 1,
+      maxRejections: 3,
     });
     expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "set_rejection_count", count: 2 });
     expect(r.sideEffects).toContainEqual({ type: "post_review_comment", notes: "fix tests" });
+  });
+
+  it("review reject blocks when the configured rejection streak is reached", () => {
+    const r = nextStage("review", {
+      type: "run_succeeded",
+      stage: "review",
+      result: { decision: "reject", summary: "not ok", details: "fix tests" },
+      rejectionCount: 2,
+      maxRejections: 3,
+    });
+    expect(r.stage).toBe("blocked");
+    expect(r.sideEffects).toContainEqual({ type: "set_rejection_count", count: 3 });
+    expect(r.sideEffects.find((sideEffect) => sideEffect.type === "set_blocking_issues").blockingIssues[0]).toMatch(/Reached max review rejections/);
   });
 
   it("delegate creates subtasks and waits for children", () => {
@@ -160,10 +178,16 @@ describe("workflow stage reducer", () => {
   });
 
   it("run_cancelled keeps the stage but does not write error_text or bump failure count", () => {
-    const r = nextStage("execute", { type: "run_cancelled", retryStage: "execute", message: "user cancel" });
+    const r = nextStage("execute", {
+      type: "run_cancelled",
+      retryStage: "execute",
+      message: "user cancel",
+      cancelInitiator: "api_cancel",
+      cancelReason: "button",
+    });
     expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "clear_error_text" });
-    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled (user)" });
+    expect(r.sideEffects).toContainEqual({ type: "set_stage_reason", reason: "cancelled (api_cancel: button)" });
     expect(r.sideEffects).toContainEqual({ type: "post_cancellation_comment", message: "user cancel" });
     // crucially: no set_failure_count on cancel
     expect(r.sideEffects.some((sideEffect) => sideEffect.type === "set_failure_count")).toBe(false);
@@ -230,6 +254,8 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "clear_pending_actions" });
     expect(r.sideEffects).toContainEqual({ type: "clear_blocking_issues" });
     expect(r.sideEffects).toContainEqual({ type: "reset_failure_count" });
+    expect(r.sideEffects).toContainEqual({ type: "reset_rejection_count" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
   });
 });
 

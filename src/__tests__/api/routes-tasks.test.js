@@ -1113,6 +1113,34 @@ describe("POST /api/tasks/:id/retry", () => {
     expect(calls).toEqual([task.id]);
   });
 
+  it("transitions blocked tasks back to their latest retry_stage before running", async () => {
+    const calls = [];
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async (id) => {
+          calls.push(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(id).stage);
+          return { runId: "r-review" };
+        },
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const now = Date.now();
+    db.prepare("UPDATE tasks SET stage = 'blocked', error_text = 'bad review', updated_at = ? WHERE id = ?").run(now, task.id);
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, retry_stage, started_at, ended_at)
+      VALUES ('review-fail', ?, 'review', 'review', 'checker', 'error', 'failed', 'review', ?, ?)
+    `).run(task.id, now - 1000, now - 500);
+
+    await agent.post(`/api/tasks/${task.id}/retry`).expect(200);
+
+    const after = db.prepare("SELECT stage, error_text, retry_count FROM tasks WHERE id = ?").get(task.id);
+    expect(after.stage).toBe("review");
+    expect(after.error_text).toBeNull();
+    expect(after.retry_count).toBe(0);
+    expect(calls).toEqual(["review"]);
+  });
+
   it("rejects retry for stages that aren't retryable", async () => {
     const { agent, db } = makeTestServer({
       watcher: {
