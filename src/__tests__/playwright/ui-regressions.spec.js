@@ -1095,6 +1095,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       rowText: "Regression Agent",
       detailText: "regression-agent",
       entityEditor: true,
+      flatBody: true,
     },
     {
       hash: `#/skills/${skillName}`,
@@ -1130,7 +1131,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
         await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
       }
 
-      const paneMetrics = await page.evaluate((entityEditor) => {
+      const paneMetrics = await page.evaluate(({ entityEditor, flatBody }) => {
         const row = document.querySelector(".pane-row.active");
         const detailHead = document.querySelector(".pane-detail-head");
         const body = document.querySelector(".pane-detail-body");
@@ -1139,20 +1140,35 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
           ? document.querySelector(".entity-editor-main > .form-section")
           : document.querySelector(".pane-detail-body > .form-section");
         const editor = document.querySelector(".entity-editor-layout");
+        const sectionStyle = formSection ? getComputedStyle(formSection) : null;
+        const capabilityPanel = flatBody ? document.querySelector(".agent-editor-layout .capability-panel") : null;
+        const capabilityStyle = capabilityPanel ? getComputedStyle(capabilityPanel) : null;
         return {
           rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
           headHeight: detailHead ? Math.round(detailHead.getBoundingClientRect().height) : 0,
           bodyWidth: body ? Math.round(body.getBoundingClientRect().width) : 0,
           listWidth: list ? Math.round(list.getBoundingClientRect().width) : 0,
-          sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
+          sectionRadius: sectionStyle ? parseFloat(sectionStyle.borderRadius) : 0,
+          sectionBorderWidth: sectionStyle ? parseFloat(sectionStyle.borderTopWidth) : 0,
+          sectionBackground: sectionStyle?.backgroundColor || "",
+          capabilityRadius: capabilityStyle ? parseFloat(capabilityStyle.borderRadius) : 0,
+          capabilityBackground: capabilityStyle?.backgroundColor || "",
           editorColumns: editor ? getComputedStyle(editor).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
         };
-      }, !!route.entityEditor);
+      }, { entityEditor: !!route.entityEditor, flatBody: !!route.flatBody });
       expect(paneMetrics.rowHeight, `${viewport.label} ${route.hash} row height`).toBeGreaterThanOrEqual(56);
       expect(paneMetrics.headHeight, `${viewport.label} ${route.hash} head height`).toBeGreaterThanOrEqual(68);
       expect(paneMetrics.bodyWidth, `${viewport.label} ${route.hash} body width`).toBeGreaterThan(0);
       expect(paneMetrics.listWidth, `${viewport.label} ${route.hash} list width`).toBeGreaterThanOrEqual(300);
-      expect(paneMetrics.sectionRadius, `${viewport.label} ${route.hash} section radius`).toBeGreaterThanOrEqual(6);
+      if (route.flatBody) {
+        expect(paneMetrics.sectionRadius, `${viewport.label} ${route.hash} flat section radius`).toBe(0);
+        expect(paneMetrics.sectionBorderWidth, `${viewport.label} ${route.hash} flat section border`).toBe(0);
+        expect(paneMetrics.sectionBackground, `${viewport.label} ${route.hash} flat section background`).toBe("rgba(0, 0, 0, 0)");
+        expect(paneMetrics.capabilityRadius, `${viewport.label} ${route.hash} flat capability radius`).toBe(0);
+        expect(paneMetrics.capabilityBackground, `${viewport.label} ${route.hash} flat capability background`).toBe("rgba(0, 0, 0, 0)");
+      } else {
+        expect(paneMetrics.sectionRadius, `${viewport.label} ${route.hash} section radius`).toBeGreaterThanOrEqual(6);
+      }
       if (route.entityEditor) {
         expect(paneMetrics.editorColumns, `${viewport.label} ${route.hash} editor columns`).toBeGreaterThanOrEqual(1);
       }
@@ -1181,7 +1197,7 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
 test("mobile agents skills and knowledge panes preserve compact premium detail structure", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true },
+    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true, flatBody: true },
     { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
     { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", entityEditor: true },
   ];
@@ -1233,7 +1249,8 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     }, !!route.entityEditor);
     expect(mobileMetrics.headWidth).toBeLessThanOrEqual(390);
     expect(mobileMetrics.toolbarTop === 0 || mobileMetrics.toolbarTop >= mobileMetrics.headTop).toBe(true);
-    expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
+    if (route.flatBody) expect(mobileMetrics.sectionRadius).toBe(0);
+    else expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
     expect(mobileMetrics.iconWidth === 0 || mobileMetrics.iconWidth >= 28).toBe(true);
     if (route.entityEditor) {
       expect(mobileMetrics.railPosition).toBe("static");
