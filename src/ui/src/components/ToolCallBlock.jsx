@@ -110,14 +110,16 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
   const outputIsEmpty = outputText.trim().length === 0;
   const isFileEdit = toolUse?.name === "file_edit";
   const isStructuredOutput = toolUse?.name === "StructuredOutput";
+  const hasStructuredAck = isGenericStructuredOutputAck(rawOutput);
+  const showStructuredResult = isStructuredOutput && !isError && (structuredOutput || hasStructuredAck);
   const structuredValue = structuredOutput?.worklab_result
     || structuredOutput?.value
     || structuredOutput?.structured_output
     || toolUse?.input;
   const fileSummary = isFileEdit ? fileEditSummary(rawOutput ?? toolUse?.input) : "";
-  const glyphName = isStructuredOutput ? "check-circle" : isFileEdit ? "file-text" : "terminal";
+  const glyphName = showStructuredResult ? "check-circle" : isFileEdit ? "file-text" : "terminal";
   const structuredSummary = String(structuredValue?.summary || structuredValue?.final_text || "").trim();
-  const label = isStructuredOutput
+  const label = showStructuredResult
     ? `Worklab result${structuredSummary ? ` · ${structuredSummary}` : ""}`
     : isFileEdit && fileSummary
       ? `file_edit · ${fileSummary}`
@@ -138,7 +140,7 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
   } else if (missing) {
     statusIcon = <Icon name="circle" size={13} class="tool-call-status-missing" />;
     stateLabel = "no result captured";
-  } else if (isStructuredOutput) {
+  } else if (showStructuredResult) {
     statusIcon = <Icon name="check" size={13} class="tool-call-status-ok" />;
     stateLabel = "structured output";
   } else if (outputIsEmpty) {
@@ -178,16 +180,16 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
         <div class="tool-call-body chat-tool-body">
           <div class="tool-call-section chat-tool-section">
             <div class="tool-call-section-header chat-tool-section-header">
-              <span>{isStructuredOutput ? "STRUCTURED OUTPUT" : "INPUT"}</span>
-              {inputText && <CopyButton text={inputText} label={isStructuredOutput ? "Copy structured output" : "Copy tool input"} />}
+              <span>{showStructuredResult ? "STRUCTURED OUTPUT" : "INPUT"}</span>
+              {inputText && <CopyButton text={inputText} label={showStructuredResult ? "Copy structured output" : "Copy tool input"} />}
             </div>
             {inputText ? (
-              <StructuredValue value={isStructuredOutput ? structuredValue : toolUse?.input} hideRaw class="tool-call-structured" />
+              <StructuredValue value={showStructuredResult ? structuredValue : toolUse?.input} hideRaw class="tool-call-structured" />
             ) : (
               <pre class="tool-call-pre">(empty)</pre>
             )}
           </div>
-          {toolResult && !(isStructuredOutput && isGenericStructuredOutputAck(rawOutput)) && (
+          {toolResult && !(showStructuredResult && hasStructuredAck) && (
             <div class="tool-call-section chat-tool-section">
               <div class="tool-call-section-header chat-tool-section-header">
                 <span>{isError ? "ERROR" : "OUTPUT"}</span>

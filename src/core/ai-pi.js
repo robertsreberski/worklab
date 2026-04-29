@@ -199,21 +199,6 @@ function streamContentKey(streamEvent, fallback) {
   return streamEvent?.contentIndex ?? fallback;
 }
 
-function structuredOutputEvent(toolUseId, value) {
-  const extracted = extractWorklabResult({
-    type: "tool_use",
-    name: "StructuredOutput",
-    input: value,
-  });
-  return {
-    type: "structured_output",
-    source: "StructuredOutput",
-    tool_use_id: toolUseId || null,
-    value,
-    ...(extracted.ok ? { worklab_result: extracted.result } : {}),
-  };
-}
-
 function jsonSerializable(value, fallback = null) {
   try {
     JSON.stringify(value);
@@ -392,9 +377,6 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           type: "assistant",
           message: { content: [{ type: "tool_use", id: event.toolCallId, name: event.toolName, input: event.args || {} }] },
         });
-        if (event.toolName === "StructuredOutput") {
-          onEvent(structuredOutputEvent(event.toolCallId, event.args || {}));
-        }
       } else if (event.type === "tool_execution_update") {
         onEvent({
           type: "tool_update",
