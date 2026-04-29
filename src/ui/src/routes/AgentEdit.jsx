@@ -28,7 +28,7 @@ import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
-import { modelDisplayName } from "../lib/display.js";
+import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
 const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"];
@@ -429,11 +429,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         value: m.value,
         label: m.label || m.value,
         disabled: group.available === false || m.available === false || m.disabled === true,
-        description: group.available === false
-          ? (group.unavailable_reason || "Unavailable")
-          : (m.available === false || m.disabled === true)
-            ? (m.unavailable_reason || "Unavailable")
-            : (m.description || undefined),
+        description: modelOptionDescription(m, group),
       })),
     })),
     ...(allModels.some((m) => m.value === agent.model) ? [] : [{

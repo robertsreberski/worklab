@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getModels as getPiModels } from "@mariozechner/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,14 +61,12 @@ describe("provider routes", () => {
 
     const res = await agent.get("/api/models/available").expect(200);
     expect(res.body.models.map((m) => m.value)).toContain("claude:claude-sonnet-4-6");
-    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.5");
-    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.4");
-    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.4-mini");
-    expect(res.body.models.map((m) => m.value)).toContain("openai:gpt-5.4-nano");
-    expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.5");
-    expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.4");
-    expect(res.body.models.map((m) => m.value)).toContain("codex:gpt-5.4-mini");
-    expect(res.body.models.map((m) => m.value)).not.toContain("codex:gpt-5.4-nano");
+    for (const piModel of getPiModels("openai")) {
+      expect(res.body.models.map((m) => m.value)).toContain(`openai:${piModel.id}`);
+    }
+    for (const piModel of getPiModels("openai-codex")) {
+      expect(res.body.models.map((m) => m.value)).toContain(`codex:${piModel.id}`);
+    }
     expect(res.body.models.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:${model.model_name}`);
     expect(res.body.groups.find((g) => g.id === "codex").label).toBe("OpenAI Codex");
     expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
