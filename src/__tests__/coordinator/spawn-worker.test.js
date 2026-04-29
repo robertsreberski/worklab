@@ -222,6 +222,69 @@ describe("spawnWorker", () => {
     }
   });
 
+  it("truncates large tool inputs and raw_result payloads only in display logs", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-spawn-"));
+    const { taskId, runId } = seedTaskAndRun(db);
+    const largeInput = "i".repeat(80);
+    const largeRawResult = "r".repeat(80);
+    const script = {
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{ type: "tool_use", id: "tool-1", name: "kb_create", input: { body: largeInput } }],
+            },
+          },
+        },
+        {
+          type: "sdk_event",
+          event: {
+            type: "user",
+            message: {
+              content: [{
+                type: "tool_result",
+                tool_use_id: "tool-1",
+                content: "ok",
+                raw_result: { content: [{ type: "text", text: largeRawResult }] },
+                is_error: false,
+              }],
+            },
+          },
+        },
+        { type: "final", text: "done" },
+      ],
+      exitCode: 0,
+    };
+    try {
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+        runId, taskId, broker, db, dataDir, logInlineLimit: 20,
+      });
+      await handle.done;
+
+      const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      const rawLog = readFileSync(run.raw_output_path, "utf8");
+      expect(rawLog).toContain(largeInput);
+      expect(rawLog).toContain(largeRawResult);
+
+      const displayEvents = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
+      const inputBlock = displayEvents[0].event.message.content[0];
+      const resultBlock = displayEvents[1].event.message.content[0];
+      expect(inputBlock.input_truncated).toBe(true);
+      expect(inputBlock.input.preview).toContain("[truncated");
+      expect(resultBlock.raw_result.truncated).toBe(true);
+      expect(resultBlock.raw_result.preview).toContain("[truncated");
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("marks a run failed when the worker exceeds the run timeout", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
