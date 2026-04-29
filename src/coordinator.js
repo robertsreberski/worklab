@@ -3,6 +3,7 @@ import { createServer as createHttpServer } from "node:http";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
+import { monitorEventLoopDelay } from "node:perf_hooks";
 import { promisify } from "node:util";
 import express from "express";
 import { createServer } from "./api/server.js";
@@ -16,6 +17,40 @@ import { createConsolidationManager } from "./coordinator/consolidation-cron.js"
 import { createAutomationManager } from "./coordinator/automation-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 import { createWorklabSlackService } from "./integrations/slack/service.js";
+
+const DEFAULT_EVENT_LOOP_WARN_MS = 150;
+const DEFAULT_EVENT_LOOP_SAMPLE_MS = 15_000;
+
+function eventLoopWarnThresholdMs() {
+  const value = Number(process.env.WORKLAB_EVENT_LOOP_WARN_MS || DEFAULT_EVENT_LOOP_WARN_MS);
+  return Number.isFinite(value) && value >= 0 ? value : DEFAULT_EVENT_LOOP_WARN_MS;
+}
+
+function startEventLoopMonitor(logger) {
+  const thresholdMs = eventLoopWarnThresholdMs();
+  if (!logger || thresholdMs === 0) return { shutdown() {} };
+  const histogram = monitorEventLoopDelay({ resolution: 20 });
+  histogram.enable();
+  const timer = setInterval(() => {
+    const p95Ms = histogram.percentile(95) / 1e6;
+    const maxMs = histogram.max / 1e6;
+    if (p95Ms >= thresholdMs) {
+      logger.warn({
+        p95_ms: Math.round(p95Ms),
+        max_ms: Math.round(maxMs),
+        threshold_ms: thresholdMs,
+      }, "event loop delay high");
+    }
+    histogram.reset();
+  }, DEFAULT_EVENT_LOOP_SAMPLE_MS);
+  timer.unref?.();
+  return {
+    shutdown() {
+      clearInterval(timer);
+      histogram.disable();
+    },
+  };
+}
 
 export function createWatcherProxy(watcherHolder) {
   return {
@@ -118,6 +153,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   });
   automationManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
+  const eventLoopMonitor = startEventLoopMonitor(logger);
   slackHolder.current = createWorklabSlackService({ db, config, logger, events });
   await slackHolder.current.start();
 
@@ -162,6 +198,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
     try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
+    try { eventLoopMonitor.shutdown(); } catch (err) { logger.warn({ err }, "event loop monitor shutdown error"); }
     try { await slackHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "slack shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
@@ -187,6 +224,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     consolidation: consolidationHolder.current,
     automationManager: automationManagerHolder.current,
     searchIndexer,
+    eventLoopMonitor,
     slack: slackHolder.current,
   };
 }

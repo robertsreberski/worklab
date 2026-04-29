@@ -209,6 +209,208 @@ function enrichTask(db, task, config = null) {
   return attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config);
 }
 
+function placeholders(values) {
+  return values.map(() => "?").join(", ");
+}
+
+function defaultAutomationSummary() {
+  return {
+    count: 0,
+    enabled_count: 0,
+    paused_count: 0,
+    next_fire_at: null,
+    last_trigger: null,
+  };
+}
+
+function safeJson(value, fallback) {
+  if (value == null) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
+function firstRowsByTask(rows, taskKey = "task_id") {
+  const byTask = new Map();
+  for (const row of rows) {
+    const taskId = row[taskKey];
+    if (taskId && !byTask.has(taskId)) byTask.set(taskId, row);
+  }
+  return byTask;
+}
+
+function pushMapped(map, key, value) {
+  if (!key) return;
+  const list = map.get(key) || [];
+  list.push(value);
+  map.set(key, list);
+}
+
+function enrichTaskList(db, tasks, config = null) {
+  if (!tasks.length) return [];
+  const taskIds = tasks.map((task) => task.id);
+  const taskIdSql = placeholders(taskIds);
+  const output = tasks.map((task) => ({
+    ...task,
+    dependency_ids: [],
+    blocked_by: [],
+    blocks: [],
+    parent: null,
+    children: [],
+    running_run_id: null,
+    running_run: null,
+    last_run: null,
+    automation_summary: defaultAutomationSummary(),
+    project: null,
+    effective_workdir: config?.workspace || null,
+  }));
+  const byId = new Map(output.map((task) => [task.id, task]));
+
+  const runningRows = firstRowsByTask(db.prepare(`
+    SELECT
+      r.id, r.task_id, r.status, r.process_status, r.started_at,
+      json_array_length(l.events) AS event_count,
+      CASE
+        WHEN l.events IS NOT NULL AND json_valid(l.events) AND json_array_length(l.events) > 0
+        THEN json_extract(l.events, '$[' || (json_array_length(l.events) - 1) || ']')
+        ELSE NULL
+      END AS last_event_json
+    FROM task_runs r
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    WHERE r.task_id IN (${taskIdSql}) AND r.status = 'running'
+    ORDER BY r.task_id, r.started_at DESC, r.rowid DESC
+  `).all(...taskIds));
+  for (const [taskId, row] of runningRows.entries()) {
+    const task = byId.get(taskId);
+    if (!task) continue;
+    task.running_run_id = row.id;
+    task.running_run = {
+      id: row.id,
+      status: row.status,
+      process_status: row.process_status || legacyRunStatusToProcessStatus(row.status),
+      started_at: row.started_at,
+      event_count: Number(row.event_count || 0),
+      last_event: safeJson(row.last_event_json, null),
+    };
+  }
+
+  const lastRows = firstRowsByTask(db.prepare(`
+    SELECT id, task_id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
+    FROM task_runs
+    WHERE task_id IN (${taskIdSql}) AND status <> 'running'
+    ORDER BY task_id, started_at DESC, rowid DESC
+  `).all(...taskIds));
+  for (const [taskId, row] of lastRows.entries()) {
+    const task = byId.get(taskId);
+    if (!task) continue;
+    task.last_run = {
+      id: row.id,
+      status: row.status,
+      process_status: row.status !== "running" && row.process_status === "running"
+        ? legacyRunStatusToProcessStatus(row.status)
+        : (row.process_status || legacyRunStatusToProcessStatus(row.status)),
+      failure_kind: row.failure_kind || null,
+      ended_at: row.ended_at,
+      stage: row.stage || (row.mode === "review" ? "review" : "execute"),
+      decision: row.decision || null,
+      summary: row.summary || null,
+    };
+  }
+
+  const blockedBy = new Map();
+  for (const row of db.prepare(`
+    SELECT d.task_id AS owner_task_id, t.*
+    FROM task_dependencies d
+    JOIN tasks t ON t.id = d.depends_on_task_id
+    WHERE d.task_id IN (${taskIdSql})
+    ORDER BY d.task_id, t.updated_at DESC, t.rowid DESC
+  `).all(...taskIds)) {
+    pushMapped(blockedBy, row.owner_task_id, compactTaskSummary(row));
+  }
+  const blocks = new Map();
+  for (const row of db.prepare(`
+    SELECT d.depends_on_task_id AS owner_task_id, t.*
+    FROM task_dependencies d
+    JOIN tasks t ON t.id = d.task_id
+    WHERE d.depends_on_task_id IN (${taskIdSql})
+    ORDER BY d.depends_on_task_id, t.updated_at DESC, t.rowid DESC
+  `).all(...taskIds)) {
+    pushMapped(blocks, row.owner_task_id, compactTaskSummary(row));
+  }
+  const children = new Map();
+  for (const row of db.prepare(`
+    SELECT e.parent_task_id AS owner_task_id, e.required AS edge_required, e.edge_type, t.*
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    WHERE e.parent_task_id IN (${taskIdSql}) AND e.edge_type = 'subtask'
+    ORDER BY e.parent_task_id, t.subtask_order ASC, t.created_at ASC
+  `).all(...taskIds)) {
+    pushMapped(children, row.owner_task_id, {
+      ...compactTaskSummary(row),
+      edge_type: row.edge_type,
+      required: row.edge_required !== 0,
+    });
+  }
+
+  const parentIds = [...new Set(output.map((task) => task.parent_task_id).filter(Boolean))];
+  const parents = new Map();
+  if (parentIds.length) {
+    for (const row of db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders(parentIds)})`).all(...parentIds)) {
+      parents.set(row.id, compactTaskSummary(row));
+    }
+  }
+  for (const task of output) {
+    task.dependency_ids = (blockedBy.get(task.id) || []).map((row) => row.id);
+    task.blocked_by = blockedBy.get(task.id) || [];
+    task.blocks = blocks.get(task.id) || [];
+    task.children = children.get(task.id) || [];
+    task.parent = parents.get(task.parent_task_id) || null;
+  }
+
+  const automationSummaries = new Map(output.map((task) => [task.id, defaultAutomationSummary()]));
+  for (const row of db.prepare(`
+    SELECT id, task_id, enabled, next_fire_at, last_status, last_error
+    FROM automations
+    WHERE task_id IN (${taskIdSql})
+  `).all(...taskIds)) {
+    const summary = automationSummaries.get(row.task_id);
+    if (!summary) continue;
+    summary.count += 1;
+    if (row.enabled !== 0) {
+      summary.enabled_count += 1;
+      if (row.next_fire_at != null && (summary.next_fire_at == null || row.next_fire_at < summary.next_fire_at)) {
+        summary.next_fire_at = row.next_fire_at;
+      }
+    } else {
+      summary.paused_count += 1;
+    }
+  }
+  const latestTriggers = firstRowsByTask(db.prepare(`
+    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
+    FROM automation_triggers
+    WHERE task_id IN (${taskIdSql})
+    ORDER BY task_id, fired_at DESC, rowid DESC
+  `).all(...taskIds));
+  for (const [taskId, trigger] of latestTriggers.entries()) {
+    const summary = automationSummaries.get(taskId);
+    if (summary) summary.last_trigger = trigger;
+  }
+  for (const task of output) task.automation_summary = automationSummaries.get(task.id) || defaultAutomationSummary();
+
+  const projectIds = [...new Set(output.map((task) => task.project_id).filter(Boolean))];
+  const projects = new Map();
+  if (projectIds.length) {
+    for (const row of db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders(projectIds)})`).all(...projectIds)) {
+      projects.set(row.id, compactProject(row));
+    }
+  }
+  for (const task of output) {
+    task.project = projects.get(task.project_id) || null;
+    task.effective_workdir = task.project?.workdir || config?.workspace || null;
+  }
+
+  return output;
+}
+
 function normaliseDependencyIds(value) {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((entry) => typeof entry === "string" && entry.trim().length > 0))];
@@ -738,9 +940,14 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         }
       }
     }
+    const view = String(req.query.view || "full");
+    if (!["full", "summary"].includes(view)) {
+      return res.status(400).json({ error: { code: "validation", message: "invalid view" } });
+    }
     const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
     const rows = db.prepare(sql).all(...params);
-    const tasks = rows.map(rowToTask).map((t) => enrichTask(db, t, config));
+    const baseTasks = rows.map(rowToTask);
+    const tasks = view === "summary" ? baseTasks : enrichTaskList(db, baseTasks, config);
     res.json({ tasks });
   });
 
