@@ -1079,6 +1079,55 @@ describe("POST /api/tasks/:id/run", () => {
   });
 });
 
+describe("POST /api/tasks/:id/retry", () => {
+  it("dispatches handleRunRequested for retryable stages", async () => {
+    const calls = [];
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async (id) => { calls.push(id); return { runId: "r-x" }; },
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare("UPDATE tasks SET stage = 'execute', error_text = 'old', updated_at = ? WHERE id = ?").run(Date.now(), task.id);
+    const res = await agent.post(`/api/tasks/${task.id}/retry`).expect(200);
+    expect(res.body.runId).toBe("r-x");
+    expect(calls).toEqual([task.id]);
+  });
+
+  it("transitions blocked tasks back to execute before running", async () => {
+    const calls = [];
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async (id) => { calls.push(id); return { runId: "r-y" }; },
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare("UPDATE tasks SET stage = 'blocked', error_text = 'too many failures', updated_at = ? WHERE id = ?").run(Date.now(), task.id);
+    await agent.post(`/api/tasks/${task.id}/retry`).expect(200);
+    const after = db.prepare("SELECT stage, error_text, retry_count FROM tasks WHERE id = ?").get(task.id);
+    expect(after.stage).toBe("execute");
+    expect(after.error_text).toBeNull();
+    expect(after.retry_count).toBe(0);
+    expect(calls).toEqual([task.id]);
+  });
+
+  it("rejects retry for stages that aren't retryable", async () => {
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r" }),
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare("UPDATE tasks SET stage = 'done', completed_at = ?, updated_at = ? WHERE id = ?").run(Date.now(), Date.now(), task.id);
+    const res = await agent.post(`/api/tasks/${task.id}/retry`).expect(400);
+    expect(res.body.error.code).toBe("invalid_state");
+    expect(res.body.error.message).toMatch(/cannot retry from done/);
+  });
+});
+
 describe("POST /api/tasks/:id/cancel", () => {
   it("invokes watcher.cancel when active", async () => {
     const cancelFn = vi.fn(() => true);
@@ -1092,7 +1141,7 @@ describe("POST /api/tasks/:id/cancel", () => {
     });
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     await agent.post(`/api/tasks/${task.id}/cancel`).expect(204);
-    expect(cancelFn).toHaveBeenCalledWith(task.id);
+    expect(cancelFn).toHaveBeenCalledWith(task.id, { initiator: "api_cancel", reason: null });
   });
 
   it("returns 404 when no active run", async () => {
