@@ -15,6 +15,10 @@ function sendRouteError(res, error) {
   });
 }
 
+function isSqliteConstraint(error) {
+  return String(error?.code || "").includes("SQLITE_CONSTRAINT");
+}
+
 function projectOr404(db, value) {
   const row = resolveProjectRow(db, value);
   if (!row) throw projectRouteError(404, "not_found", "project not found");
@@ -132,8 +136,7 @@ export function registerProjectRoutes(app, { db, broker }) {
   });
 
   app.post("/api/projects", (req, res) => {
-    try {
-      const project = normalizeProjectCreate(db, req.body || {});
+    const insertProjectRow = (project) => {
       const id = newProjectId();
       const now = Date.now();
       db.prepare(`
@@ -152,14 +155,28 @@ export function registerProjectRoutes(app, { db, broker }) {
         now,
         now,
       );
+      return id;
+    };
+    try {
+      const project = normalizeProjectCreate(db, req.body || {});
+      let id;
+      try {
+        id = insertProjectRow(project);
+      } catch (error) {
+        if (!isSqliteConstraint(error)) throw error;
+        const retry = normalizeProjectCreate(db, { ...(req.body || {}), slug: null });
+        try {
+          id = insertProjectRow(retry);
+        } catch (retryError) {
+          if (!isSqliteConstraint(retryError)) throw retryError;
+          return res.status(409).json({ error: { code: "conflict", message: "project slug is already in use" } });
+        }
+      }
       const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
       broker?.broadcast?.("global", { type: "project_created", id, slug: row.slug });
       res.status(201).json({ project: projectFromRow(row) });
     } catch (error) {
       if (error?.status) return sendRouteError(res, error);
-      if (String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
-        return res.status(400).json({ error: { code: "validation", message: error.message } });
-      }
       throw error;
     }
   });
@@ -192,16 +209,20 @@ export function registerProjectRoutes(app, { db, broker }) {
       if (fields.length > 0) {
         fields.push("updated_at = ?");
         values.push(Date.now(), existing.id);
-        db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+        try {
+          db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+        } catch (error) {
+          if (isSqliteConstraint(error)) {
+            return res.status(409).json({ error: { code: "conflict", message: "project slug is already in use" } });
+          }
+          throw error;
+        }
       }
       const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(existing.id);
       broker?.broadcast?.("global", { type: "project_updated", id: row.id, slug: row.slug });
       res.json({ project: projectFromRow(row) });
     } catch (error) {
       if (error?.status) return sendRouteError(res, error);
-      if (String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
-        return res.status(400).json({ error: { code: "validation", message: error.message } });
-      }
       throw error;
     }
   });

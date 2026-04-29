@@ -53,4 +53,15 @@ describe("project API", () => {
     expect(first.body.project.slug).toBe("client-portal");
     expect(second.body.project.slug).toBe("client-portal-2");
   });
+
+  it("auto-suffixes a clashing slug on rename instead of failing", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/projects").send({ name: "Alpha", slug: "alpha" }).expect(201);
+    const beta = await agent.post("/api/projects").send({ name: "Beta", slug: "beta" }).expect(201);
+    const renamed = await agent
+      .patch(`/api/projects/${beta.body.project.id}`)
+      .send({ slug: "alpha" })
+      .expect(200);
+    expect(renamed.body.project.slug).toBe("alpha-2");
+  });
 });
