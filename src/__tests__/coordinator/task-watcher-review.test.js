@@ -788,4 +788,37 @@ describe("task-watcher v2 workflow", () => {
     });
     expect(spawn).not.toHaveBeenCalled();
   });
+
+  it("records a soft warning when a completed run exceeds the per-run budget", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    db.prepare("UPDATE agents SET per_run_budget_usd = 0.01 WHERE name = 'coder'").run();
+    const taskId = seedTask(db, { owner: "coder" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "done",
+      worklabResult: advanceResult,
+      costUsd: 0.05,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const run = db.prepare("SELECT cost_usd, warnings_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(run.cost_usd).toBe(0.05);
+    expect(JSON.parse(run.warnings_json)).toContainEqual(expect.objectContaining({
+      kind: "budget_exceeded",
+      source: "budget",
+      message: expect.stringContaining("exceeded per-run budget"),
+    }));
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      per_run_budget_exceeded: true,
+      per_run_budget_usd: 0.01,
+      cost_usd: 0.05,
+    });
+  });
 });

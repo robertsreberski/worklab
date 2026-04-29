@@ -49,6 +49,27 @@ describe("agents CRUD", () => {
     expect(res.body.agent.name).toBe("coder");
     expect(res.body.agent.enabled).toBe(true);
     expect(res.body.agent.effort).toBe("medium");
+    expect(res.body.agent.allow_self_review).toBe(false);
+    expect(res.body.agent.daily_budget_usd).toBeNull();
+    expect(res.body.agent.per_run_budget_usd).toBeNull();
+  });
+
+  it("POST /api/agents accepts self-review and budget fields", async () => {
+    const { agent, db } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "reviewer",
+      display_name: "Reviewer",
+      model: "claude:claude-sonnet-4-6",
+      allow_self_review: true,
+      daily_budget_usd: 1.5,
+      per_run_budget_usd: 0.25,
+    }).expect(201);
+
+    expect(res.body.agent.allow_self_review).toBe(true);
+    expect(res.body.agent.daily_budget_usd).toBe(1.5);
+    expect(res.body.agent.per_run_budget_usd).toBe(0.25);
+    const row = db.prepare("SELECT allow_self_review, daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?").get("reviewer");
+    expect(row).toEqual({ allow_self_review: 1, daily_budget_usd: 1.5, per_run_budget_usd: 0.25 });
   });
 
   it("POST /api/agents generates a unique slug from display_name when name is omitted", async () => {
@@ -172,6 +193,42 @@ describe("agents CRUD", () => {
     expect(res.body.agent.instructions).toBe("new");
     expect(res.body.agent.skills_allowlist).toEqual(["example"]);
     expect(res.body.agent.skills_allowlist_mode).toBe("custom");
+  });
+
+  it("PATCH updates self-review and budget fields", async () => {
+    const { agent, db } = makeTestServer();
+    await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
+    const res = await agent.patch("/api/agents/coder").send({
+      allow_self_review: true,
+      daily_budget_usd: 2,
+      per_run_budget_usd: null,
+    }).expect(200);
+
+    expect(res.body.agent.allow_self_review).toBe(true);
+    expect(res.body.agent.daily_budget_usd).toBe(2);
+    expect(res.body.agent.per_run_budget_usd).toBeNull();
+    const row = db.prepare("SELECT allow_self_review, daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?").get("coder");
+    expect(row).toEqual({ allow_self_review: 1, daily_budget_usd: 2, per_run_budget_usd: null });
+  });
+
+  it("rejects invalid self-review and budget fields", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/agents").send({
+      name: "bad-bool",
+      display_name: "Bad Bool",
+      model: "claude:claude-sonnet-4-6",
+      allow_self_review: "yes",
+    }).expect(400);
+
+    await agent.post("/api/agents").send({
+      name: "bad-budget",
+      display_name: "Bad Budget",
+      model: "claude:claude-sonnet-4-6",
+      daily_budget_usd: -1,
+    }).expect(400);
+
+    await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", model: "claude:claude-sonnet-4-6" });
+    await agent.patch("/api/agents/coder").send({ per_run_budget_usd: "not-a-number" }).expect(400);
   });
 
   it("PATCH preserves explicit empty custom allowlists", async () => {

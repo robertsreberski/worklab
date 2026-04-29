@@ -22,6 +22,15 @@ function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
 }
 
+function safeParseJson(value, fallback) {
+  try {
+    const parsed = JSON.parse(value || "");
+    return parsed == null ? fallback : parsed;
+  } catch {
+    return fallback;
+  }
+}
+
 function modeForStage(stage) {
   if (stage === "plan") return "plan";
   return stage === "review" ? "review" : "execute";
@@ -414,6 +423,45 @@ export function createTaskWatcher({
     return { ok: true, agentSpend, workspaceSpend };
   }
 
+  function recordPerRunBudgetOverage({ runId, agentName, costUsd }) {
+    const cost = Number(costUsd);
+    if (!Number.isFinite(cost)) return;
+    const agent = db.prepare("SELECT per_run_budget_usd FROM agents WHERE name = ?").get(agentName);
+    const cap = Number(agent?.per_run_budget_usd || 0);
+    if (!(cap > 0) || cost <= cap) {
+      db.prepare("UPDATE task_runs SET cost_usd = COALESCE(cost_usd, ?) WHERE id = ?").run(cost, runId);
+      return;
+    }
+
+    const row = db.prepare("SELECT warnings_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    if (!row) return;
+    const warning = {
+      kind: "budget_exceeded",
+      source: "budget",
+      message: `Run cost $${cost.toFixed(4)} exceeded per-run budget $${cap.toFixed(2)} for ${agentName}.`,
+    };
+    const warnings = safeParseJson(row.warnings_json, []);
+    const diagnostics = safeParseJson(row.diagnostics_json, {});
+    warnings.push(warning);
+    db.prepare(`
+      UPDATE task_runs
+      SET cost_usd = COALESCE(cost_usd, ?),
+          warnings_json = ?,
+          diagnostics_json = ?
+      WHERE id = ?
+    `).run(
+      cost,
+      JSON.stringify(warnings),
+      JSON.stringify({
+        ...(diagnostics && typeof diagnostics === "object" && !Array.isArray(diagnostics) ? diagnostics : {}),
+        per_run_budget_exceeded: true,
+        per_run_budget_usd: cap,
+        cost_usd: cost,
+      }),
+      runId,
+    );
+  }
+
   async function handleRunRequested(taskId, options = {}) {
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
@@ -761,6 +809,7 @@ export function createTaskWatcher({
     } else {
       handleFailedExit(taskId, runId, res, task, run);
     }
+    recordPerRunBudgetOverage({ runId, agentName: run.agent_name, costUsd: res.costUsd ?? res.cost_usd });
 
     const endedEvent = buildRunLifecycleEvent(db, "run_ended", runId, { taskId });
     broker.broadcast("global", endedEvent);
