@@ -213,6 +213,35 @@ describe("run input assembly", () => {
     });
   });
 
+  it("uses the spawn-time workdir snapshot recorded on task_runs", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const project = seedProject(db, { workdir: "/tmp/project-snapshot-original" });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, project_id, mode, stage, agent_name, started_at, status, process_status, workdir, project_context_hash)
+        VALUES ('run-snap', ?, ?, 'execute', 'execute', 'owner', 1000, 'running', 'running', '/tmp/project-snapshot-original', 'snap-hash')
+      `).run(task.id, project.id);
+      db.prepare("UPDATE projects SET workdir = ?, updated_at = ? WHERE id = ?")
+        .run("/tmp/project-snapshot-changed", Date.now() + 1000, project.id);
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-snap",
+        mode: "execute",
+      });
+
+      expect(input.effectiveWorkdir).toBe("/tmp/project-snapshot-original");
+      const refreshedHash = db.prepare("SELECT project_context_hash FROM task_runs WHERE id = ?")
+        .get("run-snap").project_context_hash;
+      expect(refreshedHash).not.toBe("snap-hash");
+    });
+  });
+
   it("uses live project context when a project changes", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "owner", "Execute as owner.");

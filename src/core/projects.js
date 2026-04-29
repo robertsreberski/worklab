@@ -107,12 +107,25 @@ export function projectContextHash(project) {
     .slice(0, 16);
 }
 
-export function resolveTaskProjectRunContext({ db, config = {}, task }) {
-  const projectRow = task?.project_id ? resolveProjectRow(db, task.project_id) : null;
+export function resolveTaskProjectRunContext({ db, config = {}, task, runSnapshot = null }) {
+  const projectIdSource = runSnapshot && "project_id" in runSnapshot
+    ? runSnapshot.project_id
+    : task?.project_id;
+  const projectRow = projectIdSource ? resolveProjectRow(db, projectIdSource) : null;
   const project = projectFromRow(projectRow);
+  const fallbackWorkdir = project?.workdir || config.workspace || config.repoRoot || process.cwd();
+  const effectiveWorkdir = runSnapshot?.workdir || fallbackWorkdir;
   return {
     project,
-    effectiveWorkdir: project?.workdir || config.workspace || config.repoRoot || process.cwd(),
+    effectiveWorkdir,
     projectContextHash: projectContextHash(project),
   };
+}
+
+export function loadRunSnapshot(db, runId) {
+  if (!runId) return null;
+  const row = db.prepare(
+    "SELECT project_id, workdir, project_context_hash FROM task_runs WHERE id = ?",
+  ).get(runId);
+  return row || null;
 }
