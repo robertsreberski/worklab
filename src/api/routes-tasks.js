@@ -465,7 +465,7 @@ function normalizeProjectPatchValue(db, value) {
 }
 
 function cascadeProjectToEligibleDescendants(db, taskId, previousProjectId, nextProjectId, now) {
-  db.prepare(`
+  const result = db.prepare(`
     WITH RECURSIVE descendants(id) AS (
       SELECT child_task_id
       FROM task_edges
@@ -481,6 +481,7 @@ function cascadeProjectToEligibleDescendants(db, taskId, previousProjectId, next
     WHERE id IN (SELECT id FROM descendants)
       AND (project_id IS NULL OR project_id IS ?)
   `).run(taskId, nextProjectId, now, previousProjectId);
+  return Number(result?.changes || 0);
 }
 
 function replaceTaskDependencies(db, taskId, dependencyIds) {
@@ -760,6 +761,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
     return enrichTask(db, rowToTask(existing), config);
   }
 
+  let projectCascadeCount = 0;
   if (fields.length > 0) {
     const projectIdChanged = "project_id" in patch;
     const nextProjectId = projectIdChanged ? normalizeProjectPatchValue(db, patch.project_id) : null;
@@ -773,7 +775,13 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
     db.transaction(() => {
       db.prepare(updateSql).run(...values);
       if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
-        cascadeProjectToEligibleDescendants(db, taskId, existing.project_id || null, nextProjectId, updatedAt);
+        projectCascadeCount = cascadeProjectToEligibleDescendants(
+          db,
+          taskId,
+          existing.project_id || null,
+          nextProjectId,
+          updatedAt,
+        );
       }
     })();
     broker?.broadcast?.("global", { type: "task_updated", id: taskId, taskKey: existing.task_key || null });
@@ -805,7 +813,9 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
   watcher?.maybeAutoStart?.(taskId);
 
   const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
-  return enrichTask(db, rowToTask(row), config);
+  const enriched = enrichTask(db, rowToTask(row), config);
+  if (projectCascadeCount > 0) enriched.cascade = { project_id_descendants: projectCascadeCount };
+  return enriched;
 }
 
 function deleteTaskById({ db, broker, watcher, taskId }) {
