@@ -5022,8 +5022,16 @@ select,
 .summary-tile.running .value { color: var(--status-progress); }
 .activity-filters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--sp-3);
+}
+.activity-filters .filter-bar-filters {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.8fr) minmax(140px, 0.8fr) minmax(280px, 1.4fr);
+  gap: var(--sp-3);
+}
+.activity-date-range {
+  min-width: 0;
 }
 
 .activity-list { display: flex; flex-direction: column; }
@@ -6868,7 +6876,8 @@ select,
   .commander-filter .search-field {
     height: 38px;
   }
-  .activity-filters { grid-template-columns: 1fr; }
+  .activity-filters,
+  .activity-filters .filter-bar-filters { grid-template-columns: 1fr; }
   .activity-list {
     gap: var(--sp-2);
   }

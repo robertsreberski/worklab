@@ -10,6 +10,7 @@ import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
+import { DurationInput, JsonField, NumberStepper, PathOrUrlInput } from "../components/primitives/index.js";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
@@ -631,7 +632,7 @@ export function Settings() {
             <div class="settings-panel-grid">
               <SettingPanel icon="folder" title="Workspace" meta="Agent working directory. Requires restart.">
                 <FormField label="Workspace">
-                  <Input disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} />
+                  <PathOrUrlInput disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} placeholder="/path/to/workspace" />
                 </FormField>
               </SettingPanel>
               <SettingPanel icon="database" title="Environment snapshot" meta="Read-only runtime locations.">
@@ -648,7 +649,7 @@ export function Settings() {
                   <Input disabled={!!runtimeError} value={runtimeDraft.host} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, host: event.target.value })} />
                 </FormField>
                 <FormField label="Port" hint="Requires restart.">
-                  <Input disabled={!!runtimeError} type="number" min="1" max="65535" value={runtimeDraft.port} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(event.target.value) })} />
+                  <NumberStepper disabled={!!runtimeError} min={1} max={65535} value={runtimeDraft.port} ariaLabel="Port" onChange={(value) => setRuntimeDraft({ ...runtimeDraft, port: numberOrEmpty(value) })} />
                 </FormField>
                 <FormField label="Log level" hint="Requires restart.">
                   <Select disabled={!!runtimeError} variant="native" value={runtimeDraft.logLevel} options={LOG_LEVEL_OPTIONS} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logLevel: value })} />
@@ -671,10 +672,10 @@ export function Settings() {
               <SettingPanel icon="clock" title="Run limits" meta="Global timeout behavior for spawned workers.">
                 <FormGrid columns={2}>
                   <FormField label="Worker timeout (minutes)">
-                    <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.worker_timeout_ms)} onInput={(event) => setSettings({ ...settings, worker_timeout_ms: minutesToMs(event.target.value) })} />
+                    <DurationInput value={settings.worker_timeout_ms} min={0.02} step={0.25} onChange={(value) => setSettings({ ...settings, worker_timeout_ms: value })} ariaLabel="Worker timeout" />
                   </FormField>
                   <FormField label="Cancel grace (seconds)">
-                    <Input type="number" min="0" step="1" value={secondsValue(settings.cancel_grace_ms)} onInput={(event) => setSettings({ ...settings, cancel_grace_ms: secondsToMs(event.target.value) })} />
+                    <DurationInput unit="seconds" value={settings.cancel_grace_ms} min={0} step={1} onChange={(value) => setSettings({ ...settings, cancel_grace_ms: value })} ariaLabel="Cancel grace" />
                   </FormField>
                 </FormGrid>
               </SettingPanel>
@@ -687,7 +688,7 @@ export function Settings() {
                     description="Refresh agent memory once per day."
                   />
                   <FormField label="Consolidation hour">
-                    <Input type="number" min="0" max="23" value={settings.consolidation_hour} onInput={(event) => setSettings({ ...settings, consolidation_hour: event.target.value })} />
+                    <NumberStepper min={0} max={23} value={settings.consolidation_hour} ariaLabel="Consolidation hour" onChange={(value) => setSettings({ ...settings, consolidation_hour: value })} />
                   </FormField>
                 </div>
               </SettingPanel>
@@ -695,16 +696,16 @@ export function Settings() {
             <AdvancedSettings summary="Context and logging limits" count={4}>
               <FormGrid columns={3}>
                 <FormField label="Journal tail lines">
-                  <Input type="number" min="0" max="1000" value={settings.journal_tail_lines} onInput={(event) => setSettings({ ...settings, journal_tail_lines: event.target.value })} />
+                  <NumberStepper min={0} max={1000} value={settings.journal_tail_lines} ariaLabel="Journal tail lines" onChange={(value) => setSettings({ ...settings, journal_tail_lines: value })} />
                 </FormField>
                 <FormField label="Pinned KB limit">
-                  <Input type="number" min="0" max="100" value={settings.kb_pinned_limit} onInput={(event) => setSettings({ ...settings, kb_pinned_limit: event.target.value })} />
+                  <NumberStepper min={0} max={100} value={settings.kb_pinned_limit} ariaLabel="Pinned KB limit" onChange={(value) => setSettings({ ...settings, kb_pinned_limit: value })} />
                 </FormField>
                 <FormField label="Idle warning (minutes)" hint="Requires restart.">
-                  <Input disabled={!!runtimeError} type="number" min="0" step="0.01" value={minutesValue(runtimeDraft.runIdleWarningMs)} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: minutesToMs(event.target.value) })} />
+                  <DurationInput disabled={!!runtimeError} value={runtimeDraft.runIdleWarningMs} min={0} step={0.25} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: value })} ariaLabel="Idle warning" />
                 </FormField>
                 <FormField label="Inline log limit (chars)" hint="Requires restart.">
-                  <Input disabled={!!runtimeError} type="number" min="0" value={runtimeDraft.logInlineLimit} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(event.target.value) })} />
+                  <NumberStepper disabled={!!runtimeError} min={0} value={runtimeDraft.logInlineLimit} ariaLabel="Inline log limit" onChange={(value) => setRuntimeDraft({ ...runtimeDraft, logInlineLimit: numberOrEmpty(value) })} />
                 </FormField>
               </FormGrid>
             </AdvancedSettings>
@@ -794,7 +795,7 @@ export function Settings() {
                   <Input value={settings.slack_agent_name || ""} placeholder="assistant" onInput={(event) => setSettings({ ...settings, slack_agent_name: event.target.value })} />
                 </FormField>
                 <FormField label="Run timeout (minutes)">
-                  <Input type="number" min="0.02" step="0.01" value={minutesValue(settings.slack_run_timeout_ms)} onInput={(event) => setSettings({ ...settings, slack_run_timeout_ms: minutesToMs(event.target.value) })} />
+                  <DurationInput value={settings.slack_run_timeout_ms} min={0.02} step={0.25} onChange={(value) => setSettings({ ...settings, slack_run_timeout_ms: value })} ariaLabel="Slack run timeout" />
                 </FormField>
                 <FormField label="Channel allowlist" class="span-3" hint="Optional. Leave empty to accept all non-DM channels where the bot receives events.">
                   <Textarea
@@ -924,22 +925,22 @@ export function Settings() {
                     {row.transport === "stdio" ? (
                       <>
                         <FormField label="Command" class="span-2">
-                          <Input value={row.command} onInput={(event) => updateMcpRow(row.id, { command: event.target.value })} placeholder="/absolute/path/to/server" />
+                          <PathOrUrlInput value={row.command} onInput={(event) => updateMcpRow(row.id, { command: event.target.value })} placeholder="/absolute/path/to/server" />
                         </FormField>
                         <FormField label="Args (one per line)">
                           <Textarea rows={3} value={row.argsText} onInput={(event) => updateMcpRow(row.id, { argsText: event.target.value })} />
                         </FormField>
                         <FormField label="Env JSON" class="span-3">
-                          <Textarea rows={3} monospace value={row.envText} onInput={(event) => updateMcpRow(row.id, { envText: event.target.value })} placeholder='{"KEY":"value"}' />
+                          <JsonField rows={3} value={row.envText} onInput={(event) => updateMcpRow(row.id, { envText: event.target.value })} placeholder='{"KEY":"value"}' />
                         </FormField>
                       </>
                     ) : (
                       <>
                         <FormField label="URL" class="span-2">
-                          <Input value={row.url} onInput={(event) => updateMcpRow(row.id, { url: event.target.value })} placeholder="http://localhost:3000/mcp" />
+                          <PathOrUrlInput kind="url" value={row.url} onInput={(event) => updateMcpRow(row.id, { url: event.target.value })} placeholder="http://localhost:3000/mcp" />
                         </FormField>
                         <FormField label="Headers JSON">
-                          <Textarea rows={3} monospace value={row.headersText} onInput={(event) => updateMcpRow(row.id, { headersText: event.target.value })} placeholder='{"Authorization":"Bearer ..."}' />
+                          <JsonField rows={3} value={row.headersText} onInput={(event) => updateMcpRow(row.id, { headersText: event.target.value })} placeholder='{"Authorization":"Bearer ..."}' />
                         </FormField>
                       </>
                     )}

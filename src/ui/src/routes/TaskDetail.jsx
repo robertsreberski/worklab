@@ -33,8 +33,8 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Input } from "../components/primitives/Input.jsx";
-import { Select } from "../components/primitives/Select.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
+import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../components/primitives/ScheduleBuilder.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
@@ -143,52 +143,11 @@ export function formatRunPreviewForCopy(preview) {
 
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
 
-const AUTOMATION_TRIGGER_OPTIONS = [
-  { value: "once", label: "Once" },
-  { value: "daily", label: "Daily" },
-  { value: "weekly", label: "Weekly" },
-  { value: "monthly", label: "Monthly" },
-];
-
-const WEEKDAY_OPTIONS = [
-  { value: "0", label: "Sunday" },
-  { value: "1", label: "Monday" },
-  { value: "2", label: "Tuesday" },
-  { value: "3", label: "Wednesday" },
-  { value: "4", label: "Thursday" },
-  { value: "5", label: "Friday" },
-  { value: "6", label: "Saturday" },
-];
-
-function pad2(value) {
-  return String(value).padStart(2, "0");
-}
-
-function defaultRunAt() {
-  const hourFromNow = Date.now() + 3_600_000;
-  const date = new Date(hourFromNow);
-  date.setSeconds(0, 0);
-  return date.getTime();
-}
-
 function emptyAutomationDraft() {
   return {
     enabled: true,
-    trigger: { type: "daily", hour: 9, minute: 0 },
+    trigger: normalizeAutomationTrigger({ type: "daily", hour: 9, minute: 0 }),
   };
-}
-
-function normalizeAutomationTrigger(trigger = {}) {
-  const type = trigger?.type || "daily";
-  if (type === "once") return { type, run_at: Number(trigger.run_at) || defaultRunAt() };
-  const base = {
-    type,
-    hour: Number.isFinite(Number(trigger.hour)) ? Number(trigger.hour) : 9,
-    minute: Number.isFinite(Number(trigger.minute)) ? Number(trigger.minute) : 0,
-  };
-  if (type === "weekly") base.weekdays = Array.isArray(trigger.weekdays) && trigger.weekdays.length ? trigger.weekdays : [1];
-  if (type === "monthly") base.day_of_month = Number(trigger.day_of_month) || 1;
-  return base;
 }
 
 function automationDraftFrom(automation) {
@@ -196,31 +155,6 @@ function automationDraftFrom(automation) {
     enabled: automation.enabled !== false,
     trigger: normalizeAutomationTrigger(automation.trigger),
   };
-}
-
-function timeValue(trigger) {
-  return `${pad2(trigger?.hour ?? 9)}:${pad2(trigger?.minute ?? 0)}`;
-}
-
-function updateTriggerTime(trigger, value) {
-  const [hour = "09", minute = "00"] = String(value || "").split(":");
-  return { ...trigger, hour: Number(hour) || 0, minute: Number(minute) || 0 };
-}
-
-function dateTimeLocalValue(value) {
-  const ms = Number(value);
-  if (!Number.isFinite(ms)) return "";
-  const date = new Date(ms);
-  return [
-    date.getFullYear(),
-    pad2(date.getMonth() + 1),
-    pad2(date.getDate()),
-  ].join("-") + `T${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
-}
-
-function parseDateTimeLocal(value) {
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : defaultRunAt();
 }
 
 function formatActivityTime(value) {
@@ -617,13 +551,6 @@ function TaskAutomationsCard({ taskId, automations, loading, onChanged }) {
     setDraft((current) => ({ ...current, ...patch }));
   }
 
-  function patchTrigger(patch) {
-    setDraft((current) => ({
-      ...current,
-      trigger: normalizeAutomationTrigger({ ...current.trigger, ...patch }),
-    }));
-  }
-
   async function saveAutomation(event) {
     event?.preventDefault?.();
     setSaving(true);
@@ -683,52 +610,11 @@ function TaskAutomationsCard({ taskId, automations, loading, onChanged }) {
     >
       {editingId && (
         <form class="task-automation-form" onSubmit={saveAutomation}>
-          <Select
-            variant="native"
-            value={draft.trigger.type}
-            onChange={(value) => patchDraft({ trigger: normalizeAutomationTrigger({ ...draft.trigger, type: value }) })}
-            options={AUTOMATION_TRIGGER_OPTIONS}
-            ariaLabel="Schedule trigger type"
+          <ScheduleBuilder
+            value={draft.trigger}
             disabled={saving}
+            onChange={(trigger) => patchDraft({ trigger })}
           />
-          {draft.trigger.type === "once" ? (
-            <Input
-              type="datetime-local"
-              aria-label="Run at"
-              value={dateTimeLocalValue(draft.trigger.run_at)}
-              onInput={(event) => patchTrigger({ run_at: parseDateTimeLocal(event.currentTarget.value) })}
-              disabled={saving}
-            />
-          ) : (
-            <Input
-              type="time"
-              aria-label="Schedule time"
-              value={timeValue(draft.trigger)}
-              onInput={(event) => patchTrigger(updateTriggerTime(draft.trigger, event.currentTarget.value))}
-              disabled={saving}
-            />
-          )}
-          {draft.trigger.type === "weekly" && (
-            <Select
-              variant="native"
-              value={String(draft.trigger.weekdays?.[0] ?? 1)}
-              onChange={(value) => patchTrigger({ weekdays: [Number(value)] })}
-              options={WEEKDAY_OPTIONS}
-              ariaLabel="Schedule weekday"
-              disabled={saving}
-            />
-          )}
-          {draft.trigger.type === "monthly" && (
-            <Input
-              type="number"
-              aria-label="Day of month"
-              min="1"
-              max="31"
-              value={String(draft.trigger.day_of_month || 1)}
-              onInput={(event) => patchTrigger({ day_of_month: Number(event.currentTarget.value) || 1 })}
-              disabled={saving}
-            />
-          )}
           <Checkbox
             checked={!!draft.enabled}
             onChange={(value) => patchDraft({ enabled: value })}
