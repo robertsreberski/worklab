@@ -2383,25 +2383,17 @@ select,
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 56%),
-    var(--surface-elevated);
-  color: var(--accent);
-  font-family: var(--font-mono);
-  font-weight: 700;
+  background: var(--surface-elevated);
+  overflow: hidden;
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent),
-    inset 0 -3px 0 color-mix(in srgb, var(--accent) 12%, transparent);
+    0 0 18px color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.brand-mark::after {
-  content: "";
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: 6px;
-  height: 1px;
-  background: currentColor;
-  opacity: 0.48;
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .brand-copy { display: grid; min-width: 0; line-height: 1.2; }
 .brand-copy strong { font-size: var(--text-base); font-weight: 600; }
