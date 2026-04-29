@@ -29,7 +29,7 @@ function DailyCostChip() {
   useEffect(() => {
     let cancelled = false;
     function load() {
-      api.get("/api/runs/cost-summary").then((res) => {
+      api.getRunCostSummary().then((res) => {
         if (!cancelled && res?.today) setSummary(res);
       }).catch(() => {});
     }
