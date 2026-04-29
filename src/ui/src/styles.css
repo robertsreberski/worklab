@@ -2670,7 +2670,7 @@ select,
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
   color: var(--accent);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--elev-float);
   cursor: pointer;
 }
 .assistant-launcher:hover {
