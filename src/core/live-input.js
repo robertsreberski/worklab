@@ -1,6 +1,6 @@
 export const LIVE_INPUT_MAX_BODY_LENGTH = 8_000;
 
-const LIVE_INPUT_PROVIDERS = new Set(["claude", "codex"]);
+const LIVE_INPUT_PROVIDERS = new Set(["claude", "openai", "vercel", "codex", "pi"]);
 
 export function supportsLiveInputProvider(providerKind) {
   return LIVE_INPUT_PROVIDERS.has(String(providerKind || ""));

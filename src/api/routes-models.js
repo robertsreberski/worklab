@@ -30,7 +30,7 @@ function runtimeModelMetadata(model, group, availability) {
 export function registerModelRoutes(app, { db, dataDir }) {
   app.get("/api/models/available", (_req, res) => {
     const groups = getBuiltinModelGroups();
-    const availability = getBuiltinProviderAvailability();
+    const availability = getBuiltinProviderAvailability({ dataDir });
     for (const group of groups) {
       const avail = availability[group.id];
       if (avail) {
@@ -54,7 +54,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
           label: model.display_name || model.model_name,
           description: `${provider.name} / ${model.model_name}`,
           sdk: "vercel",
-          runtime_kind: "sdk",
+          runtime_kind: "pi-agent",
           provider_id: provider.id,
           provider_name: provider.name,
           provider_type: provider.provider_type,
@@ -82,7 +82,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
           available: true,
           disabled: false,
           unavailable_reason: null,
-          runtime_kind: "sdk",
+          runtime_kind: "pi-agent",
           models,
         });
       }
@@ -92,7 +92,7 @@ export function registerModelRoutes(app, { db, dataDir }) {
   });
 
   app.get("/api/models/embeddings", (_req, res) => {
-    const availability = getBuiltinProviderAvailability();
+    const availability = getBuiltinProviderAvailability({ dataDir });
     const groups = [{
       id: "openai",
       label: "OpenAI",
