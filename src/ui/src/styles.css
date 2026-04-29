@@ -7374,7 +7374,7 @@ select,
   .task-hero-title { font-size: var(--text-2xl); }
   .task-detail { padding: var(--sp-3); }
   .task-detail-shell .task-detail {
-    padding: var(--sp-3);
+    padding: var(--sp-8) var(--sp-3) var(--sp-3);
     padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
   }
   .commander-header { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
@@ -8201,7 +8201,7 @@ select,
   flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
   gap: 0;
-  padding: var(--sp-6);
+  padding: var(--sp-8) var(--sp-6) var(--sp-6);
   min-height: 0;
   overflow: visible;
   background: transparent;
@@ -8400,7 +8400,7 @@ select,
     grid-template-columns: minmax(0, 1fr);
   }
   .task-detail-shell .task-detail {
-    padding: var(--sp-4);
+    padding: var(--sp-8) var(--sp-4) var(--sp-4);
     padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
   }
   .editor-main,
