@@ -404,6 +404,106 @@ describe("task-watcher", () => {
     expect(comments.some((c) => c.author_type === "agent")).toBe(false);
   });
 
+  it("starts one compact continuation after a usage-limit failure", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const broker = stubBroker();
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const diagnostics = {
+      context_risk: "high",
+      largest_tool_events: [{ tool: "Glob", role: "tool_result", chars: 747235 }],
+      broad_scan_events: [{ tool: "Glob", pattern: "**/*", path: "/workspace" }],
+    };
+    db.prepare(`
+      UPDATE task_runs
+      SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit',
+          diagnostics_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify(diagnostics), runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "usage_limit",
+      error: "Your input exceeds the context window of this model.",
+      diagnostics,
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{ type: "tool_use", id: "write-1", name: "Write", input: { file_path: "/workspace/src/input.ts" } }],
+            },
+          },
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "usage_limit",
+    });
+    const continuationRun = db.prepare("SELECT id, parent_run_id, diagnostics_json FROM task_runs WHERE parent_run_id = ?").get(runId);
+    expect(continuationRun.parent_run_id).toBe(runId);
+    expect(JSON.parse(continuationRun.diagnostics_json)).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "usage_limit",
+    });
+    const originalDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
+    expect(originalDiagnostics.continuation_run_id).toBe(continuationRun.id);
+
+    const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "execute",
+      stage_reason: "continuing after usage_limit",
+      error_text: null,
+      retry_count: 1,
+      last_failure_kind: "usage_limit",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation%'").get(taskId);
+    expect(comment.body).toContain("Glob");
+    expect(comment.body).toContain("Do not repeat broad repository scans");
+  });
+
+  it("does not recursively continue a usage-limit continuation", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit' WHERE id = ?").run(runId);
+    resolvers[0]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "usage_limit", error: "context length" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(spawn).toHaveBeenCalledTimes(2);
+
+    const continuationRun = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit' WHERE id = ?").run(continuationRun.id);
+    resolvers[1]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "usage_limit", error: "context length" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
   it("successful worker exit without final output is invalid and does not advance", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
