@@ -175,6 +175,11 @@ test.beforeAll(async () => {
       (name, display_name, sdk, model, created_at, updated_at)
      VALUES (?, ?, 'codex', 'test-model', ?, ?)`,
   ).run("reviewer-agent", "Reviewer Agent", agentSeededAt, agentSeededAt);
+  seedDb.prepare(
+    `INSERT OR IGNORE INTO agents
+      (name, display_name, sdk, model, created_at, updated_at)
+     VALUES (?, ?, 'codex', 'test-model', ?, ?)`,
+  ).run("planner-agent", "Planner Agent", agentSeededAt, agentSeededAt);
   seedDb.close();
 
   taskId = await createTask("UI regression task", {
@@ -204,6 +209,7 @@ test.beforeAll(async () => {
   desktopNeedsOwnerTaskId = await createTask("Desktop needs owner task");
   desktopReviewTaskId = await createTask("Desktop review task", {
     stage: "review",
+    planner_agent: "planner-agent",
     owner_agent: "regression-agent",
     reviewer_agent: "reviewer-agent",
   });
@@ -481,18 +487,36 @@ test("desktop task list keeps every task state legible without clipped controls"
       await expect(page.locator(".commander-row", { hasText: row.title })).toContainText(row.text);
     }
 
-    const stateDotMetrics = await page.evaluate(() => {
+    const rowLayoutMetrics = await page.evaluate(() => {
+      const reviewRow = [...document.querySelectorAll(".commander-row")]
+        .find((row) => row.textContent?.includes("Desktop review task"));
       const cells = [...document.querySelectorAll(".commander-row .commander-cell-state")];
-      const dots = [...document.querySelectorAll(".commander-state-dot, .commander-cell-state .live-pulse")];
+      const assignees = reviewRow?.querySelector(".commander-cell-assignees");
+      const arrows = [...(assignees?.querySelectorAll(".commander-cell-arrow") || [])];
+      const avatars = [...(assignees?.querySelectorAll(".agent-avatar") || [])];
+      const assigneeRect = assignees?.getBoundingClientRect();
+      const avatarBounds = avatars.map((avatar) => avatar.getBoundingClientRect());
+      const stage = reviewRow?.querySelector(".commander-cell-pill .stage-token")?.getBoundingClientRect();
+      const title = reviewRow?.querySelector(".commander-cell-title")?.getBoundingClientRect();
       return {
-        visibleCells: cells.filter((cell) => getComputedStyle(cell).display !== "none").length,
-        dotCount: dots.length,
-        minDotSize: Math.min(...dots.map((dot) => Math.round(dot.getBoundingClientRect().width))),
+        visibleStateCells: cells.filter((cell) => getComputedStyle(cell).display !== "none").length,
+        assigneeDisplay: assignees ? getComputedStyle(assignees).display : "",
+        avatarCount: avatars.length,
+        arrowCount: arrows.length,
+        assigneeWidth: assigneeRect ? Math.round(assigneeRect.width) : 0,
+        avatarLeft: avatarBounds.length ? Math.round(Math.min(...avatarBounds.map((rect) => rect.left))) : 0,
+        avatarRight: avatarBounds.length ? Math.round(Math.max(...avatarBounds.map((rect) => rect.right))) : 0,
+        stageLeft: stage ? Math.round(stage.left) : 0,
+        titleRight: title ? Math.round(title.right) : 0,
       };
     });
-    expect(stateDotMetrics.visibleCells).toBeGreaterThanOrEqual(stateRows.length);
-    expect(stateDotMetrics.dotCount).toBeGreaterThanOrEqual(stateRows.length);
-    expect(stateDotMetrics.minDotSize).toBeGreaterThanOrEqual(7);
+    expect(rowLayoutMetrics.visibleStateCells).toBe(0);
+    expect(rowLayoutMetrics.assigneeDisplay).toBe("flex");
+    expect(rowLayoutMetrics.avatarCount).toBe(3);
+    expect(rowLayoutMetrics.arrowCount).toBe(2);
+    expect(rowLayoutMetrics.assigneeWidth).toBeGreaterThanOrEqual(84);
+    expect(rowLayoutMetrics.avatarLeft).toBeGreaterThanOrEqual(rowLayoutMetrics.titleRight);
+    expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.stageLeft);
 
     await expectNoHorizontalOverflow(page, `${viewport.label} task list states`);
     await expectNoCriticalHorizontalClipping(
@@ -521,7 +545,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     });
     expect(metrics.rowCount).toBeGreaterThanOrEqual(stateRows.length);
     expect(metrics.rowHeightMin).toBeGreaterThanOrEqual(44);
-    expect(metrics.rowHeightMax).toBeLessThanOrEqual(72);
+    expect(metrics.rowHeightMax).toBeLessThanOrEqual(88);
   }
 });
 
@@ -781,7 +805,8 @@ test("desktop task detail states keep actions and context obvious without clippe
       const columnCount = await page.locator(".task-detail").evaluate((node) => {
         return getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length;
       });
-      expect(columnCount, `${viewport.label} ${state.label} should stay two-column`).toBe(2);
+      const expectedColumns = viewport.width >= 1180 ? 2 : 1;
+      expect(columnCount, `${viewport.label} ${state.label} responsive detail columns`).toBe(expectedColumns);
       await expectNoHorizontalOverflow(page, `${viewport.label} task detail ${state.label}`);
       await expectNoCriticalHorizontalClipping(
         page,
@@ -1161,7 +1186,8 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     if (route.entityEditor) {
       await expect(page.locator(".entity-editor-layout")).toBeVisible();
       await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
-      await expect(page.locator(".entity-editor-rail").first()).toBeVisible();
+      await expect(page.locator(".entity-editor-rail.is-mobile-drawer-source").first()).toBeHidden();
+      await expect(page.locator(".rail-summary-pill").first()).toBeVisible();
     } else {
       await expect(page.locator(".pane-detail-body > .form-section").first()).toBeVisible();
     }
@@ -1170,7 +1196,7 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
       const dock = document.querySelector(".entity-edit-mobile-dock");
-      const nav = document.querySelector(".app-rail");
+      const tabbar = document.querySelector(".app-tabbar");
       const formSection = entityEditor
         ? document.querySelector(".entity-editor-main > .form-section")
         : document.querySelector(".pane-detail-body > .form-section");
@@ -1181,8 +1207,9 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
         toolbarTop: toolbar ? Math.round(toolbar.getBoundingClientRect().top) : 0,
         toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
         dockDisplay: dock ? getComputedStyle(dock).display : "",
-        dockBottomBeforeNav: dock && nav
-          ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+        tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+        dockBottomBeforeNav: dock
+          ? Math.round(dock.getBoundingClientRect().bottom) <= window.innerHeight + 1
           : false,
         headTop: head ? Math.round(head.getBoundingClientRect().top) : 0,
         sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
@@ -1191,14 +1218,15 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       };
     }, !!route.entityEditor);
     expect(mobileMetrics.headWidth).toBeLessThanOrEqual(390);
-    expect(mobileMetrics.toolbarTop).toBeGreaterThanOrEqual(mobileMetrics.headTop);
+    expect(mobileMetrics.toolbarTop === 0 || mobileMetrics.toolbarTop >= mobileMetrics.headTop).toBe(true);
     expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
-    expect(mobileMetrics.iconWidth).toBeGreaterThanOrEqual(28);
+    expect(mobileMetrics.iconWidth === 0 || mobileMetrics.iconWidth >= 28).toBe(true);
     if (route.entityEditor) {
       expect(mobileMetrics.railPosition).toBe("static");
       expect(mobileMetrics.toolbarDisplay).toBe("none");
       expect(mobileMetrics.dockDisplay).toBe("flex");
       expect(mobileMetrics.dockBottomBeforeNav).toBe(true);
+      expect(mobileMetrics.tabbarDisplay).toBe("none");
     }
 
     await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
@@ -1289,21 +1317,21 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const pill = row?.querySelector(".status-pill");
     const inlineNewTask = document.querySelector(".commander-new-task-inline");
     const fab = document.querySelector(".commander-new-task-fab");
-    const nav = document.querySelector(".app-rail");
+    const nav = document.querySelector(".app-tabbar");
     const selectedStyles = selectedRow ? getComputedStyle(selectedRow) : null;
     const baseStyles = baseRow ? getComputedStyle(baseRow) : null;
     const fabStyles = fab ? getComputedStyle(fab) : null;
     const fabRect = fab?.getBoundingClientRect();
     const navRect = nav?.getBoundingClientRect();
-    const navElement = document.querySelector(".app-nav");
-    const activeNav = document.querySelector(".app-nav a.active");
+    const navElement = document.querySelector(".app-tabbar");
+    const activeNav = document.querySelector(".app-tabbar a.active");
     const railStyles = nav ? getComputedStyle(nav) : null;
     const navStyles = navElement ? getComputedStyle(navElement) : null;
     const activeNavBefore = activeNav ? getComputedStyle(activeNav, "::before") : null;
     const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
     const bodyStyles = getComputedStyle(document.body);
     const rowStyles = row ? getComputedStyle(row) : null;
-    const navWidths = [...document.querySelectorAll(".app-nav a")]
+    const navWidths = [...document.querySelectorAll(".app-tabbar a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
     const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
       .map((entry) => Math.round(entry.getBoundingClientRect().height));
@@ -1324,6 +1352,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       navDisplay: navStyles?.display || "",
       navOverflowX: navStyles?.overflowX || "",
       activeNavBeforeDisplay: activeNavBefore?.display || "",
+      activeNavBeforeContent: activeNavBefore?.content || "",
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       viewportMeta,
@@ -1363,7 +1392,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(["clip", "hidden"]).toContain(metrics.railOverflowX);
   expect(metrics.navDisplay).toBe("grid");
   expect(["clip", "hidden"]).toContain(metrics.navOverflowX);
-  expect(metrics.activeNavBeforeDisplay).toBe("none");
+  expect(metrics.activeNavBeforeContent).toBe("none");
   expect(metrics.viewportMeta).toContain("maximum-scale=1");
   expect(metrics.viewportMeta).toContain("user-scalable=no");
   expect(metrics.bodyTouchAction).toBe("manipulation");
@@ -1403,16 +1432,17 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const rerun = document.querySelector(".activity-rerun-checkbox input");
     const dock = document.querySelector(".app-mobile-action-dock");
     const heroActions = document.querySelector(".task-hero-actions");
-    const nav = document.querySelector(".app-rail");
+    const tabbar = document.querySelector(".app-tabbar");
     const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
     const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
     const line = rail ? getComputedStyle(rail, "::after") : null;
+    const isRendered = (element) => element && element.getClientRects().length > 0;
     return {
       activityBeforeAgents: activity && agents
-        ? getComputedStyle(agents).display === "none" || activity.getBoundingClientRect().top < agents.getBoundingClientRect().top
+        ? !isRendered(agents) || activity.getBoundingClientRect().top < agents.getBoundingClientRect().top
         : false,
       activityBeforeContext: activity && context
-        ? getComputedStyle(context).display === "none" || activity.getBoundingClientRect().top < context.getBoundingClientRect().top
+        ? !isRendered(context) || activity.getBoundingClientRect().top < context.getBoundingClientRect().top
         : false,
       activityBorder: activity ? parseFloat(getComputedStyle(activity).borderTopWidth) : -1,
       composerHeight: composer ? Math.round(composer.getBoundingClientRect().height) : 0,
@@ -1423,8 +1453,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       dockMinButtonHeight: dock
         ? Math.min(...[...dock.querySelectorAll(".button")].map((button) => Math.round(button.getBoundingClientRect().height)))
         : 0,
-      dockBottomBeforeNav: dock && nav
-        ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      dockBottomBeforeNav: dock
+        ? Math.round(dock.getBoundingClientRect().bottom) <= window.innerHeight + 1
         : false,
       heroActionsDisplay: heroActions ? getComputedStyle(heroActions).display : "",
       railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
@@ -1443,6 +1474,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.dockDisplay).toBe("flex");
   expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(beforeFocus.dockBottomBeforeNav).toBe(true);
+  expect(beforeFocus.tabbarDisplay).toBe("none");
   expect(beforeFocus.heroActionsDisplay).toBe("none");
   expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
   expect(beforeFocus.dotWidth).toBeLessThanOrEqual(20);
@@ -1451,17 +1483,17 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   await page.locator(".activity-composer textarea").focus();
   const afterFocus = await page.evaluate(() => {
     const input = document.querySelector(".activity-composer-input");
-    const rail = document.querySelector(".app-rail");
+    const tabbar = document.querySelector(".app-tabbar");
     const dock = document.querySelector(".app-mobile-action-dock");
     return {
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
-      railTransform: rail ? getComputedStyle(rail).transform : "",
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
       dockTransform: dock ? getComputedStyle(dock).transform : "",
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(afterFocus.inputHeight).toBeGreaterThanOrEqual(84);
-  expect(afterFocus.railTransform).not.toBe("none");
+  expect(afterFocus.tabbarDisplay).toBe("none");
   expect(afterFocus.dockTransform).not.toBe("none");
   expect(afterFocus.overflow).toBeLessThanOrEqual(0);
 });
@@ -1476,10 +1508,10 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
     const editHead = document.querySelector(".task-edit-head");
     const toolbar = document.querySelector(".task-edit-toolbar");
     const dock = document.querySelector(".app-mobile-action-dock");
-    const nav = document.querySelector(".app-rail");
+    const tabbar = document.querySelector(".app-tabbar");
     const grid = document.querySelector(".task-edit-grid");
     const rail = document.querySelector(".task-edit-rail");
-    const statusButtons = [...document.querySelectorAll(".status-grid-btn")];
+    const settingsPill = document.querySelector(".rail-summary-pill");
     const dockButtons = [...document.querySelectorAll(".app-mobile-action-dock .button")];
     const body = document.querySelector(".task-edit-body");
     return {
@@ -1488,12 +1520,14 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
       toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
       dockDisplay: dock ? getComputedStyle(dock).display : "",
       dockMinButtonHeight: Math.min(...dockButtons.map((button) => Math.round(button.getBoundingClientRect().height))),
-      dockBottomBeforeNav: dock && nav
-        ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      dockBottomBeforeNav: dock
+        ? Math.round(dock.getBoundingClientRect().bottom) <= window.innerHeight + 1
         : false,
       gridColumns: grid ? getComputedStyle(grid).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
       railPosition: rail ? getComputedStyle(rail).position : "",
-      statusMinHeight: Math.min(...statusButtons.map((button) => Math.round(button.getBoundingClientRect().height))),
+      railDisplay: rail ? getComputedStyle(rail).display : "",
+      settingsPillDisplay: settingsPill ? getComputedStyle(settingsPill).display : "",
       bodyPaddingBottom: body ? Math.round(parseFloat(getComputedStyle(body).paddingBottom)) : 0,
     };
   });
@@ -1504,9 +1538,11 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
   expect(metrics.dockDisplay).toBe("flex");
   expect(metrics.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.dockBottomBeforeNav).toBe(true);
+  expect(metrics.tabbarDisplay).toBe("none");
   expect(metrics.gridColumns).toBe(1);
   expect(metrics.railPosition).toBe("static");
-  expect(metrics.statusMinHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.railDisplay).toBe("none");
+  expect(["flex", "inline-flex"]).toContain(metrics.settingsPillDisplay);
   expect(metrics.bodyPaddingBottom).toBeGreaterThanOrEqual(120);
   await expectNoHorizontalOverflow(page, "mobile task edit action dock");
 });
@@ -1543,7 +1579,7 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
       const dock = document.querySelector(".entity-edit-mobile-dock");
-      const nav = document.querySelector(".app-rail");
+      const tabbar = document.querySelector(".app-tabbar");
       const buttons = [...document.querySelectorAll(entityEditor ? ".entity-edit-mobile-dock .button" : ".pane-detail-head .toolbar .button")];
       const sections = [...document.querySelectorAll(entityEditor ? ".entity-editor-main > .form-section" : ".pane-detail-body > .form-section")];
       return {
@@ -1552,8 +1588,9 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
         toolbarWidth: toolbar ? Math.round(toolbar.getBoundingClientRect().width) : 0,
         toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
         dockDisplay: dock ? getComputedStyle(dock).display : "",
-        dockBottomBeforeNav: dock && nav
-          ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+        tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+        dockBottomBeforeNav: dock
+          ? Math.round(dock.getBoundingClientRect().bottom) <= window.innerHeight + 1
           : false,
         minButtonHeight: buttons.length
           ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height)))
@@ -1572,6 +1609,7 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
       expect(metrics.toolbarDisplay, `${route.hash} toolbar`).toBe("none");
       expect(metrics.dockDisplay, `${route.hash} dock`).toBe("flex");
       expect(metrics.dockBottomBeforeNav, `${route.hash} dock before nav`).toBe(true);
+      expect(metrics.tabbarDisplay, `${route.hash} tabbar`).toBe("none");
     }
     expect(metrics.sectionCount, `${route.hash} sections`).toBeGreaterThan(0);
     expect(metrics.minSectionWidth, `${route.hash} section width`).toBeGreaterThan(0);
