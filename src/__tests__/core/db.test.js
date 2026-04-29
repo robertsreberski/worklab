@@ -13,6 +13,7 @@ describe("openDb + runMigrations", () => {
     expect(tables).toEqual(
       expect.arrayContaining([
         "agents", "tasks", "task_comments", "task_runs", "agent_logs",
+        "projects",
         "custom_providers", "custom_models", "embeddings", "settings",
         "agent_consolidations", "task_dependencies", "automations", "automation_runs",
         "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
@@ -49,7 +50,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("17");
+    expect(row.value).toBe("18");
   });
 
   it("defaults new agents to allowing self-review", () => {

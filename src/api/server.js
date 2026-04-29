@@ -13,6 +13,7 @@ import { registerProviderRoutes } from "./routes-providers.js";
 import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 import { registerAutomationRoutes } from "./routes-automations.js";
+import { registerProjectRoutes } from "./routes-projects.js";
 import { registerSlackRoutes } from "./routes-slack.js";
 import { registerAssistantRoutes } from "./routes-assistant.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
@@ -27,6 +28,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
+  registerProjectRoutes(app, { db, broker, config });
   registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });

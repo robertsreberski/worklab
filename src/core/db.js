@@ -119,6 +119,7 @@ function ensureNullableTaskRunsTaskId(db) {
 
 function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "task_key", "task_key TEXT");
+  addColumnIfMissing(db, "tasks", "project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "root_task_id", "root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "parent_task_id", "parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "delegated_by_run_id", "delegated_by_run_id TEXT");
@@ -140,6 +141,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "plan_source_run_id", "plan_source_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL");
 
   addColumnIfMissing(db, "task_runs", "parent_run_id", "parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "task_runs", "project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "task_runs", "stage", "stage TEXT NOT NULL DEFAULT 'execute'");
   addColumnIfMissing(db, "task_runs", "provider_kind", "provider_kind TEXT");
   addColumnIfMissing(db, "task_runs", "process_status", "process_status TEXT NOT NULL DEFAULT 'running'");
@@ -151,6 +153,8 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "raw_output_path", "raw_output_path TEXT");
   addColumnIfMissing(db, "task_runs", "artifact_paths_json", "artifact_paths_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
+  addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
 }
 
 function normalizeWorkflowState(db) {
@@ -247,6 +251,7 @@ function rebuildTaskWorkflowTables(db) {
       CREATE TABLE tasks__new (
         id TEXT PRIMARY KEY,
         task_key TEXT,
+        project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
         root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
         parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
         delegated_by_run_id TEXT,
@@ -277,7 +282,7 @@ function rebuildTaskWorkflowTables(db) {
         completed_at INTEGER
       );
       INSERT INTO tasks__new (
-        id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent, planner_agent,
+        id, task_key, project_id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent, planner_agent,
         client_request_id, title, instructions, stage, stage_reason, run_policy, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
         plan_source_run_id, reviewer_agent, tags,
@@ -286,6 +291,7 @@ function rebuildTaskWorkflowTables(db) {
       SELECT
         id,
         ${taskColumn("task_key")},
+        ${taskColumn("project_id")},
         COALESCE(root_task_id, id),
         parent_task_id,
         delegated_by_run_id,
@@ -316,6 +322,7 @@ function rebuildTaskWorkflowTables(db) {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
       CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL;
       CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC);
       CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
       CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC);
       COMMIT;
@@ -328,9 +335,30 @@ export function runMigrations(db) {
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
   // schema block.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      slug TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      context_markdown TEXT NOT NULL DEFAULT '',
+      workdir TEXT,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      archived INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_projects_archived_updated ON projects(archived, updated_at DESC);
+  `);
   if (tableExists(db, "tasks")) {
     addColumnIfMissing(db, "tasks", "stage", "stage TEXT");
     addColumnIfMissing(db, "tasks", "task_key", "task_key TEXT");
+    addColumnIfMissing(db, "tasks", "project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
+  }
+  if (tableExists(db, "task_runs")) {
+    addColumnIfMissing(db, "task_runs", "project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
+    addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+    addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   }
   if (tableExists(db, "automations")) {
     addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
@@ -354,6 +382,8 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "diagnostics_json", "diagnostics_json TEXT");
   addColumnIfMissing(db, "task_runs", "provider_session_id", "provider_session_id TEXT");
   addColumnIfMissing(db, "task_runs", "execenv_path", "execenv_path TEXT");
+  addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
@@ -364,6 +394,7 @@ export function runMigrations(db) {
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC)");
   db.exec("CREATE TABLE IF NOT EXISTS task_dependencies (task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, depends_on_task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE, created_at INTEGER NOT NULL, PRIMARY KEY (task_id, depends_on_task_id))");
@@ -373,6 +404,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
   db.exec("CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', agent_name TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', trigger_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, last_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL, last_status TEXT, last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_fire ON automations(enabled, next_fire_at)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_automations_task ON automations(task_id, updated_at DESC)");
@@ -400,6 +432,8 @@ export function runMigrations(db) {
   db.exec("DROP TABLE IF EXISTS schedule_spawns");
   db.exec("DROP TABLE IF EXISTS schedules");
   db.exec(SCHEMA_SQL);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
   normalizeWorkflowState(db);
   backfillTaskKeys(db);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");

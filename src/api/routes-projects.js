@@ -1,0 +1,219 @@
+import { newProjectId } from "../core/ids.js";
+import {
+  normalizeProjectWorkdir,
+  parseProjectTags,
+  projectFromRow,
+  projectRouteError,
+  resolveProjectRow,
+  uniqueProjectSlug,
+} from "../core/projects.js";
+
+function sendRouteError(res, error) {
+  if (!error?.status) throw error;
+  return res.status(error.status).json({
+    error: { code: error.code || "error", message: error.message },
+  });
+}
+
+function projectOr404(db, value) {
+  const row = resolveProjectRow(db, value);
+  if (!row) throw projectRouteError(404, "not_found", "project not found");
+  return row;
+}
+
+function projectTaskSummary(row) {
+  return {
+    id: row.id,
+    task_key: row.task_key || null,
+    title: row.title,
+    stage: row.stage || "plan",
+    owner_agent: row.owner_agent || null,
+    planner_agent: row.planner_agent || null,
+    reviewer_agent: row.reviewer_agent || null,
+    parent_task_id: row.parent_task_id || null,
+    updated_at: row.updated_at,
+  };
+}
+
+function projectStats(db, projectId) {
+  const rows = db.prepare(`
+    SELECT stage, COUNT(*) AS count
+    FROM tasks
+    WHERE project_id = ?
+    GROUP BY stage
+  `).all(projectId);
+  return {
+    task_count: rows.reduce((sum, row) => sum + Number(row.count || 0), 0),
+    by_stage: Object.fromEntries(rows.map((row) => [row.stage || "plan", row.count])),
+  };
+}
+
+function normalizeProjectCreate(db, body = {}) {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  if (!name) throw projectRouteError(400, "validation", "name is required");
+  return {
+    name,
+    slug: uniqueProjectSlug(db, { name, slug: body.slug }),
+    description: typeof body.description === "string" ? body.description : "",
+    context: typeof body.context === "string" ? body.context : "",
+    workdir: normalizeProjectWorkdir(body.workdir, null),
+    tags: parseProjectTags(body.tags),
+    archived: body.archived === true ? 1 : 0,
+  };
+}
+
+function normalizeProjectPatch(db, existing, body = {}) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw projectRouteError(400, "validation", "patch is required");
+  }
+  const fields = [];
+  const values = [];
+
+  if ("name" in body) {
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) throw projectRouteError(400, "validation", "name is required");
+    fields.push("name = ?");
+    values.push(name);
+  }
+  if ("slug" in body) {
+    const nameForFallback = "name" in body && typeof body.name === "string" && body.name.trim()
+      ? body.name.trim()
+      : existing.name;
+    fields.push("slug = ?");
+    values.push(uniqueProjectSlug(db, { name: nameForFallback, slug: body.slug, existingId: existing.id }));
+  }
+  if ("description" in body) {
+    fields.push("description = ?");
+    values.push(typeof body.description === "string" ? body.description : "");
+  }
+  if ("context" in body) {
+    fields.push("context_markdown = ?");
+    values.push(typeof body.context === "string" ? body.context : "");
+  }
+  if ("workdir" in body) {
+    fields.push("workdir = ?");
+    values.push(normalizeProjectWorkdir(body.workdir, existing.workdir || null));
+  }
+  if ("tags" in body) {
+    fields.push("tags_json = ?");
+    values.push(JSON.stringify(parseProjectTags(body.tags)));
+  }
+  if ("archived" in body) {
+    fields.push("archived = ?");
+    values.push(body.archived === true ? 1 : 0);
+  }
+  return { fields, values };
+}
+
+export function registerProjectRoutes(app, { db, broker }) {
+  app.get("/api/projects", (req, res) => {
+    const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
+    const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const where = [];
+    const params = [];
+    if (!includeArchived) where.push("p.archived = 0");
+    if (q) {
+      const like = `%${q}%`;
+      where.push("(p.name LIKE ? OR p.slug LIKE ? OR p.description LIKE ? OR p.context_markdown LIKE ?)");
+      params.push(like, like, like, like);
+    }
+    const rows = db.prepare(`
+      SELECT
+        p.*,
+        COUNT(t.id) AS task_count,
+        SUM(CASE WHEN t.stage <> 'done' THEN 1 ELSE 0 END) AS active_task_count
+      FROM projects p
+      LEFT JOIN tasks t ON t.project_id = p.id
+      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+      GROUP BY p.id
+      ORDER BY p.archived ASC, p.updated_at DESC, p.name ASC
+    `).all(...params);
+    res.json({ projects: rows.map(projectFromRow) });
+  });
+
+  app.post("/api/projects", (req, res) => {
+    try {
+      const project = normalizeProjectCreate(db, req.body || {});
+      const id = newProjectId();
+      const now = Date.now();
+      db.prepare(`
+        INSERT INTO projects
+          (id, slug, name, description, context_markdown, workdir, tags_json, archived, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        project.slug,
+        project.name,
+        project.description,
+        project.context,
+        project.workdir,
+        JSON.stringify(project.tags),
+        project.archived,
+        now,
+        now,
+      );
+      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
+      broker?.broadcast?.("global", { type: "project_created", id, slug: row.slug });
+      res.status(201).json({ project: projectFromRow(row) });
+    } catch (error) {
+      if (error?.status) return sendRouteError(res, error);
+      if (String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
+        return res.status(400).json({ error: { code: "validation", message: error.message } });
+      }
+      throw error;
+    }
+  });
+
+  app.get("/api/projects/:id", (req, res) => {
+    try {
+      const row = projectOr404(db, req.params.id);
+      const tasks = db.prepare(`
+        SELECT id, task_key, title, stage, owner_agent, planner_agent, reviewer_agent, parent_task_id, updated_at
+        FROM tasks
+        WHERE project_id = ?
+        ORDER BY updated_at DESC
+      `).all(row.id).map(projectTaskSummary);
+      res.json({
+        project: {
+          ...projectFromRow(row),
+          stats: projectStats(db, row.id),
+          tasks,
+        },
+      });
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+  });
+
+  app.patch("/api/projects/:id", (req, res) => {
+    try {
+      const existing = projectOr404(db, req.params.id);
+      const { fields, values } = normalizeProjectPatch(db, existing, req.body || {});
+      if (fields.length > 0) {
+        fields.push("updated_at = ?");
+        values.push(Date.now(), existing.id);
+        db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+      }
+      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(existing.id);
+      broker?.broadcast?.("global", { type: "project_updated", id: row.id, slug: row.slug });
+      res.json({ project: projectFromRow(row) });
+    } catch (error) {
+      if (error?.status) return sendRouteError(res, error);
+      if (String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
+        return res.status(400).json({ error: { code: "validation", message: error.message } });
+      }
+      throw error;
+    }
+  });
+
+  app.delete("/api/projects/:id", (req, res) => {
+    try {
+      const existing = projectOr404(db, req.params.id);
+      db.prepare("UPDATE projects SET archived = 1, updated_at = ? WHERE id = ?").run(Date.now(), existing.id);
+      broker?.broadcast?.("global", { type: "project_updated", id: existing.id, slug: existing.slug });
+      res.status(204).end();
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+  });
+}
