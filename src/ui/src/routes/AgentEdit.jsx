@@ -16,6 +16,7 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -26,7 +27,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
-import { EditHeader } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
@@ -42,6 +43,14 @@ const BUILTIN_TOOL_DESCRIPTIONS = {
   WebFetch: "Fetch a URL and return text.",
   WebSearch: "Search the web and return result summaries.",
 };
+
+const AGENT_EDIT_SECTIONS = [
+  { id: "agent-edit-identity", num: "01", label: "Identity", meta: "Profile" },
+  { id: "agent-edit-runtime", num: "02", label: "Runtime", meta: "Model" },
+  { id: "agent-edit-policy", num: "03", label: "Policy", meta: "Review" },
+  { id: "agent-edit-behavior", num: "04", label: "Behavior", meta: "Prompt" },
+  { id: "agent-edit-capabilities", num: "05", label: "Capabilities", meta: "Scope" },
+];
 
 const emptyAgent = {
   name: "",
@@ -124,6 +133,11 @@ function parseBudgetInput(value) {
   if (!text) return null;
   const n = Number(text);
   return Number.isFinite(n) && n >= 0 ? n : value;
+}
+
+function EntityChromeBridge({ chrome }) {
+  useAppChrome(chrome, [chrome]);
+  return null;
 }
 
 export function memoryFreshnessLabel(memory) {
@@ -535,14 +549,94 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       </Button>
     </>
   );
+  const mobileActionDock = (
+    <>
+      <Button variant="secondary" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        onClick={() => formSave.save().catch(() => {})}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
+
+  function renderAgentRail() {
+    return (
+      <div class="entity-editor-rail-content">
+        <Card variant="spacious" title="Runtime snapshot" class="entity-rail-card">
+          <EntityMetaList items={runtimeMeta} />
+        </Card>
+        <Card variant="spacious" title="Capability scope" class="entity-rail-card">
+          <EntityMetaList items={capabilityMeta} />
+        </Card>
+
+        {!isNew && (
+          <Card
+            variant="spacious"
+            title="Long-term memory"
+            headerRight={<StatusPill status={memoryStatus} label={memoryLabel} size="sm" />}
+            class="entity-rail-card agent-memory-card"
+          >
+            {memoryError && <div class="agent-memory-error">{memoryError}</div>}
+            <EntityMetaList items={memoryMetaItems(memoryState)} />
+            <Textarea
+              rows={10}
+              monospace
+              readOnly
+              class="agent-memory-textarea"
+              aria-label="Long-term memory"
+              value={memoryState?.content || ""}
+              placeholder={memoryContentPlaceholder(memoryState)}
+            />
+            <div class="agent-memory-actions">
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="refresh-cw" size={13} />}
+                onClick={consolidateNow}
+                loading={consolidating || memoryState?.freshness === "consolidating"}
+                disabled={memoryState?.freshness === "consolidating"}
+              >
+                Consolidate memory
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete agent
+            </Button>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>
-      <EditHeader
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={isNew ? "New agent" : headerSlug} backLabel="Agents" onBack={cancel} />,
+          mobileActionDock,
+          drawerTitle: "Settings",
+          drawerKicker: headerSlug,
+          drawerContent: renderAgentRail(),
+          sections: AGENT_EDIT_SECTIONS,
+        }}
+      />
+      <DetailHead
         class="agent-detail-head entity-edit-head"
         backLabel="All agents"
         onBack={cancel}
-        breadcrumbs={[
+        crumbs={[
           { label: "Agents", href: "#/agents" },
           { label: isNew ? "New" : "Edit" },
         ]}
@@ -560,6 +654,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           </>
         )}
         actions={headerActions}
+        subBar={<MobilePillRow railLabel="Settings" railCount={isNew ? 2 : 4} sections={AGENT_EDIT_SECTIONS} />}
       />
       <div class="pane-detail-body entity-detail-body agent-detail-body">
         {formSave.error && (
@@ -576,6 +671,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
         <div class="entity-editor-layout agent-editor-layout">
           <main class="entity-editor-main">
+            <SectionMarker id="agent-edit-identity" num="01" kicker="Identity" meta="Profile" />
             <FormSection kicker="Identity" title="Profile">
               <FormGrid columns={3} class="agent-profile-grid">
                 <FormField label="Display name" required>
@@ -595,6 +691,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               </FormGrid>
             </FormSection>
 
+            <SectionMarker id="agent-edit-runtime" num="02" kicker="Runtime" meta="Model" />
             <FormSection kicker="Runtime" title="Model & reasoning">
               <FormGrid columns={2}>
                 <FormField label="Model" required>
@@ -639,6 +736,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               </div>
             </FormSection>
 
+            <SectionMarker id="agent-edit-policy" num="03" kicker="Policy" meta="Review" />
             <FormSection kicker="Policy" title="Review & budgets">
               <FormGrid columns={3}>
                 <FormField switchInside>
@@ -672,6 +770,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               </FormGrid>
             </FormSection>
 
+            <SectionMarker id="agent-edit-behavior" num="04" kicker="Behavior" meta="Prompt" />
             <FormSection kicker="Behavior" title="Instructions">
               <FormField label="System prompt role">
                 <Textarea
@@ -684,6 +783,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               </FormField>
             </FormSection>
 
+            <SectionMarker id="agent-edit-capabilities" num="05" kicker="Capabilities" meta="Scope" />
             <FormSection
               kicker="Capabilities"
               title="Allowlists"
@@ -743,71 +843,10 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             </FormSection>
           </main>
 
-          <aside class="entity-editor-rail">
-            <Card variant="spacious" title="Runtime snapshot" class="entity-rail-card">
-              <EntityMetaList items={runtimeMeta} />
-            </Card>
-            <Card variant="spacious" title="Capability scope" class="entity-rail-card">
-              <EntityMetaList items={capabilityMeta} />
-            </Card>
-
-            {!isNew && (
-              <Card
-                variant="spacious"
-                title="Long-term memory"
-                headerRight={<StatusPill status={memoryStatus} label={memoryLabel} size="sm" />}
-                class="entity-rail-card agent-memory-card"
-              >
-                {memoryError && <div class="agent-memory-error">{memoryError}</div>}
-                <EntityMetaList items={memoryMetaItems(memoryState)} />
-                <Textarea
-                  rows={10}
-                  monospace
-                  readOnly
-                  class="agent-memory-textarea"
-                  aria-label="Long-term memory"
-                  value={memoryState?.content || ""}
-                  placeholder={memoryContentPlaceholder(memoryState)}
-                />
-                <div class="agent-memory-actions">
-                  <Button
-                    variant="secondary"
-                    iconLeft={<Icon name="refresh-cw" size={13} />}
-                    onClick={consolidateNow}
-                    loading={consolidating || memoryState?.freshness === "consolidating"}
-                    disabled={memoryState?.freshness === "consolidating"}
-                  >
-                    Consolidate memory
-                  </Button>
-                </div>
-              </Card>
-            )}
-
-            {!isNew && (
-              <Card collapsible={{ summary: "More actions", count: 1 }} class="entity-rail-card">
-                <Button
-                  variant="destructive"
-                  iconLeft={<Icon name="trash" size={13} />}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  Delete agent
-                </Button>
-              </Card>
-            )}
+          <aside class="entity-editor-rail is-mobile-drawer-source">
+            {renderAgentRail()}
           </aside>
         </div>
-      </div>
-
-      <div class="entity-edit-mobile-dock" aria-label="Agent edit actions">
-        <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <Button
-          variant={saveButtonVariant}
-          onClick={() => formSave.save().catch(() => {})}
-          loading={formSave.saving}
-          disabled={saveDisabled}
-        >
-          {saveButtonLabel}
-        </Button>
       </div>
 
       {/* Delete modal */}
