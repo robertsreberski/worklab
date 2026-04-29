@@ -1375,7 +1375,7 @@ function responsiveRoutes(page, ids) {
     { hash: "#/providers", ready: () => page.locator(".pane-list") },
     { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
     { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
-    { hash: "#/activity", ready: () => page.locator(".summary-tiles") },
+    { hash: "#/activity", ready: () => page.locator(".activity-stats") },
     { hash: "#/settings", ready: () => page.locator(".settings-sections") },
     { hash: "#/design-system", ready: () => page.locator(".ds-catalog") },
   ];
@@ -1745,52 +1745,53 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/activity`);
   await expect(page.locator(".activity-row").first()).toBeVisible();
-  await expect(page.locator("select[aria-label='Filter by agent']")).toHaveValue("");
-  await expect(page.locator("select[aria-label='Filter by agent'] option:checked")).toHaveText("All agents");
-  await expect(page.locator("select[aria-label='Filter by status']")).toHaveValue("");
-  await expect(page.locator("select[aria-label='Filter by status'] option:checked")).toHaveText("All statuses");
-  await expect(page.locator(".summary-tiles .metric", { hasText: "Cost" })).toBeVisible();
-  await expect(page.locator(".summary-tiles .metric", { hasText: "Avg/run" })).toBeVisible();
+  await expect(page.getByRole("combobox", { name: "Filter by agent" })).toContainText("All agents");
+  await expect(page.getByRole("combobox", { name: "Filter by status" })).toContainText("All statuses");
+  await expect(page.locator(".activity-stat-card", { hasText: "Spend" })).toBeVisible();
+  await expect(page.locator(".activity-stat-card", { hasText: "Run Health" })).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const filters = document.querySelector(".activity-filters");
     const row = document.querySelector(".activity-row");
     const status = row?.querySelector(".status-pill");
     const time = row?.querySelector(".activity-time");
-    const tiles = [...document.querySelectorAll(".summary-tiles .metric")];
+    const stats = [...document.querySelectorAll(".activity-stat-card")];
     return {
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       filterColumns: filters ? getComputedStyle(filters).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
       rowColumns: row ? getComputedStyle(row).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
       rowWidth: row ? Math.round(row.getBoundingClientRect().width) : 0,
       rowRadius: row ? parseFloat(getComputedStyle(row).borderRadius) : 0,
-      statusColumn: status ? getComputedStyle(status).gridColumnStart : "",
-      timeColumn: time ? getComputedStyle(time).gridColumnStart : "",
-      tileCount: tiles.length,
-      tileColumns: tiles.length
-        ? getComputedStyle(tiles[0].parentElement).gridTemplateColumns.split(" ").filter(Boolean).length
+      statusVisible: status ? status.getBoundingClientRect().width > 0 : false,
+      timeVisible: time ? time.getBoundingClientRect().width > 0 : false,
+      statCount: stats.length,
+      statColumns: stats.length
+        ? getComputedStyle(stats[0].parentElement).gridTemplateColumns.split(" ").filter(Boolean).length
         : 0,
+      visualBars: document.querySelectorAll(".activity-stat-meter, .activity-health-bar").length,
     };
   });
 
   expect(metrics.overflow).toBeLessThanOrEqual(0);
   expect(metrics.filterColumns).toBe(1);
-  expect(metrics.rowColumns).toBe(2);
+  expect(metrics.rowColumns).toBe(3);
   expect(metrics.rowWidth).toBeLessThanOrEqual(390);
   expect(metrics.rowRadius).toBeGreaterThanOrEqual(6);
-  expect(metrics.statusColumn).toBe("2");
-  expect(metrics.timeColumn).toBe("2");
-  expect(metrics.tileCount).toBe(5);
-  expect(metrics.tileColumns).toBe(3);
+  expect(metrics.statusVisible).toBe(true);
+  expect(metrics.timeVisible).toBe(true);
+  expect(metrics.statCount).toBe(5);
+  expect(metrics.statColumns).toBe(2);
+  expect(metrics.visualBars).toBeGreaterThanOrEqual(2);
   await expectNoHorizontalOverflow(page, "mobile activity rows");
   await expectNoCriticalHorizontalClipping(
     page,
     [
-      ".summary-tiles .metric .label",
-      ".summary-tiles .metric .value",
+      ".activity-stat-label",
+      ".activity-stat-value",
       ".activity-title",
       ".activity-meta",
       ".activity-time",
+      ".activity-row-metric",
       ".status-pill-label",
     ].join(", "),
     "mobile activity rows",

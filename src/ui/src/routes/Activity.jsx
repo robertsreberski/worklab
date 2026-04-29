@@ -1,4 +1,4 @@
-// §6.9 Activity — timeline of every run. Summary Metric tiles + flat list.
+// §6.9 Activity — premium run activity dashboard.
 import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
@@ -9,13 +9,21 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
-import { Metric } from "../components/Metric.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { FilterBar, Page, SummaryGrid } from "../components/layout/index.js";
+import { Page } from "../components/layout/index.js";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
+
+const COUNT_FORMATTER = new Intl.NumberFormat();
+const STATUS_OPTIONS = [
+  { value: "", label: "All statuses" },
+  { value: "running", label: "Running" },
+  { value: "complete", label: "Complete" },
+  { value: "error", label: "Error" },
+  { value: "cancelled", label: "Cancelled" },
+];
 
 function fmtTime(ts) { return ts ? new Date(ts).toLocaleString() : "-"; }
 function fmtDuration(value) {
@@ -37,11 +45,49 @@ function fmtAge(value) {
   return `${Math.floor(ms / 86_400_000)}d`;
 }
 function fmtCost(value) { return value == null ? "" : `$${Number(value).toFixed(4)}`; }
+function fmtCount(value) { return COUNT_FORMATTER.format(Number(value || 0)); }
+function pct(count, total) {
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((Number(count || 0) / Number(total)) * 100)));
+}
 
 function activityTitle(item) {
   if (item.mode === "consolidate") return "Consolidation";
   if (item.mode === "automation") return item.automation_title || "Automation";
   return item.task_title || item.mode;
+}
+
+function agentLeadingSlot(option) {
+  if (!option?.value) return <Icon name="users" size={14} />;
+  return <AgentAvatar name={option.value} label={option.label || option.value} size={18} />;
+}
+
+function statusLeadingSlot(option) {
+  if (!option?.value) return <Icon name="filter" size={14} />;
+  return <span class="activity-status-swatch" data-status={option.value} aria-hidden="true" />;
+}
+
+function activityMetaParts(item) {
+  return [
+    item.mode,
+    item.agent_name,
+    item.automation_trigger_type,
+    item.model ? modelDisplayName(item.model) : null,
+  ].filter(Boolean);
+}
+
+function activityMetricParts(item) {
+  const parts = [];
+  if (item.duration_ms != null) parts.push({ key: "duration", icon: "clock", label: fmtDuration(item.duration_ms) });
+  if (item.input_tokens != null) {
+    parts.push({
+      key: "tokens",
+      icon: "terminal",
+      label: `${fmtCount(item.input_tokens)} in / ${fmtCount(item.output_tokens ?? 0)} out`,
+    });
+  }
+  if (item.cost_usd != null) parts.push({ key: "cost", icon: "database", label: fmtCost(item.cost_usd) });
+  return parts;
 }
 
 export function Activity() {
@@ -80,13 +126,26 @@ export function Activity() {
     if (evt.type === "run_started" || evt.type === "run_ended" || evt.type === "agent_consolidated") load();
   });
 
-  const tiles = useMemo(() => ({
-    totalCost: fmtCost(summary?.total_cost_usd ?? 0),
-    runs: summary?.run_count ?? 0,
-    averageCost: summary?.average_cost_usd != null ? fmtCost(summary.average_cost_usd) : "-",
-    running: summary?.running_count ?? 0,
-    errors: summary?.error_count ?? 0,
-  }), [summary]);
+  const stats = useMemo(() => {
+    const runs = Number(summary?.run_count || 0);
+    const costedRuns = Number(summary?.costed_run_count || 0);
+    const running = Number(summary?.running_count || 0);
+    const errors = Number(summary?.error_count || 0);
+    const settled = Math.max(0, runs - running - errors);
+    return {
+      runs,
+      costedRuns,
+      running,
+      errors,
+      settled,
+      totalCost: fmtCost(summary?.total_cost_usd ?? 0),
+      averageCost: summary?.average_cost_usd != null ? fmtCost(summary.average_cost_usd) : "-",
+      costCoverage: pct(costedRuns, runs),
+      runningPct: pct(running, runs),
+      errorPct: pct(errors, runs),
+      settledPct: pct(settled, runs),
+    };
+  }, [summary]);
 
   const pageActions = (
     <Button variant="secondary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={() => load()} loading={loading}>
@@ -103,52 +162,122 @@ export function Activity() {
         description="Recent task runs, automations, and consolidation events."
         actions={pageActions}
       >
-        <SummaryGrid class="activity-summary">
-          <Metric label="Cost" value={tiles.totalCost} />
-          <Metric label="Runs" value={tiles.runs} />
-          <Metric label="Avg/run" value={tiles.averageCost} />
-          <Metric label="Running" value={tiles.running} />
-          <Metric label="Errors" value={tiles.errors} />
-        </SummaryGrid>
+        <section class="activity-stats" aria-label="Activity statistics">
+          <article class="activity-stat-card activity-stat-card-primary activity-stat-cost">
+            <div class="activity-stat-head">
+              <span class="activity-stat-label">Spend</span>
+              <span class="activity-stat-icon"><Icon name="database" size={15} /></span>
+            </div>
+            <strong class="activity-stat-value">{stats.totalCost}</strong>
+            <div class="activity-stat-subline">
+              <span>{stats.averageCost}/run avg</span>
+              <span>{fmtCount(stats.costedRuns)} costed</span>
+            </div>
+            <div class="activity-stat-meter" aria-label={`${stats.costCoverage}% of runs have cost data`}>
+              <span style={{ width: `${stats.costCoverage}%` }} />
+            </div>
+          </article>
 
-        <Card title="Filters">
-          <FilterBar
-            class="activity-filters"
-            activeCount={activeFilterCount}
-            onClear={() => {
-              setAgentFilter("");
-              setStatusFilter("");
-              setDateRange({ from: "", to: "" });
-            }}
-            filters={(
-              <>
-            <Select
-              variant="native"
-              value={agentFilter}
-              onChange={setAgentFilter}
-              options={[
-                { value: "", label: "All agents" },
-                ...agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name })),
-              ]}
-              ariaLabel="Filter by agent"
-            />
-            <Select
-              variant="native"
-              value={statusFilter}
-              onChange={setStatusFilter}
-              options={[
-                { value: "", label: "All statuses" },
-                { value: "running", label: "Running" },
-                { value: "complete", label: "Complete" },
-                { value: "error", label: "Error" },
-                { value: "cancelled", label: "Cancelled" },
-              ]}
-              ariaLabel="Filter by status"
-            />
-            <DateRangePicker value={dateRange} onChange={setDateRange} class="activity-date-range" />
-              </>
-            )}
-          />
+          <article class="activity-stat-card activity-stat-card-primary activity-stat-health">
+            <div class="activity-stat-head">
+              <span class="activity-stat-label">Run Health</span>
+              <span class="activity-stat-icon"><Icon name="check-circle" size={15} /></span>
+            </div>
+            <strong class="activity-stat-value">{fmtCount(stats.runs)}</strong>
+            <div
+              class="activity-health-bar"
+              aria-label={`${stats.settledPct}% settled, ${stats.runningPct}% running, ${stats.errorPct}% error`}
+            >
+              <span class="activity-health-segment settled" style={{ width: `${stats.settledPct}%` }} />
+              <span class="activity-health-segment running" style={{ width: `${stats.runningPct}%` }} />
+              <span class="activity-health-segment error" style={{ width: `${stats.errorPct}%` }} />
+            </div>
+            <div class="activity-health-legend">
+              <span><i class="settled" />{fmtCount(stats.settled)} settled</span>
+              <span><i class="running" />{fmtCount(stats.running)} running</span>
+              <span><i class="error" />{fmtCount(stats.errors)} errors</span>
+            </div>
+          </article>
+
+          <article class="activity-stat-card activity-stat-mini">
+            <span class="activity-stat-icon"><Icon name="layout-list" size={14} /></span>
+            <span class="activity-stat-label">Runs</span>
+            <strong class="activity-stat-value">{fmtCount(stats.runs)}</strong>
+            <span class="activity-stat-subline">{fmtCount(stats.costedRuns)} with cost</span>
+          </article>
+          <article class="activity-stat-card activity-stat-mini activity-stat-running">
+            <span class="activity-stat-icon"><Icon name="zap" size={14} /></span>
+            <span class="activity-stat-label">Running</span>
+            <strong class="activity-stat-value">{fmtCount(stats.running)}</strong>
+            <span class="activity-stat-subline">{stats.runningPct}% live</span>
+          </article>
+          <article class="activity-stat-card activity-stat-mini activity-stat-error">
+            <span class="activity-stat-icon"><Icon name="alert-triangle" size={14} /></span>
+            <span class="activity-stat-label">Errors</span>
+            <strong class="activity-stat-value">{fmtCount(stats.errors)}</strong>
+            <span class="activity-stat-subline">{stats.errorPct}% attention</span>
+          </article>
+        </section>
+
+        <Card
+          title="Filters"
+          class="activity-filter-card"
+          headerRight={(
+            <span class={`activity-filter-count ${activeFilterCount ? "active" : ""}`.trim()}>
+              {activeFilterCount ? `${activeFilterCount} active` : "All activity"}
+            </span>
+          )}
+        >
+          <div class="activity-filter-panel activity-filters">
+            <div class="activity-filter-field">
+              <span>Agent</span>
+              <Select
+                value={agentFilter}
+                onChange={setAgentFilter}
+                options={[
+                  { value: "", label: "All agents" },
+                  ...agents.map((agent) => ({ value: agent.name, label: agent.display_name || agent.name })),
+                ]}
+                ariaLabel="Filter by agent"
+                leadingSlot={agentLeadingSlot}
+                searchable
+                class="activity-filter-select"
+                menuWidth={260}
+              />
+            </div>
+            <div class="activity-filter-field">
+              <span>Status</span>
+              <Select
+                value={statusFilter}
+                onChange={setStatusFilter}
+                options={STATUS_OPTIONS}
+                ariaLabel="Filter by status"
+                leadingSlot={statusLeadingSlot}
+                searchable={false}
+                class="activity-filter-select"
+                menuWidth={220}
+              />
+            </div>
+            <div class="activity-filter-field activity-filter-date">
+              <span>Date range</span>
+              <DateRangePicker value={dateRange} onChange={setDateRange} class="activity-date-range" />
+            </div>
+            <div class="activity-filter-actions">
+              {activeFilterCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setAgentFilter("");
+                    setStatusFilter("");
+                    setDateRange({ from: "", to: "" });
+                  }}
+                >
+                  Reset
+                </Button>
+              )}
+            </div>
+          </div>
         </Card>
 
         {items === null && <LoadingState caption="Loading activity…" />}
@@ -163,38 +292,55 @@ export function Activity() {
         )}
 
         {items?.length > 0 && (
-          <Card>
-	            <div class="activity-list">
-	              {items.map((item) => (
-	                <div class="activity-row" key={item.id}>
-	                  <AgentAvatar name={item.agent_name} label={item.agent_name} size={24} />
-	                  <div class="min-w-0">
-	                    <div class="activity-title">
-	                      {activityTitle(item)}
-	                      {item.automation_trigger_type && item.mode !== "automation" && (
-	                        <span class="chip chip-trigger">
-	                          <Icon name="clock" size={10} /> Scheduled
-	                        </span>
-	                      )}
-	                    </div>
-	                    <div class="activity-meta">
-	                      {item.mode} · {item.agent_name}
-                      {item.automation_trigger_type && ` · ${item.automation_trigger_type}`}
-                      {item.model && ` · ${modelDisplayName(item.model)}`}
-                      {item.duration_ms != null && ` · ${fmtDuration(item.duration_ms)}`}
-                      {item.input_tokens != null && ` · ${item.input_tokens} in / ${item.output_tokens ?? 0} out`}
-                      {item.cost_usd != null && ` · ${fmtCost(item.cost_usd)}`}
+          <Card title="Recent activity" class="activity-list-card" headerRight={<span class="activity-list-count">{fmtCount(items.length)} shown</span>}>
+            <div class="activity-list">
+              {items.map((item) => {
+                const metaParts = activityMetaParts(item);
+                const metricParts = activityMetricParts(item);
+                return (
+                  <article class="activity-row" data-status={item.status} key={item.id}>
+                    <span class="activity-row-rail" aria-hidden="true" />
+                    <AgentAvatar name={item.agent_name} label={item.agent_name} size={26} />
+                    <div class="activity-row-main">
+                      <div class="activity-row-titleline">
+                        <div class="activity-title">
+                          {activityTitle(item)}
+                          {item.automation_trigger_type && item.mode !== "automation" && (
+                            <span class="chip chip-trigger">
+                              <Icon name="clock" size={10} /> Scheduled
+                            </span>
+                          )}
+                        </div>
+                        <StatusPill status={item.status} size="sm" />
+                      </div>
+                      <div class="activity-meta">
+                        {metaParts.map((part) => <span key={part}>{part}</span>)}
+                      </div>
+                      {metricParts.length > 0 && (
+                        <div class="activity-row-metrics" aria-label="Run metrics">
+                          {metricParts.map((part) => (
+                            <span class="activity-row-metric" key={part.key}>
+                              <Icon name={part.icon} size={12} />
+                              {part.label}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <StatusPill status={item.status} size="sm" />
-                  <span class="activity-time" title={fmtTime(item.started_at)}>
-                    {fmtAge(item.started_at)}
-                    {item.task_id && (
-                      <>{" · "}<a href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${item.id}`}>open</a></>
-                    )}
-                  </span>
-                </div>
-              ))}
+                    <div class="activity-row-aside">
+                      <span class="activity-time" title={fmtTime(item.started_at)}>{fmtAge(item.started_at)}</span>
+                      {item.task_id && (
+                        <a
+                          class="activity-open-link"
+                          href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${item.id}`}
+                        >
+                          Open
+                        </a>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
             {nextCursor && (
               <div class="form-actions">
