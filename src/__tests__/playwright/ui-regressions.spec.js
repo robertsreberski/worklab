@@ -1463,10 +1463,10 @@ test("mobile agents skills projects and knowledge panes preserve compact premium
 test("mobile scroll containers keep final content above bottom chrome", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents", target: ".pane-row:last-child" },
-    { hash: "#/knowledge/mobile-layout-reference", target: ".knowledge-read-section:last-child" },
-    { hash: `#/projects/${projectSlug}`, target: ".knowledge-read-section:last-child" },
-    { hash: "#/agents/regression-agent", target: ".entity-editor-main > .form-section:last-child" },
+    { hash: "#/agents", target: ".pane-row:last-child", scroller: ".pane-list-body" },
+    { hash: "#/knowledge/mobile-layout-reference", target: ".knowledge-read-section:last-child", scroller: ".pane-detail" },
+    { hash: `#/projects/${projectSlug}`, target: ".knowledge-read-section:last-child", scroller: ".pane-detail" },
+    { hash: "#/agents/regression-agent", target: ".entity-editor-main > .form-section:last-child", scroller: ".pane-detail" },
   ];
 
   for (const route of routes) {
@@ -1481,25 +1481,41 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
     });
     await page.waitForTimeout(50);
 
-    const metrics = await page.evaluate((targetSelector) => {
+    const metrics = await page.evaluate(({ targetSelector, scrollerSelector }) => {
+      const parsePx = (value) => {
+        const parsed = parseFloat(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+      };
       const target = document.querySelector(targetSelector);
-      const chrome = document.querySelector(".app-mobile-action-dock") || document.querySelector(".app-tabbar");
+      const chrome = Array.from(document.querySelectorAll(".app-mobile-action-dock, .app-tabbar"))
+        .find((element) => getComputedStyle(element).display !== "none");
+      const appBody = document.querySelector(".app-body");
       const appMain = document.querySelector(".app-main");
+      const scroller = document.querySelector(scrollerSelector);
       const targetRect = target?.getBoundingClientRect();
       const chromeRect = chrome?.getBoundingClientRect();
+      const bodyStyles = appBody ? getComputedStyle(appBody) : null;
       const mainStyles = appMain ? getComputedStyle(appMain) : null;
       return {
         targetBottom: targetRect ? Math.round(targetRect.bottom) : 0,
         chromeTop: chromeRect ? Math.round(chromeRect.top) : window.innerHeight,
         chromeHeight: chromeRect ? Math.round(chromeRect.height) : 0,
-        mainPaddingBottom: mainStyles ? Math.round(parseFloat(mainStyles.paddingBottom)) : 0,
-        mainScrollPaddingBottom: mainStyles ? Math.round(parseFloat(mainStyles.scrollPaddingBottom)) : 0,
+        gapToChrome: targetRect && chromeRect ? Math.round(chromeRect.top - targetRect.bottom) : 0,
+        bodyPaddingBottom: bodyStyles ? Math.round(parsePx(bodyStyles.paddingBottom)) : 0,
+        mainPaddingBottom: mainStyles ? Math.round(parsePx(mainStyles.paddingBottom)) : 0,
+        mainScrollPaddingBottom: mainStyles ? Math.round(parsePx(mainStyles.scrollPaddingBottom)) : 0,
+        scrollerScrollable: scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false,
       };
-    }, route.target);
+    }, { targetSelector: route.target, scrollerSelector: route.scroller });
 
-    expect(metrics.mainPaddingBottom, `${route.hash} main padding`).toBeGreaterThanOrEqual(metrics.chromeHeight);
-    expect(metrics.mainScrollPaddingBottom, `${route.hash} main scroll padding`).toBeGreaterThanOrEqual(metrics.chromeHeight);
+    expect(metrics.bodyPaddingBottom, `${route.hash} body padding`).toBeGreaterThanOrEqual(metrics.chromeHeight - 1);
+    expect(metrics.bodyPaddingBottom, `${route.hash} body padding`).toBeLessThanOrEqual(metrics.chromeHeight + 2);
+    expect(metrics.mainPaddingBottom, `${route.hash} main padding`).toBeLessThanOrEqual(1);
+    expect(metrics.mainScrollPaddingBottom, `${route.hash} main scroll padding`).toBeLessThanOrEqual(1);
     expect(metrics.targetBottom, `${route.hash} target below chrome`).toBeLessThanOrEqual(metrics.chromeTop);
+    if (metrics.scrollerScrollable) {
+      expect(metrics.gapToChrome, `${route.hash} excessive bottom gap`).toBeLessThanOrEqual(96);
+    }
   }
 });
 

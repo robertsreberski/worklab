@@ -9506,13 +9506,12 @@ html.assistant-resizing * {
 @media (max-width: 860px) {
   .app.responsive {
     --mobile-tabbar-height: calc(56px + env(safe-area-inset-bottom, 0px));
-    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)));
-    --mobile-bottom-clearance: calc(var(--mobile-tabbar-height) + var(--sp-4));
+    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)) + 1px);
     grid-template-columns: minmax(0, 1fr);
-    padding-bottom: 0;
+    padding-bottom: var(--mobile-tabbar-height);
   }
   .app.responsive.has-dock {
-    --mobile-bottom-clearance: calc(var(--mobile-action-dock-height) + var(--sp-4));
+    padding-bottom: 0;
   }
   .app.responsive .app-rail {
     display: none;
@@ -9521,10 +9520,10 @@ html.assistant-resizing * {
     height: 100dvh;
     min-height: 0;
     padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: var(--mobile-tabbar-height);
   }
-  .app.responsive .app-main {
-    padding-bottom: var(--mobile-bottom-clearance);
-    scroll-padding-bottom: var(--mobile-bottom-clearance);
+  .app.responsive.has-dock .app-body {
+    padding-bottom: var(--mobile-action-dock-height);
   }
   .mobile-topbar {
     display: flex;
@@ -9554,6 +9553,12 @@ html.assistant-resizing * {
     height: 44px;
     min-height: 44px;
     min-width: 0;
+  }
+  .app.responsive.has-dock .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body,
+  .app.responsive.has-dock .task-detail,
+  .app.responsive.has-dock .task-detail-shell .task-detail,
+  .app.responsive.has-dock .task-edit-body {
+    padding-bottom: var(--sp-4);
   }
   .detail-head .sub-bar .section-jump-pill,
   .detail-head .sub-bar .rail-summary-pill {
