@@ -13,7 +13,7 @@ import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
-import { resolveTaskProjectRunContext } from "./projects.js";
+import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -159,7 +159,14 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
-  const projectRunContext = resolveTaskProjectRunContext({ db, config, task });
+  const runSnapshot = loadRunSnapshot(db, runId);
+  const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
+  if (runSnapshot && projectRunContext.projectContextHash
+    && runSnapshot.project_context_hash
+    && runSnapshot.project_context_hash !== projectRunContext.projectContextHash) {
+    db.prepare("UPDATE task_runs SET project_context_hash = ? WHERE id = ?")
+      .run(projectRunContext.projectContextHash, runId);
+  }
 
   const commentRows = enrichCommentRows(
     db,
