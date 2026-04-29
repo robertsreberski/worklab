@@ -2502,6 +2502,17 @@ select,
   font-size: var(--text-sm);
   white-space: nowrap;
 }
+.commander-cost-chip {
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px var(--sp-2);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  cursor: help;
+}
 .commander-new-task-fab {
   display: none;
 }
@@ -6475,6 +6486,82 @@ select,
   font-size: var(--text-xs);
   line-height: 1.4;
   white-space: nowrap;
+}
+.run-warning-count {
+  border-color: var(--status-progress-border);
+  color: var(--status-progress);
+  background: var(--status-progress-bg-10);
+}
+.run-cancel-chip {
+  border-color: var(--status-error-border);
+  color: var(--status-error);
+  background: var(--status-error-bg-10);
+}
+.run-cancel-note {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.run-cancel-note code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-sunken);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-xs);
+}
+.run-warnings-list {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.run-warning-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.run-warning-kind {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--status-progress);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.run-warning-source {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.run-warning-message {
+  color: var(--text);
+}
+.run-diagnostics {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: var(--text-sm);
+}
+.run-diagnostics summary {
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.run-diagnostics pre {
+  margin-top: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow: auto;
 }
 .run-summary-meta {
   color: var(--text-muted);

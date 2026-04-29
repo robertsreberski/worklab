@@ -4,6 +4,7 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { formatCost } from "../lib/runFormatting.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
@@ -22,6 +23,36 @@ import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
 
 const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
+
+function DailyCostChip() {
+  const [summary, setSummary] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    function load() {
+      api.get("/api/runs/cost-summary").then((res) => {
+        if (!cancelled && res?.today) setSummary(res);
+      }).catch(() => {});
+    }
+    load();
+    const handle = setInterval(load, 60_000);
+    return () => { cancelled = true; clearInterval(handle); };
+  }, []);
+  if (!summary?.today || !Number.isFinite(summary.today.total_usd) || summary.today.run_count === 0) return null;
+  const todayLabel = formatCost(summary.today.total_usd);
+  const weekLabel = formatCost(summary.week.total_usd);
+  const titleLines = [`Today: ${todayLabel} across ${summary.today.run_count} run${summary.today.run_count === 1 ? "" : "s"}`];
+  if (summary.week.run_count > summary.today.run_count) {
+    titleLines.push(`This week: ${weekLabel} across ${summary.week.run_count} runs`);
+  }
+  for (const row of summary.today_by_agent || []) {
+    titleLines.push(`  - ${row.agent || "unattributed"}: ${formatCost(row.total_usd)}`);
+  }
+  return (
+    <span class="commander-cost-chip" title={titleLines.join("\n")}>
+      {todayLabel} today
+    </span>
+  );
+}
 
 const GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
@@ -362,6 +393,7 @@ export function Commander() {
               class="tabs-pills"
             />
             <div class="commander-filter-actions">
+              <DailyCostChip />
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
               <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                 New task

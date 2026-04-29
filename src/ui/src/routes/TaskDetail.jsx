@@ -702,6 +702,42 @@ function AgentRailRow({ role, value, onChange, agents, caption: captionOverride 
   );
 }
 
+function RunWarningsList({ warnings }) {
+  if (!Array.isArray(warnings) || !warnings.length) return null;
+  return (
+    <ul class="run-warnings-list">
+      {warnings.map((w, idx) => (
+        <li key={idx} class={`run-warning-item run-warning-${(w.kind || "runtime").replace(/[^a-z0-9_-]/gi, "_")}`}>
+          <span class="run-warning-kind">{w.kind || "runtime"}</span>
+          {w.source && <span class="run-warning-source">{w.source}</span>}
+          <span class="run-warning-message">{w.message || ""}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function RunCancellationNote({ run }) {
+  if (!run?.cancel_initiator) return null;
+  const reason = run.cancel_reason ? `: ${run.cancel_reason}` : "";
+  return (
+    <div class="run-cancel-note">
+      Cancel initiated by <code>{run.cancel_initiator}</code>{reason}
+    </div>
+  );
+}
+
+function RunDiagnosticsDisclosure({ run }) {
+  const diag = run?.diagnostics;
+  if (!diag || typeof diag !== "object") return null;
+  return (
+    <details class="run-diagnostics">
+      <summary>Run diagnostics</summary>
+      <pre>{JSON.stringify(diag, null, 2)}</pre>
+    </details>
+  );
+}
+
 function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
   const metrics = runMetricItems(run);
@@ -713,6 +749,7 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const warningLabel = processStatus === "succeeded" && Number(run.log?.num_turns) === 0
     ? "No final text"
     : null;
+  const warnings = Array.isArray(run.warnings) ? run.warnings : [];
   return (
     <details
       open={expanded}
@@ -738,6 +775,16 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
                     </span>
                   )}
                   {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
+                  {warnings.length > 0 && (
+                    <span class="run-warning-badge run-warning-count" title={`${warnings.length} runtime warning${warnings.length === 1 ? "" : "s"}`}>
+                      ⚠ {warnings.length}
+                    </span>
+                  )}
+                  {run.cancel_initiator && (
+                    <span class="run-warning-badge run-cancel-chip" title={run.cancel_reason || run.cancel_initiator}>
+                      {run.cancel_initiator}
+                    </span>
+                  )}
                 </div>
                 {resultPreview.details && <div class="run-result-details">{resultPreview.details}</div>}
               </div>
@@ -751,6 +798,12 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
                 )}
                 <span class="run-summary-title" title={startedAt || undefined}>{title}</span>
                 {warningLabel && <span class="run-warning-badge">{warningLabel}</span>}
+                {warnings.length > 0 && (
+                  <span class="run-warning-badge run-warning-count">⚠ {warnings.length}</span>
+                )}
+                {run.cancel_initiator && (
+                  <span class="run-warning-badge run-cancel-chip">{run.cancel_initiator}</span>
+                )}
               </div>
             )}
           </div>
@@ -773,6 +826,9 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
           </a>
         </div>
       )}
+      <RunCancellationNote run={run} />
+      <RunWarningsList warnings={warnings} />
+      <RunDiagnosticsDisclosure run={run} />
       <div class="run-card-events">
         {loading ? (
           <div class="run-card-events-loading">Loading events…</div>

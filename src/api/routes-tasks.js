@@ -613,6 +613,34 @@ function taskOr404(db, value) {
 }
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
+  app.get("/api/runs/cost-summary", (req, res) => {
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const weekStart = todayStart.getTime() - 6 * 24 * 60 * 60 * 1000;
+    const today = db.prepare(`
+      SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
+      FROM task_runs
+      WHERE started_at >= ? AND cost_usd IS NOT NULL
+    `).get(todayStart.getTime());
+    const week = db.prepare(`
+      SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
+      FROM task_runs
+      WHERE started_at >= ? AND cost_usd IS NOT NULL
+    `).get(weekStart);
+    const byAgent = db.prepare(`
+      SELECT agent_name, COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
+      FROM task_runs
+      WHERE started_at >= ? AND cost_usd IS NOT NULL
+      GROUP BY agent_name
+      ORDER BY total DESC
+    `).all(todayStart.getTime());
+    res.json({
+      today: { total_usd: Number(today.total || 0), run_count: today.runs },
+      week: { total_usd: Number(week.total || 0), run_count: week.runs },
+      today_by_agent: byAgent.map((row) => ({ agent: row.agent_name, total_usd: Number(row.total || 0), run_count: row.runs })),
+    });
+  });
+
   app.get("/api/tasks", (req, res) => {
     const where = [];
     const params = [];
