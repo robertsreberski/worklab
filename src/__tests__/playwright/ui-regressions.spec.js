@@ -1148,7 +1148,13 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
-    await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    if (route.entityEditor) {
+      await expect(page.locator(".pane-mobile-back")).toHaveCount(0);
+      await expect(page.locator(".edit-shell-head .icon-button").first()).toBeVisible();
+      await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toBeVisible();
+    } else {
+      await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    }
     await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
     await expect(page.locator(".pane-detail-subline")).toBeVisible();
     if (route.entityEditor) {
@@ -1162,6 +1168,8 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     const mobileMetrics = await page.evaluate((entityEditor) => {
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
+      const dock = document.querySelector(".entity-edit-mobile-dock");
+      const nav = document.querySelector(".app-rail");
       const formSection = entityEditor
         ? document.querySelector(".entity-editor-main > .form-section")
         : document.querySelector(".pane-detail-body > .form-section");
@@ -1170,6 +1178,11 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       return {
         headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
         toolbarTop: toolbar ? Math.round(toolbar.getBoundingClientRect().top) : 0,
+        toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
+        dockDisplay: dock ? getComputedStyle(dock).display : "",
+        dockBottomBeforeNav: dock && nav
+          ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+          : false,
         headTop: head ? Math.round(head.getBoundingClientRect().top) : 0,
         sectionRadius: formSection ? parseFloat(getComputedStyle(formSection).borderRadius) : 0,
         iconWidth: icon ? Math.round(icon.getBoundingClientRect().width) : 0,
@@ -1180,7 +1193,12 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     expect(mobileMetrics.toolbarTop).toBeGreaterThanOrEqual(mobileMetrics.headTop);
     expect(mobileMetrics.sectionRadius).toBeGreaterThanOrEqual(6);
     expect(mobileMetrics.iconWidth).toBeGreaterThanOrEqual(28);
-    if (route.entityEditor) expect(mobileMetrics.railPosition).toBe("static");
+    if (route.entityEditor) {
+      expect(mobileMetrics.railPosition).toBe("static");
+      expect(mobileMetrics.toolbarDisplay).toBe("none");
+      expect(mobileMetrics.dockDisplay).toBe("flex");
+      expect(mobileMetrics.dockBottomBeforeNav).toBe(true);
+    }
 
     await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
     await expectNoCriticalHorizontalClipping(
@@ -1265,6 +1283,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const id = row?.querySelector(".commander-cell-id");
     const state = row?.querySelector(".commander-cell-state");
     const filter = document.querySelector(".commander-filter");
+    const search = document.querySelector(".commander-filter .search-field");
+    const tabs = document.querySelector(".commander-filter .tabs");
     const pill = row?.querySelector(".status-pill");
     const inlineNewTask = document.querySelector(".commander-new-task-inline");
     const fab = document.querySelector(".commander-new-task-fab");
@@ -1275,8 +1295,10 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const fabRect = fab?.getBoundingClientRect();
     const navRect = nav?.getBoundingClientRect();
     const navElement = document.querySelector(".app-nav");
+    const activeNav = document.querySelector(".app-nav a.active");
     const railStyles = nav ? getComputedStyle(nav) : null;
     const navStyles = navElement ? getComputedStyle(navElement) : null;
+    const activeNavBefore = activeNav ? getComputedStyle(activeNav, "::before") : null;
     const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
     const bodyStyles = getComputedStyle(document.body);
     const rowStyles = row ? getComputedStyle(row) : null;
@@ -1287,6 +1309,9 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     return {
       rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
       filterHeight: filter ? Math.round(filter.getBoundingClientRect().height) : 0,
+      searchWidth: search ? Math.round(search.getBoundingClientRect().width) : 0,
+      searchTop: search ? Math.round(search.getBoundingClientRect().top) : 0,
+      tabsTop: tabs ? Math.round(tabs.getBoundingClientRect().top) : 0,
       idDisplay: id ? getComputedStyle(id).display : "",
       stateDisplay: state ? getComputedStyle(state).display : "",
       pillVisible: pill ? getComputedStyle(pill).display !== "none" : false,
@@ -1297,6 +1322,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       railOverflowX: railStyles?.overflowX || "",
       navDisplay: navStyles?.display || "",
       navOverflowX: navStyles?.overflowX || "",
+      activeNavBeforeDisplay: activeNavBefore?.display || "",
       tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       viewportMeta,
@@ -1327,6 +1353,8 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
   expect(metrics.rowHeight).toBeLessThanOrEqual(88);
   expect(metrics.filterHeight).toBeLessThanOrEqual(92);
+  expect(metrics.searchWidth).toBeGreaterThanOrEqual(360);
+  expect(metrics.tabsTop).toBeGreaterThan(metrics.searchTop);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
   expect(metrics.navOverflow).toBeLessThanOrEqual(0);
@@ -1334,6 +1362,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(["clip", "hidden"]).toContain(metrics.railOverflowX);
   expect(metrics.navDisplay).toBe("grid");
   expect(["clip", "hidden"]).toContain(metrics.navOverflowX);
+  expect(metrics.activeNavBeforeDisplay).toBe("none");
   expect(metrics.viewportMeta).toContain("maximum-scale=1");
   expect(metrics.viewportMeta).toContain("user-scalable=no");
   expect(metrics.bodyTouchAction).toBe("manipulation");
@@ -1492,9 +1521,17 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
 
   for (const route of routes) {
     await page.goto(`${baseUrl}/${route.hash}`);
-    await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    if (route.entityEditor) {
+      await expect(page.locator(".pane-mobile-back")).toHaveCount(0);
+      await expect(page.locator(".edit-shell-head .icon-button").first()).toBeVisible();
+      await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Create" })).toBeVisible();
+    } else {
+      await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
+    }
     await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
-    await expect(page.locator(".pane-detail-head .toolbar .button").first()).toBeVisible();
+    if (!route.entityEditor) {
+      await expect(page.locator(".pane-detail-head .toolbar .button").first()).toBeVisible();
+    }
     if (route.entityEditor) {
       await expect(page.locator(".entity-editor-main > .form-section").first()).toBeVisible();
     } else {
@@ -1504,12 +1541,19 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
     const metrics = await page.evaluate((entityEditor) => {
       const head = document.querySelector(".pane-detail-head");
       const toolbar = document.querySelector(".pane-detail-head .toolbar");
-      const buttons = [...document.querySelectorAll(".pane-detail-head .toolbar .button")];
+      const dock = document.querySelector(".entity-edit-mobile-dock");
+      const nav = document.querySelector(".app-rail");
+      const buttons = [...document.querySelectorAll(entityEditor ? ".entity-edit-mobile-dock .button" : ".pane-detail-head .toolbar .button")];
       const sections = [...document.querySelectorAll(entityEditor ? ".entity-editor-main > .form-section" : ".pane-detail-body > .form-section")];
       return {
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         headWidth: head ? Math.round(head.getBoundingClientRect().width) : 0,
         toolbarWidth: toolbar ? Math.round(toolbar.getBoundingClientRect().width) : 0,
+        toolbarDisplay: toolbar ? getComputedStyle(toolbar).display : "",
+        dockDisplay: dock ? getComputedStyle(dock).display : "",
+        dockBottomBeforeNav: dock && nav
+          ? Math.round(dock.getBoundingClientRect().bottom) <= Math.round(nav.getBoundingClientRect().top) + 1
+          : false,
         minButtonHeight: buttons.length
           ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height)))
           : 0,
@@ -1523,6 +1567,11 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
     expect(metrics.headWidth, `${route.hash} head width`).toBeLessThanOrEqual(390);
     expect(metrics.toolbarWidth, `${route.hash} toolbar width`).toBeLessThanOrEqual(390);
     expect(metrics.minButtonHeight, `${route.hash} button height`).toBeGreaterThanOrEqual(44);
+    if (route.entityEditor) {
+      expect(metrics.toolbarDisplay, `${route.hash} toolbar`).toBe("none");
+      expect(metrics.dockDisplay, `${route.hash} dock`).toBe("flex");
+      expect(metrics.dockBottomBeforeNav, `${route.hash} dock before nav`).toBe(true);
+    }
     expect(metrics.sectionCount, `${route.hash} sections`).toBeGreaterThan(0);
     expect(metrics.minSectionWidth, `${route.hash} section width`).toBeGreaterThan(0);
 

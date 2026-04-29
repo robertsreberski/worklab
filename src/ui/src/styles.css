@@ -4425,6 +4425,57 @@ select,
   letter-spacing: 0;
 }
 .task-edit-head .eyebrow { margin-bottom: 2px; }
+.edit-shell-head.has-title {
+  align-items: flex-start;
+  min-height: 72px;
+}
+.edit-shell-head-left {
+  flex: 1 1 auto;
+  align-items: flex-start;
+}
+.edit-shell-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.edit-shell-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.edit-shell-title-row .pane-detail-icon,
+.edit-shell-title-row .ds-detail-identity {
+  flex: 0 0 auto;
+}
+.edit-shell-titles {
+  min-width: 0;
+}
+.edit-shell-toolbar {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+@media (max-width: 1180px) {
+  .entity-edit-head {
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .entity-edit-head .edit-shell-head-left,
+  .entity-edit-head .edit-shell-toolbar {
+    width: 100%;
+  }
+  .entity-edit-head .edit-shell-toolbar {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+  .entity-edit-head .task-edit-shortcut {
+    display: none;
+  }
+}
+.entity-edit-mobile-dock {
+  display: none;
+}
 .task-edit-body {
   flex: 1;
   overflow: auto;
@@ -7034,8 +7085,37 @@ select,
   .app.has-mobile-action-dock .task-edit-toolbar {
     display: none;
   }
+  .entity-edit-head .task-edit-toolbar {
+    display: none;
+  }
   .task-edit-head-left {
     width: 100%;
+  }
+  .edit-shell-title-row {
+    align-items: flex-start;
+  }
+  .entity-edit-mobile-dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(56px + env(safe-area-inset-bottom));
+    z-index: 31;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--sp-2);
+    min-width: 0;
+    padding: var(--sp-3) var(--sp-4);
+    border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 96%, transparent);
+    backdrop-filter: blur(12px);
+  }
+  .entity-edit-mobile-dock .button {
+    flex: 1 1 0;
+    min-height: 44px;
+  }
+  .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body {
+    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
   }
   .status-grid-btn {
     min-height: 44px;
@@ -7305,6 +7385,12 @@ select,
   .app.has-mobile-action-dock .task-detail,
   .app.has-mobile-action-dock .task-edit-body {
     padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+  }
+  .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body {
+    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+  }
+  .entity-edit-mobile-dock {
+    padding: var(--sp-2) var(--sp-3);
   }
   .modal-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
   .modal-body { padding: var(--sp-4); }

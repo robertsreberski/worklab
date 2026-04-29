@@ -10,15 +10,11 @@ import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { Breadcrumb } from "../components/primitives/Breadcrumb.jsx";
 import { Button } from "../components/primitives/Button.jsx";
-import { IconButton } from "../components/primitives/IconButton.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
-import { Kbd } from "../components/primitives/Kbd.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { Tooltip } from "../components/primitives/Tooltip.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
@@ -26,6 +22,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { EditHeader } from "../components/layout/index.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 
@@ -213,23 +210,18 @@ export function TaskEdit({ mode = "create", id = null }) {
   return (
     <AppShell route="tasks" mobileActionDock={mobileActionDock}>
       <div class="task-edit">
-        <header class="task-edit-head" aria-label={heading}>
-          <div class="task-edit-head-left">
-            <IconButton
-              icon={<Icon name="chevron-left" size={14} />}
-              aria-label="Back"
-              onClick={cancel}
-            />
-            <Breadcrumb items={[
-              { label: "Tasks", href: "#/tasks" },
-              ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}` }] : []),
-              { label: mode === "create" ? "New" : "Edit" },
-            ]} />
-          </div>
-          <div class="toolbar task-edit-toolbar">
-            <span class="task-edit-shortcut" aria-hidden="true">
-              <Kbd>⌘</Kbd><Kbd>S</Kbd> save
-            </span>
+        <EditHeader
+          ariaLabel={heading}
+          backLabel="Back"
+          onBack={cancel}
+          breadcrumbs={[
+            { label: "Tasks", href: "#/tasks" },
+            ...(mode === "edit" ? [{ label: idDisplay, href: `#/tasks/${loadedTask ? taskRouteId(loadedTask) : encodeURIComponent(id)}` }] : []),
+            { label: mode === "create" ? "New" : "Edit" },
+          ]}
+          class="task-edit-task-head"
+          actions={(
+            <>
             <Button variant="ghost" onClick={cancel}>Cancel</Button>
             <Button
               variant={saveButtonVariant}
@@ -239,8 +231,9 @@ export function TaskEdit({ mode = "create", id = null }) {
             >
               {saveButtonLabel}
             </Button>
-          </div>
-        </header>
+            </>
+          )}
+        />
         <form
           ref={formRef}
           class="task-edit-body"

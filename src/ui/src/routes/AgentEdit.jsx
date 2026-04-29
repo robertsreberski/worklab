@@ -26,7 +26,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
-import { DetailHeader } from "../components/layout/index.js";
+import { EditHeader } from "../components/layout/index.js";
 import { modelDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
@@ -329,9 +329,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
   useEffect(() => { loadMemory(); }, [loadMemory]);
 
-  const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
-  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
-
   const formSave = useFormSave(async () => {
     if (modelSaveBlocked) throw new Error(selectedModel?.unavailable_reason || "Selected model is unavailable");
     const enabledSkillNames = new Set(skills.filter((s) => s.enabled !== false).map((s) => s.name));
@@ -370,9 +367,15 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       onSaved?.(name);
     }
   });
+  const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
+  const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
+  const cancel = useCallback(() => {
+    guard.requestNavigation("#/agents");
+  }, [guard.requestNavigation]);
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
+    Escape: () => cancel(),
   });
 
   useSSE("global", (evt) => {
@@ -501,11 +504,34 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   ];
   const memoryLabel = memoryFreshnessLabel(memoryState);
   const memoryStatus = memoryFreshnessStatus(memoryState);
+  const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
+  const saveButtonLabel = isNew ? "Create" : "Save";
+  const saveDisabled = !agent.display_name || modelSaveBlocked;
+  const headerActions = (
+    <>
+      {!isNew && <StatusPill status={agent.enabled ? "enabled" : "disabled"} />}
+      <Button variant="ghost" onClick={cancel}>Cancel</Button>
+      <Button
+        variant={saveButtonVariant}
+        onClick={() => formSave.save().catch(() => {})}
+        loading={formSave.saving}
+        disabled={saveDisabled}
+      >
+        {saveButtonLabel}
+      </Button>
+    </>
+  );
 
   return (
     <>
-      <DetailHeader
-        class="agent-detail-head"
+      <EditHeader
+        class="agent-detail-head entity-edit-head"
+        backLabel="All agents"
+        onBack={cancel}
+        breadcrumbs={[
+          { label: "Agents", href: "#/agents" },
+          { label: isNew ? "New" : "Edit" },
+        ]}
         icon={!isNew ? <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} /> : null}
         iconFrame={false}
         kicker={isNew ? "Create agent" : "Agent"}
@@ -519,19 +545,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             <span>{normalizedEffort} effort</span>
           </>
         )}
-        actions={(
-          <>
-          {!isNew && <StatusPill status={agent.enabled ? "enabled" : "disabled"} />}
-          <Button
-            variant={isDirty || isNew ? "primary" : "secondary"}
-            onClick={() => formSave.save().catch(() => {})}
-            loading={formSave.saving}
-            disabled={!agent.display_name || modelSaveBlocked}
-          >
-            {isNew ? "Create" : "Save"}
-          </Button>
-          </>
-        )}
+        actions={headerActions}
       />
       <div class="pane-detail-body entity-detail-body agent-detail-body">
         {formSave.error && (
@@ -735,6 +749,18 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             )}
           </aside>
         </div>
+      </div>
+
+      <div class="entity-edit-mobile-dock" aria-label="Agent edit actions">
+        <Button variant="secondary" onClick={cancel}>Cancel</Button>
+        <Button
+          variant={saveButtonVariant}
+          onClick={() => formSave.save().catch(() => {})}
+          loading={formSave.saving}
+          disabled={saveDisabled}
+        >
+          {saveButtonLabel}
+        </Button>
       </div>
 
       {/* Delete modal */}
