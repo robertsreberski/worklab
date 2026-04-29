@@ -1232,6 +1232,7 @@ function responsiveRoutes(page, ids) {
     { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
     { hash: "#/activity", ready: () => page.locator(".summary-tiles") },
     { hash: "#/settings", ready: () => page.locator(".settings-sections") },
+    { hash: "#/design-system", ready: () => page.locator(".ds-catalog") },
   ];
 }
 
