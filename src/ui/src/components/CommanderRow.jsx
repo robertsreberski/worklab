@@ -9,7 +9,8 @@ import { mergeRunEvents, useRunStream } from "../lib/useRunStream.js";
 import { useLiveTicker } from "../lib/useLiveTicker.js";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
-import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
+import { statusMeta } from "./primitives/StatusPill.jsx";
+import { StageToken } from "./primitives/StageToken.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
@@ -196,7 +197,7 @@ export function CommanderRow({
         class="commander-cell-pill"
         title={task.stage_reason || undefined}
       >
-        <StatusPill status={task.running_run_id ? "running" : displayStage} size="sm" />
+        <StageToken stage={task.running_run_id ? "running" : displayStage} />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
     </div>

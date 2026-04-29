@@ -7847,6 +7847,11 @@ select,
   gap: var(--sp-3);
   margin-top: var(--sp-4);
 }
+.detail-head .sub-bar .section-jump-pill,
+.detail-head .sub-bar .rail-summary-pill,
+.detail-head .sub-bar .mobile-pill-spacer {
+  display: none;
+}
 
 .card,
 .settings-section-shell,
@@ -8137,6 +8142,36 @@ select,
   padding: var(--sp-6);
   background: var(--surface-sunken);
 }
+.task-detail-shell {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-sunken) 40%, transparent)),
+    repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px);
+}
+.task-detail-shell .task-detail {
+  flex: 1 1 auto;
+  grid-template-columns: minmax(0, 1fr) var(--rail-w);
+  gap: 0;
+  padding: 0;
+  min-height: 0;
+  overflow: visible;
+  background: transparent;
+}
+.task-detail-shell .task-detail-main {
+  gap: var(--sp-6);
+}
+.task-detail-rail-content,
+.task-workflow-section,
+.task-brief-section,
+.task-plan-section,
+.task-activity-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
 .field-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8236,6 +8271,13 @@ select,
     height: 40px;
     min-height: 40px;
     min-width: 0;
+  }
+  .detail-head .sub-bar .section-jump-pill,
+  .detail-head .sub-bar .rail-summary-pill {
+    display: inline-flex;
+  }
+  .detail-head .sub-bar .mobile-pill-spacer {
+    display: block;
   }
   .app-right-drawer,
   .app-section-sheet {

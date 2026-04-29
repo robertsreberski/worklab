@@ -3,8 +3,8 @@
 // Disabled transitions are hidden (not greyed-out) to reduce cognitive load.
 
 import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
-import { StatusPill, statusMeta } from "./primitives/StatusPill.jsx";
-import { Icon } from "./Icon.jsx";
+import { statusMeta } from "./primitives/StatusPill.jsx";
+import { StageToken } from "./primitives/StageToken.jsx";
 
 // Per §5.1 table. Each entry is { from, to, label, confirm?: string }.
 // confirm is the modal message string (caller wires the Modal).
@@ -108,8 +108,7 @@ export function StatusMenu({
         role="combobox"
         onKeyDown={onTriggerKeyDown}
       >
-        <StatusPill status={status} />
-        <Icon name="chevron-down" size={12} />
+        <StageToken stage={status} variant="menu" as="span" />
       </button>
       {open && choices.length > 0 && (
         <div

@@ -13,8 +13,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { agentDisplayName, taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { selectHighlightedRunId } from "./taskDetailRuns.js";
 
-import { AppShell } from "../components/AppShell.jsx";
-import { Breadcrumb } from "../components/primitives/Breadcrumb.jsx";
+import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -36,6 +35,7 @@ import { Input } from "../components/primitives/Input.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../components/primitives/ScheduleBuilder.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -142,6 +142,13 @@ export function formatRunPreviewForCopy(preview) {
 }
 
 const DEFAULT_RUN_POLICY = "auto_plan_execute";
+
+const TASK_DETAIL_SECTIONS = [
+  { id: "task-brief", num: "01", label: "Brief", meta: "Request" },
+  { id: "task-plan", num: "02", label: "Plan", meta: "Markdown" },
+  { id: "task-workflow", num: "03", label: "Workflow", meta: "Automation" },
+  { id: "task-activity", num: "04", label: "Activity", meta: "Comments & runs" },
+];
 
 function emptyAutomationDraft() {
   return {
@@ -1461,30 +1468,193 @@ export function TaskDetail({ id, runParam = null }) {
 
   const taskActions = task && (
     <>
-      {renderPrimaryAction()}
+      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
+        Edit
+      </Button>
       {canPreviewRunInput && (
         <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
           Run input
         </Button>
       )}
-      <Button variant="ghost" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
-        Edit
-      </Button>
+      {renderPrimaryAction()}
     </>
   );
   const mobileActionDock = task && (
     <>
-      {renderPrimaryAction()}
+      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
+        Edit
+      </Button>
       {canPreviewRunInput && (
         <Button variant="secondary" iconLeft={<Icon name="eye" size={13} />} onClick={openRunPreview}>
           Run input
         </Button>
       )}
-      <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
-        Edit
-      </Button>
+      {renderPrimaryAction()}
     </>
   );
+  const detailMeta = task && (
+    <>
+      {runningRun && <LivePulse size={10} />}
+      <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
+      {hasLastRunError && (
+        <span class="chip chip-error">
+          <Icon name="alert-triangle" size={10} /> Error
+        </span>
+      )}
+      {showStuckBanner && (
+        <span class="chip chip-error">
+          <Icon name="alert-triangle" size={10} /> Stuck - reset
+        </span>
+      )}
+      {hasTaskSchedules && (
+        <span
+          class={`chip ${hasEnabledSchedule ? "chip-trigger" : "chip-muted"}`}
+          title={automationSummary.next_fire_at ? `Next scheduled run: ${formatDate(automationSummary.next_fire_at)}` : undefined}
+        >
+          <Icon name={hasEnabledSchedule ? "clock" : "minus-circle"} size={10} />
+          {hasEnabledSchedule ? "Scheduled" : "Schedule paused"}
+        </span>
+      )}
+    </>
+  );
+  const hasRailTags = (task?.tags || []).length > 0;
+  const hasRailDependencies = ((task?.blocked_by || []).length > 0 || (task?.blocks || []).length > 0);
+  const hasRailContext = Boolean(
+    task?.updated_at
+      || task?.created_at
+      || task?.completed_at
+      || task?.automation_summary?.next_fire_at
+      || task?.run_policy,
+  );
+  const railCardCount = [
+    true,
+    hasRailContext,
+    Boolean(artifactRun),
+    hasRailTags,
+    hasRailDependencies,
+    true,
+  ].filter(Boolean).length;
+  const detailSubBar = task && (
+    <MobilePillRow railLabel="Details" railCount={railCardCount} sections={TASK_DETAIL_SECTIONS} />
+  );
+
+  function renderTaskRail() {
+    if (!task) return null;
+    return (
+      <div class="task-detail-rail-content">
+        <Card title="Agents" class="rail-agents-card">
+          <div class="rail-agents-stack">
+            <AgentRailRow
+              role="owner"
+              value={task.owner_agent || ""}
+              onChange={(value) => updateAssignee("owner_agent", value)}
+              agents={agents}
+              caption={task.owner_agent ? "Runs work" : undefined}
+            />
+            <AgentRailRow
+              role="planner"
+              value={task.planner_agent || ""}
+              onChange={(value) => updateAssignee("planner_agent", value)}
+              agents={agents}
+            />
+            <AgentRailRow
+              role="reviewer"
+              value={task.reviewer_agent || ""}
+              onChange={(value) => updateAssignee("reviewer_agent", value)}
+              agents={agents}
+            />
+          </div>
+        </Card>
+
+        <TaskContextCard task={task} />
+
+        {artifactRun && <RunArtifactsCard run={artifactRun} />}
+
+        {hasRailTags && (
+          <Card variant="spacious" title="Tags">
+            <div class="task-tags">
+              {(task.tags || []).map((t) => (
+                <Chip key={t} variant="tag">{t}</Chip>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {hasRailDependencies && (
+          <Card variant="spacious" title="Dependencies">
+            {(task.blocked_by || []).length > 0 && (
+              <div class="dependency-group">
+                <div class="all-caps">Blocked by</div>
+                {(task.blocked_by || []).map((dependency) => (
+                  <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
+                    <span class="truncate">{dependency.title}</span>
+                    <StatusPill status={dependency.stage || "plan"} size="sm" />
+                  </a>
+                ))}
+              </div>
+            )}
+            {(task.blocks || []).length > 0 && (
+              <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
+                <div class="all-caps">Blocks</div>
+                {(task.blocks || []).map((dependency) => (
+                  <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
+                    <span class="truncate">{dependency.title}</span>
+                    <StatusPill status={dependency.stage || "plan"} size="sm" />
+                  </a>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        <Card collapsible={{ summary: "More actions", count: 3 }}>
+          <div class="task-actions-stack">
+            <Button
+              variant="secondary"
+              iconLeft={<Icon name="database" size={13} />}
+              onClick={async () => {
+                try {
+                  await navigator.clipboard.writeText(taskDisplayKey(task));
+                  pushToast("Task key copied", { variant: "success" });
+                } catch {
+                  pushToast("Copy failed", { variant: "error" });
+                }
+              }}
+            >
+              Copy task key
+            </Button>
+            <Button
+              variant="secondary"
+              iconLeft={<Icon name="copy" size={13} />}
+              onClick={async () => {
+                try {
+                  const copy = {
+                    title: `Copy of ${task.title}`,
+                    instructions: task.instructions,
+                    owner_agent: task.owner_agent,
+                    planner_agent: task.planner_agent,
+                    reviewer_agent: task.reviewer_agent,
+                    run_policy: task.run_policy || DEFAULT_RUN_POLICY,
+                    tags: task.tags,
+                  };
+                  const r = await api.createTask(copy);
+                  pushToast("Task duplicated", { variant: "success" });
+                  navigateHash(`#/tasks/${taskRouteId(r.task)}`);
+                } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
+              }}
+            >Duplicate</Button>
+            <Button
+              variant="destructive"
+              iconLeft={<Icon name="trash" size={13} />}
+              onClick={() => setDeleteOpen(true)}
+            >
+              Delete task
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   // §5.9 keyboard: ⌘Enter triggers primary, E opens edit
   useGlobalShortcuts({
@@ -1529,64 +1699,58 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   return (
-    <AppShell route="tasks" mobileActionDock={mobileActionDock}>
-      <div class="task-detail">
-        <div class="task-detail-main">
-          <Breadcrumb items={[{ label: "Tasks", href: "#/tasks" }, { label: taskKeyLabel }]} />
-
-          <section class="task-hero">
-            <div class="task-hero-top">
-              <div class="task-hero-stack">
-                <div class="task-hero-status-row">
-                  {runningRun && <LivePulse size={10} />}
-                  <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
-                  {hasLastRunError && (
-                    <span class="chip chip-error">
-                      <Icon name="alert-triangle" size={10} /> Error
-                    </span>
-                  )}
-                  {showStuckBanner && (
-                    <span class="chip chip-error">
-                      <Icon name="alert-triangle" size={10} /> Stuck — reset
-                    </span>
-                  )}
-                  {hasTaskSchedules && (
-                    <span
-                      class={`chip ${hasEnabledSchedule ? "chip-trigger" : "chip-muted"}`}
-                      title={automationSummary.next_fire_at ? `Next scheduled run: ${formatDate(automationSummary.next_fire_at)}` : undefined}
-                    >
-                      <Icon name={hasEnabledSchedule ? "clock" : "minus-circle"} size={10} />
-                      {hasEnabledSchedule ? "Scheduled" : "Schedule paused"}
-                    </span>
-                  )}
-                </div>
-                <h1 class="task-hero-title title-display">{task.title}</h1>
-              </div>
-              {taskActions && <div class="task-hero-actions toolbar">{taskActions}</div>}
-            </div>
-            {task.instructions && (
+    <AppShell
+      route="tasks"
+      mobileActionDock={mobileActionDock}
+      mobileTopbar={<MobileTopbar title={taskKeyLabel} backLabel="Tasks" onBack={() => navigateHash("#/tasks")} />}
+      drawerTitle="Details"
+      drawerKicker={taskKeyLabel}
+      drawerContent={renderTaskRail()}
+      sections={TASK_DETAIL_SECTIONS}
+    >
+      <div class="task-detail-shell editor-shell">
+        <DetailHead
+          crumbs={[{ label: "Tasks", href: "#/tasks" }, { label: taskKeyLabel }]}
+          kicker="Task detail"
+          idPrefix={taskKeyLabel}
+          title={task.title}
+          meta={detailMeta}
+          actions={taskActions && <div class="task-hero-actions toolbar">{taskActions}</div>}
+          subBar={detailSubBar}
+          glyph="T"
+        />
+        <div class="task-detail editor-body">
+          <div class="task-detail-main editor-main">
+            <section class="task-brief-section" aria-labelledby="task-brief">
+              <SectionMarker id="task-brief" num="01" kicker="Brief" meta="Request" />
               <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>
                 <div class="task-hero-instructions-head">
                   <div class="all-caps task-hero-instructions-kicker">
                     <Icon name="terminal" size={10} /> Instructions / Request
                   </div>
-                  <button
-                    type="button"
-                    class="task-hero-instructions-copy"
-                    aria-label="Copy instructions"
-                    onClick={async () => {
-                      try {
-                        await navigator.clipboard.writeText(task.instructions || "");
-                        pushToast("Copied", { variant: "success" });
-                      } catch {
-                        pushToast("Copy failed", { variant: "error" });
-                      }
-                    }}
-                  >
-                    <Icon name="copy" size={12} />
-                  </button>
+                  {task.instructions && (
+                    <button
+                      type="button"
+                      class="task-hero-instructions-copy"
+                      aria-label="Copy instructions"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(task.instructions || "");
+                          pushToast("Copied", { variant: "success" });
+                        } catch {
+                          pushToast("Copy failed", { variant: "error" });
+                        }
+                      }}
+                    >
+                      <Icon name="copy" size={12} />
+                    </button>
+                  )}
                 </div>
-                <pre class="task-hero-instructions-body">{task.instructions}</pre>
+                {task.instructions ? (
+                  <pre class="task-hero-instructions-body">{task.instructions}</pre>
+                ) : (
+                  <div class="task-plan-empty">No instructions recorded.</div>
+                )}
                 {(task.instructions || "").length > 400 && (
                   <button
                     type="button"
@@ -1597,78 +1761,86 @@ export function TaskDetail({ id, runParam = null }) {
                   </button>
                 )}
               </div>
-            )}
-          </section>
+            </section>
 
-          <TaskPlanCard
-            task={task}
-            draft={planDraft}
-            editing={planEditing}
-            saving={planSaving}
-            onDraft={setPlanDraft}
-            onEdit={() => setPlanEditing(true)}
-            onCancel={cancelPlanEdit}
-            onSave={savePlan}
-          />
-
-          <TaskWorkflowMeta task={task} />
-
-          <TaskAutomationsCard
-            taskId={operationTaskId}
-            automations={taskAutomations}
-            loading={automationsLoading}
-            onChanged={() => {
-              reload();
-              reloadAutomations();
-            }}
-          />
-
-          <TaskSubtasksCard
-            task={task}
-            agents={agents}
-            title={subtaskTitle}
-            owner={subtaskOwner}
-            required={subtaskRequired}
-            saving={subtaskSaving}
-            onTitle={setSubtaskTitle}
-            onOwner={(value) => setSubtaskOwner(value || "")}
-            onRequired={setSubtaskRequired}
-            onCreate={createManualSubtask}
-          />
-
-          {showStuckBanner && (
-            <Banner
-              variant="warn"
-              title="This task shows as running but no worker is active."
-              detail={runError || undefined}
-              actions={
-                <>
-                  <Button variant="secondary" size="sm" onClick={resetToExecute}>Reset</Button>
-                  <Button variant="primary"  size="sm" onClick={retryStuck}>Retry</Button>
-                </>
-              }
-              dismissible={false}
-            />
-          )}
-
-          {runError && (
-            <Banner variant="error" title="Run error" detail={runError} onDismiss={() => setRunError(null)} />
-          )}
-
-          {runningRun ? (
-            <div ref={(node) => setRunTarget(runningRun.id, node)}>
-              <LiveRunPanel
-                run={runningRun}
-                isStreaming
-                agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
+            <section class="task-plan-section" aria-labelledby="task-plan">
+              <SectionMarker id="task-plan" num="02" kicker="Plan" meta="Markdown" />
+              <TaskPlanCard
+                task={task}
+                draft={planDraft}
+                editing={planEditing}
+                saving={planSaving}
+                onDraft={setPlanDraft}
+                onEdit={() => setPlanEditing(true)}
+                onCancel={cancelPlanEdit}
+                onSave={savePlan}
               />
-            </div>
-          ) : null}
+            </section>
 
-          <Card
-            title="Activity"
-            class="activity-card"
-          >
+            <section class="task-workflow-section" aria-labelledby="task-workflow">
+              <SectionMarker id="task-workflow" num="03" kicker="Workflow" meta="Automation" />
+
+              <TaskWorkflowMeta task={task} />
+
+              <TaskAutomationsCard
+                taskId={operationTaskId}
+                automations={taskAutomations}
+                loading={automationsLoading}
+                onChanged={() => {
+                  reload();
+                  reloadAutomations();
+                }}
+              />
+
+              <TaskSubtasksCard
+                task={task}
+                agents={agents}
+                title={subtaskTitle}
+                owner={subtaskOwner}
+                required={subtaskRequired}
+                saving={subtaskSaving}
+                onTitle={setSubtaskTitle}
+                onOwner={(value) => setSubtaskOwner(value || "")}
+                onRequired={setSubtaskRequired}
+                onCreate={createManualSubtask}
+              />
+
+              {showStuckBanner && (
+                <Banner
+                  variant="warn"
+                  title="This task shows as running but no worker is active."
+                  detail={runError || undefined}
+                  actions={
+                    <>
+                      <Button variant="secondary" size="sm" onClick={resetToExecute}>Reset</Button>
+                      <Button variant="primary"  size="sm" onClick={retryStuck}>Retry</Button>
+                    </>
+                  }
+                  dismissible={false}
+                />
+              )}
+
+              {runError && (
+                <Banner variant="error" title="Run error" detail={runError} onDismiss={() => setRunError(null)} />
+              )}
+
+              {runningRun ? (
+                <div ref={(node) => setRunTarget(runningRun.id, node)}>
+                  <LiveRunPanel
+                    run={runningRun}
+                    isStreaming
+                    agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
+                  />
+                </div>
+              ) : null}
+            </section>
+
+            <section class="task-activity-section" aria-labelledby="task-activity">
+              <SectionMarker id="task-activity" num="04" kicker="Activity" meta="Comments & runs" />
+              <Card
+                title="Activity"
+                class="activity-card"
+              >
             <div class="activity-composer">
               <form onSubmit={addComment} class="activity-composer-form">
                 <Textarea
@@ -1755,121 +1927,14 @@ export function TaskDetail({ id, runParam = null }) {
             ) : (
               <div class="activity-empty">{runningRun ? "No comments or completed runs yet." : "No activity yet."}</div>
             )}
-          </Card>
+              </Card>
+            </section>
+          </div>
+
+          <aside class="task-detail-rail editor-rail">
+            {renderTaskRail()}
+          </aside>
         </div>
-
-        <aside class="task-detail-rail">
-          <Card title="Agents" class="rail-agents-card">
-            <div class="rail-agents-stack">
-              <AgentRailRow
-                role="owner"
-                value={task.owner_agent || ""}
-                onChange={(value) => updateAssignee("owner_agent", value)}
-                agents={agents}
-                caption={task.owner_agent ? "Runs work" : undefined}
-              />
-              <AgentRailRow
-                role="planner"
-                value={task.planner_agent || ""}
-                onChange={(value) => updateAssignee("planner_agent", value)}
-                agents={agents}
-              />
-              <AgentRailRow
-                role="reviewer"
-                value={task.reviewer_agent || ""}
-                onChange={(value) => updateAssignee("reviewer_agent", value)}
-                agents={agents}
-              />
-            </div>
-          </Card>
-
-          <TaskContextCard task={task} />
-
-          {artifactRun && <RunArtifactsCard run={artifactRun} />}
-
-          {(task.tags || []).length > 0 && (
-            <Card variant="spacious" title="Tags">
-              <div class="task-tags">
-                {(task.tags || []).map((t) => (
-                  <Chip key={t} variant="tag">{t}</Chip>
-                ))}
-              </div>
-            </Card>
-          )}
-
-          {((task.blocked_by || []).length > 0 || (task.blocks || []).length > 0) && (
-            <Card variant="spacious" title="Dependencies">
-              {(task.blocked_by || []).length > 0 && (
-                <div class="dependency-group">
-                  <div class="all-caps">Blocked by</div>
-                  {(task.blocked_by || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                      <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.stage || "plan"} size="sm" />
-                    </a>
-                  ))}
-                </div>
-              )}
-              {(task.blocks || []).length > 0 && (
-                <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
-                  <div class="all-caps">Blocks</div>
-                  {(task.blocks || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                      <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.stage || "plan"} size="sm" />
-                    </a>
-                  ))}
-                </div>
-              )}
-            </Card>
-          )}
-
-          <Card collapsible={{ summary: "More actions", count: 3 }}>
-            <div class="task-actions-stack">
-              <Button
-                variant="secondary"
-                iconLeft={<Icon name="database" size={13} />}
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(taskDisplayKey(task));
-                    pushToast("Task key copied", { variant: "success" });
-                  } catch {
-                    pushToast("Copy failed", { variant: "error" });
-                  }
-                }}
-              >
-                Copy task key
-              </Button>
-              <Button
-                variant="secondary"
-                iconLeft={<Icon name="copy" size={13} />}
-                onClick={async () => {
-                  try {
-                    const copy = {
-                      title: `Copy of ${task.title}`,
-                      instructions: task.instructions,
-                      owner_agent: task.owner_agent,
-                      planner_agent: task.planner_agent,
-                      reviewer_agent: task.reviewer_agent,
-                      run_policy: task.run_policy || DEFAULT_RUN_POLICY,
-                      tags: task.tags,
-                    };
-                    const r = await api.createTask(copy);
-                    pushToast("Task duplicated", { variant: "success" });
-                    navigateHash(`#/tasks/${taskRouteId(r.task)}`);
-                  } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
-                }}
-              >Duplicate</Button>
-              <Button
-                variant="destructive"
-                iconLeft={<Icon name="trash" size={13} />}
-                onClick={() => setDeleteOpen(true)}
-              >
-                Delete task
-              </Button>
-            </div>
-          </Card>
-        </aside>
       </div>
 
       {/* Stage-transition confirm modal */}
