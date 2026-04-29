@@ -385,6 +385,15 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_automation_triggers_run ON automation_triggers(run_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_provider ON custom_models(provider_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_custom_models_enabled ON custom_models(enabled, provider_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS assistant_threads (id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT 'Personal assistant', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+  db.exec("CREATE TABLE IF NOT EXISTS assistant_messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE, role TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'complete', run_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_messages_thread ON assistant_messages(thread_id, created_at ASC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_messages_run ON assistant_messages(run_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS assistant_runs (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE, user_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL, assistant_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL, status TEXT NOT NULL DEFAULT 'running', model TEXT, effort TEXT, started_at INTEGER NOT NULL, ended_at INTEGER, input_tokens INTEGER, output_tokens INTEGER, cache_read_tokens INTEGER, cache_creation_tokens INTEGER, cost_usd REAL, duration_ms INTEGER, num_turns INTEGER, summary TEXT, final_json TEXT, error_text TEXT, raw_output_path TEXT)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_runs_thread ON assistant_runs(thread_id, started_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_runs_status ON assistant_runs(status, started_at DESC)");
+  db.exec("CREATE TABLE IF NOT EXISTS assistant_agent_logs (id TEXT PRIMARY KEY, assistant_run_id TEXT NOT NULL REFERENCES assistant_runs(id) ON DELETE CASCADE, events TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_agent_logs_run ON assistant_agent_logs(assistant_run_id)");
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
   rebuildTaskWorkflowTables(db);

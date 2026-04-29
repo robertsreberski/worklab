@@ -14,9 +14,10 @@ import { registerModelRoutes } from "./routes-models.js";
 import { registerSearchRoutes } from "./routes-search.js";
 import { registerAutomationRoutes } from "./routes-automations.js";
 import { registerSlackRoutes } from "./routes-slack.js";
+import { registerAssistantRoutes } from "./routes-assistant.js";
 import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack, assistant: assistantOptions }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -39,6 +40,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
   registerAutomationRoutes(app, { db, broker, automationManager });
   registerSlackRoutes(app, { db, config, slack });
+  const assistant = registerAssistantRoutes(app, { db, broker, logger, config, ...(assistantOptions || {}) });
   if (config) registerAdminMcpRoutes(app, { config, logger });
 
   app.use("/api", (_req, res) => {
@@ -50,5 +52,5 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     res.status(500).json({ error: { code: "internal", message: err.message } });
   });
 
-  return { app, broker };
+  return { app, broker, assistant };
 }

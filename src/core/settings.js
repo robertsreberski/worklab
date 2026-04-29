@@ -21,9 +21,12 @@ export const DEFAULT_SETTINGS = {
   slack_run_timeout_ms: 120000,
   slack_notify_task_completed: true,
   slack_notify_task_errors: true,
+  assistant_model: "openai:gpt-5.5",
+  assistant_effort: "high",
+  assistant_run_timeout_ms: 300000,
 };
 
-const SLACK_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
 
 function coerceStored(value) {
   try { return JSON.parse(value); } catch { return value; }
@@ -98,12 +101,24 @@ export function validateSetting(key, value) {
     }
     case "slack_effort": {
       const text = stringValue(key, value, { required: true });
-      if (!SLACK_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...SLACK_EFFORTS].join(", ")}`);
+      if (!AGENT_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...AGENT_EFFORTS].join(", ")}`);
       return text;
     }
     case "slack_channel_ids":
       return stringArray(key, value);
     case "slack_run_timeout_ms":
+      return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
+    case "assistant_model": {
+      const text = stringValue(key, value, { required: true });
+      if (!isValidModelReference(text)) throw new Error(`${key} must be a valid model reference`);
+      return text;
+    }
+    case "assistant_effort": {
+      const text = stringValue(key, value, { required: true });
+      if (!AGENT_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...AGENT_EFFORTS].join(", ")}`);
+      return text;
+    }
+    case "assistant_run_timeout_ms":
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     default:
       throw new Error(`unknown setting: ${key}`);
