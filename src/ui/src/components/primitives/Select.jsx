@@ -131,6 +131,7 @@ export function Select({
 
   // Native variant: short enum, OS control.
   if (variant === "native") {
+    const hasEmptyOption = flat.some((o) => o.value === "");
     return (
       <select
         class={`input ${className}`.trim()}
@@ -139,7 +140,7 @@ export function Select({
         aria-label={ariaLabel}
         onChange={(e) => onChange?.(e.target.value)}
       >
-        {placeholder && !value && <option value="" disabled>{placeholder}</option>}
+        {placeholder && !value && !hasEmptyOption && <option value="" disabled>{placeholder}</option>}
         {flat.map((o) => (
           <option key={o.value} value={o.value} disabled={o.disabled}>
             {o.label || o.value}

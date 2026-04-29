@@ -1745,6 +1745,12 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/activity`);
   await expect(page.locator(".activity-row").first()).toBeVisible();
+  await expect(page.locator("select[aria-label='Filter by agent']")).toHaveValue("");
+  await expect(page.locator("select[aria-label='Filter by agent'] option:checked")).toHaveText("All agents");
+  await expect(page.locator("select[aria-label='Filter by status']")).toHaveValue("");
+  await expect(page.locator("select[aria-label='Filter by status'] option:checked")).toHaveText("All statuses");
+  await expect(page.locator(".summary-tiles .metric", { hasText: "Cost" })).toBeVisible();
+  await expect(page.locator(".summary-tiles .metric", { hasText: "Avg/run" })).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const filters = document.querySelector(".activity-filters");
@@ -1774,7 +1780,7 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   expect(metrics.rowRadius).toBeGreaterThanOrEqual(6);
   expect(metrics.statusColumn).toBe("2");
   expect(metrics.timeColumn).toBe("2");
-  expect(metrics.tileCount).toBe(3);
+  expect(metrics.tileCount).toBe(5);
   expect(metrics.tileColumns).toBe(3);
   await expectNoHorizontalOverflow(page, "mobile activity rows");
   await expectNoCriticalHorizontalClipping(

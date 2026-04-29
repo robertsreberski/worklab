@@ -46,6 +46,7 @@ function activityTitle(item) {
 
 export function Activity() {
   const [items, setItems] = useState(null);
+  const [summary, setSummary] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(false);
   const [agents, setAgents] = useState([]);
@@ -64,6 +65,7 @@ export function Activity() {
       if (dateRange.to) query.to = dateRange.to;
       const res = await api.listActivity(query);
       setItems((prev) => append ? [...(prev || []), ...(res.items || [])] : (res.items || []));
+      setSummary(res.summary || null);
       setNextCursor(res.nextCursor || null);
     } finally {
       setLoading(false);
@@ -78,13 +80,13 @@ export function Activity() {
     if (evt.type === "run_started" || evt.type === "run_ended" || evt.type === "agent_consolidated") load();
   });
 
-  const tiles = useMemo(() => {
-    const list = items || [];
-    const total = list.length;
-    const running = list.filter((i) => i.status === "running").length;
-    const errors = list.filter((i) => i.status === "error" || i.status === "failed").length;
-    return { total, running, errors };
-  }, [items]);
+  const tiles = useMemo(() => ({
+    totalCost: fmtCost(summary?.total_cost_usd ?? 0),
+    runs: summary?.run_count ?? 0,
+    averageCost: summary?.average_cost_usd != null ? fmtCost(summary.average_cost_usd) : "-",
+    running: summary?.running_count ?? 0,
+    errors: summary?.error_count ?? 0,
+  }), [summary]);
 
   const pageActions = (
     <Button variant="secondary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={() => load()} loading={loading}>
@@ -101,8 +103,10 @@ export function Activity() {
         description="Recent task runs, automations, and consolidation events."
         actions={pageActions}
       >
-        <SummaryGrid>
-          <Metric label="Items" value={tiles.total} />
+        <SummaryGrid class="activity-summary">
+          <Metric label="Cost" value={tiles.totalCost} />
+          <Metric label="Runs" value={tiles.runs} />
+          <Metric label="Avg/run" value={tiles.averageCost} />
           <Metric label="Running" value={tiles.running} />
           <Metric label="Errors" value={tiles.errors} />
         </SummaryGrid>
