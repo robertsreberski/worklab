@@ -276,7 +276,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let dailyBudgetUsd;
     let perRunBudgetUsd;
     try {
-      allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, false);
+      allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       dailyBudgetUsd = normalizeBudgetField("daily_budget_usd", req.body.daily_budget_usd);
       perRunBudgetUsd = normalizeBudgetField("per_run_budget_usd", req.body.per_run_budget_usd);
     } catch (err) {

@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 16;
+export const SCHEMA_VERSION = 17;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS agents (
   mcp_allowlist_mode TEXT NOT NULL DEFAULT 'all',
   builtin_allowlist TEXT NOT NULL DEFAULT '[]',
   builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all',
-  allow_self_review INTEGER NOT NULL DEFAULT 0,
+  allow_self_review INTEGER NOT NULL DEFAULT 1,
   daily_budget_usd REAL,
   per_run_budget_usd REAL,
   enabled INTEGER NOT NULL DEFAULT 1,

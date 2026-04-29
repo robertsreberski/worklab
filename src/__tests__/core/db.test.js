@@ -49,7 +49,17 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("16");
+    expect(row.value).toBe("17");
+  });
+
+  it("defaults new agents to allowing self-review", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("default-review", "Default Review", "claude", "claude:claude-sonnet-4-6", now, now);
+    const row = db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get("default-review");
+    expect(row.allow_self_review).toBe(1);
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {
