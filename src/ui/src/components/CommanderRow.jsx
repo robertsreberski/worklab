@@ -113,6 +113,9 @@ export function CommanderRow({
         onOpen?.();
       }}
       onMouseEnter={() => onSelect?.()}
+      onPointerDown={(event) => {
+        if (event.pointerType !== "mouse") onSelect?.();
+      }}
     >
       <div
         class="commander-cell-checkbox"

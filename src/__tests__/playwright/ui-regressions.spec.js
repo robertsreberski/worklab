@@ -1253,6 +1253,9 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
   await expect(page.locator(".commander-row.selected").first()).toBeVisible();
+  const touchTargetRow = page.locator(".commander-row").nth(1);
+  await touchTargetRow.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true });
+  await expect(touchTargetRow).toHaveClass(/selected/);
 
   const metrics = await page.evaluate(() => {
     const row = document.querySelector(".commander-row");
