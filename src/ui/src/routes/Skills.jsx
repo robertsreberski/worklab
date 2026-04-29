@@ -2,13 +2,13 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
+import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { SkillEdit } from "./SkillEdit.jsx";
 import { skillDisplayName } from "../lib/display.js";
@@ -88,8 +88,15 @@ export function Skills({ selectedName = null }) {
   }, [skills, query]);
 
   const listHeader = (
-    <>
-      <SearchField value={query} onInput={(e) => setQuery(e.target.value)} placeholder="Search skills…" inputRef={searchRef} />
+    <PaneListHeader
+      searchValue={query}
+      onSearch={setQuery}
+      searchPlaceholder="Search skills…"
+      searchAriaLabel="Search skills"
+      searchRef={searchRef}
+      actionLabel="New skill"
+      onAction={() => { navigateHash("#/skills/new"); }}
+    >
       <input
         ref={fileInputRef}
         class="sr-only"
@@ -110,10 +117,7 @@ export function Skills({ selectedName = null }) {
       >
         Import ZIP
       </Button>
-      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => { navigateHash("#/skills/new"); }}>
-        New skill
-      </Button>
-    </>
+    </PaneListHeader>
   );
 
   const listBody = filtered.length === 0 ? (

@@ -15,6 +15,7 @@ import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { Page } from "../components/layout/index.js";
 import {
   browserNotificationSettings,
   disableBrowserNotifications,
@@ -503,7 +504,7 @@ export function Settings() {
   if (!settings || !runtimeDraft) {
     return (
       <AppShell route="settings">
-        <div class="page-wrap"><LoadingState caption="Loading settings..." /></div>
+        <Page><LoadingState caption="Loading settings..." /></Page>
       </AppShell>
     );
   }
@@ -541,16 +542,13 @@ export function Settings() {
 
   return (
     <AppShell route="settings">
-      <div class="page-wrap settings-page">
-        <header class="settings-page-head">
-          <div class="settings-page-title">
-            <span class="form-section-kicker">Settings</span>
-            <h1>Settings</h1>
-            <p>Service, workers, integrations, search, and MCP tools.</p>
-          </div>
-          <div class="page-actions toolbar">{pageActions}</div>
-        </header>
-
+      <Page
+        class="settings-page"
+        kicker="Settings"
+        title="Settings"
+        description="Service, workers, integrations, search, and MCP tools."
+        actions={pageActions}
+      >
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
@@ -955,7 +953,7 @@ export function Settings() {
           </SettingsSection>
 
         </div>
-      </div>
+      </Page>
     </AppShell>
   );
 }

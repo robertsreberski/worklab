@@ -13,6 +13,7 @@ import { Metric } from "../components/Metric.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { Page, SummaryGrid } from "../components/layout/index.js";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
@@ -94,13 +95,17 @@ export function Activity() {
 
   return (
     <AppShell route="activity">
-      <div class="page-wrap">
-        <div class="page-actions toolbar">{pageActions}</div>
-        <div class="summary-tiles">
+      <Page
+        kicker="Activity"
+        title="Activity"
+        description="Recent task runs, automations, and consolidation events."
+        actions={pageActions}
+      >
+        <SummaryGrid>
           <Metric label="Items" value={tiles.total} />
           <Metric label="Running" value={tiles.running} />
           <Metric label="Errors" value={tiles.errors} />
-        </div>
+        </SummaryGrid>
 
         <Card title="Filters">
           <div class="activity-filters">
@@ -186,7 +191,7 @@ export function Activity() {
             )}
           </Card>
         )}
-      </div>
+      </Page>
     </AppShell>
   );
 }

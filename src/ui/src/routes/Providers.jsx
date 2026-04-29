@@ -3,7 +3,6 @@ import { api } from "../lib/api.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
@@ -19,6 +18,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { PaneListHeader } from "../components/layout/index.js";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -483,12 +483,15 @@ export function Providers({ selectedId = null }) {
   }, [providers, query]);
 
   const listHeader = (
-    <>
-      <SearchField value={query} onInput={(event) => setQuery(event.target.value)} placeholder="Search providers…" inputRef={searchRef} />
-      <Button variant="primary" size="sm" iconLeft={<Icon name="plus" size={12} />} onClick={() => navigateHash("#/providers/new")}>
-        New provider
-      </Button>
-    </>
+    <PaneListHeader
+      searchValue={query}
+      onSearch={setQuery}
+      searchPlaceholder="Search providers…"
+      searchAriaLabel="Search providers"
+      searchRef={searchRef}
+      actionLabel="New provider"
+      onAction={() => navigateHash("#/providers/new")}
+    />
   );
 
   const listBody = filtered.length === 0 ? (

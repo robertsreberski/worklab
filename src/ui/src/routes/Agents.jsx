@@ -6,11 +6,11 @@ import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
-import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
+import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
@@ -63,23 +63,15 @@ export function Agents({ selectedName = null }) {
   }, [agents, query]);
 
   const listHeader = (
-    <>
-      <SearchField
-        value={query}
-        onInput={(e) => setQuery(e.target.value)}
-        placeholder="Search agents…"
-        ariaLabel="Search agents"
-        inputRef={searchRef}
-      />
-      <Button
-        variant="primary"
-        size="sm"
-        iconLeft={<Icon name="plus" size={12} />}
-        onClick={() => { navigateHash("#/agents/new"); }}
-      >
-        New agent
-      </Button>
-    </>
+    <PaneListHeader
+      searchValue={query}
+      onSearch={setQuery}
+      searchPlaceholder="Search agents…"
+      searchAriaLabel="Search agents"
+      searchRef={searchRef}
+      actionLabel="New agent"
+      onAction={() => { navigateHash("#/agents/new"); }}
+    />
   );
 
   const listBody = filtered.length === 0 ? (
