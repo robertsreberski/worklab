@@ -5,6 +5,8 @@ describe("admin MCP tools", () => {
   it("exposes full-access API escape hatch and task wrappers", () => {
     const names = adminToolDefinitions.map((tool) => tool.name);
     expect(names).toContain("worklab_api_request");
+    expect(names).toContain("worklab_project_create");
+    expect(names).toContain("worklab_project_archive");
     expect(names).toContain("worklab_task_create");
     expect(names).toContain("worklab_task_comment_delete");
     expect(names).toContain("worklab_automation_create");
@@ -33,6 +35,22 @@ describe("admin MCP tools", () => {
     expect(result.url).toBe("http://localhost:7878/api/tasks/task_1");
     expect(result.method).toBe("PATCH");
     expect(result.body).toEqual({ title: "New" });
+
+    const project = await handlers.worklab_project_create({
+      name: "Project",
+      context: "Shared context",
+      workdir: "/tmp/project",
+    });
+    expect(project.url).toBe("http://localhost:7878/api/projects");
+    expect(project.method).toBe("POST");
+    expect(project.body).toMatchObject({ name: "Project", context: "Shared context", workdir: "/tmp/project" });
+
+    const projectList = await handlers.worklab_project_list({ q: "proj", include_archived: true });
+    expect(projectList.url).toBe("http://localhost:7878/api/projects?q=proj&include_archived=true");
+
+    const archivedProject = await handlers.worklab_project_archive({ id: "project_1" });
+    expect(archivedProject.url).toBe("http://localhost:7878/api/projects/project_1");
+    expect(archivedProject.method).toBe("DELETE");
 
     const automation = await handlers.worklab_automation_run({ id: "auto_1" });
     expect(automation.url).toBe("http://localhost:7878/api/automations/auto_1/run");

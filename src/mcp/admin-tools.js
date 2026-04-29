@@ -19,6 +19,7 @@ function tool(name, description, inputSchema = object()) {
 
 const id = string("Identifier");
 const taskId = string("Task id or public task key");
+const projectId = string("Project id or slug");
 const slug = string("Slug");
 const patch = object({}, [], true);
 
@@ -28,9 +29,27 @@ export const adminToolDefinitions = [
   tool("worklab_service_restart", "Request a Worklab service restart."),
   tool("worklab_service_stop", "Request a Worklab service stop."),
 
-  tool("worklab_task_list", "List tasks, optionally filtered by stage or agent.", object({
+  tool("worklab_project_list", "List projects, optionally including archived projects.", object({
+    q: string("Search query"),
+    include_archived: boolean("Include archived projects"),
+  })),
+  tool("worklab_project_get", "Get a project with task summary and stage counts.", object({ id: projectId }, ["id"])),
+  tool("worklab_project_create", "Create a project.", object({
+    name: string("Project name"),
+    slug: string("Optional URL-safe slug"),
+    description: string("Short project description"),
+    context: string("Markdown context inserted into every assigned task run"),
+    workdir: string("Optional run workdir override"),
+    tags: arrayOfString("Tags"),
+    archived: boolean("Whether the project starts archived"),
+  }, ["name"])),
+  tool("worklab_project_update", "Patch a project.", object({ id: projectId, patch }, ["id", "patch"])),
+  tool("worklab_project_archive", "Archive a project without deleting linked tasks.", object({ id: projectId }, ["id"])),
+
+  tool("worklab_task_list", "List tasks, optionally filtered by stage, agent, or project.", object({
     stage: string("Workflow stage filter"),
     agent: string("Owner or reviewer agent filter"),
+    project: string("Project id, slug, or 'none'"),
   })),
   tool("worklab_task_get", "Get a task with comments, runs, and graph context.", object({ id: taskId }, ["id"])),
   tool("worklab_task_create", "Create a task.", object({
@@ -41,6 +60,7 @@ export const adminToolDefinitions = [
     reviewer_agent: string("Reviewer agent name"),
     stage: string("Initial workflow stage"),
     run_policy: string("Run policy: manual or auto_plan_execute"),
+    project_id: string("Optional project id or slug"),
     tags: arrayOfString("Tags"),
     blocked_by_ids: arrayOfString("Dependency task ids or public task keys"),
     client_request_id: string("Idempotency key"),
@@ -183,7 +203,12 @@ export async function apiRequest({ baseUrl, fetchImpl = fetch }, method, path, {
 }
 
 const specs = [
-  ["worklab_task_list", "GET", "/api/tasks", ["stage", "agent"]],
+  ["worklab_project_list", "GET", "/api/projects", ["q", "include_archived"]],
+  ["worklab_project_get", "GET", "/api/projects/:id"],
+  ["worklab_project_create", "POST", "/api/projects", [], "input"],
+  ["worklab_project_update", "PATCH", "/api/projects/:id", [], "patch"],
+  ["worklab_project_archive", "DELETE", "/api/projects/:id"],
+  ["worklab_task_list", "GET", "/api/tasks", ["stage", "agent", "project"]],
   ["worklab_task_get", "GET", "/api/tasks/:id"],
   ["worklab_task_create", "POST", "/api/tasks", [], "input"],
   ["worklab_task_update", "PATCH", "/api/tasks/:id", [], "patch"],
