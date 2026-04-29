@@ -1490,6 +1490,54 @@ for (const vp of RESPONSIVE_VIEWPORTS) {
   });
 }
 
+test("mobile More tab opens overflow navigation routes", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  const more = page.locator(".app-tabbar button", { hasText: "More" });
+  await expect(more).toBeVisible();
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+
+  await more.click();
+  const sheet = page.locator(".app-more-sheet.open");
+  await expect(sheet).toBeVisible();
+  await expect(more).toHaveAttribute("aria-expanded", "true");
+
+  for (const label of ["Skills", "Knowledge", "Providers", "Settings"]) {
+    await expect(sheet.getByRole("link", { name: label })).toBeVisible();
+  }
+
+  const metrics = await page.evaluate(() => {
+    const navItems = [...document.querySelectorAll(".app-tabbar > a, .app-tabbar > button")];
+    const sheetLinks = [...document.querySelectorAll(".app-more-sheet-link")];
+    return {
+      navCount: navItems.length,
+      navMinWidth: Math.min(...navItems.map((item) => Math.round(item.getBoundingClientRect().width))),
+      navMaxWidth: Math.max(...navItems.map((item) => Math.round(item.getBoundingClientRect().width))),
+      sheetLinkLabels: sheetLinks.map((link) => (link.textContent || "").replace(/\s+/g, " ").trim()),
+      minSheetLinkHeight: Math.min(...sheetLinks.map((link) => Math.round(link.getBoundingClientRect().height))),
+      sheetOverflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(metrics.navCount).toBe(5);
+  expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
+  expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
+  expect(metrics.sheetLinkLabels).toEqual(["Skills", "Knowledge", "Providers", "Settings"]);
+  expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
+  await expectNoHorizontalOverflow(page, "mobile More sheet");
+
+  await sheet.getByRole("link", { name: "Skills" }).click();
+  await expect(page).toHaveURL(/#\/skills$/);
+  await expect(page.locator(".pane-list")).toBeVisible();
+  await expect(page.locator(".app-more-sheet")).toHaveCount(0);
+
+  await page.goto(`${baseUrl}/#/providers`);
+  await expect(page.locator(".pane-list")).toBeVisible();
+  await expect(page.locator(".app-tabbar button", { hasText: "More" })).toHaveClass(/active/);
+});
+
 test("mobile commander uses deliberate row density without exposing task ids", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
