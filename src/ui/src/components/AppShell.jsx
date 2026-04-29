@@ -8,6 +8,7 @@ import { useContext, useEffect, useMemo, useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
+import { AssistantDock } from "./AssistantDock.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -49,6 +50,15 @@ const TABBAR_ROUTES = [
   { id: "more", label: "More", icon: "more-horizontal", href: "#/knowledge" },
 ];
 const EMPTY_SECTIONS = [];
+const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";
+
+function assistantInitialOpen() {
+  if (typeof window === "undefined") return true;
+  const stored = window.localStorage?.getItem?.(ASSISTANT_PREF_KEY);
+  if (stored === "open") return true;
+  if (stored === "closed") return false;
+  return !window.matchMedia?.("(max-width: 860px)")?.matches;
+}
 
 export function useAppChrome(chrome, deps = []) {
   const context = useContext(AppChromeContext);
@@ -191,6 +201,7 @@ export function AppShell({
   const [registeredChrome, setRegisteredChrome] = useState({});
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sectionSheetOpen, setSectionSheetOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(assistantInitialOpen);
   const chromeContext = useMemo(() => ({ setChrome: setRegisteredChrome }), []);
   const activeDock = registeredChrome.mobileActionDock ?? mobileActionDock;
   const activeTopbar = registeredChrome.mobileTopbar ?? mobileTopbar;
@@ -215,6 +226,10 @@ export function AppShell({
     setSectionSheetOpen(false);
   }, [route]);
 
+  useEffect(() => {
+    window.localStorage?.setItem?.(ASSISTANT_PREF_KEY, assistantOpen ? "open" : "closed");
+  }, [assistantOpen]);
+
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
     "N": () => { navigateHash("#/tasks/new"); },
@@ -232,7 +247,7 @@ export function AppShell({
 
   return (
     <AppChromeContext.Provider value={chromeContext}>
-      <div class={`app responsive ${activeDock ? "has-mobile-action-dock has-dock" : ""}`.trim()}>
+      <div class={`app responsive ${activeDock ? "has-mobile-action-dock has-dock" : ""} ${assistantOpen ? "assistant-open" : ""}`.trim()}>
         <a href="#main" class="skip-link">Skip to main content</a>
         <aside class="app-rail">
           <a
@@ -307,6 +322,7 @@ export function AppShell({
             sections={activeSections}
           />
         </div>
+        <AssistantDock open={assistantOpen} onToggle={() => setAssistantOpen((current) => !current)} />
         <AppTabbar route={route} />
         <ToastHost />
         <KeyboardHelpDrawer open={helpOpen} onClose={() => setHelpOpen(false)} />

@@ -44,6 +44,23 @@ describe("ui API client", () => {
       body: undefined,
     });
   });
+
+  it("sends assistant messages through a named helper", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 202,
+      json: async () => ({ run: { id: "run-1" } }),
+    }));
+
+    const result = await api.sendAssistantMessage("Create a task");
+
+    expect(result.run.id).toBe("run-1");
+    expect(global.fetch).toHaveBeenCalledWith("/api/assistant/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body: "Create a task" }),
+    });
+  });
 });
 
 describe("ui API call sites", () => {

@@ -59,6 +59,11 @@ export const api = {
   patchRuntimeSettings: (patch) => request("PATCH", "/settings/runtime", patch),
   restartRuntime: () => request("POST", "/settings/runtime/restart"),
   getSlackStatus: () => request("GET", "/slack/status"),
+  // assistant
+  getAssistant: () => request("GET", "/assistant"),
+  sendAssistantMessage: (body) => request("POST", "/assistant/messages", { body }),
+  getAssistantRun: (id) => request("GET", `/assistant/runs/${id}`),
+  cancelAssistantRun: (id) => request("POST", `/assistant/runs/${id}/cancel`),
   // agents
   listAgents: () => request("GET", "/agents"),
   getAgent: (name) => request("GET", `/agents/${name}`),
