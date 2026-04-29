@@ -47,6 +47,12 @@ function projectRouteId(project) {
   return encodeURIComponent(project?.slug || project?.id || "");
 }
 
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+function slugLooksValid(value) {
+  if (!value) return true;
+  return SLUG_PATTERN.test(value);
+}
+
 function projectDraftFrom(project = {}) {
   return {
     name: project.name || "",
@@ -101,6 +107,9 @@ function ProjectEditor({ selectedId, onSaved }) {
   }, [isNew, selectedId]);
 
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  const slugTrimmed = draft.slug.trim();
+  const slugValid = slugLooksValid(slugTrimmed);
+  const canSave = !!draft.name.trim() && slugValid;
 
   function update(patch) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -153,7 +162,7 @@ function ProjectEditor({ selectedId, onSaved }) {
     mobileActionDock: (
       <>
         <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <Button variant={isDirty || isNew ? "primary" : "secondary"} loading={saving} disabled={!draft.name.trim()} onClick={() => save().catch(() => {})}>
+        <Button variant={isDirty || isNew ? "primary" : "secondary"} loading={saving} disabled={!canSave} onClick={() => save().catch(() => {})}>
           {isNew ? "Create" : "Save"}
         </Button>
       </>
@@ -190,7 +199,7 @@ function ProjectEditor({ selectedId, onSaved }) {
         actions={(
           <>
             <Button variant="ghost" onClick={cancel}>Cancel</Button>
-            <Button variant={isDirty || isNew ? "primary" : "secondary"} loading={saving} disabled={!draft.name.trim()} onClick={() => save().catch(() => {})}>
+            <Button variant={isDirty || isNew ? "primary" : "secondary"} loading={saving} disabled={!canSave} onClick={() => save().catch(() => {})}>
               {isNew ? "Create" : "Save"}
             </Button>
           </>
@@ -207,8 +216,17 @@ function ProjectEditor({ selectedId, onSaved }) {
                 <FormField label="Name" required>
                   <Input value={draft.name} onInput={(event) => update({ name: event.currentTarget.value })} placeholder="Project name" autoFocus={isNew} />
                 </FormField>
-                <FormField label="Slug" hint="Lowercase letters, digits, and hyphens.">
-                  <Input value={draft.slug} onInput={(event) => update({ slug: event.currentTarget.value })} placeholder="generated-from-name" />
+                <FormField
+                  label="Slug"
+                  hint={slugValid ? "Lowercase letters, digits, and hyphens." : null}
+                  error={slugValid ? null : "Slug must use lowercase letters, digits, and hyphens (no leading/trailing dash)."}
+                >
+                  <Input
+                    value={draft.slug}
+                    onInput={(event) => update({ slug: event.currentTarget.value })}
+                    placeholder="generated-from-name"
+                    aria-invalid={!slugValid}
+                  />
                 </FormField>
                 <FormField label="Description">
                   <Input value={draft.description} onInput={(event) => update({ description: event.currentTarget.value })} placeholder="Short summary" />
