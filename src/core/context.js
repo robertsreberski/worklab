@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { buildSkillIndex } from "./skills.js";
 import { stripWorklabResultJson } from "./worklab-result.js";
+import { renderToolSurfaceMarkdown } from "../mcp/worklab-tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
@@ -233,71 +235,166 @@ function buildAutomationBody(automation) {
   ].filter(Boolean).join("\n");
 }
 
-function buildBasePrompt({ agent, task, skills, memory, journalTail, comments, currentRunComments, pinnedKb, priorRuns }) {
-  const parts = [];
-  parts.push(section("Role", agent.instructions || ""));
-  parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
-  parts.push(renderSkills(skills));
-  parts.push(section("Memory", memory || ""));
-  parts.push(section("Recent journal", journalTail || ""));
-  parts.push(section("Current Run Guidance", formatCurrentRunGuidance(currentRunComments)));
-  parts.push(section("Task", buildTaskBody(task, comments)));
-  parts.push(section("Prior run history", formatPriorRuns(priorRuns)));
-  parts.push(section("Available run logs", formatAvailableRunLogs(priorRuns)));
-  parts.push(CADENCE);
-  return parts;
+// Render the agent's runtime capability surface as a tight markdown block.
+// CLI providers consume this via the prompt; SDK providers also see it
+// because some adapters do not expose static tool docs to the model.
+function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpServers = {}, worklabToolAllowlist = null } = {}) {
+  const lines = [];
+  const builtin = (allowedTools || []).filter((tool) => !disallowedTools?.includes(tool));
+  if (builtin.length) {
+    lines.push(`Built-in tools available: ${builtin.join(", ")}.`);
+  } else if (Array.isArray(allowedTools) && allowedTools.length === 0 && Array.isArray(disallowedTools) && disallowedTools.length > 0) {
+    lines.push("Built-in tools: disabled for this run.");
+  }
+  const serverNames = Object.keys(mcpServers || {});
+  if (serverNames.includes("worklab")) {
+    const surface = renderToolSurfaceMarkdown(worklabToolAllowlist);
+    if (surface) {
+      lines.push("");
+      lines.push("Worklab MCP tools:");
+      lines.push(surface);
+    }
+  }
+  const otherServers = serverNames.filter((name) => name !== "worklab");
+  if (otherServers.length) {
+    lines.push("");
+    lines.push(`Other MCP servers connected: ${otherServers.join(", ")}.`);
+  }
+  return lines.join("\n");
 }
 
-export function buildPlanSystemPrompt(input) {
-  const parts = buildBasePrompt(input);
+const BASE_SECTION_NAMES = [
+  "Role",
+  "Pinned knowledge",
+  "Skills",
+  "Memory",
+  "Recent journal",
+  "Capabilities",
+  "Current Run Guidance",
+];
+
+// Compose the invariant prefix shared by plan, execute, review and automation.
+// Returned as an array of [name, body] pairs so callers can hash a stable
+// representation for prompt-cache diagnostics without resorting to
+// substring comparisons on the rendered prompt.
+function buildBaseSections(input) {
+  const {
+    agent, skills, memory, journalTail, currentRunComments,
+    allowedTools, disallowedTools, mcpServers, pinnedKb,
+  } = input;
+  return [
+    ["Role", agent.instructions || ""],
+    ["Pinned knowledge", formatPinnedKb(pinnedKb)],
+    ["Skills", renderSkills(skills).trim()],
+    ["Memory", memory || ""],
+    ["Recent journal", journalTail || ""],
+    ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers })],
+    ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
+  ];
+}
+
+function renderSectionParts(sectionPairs) {
+  return sectionPairs.map(([name, body]) => {
+    if (!body || !String(body).trim()) return "";
+    if (name === "Skills") return `${body}\n`;
+    return section(name, body);
+  });
+}
+
+function hashPrefix(sectionPairs) {
+  const hash = createHash("sha256");
+  for (const [name, body] of sectionPairs) {
+    hash.update(`${name} ${body || ""} `);
+  }
+  return hash.digest("hex").slice(0, 16);
+}
+
+function modeDirective(mode) {
+  if (mode === "plan") return PLAN_DIRECTIVE;
+  if (mode === "review") return REVIEW_DIRECTIVE;
+  if (mode === "automation") return AUTOMATION_DIRECTIVE;
+  if (mode === "consolidate") return CONSOLIDATION_DIRECTIVE;
+  return WORK_DIRECTIVE;
+}
+
+// Single source of truth for prompt assembly. Returns:
+//   - text: the rendered system prompt
+//   - prefixHash: a stable 16-char sha256 over the invariant prefix
+//                 (Role…Current Run Guidance) used for diagnostics and
+//                 to verify Claude SDK prompt-cache stability across modes
+//   - sections: the list of section names actually emitted (for diagnostics)
+export function buildSystemPrompt(input, mode) {
+  if (mode === "consolidate") {
+    const parts = [
+      section("Role", input.agent.instructions || ""),
+      section("Current memory", input.memory || "_No existing memory._"),
+      section("Full journal", input.journal || "_No journal entries._"),
+      CONSOLIDATION_DIRECTIVE,
+    ];
+    return {
+      text: parts.filter(Boolean).join("\n"),
+      prefixHash: null,
+      sections: ["Role", "Current memory", "Full journal", "directive:consolidate"],
+    };
+  }
+
+  const baseSections = buildBaseSections(input);
+  const prefixHash = hashPrefix(baseSections);
+  const parts = renderSectionParts(baseSections);
+  const sectionNames = [...BASE_SECTION_NAMES];
+
+  if (mode === "automation") {
+    parts.push(section("Automation", buildAutomationBody(input.automation)));
+    sectionNames.push("Automation");
+  } else {
+    parts.push(section("Task", buildTaskBody(input.task, input.comments)));
+    sectionNames.push("Task");
+  }
+
+  if (mode === "review") {
+    parts.push(formatWorkOutput(input.execution || {}));
+    parts.push(section("Available run logs", formatReviewRunLogs(input.execution)));
+    sectionNames.push("Work output", "Available run logs");
+  } else if (mode === "plan" || mode === "execute") {
+    parts.push(section("Prior run history", formatPriorRuns(input.priorRuns)));
+    parts.push(section("Available run logs", formatAvailableRunLogs(input.priorRuns)));
+    sectionNames.push("Prior run history", "Available run logs");
+  }
+
+  if (mode !== "review") {
+    parts.push(CADENCE);
+    sectionNames.push("CADENCE");
+  }
   parts.push(RESULT_FIELD_RULES);
-  parts.push(PLAN_DIRECTIVE);
-  return parts.filter(Boolean).join("\n");
+  parts.push(modeDirective(mode));
+  sectionNames.push("RESULT_FIELD_RULES", `directive:${mode}`);
+
+  return {
+    text: parts.filter(Boolean).join("\n"),
+    prefixHash,
+    sections: sectionNames,
+  };
+}
+
+// Backward-compatible wrappers — existing callers (worker.js, tests) keep
+// working while new code uses buildSystemPrompt directly. Each wrapper
+// returns the rendered text only; diagnostics callers use buildSystemPrompt.
+export function buildPlanSystemPrompt(input) {
+  return buildSystemPrompt(input, "plan").text;
 }
 
 export function buildExecuteSystemPrompt(input) {
-  const parts = buildBasePrompt(input);
-  parts.push(RESULT_FIELD_RULES);
-  parts.push(WORK_DIRECTIVE);
-  return parts.filter(Boolean).join("\n");
+  return buildSystemPrompt(input, "execute").text;
 }
 
-// NOTE: the first shared context sections MUST match buildExecuteSystemPrompt byte-for-byte
-// (T13 e2e verifies pinned KB + skills appear identically in both modes).
-export function buildReviewSystemPrompt({ agent, task, skills, memory, journalTail, comments, currentRunComments, pinnedKb, execution }) {
-  const parts = [];
-  parts.push(section("Role", agent.instructions || ""));
-  parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
-  parts.push(renderSkills(skills));
-  parts.push(section("Memory", memory || ""));
-  parts.push(section("Recent journal", journalTail || ""));
-  parts.push(section("Current Run Guidance", formatCurrentRunGuidance(currentRunComments)));
-  parts.push(section("Task", buildTaskBody(task, comments)));
-  parts.push(formatWorkOutput(execution || {}));
-  parts.push(section("Available run logs", formatReviewRunLogs(execution)));
-  parts.push(RESULT_FIELD_RULES);
-  parts.push(REVIEW_DIRECTIVE);
-  return parts.filter(Boolean).join("\n");
+export function buildReviewSystemPrompt(input) {
+  return buildSystemPrompt(input, "review").text;
 }
 
-export function buildConsolidationSystemPrompt({ agent, memory, journal }) {
-  const parts = [];
-  parts.push(section("Role", agent.instructions || ""));
-  parts.push(section("Current memory", memory || "_No existing memory._"));
-  parts.push(section("Full journal", journal || "_No journal entries._"));
-  parts.push(CONSOLIDATION_DIRECTIVE);
-  return parts.filter(Boolean).join("\n");
+export function buildConsolidationSystemPrompt(input) {
+  return buildSystemPrompt(input, "consolidate").text;
 }
 
-export function buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb }) {
-  const parts = [];
-  parts.push(section("Role", agent.instructions || ""));
-  parts.push(section("Pinned knowledge", formatPinnedKb(pinnedKb)));
-  parts.push(renderSkills(skills));
-  parts.push(section("Memory", memory || ""));
-  parts.push(section("Recent journal", journalTail || ""));
-  parts.push(section("Automation", buildAutomationBody(automation)));
-  parts.push(CADENCE);
-  parts.push(AUTOMATION_DIRECTIVE);
-  return parts.filter(Boolean).join("\n");
+export function buildAutomationSystemPrompt(input) {
+  return buildSystemPrompt(input, "automation").text;
 }

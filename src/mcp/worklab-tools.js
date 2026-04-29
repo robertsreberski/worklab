@@ -160,6 +160,20 @@ export function createToolHandlers(context) {
   };
 }
 
+export function renderToolSurfaceMarkdown(toolNames) {
+  const allow = toolNames ? new Set(toolNames) : null;
+  const visible = toolDefinitions.filter((tool) => !allow || allow.has(tool.name));
+  if (visible.length === 0) return "";
+  return visible
+    .map((tool) => {
+      const required = Array.isArray(tool.inputSchema?.required) ? tool.inputSchema.required : [];
+      const params = required.length ? ` (${required.join(", ")})` : "";
+      const summary = (tool.description || "").trim().split(/\n+/)[0];
+      return `- \`${tool.name}\`${params}: ${summary}`;
+    })
+    .join("\n");
+}
+
 export const toolDefinitions = [
   {
     name: "journal_append",
