@@ -7,6 +7,19 @@ const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const MAX_READ_LINES = 2000;
 const MAX_WRITE_BYTES = 10 * 1024 * 1024;
+const DEFAULT_EXCLUDED_DIRS = [
+  ".git",
+  "node_modules",
+  "dist",
+  "coverage",
+  "playwright-report",
+  "test-results",
+  ".cache",
+];
+const DEFAULT_EXCLUDED_FILES = ["*.map"];
+const DEFAULT_MAX_SEARCH_LINES = 500;
+const DEFAULT_MAX_SEARCH_CHARS = 80_000;
+const SEARCH_MAX_BUFFER = 2 * 1024 * 1024;
 
 function roots() {
   return [...new Set([
@@ -56,29 +69,118 @@ export async function editToolImpl({ file_path, old_string, new_string, replace_
   return `Successfully edited ${file_path}`;
 }
 
-export async function globToolImpl({ pattern, path }) {
-  const cwd = resolve(path || process.env.WORKLAB_WORKSPACE || process.cwd());
-  if (!isPathAllowed(cwd)) return `Error: Path not allowed: ${cwd}`;
-  const args = [cwd, "-type", "f"];
-  if (pattern.includes("/") || pattern.includes("**")) args.push("-path", `*/${pattern.replace(/\*\*\//g, "*/")}`);
-  else args.push("-name", pattern);
-  const { stdout } = await execFileAsync("find", args, { timeout: 15000, maxBuffer: 1024 * 1024 });
-  return stdout.trim() || "No files found matching pattern.";
+function findPruneArgs() {
+  return [
+    "(",
+    ...DEFAULT_EXCLUDED_DIRS.flatMap((dir, index) => (
+      index === 0 ? ["-name", dir] : ["-o", "-name", dir]
+    )),
+    ")",
+    "-prune",
+    "-o",
+  ];
 }
 
-export async function grepToolImpl({ pattern, path, glob, context, case_insensitive }) {
+function globPatternArgs(pattern) {
+  const raw = String(pattern || "*").replace(/^\.\//, "");
+  if (raw === "**" || raw === "**/*" || raw === "*") return [];
+  if (raw.includes("/") || raw.includes("**")) {
+    const findPattern = raw.replace(/\*\*\/?/g, "*");
+    return ["-path", `*/${findPattern}`];
+  }
+  return ["-name", raw];
+}
+
+function capLines(text, {
+  label,
+  noMatches,
+  maxLines = DEFAULT_MAX_SEARCH_LINES,
+  maxChars = DEFAULT_MAX_SEARCH_CHARS,
+} = {}) {
+  const raw = String(text || "").trim();
+  if (!raw) return noMatches;
+  const lines = raw.split("\n");
+  const kept = [];
+  let chars = 0;
+  for (const line of lines) {
+    if (kept.length >= maxLines || chars + line.length + 1 > maxChars) break;
+    kept.push(line);
+    chars += line.length + 1;
+  }
+  if (kept.length === lines.length) return raw;
+  const suffix = [
+    `[truncated ${label || "search"} result: showing ${kept.length} of ${lines.length} lines after excluding generated/vendor paths.`,
+    "Use a narrower path, glob, or pattern for the full result.]",
+  ].join(" ");
+  return `${kept.join("\n")}\n\n${suffix}`;
+}
+
+function excludedPathSummary() {
+  return `Excluded directories: ${DEFAULT_EXCLUDED_DIRS.join(", ")}; excluded files: ${DEFAULT_EXCLUDED_FILES.join(", ")}.`;
+}
+
+export async function globToolImpl({ pattern, path, max_matches, max_output_chars }) {
+  const cwd = resolve(path || process.env.WORKLAB_WORKSPACE || process.cwd());
+  if (!isPathAllowed(cwd)) return `Error: Path not allowed: ${cwd}`;
+  const args = [
+    cwd,
+    ...findPruneArgs(),
+    "-type", "f",
+    ...DEFAULT_EXCLUDED_FILES.flatMap((filePattern) => ["!", "-name", filePattern]),
+    ...globPatternArgs(pattern),
+    "-print",
+  ];
+  try {
+    const { stdout } = await execFileAsync("find", args, { timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
+    const result = capLines(stdout, {
+      label: "Glob",
+      noMatches: "No files found matching pattern.",
+      maxLines: Number(max_matches) || DEFAULT_MAX_SEARCH_LINES,
+      maxChars: Number(max_output_chars) || DEFAULT_MAX_SEARCH_CHARS,
+    });
+    return result === "No files found matching pattern." ? result : `${result}\n\n${excludedPathSummary()}`;
+  } catch (err) {
+    if (err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" || /maxBuffer/i.test(err.message || "")) {
+      return `${capLines(err.stdout || "", {
+        label: "Glob",
+        noMatches: "Glob result exceeded the output limit before any preview could be captured.",
+        maxLines: Number(max_matches) || DEFAULT_MAX_SEARCH_LINES,
+        maxChars: Number(max_output_chars) || DEFAULT_MAX_SEARCH_CHARS,
+      })}\n\n${excludedPathSummary()}`;
+    }
+    return `Error: ${err.message}`;
+  }
+}
+
+export async function grepToolImpl({ pattern, path, glob, context, case_insensitive, max_matches, max_output_chars }) {
   const target = path || process.env.WORKLAB_WORKSPACE || process.cwd();
   if (!isPathAllowed(target)) return `Error: Path not allowed: ${target}`;
   const args = ["-rn"];
   if (case_insensitive) args.push("-i");
   if (context) args.push(`-C${context}`);
   if (glob) args.push(`--include=${glob}`);
+  for (const dir of DEFAULT_EXCLUDED_DIRS) args.push(`--exclude-dir=${dir}`);
+  for (const filePattern of DEFAULT_EXCLUDED_FILES) args.push(`--exclude=${filePattern}`);
   args.push("--", pattern, target);
   try {
-    const { stdout } = await execFileAsync("grep", args, { timeout: 15000, maxBuffer: 1024 * 1024 });
-    return stdout || "No matches found.";
+    const { stdout } = await execFileAsync("grep", args, { timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
+    const result = capLines(stdout, {
+      label: "Grep",
+      noMatches: "No matches found.",
+      maxLines: Number(max_matches) || DEFAULT_MAX_SEARCH_LINES,
+      maxChars: Number(max_output_chars) || DEFAULT_MAX_SEARCH_CHARS,
+    });
+    return result === "No matches found." ? result : `${result}\n\n${excludedPathSummary()}`;
   } catch (err) {
     if (err.code === 1) return "No matches found.";
+    if (err.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" || /maxBuffer/i.test(err.message || "")) {
+      return `${capLines(err.stdout || "", {
+        label: "Grep",
+        noMatches: "Grep result exceeded the output limit before any preview could be captured.",
+        maxLines: Number(max_matches) || DEFAULT_MAX_SEARCH_LINES,
+        maxChars: Number(max_output_chars) || DEFAULT_MAX_SEARCH_CHARS,
+      })}\n\n${excludedPathSummary()}`;
+    }
     return `Error: ${err.message}`;
   }
 }
