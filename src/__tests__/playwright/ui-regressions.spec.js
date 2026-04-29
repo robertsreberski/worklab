@@ -895,16 +895,24 @@ test("desktop task detail states keep actions and context obvious without clippe
         const head = node.querySelector(".detail-head");
         const detail = node.querySelector(".task-detail");
         const brief = node.querySelector("#task-brief");
+        const briefContent = node.querySelector(".task-hero-instructions");
+        const plan = node.querySelector("#task-plan");
+        const planContent = node.querySelector(".task-plan-card");
         const status = node.querySelector(".task-hero-status-row");
-        if (!head || !detail || !brief || !status) return { missing: true };
+        if (!head || !detail || !brief || !briefContent || !plan || !planContent || !status) return { missing: true };
         const headRect = head.getBoundingClientRect();
         const detailRect = detail.getBoundingClientRect();
         const briefRect = brief.getBoundingClientRect();
+        const briefContentRect = briefContent.getBoundingClientRect();
+        const planRect = plan.getBoundingClientRect();
+        const planContentRect = planContent.getBoundingClientRect();
         const statusRect = status.getBoundingClientRect();
         return {
           missing: false,
           detailStartsAfterHeader: Math.round(detailRect.top - headRect.bottom),
           headerToBriefGap: Math.round(briefRect.top - headRect.bottom),
+          briefMarkerToContentGap: Math.round(briefContentRect.top - briefRect.bottom),
+          planMarkerToContentGap: Math.round(planContentRect.top - planRect.bottom),
           statusBottomDelta: Math.ceil(statusRect.bottom - headRect.bottom),
         };
       });
@@ -912,6 +920,7 @@ test("desktop task detail states keep actions and context obvious without clippe
       expect(shellLayout.detailStartsAfterHeader, `${viewport.label} ${state.label} detail starts after header`).toBeGreaterThanOrEqual(0);
       expect(shellLayout.statusBottomDelta, `${viewport.label} ${state.label} status row stays inside header`).toBeLessThanOrEqual(0);
       expect(shellLayout.headerToBriefGap, `${viewport.label} ${state.label} header-to-brief gap`).toBeGreaterThanOrEqual(48);
+      expect(shellLayout.briefMarkerToContentGap, `${viewport.label} ${state.label} brief content gap`).toBe(shellLayout.planMarkerToContentGap);
       await expectNoHorizontalOverflow(page, `${viewport.label} task detail ${state.label}`);
       await expectNoCriticalHorizontalClipping(
         page,
