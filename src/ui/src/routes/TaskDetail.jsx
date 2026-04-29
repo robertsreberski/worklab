@@ -45,6 +45,39 @@ import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } 
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
 
+function formatMetadataAge(value) {
+  if (!value) return "";
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp)) return "";
+  const delta = Date.now() - timestamp;
+  const abs = Math.abs(delta);
+  const past = delta >= 0;
+  if (abs < 60_000) return past ? "now" : "soon";
+  const units = [
+    ["d", 86_400_000],
+    ["h", 3_600_000],
+    ["m", 60_000],
+  ];
+  const [unit, size] = units.find(([, size]) => abs >= size) || units[2];
+  const amount = Math.floor(abs / size);
+  return past ? `${amount}${unit} ago` : `in ${amount}${unit}`;
+}
+
+function formatMetadataShortDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  const options = { month: "short", day: "numeric" };
+  if (date.getFullYear() !== new Date().getFullYear()) options.year = "numeric";
+  return date.toLocaleDateString(undefined, options);
+}
+
+function formatMetadataDateWithAge(value) {
+  const date = formatMetadataShortDate(value);
+  const age = formatMetadataAge(value);
+  return [date, age].filter(Boolean).join(" · ");
+}
+
 function formatRunPolicy(value) {
   return value === "auto_plan_execute" ? "Auto" : "Manual";
 }
@@ -294,10 +327,10 @@ function commentAuthorLabel(item) {
 
 function TaskContextList({ task }) {
   const items = [
-    task.updated_at ? { label: "Updated", value: formatDate(task.updated_at) } : null,
-    task.created_at ? { label: "Created", value: formatDate(task.created_at) } : null,
-    task.completed_at ? { label: "Completed", value: formatDate(task.completed_at) } : null,
-    task.automation_summary?.next_fire_at ? { label: "Next scheduled run", value: formatDate(task.automation_summary.next_fire_at) } : null,
+    task.updated_at ? { label: "Updated", value: formatMetadataAge(task.updated_at) } : null,
+    task.created_at ? { label: "Created", value: formatMetadataDateWithAge(task.created_at) } : null,
+    task.completed_at ? { label: "Completed", value: formatMetadataDateWithAge(task.completed_at) } : null,
+    task.automation_summary?.next_fire_at ? { label: "Next scheduled run", value: formatMetadataDateWithAge(task.automation_summary.next_fire_at) } : null,
     { label: "Run mode", value: formatRunPolicy(task.run_policy), mono: false },
     (task.tags || []).length ? {
       label: "Tags",
@@ -316,7 +349,7 @@ function TaskContextList({ task }) {
     <dl class="task-meta-list">
       {items.flatMap((item) => [
         <dt key={`${item.label}-label`}>{item.label}</dt>,
-        <dd key={`${item.label}-value`} class={item.mono === false ? "" : "mono"}>{item.value}</dd>,
+        <dd key={`${item.label}-value`} class={item.mono ? "mono" : ""}>{item.value}</dd>,
       ])}
     </dl>
   );

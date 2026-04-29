@@ -650,6 +650,18 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Completed" })).toHaveCount(0);
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Run mode" })).toBeVisible();
   await expect(page.locator(".task-metadata-card .task-meta-list dt", { hasText: "Next scheduled run" })).toBeVisible();
+  const metadata = await page.locator(".task-metadata-card .task-meta-list").evaluate((list) => {
+    const entries = {};
+    const nodes = Array.from(list.children);
+    for (let i = 0; i < nodes.length; i += 2) {
+      entries[(nodes[i].textContent || "").trim()] = (nodes[i + 1]?.textContent || "").replace(/\s+/g, " ").trim();
+    }
+    return entries;
+  });
+  expect(metadata.Updated).toMatch(/^(now|\d+[mhd] ago)$/);
+  expect(metadata.Created).toMatch(/^[A-Z][a-z]{2} \d{1,2}(, \d{4})? · (now|\d+[mhd] ago)$/);
+  expect(metadata["Next scheduled run"]).toMatch(/^[A-Z][a-z]{2} \d{1,2}(, \d{4})? · (soon|in \d+[mhd]|\d+[mhd] ago|now)$/);
+  expect(metadata["Run mode"]).toBe("Manual");
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
   await expect(page.locator(".task-metadata-card")).toContainText("Artifacts");
   await expect(page.locator(".task-metadata-card")).toContainText("TaskDetail.jsx");
@@ -820,8 +832,18 @@ test("desktop task detail states keep actions and context obvious without clippe
       });
       const expectedColumns = viewport.width >= 1180 ? 2 : 1;
       expect(columnCount, `${viewport.label} ${state.label} responsive detail columns`).toBe(expectedColumns);
-      const detailWidth = await page.locator(".task-detail").evaluate((node) => Math.round(node.getBoundingClientRect().width));
-      expect(detailWidth, `${viewport.label} ${state.label} detail max width`).toBeLessThanOrEqual(1180);
+      const widthMetrics = await page.locator(".task-detail-shell").evaluate((node) => {
+        const detail = node.querySelector(".task-detail");
+        const main = node.querySelector(".task-detail-main");
+        return {
+          shellWidth: Math.round(node.getBoundingClientRect().width),
+          detailWidth: Math.round(detail?.getBoundingClientRect().width || 0),
+          mainBorderRight: main ? getComputedStyle(main).borderRightWidth : null,
+        };
+      });
+      expect(widthMetrics.detailWidth, `${viewport.label} ${state.label} detail uses available width`).toBeGreaterThan(0);
+      expect(Math.abs(widthMetrics.detailWidth - widthMetrics.shellWidth), `${viewport.label} ${state.label} detail full width`).toBeLessThanOrEqual(2);
+      expect(widthMetrics.mainBorderRight, `${viewport.label} ${state.label} editor main divider`).toBe("0px");
       const shellLayout = await page.locator(".task-detail-shell").evaluate((node) => {
         const head = node.querySelector(".detail-head");
         const detail = node.querySelector(".task-detail");

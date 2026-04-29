@@ -8247,7 +8247,6 @@ select,
   flex-direction: column;
   gap: var(--sp-6);
   padding: var(--sp-6) var(--sp-7);
-  border-right: 1px solid var(--border);
 }
 .editor-rail {
   min-width: 0;
@@ -8273,8 +8272,8 @@ select,
 }
 .task-detail-shell .task-detail {
   flex: 1 1 auto;
-  width: min(100%, 1180px);
-  margin: 0 auto;
+  width: 100%;
+  margin: 0;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
   gap: 0;
   padding: var(--sp-8) var(--sp-6) var(--sp-6);
