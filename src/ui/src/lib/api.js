@@ -46,6 +46,7 @@ export const api = {
   cancelTask: (id) => request("POST", `/tasks/${id}/cancel`),
   // runs
   getRun: (id) => request("GET", `/runs/${id}`),
+  getRunCostSummary: () => request("GET", "/runs/cost-summary"),
   sendRunMessage: (id, body) => request("POST", `/runs/${id}/messages`, { body }),
   // activity/search
   listActivity: (query) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`),

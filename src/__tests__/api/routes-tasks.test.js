@@ -43,6 +43,38 @@ describe("GET /api/tasks", () => {
   });
 });
 
+describe("GET /api/runs/cost-summary", () => {
+  it("summarizes daily, weekly, and per-agent run costs", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "costed" }).expect(201);
+    const todayStart = new Date();
+    todayStart.setUTCHours(0, 0, 0, 0);
+    const today = todayStart.getTime() + 1_000;
+    const yesterday = todayStart.getTime() - 24 * 60 * 60 * 1000;
+    const older = todayStart.getTime() - 8 * 24 * 60 * 60 * 1000;
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, cost_usd)
+      VALUES (?, ?, 'execute', ?, ?, 'complete', ?)
+    `);
+    insertRun.run("today-alpha", task.id, "alpha", today, 0.01);
+    insertRun.run("today-beta", task.id, "beta", today + 1, 0.02);
+    insertRun.run("week-alpha", task.id, "alpha", yesterday, 0.03);
+    insertRun.run("old-alpha", task.id, "alpha", older, 0.99);
+    insertRun.run("uncosted", task.id, "beta", today + 2, null);
+
+    const res = await agent.get("/api/runs/cost-summary").expect(200);
+
+    expect(res.body.today.run_count).toBe(2);
+    expect(res.body.today.total_usd).toBeCloseTo(0.03);
+    expect(res.body.week.run_count).toBe(3);
+    expect(res.body.week.total_usd).toBeCloseTo(0.06);
+    expect(res.body.today_by_agent).toEqual([
+      { agent: "beta", total_usd: 0.02, run_count: 1 },
+      { agent: "alpha", total_usd: 0.01, run_count: 1 },
+    ]);
+  });
+});
+
 describe("POST /api/tasks", () => {
   it("creates a task with required fields", async () => {
     const { agent } = makeTestServer();
