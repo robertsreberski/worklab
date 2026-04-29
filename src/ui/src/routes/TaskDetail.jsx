@@ -1765,6 +1765,7 @@ export function TaskDetail({ id, runParam = null }) {
     >
       <div class="task-detail-shell editor-shell">
         <DetailHead
+          class="task-detail-head"
           crumbs={[{ label: "Tasks", href: "#/tasks" }, { label: taskKeyLabel }]}
           kicker="Task detail"
           idPrefix={taskKeyLabel}
