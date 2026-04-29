@@ -136,18 +136,39 @@ function assistantMcpServers(config) {
 
 function abortSignalWithTimeout(ms, parentSignal) {
   const ac = new AbortController();
-  const onAbort = () => ac.abort(parentSignal?.reason);
+  let details = null;
+  const abortWith = ({ kind, initiator, message, reason }) => {
+    if (ac.signal.aborted) return;
+    details = { kind, initiator, message, reason: reason || message || null };
+    ac.abort(Object.assign(new Error(message || "assistant run aborted"), details));
+  };
+  const onAbort = () => abortWith({
+    kind: "parent_abort",
+    initiator: "parent",
+    message: parentSignal?.reason?.message || "assistant run aborted",
+    reason: parentSignal?.reason?.message || null,
+  });
   if (parentSignal) {
-    if (parentSignal.aborted) ac.abort(parentSignal.reason);
+    if (parentSignal.aborted) onAbort();
     else parentSignal.addEventListener("abort", onAbort, { once: true });
   }
   const timeout = Number.isFinite(Number(ms)) && Number(ms) > 0
-    ? setTimeout(() => ac.abort(new Error("assistant run timed out")), Number(ms))
+    ? setTimeout(() => abortWith({
+      kind: "timeout",
+      initiator: "assistant_timeout",
+      message: `assistant run timed out after ${Number(ms)}ms`,
+    }), Number(ms))
     : null;
   timeout?.unref?.();
   return {
     signal: ac.signal,
-    cancel: () => ac.abort(new Error("assistant run cancelled")),
+    cancel: (options = {}) => abortWith({
+      kind: "user_cancel",
+      initiator: options.initiator || "api_cancel",
+      message: "Assistant run cancelled",
+      reason: options.reason || "user requested cancellation",
+    }),
+    details: () => details,
     cleanup: () => {
       if (timeout) clearTimeout(timeout);
       if (parentSignal) parentSignal.removeEventListener("abort", onAbort);
@@ -169,6 +190,79 @@ function rawLogPath(dataDir, runId) {
   return join(dir, `${runId}.jsonl`);
 }
 
+function eventLimit(value) {
+  const parsed = Number(value || 200);
+  if (!Number.isInteger(parsed) || parsed < 1) return 200;
+  return Math.min(parsed, 500);
+}
+
+function truncateText(value, { limit, rawLogPath: path, label }) {
+  const text = String(value || "");
+  if (!limit || text.length <= limit) return text;
+  const omitted = text.length - limit;
+  return `${text.slice(0, limit)}\n\n[truncated ${label}: ${omitted} chars omitted; raw log: ${path || "unavailable"}]`;
+}
+
+function jsonSize(value) {
+  try { return JSON.stringify(value).length; } catch { return Infinity; }
+}
+
+function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path } = {}) {
+  const content = event?.message?.content;
+  if (!Array.isArray(content)) return event;
+  let changed = false;
+  const nextContent = content.map((block) => {
+    if (!block || typeof block !== "object") return block;
+    if (block.type !== "tool_result" && block.type !== "tool_use") return block;
+    const next = { ...block };
+    if (typeof next.content === "string") {
+      const truncated = truncateText(next.content, { limit, rawLogPath: path, label: "assistant tool result" });
+      if (truncated !== next.content) {
+        next.content = truncated;
+        changed = true;
+      }
+    } else if (next.content != null) {
+      const size = jsonSize(next.content);
+      if (size > limit) {
+        next.content = `[truncated assistant tool result: ${size} JSON chars; raw log: ${path || "unavailable"}]`;
+        changed = true;
+      }
+    }
+    for (const key of ["raw_result", "input"]) {
+      const size = jsonSize(next[key]);
+      if (size > limit) {
+        next[key] = { truncated: true, original_json_chars: size, raw_log_path: path || null };
+        changed = true;
+      }
+    }
+    return next;
+  });
+  return changed ? { ...event, message: { ...event.message, content: nextContent } } : event;
+}
+
+function warningRows(events = [], extras = []) {
+  const rows = [];
+  for (const event of events) {
+    if (event?.type !== "runtime_warning") continue;
+    rows.push({
+      kind: event.warning_kind || "runtime",
+      source: event.source || null,
+      message: typeof event.message === "string" ? event.message : "",
+      ts: event.ts || Date.now(),
+    });
+  }
+  for (const warning of extras || []) {
+    if (!warning) continue;
+    rows.push({
+      kind: warning.warning_kind || warning.kind || "runtime",
+      source: warning.source || null,
+      message: typeof warning.message === "string" ? warning.message : "",
+      ts: warning.ts || Date.now(),
+    });
+  }
+  return rows;
+}
+
 function rowToMessage(row, run = null) {
   if (!row) return null;
   return {
@@ -184,9 +278,9 @@ function rowToMessage(row, run = null) {
   };
 }
 
-function rowToRun(row, events = undefined) {
+function rowToRun(row, eventPayload = undefined) {
   if (!row) return null;
-  return {
+  const run = {
     id: row.id,
     thread_id: row.thread_id,
     user_message_id: row.user_message_id || null,
@@ -207,10 +301,20 @@ function rowToRun(row, events = undefined) {
     num_turns: row.num_turns ?? null,
     summary: row.summary || "",
     final: parseJson(row.final_json, null),
+    failure_kind: row.failure_kind || null,
     error_text: row.error_text || "",
+    cancel_initiator: row.cancel_initiator || null,
+    cancel_reason: row.cancel_reason || null,
+    warnings: parseJson(row.warnings_json, []) || [],
+    diagnostics: parseJson(row.diagnostics_json, null),
     raw_output_path: row.raw_output_path || null,
-    ...(events !== undefined ? { events } : {}),
   };
+  if (eventPayload !== undefined) {
+    run.events = eventPayload.events;
+    if (eventPayload.event_count !== undefined) run.event_count = eventPayload.event_count;
+    if (eventPayload.events_truncated !== undefined) run.events_truncated = eventPayload.events_truncated;
+  }
+  return run;
 }
 
 function threadRow(db, id = DEFAULT_ASSISTANT_THREAD_ID) {
@@ -236,19 +340,26 @@ export class WorklabAssistantService {
     this.active = new Map();
   }
 
-  getRunEvents(runId) {
+  getRunEvents(runId, { limit = null } = {}) {
     const log = this.db.prepare(`
       SELECT events FROM assistant_agent_logs
       WHERE assistant_run_id = ?
       ORDER BY created_at DESC
       LIMIT 1
     `).get(runId);
-    return parseJson(log?.events, []) || [];
+    const events = parseJson(log?.events, []) || [];
+    if (!limit) return { events };
+    const tail = events.slice(-eventLimit(limit));
+    return {
+      events: tail,
+      event_count: events.length,
+      events_truncated: events.length > tail.length,
+    };
   }
 
-  getRun(runId, { includeEvents = true } = {}) {
+  getRun(runId, { includeEvents = true, eventLimit: limit = null } = {}) {
     const row = this.db.prepare("SELECT * FROM assistant_runs WHERE id = ?").get(runId);
-    return rowToRun(row, includeEvents ? this.getRunEvents(runId) : undefined);
+    return rowToRun(row, includeEvents ? this.getRunEvents(runId, { limit }) : undefined);
   }
 
   getDefaultThread() {
@@ -259,14 +370,14 @@ export class WorklabAssistantService {
       ORDER BY created_at ASC, rowid ASC
       LIMIT 100
     `).all(thread.id);
-    const messages = rows.map((row) => rowToMessage(row, row.run_id ? this.getRun(row.run_id) : null));
+    const messages = rows.map((row) => rowToMessage(row, row.run_id ? this.getRun(row.run_id, { includeEvents: false }) : null));
     const activeRow = this.db.prepare(`
       SELECT * FROM assistant_runs
       WHERE thread_id = ? AND status = 'running'
       ORDER BY started_at DESC
       LIMIT 1
     `).get(thread.id);
-    return { thread, messages, active_run: rowToRun(activeRow, activeRow ? this.getRunEvents(activeRow.id) : undefined) };
+    return { thread, messages, active_run: this.getRun(activeRow?.id, { includeEvents: false }) };
   }
 
   recentMessages(threadId, excludeIds = []) {
@@ -377,8 +488,8 @@ Return only one JSON object with this exact schema:
     return {
       thread,
       user_message: rowToMessage(this.db.prepare("SELECT * FROM assistant_messages WHERE id = ?").get(userMessageId)),
-      assistant_message: rowToMessage(this.db.prepare("SELECT * FROM assistant_messages WHERE id = ?").get(assistantMessageId), this.getRun(runId)),
-      run: this.getRun(runId),
+      assistant_message: rowToMessage(this.db.prepare("SELECT * FROM assistant_messages WHERE id = ?").get(assistantMessageId), this.getRun(runId, { includeEvents: false })),
+      run: this.getRun(runId, { includeEvents: false }),
     };
   }
 
@@ -390,18 +501,44 @@ Return only one JSON object with this exact schema:
     const active = this.active.get(runId);
     if (active) active.cancel = signal.cancel;
     const events = [];
+    const logId = `log-${runId}`;
+    let persistTimer = null;
+
+    this.db.prepare(`
+      INSERT INTO assistant_agent_logs (id, assistant_run_id, events, status, created_at)
+      VALUES (?, ?, '[]', 'running', ?)
+      ON CONFLICT(id) DO NOTHING
+    `).run(logId, runId, Date.now());
+
+    const flushEvents = (status = "running") => {
+      this.db.prepare("UPDATE assistant_agent_logs SET events = ?, status = ? WHERE assistant_run_id = ?")
+        .run(JSON.stringify(events), status, runId);
+    };
+
+    const schedulePersist = () => {
+      if (persistTimer) return;
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        const row = this.db.prepare("SELECT status FROM assistant_runs WHERE id = ?").get(runId);
+        if (row?.status === "running") flushEvents("running");
+      }, 250);
+      persistTimer.unref?.();
+    };
+
+    const finalizeLog = (status) => {
+      if (persistTimer) {
+        clearTimeout(persistTimer);
+        persistTimer = null;
+      }
+      flushEvents(status);
+    };
 
     const recordEvent = (event) => {
-      const next = { ...event, _event_seq: events.length };
+      const raw = { ...event, _event_seq: events.length };
+      appendFileSync(logPath, `${JSON.stringify(raw)}\n`);
+      const next = truncateAssistantEvent(raw, { rawLogPath: logPath });
       events.push(next);
-      appendFileSync(logPath, `${JSON.stringify(next)}\n`);
-      this.db.prepare(`
-        INSERT INTO assistant_agent_logs (id, assistant_run_id, events, status, created_at)
-        VALUES (?, ?, ?, 'running', ?)
-        ON CONFLICT(id) DO NOTHING
-      `).run(`log-${runId}`, runId, JSON.stringify(events), Date.now());
-      this.db.prepare("UPDATE assistant_agent_logs SET events = ?, status = ? WHERE assistant_run_id = ?")
-        .run(JSON.stringify(events), "running", runId);
+      schedulePersist();
       this.broker?.broadcast?.(`assistant:${runId}`, next);
     };
 
@@ -433,17 +570,25 @@ Return only one JSON object with this exact schema:
         ],
         disallowedTools: [],
         permissionMode: "bypassPermissions",
-        maxTurns: 12,
+        maxTurns: settings.assistant_max_turns || 32,
         outputSchema: ASSISTANT_RESULT_JSON_SCHEMA,
         abortSignal: signal.signal,
         onEvent: recordEvent,
       });
-      if (response.cancelled || signal.signal.aborted) {
-        recordEvent({ type: "cancelled" });
-        this.finishCancelled({ runId, assistantMessageId, message: "Assistant run cancelled", events });
+      for (const warning of response.runtimeWarnings || []) {
+        recordEvent({ type: "runtime_warning", ...warning });
+      }
+      if (signal.signal.aborted) {
+        this.finishAborted({ runId, threadId, assistantMessageId, events, signal, finalizeLog });
         return null;
       }
-      if (response.error) throw new Error(response.error);
+      if (response.error) throw Object.assign(new Error(response.error), { failureKind: response.failureKind });
+      if (response.cancelled) {
+        throw Object.assign(new Error("Assistant provider stopped before final output"), {
+          failureKind: response.failureKind || "provider_cancelled",
+        });
+      }
+      if (!this.isRunRunning(runId)) return null;
 
       let result;
       try {
@@ -468,48 +613,28 @@ Return only one JSON object with this exact schema:
         model: response.model,
         effort: response.effort,
       });
-      this.db.prepare(`
-        UPDATE assistant_runs
-        SET status = 'succeeded', ended_at = ?, input_tokens = ?, output_tokens = ?,
-            cache_read_tokens = ?, cache_creation_tokens = ?, cost_usd = ?,
-            duration_ms = ?, num_turns = ?, summary = ?, final_json = ?
-        WHERE id = ?
-      `).run(
-        Date.now(),
-        usageInt(response.usage, "input_tokens"),
-        usageInt(response.usage, "output_tokens"),
-        usageInt(response.usage, "cache_read_input_tokens") ?? usageInt(response.usage, "cache_read_tokens"),
-        usageInt(response.usage, "cache_creation_input_tokens") ?? usageInt(response.usage, "cache_creation_tokens"),
-        usageNumber(response.usage, "cost_usd"),
-        response.durationMs || null,
-        response.numTurns || null,
-        result.summary,
-        JSON.stringify(result),
-        runId,
-      );
-      this.db.prepare("UPDATE assistant_agent_logs SET status = 'succeeded', events = ? WHERE assistant_run_id = ?")
-        .run(JSON.stringify(events), runId);
-      this.broker?.broadcast?.(`assistant:${runId}`, { type: "done" });
-      this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId, run_id: runId, status: "succeeded" });
+      finalizeLog("succeeded");
+      this.finishSucceeded({ runId, threadId, assistantMessageId, response, result, events });
       return result;
     } catch (err) {
       const message = err?.message || String(err);
       if (signal.signal.aborted) {
-        recordEvent({ type: "cancelled" });
-        this.finishCancelled({ runId, assistantMessageId, message: "Assistant run cancelled", events });
+        this.finishAborted({ runId, threadId, assistantMessageId, events, signal, finalizeLog });
       } else {
         recordEvent({ type: "error", message });
-        this.db.prepare("UPDATE assistant_runs SET status = 'failed', ended_at = ?, error_text = ? WHERE id = ?")
-          .run(Date.now(), message, runId);
-        this.db.prepare("UPDATE assistant_messages SET status = 'failed', body = ?, updated_at = ? WHERE id = ?")
-          .run(`Assistant failed: ${message}`, Date.now(), assistantMessageId);
-        this.db.prepare("UPDATE assistant_agent_logs SET status = 'failed', events = ? WHERE assistant_run_id = ?")
-          .run(JSON.stringify(events), runId);
-        this.broker?.broadcast?.(`assistant:${runId}`, { type: "done" });
-        this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId, run_id: runId, status: "failed" });
+        finalizeLog("failed");
+        this.finishFailed({
+          runId,
+          threadId,
+          assistantMessageId,
+          message,
+          failureKind: err?.failureKind || "provider_unavailable",
+          events,
+        });
       }
       return null;
     } finally {
+      if (persistTimer) clearTimeout(persistTimer);
       signal.cleanup();
     }
   }
@@ -546,33 +671,158 @@ Return only one JSON object with this exact schema:
     this.db.prepare("UPDATE assistant_threads SET updated_at = ? WHERE id = ?").run(now, threadId);
   }
 
-  finishCancelled({ runId, assistantMessageId, message, events }) {
+  isRunRunning(runId) {
+    return this.db.prepare("SELECT status FROM assistant_runs WHERE id = ?").get(runId)?.status === "running";
+  }
+
+  broadcastDone({ runId, threadId, assistantMessageId, status }) {
+    const run = this.getRun(runId, { includeEvents: false });
+    const message = rowToMessage(
+      this.db.prepare("SELECT * FROM assistant_messages WHERE id = ?").get(assistantMessageId),
+      run,
+    );
+    this.broker?.broadcast?.(`assistant:${runId}`, { type: "done", run, message });
+    this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status });
+  }
+
+  finishSucceeded({ runId, threadId, assistantMessageId, response, result, events }) {
+    const warnings = warningRows(events);
+    const diagnostics = {
+      sdk: response.sdk || null,
+      model: response.model || null,
+      effort: response.effort || null,
+      warning_count: warnings.length,
+    };
+    const updated = this.db.prepare(`
+      UPDATE assistant_runs
+      SET status = 'succeeded', ended_at = ?, input_tokens = ?, output_tokens = ?,
+          cache_read_tokens = ?, cache_creation_tokens = ?, cost_usd = ?,
+          duration_ms = ?, num_turns = ?, summary = ?, final_json = ?,
+          failure_kind = NULL, warnings_json = ?, diagnostics_json = ?
+      WHERE id = ? AND status = 'running'
+    `).run(
+      Date.now(),
+      usageInt(response.usage, "input_tokens"),
+      usageInt(response.usage, "output_tokens"),
+      usageInt(response.usage, "cache_read_input_tokens") ?? usageInt(response.usage, "cache_read_tokens"),
+      usageInt(response.usage, "cache_creation_input_tokens") ?? usageInt(response.usage, "cache_creation_tokens"),
+      usageNumber(response.usage, "cost_usd"),
+      response.durationMs || null,
+      response.numTurns || null,
+      result.summary,
+      JSON.stringify(result),
+      JSON.stringify(warnings),
+      JSON.stringify(diagnostics),
+      runId,
+    );
+    if (updated.changes === 0) return false;
+    this.broadcastDone({ runId, threadId, assistantMessageId, status: "succeeded" });
+    return true;
+  }
+
+  finishFailed({ runId, threadId, assistantMessageId, message, failureKind = "provider_unavailable", events = [], diagnostics = {} }) {
     const now = Date.now();
-    this.db.prepare("UPDATE assistant_runs SET status = 'cancelled', ended_at = ?, error_text = ? WHERE id = ?")
-      .run(now, message, runId);
+    const warnings = warningRows(events);
+    const nextDiagnostics = {
+      ...diagnostics,
+      warning_count: warnings.length,
+      failure_kind: failureKind,
+    };
+    const updated = this.db.prepare(`
+      UPDATE assistant_runs
+      SET status = 'failed', ended_at = ?, error_text = ?, failure_kind = ?,
+          warnings_json = ?, diagnostics_json = ?
+      WHERE id = ? AND status = 'running'
+    `).run(now, message, failureKind, JSON.stringify(warnings), JSON.stringify(nextDiagnostics), runId);
+    if (updated.changes === 0) return false;
+    this.db.prepare("UPDATE assistant_messages SET status = 'failed', body = ?, updated_at = ? WHERE id = ?")
+      .run(`Assistant failed: ${message}`, now, assistantMessageId);
+    this.db.prepare("UPDATE assistant_agent_logs SET status = 'failed', events = ? WHERE assistant_run_id = ?")
+      .run(JSON.stringify(events || []), runId);
+    this.broadcastDone({ runId, threadId, assistantMessageId, status: "failed" });
+    return true;
+  }
+
+  finishAborted({ runId, threadId, assistantMessageId, events, signal, finalizeLog }) {
+    const details = signal.details?.() || {};
+    if (details.kind === "timeout") {
+      const message = details.message || "assistant run timed out";
+      events.push({ type: "runtime_warning", warning_kind: "timeout", message, _event_seq: events.length });
+      finalizeLog?.("failed");
+      return this.finishFailed({
+        runId,
+        threadId,
+        assistantMessageId,
+        message,
+        failureKind: "timeout",
+        events,
+        diagnostics: {
+          cancel_initiator: details.initiator || "assistant_timeout",
+          cancel_reason: details.reason || message,
+        },
+      });
+    }
+    events.push({
+      type: "cancelled",
+      initiator: details.initiator || "api_cancel",
+      reason: details.reason || "user requested cancellation",
+      _event_seq: events.length,
+    });
+    finalizeLog?.("cancelled");
+    return this.finishCancelled({
+      runId,
+      threadId,
+      assistantMessageId,
+      message: "Assistant run cancelled",
+      initiator: details.initiator || "api_cancel",
+      reason: details.reason || "user requested cancellation",
+      events,
+    });
+  }
+
+  finishCancelled({ runId, threadId, assistantMessageId, message, initiator = "api_cancel", reason = null, events }) {
+    const now = Date.now();
+    const warnings = warningRows(events);
+    const diagnostics = {
+      warning_count: warnings.length,
+      cancel_initiator: initiator,
+      cancel_reason: reason,
+    };
+    const updated = this.db.prepare(`
+      UPDATE assistant_runs
+      SET status = 'cancelled', ended_at = ?, error_text = ?, failure_kind = 'cancelled',
+          cancel_initiator = ?, cancel_reason = ?, warnings_json = ?, diagnostics_json = ?
+      WHERE id = ? AND status = 'running'
+    `).run(now, message, initiator, reason, JSON.stringify(warnings), JSON.stringify(diagnostics), runId);
+    if (updated.changes === 0) return false;
     this.db.prepare("UPDATE assistant_messages SET status = 'cancelled', body = ?, updated_at = ? WHERE id = ?")
       .run(message, now, assistantMessageId);
     this.db.prepare("UPDATE assistant_agent_logs SET status = 'cancelled', events = ? WHERE assistant_run_id = ?")
       .run(JSON.stringify(events || []), runId);
-    this.broker?.broadcast?.(`assistant:${runId}`, { type: "done" });
-    this.broker?.broadcast?.("global", { type: "assistant_run_ended", run_id: runId, status: "cancelled" });
+    this.broadcastDone({ runId, threadId, assistantMessageId, status: "cancelled" });
+    return true;
   }
 
-  cancelRun(runId) {
+  cancelRun(runId, options = {}) {
     const row = this.db.prepare("SELECT * FROM assistant_runs WHERE id = ?").get(runId);
     if (!row) return { ok: false, status: 404, code: "not_found", message: "assistant run not found" };
     if (row.status !== "running") {
       return { ok: false, status: 409, code: "run_not_active", message: "assistant run is not running" };
     }
     const active = this.active.get(runId);
-    if (active?.cancel) active.cancel();
+    const initiator = options.initiator || "api_cancel";
+    const reason = options.reason || "user requested cancellation";
+    if (active?.cancel) active.cancel({ initiator, reason });
     else this.finishCancelled({
       runId,
+      threadId: row.thread_id,
       assistantMessageId: row.assistant_message_id,
       message: "Assistant run cancelled",
-      events: this.getRunEvents(runId),
+      initiator,
+      reason,
+      events: this.getRunEvents(runId).events,
     });
-    return { ok: true, run: this.getRun(runId) };
+    return { ok: true, run: this.getRun(runId, { includeEvents: false }) };
   }
 
   waitIdle() {
