@@ -1,8 +1,9 @@
-async function request(method, path, body) {
+async function request(method, path, body, options = {}) {
   const res = await fetch(`/api${path}`, {
     method,
     headers: { "Content-Type": "application/json" },
     body: body == null ? undefined : JSON.stringify(body),
+    signal: options.signal,
   });
   if (res.status === 204) return null;
   const json = await res.json().catch(() => ({}));
@@ -26,19 +27,19 @@ async function uploadZip(path, file) {
 
 export const api = {
   // projects
-  listProjects: (query) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`),
-  getProject: (id) => request("GET", `/projects/${encodeURIComponent(id)}`),
+  listProjects: (query, options) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  getProject: (id, options) => request("GET", `/projects/${encodeURIComponent(id)}`, null, options),
   createProject: (data) => request("POST", "/projects", data),
   patchProject: (id, patch) => request("PATCH", `/projects/${encodeURIComponent(id)}`, patch),
   archiveProject: (id) => request("DELETE", `/projects/${encodeURIComponent(id)}`),
   // tasks
-  listTasks: (query) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`),
-  getTask: (id) => request("GET", `/tasks/${id}`),
+  listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  getTask: (id, options) => request("GET", `/tasks/${id}`, null, options),
   createTask: (data) => request("POST", "/tasks", data),
   bulkTasks: (data) => request("POST", "/tasks/bulk", data),
   patchTask: (id, patch) => request("PATCH", `/tasks/${id}`, patch),
   createSubtask: (id, data) => request("POST", `/tasks/${id}/subtasks`, data),
-  listTaskAutomations: (id) => request("GET", `/tasks/${id}/automations`),
+  listTaskAutomations: (id, options) => request("GET", `/tasks/${id}/automations`, null, options),
   createTaskAutomation: (id, data) => request("POST", `/tasks/${id}/automations`, data),
   getTaskAutomation: (taskId, automationId) => request("GET", `/tasks/${taskId}/automations/${automationId}`),
   patchTaskAutomation: (taskId, automationId, patch) => request("PATCH", `/tasks/${taskId}/automations/${automationId}`, patch),
@@ -51,15 +52,15 @@ export const api = {
   runTask: (id) => request("POST", `/tasks/${id}/run`),
   cancelTask: (id) => request("POST", `/tasks/${id}/cancel`),
   // runs
-  getRun: (id) => request("GET", `/runs/${id}`),
+  getRun: (id, options) => request("GET", `/runs/${id}`, null, options),
   getRunCostSummary: () => request("GET", "/runs/cost-summary"),
   sendRunMessage: (id, body) => request("POST", `/runs/${id}/messages`, { body }),
   // activity/search
-  listActivity: (query) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`),
+  listActivity: (query, options) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),
   searchStatus: () => request("GET", "/search/status"),
   // settings
-  getSettings: () => request("GET", "/settings"),
+  getSettings: (options) => request("GET", "/settings", null, options),
   patchSettings: (patch) => request("PATCH", "/settings", patch),
   getRuntimeSettings: () => request("GET", "/settings/runtime"),
   patchRuntimeSettings: (patch) => request("PATCH", "/settings/runtime", patch),
@@ -71,8 +72,8 @@ export const api = {
   getAssistantRun: (id) => request("GET", `/assistant/runs/${id}`),
   cancelAssistantRun: (id) => request("POST", `/assistant/runs/${id}/cancel`),
   // agents
-  listAgents: () => request("GET", "/agents"),
-  getAgent: (name) => request("GET", `/agents/${name}`),
+  listAgents: (options) => request("GET", "/agents", null, options),
+  getAgent: (name, options) => request("GET", `/agents/${name}`, null, options),
   getAgentMemory: (name) => request("GET", `/agents/${name}/memory`),
   createAgent: (data) => request("POST", "/agents", data),
   patchAgent: (name, patch) => request("PATCH", `/agents/${name}`, patch),
@@ -81,7 +82,7 @@ export const api = {
   listAgentRuns: (name, limit = 20) => request("GET", `/agents/${name}/runs?limit=${limit}`),
   getAgentJournal: (name, runId) => request("GET", `/agents/${name}/journal?run=${encodeURIComponent(runId)}`),
   // skills
-  listSkills: () => request("GET", "/skills"),
+  listSkills: (options) => request("GET", "/skills", null, options),
   getSkill: (name) => request("GET", `/skills/${name}`),
   createSkill: (data) => request("POST", "/skills", data),
   importSkillZip: (file) => uploadZip("/skills/import", file),
@@ -93,14 +94,14 @@ export const api = {
   getMcpStatus: () => request("GET", "/mcp/status"),
   putMcpConfig: (data) => request("PUT", "/mcp", data),
   // kb
-  listKb: (query) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`),
+  listKb: (query, options) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getKb: (slug) => request("GET", `/kb/${encodeURIComponent(slug)}`),
   createKb: (data) => request("POST", "/kb", data),
   patchKb: (slug, patch) => request("PATCH", `/kb/${encodeURIComponent(slug)}`, patch),
   deleteKb: (slug) => request("DELETE", `/kb/${encodeURIComponent(slug)}`),
   kbUsage: (slug) => request("GET", `/kb/${encodeURIComponent(slug)}/usage`),
   // providers/models
-  listProviders: () => request("GET", "/providers"),
+  listProviders: (options) => request("GET", "/providers", null, options),
   getProvider: (id) => request("GET", `/providers/${id}`),
   createProvider: (data) => request("POST", "/providers", data),
   patchProvider: (id, patch) => request("PATCH", `/providers/${id}`, patch),

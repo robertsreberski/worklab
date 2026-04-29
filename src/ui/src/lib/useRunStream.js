@@ -31,7 +31,7 @@ export function mergeRunEvents(current = [], incoming = []) {
   });
 }
 
-export function useRunStream(runId, { subscribe = true } = {}) {
+export function useRunStream(runId, { subscribe = true, initialEventLimit = null } = {}) {
   const [events, setEvents] = useState([]);
   const [run, setRun] = useState(null);
   const [done, setDone] = useState(false);
@@ -54,10 +54,16 @@ export function useRunStream(runId, { subscribe = true } = {}) {
       if (runRefreshTimer) clearTimeout(runRefreshTimer);
       runRefreshTimer = null;
     }
+    function runUrl() {
+      if (!initialEventLimit) return `/api/runs/${runId}`;
+      const query = new URLSearchParams({ events: "tail", limit: String(initialEventLimit) });
+      return `/api/runs/${runId}?${query}`;
+    }
+
     function hydrateRun() {
       clearRunRefresh();
       // Preload any already-recorded events (run may have ended before we connected)
-      return fetch(`/api/runs/${runId}`, { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
+      return fetch(runUrl(), { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
         if (cancelled) return;
         if (data?.run) setRun(data.run);
         if (data?.log?.events?.length) setEvents((prev) => mergeRunEvents(prev, data.log.events));
@@ -82,7 +88,7 @@ export function useRunStream(runId, { subscribe = true } = {}) {
     };
     es.onerror = () => { es.close(); };
     return () => { cancelled = true; clearRunRefresh(); controller.abort(); es.close(); };
-  }, [runId, subscribe]);
+  }, [runId, subscribe, initialEventLimit]);
 
   return { events, run, done, loading };
 }

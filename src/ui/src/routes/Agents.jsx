@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useCoalescedCallback } from "../lib/useCoalescedCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -36,13 +37,21 @@ export function Agents({ selectedName = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
   const searchRef = useRef(null);
+  const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    reloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    reloadAbortRef.current = controller;
+    api.listAgents({ signal: controller.signal })
+      .then((r) => { if (!controller.signal.aborted) setAgents(r.agents || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
   }, []);
+  const reloadSoon = useCoalescedCallback(reload, 100);
 
   useEffect(() => { reload(); }, [reload]);
-  useSSE("global", (evt) => { if (evt.type?.startsWith("agent_")) reload(); });
+  useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
+  useSSE("global", (evt) => { if (evt.type?.startsWith("agent_")) reloadSoon(); });
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();

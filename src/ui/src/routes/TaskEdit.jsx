@@ -84,18 +84,22 @@ export function TaskEdit({ mode = "create", id = null }) {
   const createRequestIdRef = useRef(mode === "create" ? newClientRequestId() : null);
 
   useEffect(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
-    api.listProjects({ include_archived: "true" }).then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
-    api.listTasks().then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
+    const controller = new AbortController();
+    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
+    api.listProjects({ include_archived: "true" }, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
+    api.listTasks({ view: "summary" }, { signal: controller.signal }).then((r) => setTasks(r.tasks || [])).catch((err) => { if (err?.name !== "AbortError") setTasks([]); });
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
     if (mode !== "edit" || !id) return;
+    const controller = new AbortController();
     setLoading(true);
     setNotFound(false);
     setLoadedTask(null);
-    api.getTask(id)
+    api.getTask(id, { signal: controller.signal })
       .then((data) => {
+        if (controller.signal.aborted) return;
         if (!data?.task) { setLoadedTask(null); setNotFound(true); return; }
         setLoadedTask(data.task);
         const initial = {
@@ -113,8 +117,9 @@ export function TaskEdit({ mode = "create", id = null }) {
         setDraft(initial);
         setBaseline(initial);
       })
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (err?.name !== "AbortError") setNotFound(true); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [mode, id]);
 
   const formSave = useFormSave(async (patch) => {
