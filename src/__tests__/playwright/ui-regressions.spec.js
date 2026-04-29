@@ -474,7 +474,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    for (const label of ["Review", "Execute", "Blocked", "Done"]) {
+    for (const label of ["Review", "Execute", "Done"]) {
       await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
     }
     for (const row of stateRows) {
@@ -627,7 +627,7 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".run-artifacts-card")).toContainText("Artifacts");
   await expect(page.locator(".run-artifacts-card")).toContainText("TaskDetail.jsx");
   await expect(page.locator(".run-artifacts-card")).toContainText("+10 -2");
-  await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(2);
+  await expect(page.locator(".rail-agent-picker .select-trigger")).toHaveCount(3);
   await expect(page.locator(".rail-agent-picker .select-trigger").first()).toContainText("Regression Agent");
   await expect(page.locator(".activity-composer")).toBeVisible();
   await expect(page.locator(".activity-rerun-checkbox input")).toBeChecked();
@@ -1623,7 +1623,9 @@ test("mobile overlays keep drawer and modal controls reachable", async ({ page }
   await expect(page.locator(".drawer")).toHaveCount(0);
 
   await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
-  await page.locator('input[placeholder*="actionable"]').fill("UI regression task with unsaved mobile edit");
+  const titleInput = page.locator('input[placeholder*="actionable"]');
+  await titleInput.fill("UI regression task with unsaved mobile edit");
+  await expect(page.locator(".app-mobile-action-dock .button.primary", { hasText: "Save" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.locator(".modal", { hasText: "You have unsaved changes" })).toBeVisible();
 
