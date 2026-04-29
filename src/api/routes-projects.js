@@ -121,6 +121,7 @@ export function registerProjectRoutes(app, { db, broker }) {
       where.push("(p.name LIKE ? OR p.slug LIKE ? OR p.description LIKE ? OR p.context_markdown LIKE ?)");
       params.push(like, like, like, like);
     }
+    const limit = Math.max(1, Math.min(Number(req.query.limit) || 200, 500));
     const rows = db.prepare(`
       SELECT
         p.*,
@@ -131,8 +132,9 @@ export function registerProjectRoutes(app, { db, broker }) {
       ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
       GROUP BY p.id
       ORDER BY p.archived ASC, p.updated_at DESC, p.name ASC
-    `).all(...params);
-    res.json({ projects: rows.map(projectFromRow) });
+      LIMIT ?
+    `).all(...params, limit);
+    res.json({ projects: rows.map(projectFromRow), limit });
   });
 
   app.post("/api/projects", (req, res) => {

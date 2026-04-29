@@ -399,11 +399,13 @@ export function Projects({ selectedId = null, mode = null }) {
       .catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
   }, [includeArchived]);
   const reloadSoon = useCoalescedCallback(reload, 100);
+  const reloadEventually = useCoalescedCallback(reload, 1500);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
   useSSE("global", (evt) => {
-    if (evt.type?.startsWith("project_") || evt.type?.startsWith("task_")) reloadSoon();
+    if (evt.type?.startsWith("project_")) reloadSoon();
+    else if (evt.type?.startsWith("task_")) reloadEventually();
   });
   useGlobalShortcuts({
     "/": (event) => {
