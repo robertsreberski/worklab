@@ -103,9 +103,10 @@ function agentCommentBody(result, finalText) {
 function looksLikePlanBody(text) {
   const body = String(text || "").trim();
   if (!body) return false;
-  return /^#{1,3}\s+Plan\b/im.test(body)
-    || /^\*\*Plan\b/im.test(body)
-    || /\b(?:Approach|Implementation|Test Plan|Risks?|Caveats?|Out of scope)\b/i.test(body);
+  const sectionNames = "(?:Plan|Implementation Plan|Test Plan|Approach|Implementation|Risks?|Caveats?|Out of scope)";
+  return new RegExp(`^#{1,3}\\s+${sectionNames}(?:\\s*[:\\-].*|\\s*)$`, "im").test(body)
+    || new RegExp(`^\\*\\*${sectionNames}(?:\\*\\*|\\s*[:\\-])`, "im").test(body)
+    || new RegExp(`^${sectionNames}\\s*:`, "im").test(body);
 }
 
 // In-memory cycle check across a freshly-delegated batch of subtasks. Each
@@ -550,9 +551,11 @@ export function createTaskWatcher({
   }
 
   function planBodyFromRun(result, finalText) {
+    const structuredPlan = sanitizeAgentText(result?.details);
+    if (looksLikePlanBody(structuredPlan)) return structuredPlan;
     const rawPlan = sanitizeAgentText(finalText);
     if (looksLikePlanBody(rawPlan)) return rawPlan;
-    for (const candidate of [result?.details, result?.summary, rawPlan]) {
+    for (const candidate of [structuredPlan, result?.summary, rawPlan]) {
       const body = sanitizeAgentText(candidate);
       if (body) return body;
     }

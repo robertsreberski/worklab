@@ -594,6 +594,72 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe("Plan ready. Moving to execute.");
   });
 
+  it("prefers structured plan details over human-facing final prose", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", stage: "plan" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const plan = "## Plan: Research Kaiseki Restaurant\n\n### Steps\n1. Verify candidates.\n2. Rank options.\n\n### Risks\n- Availability may be limited.";
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Plan ready",
+      details: plan,
+      final_text: "Plan is ready. Execution will clarify the restaurant name and research bookable options.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const prose = `Based on my research, I identified a key ambiguity. Here is the structured result:
+
+\`\`\`json
+${JSON.stringify(worklabResult)}
+\`\`\`
+
+---
+
+**Plan summary for you:**
+
+Before execution, I flagged that no exact restaurant match was found.
+
+1. Confirm the kaiseki interpretation.
+2. Build and filter candidate restaurants.
+3. Rank options with booking guidance.
+
+The main risks are budget, booking window, and unknown group size.`;
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: prose,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT stage, plan_body FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.plan_body).toBe(plan);
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(worklabResult.final_text);
+  });
+
   it("falls back to structured plan details when final text is only structured JSON", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
