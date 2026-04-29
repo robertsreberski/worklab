@@ -147,4 +147,27 @@ describe("assistant routes", () => {
     const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
     expect(run.body.run.status).toBe("cancelled");
   });
+
+  it("persists readable provider failures on assistant messages", async () => {
+    const runAgent = vi.fn(async () => ({
+      error: "Your input exceeds the context window of this model. Please adjust your input and try again.",
+      events: [],
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "codex:gpt-5.5",
+      effort: "high",
+      failureKind: "usage_limit",
+    }));
+    const { agent, assistant } = setup({ runAgent });
+    const started = await agent.post("/api/assistant/messages").send({ body: "Make a very large request." }).expect(202);
+
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("failed");
+    expect(run.body.run.error_text).toBe("Your input exceeds the context window of this model. Please adjust your input and try again.");
+    const thread = await agent.get("/api/assistant").expect(200);
+    expect(thread.body.messages.at(-1).body).toBe("Assistant failed: Your input exceeds the context window of this model. Please adjust your input and try again.");
+  });
 });
