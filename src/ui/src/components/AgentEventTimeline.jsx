@@ -75,6 +75,16 @@ function normaliseBlock(block) {
       tool_use_id: block.tool_use_id,
       output: block.output ?? block.content ?? block.result ?? "",
       is_error: Boolean(block.is_error || block.error),
+      raw_result: block.raw_result,
+    };
+  }
+  if (block.type === "structured_output") {
+    return {
+      type: "structured_output",
+      tool_use_id: block.tool_use_id || null,
+      value: block.value ?? block.structured_output ?? block.result,
+      worklab_result: block.worklab_result,
+      source: block.source || null,
     };
   }
   return block;
@@ -127,10 +137,13 @@ function flattenEvents(events) {
 function groupEvents(events) {
   const flat = flattenEvents(events);
   const resultsByToolUseId = new Map();
+  const structuredByToolUseId = new Map();
   for (const event of flat) {
     if (event?.type === "tool_result" && event.tool_use_id) resultsByToolUseId.set(event.tool_use_id, event);
+    if (event?.type === "structured_output" && event.tool_use_id) structuredByToolUseId.set(event.tool_use_id, event);
   }
   const consumedResultIds = new Set();
+  const consumedStructuredIds = new Set();
   const items = [];
   let cluster = null;
   const flush = () => {
@@ -150,11 +163,14 @@ function groupEvents(events) {
 
     if (event?.type === "tool_use" && event.tool_use_id) {
       const paired = resultsByToolUseId.get(event.tool_use_id) || null;
+      const structuredOutput = structuredByToolUseId.get(event.tool_use_id) || null;
       if (paired) consumedResultIds.add(event.tool_use_id);
-      items.push({ _toolCall: true, toolUse: event, toolResult: paired });
+      if (structuredOutput) consumedStructuredIds.add(event.tool_use_id);
+      items.push({ _toolCall: true, toolUse: event, toolResult: paired, structuredOutput });
       continue;
     }
     if (event?.type === "tool_result" && consumedResultIds.has(event.tool_use_id)) continue;
+    if (event?.type === "structured_output" && consumedStructuredIds.has(event.tool_use_id)) continue;
     items.push(event);
   }
   flush();
@@ -187,6 +203,44 @@ function CollapsibleBlock({ title, text, value, expanded, onToggle, borderColor,
           {`${preview}${isLong ? "..." : ""}`}
         </pre>
       )}
+    </div>
+  );
+}
+
+function structuredOutputValue(event) {
+  return event?.worklab_result || event?.value || event?.structured_output || event?.result || {};
+}
+
+function StructuredOutputBlock({ event }) {
+  const [expanded, setExpanded] = useState(false);
+  const value = structuredOutputValue(event);
+  const rows = [
+    ["Stage", value?.stage],
+    ["Decision", value?.decision],
+    ["Summary", value?.summary],
+    ["Final", value?.final_text],
+  ].filter(([, next]) => next !== undefined && next !== null && String(next).trim());
+
+  return (
+    <div class="agentlog-structured-output">
+      {rows.length ? (
+        <div class="agentlog-structured-rows">
+          {rows.map(([label, next]) => (
+            <div class="agentlog-structured-row" key={label}>
+              <span>{label}</span>
+              <strong>{String(next)}</strong>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <StructuredValue value={value} />
+      )}
+      <CollapsibleBlock
+        title="Full JSON"
+        value={value}
+        expanded={expanded}
+        onToggle={() => setExpanded((current) => !current)}
+      />
     </div>
   );
 }
@@ -261,11 +315,12 @@ function PhaseClusterBlock({ cluster, isLast }) {
   );
 }
 
-function ToolCallTimelineItem({ toolUse, toolResult, messageStatus, isLast }) {
+function ToolCallTimelineItem({ toolUse, toolResult, structuredOutput, messageStatus, isLast }) {
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
   const isFileEdit = toolUse?.name === "file_edit";
-  const railName = isError ? "alert-triangle" : isFileEdit ? "file-text" : toolResult ? "check" : "terminal";
-  const railTone = isError ? "error" : toolResult ? "ok" : "muted";
+  const isStructuredOutput = toolUse?.name === "StructuredOutput";
+  const railName = isError ? "alert-triangle" : isStructuredOutput ? "check-circle" : isFileEdit ? "file-text" : toolResult ? "check" : "terminal";
+  const railTone = isError ? "error" : (toolResult || structuredOutput) ? "ok" : "muted";
   return (
     <div class="agentlog-tl-item">
       <div class="agentlog-tl-rail">
@@ -273,7 +328,12 @@ function ToolCallTimelineItem({ toolUse, toolResult, messageStatus, isLast }) {
         {!isLast && <div class="agentlog-tl-line" />}
       </div>
       <div class="agentlog-tl-content agentlog-tl-content-toolcall">
-        <ToolCallBlock toolUse={toolUse} toolResult={toolResult} messageStatus={messageStatus} />
+        <ToolCallBlock
+          toolUse={toolUse}
+          toolResult={toolResult}
+          structuredOutput={structuredOutput}
+          messageStatus={messageStatus}
+        />
       </div>
     </div>
   );
@@ -308,6 +368,9 @@ function TimelineEvent({ event, isLast, streaming }) {
   } else if (type === "thinking") {
     railIcon = <RailIcon name="sparkles" />;
     content = <ThinkingBlock text={event.text || ""} streaming={event.streaming || streaming} />;
+  } else if (type === "structured_output") {
+    railIcon = <RailIcon name="check-circle" tone="ok" />;
+    content = <StructuredOutputBlock event={event} />;
   } else if (type === "tool_result" || type === "tool_output") {
     const isError = event.is_error || event.error;
     railIcon = <RailIcon name={isError ? "alert-triangle" : "check"} tone={isError ? "error" : "ok"} />;
@@ -434,6 +497,7 @@ export function AgentEventTimeline({ events = [], streaming = false, messageStat
               key={`tool-${item.toolUse?.tool_use_id || index}`}
               toolUse={item.toolUse}
               toolResult={item.toolResult}
+              structuredOutput={item.structuredOutput}
               messageStatus={effectiveStatus}
               isLast={isLast}
             />

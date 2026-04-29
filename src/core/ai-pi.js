@@ -195,6 +195,34 @@ function toolResultContent(result) {
   return content.map((block) => block?.type === "text" ? block.text || "" : JSON.stringify(block)).filter(Boolean).join("\n");
 }
 
+function streamContentKey(streamEvent, fallback) {
+  return streamEvent?.contentIndex ?? fallback;
+}
+
+function structuredOutputEvent(toolUseId, value) {
+  const extracted = extractWorklabResult({
+    type: "tool_use",
+    name: "StructuredOutput",
+    input: value,
+  });
+  return {
+    type: "structured_output",
+    source: "StructuredOutput",
+    tool_use_id: toolUseId || null,
+    value,
+    ...(extracted.ok ? { worklab_result: extracted.result } : {}),
+  };
+}
+
+function jsonSerializable(value, fallback = null) {
+  try {
+    JSON.stringify(value);
+    return value;
+  } catch {
+    return fallback;
+  }
+}
+
 function emitCaptured(events, onEvent, event) {
   if (!event) return;
   events.push(event);
@@ -277,6 +305,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   const runtimeWarnings = [];
   const assistantTexts = [];
   const assistantThinking = [];
+  const textDeltaIndexes = new Set();
+  const thinkingDeltaIndexes = new Set();
   let structuredResult = null;
   let mcpClients = [];
   let finalMessages = [];
@@ -339,25 +369,50 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       if (event.type === "message_update") {
         const streamEvent = event.assistantMessageEvent;
         if (streamEvent?.type === "text_delta" && streamEvent.delta) {
+          textDeltaIndexes.add(streamContentKey(streamEvent, "text"));
           assistantTexts.push(streamEvent.delta);
           onEvent({ type: "assistant", message: { content: [{ type: "text", text: streamEvent.delta }] } });
+        } else if (streamEvent?.type === "text_end" && streamEvent.content) {
+          const key = streamContentKey(streamEvent, "text");
+          if (!textDeltaIndexes.has(key)) {
+            assistantTexts.push(streamEvent.content);
+            onEvent({ type: "assistant", message: { content: [{ type: "text", text: streamEvent.content }] } });
+          }
         } else if (streamEvent?.type === "thinking_delta" && streamEvent.delta) {
+          thinkingDeltaIndexes.add(streamContentKey(streamEvent, "thinking"));
           assistantThinking.push(streamEvent.delta);
           onEvent({ type: "assistant", message: { content: [{ type: "thinking", text: streamEvent.delta }] } });
+        } else if (streamEvent?.type === "thinking_end" && streamEvent.content) {
+          const key = streamContentKey(streamEvent, "thinking");
+          if (!thinkingDeltaIndexes.has(key)) assistantThinking.push(streamEvent.content);
+          onEvent({ type: "assistant", message: { content: [{ type: "thinking", text: streamEvent.content }] } });
         }
       } else if (event.type === "tool_execution_start") {
         onEvent({
           type: "assistant",
           message: { content: [{ type: "tool_use", id: event.toolCallId, name: event.toolName, input: event.args || {} }] },
         });
+        if (event.toolName === "StructuredOutput") {
+          onEvent(structuredOutputEvent(event.toolCallId, event.args || {}));
+        }
+      } else if (event.type === "tool_execution_update") {
+        onEvent({
+          type: "tool_update",
+          tool_use_id: event.toolCallId,
+          name: event.toolName,
+          input: event.args || {},
+          partial_result: jsonSerializable(event.partialResult, String(event.partialResult ?? "")),
+        });
       } else if (event.type === "tool_execution_end") {
+        const resultContent = toolResultContent(event.result);
         onEvent({
           type: "user",
           message: {
             content: [{
               type: "tool_result",
               tool_use_id: event.toolCallId,
-              content: toolResultContent(event.result),
+              content: resultContent,
+              raw_result: jsonSerializable(event.result, resultContent),
               is_error: !!event.isError,
             }],
           },

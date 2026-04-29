@@ -56,6 +56,55 @@ function textStream(text, nextUsage = usage()) {
   };
 }
 
+function textDeltaAndEndStream(text, nextUsage = usage()) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const start = {
+        role: "assistant",
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: nextUsage,
+        stopReason: "stop",
+        timestamp: Date.now(),
+      };
+      const done = { ...start, content: [{ type: "text", text }] };
+      stream.push({ type: "start", partial: start });
+      stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: done });
+      stream.push({ type: "text_end", contentIndex: 0, content: text, partial: done });
+      stream.push({ type: "done", reason: "stop", message: done });
+    });
+    return stream;
+  };
+}
+
+function thinkingEndStream(thinking, text, nextUsage = usage()) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const start = {
+        role: "assistant",
+        content: [],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: nextUsage,
+        stopReason: "stop",
+        timestamp: Date.now(),
+      };
+      const withThinking = { ...start, content: [{ type: "thinking", thinking }] };
+      const done = { ...start, content: [{ type: "thinking", thinking }, { type: "text", text }] };
+      stream.push({ type: "start", partial: start });
+      stream.push({ type: "thinking_end", contentIndex: 0, content: thinking, partial: withThinking });
+      stream.push({ type: "text_delta", contentIndex: 1, delta: text, partial: done });
+      stream.push({ type: "done", reason: "stop", message: done });
+    });
+    return stream;
+  };
+}
+
 function errorStream(message) {
   return (model) => {
     const stream = createAssistantMessageEventStream();
@@ -153,6 +202,36 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
 
+  it("captures provider thinking snapshots when no thinking deltas were emitted", async () => {
+    const events = [];
+    const result = await generateResponse("sys", {
+      model: resolveModel("openai:gpt-5.5"),
+      effort: "high",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: thinkingEndStream("Reviewed the available tools.", "Done."),
+      onEvent: (event) => events.push(event),
+    });
+
+    expect(result.thinking).toBe("Reviewed the available tools.");
+    expect(result.text).toBe("Done.");
+    expect(events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.type === "thinking")).toBe(true);
+  });
+
+  it("does not duplicate text_end snapshots after text deltas", async () => {
+    const events = [];
+    const result = await generateResponse("sys", {
+      model: resolveModel("openai:gpt-5.5"),
+      effort: "medium",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: textDeltaAndEndStream("Hello once."),
+      onEvent: (event) => events.push(event),
+    });
+
+    const textEvents = events.filter((event) => event.type === "assistant" && event.message?.content?.[0]?.type === "text");
+    expect(result.text).toBe("Hello once.");
+    expect(textEvents.map((event) => event.message.content[0].text)).toEqual(["Hello once."]);
+  });
+
   it("runs custom provider vercel: references through the same pi runtime", async () => {
     const modelRef = createCustomProviderModel();
     const result = await generateResponse("sys", {
@@ -236,6 +315,7 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(result.text).toBe("Implemented.");
     expect(result.worklabResult).toMatchObject(worklabResult);
     expect(result.events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.name === "StructuredOutput")).toBe(true);
+    expect(result.events.some((event) => event.type === "structured_output" && event.worklab_result?.final_text === "Implemented.")).toBe(true);
   });
 });
 

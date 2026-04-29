@@ -93,6 +93,15 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   }
   if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
+  if (ev.type === "structured_output") {
+    return {
+      type: "structured_output",
+      tool_use_id: ev.tool_use_id || null,
+      source: ev.source || "StructuredOutput",
+      value: ev.value ?? ev.structured_output ?? ev.result,
+      ...(ev.worklab_result ? { worklab_result: ev.worklab_result } : {}),
+    };
+  }
   const codexItem = normalizeCodexItemEvent(ev);
   if (codexItem) return codexItem;
   if (ev.type === "cli_event") return normalizeCliEvent(ev);
