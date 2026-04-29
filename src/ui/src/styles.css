@@ -9334,7 +9334,7 @@ html.assistant-resizing * {
   width: 100%;
   margin: 0;
   grid-template-columns: minmax(0, 1fr) var(--rail-w);
-  gap: 0;
+  gap: var(--sp-4);
   padding: var(--sp-8) var(--sp-6) var(--sp-6);
   min-height: 0;
   overflow: visible;
@@ -9342,6 +9342,10 @@ html.assistant-resizing * {
 }
 .task-detail-shell .task-detail-main {
   gap: var(--sp-6);
+}
+.task-detail-shell .task-detail-main.editor-main,
+.task-detail-shell .task-detail-rail.editor-rail {
+  padding-inline: 0;
 }
 .task-detail-rail-content,
 .task-edit-rail-content,
@@ -9374,12 +9378,10 @@ html.assistant-resizing * {
 }
 
 @media (min-width: 1181px) {
-  .task-detail-shell .task-detail-main.editor-main,
   .task-edit-main.editor-main {
     padding-right: var(--sp-4);
   }
 
-  .task-detail-rail.editor-rail,
   .task-edit-rail.editor-rail {
     padding-left: var(--sp-3);
   }
@@ -9666,6 +9668,9 @@ html.assistant-resizing * {
 }
 
 @media (max-width: 480px) {
+  .task-detail-shell .task-detail {
+    padding-inline: var(--sp-3);
+  }
   .detail-head .title-copy h2 {
     font-size: 22px;
   }
