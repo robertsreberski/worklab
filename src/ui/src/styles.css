@@ -6279,12 +6279,12 @@ select,
 }
 .task-metadata-card > .task-context-list,
 .task-metadata-card > .task-tags,
-.task-metadata-card > .dependency-group,
+.task-metadata-card > .task-dependencies-section,
 .task-metadata-card > .run-artifacts-section {
   min-width: 0;
 }
 .task-metadata-card > .task-tags,
-.task-metadata-card > .dependency-group,
+.task-metadata-card > .task-dependencies-section,
 .task-metadata-card > .run-artifacts-section {
   padding-top: var(--sp-3);
   margin-top: var(--sp-3);
@@ -6349,6 +6349,12 @@ select,
   flex-direction: column;
   gap: var(--sp-2);
 }
+.task-dependencies-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.task-dependencies-section .dependency-group-spaced { margin-top: 0; }
 .dependency-group-spaced { margin-top: var(--sp-4); }
 .task-actions-stack {
   display: flex;
@@ -8234,6 +8240,7 @@ select,
     repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px);
 }
 .task-detail-shell > .detail-head {
+  flex: 0 0 auto;
   z-index: 1;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface) 88%, transparent) 72%, var(--surface) 100%);

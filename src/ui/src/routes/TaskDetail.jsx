@@ -1559,7 +1559,10 @@ export function TaskDetail({ id, runParam = null }) {
             </div>
           )}
           {hasRailDependencies && (
-            <>
+            <div class="task-dependencies-section">
+              <div class="task-rail-section-head">
+                <span class="all-caps">Dependencies</span>
+              </div>
               {(task.blocked_by || []).length > 0 && (
                 <div class="dependency-group">
                   <div class="all-caps">Blocked by</div>
@@ -1582,7 +1585,7 @@ export function TaskDetail({ id, runParam = null }) {
                   ))}
                 </div>
               )}
-            </>
+            </div>
           )}
           {artifactRun && <RunArtifactsSection run={artifactRun} />}
         </Card>

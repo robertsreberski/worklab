@@ -767,7 +767,7 @@ test("desktop task detail states keep actions and context obvious without clippe
       title: "Desktop blocked task",
       status: "Execute",
       actions: [{ label: "Run work", enabled: false }],
-      contextText: "Blocked by",
+      contextText: "Dependencies",
     },
     {
       label: "running",
@@ -814,13 +814,27 @@ test("desktop task detail states keep actions and context obvious without clippe
       expect(columnCount, `${viewport.label} ${state.label} responsive detail columns`).toBe(expectedColumns);
       const detailWidth = await page.locator(".task-detail").evaluate((node) => Math.round(node.getBoundingClientRect().width));
       expect(detailWidth, `${viewport.label} ${state.label} detail max width`).toBeLessThanOrEqual(1180);
-      const headerToBriefGap = await page.locator(".task-detail-shell").evaluate((node) => {
+      const shellLayout = await page.locator(".task-detail-shell").evaluate((node) => {
         const head = node.querySelector(".detail-head");
+        const detail = node.querySelector(".task-detail");
         const brief = node.querySelector("#task-brief");
-        if (!head || !brief) return 0;
-        return Math.round(brief.getBoundingClientRect().top - head.getBoundingClientRect().bottom);
+        const status = node.querySelector(".task-hero-status-row");
+        if (!head || !detail || !brief || !status) return { missing: true };
+        const headRect = head.getBoundingClientRect();
+        const detailRect = detail.getBoundingClientRect();
+        const briefRect = brief.getBoundingClientRect();
+        const statusRect = status.getBoundingClientRect();
+        return {
+          missing: false,
+          detailStartsAfterHeader: Math.round(detailRect.top - headRect.bottom),
+          headerToBriefGap: Math.round(briefRect.top - headRect.bottom),
+          statusBottomDelta: Math.ceil(statusRect.bottom - headRect.bottom),
+        };
       });
-      expect(headerToBriefGap, `${viewport.label} ${state.label} header-to-brief gap`).toBeGreaterThanOrEqual(48);
+      expect(shellLayout.missing, `${viewport.label} ${state.label} shell layout nodes`).toBe(false);
+      expect(shellLayout.detailStartsAfterHeader, `${viewport.label} ${state.label} detail starts after header`).toBeGreaterThanOrEqual(0);
+      expect(shellLayout.statusBottomDelta, `${viewport.label} ${state.label} status row stays inside header`).toBeLessThanOrEqual(0);
+      expect(shellLayout.headerToBriefGap, `${viewport.label} ${state.label} header-to-brief gap`).toBeGreaterThanOrEqual(48);
       await expectNoHorizontalOverflow(page, `${viewport.label} task detail ${state.label}`);
       await expectNoCriticalHorizontalClipping(
         page,
@@ -854,6 +868,7 @@ test("task detail context shows completion and run mode", async ({ page }) => {
 
 test("task detail shows linked dependencies when the graph exists", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${blockedTaskId}`);
+  await expect(page.locator(".task-metadata-card")).toContainText("Dependencies");
   await expect(page.locator(".task-metadata-card")).toContainText("Blocked by");
   await expect(page.locator(".blocked-link", { hasText: "Dependency blocker" })).toBeVisible();
 });
@@ -1466,6 +1481,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const tabbar = document.querySelector(".app-tabbar");
     const head = document.querySelector(".task-detail-shell .detail-head");
     const brief = document.querySelector("#task-brief");
+    const status = document.querySelector(".task-hero-status-row");
     const rail = document.querySelector(".activity-feed-entry:not(:last-child) .activity-feed-rail");
     const dot = document.querySelector(".activity-feed-dot:not(.avatar)") || document.querySelector(".activity-feed-dot");
     const line = rail ? getComputedStyle(rail, "::after") : null;
@@ -1493,6 +1509,9 @@ test("mobile task detail keeps activity first with a compact premium composer", 
       headerToBriefGap: head && brief
         ? Math.round(brief.getBoundingClientRect().top - head.getBoundingClientRect().bottom)
         : 0,
+      statusInsideHeader: head && status
+        ? Math.ceil(status.getBoundingClientRect().bottom - head.getBoundingClientRect().bottom) <= 0
+        : false,
       heroActionsDisplay: heroActions ? getComputedStyle(heroActions).display : "",
       railWidth: rail ? Math.round(rail.getBoundingClientRect().width) : 0,
       dotWidth: dot ? Math.round(parseFloat(getComputedStyle(dot).getPropertyValue("--activity-dot-size")) || dot.getBoundingClientRect().width) : 0,
@@ -1511,6 +1530,7 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(beforeFocus.dockMinButtonHeight).toBeGreaterThanOrEqual(44);
   expect(beforeFocus.dockBottomBeforeNav).toBe(true);
   expect(beforeFocus.headerToBriefGap).toBeGreaterThanOrEqual(40);
+  expect(beforeFocus.statusInsideHeader).toBe(true);
   expect(beforeFocus.tabbarDisplay).toBe("none");
   expect(beforeFocus.heroActionsDisplay).toBe("none");
   expect(beforeFocus.railWidth).toBeLessThanOrEqual(24);
