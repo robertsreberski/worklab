@@ -151,6 +151,20 @@ describe("assistant routes", () => {
     expect(run.body.run.cancel_initiator).toBe("api_cancel");
   });
 
+  it("reconciles assistant runs that ignore cancellation", async () => {
+    const runAgent = vi.fn(() => new Promise(() => {}));
+    const { agent, db } = setup({ runAgent });
+    writeSettings(db, { cancel_grace_ms: 0 });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Ignore cancellation." }).expect(202);
+    await agent.post(`/api/assistant/runs/${started.body.run.id}/cancel`).expect(202);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("cancelled");
+    expect(run.body.run.cancel_reason).toContain("reconciled after cancel grace");
+  });
+
   it("marks assistant timeout aborts as failed timeouts", async () => {
     const runAgent = vi.fn((_systemPrompt, options) => new Promise((resolve) => {
       options.abortSignal.addEventListener("abort", () => resolve({
