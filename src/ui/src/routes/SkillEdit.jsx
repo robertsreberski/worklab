@@ -20,6 +20,7 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { FileTree } from "../components/FileTree.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { DetailHeader } from "../components/layout/index.js";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 
@@ -109,28 +110,27 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
 
   return (
     <>
-      <header class="pane-detail-head skill-detail-head">
-        <div class="pane-detail-head-copy">
-          <div class="pane-detail-icon skill-detail-icon" aria-hidden="true">
-            <Icon name="sparkles" size={16} />
-          </div>
-          <div class="pane-detail-head-titles">
-            <div class="all-caps">{isNew ? "Create skill" : "Skill"}</div>
-            <h2>{title}</h2>
-            <div class="pane-detail-subline">
-              <span class="pane-row-mono">{slugLabel}</span>
-              <span class="pane-row-dot">·</span>
-              <span>{priorityLabel}</span>
-              {!isNew && (
-                <>
-                  <span class="pane-row-dot">·</span>
-                  <span>{usageCount} explicit agent{usageCount === 1 ? "" : "s"}</span>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <div class="toolbar">
+      <DetailHeader
+        class="skill-detail-head"
+        icon={<Icon name="sparkles" size={16} />}
+        iconClass="skill-detail-icon"
+        kicker={isNew ? "Create skill" : "Skill"}
+        title={title}
+        meta={(
+          <>
+            <span class="pane-row-mono">{slugLabel}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{priorityLabel}</span>
+            {!isNew && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>{usageCount} explicit agent{usageCount === 1 ? "" : "s"}</span>
+              </>
+            )}
+          </>
+        )}
+        actions={(
+          <>
           {!isNew && <StatusPill status={skill.meta.enabled !== false ? "enabled" : "disabled"} />}
           <Button
             variant={isDirty || isNew ? "primary" : "secondary"}
@@ -140,8 +140,9 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           >
             {isNew ? "Create" : "Save"}
           </Button>
-        </div>
-      </header>
+          </>
+        )}
+      />
       <div class="pane-detail-body entity-detail-body skill-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />

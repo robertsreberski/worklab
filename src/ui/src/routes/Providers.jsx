@@ -18,7 +18,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { PaneListHeader } from "../components/layout/index.js";
+import { DetailHeader, PaneListHeader } from "../components/layout/index.js";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -250,12 +250,23 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 
   return (
     <>
-      <header class="pane-detail-head">
-        <div class="pane-detail-head-titles">
-          <div class="all-caps">{isNew ? "Create provider" : "Provider"}</div>
-          <h2>{isNew ? "New provider" : provider.name}</h2>
-        </div>
-        <div class="toolbar">
+      <DetailHeader
+        icon={<Icon name="terminal" size={16} />}
+        kicker={isNew ? "Create provider" : "Provider"}
+        title={isNew ? "New provider" : provider.name}
+        meta={(
+          <>
+            <span class="pane-row-mono">{provider.provider_type || "provider"}</span>
+            {provider.base_url && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>{provider.base_url}</span>
+              </>
+            )}
+          </>
+        )}
+        actions={(
+          <>
           {!isNew && <StatusPill status={provider.enabled ? "enabled" : "disabled"} />}
           {!isNew && (
             <Button
@@ -287,8 +298,9 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
           >
             {isNew ? "Create" : "Save"}
           </Button>
-        </div>
-      </header>
+          </>
+        )}
+      />
 
       <div class="pane-detail-body">
         {formSave.error && (

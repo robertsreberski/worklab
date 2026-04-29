@@ -19,6 +19,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { DetailHeader } from "../components/layout/index.js";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
@@ -108,22 +109,21 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
 
   return (
     <>
-      <header class="pane-detail-head knowledge-detail-head">
-        <div class="pane-detail-head-copy">
-          <div class={`pane-detail-icon knowledge-detail-icon ${entry.pinned ? "pinned" : ""}`.trim()} aria-hidden="true">
-            <Icon name={entry.pinned ? "pin" : "book"} size={16} />
-          </div>
-          <div class="pane-detail-head-titles">
-            <div class="all-caps">{isNew ? "Create entry" : "Knowledge"}</div>
-            <h2>{title || "(untitled)"}</h2>
-            <div class="pane-detail-subline">
-              <span class="pane-row-mono">{slugLabel}</span>
-              <span class="pane-row-dot">·</span>
-              <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
-            </div>
-          </div>
-        </div>
-        <div class="toolbar">
+      <DetailHeader
+        class="knowledge-detail-head"
+        icon={<Icon name={entry.pinned ? "pin" : "book"} size={16} />}
+        iconClass={`knowledge-detail-icon ${entry.pinned ? "pinned" : ""}`.trim()}
+        kicker={isNew ? "Create entry" : "Knowledge"}
+        title={title || "(untitled)"}
+        meta={(
+          <>
+            <span class="pane-row-mono">{slugLabel}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
+          </>
+        )}
+        actions={(
+          <>
           {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
           {categoryAttr && <span class="kb-category-badge" data-category={categoryAttr}>{entry.category}</span>}
           <Button
@@ -134,8 +134,9 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
           >
             {isNew ? "Create" : "Save"}
           </Button>
-        </div>
-      </header>
+          </>
+        )}
+      />
       <div class="pane-detail-body">
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
