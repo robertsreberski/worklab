@@ -61,4 +61,111 @@ describe("admin MCP tools", () => {
     expect(deletedComment.method).toBe("DELETE");
     expect(deletedComment.body).toBeNull();
   });
+
+  it("returns compact filtered agent summaries without full instructions", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      agents: [
+        {
+          name: "game-dev",
+          display_name: "Game Dev",
+          description: "Builds games",
+          sdk: "codex",
+          model: "codex:gpt-5.5",
+          effort: "xhigh",
+          instructions: "Very long private instructions ".repeat(1000),
+          skills_allowlist: ["sprite-work"],
+          skills_allowlist_mode: "custom",
+          mcp_allowlist: ["worklab"],
+          mcp_allowlist_mode: "custom",
+          builtin_allowlist: [],
+          builtin_allowlist_mode: "all",
+          allow_self_review: true,
+          enabled: true,
+          last_run_at: 123,
+          run_count_30d: 4,
+          avg_run_duration_ms: 5000,
+        },
+        {
+          name: "archived-agent",
+          display_name: "Archived Agent",
+          instructions: "should not match",
+          enabled: false,
+        },
+      ],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
+
+    const result = await handlers.worklab_agent_list({ q: "game", enabled: true, limit: 1 });
+
+    expect(result).toMatchObject({ count: 2, matched: 1, returned: 1, truncated: false });
+    expect(result.agents[0]).toMatchObject({
+      name: "game-dev",
+      model: "codex:gpt-5.5",
+      skills_allowlist: { mode: "custom", count: 1 },
+      mcp_allowlist: { mode: "custom", count: 1 },
+    });
+    expect(result.agents[0]).not.toHaveProperty("instructions");
+    expect(JSON.stringify(result)).not.toContain("Very long private instructions");
+  });
+
+  it("returns compact filtered model choices without raw catalogs", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      groups: [
+        {
+          id: "codex",
+          label: "OpenAI Codex",
+          runtime_kind: "pi-agent",
+          models: [
+            {
+              value: "codex:gpt-5.5",
+              label: "Codex GPT-5.5",
+              description: "Flagship",
+              sdk: "codex",
+              provider: "openai-codex",
+              model: "gpt-5.5",
+              capabilities: {
+                context_window: 400000,
+                max_tokens: 128000,
+                reasoning: true,
+                reasoning_levels: ["low", "medium", "high", "xhigh"],
+                tool_use: true,
+              },
+              pricing: { input: 1, output: 2 },
+              builtin_tools: ["Read", "Write", "Bash"],
+              available: true,
+            },
+          ],
+        },
+        {
+          id: "claude",
+          label: "Claude",
+          models: [{
+            value: "claude:claude-sonnet-4-6",
+            label: "Claude Sonnet",
+            sdk: "claude",
+            model: "claude-sonnet-4-6",
+            capabilities: {},
+            available: true,
+          }],
+        },
+      ],
+      models: [],
+    }), { status: 200, headers: { "content-type": "application/json" } }));
+    const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
+
+    const result = await handlers.worklab_model_available({ sdk: "codex", limit: 1 });
+
+    expect(result).toMatchObject({ count: 2, available_count: 2, matched: 1, returned: 1, truncated: false });
+    expect(result.models[0]).toMatchObject({
+      value: "codex:gpt-5.5",
+      sdk: "codex",
+      provider: "openai-codex",
+      context_window: 400000,
+      max_tokens: 128000,
+      reasoning_levels: ["low", "medium", "high", "xhigh"],
+    });
+    expect(result.models[0]).not.toHaveProperty("capabilities");
+    expect(result.models[0]).not.toHaveProperty("pricing");
+    expect(result.models[0]).not.toHaveProperty("builtin_tools");
+  });
 });

@@ -31,6 +31,9 @@ function textResult(text, details = {}) {
   };
 }
 
+const MCP_TEXT_RESULT_LIMIT = 60_000;
+const MCP_RAW_DETAIL_LIMIT = 20_000;
+
 function objectSchema(properties, required = []) {
   return { type: "object", properties, required, additionalProperties: false };
 }
@@ -72,6 +75,36 @@ function toolText(result) {
   if (typeof result === "string") return result;
   if (result == null) return "";
   try { return JSON.stringify(result); } catch { return String(result); }
+}
+
+function truncateMcpText(text, limit = MCP_TEXT_RESULT_LIMIT) {
+  const value = String(text || "");
+  if (value.length <= limit) return { text: value, truncated: false, originalLength: value.length };
+  const marker = [
+    "",
+    `[truncated MCP tool result from ${value.length} to ${limit} characters]`,
+    "Use a more specific Worklab MCP tool, filters, or a detail/get tool for the exact item you need.",
+  ].join("\n");
+  return {
+    text: `${value.slice(0, Math.max(0, limit - marker.length))}${marker}`,
+    truncated: true,
+    originalLength: value.length,
+  };
+}
+
+function compactRawMcpResult(out) {
+  let text;
+  try {
+    text = JSON.stringify(out || {});
+  } catch {
+    text = String(out ?? "");
+  }
+  if (text.length <= MCP_RAW_DETAIL_LIMIT) return out;
+  return {
+    truncated: true,
+    original_length: text.length,
+    preview: `${text.slice(0, MCP_RAW_DETAIL_LIMIT)}\n[truncated raw MCP result]`,
+  };
 }
 
 function fileEditPayload(change, { status, before, after, error } = {}) {
@@ -246,19 +279,26 @@ async function connectMcpClient(name, cfg) {
   return { name, client, transport };
 }
 
-function coerceMcpContent(out) {
+export function coerceMcpContent(out) {
   if (Array.isArray(out?.content) && out.content.length) {
     return out.content.map((part) => {
-      if (part.type === "text") return { type: "text", text: part.text || "" };
+      if (part.type === "text") return { type: "text", text: truncateMcpText(part.text || "").text };
       if (part.type === "image") return {
         type: "image",
         data: part.data,
         mimeType: part.mimeType || part.mime_type || "image/png",
       };
-      return { type: "text", text: JSON.stringify(part) };
+      return { type: "text", text: truncateMcpText(JSON.stringify(part)).text };
     });
   }
-  return [{ type: "text", text: JSON.stringify(out || {}) }];
+  return [{ type: "text", text: truncateMcpText(JSON.stringify(out || {})).text }];
+}
+
+function mcpContentWasTruncated(out) {
+  if (Array.isArray(out?.content) && out.content.length) {
+    return out.content.some((part) => part.type === "text" && truncateMcpText(part.text || "").truncated);
+  }
+  return truncateMcpText(JSON.stringify(out || {})).truncated;
 }
 
 function mcpToolName(serverName, toolName, reservedNames) {
@@ -315,7 +355,12 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set()) {
           const out = await connected.client.callTool({ name: sourceTool.name, arguments: params || {} });
           return {
             content: coerceMcpContent(out),
-            details: { server: serverName, tool: sourceTool.name, raw: out },
+            details: {
+              server: serverName,
+              tool: sourceTool.name,
+              result_truncated: mcpContentWasTruncated(out),
+              raw: compactRawMcpResult(out),
+            },
           };
         },
       });
