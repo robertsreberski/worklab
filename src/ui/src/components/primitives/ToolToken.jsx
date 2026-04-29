@@ -79,6 +79,13 @@ export function normalizeToolTokenEvent(event) {
   if (!event) return null;
   if (event.type === "sdk_event") return normalizeToolTokenEvent(event.event);
   if (event.type === "worklab_result_candidate") return null;
+  if (event.type === "structured_output") {
+    const value = event.worklab_result || event.value || event.structured_output || {};
+    return {
+      type: "text",
+      text: value.final_text || value.summary || "Structured output",
+    };
+  }
   const fileChange = normalizeFileChangeToken(event);
   if (fileChange) return fileChange;
   const codexItem = normalizeCodexItemToken(event);

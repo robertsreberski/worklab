@@ -76,6 +76,19 @@ describe("agent event timeline normalization", () => {
     expect(items[0].toolResult.output).toBe("ok");
   });
 
+  it("attaches structured output to the matching tool call", () => {
+    const structured = { schema: "worklab.v2", summary: "Done", final_text: "Implemented." };
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "structured-1", name: "StructuredOutput", input: structured },
+      { type: "structured_output", tool_use_id: "structured-1", value: structured, worklab_result: structured },
+      { type: "tool_result", tool_use_id: "structured-1", output: "Structured output received." },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].structuredOutput).toMatchObject({ worklab_result: structured });
+  });
+
   it("pairs file edit events without marking completed changes as errors", () => {
     const changes = [{ path: "/workspace/catching-up/build_wp_p2_tree.py", kind: "update" }];
     const items = groupAgentTimelineEvents([

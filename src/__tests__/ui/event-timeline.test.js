@@ -334,6 +334,38 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("keeps normalized structured output events visible", () => {
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done",
+      final_text: "Implemented.",
+    };
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "structured_output",
+          source: "StructuredOutput",
+          tool_use_id: "structured-1",
+          value: worklabResult,
+          worklab_result: worklabResult,
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "structured_output",
+        source: "StructuredOutput",
+        tool_use_id: "structured-1",
+        value: worklabResult,
+        worklab_result: worklabResult,
+      },
+    ]);
+  });
+
   it("keeps live user messages visible as guidance rows", () => {
     const events = normalizeWorklabEvents([
       { type: "live_user_message", body: "Please focus on the API route.", created_at: 123 },
