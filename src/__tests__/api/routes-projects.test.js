@@ -105,4 +105,78 @@ describe("project API", () => {
       .expect(200);
     expect(renamed.body.project.slug).toBe("alpha-2");
   });
+
+  it("includes project task progress and attention fields", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Progress View" }).expect(201);
+    const { body: { task: runningTask } } = await agent.post("/api/tasks").send({
+      title: "Running task",
+      project_id: project.id,
+      stage: "execute",
+    }).expect(201);
+    const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "External blocker" }).expect(201);
+    const { body: { task: attentionTask } } = await agent.post("/api/tasks").send({
+      title: "Needs attention",
+      project_id: project.id,
+      stage: "awaiting_user",
+      blocked_by_ids: [blocker.id],
+    }).expect(201);
+    const now = Date.now();
+    db.prepare(`
+      UPDATE tasks
+      SET
+        pending_actions_json = ?,
+        blocking_issues_json = ?,
+        retry_count = 2,
+        rejection_streak = 1,
+        last_failure_kind = 'review_rejected',
+        error_text = 'needs a human decision',
+        stage_reason = 'confirm release gate'
+      WHERE id = ?
+    `).run(
+      JSON.stringify(["confirm release"]),
+      JSON.stringify(["missing approval"]),
+      attentionTask.id,
+    );
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, project_id, mode, stage, agent_name, started_at, status, process_status)
+      VALUES ('run-active', ?, ?, 'execute', 'execute', 'builder', ?, 'running', 'running')
+    `).run(runningTask.id, project.id, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, project_id, mode, stage, agent_name, started_at, ended_at, status, process_status, failure_kind, decision, summary)
+      VALUES ('run-failed', ?, ?, 'execute', 'execute', 'builder', ?, ?, 'error', 'running', 'spawn', 'failed', 'worker failed')
+    `).run(attentionTask.id, project.id, now - 2_000, now - 1_000);
+
+    const detail = await agent.get(`/api/projects/${project.id}`).expect(200);
+    const running = detail.body.project.tasks.find((task) => task.id === runningTask.id);
+    const attention = detail.body.project.tasks.find((task) => task.id === attentionTask.id);
+
+    expect(running).toMatchObject({
+      id: runningTask.id,
+      stage: "execute",
+      running_run_id: "run-active",
+      running_run: { id: "run-active", process_status: "running" },
+    });
+    expect(attention).toMatchObject({
+      id: attentionTask.id,
+      stage: "awaiting_user",
+      stage_reason: "confirm release gate",
+      pending_actions: ["confirm release"],
+      blocking_issues: ["missing approval"],
+      retry_count: 2,
+      rejection_streak: 1,
+      last_failure_kind: "review_rejected",
+      error_text: "needs a human decision",
+      unresolved_dependency_count: 1,
+      last_run: {
+        id: "run-failed",
+        process_status: "failed",
+        failure_kind: "spawn",
+        decision: "failed",
+        summary: "worker failed",
+      },
+    });
+  });
 });
