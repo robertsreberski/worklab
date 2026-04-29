@@ -13,6 +13,7 @@ import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
+import { resolveTaskProjectRunContext } from "./projects.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -158,6 +159,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
+  const projectRunContext = resolveTaskProjectRunContext({ db, config, task });
 
   const commentRows = enrichCommentRows(
     db,
@@ -177,12 +179,31 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     env: {
       WORKLAB_TASK_ID: taskId,
       WORKLAB_TASK_TITLE: task.title,
+      ...(projectRunContext.project ? {
+        WORKLAB_PROJECT_ID: projectRunContext.project.id,
+        WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
+        WORKLAB_PROJECT_NAME: projectRunContext.project.name,
+      } : {}),
     },
   });
 
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
 
-  return { task, agent, commentRows, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb };
+  return {
+    task,
+    agent,
+    project: projectRunContext.project,
+    effectiveWorkdir: projectRunContext.effectiveWorkdir,
+    projectContextHash: projectRunContext.projectContextHash,
+    commentRows,
+    skills,
+    memory,
+    journalTail,
+    mcpServers,
+    allowedTools,
+    disallowedTools,
+    pinnedKb,
+  };
 }
 
 export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
@@ -245,6 +266,12 @@ function diagnosticsForPrompt(prompt, setup) {
   return {
     prefixHash: prompt.prefixHash,
     promptChars: prompt.text.length,
+    project: setup.project ? {
+      id: setup.project.id,
+      slug: setup.project.slug,
+      contextHash: setup.projectContextHash,
+      workdir: setup.effectiveWorkdir,
+    } : null,
     toolCount: {
       skills: Array.isArray(skills) ? skills.length : 0,
       builtin: Array.isArray(allowedTools) ? allowedTools.filter((tool) => !disallowedTools.includes(tool)).length : 0,
@@ -265,6 +292,10 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     priorRunId: priorRunId || "",
     agentUpdatedAt: setup.agent?.updated_at || 0,
     taskUpdatedAt: setup.task?.updated_at || 0,
+    projectId: setup.project?.id || "",
+    projectUpdatedAt: setup.project?.updated_at || 0,
+    projectWorkdirHash: shortHash(setup.effectiveWorkdir || ""),
+    projectContextHash: setup.projectContextHash || "",
     commentsHash: shortHash((setup.commentRows || []).map((c) => `${c.id}:${c.created_at}`).join("|")),
     skillsHash: shortHash(skillsSignature.join("|")),
     mcpHash: shortHash(mcpSignature.join("|")),
@@ -290,7 +321,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
-      agent, task, skills, memory, journalTail,
+      agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns,
       allowedTools, disallowedTools, mcpServers,
     };
@@ -320,6 +351,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution,
       allowedTools, disallowedTools, mcpServers,
+      project: setup.project,
+      effectiveWorkdir: setup.effectiveWorkdir,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
     const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
@@ -373,6 +406,10 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
     agent_name: agentName,
     model: agent.model,
     effort: agent.effort || "medium",
+    project_id: runInput.project?.id || null,
+    project_slug: runInput.project?.slug || null,
+    project_name: runInput.project?.name || null,
+    workdir: runInput.effectiveWorkdir || config.workspace || null,
     generated_at: now,
   };
   const tools = [

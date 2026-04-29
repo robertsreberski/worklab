@@ -352,6 +352,7 @@ async function main() {
       systemPrompt,
       messages,
       promptDiagnostics,
+      effectiveWorkdir,
     } = runInput;
     materializeExecenvRuntimeConfig({ agent, task, systemPrompt });
     if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
@@ -365,7 +366,7 @@ async function main() {
         dataDir: config.dataDir,
         skills,
         messages,
-        cwd: config.workspace,
+        cwd: effectiveWorkdir || config.workspace,
         mcpServers,
         allowedTools,
         disallowedTools,
@@ -441,6 +442,7 @@ async function main() {
       systemPrompt,
       messages,
       promptDiagnostics,
+      effectiveWorkdir,
     } = reviewInput;
     materializeExecenvRuntimeConfig({ agent, task: reviewTask, systemPrompt });
     if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
@@ -454,7 +456,7 @@ async function main() {
         dataDir: config.dataDir,
         skills,
         messages,
-        cwd: config.workspace,
+        cwd: effectiveWorkdir || config.workspace,
         mcpServers,
         allowedTools,
         disallowedTools,

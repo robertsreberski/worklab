@@ -38,12 +38,31 @@ function seedTask(db, patch = {}) {
     owner_agent: patch.owner_agent || "owner",
     planner_agent: patch.planner_agent || null,
     reviewer_agent: patch.reviewer_agent || null,
+    project_id: patch.project_id || null,
   };
   db.prepare(`
     INSERT INTO tasks
-      (id, task_key, root_task_id, title, instructions, stage, owner_agent, planner_agent, reviewer_agent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(row.id, row.task_key, row.id, row.title, row.instructions, row.stage, row.owner_agent, row.planner_agent, row.reviewer_agent, now, now);
+      (id, task_key, root_task_id, project_id, title, instructions, stage, owner_agent, planner_agent, reviewer_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.task_key, row.id, row.project_id, row.title, row.instructions, row.stage, row.owner_agent, row.planner_agent, row.reviewer_agent, now, now);
+  return row;
+}
+
+function seedProject(db, patch = {}) {
+  const now = Date.now();
+  const row = {
+    id: patch.id || "project-run-input",
+    slug: patch.slug || "run-input-project",
+    name: patch.name || "Run Input Project",
+    description: patch.description || "Project description.",
+    context: patch.context || "Project context for every run.",
+    workdir: patch.workdir || "/tmp/worklab-project-run-input",
+  };
+  db.prepare(`
+    INSERT INTO projects
+      (id, slug, name, description, context_markdown, workdir, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.slug, row.name, row.description, row.context, row.workdir, now, now);
   return row;
 }
 
@@ -157,6 +176,71 @@ describe("run input assembly", () => {
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
       expect(preview.messages).toEqual(input.messages);
+    });
+  });
+
+  it("injects project context and workdir into task run prompts", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const project = seedProject(db, {
+        context: "Use the Project Atlas conventions.",
+        workdir: "/tmp/project-atlas",
+      });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-project",
+        mode: "execute",
+      });
+
+      expect(input.project).toMatchObject({ id: project.id, slug: project.slug, name: project.name });
+      expect(input.effectiveWorkdir).toBe("/tmp/project-atlas");
+      const projectStart = input.systemPrompt.indexOf("## Project");
+      const taskStart = input.systemPrompt.indexOf("## Task");
+      expect(projectStart).toBeGreaterThan(0);
+      expect(projectStart).toBeLessThan(taskStart);
+      expect(input.systemPrompt).toContain("Use the Project Atlas conventions.");
+      expect(input.systemPrompt).toContain("**Workdir:** `/tmp/project-atlas`");
+      expect(input.promptDiagnostics.project).toMatchObject({
+        id: project.id,
+        slug: project.slug,
+        workdir: "/tmp/project-atlas",
+      });
+    });
+  });
+
+  it("uses live project context when a project changes", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const project = seedProject(db, { context: "Old context." });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+
+      const first = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-project-1",
+        mode: "execute",
+      });
+      db.prepare("UPDATE projects SET context_markdown = ?, updated_at = ? WHERE id = ?")
+        .run("New context.", Date.now() + 1000, project.id);
+      const second = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-project-2",
+        mode: "execute",
+      });
+
+      expect(first.systemPrompt).toContain("Old context.");
+      expect(second.systemPrompt).toContain("New context.");
+      expect(second.systemPrompt).not.toContain("Old context.");
     });
   });
 
