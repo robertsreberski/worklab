@@ -254,7 +254,7 @@ describe("worklab-tools KB handlers", () => {
     }
   });
 
-  it("toolDefinitions has 12 total entries (4 existing + 5 KB + 3 search)", () => {
-    expect(toolDefinitions.length).toBe(12);
+  it("toolDefinitions has 14 total entries (4 existing + 5 KB + 3 search + 2 subtask graph)", () => {
+    expect(toolDefinitions.length).toBe(14);
   });
 });

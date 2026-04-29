@@ -120,4 +120,46 @@ describe("worklab-tools handlers", () => {
     await expect(handlers.run_log_read({ run_id: "missing" })).rejects.toThrow("run not found");
     await expect(handlers.run_log_read({ run_id: "run-outside" })).rejects.toThrow("outside data dir");
   });
+
+  it("list_children returns subtasks linked via task_edges", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, stage, created_at, updated_at) VALUES ('t1', 'parent', 'awaiting_children', 1, 1)").run();
+      db.prepare("INSERT INTO tasks (id, title, stage, parent_task_id, subtask_order, created_at, updated_at) VALUES ('c1', 'child a', 'execute', 't1', 0, 2, 2)").run();
+      db.prepare("INSERT INTO tasks (id, title, stage, parent_task_id, subtask_order, created_at, updated_at) VALUES ('c2', 'child b', 'done', 't1', 1, 3, 3)").run();
+      db.prepare("INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_at) VALUES ('t1', 'c1', 'subtask', 1, 1)").run();
+      db.prepare("INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_at) VALUES ('t1', 'c2', 'subtask', 0, 1)").run();
+    });
+    const result = await createToolHandlers(c).list_children({});
+    expect(result.parent_task_id).toBe("t1");
+    expect(result.children.map((c) => c.id)).toEqual(["c1", "c2"]);
+    expect(result.children[0]).toMatchObject({ title: "child a", required: true, stage: "execute" });
+    expect(result.children[1]).toMatchObject({ required: false, stage: "done" });
+  });
+
+  it("get_child_result returns the latest run result for a subtask", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, stage, created_at, updated_at) VALUES ('t1', 'parent', 'awaiting_children', 1, 1)").run();
+      db.prepare("INSERT INTO tasks (id, title, stage, parent_task_id, created_at, updated_at) VALUES ('c1', 'child', 'done', 't1', 2, 2)").run();
+      db.prepare("INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_at) VALUES ('t1', 'c1', 'subtask', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary, result_json)
+        VALUES ('run-c1', 'c1', 'execute', 'execute', 'a', 1, 2, 'complete', 'succeeded', 'advance', 'all done', ?)
+      `).run(JSON.stringify({ schema: "worklab.v2", decision: "advance", summary: "all done" }));
+    });
+    const result = await createToolHandlers(c).get_child_result({ child_task_id: "c1" });
+    expect(result.title).toBe("child");
+    expect(result.last_run.decision).toBe("advance");
+    expect(result.last_run.result.summary).toBe("all done");
+  });
+
+  it("get_child_result rejects tasks that aren't children of the calling task", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, stage, created_at, updated_at) VALUES ('t1', 'parent', 'execute', 1, 1)").run();
+      db.prepare("INSERT INTO tasks (id, title, stage, created_at, updated_at) VALUES ('rogue', 'unrelated', 'execute', 2, 2)").run();
+    });
+    await expect(createToolHandlers(c).get_child_result({ child_task_id: "rogue" })).rejects.toThrow(/forbidden/);
+  });
 });
