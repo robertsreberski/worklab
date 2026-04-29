@@ -693,6 +693,7 @@ exit 0
     const final = { type: "item.completed", item: { id: "item_msg", type: "agent_message", text: JSON.stringify(structured) } };
     writeFileSync(fakeCodex, `#!/bin/sh
 printf '%s\\n' '${JSON.stringify(started)}'
+sleep 0.2
 cat > ${JSON.stringify(targetFile)} <<'EOF_EDITED'
 one
 TWO
