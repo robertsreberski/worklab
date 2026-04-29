@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 15;
+export const SCHEMA_VERSION = 16;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -327,6 +327,60 @@ CREATE TABLE IF NOT EXISTS slack_delivery_log (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_delivery_run ON slack_delivery_log(slack_triage_run_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_slack_delivery_task_run ON slack_delivery_log(task_run_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS assistant_threads (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL DEFAULT 'Personal assistant',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS assistant_messages (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'complete',
+  run_id TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_messages_thread ON assistant_messages(thread_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_assistant_messages_run ON assistant_messages(run_id);
+
+CREATE TABLE IF NOT EXISTS assistant_runs (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL REFERENCES assistant_threads(id) ON DELETE CASCADE,
+  user_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL,
+  assistant_message_id TEXT REFERENCES assistant_messages(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'running',
+  model TEXT,
+  effort TEXT,
+  started_at INTEGER NOT NULL,
+  ended_at INTEGER,
+  input_tokens INTEGER,
+  output_tokens INTEGER,
+  cache_read_tokens INTEGER,
+  cache_creation_tokens INTEGER,
+  cost_usd REAL,
+  duration_ms INTEGER,
+  num_turns INTEGER,
+  summary TEXT,
+  final_json TEXT,
+  error_text TEXT,
+  raw_output_path TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_runs_thread ON assistant_runs(thread_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_assistant_runs_status ON assistant_runs(status, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS assistant_agent_logs (
+  id TEXT PRIMARY KEY,
+  assistant_run_id TEXT NOT NULL REFERENCES assistant_runs(id) ON DELETE CASCADE,
+  events TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_assistant_agent_logs_run ON assistant_agent_logs(assistant_run_id);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

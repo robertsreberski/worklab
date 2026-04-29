@@ -16,7 +16,8 @@ describe("openDb + runMigrations", () => {
         "custom_providers", "custom_models", "embeddings", "settings",
         "agent_consolidations", "task_dependencies", "automations", "automation_runs",
         "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
-        "slack_agent_logs", "slack_delivery_log",
+        "slack_agent_logs", "slack_delivery_log", "assistant_threads", "assistant_messages",
+        "assistant_runs", "assistant_agent_logs",
       ]),
     );
   });
@@ -48,7 +49,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("15");
+    expect(row.value).toBe("16");
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {

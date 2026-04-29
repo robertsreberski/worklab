@@ -36,6 +36,9 @@ describe("settings", () => {
     expect(res.body.settings.consolidation_enabled).toBe(true);
     expect(res.body.settings.worker_timeout_ms).toBe(1800000);
     expect(res.body.settings.default_embedding_model).toBe("");
+    expect(res.body.settings.assistant_model).toBe("openai:gpt-5.5");
+    expect(res.body.settings.assistant_effort).toBe("high");
+    expect(res.body.settings.assistant_run_timeout_ms).toBe(300000);
   });
 
   it("PATCH clears the embedding model when given empty string", async () => {
@@ -62,6 +65,9 @@ describe("settings", () => {
       slack_run_timeout_ms: 60000,
       slack_notify_task_completed: true,
       slack_notify_task_errors: false,
+      assistant_model: "codex:gpt-5.4",
+      assistant_effort: "medium",
+      assistant_run_timeout_ms: 45000,
     }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
     expect(res.body.settings.consolidation_hour).toBe(5);
@@ -70,6 +76,9 @@ describe("settings", () => {
     expect(res.body.settings.slack_user_id).toBe("UROBERT");
     expect(res.body.settings.slack_channel_ids).toEqual(["C1", "C2"]);
     expect(res.body.settings.slack_notify_task_errors).toBe(false);
+    expect(res.body.settings.assistant_model).toBe("codex:gpt-5.4");
+    expect(res.body.settings.assistant_effort).toBe("medium");
+    expect(res.body.settings.assistant_run_timeout_ms).toBe(45000);
   });
 
   it("PATCH rejects unknown keys", async () => {

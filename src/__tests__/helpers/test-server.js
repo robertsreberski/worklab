@@ -2,7 +2,7 @@ import supertest from "supertest";
 import { makeTestDb } from "./test-db.js";
 import { createServer } from "../../api/server.js";
 
-export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls } = {}) {
+export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, assistant } = {}) {
   const db = makeTestDb();
   const stubWatcher = watcher || {
     handleRunRequested: async () => ({ runId: "fake-run" }),
@@ -15,7 +15,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     maybeAutoStart: () => {},
     maybeAutoStartDependents: () => {},
   };
-  const { app, broker } = createServer({
+  const { app, broker, assistant: serverAssistant } = createServer({
     db,
     logger: undefined,
     watcher: stubWatcher,
@@ -24,6 +24,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     automationManager,
     config,
     runtimeControls,
+    assistant,
   });
-  return { app, broker, db, watcher: stubWatcher, agent: supertest(app) };
+  return { app, broker, db, watcher: stubWatcher, assistant: serverAssistant, agent: supertest(app) };
 }
