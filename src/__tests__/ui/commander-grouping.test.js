@@ -49,4 +49,15 @@ describe("commander task grouping", () => {
       reviewer_agent: "reviewer",
     }, "planning-specialist")).toBe(true);
   });
+
+  it("matches project metadata in commander search", () => {
+    expect(taskMatchesCommanderQuery({
+      title: "Build",
+      project: { name: "Control Plane", slug: "control-plane" },
+    }, "control-plane")).toBe(true);
+    expect(taskMatchesCommanderQuery({
+      title: "Build",
+      project: { name: "Control Plane", slug: "control-plane" },
+    }, "control plane")).toBe(true);
+  });
 });

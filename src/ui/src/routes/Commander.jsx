@@ -86,7 +86,9 @@ export function taskMatchesCommanderQuery(task, query) {
     task.id?.toLowerCase().includes(q) ||
     task.owner_agent?.toLowerCase().includes(q) ||
     task.planner_agent?.toLowerCase().includes(q) ||
-    task.reviewer_agent?.toLowerCase().includes(q)
+    task.reviewer_agent?.toLowerCase().includes(q) ||
+    task.project?.name?.toLowerCase().includes(q) ||
+    task.project?.slug?.toLowerCase().includes(q)
   );
 }
 
@@ -132,6 +134,7 @@ function BulkTaskBar({
   count,
   visibleCount,
   agents,
+  projects,
   busy,
   onClear,
   onSelectVisible,
@@ -139,6 +142,14 @@ function BulkTaskBar({
   onDelete,
 }) {
   const agentOptions = useMemo(() => agentBulkOptions(agents), [agents]);
+  const projectOptions = useMemo(() => [
+    { value: "__none__", label: "No project" },
+    ...(projects || []).map((project) => ({
+      value: project.id,
+      label: project.name,
+      description: project.slug,
+    })),
+  ], [projects]);
 
   return (
     <div class="commander-bulkbar" role="region" aria-label="Bulk task actions">
@@ -204,6 +215,16 @@ function BulkTaskBar({
           options={BULK_RUN_POLICY_OPTIONS}
           onChange={(value) => value && onPatch({ run_policy: value })}
         />
+        <Select
+          class="bulk-action-select bulk-action-select-wide"
+          variant="menu"
+          value=""
+          placeholder="Project"
+          ariaLabel="Bulk assign project"
+          disabled={busy}
+          options={projectOptions}
+          onChange={(value) => onPatch({ project_id: value === "__none__" ? null : value })}
+        />
         <Button
           size="sm"
           variant="destructive"
@@ -221,7 +242,9 @@ function BulkTaskBar({
 export function Commander() {
   const [tasks, setTasks] = useState(null);
   const [agents, setAgents] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -241,9 +264,13 @@ export function Commander() {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listProjects().then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
   }, []);
   useSSE("global", (evt) => {
     if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reload();
+    if (evt.type?.startsWith("project_")) {
+      api.listProjects().then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
+    }
   });
 
   useEffect(() => {
@@ -269,9 +296,11 @@ export function Commander() {
   const filtered = useMemo(() => {
     return withGroup.filter(({ task, group }) => {
       if (statusFilter !== "all" && group !== statusFilter) return false;
+      if (projectFilter === "__none__" && task.project_id) return false;
+      if (projectFilter !== "all" && projectFilter !== "__none__" && task.project_id !== projectFilter) return false;
       return taskMatchesCommanderQuery(task, query);
     });
-  }, [withGroup, statusFilter, query]);
+  }, [withGroup, statusFilter, projectFilter, query]);
 
   const grouped = useMemo(() => {
     return GROUPS
@@ -336,7 +365,17 @@ export function Commander() {
 
   const tabsWithCounts = TABS.map((t) => ({ ...t, count: counts[t.value] || 0 }));
 
-  const hasFilter = statusFilter !== "all" || !!query.trim();
+  const projectOptions = useMemo(() => [
+    { value: "all", label: "All projects" },
+    { value: "__none__", label: "No project" },
+    ...projects.map((project) => ({
+      value: project.id,
+      label: project.name,
+      description: project.slug,
+    })),
+  ], [projects]);
+
+  const hasFilter = statusFilter !== "all" || projectFilter !== "all" || !!query.trim();
 
   const taskCountLabel = tasks ? `${counts.all || 0} tasks` : null;
 
@@ -392,6 +431,15 @@ export function Commander() {
               tabs={tabsWithCounts}
               class="tabs-pills"
             />
+            <Select
+              class="commander-project-filter"
+              variant="menu"
+              value={projectFilter}
+              onChange={setProjectFilter}
+              options={projectOptions}
+              placeholder="Project"
+              ariaLabel="Filter by project"
+            />
             <div class="commander-filter-actions">
               <DailyCostChip />
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
@@ -405,6 +453,7 @@ export function Commander() {
               count={checkedTaskIds.length}
               visibleCount={visibleTaskIds.length}
               agents={agents}
+              projects={projects}
               busy={bulkBusy}
               onClear={() => setCheckedIds(new Set())}
               onSelectVisible={selectVisibleTasks}
@@ -422,7 +471,7 @@ export function Commander() {
             <EmptyStateFiltered
               title="No tasks match your filter"
               body="Try a different stage or clear your search."
-              onClearFilters={() => { setStatusFilter("all"); setQuery(""); }}
+              onClearFilters={() => { setStatusFilter("all"); setProjectFilter("all"); setQuery(""); }}
             />
           ) : (
             <EmptyState

@@ -2848,6 +2848,10 @@ html.assistant-resizing * {
   scrollbar-width: none;
 }
 .commander-filter .tabs::-webkit-scrollbar { display: none; }
+.commander-project-filter {
+  flex: 0 0 176px;
+  width: 176px;
+}
 .commander-filter .filter-divider { width: 1px; height: 16px; background: var(--border); }
 .commander-filter-actions {
   display: inline-flex;
@@ -3081,6 +3085,11 @@ html.assistant-resizing * {
 }
 .commander-cell-title-row > .chip {
   flex: 0 0 auto;
+}
+.commander-project-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .commander-title {
   flex: 1 1 auto;
@@ -6943,6 +6952,27 @@ html.assistant-resizing * {
   gap: var(--sp-2);
   row-gap: var(--sp-2);
 }
+.task-project-chip,
+.task-meta-project-link {
+  color: inherit;
+  text-decoration: none;
+}
+.task-project-chip {
+  max-width: min(260px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.task-meta-project-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--text);
+  font-weight: 600;
+}
+.task-meta-project-link:hover {
+  color: var(--accent);
+}
 .task-overview-description { margin-bottom: var(--sp-4); }
 .task-instructions-kicker { margin-top: var(--sp-3); }
 .task-instructions-pre { margin-top: var(--sp-1); }
@@ -7412,6 +7442,28 @@ html.assistant-resizing * {
 }
 .knowledge-read-usage-list li {
   align-items: flex-start;
+}
+.project-archive-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 30px;
+  padding: 0 var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.project-archive-toggle input {
+  margin: 0;
+}
+.project-description {
+  max-width: 72ch;
+}
+.project-task-list {
+  max-width: 760px;
+}
+.project-task-list li {
+  gap: var(--sp-2);
 }
 @media (max-width: 1180px) {
   .knowledge-read-layout {
@@ -8068,6 +8120,11 @@ html.assistant-resizing * {
             mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   }
   .commander-filter .tabs::-webkit-scrollbar { display: none; }
+  .commander-project-filter {
+    flex: 1 1 180px;
+    width: auto;
+    min-width: 0;
+  }
   .commander-filter .tab {
     flex: 0 0 auto;
     min-height: 34px;
