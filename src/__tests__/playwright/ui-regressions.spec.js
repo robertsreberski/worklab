@@ -27,6 +27,7 @@ let desktopRunningTaskId;
 let desktopErroredTaskId;
 let providerId;
 let skillName;
+let projectSlug;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -314,6 +315,18 @@ test.beforeAll(async () => {
     ok: [201],
   });
   skillName = skill.skill.name;
+  const project = await requestJson("/api/projects", {
+    method: "POST",
+    body: {
+      name: "Mobile Layout Project",
+      slug: "mobile-layout-project",
+      description: "Seeded project for mobile read actions.",
+      context: "This seeded project keeps the project read page populated for mobile chrome tests.",
+      tags: ["mobile", "layout"],
+    },
+    ok: [201],
+  });
+  projectSlug = project.project.slug;
 
   const db = new Database(join(dataDir, "worklab.db"));
   const now = Date.now();
@@ -1330,11 +1343,12 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
   }
 });
 
-test("mobile agents skills and knowledge panes preserve compact premium detail structure", async ({ page }) => {
+test("mobile agents skills projects and knowledge panes preserve compact premium detail structure", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
     { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true, flatBody: true },
     { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
+    { hash: `#/projects/${projectSlug}`, title: "Mobile Layout Project", back: "Projects", readArticle: true, archiveAction: true },
     { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", readArticle: true },
   ];
 
@@ -1348,6 +1362,10 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
       await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toBeVisible();
     } else if (route.readArticle) {
       await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Save" })).toHaveCount(0);
+      await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Edit" })).toBeVisible();
+      if (route.archiveAction) {
+        await expect(page.locator(".entity-edit-mobile-dock .button", { hasText: "Archive" })).toBeVisible();
+      }
     } else {
       await expect(page.locator(".pane-mobile-back .button", { hasText: route.back })).toBeVisible();
     }
@@ -1418,8 +1436,9 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
     } else if (route.readArticle) {
       expect(mobileMetrics.railPosition).toBe("static");
       expect(mobileMetrics.toolbarDisplay).toBe("none");
-      expect(mobileMetrics.dockDisplay).toBe("");
-      expect(mobileMetrics.tabbarDisplay).toBe("grid");
+      expect(mobileMetrics.dockDisplay).toBe("flex");
+      expect(mobileMetrics.dockBottomBeforeNav).toBe(true);
+      expect(mobileMetrics.tabbarDisplay).toBe("none");
     }
 
     await expectNoHorizontalOverflow(page, `mobile polished pane ${route.hash}`);
@@ -1441,6 +1460,49 @@ test("mobile agents skills and knowledge panes preserve compact premium detail s
   }
 });
 
+test("mobile scroll containers keep final content above bottom chrome", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routes = [
+    { hash: "#/agents", target: ".pane-row:last-child" },
+    { hash: "#/knowledge/mobile-layout-reference", target: ".knowledge-read-section:last-child" },
+    { hash: `#/projects/${projectSlug}`, target: ".knowledge-read-section:last-child" },
+    { hash: "#/agents/regression-agent", target: ".entity-editor-main > .form-section:last-child" },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(route.target).first()).toBeVisible();
+    await page.evaluate(() => {
+      for (const selector of [".app-main", ".pane-list-body", ".pane-detail", ".pane-detail-body"]) {
+        for (const element of document.querySelectorAll(selector)) {
+          element.scrollTop = element.scrollHeight;
+        }
+      }
+    });
+    await page.waitForTimeout(50);
+
+    const metrics = await page.evaluate((targetSelector) => {
+      const target = document.querySelector(targetSelector);
+      const chrome = document.querySelector(".app-mobile-action-dock") || document.querySelector(".app-tabbar");
+      const appMain = document.querySelector(".app-main");
+      const targetRect = target?.getBoundingClientRect();
+      const chromeRect = chrome?.getBoundingClientRect();
+      const mainStyles = appMain ? getComputedStyle(appMain) : null;
+      return {
+        targetBottom: targetRect ? Math.round(targetRect.bottom) : 0,
+        chromeTop: chromeRect ? Math.round(chromeRect.top) : window.innerHeight,
+        chromeHeight: chromeRect ? Math.round(chromeRect.height) : 0,
+        mainPaddingBottom: mainStyles ? Math.round(parseFloat(mainStyles.paddingBottom)) : 0,
+        mainScrollPaddingBottom: mainStyles ? Math.round(parseFloat(mainStyles.scrollPaddingBottom)) : 0,
+      };
+    }, route.target);
+
+    expect(metrics.mainPaddingBottom, `${route.hash} main padding`).toBeGreaterThanOrEqual(metrics.chromeHeight);
+    expect(metrics.mainScrollPaddingBottom, `${route.hash} main scroll padding`).toBeGreaterThanOrEqual(metrics.chromeHeight);
+    expect(metrics.targetBottom, `${route.hash} target below chrome`).toBeLessThanOrEqual(metrics.chromeTop);
+  }
+});
+
 // Responsive breakpoints from ui-design-system.md §7.5. Spec mandates no
 // horizontal overflow on any route at any of these four widths.
 const RESPONSIVE_VIEWPORTS = [
@@ -1454,11 +1516,14 @@ const RESPONSIVE_VIEWPORTS = [
 ];
 
 function responsiveRoutes(page, ids) {
-  const { taskId, providerId, skillName } = ids;
+  const { taskId, providerId, skillName, projectSlug } = ids;
   return [
     { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
     { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
     { hash: "#/tasks/new", ready: () => page.locator(".task-edit-head").first() },
+    { hash: "#/projects", ready: () => page.locator(".pane-list") },
+    { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
+    { hash: "#/projects/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "Untitled project" }) },
     { hash: "#/agents", ready: () => page.locator(".pane-list") },
     { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
     { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
@@ -1480,7 +1545,7 @@ function responsiveRoutes(page, ids) {
 for (const vp of RESPONSIVE_VIEWPORTS) {
   test(`no horizontal overflow at ${vp.label} (${vp.w}x${vp.h})`, async ({ page }) => {
     await page.setViewportSize({ width: vp.w, height: vp.h });
-    const routes = responsiveRoutes(page, { taskId, providerId, skillName });
+    const routes = responsiveRoutes(page, { taskId, providerId, skillName, projectSlug });
     for (const route of routes) {
       await page.goto("about:blank");
       await page.goto(`${baseUrl}/${route.hash}`);
