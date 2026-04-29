@@ -142,9 +142,14 @@ export function CommanderRow({
         <div class="commander-cell-title-row">
           <span class="commander-title">{task.title}</span>
           {task.project && (
-            <span class="chip chip-muted commander-project-chip" title={`Project: ${task.project.name || task.project.slug}`}>
+            <a
+              class="chip chip-muted commander-project-chip"
+              href={`#/projects/${encodeURIComponent(task.project.slug || task.project.id)}`}
+              title={`Project: ${task.project.name || task.project.slug}`}
+              onClick={(event) => event.stopPropagation()}
+            >
               <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
-            </span>
+            </a>
           )}
           {metaChip}
           {autoRun && (
