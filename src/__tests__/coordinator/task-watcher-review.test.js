@@ -725,9 +725,10 @@ describe("task-watcher v2 workflow", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects same-agent reviewer unless allow_self_review is set on the agent", async () => {
+  it("rejects same-agent reviewer when allow_self_review is disabled on the agent", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
+    db.prepare("UPDATE agents SET allow_self_review = 0 WHERE name = 'coder'").run();
     const taskId = seedTask(db, { owner: "coder", reviewer: "coder" });
     const { spawn, resolvers } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });

@@ -66,7 +66,7 @@ const emptyAgent = {
   mcp_allowlist_mode: "all",
   builtin_allowlist: [],
   builtin_allowlist_mode: "all",
-  allow_self_review: false,
+  allow_self_review: true,
   daily_budget_usd: null,
   per_run_budget_usd: null,
   enabled: true,
