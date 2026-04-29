@@ -45,6 +45,11 @@
   --accent-hover: #8ee8d7;
   --accent-active: #45bfa9;
   --accent-soft: rgba(105, 220, 198, 0.10);
+  --accent-line: rgba(105, 220, 198, 0.28);
+  --paper-line: rgba(236, 222, 190, 0.045);
+  --scanline: rgba(236, 222, 190, 0.025);
+  --hairline: rgba(255, 248, 229, 0.055);
+  --ink-shadow: rgba(0, 0, 0, 0.48);
 
   /* §2.1.4 Status semantic tokens */
   --status-todo: #69dcc6;          /* cyan */
@@ -216,7 +221,10 @@ html, body, #app {
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background: var(--bg);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, var(--scanline) 2px 3px),
+    repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px),
+    var(--bg);
   color: var(--text);
   font-size: var(--text-base);
   line-height: 1.45;
@@ -316,7 +324,9 @@ select,
   height: 32px;
   padding: 0 var(--sp-4);
   border: 1px solid var(--border-strong);
-  background: var(--surface-elevated);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--hairline) 100%, transparent), transparent 44%),
+    var(--surface-elevated);
   color: var(--text);
   border-radius: var(--radius-sm);
   font-family: var(--font-sans);
@@ -329,21 +339,30 @@ select,
     border-color var(--dur-snap) var(--ease-snap),
     color var(--dur-snap) var(--ease-snap),
     box-shadow var(--dur-snap) var(--ease-snap);
+  box-shadow:
+    inset 0 1px 0 var(--hairline),
+    inset 0 -1px 0 color-mix(in srgb, var(--ink-shadow) 58%, transparent);
 }
 .button:hover { background: color-mix(in srgb, var(--surface-elevated) 65%, var(--surface) 35%); border-color: var(--border-strong); }
 .button:active { background: var(--surface); }
 
 .button.primary {
-  background: var(--accent);
+  background:
+    linear-gradient(180deg, var(--accent-hover), var(--accent) 62%, var(--accent-active));
   color: var(--text-inverse);
   border-color: var(--accent);
   font-weight: 700;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 30%, transparent),
+    inset 0 -2px 0 color-mix(in srgb, var(--text-inverse) 28%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 .button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .button.primary:active { background: var(--accent-active); border-color: var(--accent-active); }
 
 .button.secondary {
-  background: var(--surface-elevated);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 78%, var(--hairline)), var(--surface-elevated));
   color: var(--text);
   border-color: var(--border-strong);
   font-weight: 500;
@@ -358,7 +377,9 @@ select,
 .button.ghost:hover { color: var(--text); border-color: var(--border); background: color-mix(in srgb, var(--surface) 50%, transparent); }
 
 .button.destructive {
-  background: var(--status-error-bg-10);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--status-error) 9%, transparent), transparent),
+    var(--status-error-bg-10);
   border-color: var(--status-error-border);
   color: var(--status-error);
 }
@@ -410,7 +431,9 @@ select,
   min-width: 0;
   height: 32px;
   padding: 0 var(--sp-3);
-  background: var(--surface-sunken);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-sunken) 82%, var(--surface)), var(--surface-sunken)),
+    repeating-linear-gradient(90deg, transparent 0 15px, var(--paper-line) 15px 16px);
   border: 1px solid var(--border);
   color: var(--text);
   font-family: inherit;
@@ -1159,7 +1182,9 @@ select,
   min-width: 0;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
-  background: var(--surface-sunken);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-sunken) 82%, var(--surface)), var(--surface-sunken)),
+    repeating-linear-gradient(90deg, transparent 0 15px, var(--paper-line) 15px 16px);
   color: var(--text);
   font-family: inherit;
   font-size: var(--text-base);
@@ -1183,14 +1208,35 @@ select,
 
 /* §4.7 Card */
 .card {
-  background: var(--surface);
+  position: relative;
+  background:
+    linear-gradient(90deg, var(--accent-line), transparent 34%) 0 0 / 100% 1px no-repeat,
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 18%, var(--surface)), var(--surface));
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: var(--sp-4);
   min-width: 0;
+  box-shadow:
+    inset 0 1px 0 var(--hairline),
+    0 1px 0 var(--ink-shadow);
+}
+.card::after {
+  content: "";
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 10px;
+  height: 10px;
+  border-top: 1px solid var(--border-strong);
+  border-right: 1px solid var(--border-strong);
+  border-top-right-radius: var(--radius-xs);
+  pointer-events: none;
+  opacity: 0.74;
 }
 .card-spacious { padding: var(--sp-6); }
 .card-inset { border: 0; background: var(--surface-sunken); }
+.card-inset::after,
+.activity-card::after { display: none; }
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -1264,9 +1310,12 @@ select,
   flex-direction: column;
   gap: var(--sp-1);
   padding: var(--sp-3);
-  background: var(--surface-sunken);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 52%),
+    var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 34%, transparent);
 }
 .metric .label { color: var(--text-muted); font-size: var(--text-xs); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
 .metric .value { color: var(--text); font-size: var(--text-lg); font-weight: 500; font-family: var(--font-mono); line-height: 1.2; }
@@ -1951,10 +2000,31 @@ select,
 
 /* §6.1 AppShell */
 .app {
+  position: relative;
+  isolation: isolate;
   min-height: 100dvh;
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
-  background: var(--bg);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--surface-sunken) 72%, transparent), transparent 32%),
+    var(--bg);
+}
+.app::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 11px, color-mix(in srgb, var(--accent) 3%, transparent) 11px 12px),
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--ink-shadow) 44%, transparent));
+  opacity: 0.42;
+}
+.app-rail,
+.app-body,
+.app-mobile-action-dock {
+  position: relative;
+  z-index: 1;
 }
 .app-rail {
   position: sticky;
@@ -1965,7 +2035,13 @@ select,
   gap: var(--sp-5);
   padding: var(--sp-5) var(--sp-4);
   border-right: 1px solid var(--border);
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 36%, transparent), transparent 34%),
+    repeating-linear-gradient(0deg, transparent 0 31px, var(--paper-line) 31px 32px),
+    var(--surface);
+  box-shadow:
+    inset -1px 0 0 color-mix(in srgb, var(--hairline) 80%, transparent),
+    12px 0 32px -28px var(--ink-shadow);
 }
 .brand-lockup {
   display: flex;
@@ -1975,13 +2051,30 @@ select,
   min-width: 0;
 }
 .brand-mark {
+  position: relative;
   width: 32px; height: 32px;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
-  background: var(--surface-elevated);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--accent) 18%, transparent), transparent 56%),
+    var(--surface-elevated);
   color: var(--accent);
+  font-family: var(--font-mono);
   font-weight: 700;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent),
+    inset 0 -3px 0 color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.brand-mark::after {
+  content: "";
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 6px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.48;
 }
 .brand-copy { display: grid; min-width: 0; line-height: 1.2; }
 .brand-copy strong { font-size: var(--text-base); font-weight: 600; }
@@ -1997,6 +2090,7 @@ select,
   text-transform: uppercase;
 }
 .app-nav a {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--sp-2);
@@ -2009,12 +2103,25 @@ select,
   font-weight: 500;
   transition: background var(--dur-snap) var(--ease-snap), color var(--dur-snap) var(--ease-snap);
 }
+.app-nav a::before {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 7px;
+  bottom: 7px;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: transparent;
+}
 .app-nav a:hover { color: var(--text); background: color-mix(in srgb, var(--surface-elevated) 70%, transparent); }
 .app-nav a.active {
   color: var(--text);
-  background: var(--accent-soft);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 74%),
+    var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
+.app-nav a.active::before { background: var(--accent); }
 .app-nav a .nav-icon { color: inherit; opacity: 0.75; }
 .app-nav a.active .nav-icon { opacity: 1; color: var(--accent); }
 
@@ -2060,7 +2167,9 @@ select,
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: var(--bg);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 63px, var(--paper-line) 63px 64px),
+    var(--bg);
   font-family: var(--font-sans);
 }
 .commander-topbar {
@@ -2154,7 +2263,9 @@ select,
   justify-content: space-between;
   padding: var(--sp-4) var(--sp-6) var(--sp-2);
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 26%, transparent), transparent),
+    var(--surface);
 }
 .commander-header-left { min-width: 0; }
 .commander-header-right {
@@ -2181,7 +2292,9 @@ select,
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-6);
-  background: var(--surface-sunken);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 9px, color-mix(in srgb, var(--paper-line) 90%, transparent) 9px 10px),
+    var(--surface-sunken);
   border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
   font-weight: 600;
@@ -2209,7 +2322,8 @@ select,
   column-gap: 10px;
   padding: var(--sp-2) var(--sp-6);
   border-bottom: 1px solid var(--border);
-  background: transparent;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--surface) 52%, transparent), transparent);
   cursor: pointer;
   min-height: 44px;
   transition: min-height var(--dur-std) var(--ease-snap), background var(--dur-snap) var(--ease-snap), border-color var(--dur-snap) var(--ease-snap);
@@ -2218,9 +2332,15 @@ select,
   text-decoration: none;
 }
 .commander-row:hover,
-.commander-row:active { background: color-mix(in srgb, var(--surface-elevated) 58%, transparent); }
+.commander-row:active {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 64%),
+    color-mix(in srgb, var(--surface-elevated) 58%, transparent);
+}
 .commander-row.selected {
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
+  background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 0 1px, transparent 1px 12px),
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
   border-left: 2px solid var(--accent);
   padding-left: calc(var(--sp-6) - 2px);
 }
@@ -2363,6 +2483,9 @@ select,
   min-height: 0;
   overflow: auto;
   font-family: var(--font-sans);
+  background:
+    linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-sunken) 40%, transparent)),
+    repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px);
 }
 .task-detail-main { display: flex; flex-direction: column; gap: var(--sp-5); min-width: 0; }
 .task-detail-rail { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
@@ -2389,6 +2512,8 @@ select,
   font-size: var(--text-3xl);
   line-height: 1.04;
   color: var(--text);
+  font-weight: 800;
+  text-wrap: balance;
 }
 .task-hero-meta {
   display: flex;
@@ -3546,7 +3671,7 @@ select,
   min-height: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 8%, transparent), transparent 34%),
+    repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px),
     var(--bg);
 }
 .pane-list {
@@ -3556,6 +3681,7 @@ select,
   border-right: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--surface) 66%, transparent), color-mix(in srgb, var(--surface-sunken) 88%, transparent)),
+    repeating-linear-gradient(0deg, transparent 0 27px, var(--paper-line) 27px 28px),
     var(--surface-sunken);
 }
 .pane-list-head {
@@ -3611,6 +3737,7 @@ select,
 }
 .pane-row.active {
   background:
+    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 6%, transparent) 0 1px, transparent 1px 12px),
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 52%, transparent) 62%, transparent);
   border-bottom-color: color-mix(in srgb, var(--accent) 18%, var(--border));
 }
@@ -3974,6 +4101,9 @@ select,
   flex-direction: column;
   flex: 1;
   min-height: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 55px, var(--paper-line) 55px 56px),
+    var(--bg);
 }
 .task-edit-head {
   position: sticky;
@@ -3986,7 +4116,10 @@ select,
   min-height: 56px;
   padding: var(--sp-3) var(--sp-6);
   border-bottom: 1px solid var(--border);
-  background: var(--surface);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 34%, transparent), transparent),
+    var(--surface);
+  box-shadow: 0 12px 24px -24px var(--ink-shadow);
 }
 .task-edit-head h2 {
   margin: 0;
@@ -4048,6 +4181,7 @@ select,
   letter-spacing: 0;
   line-height: 1.2;
   color: var(--text);
+  text-wrap: balance;
 }
 .task-edit-title-id {
   color: var(--text-subtle);
@@ -4331,6 +4465,7 @@ select,
   min-width: 0;
 }
 .ds-page-head {
+  position: relative;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -4340,9 +4475,20 @@ select,
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background:
+    repeating-linear-gradient(90deg, transparent 0 23px, var(--paper-line) 23px 24px),
     linear-gradient(180deg, color-mix(in srgb, var(--surface-elevated) 38%, transparent), transparent),
     var(--surface);
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 4%, transparent);
+}
+.ds-page-head::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-5);
+  right: var(--sp-5);
+  bottom: -1px;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, var(--accent-line) 0 8px, transparent 8px 18px);
+  pointer-events: none;
 }
 .ds-page-title {
   display: flex;
@@ -4465,12 +4611,15 @@ select,
 }
 .summary-tile {
   padding: var(--sp-4);
-  background: var(--surface);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 54%),
+    var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: var(--sp-1);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 26%, transparent);
 }
 .summary-tile .label { color: var(--text-muted); font-size: var(--text-xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.08em; }
 .summary-tile .value { font-size: var(--text-2xl); font-weight: 600; color: var(--text); font-family: var(--font-mono); letter-spacing: 0; }
@@ -5080,7 +5229,7 @@ select,
   border: 1px solid color-mix(in srgb, var(--border) 78%, var(--accent));
   border-radius: var(--radius-md);
   background:
-    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 34%),
+    repeating-linear-gradient(90deg, transparent 0 19px, var(--paper-line) 19px 20px),
     linear-gradient(145deg, color-mix(in srgb, var(--surface-elevated) 74%, transparent), var(--surface));
   box-shadow: var(--elev-flat);
 }
