@@ -349,6 +349,47 @@ export function createTaskWatcher({
     return { runId };
   }
 
+  function checkBudget({ agentName, taskId }) {
+    const settings = readSettings(db);
+    const agent = db.prepare("SELECT daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?").get(agentName);
+    const startOfDayUtc = new Date();
+    startOfDayUtc.setUTCHours(0, 0, 0, 0);
+    const since = startOfDayUtc.getTime();
+    const todayCostRow = db.prepare(`
+      SELECT COALESCE(SUM(cost_usd), 0) AS total
+      FROM task_runs
+      WHERE agent_name = ? AND started_at >= ? AND cost_usd IS NOT NULL
+    `).get(agentName, since);
+    const workspaceCostRow = db.prepare(`
+      SELECT COALESCE(SUM(cost_usd), 0) AS total
+      FROM task_runs
+      WHERE started_at >= ? AND cost_usd IS NOT NULL
+    `).get(since);
+    const agentSpend = Number(todayCostRow?.total || 0);
+    const workspaceSpend = Number(workspaceCostRow?.total || 0);
+    const workspaceBudget = Number(settings.daily_budget_usd || 0);
+    if (workspaceBudget > 0 && workspaceSpend >= workspaceBudget) {
+      return {
+        ok: false,
+        scope: "workspace",
+        spent: workspaceSpend,
+        cap: workspaceBudget,
+        message: `Daily workspace budget reached ($${workspaceSpend.toFixed(4)} of $${workspaceBudget.toFixed(2)}).`,
+      };
+    }
+    const agentDailyBudget = Number(agent?.daily_budget_usd || 0);
+    if (agentDailyBudget > 0 && agentSpend >= agentDailyBudget) {
+      return {
+        ok: false,
+        scope: "agent_daily",
+        spent: agentSpend,
+        cap: agentDailyBudget,
+        message: `Daily budget for ${agentName} reached ($${agentSpend.toFixed(4)} of $${agentDailyBudget.toFixed(2)}).`,
+      };
+    }
+    return { ok: true, agentSpend, workspaceSpend };
+  }
+
   async function handleRunRequested(taskId, options = {}) {
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
@@ -369,9 +410,52 @@ export function createTaskWatcher({
     const parentRunId = options.parentRunId || (mode === "review" ? latestPriorExecuteRunId(taskId) : null);
     if (mode === "review" && !parentRunId) throw new Error("no execute run to review");
 
+    if (mode === "review") {
+      const reviewerCheck = enforceNoSelfReview({ taskId, reviewerAgent: agentName });
+      if (!reviewerCheck.ok) {
+        const err = new Error(reviewerCheck.message);
+        err.code = "self_review_disallowed";
+        throw err;
+      }
+    }
+
+    if (!options.skipBudgetCheck) {
+      const budget = checkBudget({ agentName, taskId });
+      if (!budget.ok) {
+        annotateTaskFailure(taskId, {
+          message: budget.message,
+          failureKind: "budget_exceeded",
+          retryStage: stage,
+        });
+        const err = new Error(budget.message);
+        err.code = "budget_exceeded";
+        throw err;
+      }
+    }
+
     const run = spawnRun({ task, stage, mode, agentName, parentRunId });
     applySideEffects(taskId, result.sideEffects, stage, result.stage, { running: true });
     return run;
+  }
+
+  function enforceNoSelfReview({ taskId, reviewerAgent }) {
+    const reviewer = db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get(reviewerAgent);
+    if (reviewer?.allow_self_review) return { ok: true };
+    const lastExecutor = db.prepare(`
+      SELECT agent_name
+      FROM task_runs
+      WHERE task_id = ? AND mode = 'execute'
+      ORDER BY started_at DESC, rowid DESC
+      LIMIT 1
+    `).get(taskId);
+    if (!lastExecutor) return { ok: true };
+    if (lastExecutor.agent_name === reviewerAgent) {
+      return {
+        ok: false,
+        message: `${reviewerAgent} cannot review their own execute run; assign a different reviewer or enable allow_self_review on the agent.`,
+      };
+    }
+    return { ok: true };
   }
 
   function postAgentFinalComment(taskId, agentName, result, finalText) {

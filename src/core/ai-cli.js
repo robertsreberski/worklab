@@ -14,6 +14,8 @@ import {
 } from "./worklab-result.js";
 import { normalizeCodexItemEvent } from "./codex-events.js";
 import { createFileChangePayload } from "./file-change-stats.js";
+import { estimateCost } from "./cost.js";
+import { createStderrTail } from "./failure-kind.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -362,6 +364,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     fileChangeSnapshots: new Map(),
   };
 
+  const stderrTail = createStderrTail({ limit: 8 * 1024 });
   try {
     const child = spawn(commandSpec.command, commandSpec.args, {
       cwd: commandSpec.cwd,
@@ -369,8 +372,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    const stderr = [];
-    child.stderr.on("data", (chunk) => stderr.push(chunk.toString()));
+    child.stderr.on("data", (chunk) => stderrTail.push(chunk));
 
     const rl = createInterface({ input: child.stdout });
     rl.on("line", (line) => {
@@ -420,26 +422,47 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     }
 
     const exitCode = await new Promise((resolve) => child.on("close", resolve));
-    const stderrText = stderr.join("").trim();
+    const stderrText = stderrTail.toString().trim();
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
     const text = finalTextFromCliOutput(worklabResult, texts);
     if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
       errorMessage = `${commandSpec.command} completed without final output`;
     }
+    const reference = `${resolved.sdk}:${resolved.model}`;
+    const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
+    const outputTokens = usage?.output_tokens ?? usage?.outputTokens ?? 0;
+    const cachedTokens = usage?.cache_read_tokens ?? usage?.cache_read_input_tokens ?? 0;
+    const cacheCreationTokens = usage?.cache_creation_tokens ?? usage?.cache_creation_input_tokens ?? 0;
+    const costUsd = estimateCost({
+      db: options.db,
+      model: reference,
+      inputTokens,
+      outputTokens,
+      cachedTokens,
+    });
+    const enrichedUsage = {
+      ...usage,
+      input_tokens: inputTokens || null,
+      output_tokens: outputTokens || null,
+      cache_read_tokens: cachedTokens || null,
+      cache_creation_tokens: cacheCreationTokens || null,
+      cost_usd: costUsd,
+    };
     return {
       text,
       worklabResult,
       structuredResultSource,
       events,
-      usage,
+      usage: enrichedUsage,
       durationMs: Date.now() - start,
       numTurns: texts.length || (events.length ? 1 : 0),
-      model: `${resolved.sdk}:${resolved.model}`,
+      model: reference,
       effort: options.effort || null,
       sdk: resolved.sdk,
       cancelled: !!options.abortSignal?.aborted,
       error: errorMessage ? formatCliError(errorMessage, commandSpec.command) : null,
       failureKind,
+      stderrTail: stderrText || null,
     };
   } catch (err) {
     return {
@@ -456,6 +479,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       cancelled: !!options.abortSignal?.aborted,
       error: err.message || String(err),
       failureKind: failureKind || "provider_unavailable",
+      stderrTail: stderrTail.toString() || null,
     };
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}

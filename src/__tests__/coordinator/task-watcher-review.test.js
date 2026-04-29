@@ -617,4 +617,68 @@ describe("task-watcher v2 workflow", () => {
     expect(task.stage_reason).toBeNull();
     expect(spawn).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects same-agent reviewer unless allow_self_review is set on the agent", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "coder" });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "ok", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    await expect(watcher.handleRunRequested(taskId)).rejects.toMatchObject({
+      message: expect.stringContaining("cannot review their own"),
+      code: "self_review_disallowed",
+    });
+
+    db.prepare("UPDATE agents SET allow_self_review = 1 WHERE name = 'coder'").run();
+    await watcher.handleRunRequested(taskId);
+    expect(spawn).toHaveBeenCalledTimes(2);
+  });
+
+  it("budget pre-flight rejects when the workspace daily cap is hit and routes to blocked", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("daily_budget_usd", JSON.stringify(0.01));
+    const taskId = seedTask(db, { owner: "coder" });
+    // Pre-existing run today with a high cost — pushes the workspace over the cap.
+    const now = Date.now();
+    db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status, cost_usd)
+                VALUES ('cost-run', ?, 'execute', 'coder', ?, 'complete', 'succeeded', 0.05)`)
+      .run(taskId, now);
+    const { spawn } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", maxFailures: 5 });
+
+    await expect(watcher.handleRunRequested(taskId)).rejects.toMatchObject({
+      message: expect.stringContaining("Daily workspace budget"),
+      code: "budget_exceeded",
+    });
+
+    const task = db.prepare("SELECT stage, last_failure_kind, error_text FROM tasks WHERE id = ?").get(taskId);
+    expect(task.last_failure_kind).toBe("budget_exceeded");
+    expect(task.error_text).toContain("Daily workspace budget");
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("budget pre-flight rejects when the per-agent daily cap is hit", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    db.prepare("UPDATE agents SET daily_budget_usd = 0.01 WHERE name = 'coder'").run();
+    const taskId = seedTask(db, { owner: "coder" });
+    const now = Date.now();
+    db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status, cost_usd)
+                VALUES ('agent-cost', ?, 'execute', 'coder', ?, 'complete', 'succeeded', 0.05)`)
+      .run(taskId, now);
+    const { spawn } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", maxFailures: 5 });
+
+    await expect(watcher.handleRunRequested(taskId)).rejects.toMatchObject({
+      message: expect.stringContaining("Daily budget for coder"),
+      code: "budget_exceeded",
+    });
+    expect(spawn).not.toHaveBeenCalled();
+  });
 });
