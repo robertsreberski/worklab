@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildSkillIndex } from "./skills.js";
 import { stripWorklabResultJson } from "./worklab-result.js";
+import { formatTaskArtifactsForPrompt } from "./run-artifacts.js";
 import { renderToolSurfaceMarkdown } from "../mcp/worklab-tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
@@ -384,12 +385,14 @@ export function buildSystemPrompt(input, mode) {
 
   if (mode === "review") {
     parts.push(formatWorkOutput(input.execution || {}));
+    parts.push(section("Task artifacts", formatTaskArtifactsForPrompt(input.taskArtifacts)));
     parts.push(section("Available run logs", formatReviewRunLogs(input.execution)));
-    sectionNames.push("Work output", "Available run logs");
+    sectionNames.push("Work output", "Task artifacts", "Available run logs");
   } else if (mode === "plan" || mode === "execute") {
     parts.push(section("Prior run history", formatPriorRuns(input.priorRuns)));
+    parts.push(section("Task artifacts", formatTaskArtifactsForPrompt(input.taskArtifacts)));
     parts.push(section("Available run logs", formatAvailableRunLogs(input.priorRuns)));
-    sectionNames.push("Prior run history", "Available run logs");
+    sectionNames.push("Prior run history", "Task artifacts", "Available run logs");
   }
 
   if (mode !== "review") {

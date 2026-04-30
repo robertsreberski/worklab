@@ -78,6 +78,7 @@ export function makeContextCacheKey({
   mcpHash = "",
   builtinHash = "",
   kbHash = "",
+  artifactsHash = "",
   memoryHash = "",
   journalHash = "",
   capabilitiesHash = "",
@@ -94,7 +95,7 @@ export function makeContextCacheKey({
     projectWorkdirHash || "",
     projectContextHash || "",
     commentsHash, skillsHash, mcpHash, builtinHash,
-    kbHash, memoryHash, journalHash, capabilitiesHash,
+    kbHash, artifactsHash, memoryHash, journalHash, capabilitiesHash,
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24);
 }
