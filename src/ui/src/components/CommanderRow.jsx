@@ -6,13 +6,12 @@
 
 import { useMemo } from "preact/hooks";
 import { mergeRunEvents, useRunStream } from "../lib/useRunStream.js";
-import { useLiveTicker } from "../lib/useLiveTicker.js";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
 import { statusMeta } from "./primitives/StatusPill.jsx";
 import { StageToken } from "./primitives/StageToken.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
-import { ToolToken } from "./primitives/ToolToken.jsx";
+import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
 import { agentDisplayName, hasRunError, taskDisplayKey } from "../lib/display.js";
 
@@ -37,6 +36,52 @@ function runningRunIdFromTask(task) {
   return live?.id || null;
 }
 
+function isThinkingPreviewEvent(event) {
+  return event?.kind === "think" || event?.type === "thinking";
+}
+
+function previewThinkingText(event) {
+  return event?.text || event?.content || event?.thinking || "";
+}
+
+function mergePreviewThinkingText(current, next) {
+  const left = current || "";
+  const right = next || "";
+  if (!right) return left;
+  if (!left) return right;
+  if (left === right) return left;
+
+  const leftTrimmed = left.trim();
+  const rightTrimmed = right.trim();
+  if (leftTrimmed && rightTrimmed) {
+    if (leftTrimmed === rightTrimmed) return left;
+    if (rightTrimmed.length >= leftTrimmed.length && rightTrimmed.startsWith(leftTrimmed)) return right;
+  }
+
+  return `${left}${right}`;
+}
+
+export function commanderLivePreviewEvents(events = [], { limit = 2 } = {}) {
+  const preview = [];
+  for (const rawEvent of events || []) {
+    const event = normalizeToolTokenEvent(rawEvent);
+    if (!event) continue;
+    if (isThinkingPreviewEvent(event)) {
+      const text = previewThinkingText(event);
+      if (!text.trim()) continue;
+      const last = preview[preview.length - 1];
+      if (isThinkingPreviewEvent(last)) {
+        last.text = mergePreviewThinkingText(previewThinkingText(last), text);
+      } else {
+        preview.push({ ...event, type: "thinking", text });
+      }
+      continue;
+    }
+    preview.push(event);
+  }
+  return preview.slice(-limit);
+}
+
 export function CommanderRow({
   task,
   agents = [],
@@ -49,12 +94,11 @@ export function CommanderRow({
   const runningRunId = runningRunIdFromTask(task);
   const isStreaming = !!runningRunId;
   const { events } = useRunStream(runningRunId, { subscribe: isStreaming, initialEventLimit: 12 });
-  const recentEvents = useMemo(() => {
+  const previewEvents = useMemo(() => {
     if (!isStreaming) return [];
     const initial = task.running_run?.last_event ? [task.running_run.last_event] : [];
-    return mergeRunEvents(initial, events || []).slice(-6);
+    return commanderLivePreviewEvents(mergeRunEvents(initial, events || []).slice(-12), { limit: 2 });
   }, [events, isStreaming, task.running_run?.last_event]);
-  const event = useLiveTicker(recentEvents, { running: isStreaming, intervalMs: 2200 });
   const displayStage = task.stage || "plan";
   const meta = statusMeta(task.running_run_id ? "running" : displayStage);
 
@@ -106,7 +150,7 @@ export function CommanderRow({
 
   return (
     <div
-      class={`commander-row ${selected ? "selected" : ""} ${isStreaming && event ? "running" : ""}`}
+      class={`commander-row ${selected ? "selected" : ""} ${isStreaming && previewEvents.length ? "running" : ""}`}
       role="button"
       tabIndex={-1}
       onClick={() => {
@@ -205,9 +249,13 @@ export function CommanderRow({
         <StageToken stage={task.running_run_id ? "running" : displayStage} />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
-      {isStreaming && event && (
-        <div class="commander-live-line" key={`${task.id}-${event.ts || event.t || 0}`}>
-          <ToolToken event={event} compact />
+      {isStreaming && previewEvents.length > 0 && (
+        <div class="commander-live-line">
+          {previewEvents.map((event, index) => (
+            <div class="commander-live-line-row" key={`${task.id}-${event._event_seq ?? event.id ?? event.ts ?? event.t ?? index}`}>
+              <ToolToken event={event} compact />
+            </div>
+          ))}
         </div>
       )}
     </div>
