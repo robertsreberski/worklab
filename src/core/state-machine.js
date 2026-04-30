@@ -333,7 +333,7 @@ export function nextStage(currentStage, event) {
       return change("execute", [
         { type: "clear_error_text" },
         ...RESET_USER_ARRAYS,
-        { type: "set_stage_reason", reason: null },
+        { type: "set_stage_reason", reason: "required children completed" },
       ]);
 
     case "child_blocked":
