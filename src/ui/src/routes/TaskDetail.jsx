@@ -529,19 +529,36 @@ function TaskSubtasksCard({
     <Card title={`Subtasks (${children.length})`} class="task-subtasks-card">
       {children.length > 0 ? (
         <ul class="task-subtasks-list">
-          {children.map((child) => (
-            <li key={child.id}>
-              <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
-                <span class="truncate">{child.title}</span>
-                <span class="task-subtask-meta">
-                  <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
-                    {child.required === false ? "optional" : "required"}
-                  </Chip>
-                  <StatusPill status={child.stage || "plan"} size="sm" />
-                </span>
-              </a>
-            </li>
-          ))}
+          {children.map((child) => {
+            const lastRun = child.last_run || null;
+            const runSummary = lastRun?.summary || lastRun?.details || "";
+            return (
+              <li key={child.id}>
+                <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
+                  <span class="task-subtask-main min-w-0">
+                    <span class="task-subtask-title truncate">{child.title}</span>
+                    {runSummary && <span class="task-subtask-summary truncate">{runSummary}</span>}
+                  </span>
+                  <span class="task-subtask-meta">
+                    {child.owner_agent && (
+                      <Chip variant="muted" size="sm">
+                        {child.owner_agent}
+                      </Chip>
+                    )}
+                    <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
+                      {child.required === false ? "optional" : "required"}
+                    </Chip>
+                    {lastRun?.decision && (
+                      <Chip variant={lastRun.failure_kind ? "warn" : "tag"} size="sm">
+                        {lastRun.failure_kind || lastRun.decision}
+                      </Chip>
+                    )}
+                    <StatusPill status={child.stage || "plan"} size="sm" />
+                  </span>
+                </a>
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <div class="task-subtasks-empty">No subtasks yet.</div>

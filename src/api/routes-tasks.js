@@ -60,6 +60,41 @@ function compactTaskSummary(row) {
   };
 }
 
+function latestTaskRunSummary(db, taskId) {
+  const row = db.prepare(`
+    SELECT id, mode, stage, status, process_status, decision, failure_kind,
+           summary, details, artifact_summary_json, started_at, ended_at
+    FROM task_runs
+    WHERE task_id = ?
+    ORDER BY started_at DESC, rowid DESC
+    LIMIT 1
+  `).get(taskId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    mode: row.mode,
+    stage: row.stage,
+    status: row.status,
+    process_status: row.process_status || legacyRunStatusToProcessStatus(row.status),
+    decision: row.decision || null,
+    failure_kind: row.failure_kind || null,
+    summary: row.summary || null,
+    details: row.details || null,
+    artifact_summary: safeJson(row.artifact_summary_json, {}),
+    started_at: row.started_at || null,
+    ended_at: row.ended_at || null,
+  };
+}
+
+function compactChildTaskSummary(db, row) {
+  return {
+    ...compactTaskSummary(row),
+    edge_type: row.edge_type,
+    required: row.edge_required !== 0,
+    last_run: latestTaskRunSummary(db, row.id),
+  };
+}
+
 function parseEvents(value) {
   try {
     const parsed = JSON.parse(value || "[]");
@@ -156,11 +191,7 @@ function attachTaskGraph(db, task) {
     blocked_by: dependencyRows.map(compactTaskSummary),
     blocks: dependentRows.map(compactTaskSummary),
     parent: compactTaskSummary(parentRow),
-    children: childRows.map((row) => ({
-      ...compactTaskSummary(row),
-      edge_type: row.edge_type,
-      required: row.edge_required !== 0,
-    })),
+    children: childRows.map((row) => compactChildTaskSummary(db, row)),
   };
 }
 
@@ -345,11 +376,7 @@ function enrichTaskList(db, tasks, config = null) {
     WHERE e.parent_task_id IN (${taskIdSql}) AND e.edge_type = 'subtask'
     ORDER BY e.parent_task_id, t.subtask_order ASC, t.created_at ASC
   `).all(...taskIds)) {
-    pushMapped(children, row.owner_task_id, {
-      ...compactTaskSummary(row),
-      edge_type: row.edge_type,
-      required: row.edge_required !== 0,
-    });
+    pushMapped(children, row.owner_task_id, compactChildTaskSummary(db, row));
   }
 
   const parentIds = [...new Set(output.map((task) => task.parent_task_id).filter(Boolean))];

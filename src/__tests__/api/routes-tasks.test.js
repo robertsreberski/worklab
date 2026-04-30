@@ -782,6 +782,37 @@ describe("POST /api/tasks/:id/subtasks", () => {
     expect(res.body.task.project.slug).toBe(project.slug);
   });
 
+  it("includes child owner and latest run summary on parent detail", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare(`INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+      .run("owner", "Owner", "claude", "claude:claude-sonnet-4-6", now, now);
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({
+      title: "Parent",
+      owner_agent: "owner",
+    }).expect(201);
+    const { body: { task: child } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child", owner_agent: "owner" }).expect(201);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, status, process_status, decision, summary,
+         artifact_summary_json, started_at, ended_at)
+      VALUES (?, ?, 'execute', 'execute', ?, 'complete', 'succeeded', 'advance', ?, ?, ?, ?)
+    `).run("run-child", child.id, "owner", "Child finished.", JSON.stringify({ files_changed: 2 }), now + 1, now + 2);
+
+    const res = await agent.get(`/api/tasks/${parent.id}`).expect(200);
+
+    expect(res.body.task.children[0]).toMatchObject({
+      id: child.id,
+      owner_agent: "owner",
+      last_run: {
+        id: "run-child",
+        decision: "advance",
+        summary: "Child finished.",
+        artifact_summary: { files_changed: 2 },
+      },
+    });
+  });
+
   it("optional manual subtasks do not make the parent wait", async () => {
     const { agent } = makeTestServer();
     const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
