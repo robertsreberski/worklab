@@ -309,6 +309,12 @@ function pruneOldToolResults(messages, policy) {
   };
 }
 
+function replaceMessagesInPlace(target, next) {
+  if (!Array.isArray(target) || target === next) return next;
+  target.splice(0, target.length, ...next);
+  return target;
+}
+
 function truncateText(text, limit, label) {
   const value = String(text || "");
   if (value.length <= limit) {
@@ -463,7 +469,7 @@ export function createAgentCompactionManager({
     let workingMessages = messages;
     const pruned = pruneOldToolResults(workingMessages, policy);
     if (pruned.changed) {
-      workingMessages = pruned.messages;
+      workingMessages = replaceMessagesInPlace(messages, pruned.messages);
       toolResultsPruned += pruned.prunedCount;
       toolPayloadCharsSinceCompaction = 0;
       const afterPrune = estimateAgentMessages(workingMessages);
@@ -473,8 +479,10 @@ export function createAgentCompactionManager({
         pruned_tool_results: pruned.prunedCount,
         tokens_before: original.tokens,
         tokens_after: afterPrune.tokens,
+        tokens_saved: original.tokens - afterPrune.tokens,
         pruned_tool_tokens_before: pruned.tokensBefore,
         pruned_tool_tokens_after: pruned.tokensAfter,
+        pruned_tool_tokens_saved: pruned.tokensBefore - pruned.tokensAfter,
       });
     }
 
@@ -580,13 +588,14 @@ export function createAgentCompactionManager({
         seq,
         tokens_before: before.tokens,
         tokens_after: finalAfter.tokens,
+        tokens_saved: savingsTokens,
         chars_before: before.chars,
         chars_after: finalAfter.chars,
         compacted_messages: compacted.length,
         kept_messages: recent.length,
         first_kept_index: firstKeptIndex,
       });
-      return nextMessages;
+      return replaceMessagesInPlace(messages, nextMessages);
     } catch (err) {
       lastError = err?.message || String(err);
       record({
