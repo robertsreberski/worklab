@@ -178,6 +178,56 @@ describe("buildExecuteSystemPrompt", () => {
     expect(kbIdx).toBeGreaterThan(instrIdx);
     expect(p.indexOf("demo")).toBeGreaterThan(kbIdx);
   });
+
+  it("renders delegation policy, available agents, and child summaries", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      delegation: {
+        enabled: true,
+        canDelegate: true,
+        depth: 0,
+        maxDepth: 1,
+        maxChildrenPerRound: 5,
+        maxParallelChildren: 3,
+        autoRunChildren: true,
+        availableAgents: [
+          { name: "researcher", display_name: "Researcher", description: "Parallel research.", sdk: "codex", model: "codex:gpt-5.5", effort: "xhigh" },
+        ],
+        childTasks: [
+          {
+            id: "child-1",
+            task_key: "T-2",
+            title: "Survey sources",
+            stage: "done",
+            required: true,
+            owner_agent: "researcher",
+            latest_run: {
+              id: "run-child",
+              status: "complete",
+              process_status: "succeeded",
+              decision: "advance",
+              summary: "Sources surveyed.",
+              artifact_summary: { files_changed: 1 },
+            },
+          },
+        ],
+      },
+    });
+
+    expect(p).toContain("## Child tasks");
+    expect(p).toContain("### T-2: Survey sources");
+    expect(p).toContain("Summary: Sources surveyed.");
+    expect(p).toContain("## Delegation policy");
+    expect(p).toContain("Return decision \"delegate\" when the work naturally splits");
+    expect(p).toContain("## Available agents");
+    expect(p).toContain("`researcher` (Researcher)");
+  });
 });
 
 describe("buildPlanSystemPrompt", () => {

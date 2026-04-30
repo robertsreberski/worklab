@@ -104,6 +104,29 @@ describe("run input assembly", () => {
     });
   });
 
+  it("adds delegation policy and enabled agent roster to runnable prompts", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      seedAgent(db, "helper", "Help with focused work.");
+      seedTask(db, { stage: "execute", owner_agent: "owner" });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: "task-1",
+        agentName: "owner",
+        runId: "run-current",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Delegation policy");
+      expect(input.systemPrompt).toContain("Delegation policy: available");
+      expect(input.systemPrompt).toContain("## Available agents");
+      expect(input.systemPrompt).toContain("`helper`");
+      expect(input.delegation.canDelegate).toBe(true);
+    });
+  });
+
   it("surfaces run-start human comments as current run guidance", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "owner", "Execute as owner.");
