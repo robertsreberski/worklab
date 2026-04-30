@@ -589,6 +589,91 @@ describe("POST /api/tasks/bulk", () => {
     expect(db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE id = ?").get(running.id).c).toBe(1);
   });
 
+  it("bulk run dispatches selected tasks to the watcher", async () => {
+    const calls = [];
+    const watcher = {
+      handleRunRequested: vi.fn(async (id) => {
+        calls.push(id);
+        return { runId: `run-${calls.length}` };
+      }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+    };
+    const { agent } = makeTestServer({ watcher });
+    const { body: { task: a } } = await agent.post("/api/tasks").send({ title: "a" }).expect(201);
+    const { body: { task: b } } = await agent.post("/api/tasks").send({ title: "b" }).expect(201);
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [a.task_key, b.id],
+      operation: "run",
+    }).expect(200);
+
+    expect(res.body.summary).toEqual({ requested: 2, succeeded: 2, failed: 0 });
+    expect(res.body.results).toEqual([
+      { id: a.task_key, task_id: a.id, ok: true, runId: "run-1" },
+      { id: b.id, task_id: b.id, ok: true, runId: "run-2" },
+    ]);
+    expect(calls).toEqual([a.id, b.id]);
+  });
+
+  it("bulk run reports per-task failures while starting valid tasks", async () => {
+    const watcher = {
+      handleRunRequested: vi.fn(async (id) => {
+        if (id === "missing-owner") {
+          throw Object.assign(new Error("no owner assigned"), { code: "missing_agent" });
+        }
+        return { runId: `run-${id}` };
+      }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+    };
+    const { agent, db } = makeTestServer({ watcher });
+    const { body: { task: ok } } = await agent.post("/api/tasks").send({ title: "ok" }).expect(201);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, title, instructions, stage, run_policy, tags, created_at, updated_at)
+      VALUES ('missing-owner', 'T-404', 'missing-owner', 'missing owner', '', 'execute', 'manual', '[]', ?, ?)
+    `).run(now, now);
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [ok.id, "missing-owner"],
+      operation: "run",
+    }).expect(200);
+
+    expect(res.body.summary).toEqual({ requested: 2, succeeded: 1, failed: 1 });
+    expect(res.body.results.find((result) => result.id === ok.id)).toMatchObject({
+      ok: true,
+      task_id: ok.id,
+      runId: `run-${ok.id}`,
+    });
+    expect(res.body.results.find((result) => result.id === "missing-owner").error).toEqual({
+      code: "missing_agent",
+      message: "no owner assigned",
+      status: 400,
+    });
+  });
+
+  it("rejects bulk run when the watcher is not configured", async () => {
+    const { agent } = makeTestServer({
+      watcher: {
+        cancel: () => true,
+        shutdown: async () => {},
+        isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" }).expect(201);
+
+    const res = await agent.post("/api/tasks/bulk").send({
+      ids: [task.id],
+      operation: "run",
+    }).expect(501);
+
+    expect(res.body.error).toEqual({ code: "not_configured", message: "watcher not wired" });
+  });
+
   it("rejects invalid bulk requests", async () => {
     const { agent } = makeTestServer();
     await agent.post("/api/tasks/bulk").send({ ids: [], operation: "delete" }).expect(400);

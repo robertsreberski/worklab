@@ -1057,22 +1057,32 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     res.status(201).json({ task });
   });
 
-  app.post("/api/tasks/bulk", (req, res) => {
+  app.post("/api/tasks/bulk", async (req, res) => {
     let ids;
     try {
       ids = normalizeBulkIds(req.body?.ids);
       const operation = req.body?.operation;
-      if (!["patch", "delete"].includes(operation)) {
-        throw routeError(400, "validation", "operation must be patch or delete");
+      if (!["patch", "delete", "run"].includes(operation)) {
+        throw routeError(400, "validation", "operation must be patch, delete, or run");
       }
       if (operation === "patch") validateBulkPatch(req.body?.patch);
+      if (operation === "run" && !watcher?.handleRunRequested) {
+        throw routeError(501, "not_configured", "watcher not wired");
+      }
 
-      const results = ids.map((inputId) => {
+      const results = [];
+      for (const inputId of ids) {
         try {
           const taskRow = taskOr404(db, inputId);
           if (operation === "delete") {
             deleteTaskById({ db, broker, watcher, taskId: taskRow.id });
-            return { id: inputId, task_id: taskRow.id, ok: true };
+            results.push({ id: inputId, task_id: taskRow.id, ok: true });
+            continue;
+          }
+          if (operation === "run") {
+            const run = await watcher.handleRunRequested(taskRow.id);
+            results.push({ id: inputId, task_id: taskRow.id, ok: true, runId: run?.runId || null });
+            continue;
           }
           const task = applyTaskPatchById({
             db,
@@ -1083,11 +1093,14 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
             patch: req.body.patch,
             config,
           });
-          return { id: inputId, task_id: taskRow.id, ok: true, task };
+          results.push({ id: inputId, task_id: taskRow.id, ok: true, task });
         } catch (error) {
-          return { id: inputId, ok: false, error: resultError(error) };
+          const normalizedError = operation === "run" && !error.status
+            ? Object.assign(error, { status: 400, code: error.code || "invalid_state" })
+            : error;
+          results.push({ id: inputId, ok: false, error: resultError(normalizedError) });
         }
-      });
+      }
 
       res.json({ summary: bulkSummary(results), results });
     } catch (error) {
