@@ -48,8 +48,16 @@ import {
   deleteSubtaskEdgesForParent,
   insertSubtaskEdge,
 } from "../core/db/queries/task-edges.js";
+import {
+  agentCommentBody,
+  assistantTextsFromEvents,
+  conciseCommentForLinkedAnswer,
+  firstMeaningfulParagraph,
+  richFinalAnswerFromRun,
+  sanitizeAgentText,
+  structuredFinalText,
+} from "./watcher/final-text.js";
 
-const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KNOWLEDGE_LINK_RE = /#\/knowledge\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
 
@@ -101,97 +109,6 @@ function buildFallbackResult({ stage, mode, res }) {
     summary: res.finalText ? String(res.finalText).trim().slice(0, 500) : "Run completed",
     details: res.finalText || "",
   });
-}
-
-function collapseDuplicateParagraphs(text) {
-  const raw = String(text || "").trim();
-  if (!raw) return "";
-  const paragraphs = raw.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
-  if (paragraphs.length <= 1) return raw;
-  const seen = new Set();
-  return paragraphs.filter((paragraph) => {
-    const key = paragraph.replace(/\s+/g, " ");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  }).join("\n\n");
-}
-
-function sanitizeAgentText(text) {
-  return collapseDuplicateParagraphs(stripWorklabResultJson(text));
-}
-
-function structuredFinalText(result) {
-  const value = result?.worklab_result || result;
-  if (!value || value.schema !== "worklab.v2") return "";
-  return sanitizeAgentText(value.final_text || "");
-}
-
-function agentCommentBody(result, finalText) {
-  const structured = structuredFinalText(result);
-  if (structured) return structured;
-  const delivered = sanitizeAgentText(finalText);
-  if (delivered) return delivered;
-  return sanitizeAgentText(formatWorklabResultText(result));
-}
-
-function normalizedComparableText(text) {
-  return String(text || "").replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function firstMeaningfulParagraph(text, limit = 500) {
-  const paragraph = String(text || "")
-    .split(/\n{2,}/)
-    .map((part) => part.trim())
-    .find(Boolean) || "";
-  if (paragraph.length <= limit) return paragraph;
-  return `${paragraph.slice(0, limit - 3).trimEnd()}...`;
-}
-
-function assistantTextsFromEvents(events = []) {
-  const texts = [];
-  for (const wrapper of Array.isArray(events) ? events : []) {
-    const event = wrapper?.type === "sdk_event" && wrapper.event ? wrapper.event : wrapper;
-    const content = event?.message?.content;
-    if (typeof content === "string") {
-      texts.push(content);
-      continue;
-    }
-    if (!Array.isArray(content)) continue;
-    for (const block of content) {
-      if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
-    }
-  }
-  return texts;
-}
-
-function isDistinctRichFinal(text, commentBody) {
-  const body = String(text || "").trim();
-  if (body.length < RICH_FINAL_MIN_CHARS) return false;
-  const comparableBody = normalizedComparableText(body);
-  const comparableComment = normalizedComparableText(commentBody);
-  if (!comparableBody) return false;
-  if (comparableBody === comparableComment) return false;
-  return true;
-}
-
-function richFinalAnswerFromRun({ finalText, events, commentBody }) {
-  const candidates = [
-    sanitizeAgentText(finalText),
-    ...assistantTextsFromEvents(events).reverse().map((text) => sanitizeAgentText(text)),
-  ];
-  for (const candidate of candidates) {
-    if (isDistinctRichFinal(candidate, commentBody)) return candidate;
-  }
-  return "";
-}
-
-function conciseCommentForLinkedAnswer(result, richText) {
-  const structured = structuredFinalText(result);
-  if (structured) return structured;
-  const summary = sanitizeAgentText(result?.summary || "");
-  if (summary) return summary;
-  return firstMeaningfulParagraph(richText);
 }
 
 function runResultKbSlug(runId) {
