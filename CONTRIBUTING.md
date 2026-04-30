@@ -13,6 +13,8 @@ were stale. Do not reintroduce behavior based on those deleted documents.
 - Use Node 20+.
 - Run `npm install` at the repo root.
 - Run `npm test` before committing.
+- Run `npm run lint`, `npm run lint:size`, and `./scripts/guard-imports.sh`
+  for repo-wide cleanup or modularization work.
 - Keep source changes close to the existing module boundaries:
   `src/core`, `src/coordinator`, `src/api`, `src/mcp`, `src/cli`, and `src/ui`.
 - Add or update tests for workflow logic, provider behavior, recovery paths,
@@ -35,4 +37,3 @@ were stale. Do not reintroduce behavior based on those deleted documents.
 - The system should recover from provider errors, invalid results, stale
   workers, cancellation, and repeated rejection loops with clear user-facing
   state.
-

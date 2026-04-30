@@ -19,7 +19,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src",
-    "lint:boundaries": "eslint src --rule '{\"no-restricted-imports\":\"warn\"}'"
+    "lint:boundaries": "eslint src --rule '{\"no-restricted-imports\":\"warn\"}'",
+    "lint:size": "node scripts/guard-file-size.js"
   },
   "engines": {
     "node": ">=20"

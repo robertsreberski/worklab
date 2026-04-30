@@ -131,6 +131,14 @@ Run the full unit and integration suite:
 npm test
 ```
 
+Check source boundaries and file-size drift:
+
+```bash
+npm run lint
+npm run lint:size
+./scripts/guard-imports.sh
+```
+
 Build the UI before validating service/static serving behavior:
 
 ```bash
