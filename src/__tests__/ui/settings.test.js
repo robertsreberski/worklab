@@ -50,12 +50,27 @@ describe("settings UI duration conversions", () => {
       slack_run_timeout_ms: minutesToMs("2"),
       assistant_run_timeout_ms: minutesToMs("5"),
       assistant_max_turns: 48,
+      agent_compaction_enabled: true,
+      agent_compaction_trigger_ratio: 0.7,
+      agent_compaction_keep_recent_tokens: 32000,
+      agent_compaction_summary_max_tokens: 12000,
+      agent_tool_text_limit_chars: 18000,
+      agent_bash_output_limit_chars: 22000,
+      agent_mcp_text_limit_chars: 16000,
+      agent_image_inline_max_bytes: 200000,
+      agent_mcp_call_timeout_ms: secondsToMs("90"),
+      agent_recovery_continuation_limit: 4,
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
     expect(payload.cancel_grace_ms).toBe(5000);
     expect(payload.slack_run_timeout_ms).toBe(120000);
     expect(payload.assistant_run_timeout_ms).toBe(300000);
     expect(payload.assistant_max_turns).toBe(48);
+    expect(payload.agent_compaction_trigger_ratio).toBe(0.7);
+    expect(payload.agent_compaction_keep_recent_tokens).toBe(32000);
+    expect(payload.agent_tool_text_limit_chars).toBe(18000);
+    expect(payload.agent_mcp_call_timeout_ms).toBe(90000);
+    expect(payload.agent_recovery_continuation_limit).toBe(4);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {
