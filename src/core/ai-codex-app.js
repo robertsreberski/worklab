@@ -490,21 +490,37 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     });
     setActiveTurnId(turn?.turn?.id);
 
-    await Promise.race([
-      turnDone,
-      client.closed.then((err) => {
-        if (!turnCompleted) throw err;
-        return null;
-      }),
-    ]);
+    let prematureClose = false;
+    try {
+      await Promise.race([
+        turnDone,
+        client.closed.then((err) => {
+          if (!turnCompleted) {
+            prematureClose = true;
+            throw err;
+          }
+          return null;
+        }),
+      ]);
+    } catch (err) {
+      if (prematureClose && !errorMessage) {
+        errorMessage = err?.message || "codex app-server stream closed before turn completed";
+        failureKind = "provider_unavailable";
+      } else if (!prematureClose) {
+        throw err;
+      }
+    }
     turnCompleted = true;
     await Promise.race([steerTask, Promise.resolve()]);
 
     const text = finalTextFromOutput(worklabResult, texts);
+    let codexErrorCode = prematureClose ? "codex_app_server_closed" : null;
     if (!errorMessage && !text.trim() && !worklabResult) {
       errorMessage = "codex app-server completed without final output";
       failureKind = "provider_unavailable";
+      codexErrorCode = codexErrorCode || "codex_app_server_no_output";
     }
+    const hadPartialProgress = events.length > 0 || texts.length > 0;
     const reference = `codex:${resolved.model}`;
     const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
     const outputTokens = usage?.output_tokens ?? usage?.outputTokens ?? 0;
@@ -537,6 +553,12 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       cancelled: !!options.abortSignal?.aborted,
       error: errorMessage,
       failureKind,
+      diagnostics: {
+        ...(codexErrorCode ? { pi_error_code: codexErrorCode } : {}),
+        ...(hadPartialProgress && failureKind === "provider_unavailable"
+          ? { had_partial_progress: true }
+          : {}),
+      },
     };
   } catch (err) {
     return {
@@ -553,6 +575,10 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       cancelled: !!options.abortSignal?.aborted,
       error: err?.message || String(err),
       failureKind: failureKind || "provider_unavailable",
+      diagnostics: {
+        ...(err?.code ? { pi_error_code: String(err.code) } : {}),
+        ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
+      },
     };
   } finally {
     options.abortSignal?.removeEventListener?.("abort", abortHandler);

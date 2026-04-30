@@ -424,10 +424,14 @@ export async function generateCliResponse(systemPrompt, options = {}) {
 
     const exitCode = await new Promise((resolve) => child.on("close", resolve));
     const stderrText = stderrTail.toString().trim();
+    let cliErrorCode = null;
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
     const text = finalTextFromCliOutput(worklabResult, texts);
+    const hadPartialProgress = events.length > 0 || texts.length > 0;
     if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
       errorMessage = `${commandSpec.command} completed without final output`;
+      failureKind = failureKind || "provider_unavailable";
+      cliErrorCode = "cli_stream_terminated";
     }
     const reference = `${resolved.sdk}:${resolved.model}`;
     const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
@@ -464,6 +468,12 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       error: errorMessage ? formatCliError(errorMessage, commandSpec.command) : null,
       failureKind,
       stderrTail: stderrText || null,
+      diagnostics: {
+        ...(cliErrorCode ? { pi_error_code: cliErrorCode } : {}),
+        ...(hadPartialProgress && failureKind === "provider_unavailable"
+          ? { had_partial_progress: true }
+          : {}),
+      },
     };
   } catch (err) {
     return {
@@ -481,6 +491,10 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       error: err.message || String(err),
       failureKind: failureKind || "provider_unavailable",
       stderrTail: stderrTail.toString() || null,
+      diagnostics: {
+        ...(err?.code ? { pi_error_code: String(err.code) } : {}),
+        ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
+      },
     };
   } finally {
     try { rmSync(dir, { recursive: true, force: true }); } catch {}
