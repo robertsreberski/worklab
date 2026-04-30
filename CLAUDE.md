@@ -12,16 +12,18 @@ The task/agent workflow is being redesigned ("v2"). The authoritative reference 
 
 ## Module Boundaries
 
-Worklab is split by boundary; keep changes within the right module:
+Worklab is layered. Each layer's `README.md` lists what it owns and what it must not import; the matching ESLint rules in `eslint.config.js` enforce the boundary at warn level (`npm run lint`, `./scripts/guard-imports.sh`).
 
-- `src/core/` — config, env, SQLite schema/migrations, providers, credentials, task state machine, knowledge base, journals, memory consolidation, run/event helpers, and SDK adapters (`ai-claude.js`, `ai-openai.js`, `ai-vercel.js`, `ai-cli.js`, `ai-codex-app.js`). The `worklab_result` contract lives here.
-- `src/coordinator/` — `task-watcher.js` (DB → spawn decisions), `spawn-worker.js` (forks `src/worker.js`), `automation-manager.js`, `consolidation-cron.js`, `search-indexer.js`. The coordinator owns scheduling and never runs agent code in-process.
-- `src/worker.js` + `src/coordinator.js` — child entry points spawned by the coordinator.
-- `src/api/` — Express routes (`routes-*.js`), `server.js`, and SSE streaming (`sse.js`). API handlers go through core helpers; they do not touch the DB directly when a core helper exists.
-- `src/mcp/` — `admin-server.js` (HTTP MCP, full admin surface) and `worklab-tools-server.js` (the constrained tool surface exposed to agents). Agents must mutate task/subtask state through these tools, not by editing the DB or files.
-- `src/cli/` — `worklab` binary (`bin` in package.json). `index.js` lazy-imports subcommands; `args.js` applies `--port/--host/--data-dir/--workspace` before `bootstrapWorklabEnv`.
-- `src/integrations/slack/` — Slack Bolt integration (context, filter, service, triage-result).
-- `src/ui/` — Preact + Vite app. Routes in `src/ui/src/routes/`, primitives in `components/primitives/`, layout shells in `components/layout/`. Built bundle goes to `src/ui/dist/` and is served by the API.
+- `src/ai/` — Provider layer: SDK/CLI adapters (`providers/{claude-sdk,pi-sdk,claude-cli,codex-app}.js`), the `worklab_result` contract (`result/contract.js`), failure-kind taxonomy (`failure.js`), streaming-event normalization (`streaming/codex-events.js`), and a registry (`registry.js`). No DB, no domain layers.
+- `src/agent/` — Agent kernel: context compaction (`compaction.js`), transcript snapshots (`transcript.js`), allowlist resolution (`allowlists.js`), built-in tool implementations (`tools/index.js`), the PI tool bridge (`tools/pi-bridge.js`), and the prompt builders (`prompt/system-prompt.js`). May use `src/ai/` only.
+- `src/core/` — Worklab domain: SQLite layer in `db/` (open, schema/, migrations/runner.js, queries/<aggregate>.js — every SQL statement lives in `queries/`), task state machine, knowledge base, journals, memory consolidation, run/event helpers, automations, embeddings, projects, settings, credentials, and assorted leaf utilities. May use `src/agent/` and `src/ai/`. Public re-exports in `src/core/index.js`.
+- `src/coordinator/` — Process orchestrator: `task-watcher.js` (DB → spawn decisions, decomposed across `watcher/{run-handler,final-text,kb-publisher,delegation-handler,failure-classifier}.js`), `spawn-worker.js` (forks `src/worker.js`), `automation-manager.js`, `consolidation-cron.js`, `search-indexer.js`. Owns scheduling; never runs agent code in-process.
+- `src/worker.js` + `src/coordinator.js` — Child entry points spawned by the coordinator. Worker result-shaping helpers live in `src/worker/result-emitter.js`.
+- `src/api/` — Express edge: `server.js`, SSE in `sse.js`, route modules in `routes/<aggregate>.js`. Routes call into `src/core/`; direct `db.prepare()` is forbidden (lint enforces).
+- `src/mcp/` — MCP servers: `admin/{server,tools}.js` (HTTP, full admin surface) and `agent/{server,tools}.js` (stdio, the constrained tool surface exposed to agents). Agents must mutate task/subtask state through these tools, not by editing the DB or files.
+- `src/integrations/slack/` — Slack Bolt integration (`service.js`, `context.js`, `filter.js`, `triage-result.js`). Talks to Worklab via core/agent — never via the API.
+- `src/cli/` — `worklab` binary (`bin` in `package.json`). `index.js` lazy-imports subcommands; `args.js` applies `--port/--host/--data-dir/--workspace` before `bootstrapWorklabEnv`.
+- `src/ui/` — Preact + Vite app. Routes in `src/ui/src/routes/`, primitives in `components/primitives/`, layout shells in `components/layout/`. Built bundle goes to `src/ui/dist/` and is served by the API. Browser-only — no Node imports.
 
 Runtime data lives in `~/.worklab` by default (`WORKLAB_DATA_DIR` to override). `data-template/` is the seed copied on first boot (see `src/core/first-boot.js`).
 
@@ -39,6 +41,8 @@ npm run dev:ui             # Vite dev server with HMR; proxies /api to dev:api
 npm start                  # build:ui then `worklab serve`
 npm run test:e2e:ollama    # Playwright against a freshly built UI (chromium, serial)
 ./scripts/guard-banned-tokens.sh   # UI design-token lint (see below)
+npm run lint                       # boundary-import lint (warn-level)
+./scripts/guard-imports.sh         # same, formatted for pre-commit
 ```
 
 For Vite + non-default API port, pass the same port to both: `npm run dev:api -- --port 9000` and `WORKLAB_PORT=9000 npm run dev:ui`.
