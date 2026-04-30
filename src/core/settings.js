@@ -26,15 +26,17 @@ export const DEFAULT_SETTINGS = {
   assistant_run_timeout_ms: 300000,
   assistant_max_turns: 32,
   agent_compaction_enabled: true,
-  agent_compaction_trigger_ratio: 0.72,
+  agent_compaction_trigger_ratio: 0.55,
   agent_compaction_keep_recent_tokens: 24000,
   agent_compaction_summary_max_tokens: 16000,
-  agent_tool_text_limit_chars: 24000,
-  agent_bash_output_limit_chars: 30000,
-  agent_mcp_text_limit_chars: 20000,
+  agent_tool_text_limit_chars: 16000,
+  agent_bash_output_limit_chars: 20000,
+  agent_mcp_text_limit_chars: 12000,
   agent_image_inline_max_bytes: 250000,
   agent_mcp_call_timeout_ms: 120000,
   agent_recovery_continuation_limit: 3,
+  agent_provider_recovery_enabled: true,
+  agent_provider_recovery_base_delay_ms: 30000,
 };
 
 const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
@@ -142,6 +144,7 @@ export function validateSetting(key, value) {
     case "assistant_max_turns":
       return integerInRange(key, value, { min: 1, max: 200 });
     case "agent_compaction_enabled":
+    case "agent_provider_recovery_enabled":
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
     case "agent_compaction_trigger_ratio":
@@ -160,6 +163,8 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     case "agent_recovery_continuation_limit":
       return integerInRange(key, value, { min: 0, max: 20 });
+    case "agent_provider_recovery_base_delay_ms":
+      return integerInRange(key, value, { min: 0, max: 300000 });
     default:
       throw new Error(`unknown setting: ${key}`);
   }

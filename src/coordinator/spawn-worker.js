@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { newAgentLogId } from "../core/ids.js";
 import { processStatusToLegacyStatus } from "../core/state-machine.js";
 import { normalizeLiveInputBody } from "../core/live-input.js";
-import { classifyFailure, createStderrTail } from "../core/failure-kind.js";
+import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
 
 const CONTEXT_BLOAT_TOP_EVENTS = 5;
 
@@ -599,6 +599,13 @@ export function spawnWorker({
           ?? finalPayload?.usage?.costUsd,
       );
       const stderrTailText = stderrTail.toString();
+      const providerFailureInfo = failureKind === "provider_unavailable"
+        ? retryableProviderFailureInfo({
+            errorText: errorMessage || resultError || "",
+            stderrTail: stderrTailText,
+            failureKind,
+          })
+        : null;
       const diagnostics = {
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
@@ -614,6 +621,11 @@ export function spawnWorker({
         ...(workerCancelSignal ? { worker_cancel_signal: workerCancelSignal } : {}),
         ...(stderrTailText ? { stderr_tail: stderrTailText } : {}),
         ...(failureKind ? { failure_kind: failureKind } : {}),
+        ...(providerFailureInfo?.retryable ? {
+          retryable_provider_error: true,
+          provider_error_subkind: providerFailureInfo.subkind,
+          ...(providerFailureInfo.requestId ? { provider_request_id: providerFailureInfo.requestId } : {}),
+        } : {}),
       };
 
       db.prepare(

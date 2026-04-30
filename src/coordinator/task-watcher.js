@@ -21,6 +21,7 @@ import { prepareExecenv } from "../core/execenv.js";
 import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
 import { resolveTaskProjectRunContext } from "../core/projects.js";
+import { retryableProviderFailureInfo } from "../core/failure-kind.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -229,7 +230,7 @@ function toolBlocksFromRunEvents(events = []) {
   return blocks;
 }
 
-function compactUsageLimitRunSummary({ runId, res }) {
+function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
   const diagnostics = res?.diagnostics || {};
   const blocks = toolBlocksFromRunEvents(res?.events);
   const changedFiles = [];
@@ -254,8 +255,14 @@ function compactUsageLimitRunSummary({ runId, res }) {
   const largest = Array.isArray(diagnostics.largest_tool_events) ? diagnostics.largest_tool_events[0] : null;
   const broadScan = Array.isArray(diagnostics.broad_scan_events) ? diagnostics.broad_scan_events[0] : null;
   const uniqueFiles = [...new Set(changedFiles)].slice(0, 12);
+  const errorText = String(res?.error || "").trim();
+  const intro = reason === "usage_limit"
+    ? `Previous run \`${runId}\` hit the model context limit.`
+    : `Previous run \`${runId}\` ended with a retryable provider error${providerInfo?.subkind ? ` (${providerInfo.subkind})` : ""}.`;
   const lines = [
-    `Previous run \`${runId}\` hit the model context limit.`,
+    intro,
+    providerInfo?.requestId ? `Provider request ID: ${providerInfo.requestId}` : "",
+    errorText ? `Error: ${errorText.slice(0, 500)}` : "",
     largest ? `Largest tool payload: ${largest.tool || "unknown tool"} ${largest.role || "event"} (${largest.chars || 0} chars).` : "",
     broadScan ? `Broad scan detected: ${broadScan.tool || "tool"} ${broadScan.pattern || ""} ${broadScan.path || ""}`.trim() : "",
     uniqueFiles.length ? `Files touched before the failure:\n- ${uniqueFiles.join("\n- ")}` : "",
@@ -403,6 +410,7 @@ export function createTaskWatcher({
   // children complete in the same tick or a child finishes during a fresh
   // delegation round.
   const pendingStarts = new Set();
+  const recoveryTimers = new Set();
 
   function canAutoStart(taskId) {
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
@@ -925,21 +933,59 @@ export function createTaskWatcher({
     };
   }
 
-  function maybeStartUsageLimitContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
-    if (failureKind !== "usage_limit" || processStatus !== "failed") return null;
+  function providerRecoveryDelay(settings, attempt) {
+    const base = Number(settings.agent_provider_recovery_base_delay_ms ?? 30000);
+    if (!Number.isFinite(base) || base <= 0) return 0;
+    const raw = Math.min(300000, Math.floor(base * (2 ** Math.max(0, attempt - 1))));
+    const jitter = Math.floor(raw * 0.2 * Math.random());
+    return raw + jitter;
+  }
+
+  function recoveryReason({ failureKind, res, run, settings }) {
+    if (failureKind === "usage_limit") {
+      return { reason: "usage_limit", providerInfo: null };
+    }
+    if (failureKind !== "provider_unavailable") return null;
+    if (settings.agent_provider_recovery_enabled === false) return null;
+    const diagnostics = {
+      ...safeParseJson(run?.diagnostics_json, {}),
+      ...(res?.diagnostics || {}),
+    };
+    const providerInfo = diagnostics.retryable_provider_error
+      ? {
+          retryable: true,
+          subkind: diagnostics.provider_error_subkind || "retryable_request",
+          requestId: diagnostics.provider_request_id || null,
+        }
+      : retryableProviderFailureInfo({
+          errorText: res?.error || run?.error_text || "",
+          stderrTail: diagnostics.stderr_tail || "",
+          failureKind,
+        });
+    if (!providerInfo.retryable) return null;
+    return {
+      reason: diagnostics.context_risk === "high" ? "provider_retryable_context_risk" : "provider_retryable",
+      providerInfo,
+    };
+  }
+
+  function maybeStartRecoveryContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
+    if (processStatus !== "failed") return null;
     if (!["plan", "execute"].includes(stage)) return null;
-    if (nextStageValue === "blocked") return null;
     const existing = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ? LIMIT 1").get(runId);
     if (existing) return null;
     const settings = readSettings(db);
+    const recovery = recoveryReason({ failureKind, res, run, settings });
+    if (!recovery) return null;
     const continuationLimit = Number(settings.agent_recovery_continuation_limit ?? 3);
     if (continuationLimit <= 0) return null;
     const lineage = continuationLineage(run);
     if (lineage.depth >= continuationLimit) {
-      postSystemComment(taskId, `Automatic continuation skipped: usage-limit continuation limit reached (${lineage.depth}/${continuationLimit}).`);
+      postSystemComment(taskId, `Automatic continuation skipped: recovery continuation limit reached (${lineage.depth}/${continuationLimit}).`);
       patchRunDiagnostics(runId, {
         continuation_skipped: true,
         continuation_skip_reason: "limit_reached",
+        continuation_reason: recovery.reason,
         continuation_depth: lineage.depth,
         continuation_limit: continuationLimit,
         continuation_root_run_id: lineage.rootRunId,
@@ -955,22 +1001,53 @@ export function createTaskWatcher({
       return null;
     }
 
-    const summary = compactUsageLimitRunSummary({ runId, res });
+    const continuationStage = ["plan", "execute"].includes(nextStageValue) ? nextStageValue : stage;
+    const attempt = lineage.depth + 1;
+    const delayMs = recovery.reason === "usage_limit" ? 0 : providerRecoveryDelay(settings, attempt);
+    const summary = compactRecoveryRunSummary({
+      runId,
+      res,
+      reason: recovery.reason === "usage_limit" ? "usage_limit" : "provider_retryable",
+      providerInfo: recovery.providerInfo,
+    });
+    const heading = recovery.reason === "usage_limit"
+      ? "Automatic continuation after context-window overflow."
+      : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
     postSystemComment(taskId, [
-      "Automatic continuation after context-window overflow.",
+      heading,
+      delayMs > 0 ? `Retrying in ${Math.round(delayMs / 1000)} seconds.` : "",
       "",
       summary,
       "",
-      "Continue from the current workspace state. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
-    ].join("\n").trim());
+      "Continue from the current workspace state. Do not repeat completed work. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
+    ].filter(Boolean).join("\n").trim());
     applySideEffects(taskId, [
       { type: "clear_error_text" },
-      { type: "set_stage_reason", reason: "continuing after usage_limit" },
-    ], nextStageValue, nextStageValue, { running: true });
+      { type: "set_stage_reason", reason: `continuing after ${recovery.reason}` },
+    ], nextStageValue, continuationStage, { running: true });
 
-    try {
+    patchRunDiagnostics(runId, {
+      continuation_scheduled: true,
+      continuation_delay_ms: delayMs,
+      continuation_depth: lineage.depth,
+      continuation_limit: continuationLimit,
+      continuation_reason: recovery.reason,
+      continuation_root_run_id: lineage.rootRunId,
+      retryable_provider_error: recovery.providerInfo?.retryable || undefined,
+      provider_error_subkind: recovery.providerInfo?.subkind || undefined,
+      provider_request_id: recovery.providerInfo?.requestId || undefined,
+    });
+
+    const startContinuation = () => {
+      if (active.has(taskId)) {
+        patchRunDiagnostics(runId, {
+          continuation_skipped: true,
+          continuation_skip_reason: "task_already_running",
+        });
+        return null;
+      }
       const continuation = spawnRun({
-        task: { ...task, stage: nextStageValue },
+        task: { ...task, stage: continuationStage },
         stage,
         mode: run.mode || modeForStage(stage),
         agentName,
@@ -978,18 +1055,44 @@ export function createTaskWatcher({
         diagnosticsSeed: {
           continuation_of_run_id: runId,
           continuation_root_run_id: lineage.rootRunId,
-          continuation_reason: "usage_limit",
-          continuation_depth: lineage.depth + 1,
+          continuation_reason: recovery.reason,
+          continuation_depth: attempt,
           continuation_limit: continuationLimit,
+          recovery_attempt: attempt,
+          recovery_delay_ms: delayMs,
+          retryable_provider_error: recovery.providerInfo?.retryable || undefined,
+          provider_error_subkind: recovery.providerInfo?.subkind || undefined,
+          provider_request_id: recovery.providerInfo?.requestId || undefined,
         },
       });
       patchRunDiagnostics(runId, {
         continuation_run_id: continuation.runId,
         continuation_depth: lineage.depth,
         continuation_limit: continuationLimit,
+        continuation_reason: recovery.reason,
         continuation_root_run_id: lineage.rootRunId,
       });
       return continuation;
+    };
+
+    if (delayMs > 0) {
+      pendingStarts.add(taskId);
+      const timer = setTimeout(() => {
+        recoveryTimers.delete(timer);
+        pendingStarts.delete(taskId);
+        try {
+          startContinuation();
+        } catch (err) {
+          postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
+        }
+      }, delayMs);
+      timer.unref?.();
+      recoveryTimers.add(timer);
+      return { scheduled: true, delayMs };
+    }
+
+    try {
+      return startContinuation();
     } catch (err) {
       postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
       return null;
@@ -1213,7 +1316,7 @@ export function createTaskWatcher({
        SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, ?)
        WHERE id = ?`,
     ).run(failureKind, stage, runId);
-    maybeStartUsageLimitContinuation({
+    maybeStartRecoveryContinuation({
       taskId,
       runId,
       res,
@@ -1292,6 +1395,9 @@ export function createTaskWatcher({
   }
 
   async function shutdown() {
+    for (const timer of recoveryTimers) clearTimeout(timer);
+    recoveryTimers.clear();
+    pendingStarts.clear();
     const promises = [];
     for (const entry of active.values()) {
       entry.handle.cancel({
