@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../core/kb.js";
-import { uniqueSlug } from "../core/slugs.js";
+import { kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../../core/kb.js";
+import { uniqueSlug } from "../../core/slugs.js";
 
 const CreateSchema = z.object({
   slug: z.string().optional(),

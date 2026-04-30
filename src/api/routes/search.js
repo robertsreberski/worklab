@@ -1,4 +1,4 @@
-import { getIndexStatus, search } from "../core/embeddings.js";
+import { getIndexStatus, search } from "../../core/embeddings.js";
 
 function parseLimit(value) {
   const n = Number(value);

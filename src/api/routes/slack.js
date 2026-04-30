@@ -1,4 +1,4 @@
-import { readSettings } from "../core/settings.js";
+import { readSettings } from "../../core/settings.js";
 
 function fallbackStatus(db, config) {
   const settings = readSettings(db);

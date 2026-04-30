@@ -1,6 +1,6 @@
-import { getBuiltinModelGroups } from "../core/ai.js";
-import { buildModelCapabilities, isValidProviderType, listModels, listProviders } from "../core/providers.js";
-import { getBuiltinProviderAvailability } from "../core/credentials.js";
+import { getBuiltinModelGroups } from "../../core/ai.js";
+import { buildModelCapabilities, isValidProviderType, listModels, listProviders } from "../../core/providers.js";
+import { getBuiltinProviderAvailability } from "../../core/credentials.js";
 
 const OPENAI_EMBEDDING_MODELS = [
   { model: "text-embedding-3-small", label: "text-embedding-3-small", description: "1536 dims, low cost" },

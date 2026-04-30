@@ -1,12 +1,12 @@
-import { getBuiltinModelByReference, normalizeReasoningEffortForModel, parseModelReference } from "../core/ai.js";
-import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../core/providers.js";
-import { readRunSection } from "../core/journal.js";
-import { isValidSlug, uniqueSlug } from "../core/slugs.js";
-import { getBuiltinProviderAvailability } from "../core/credentials.js";
-import { loadSkills } from "../core/skills.js";
-import { getMcpServerStatuses } from "../core/mcp-config.js";
-import { readAgentMemoryState } from "../core/memory.js";
-import { agentExists, getAgentByName } from "../core/db/queries/agents.js";
+import { getBuiltinModelByReference, normalizeReasoningEffortForModel, parseModelReference } from "../../core/ai.js";
+import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../../core/providers.js";
+import { readRunSection } from "../../core/journal.js";
+import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
+import { getBuiltinProviderAvailability } from "../../core/credentials.js";
+import { loadSkills } from "../../core/skills.js";
+import { getMcpServerStatuses } from "../../core/mcp-config.js";
+import { readAgentMemoryState } from "../../core/memory.js";
+import { agentExists, getAgentByName } from "../../core/db/queries/agents.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -14,7 +14,7 @@ import {
   normalizeList,
   parseStoredAllowlist,
   storedAllowlistMode,
-} from "../core/agent-allowlists.js";
+} from "../../core/agent-allowlists.js";
 import { join } from "node:path";
 
 function rowToAgent(row) {
