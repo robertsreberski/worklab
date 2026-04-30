@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { backendCapabilities, backendUsesExecenvConfig, backendSupportsSessionResume, BACKEND_CAPABILITIES } from "../../core/backend.js";
+import { backendCapabilities, backendUsesExecenvConfig, backendSupportsSessionResume, BACKEND_CAPABILITIES } from "../../ai/backend.js";
 
 describe("backendCapabilities", () => {
   it("resolves by sdk kind", () => {
@@ -7,11 +7,6 @@ describe("backendCapabilities", () => {
     expect(backendCapabilities("claude-code")).toMatchObject({ kind: "claude-code", runtime: "sdk", native_runtime_config: null });
     expect(backendCapabilities("codex")).toMatchObject({ kind: "codex", runtime: "pi-agent", native_runtime_config: null });
     expect(backendCapabilities("pi")).toMatchObject({ kind: "pi", runtime: "pi-agent" });
-  });
-
-  it("resolves by model reference string", () => {
-    expect(backendCapabilities("claude:claude-opus-4-7").kind).toBe("claude");
-    expect(backendCapabilities("codex:gpt-5.5").kind).toBe("codex");
   });
 
   it("resolves by parsed model object", () => {

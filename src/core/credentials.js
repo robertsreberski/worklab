@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import { hasPiOAuthCredentials } from "./pi-oauth.js";
+import { hasPiOAuthCredentials } from "../ai/pi-oauth.js";
 
 const PROBE_TTL_MS = 10_000;
 const probeCache = new Map();

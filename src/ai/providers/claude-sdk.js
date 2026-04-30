@@ -8,9 +8,9 @@ import {
   readFileChangeSnapshot,
   statsForCompletedChange,
 } from "../file-change-stats.js";
-import { formatLiveInputGuidance } from "../../core/live-input.js";
-import { estimateCost } from "../../core/cost.js";
-import { backendCapabilities } from "../../core/backend.js";
+import { formatLiveInputGuidance } from "../live-input-prompt.js";
+import { estimateCost } from "../cost.js";
+import { backendCapabilities } from "../backend.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };

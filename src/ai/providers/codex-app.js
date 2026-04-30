@@ -9,9 +9,9 @@ import {
 } from "../result/contract.js";
 import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
-import { formatLiveInputGuidance } from "../../core/live-input.js";
-import { estimateCost } from "../../core/cost.js";
-import { backendCapabilities } from "../../core/backend.js";
+import { formatLiveInputGuidance } from "../live-input-prompt.js";
+import { estimateCost } from "../cost.js";
+import { backendCapabilities } from "../backend.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)

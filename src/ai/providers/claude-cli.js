@@ -14,9 +14,9 @@ import {
 } from "../result/contract.js";
 import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
-import { estimateCost } from "../../core/cost.js";
+import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
-import { backendCapabilities } from "../../core/backend.js";
+import { backendCapabilities } from "../backend.js";
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
