@@ -358,6 +358,52 @@ function failureKindForPiError(message, diagnostics, { maxTurnsHit = false } = {
   return "provider_unavailable";
 }
 
+function pickFirstString(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function capturePiErrorPayload(message) {
+  if (!message) return null;
+  const errorMessage = pickFirstString(
+    message.errorMessage,
+    message.error?.errorMessage,
+    message.error?.message,
+  );
+  const code = pickFirstString(
+    message.code,
+    message.error?.code,
+    message.cause?.code,
+    message.errorCode,
+    message.error?.error?.code,
+  );
+  const requestId = pickFirstString(
+    message.requestId,
+    message.request_id,
+    message.error?.requestId,
+    message.error?.request_id,
+  );
+  const stopReason = pickFirstString(message.stopReason, message.stop_reason);
+  if (!errorMessage && !code && !requestId && !stopReason) return null;
+  return {
+    stop_reason: stopReason,
+    error_message: errorMessage,
+    code,
+    request_id: requestId,
+  };
+}
+
+function pickPiErrorCodeFromException(err) {
+  if (!err) return null;
+  return pickFirstString(
+    err.code,
+    err.cause?.code,
+    err.errno && String(err.errno),
+  );
+}
+
 function readRuntimeSettings(db, explicitSettings, runtimeWarnings) {
   if (explicitSettings) return explicitSettings;
   if (!db) return {};
@@ -388,6 +434,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let maxTurnsHit = false;
   let turnCount = 0;
   let compaction = null;
+  let piErrorPayload = null;
+  let toolResultsSeen = 0;
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
 
@@ -500,6 +548,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         });
       } else if (event.type === "tool_execution_end") {
         const resultContent = toolResultContent(event.result);
+        if (!event.isError) toolResultsSeen += 1;
         onEvent({
           type: "user",
           message: {
@@ -609,20 +658,33 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       outputTokens: usage.output,
       cachedTokens: usage.cacheRead,
     });
+    if (!piErrorPayload && (stopReason === "error" || stopReason === "aborted")) {
+      piErrorPayload = capturePiErrorPayload(lastAssistant);
+    }
     const rawErrorMessage = externalAbort
       ? null
       : maxTurnsHit
         ? "Pi agent stopped before final output: max turns reached"
         : (stopReason === "error" || stopReason === "aborted"
-            ? lastAssistant.errorMessage || agent.state.errorMessage || "Pi agent aborted before final output"
+            ? piErrorPayload?.error_message
+              || lastAssistant?.errorMessage
+              || agent.state.errorMessage
+              || "Pi agent aborted before final output"
             : null);
     const errorMessage = normalizePiErrorMessage(rawErrorMessage);
+    const hadPartialProgress = !externalAbort
+      && (stopReason === "error" || stopReason === "aborted")
+      && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
     const diagnostics = {
       pi_stop_reason: stopReason,
       max_turns_hit: maxTurnsHit,
       max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
       external_abort: externalAbort,
+      ...(piErrorPayload?.code ? { pi_error_code: piErrorPayload.code } : {}),
+      ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
+      ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
+      ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
       ...(compaction?.diagnostics?.() || {}),
     };
 
@@ -652,7 +714,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     externalAbort ||= !!options.abortSignal?.aborted;
-    const errorMessage = normalizePiErrorMessage(err?.message || String(err));
+    const exceptionCode = pickPiErrorCodeFromException(err);
+    const errorMessage = normalizePiErrorMessage(
+      piErrorPayload?.error_message || err?.message || String(err),
+    );
+    const hadPartialProgress = !externalAbort
+      && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
     return {
       text: assistantTexts.join("") || null,
       events,
@@ -674,6 +741,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
         turn_count: turnCount,
         external_abort: externalAbort,
+        ...(piErrorPayload?.code || exceptionCode
+          ? { pi_error_code: piErrorPayload?.code || exceptionCode }
+          : {}),
+        ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
+        ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
+        ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
         ...(compaction?.diagnostics?.() || {}),
       },
     };
