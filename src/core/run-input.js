@@ -19,8 +19,9 @@ import { getAgentByName } from "./db/queries/agents.js";
 import { listTaskComments } from "./db/queries/comments.js";
 import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
-import { loadTaskArtifacts } from "./run-artifacts.js";
+import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
+import { renderToolSurfaceMarkdown } from "../mcp/agent/tools.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -376,6 +377,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts,
+      taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
+      worklabToolSurfaceMarkdown: renderToolSurfaceMarkdown(null),
       allowedTools, disallowedTools, mcpServers, delegation,
     };
     const cached = cache.get(cacheKey);
@@ -403,6 +406,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const prompt = cached || buildSystemPrompt({
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
+      taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
+      worklabToolSurfaceMarkdown: renderToolSurfaceMarkdown(null),
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,

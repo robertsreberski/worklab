@@ -1,8 +1,6 @@
 import { createHash } from "node:crypto";
-import { buildSkillIndex } from "../../core/skills.js";
+import { buildSkillIndex } from "./skill-index.js";
 import { stripWorklabResultJson } from "../../ai/result/contract.js";
-import { formatTaskArtifactsForPrompt } from "../../core/run-artifacts.js";
-import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
@@ -258,7 +256,10 @@ function buildAutomationBody(automation) {
 // Render the agent's runtime capability surface as a tight markdown block.
 // CLI providers consume this via the prompt; SDK providers also see it
 // because some adapters do not expose static tool docs to the model.
-function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpServers = {}, worklabToolAllowlist = null } = {}) {
+//
+// `worklabToolSurfaceMarkdown` is pre-rendered by the caller (run-input,
+// worker, assistant) — the kernel does not import the tool registry.
+function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpServers = {}, worklabToolSurfaceMarkdown = "" } = {}) {
   const lines = [];
   const builtin = (allowedTools || []).filter((tool) => !disallowedTools?.includes(tool));
   if (builtin.length) {
@@ -267,13 +268,10 @@ function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpS
     lines.push("Built-in tools: disabled for this run.");
   }
   const serverNames = Object.keys(mcpServers || {});
-  if (serverNames.includes("worklab")) {
-    const surface = renderToolSurfaceMarkdown(worklabToolAllowlist);
-    if (surface) {
-      lines.push("");
-      lines.push("Worklab MCP tools:");
-      lines.push(surface);
-    }
+  if (serverNames.includes("worklab") && worklabToolSurfaceMarkdown) {
+    lines.push("");
+    lines.push("Worklab MCP tools:");
+    lines.push(worklabToolSurfaceMarkdown);
   }
   const otherServers = serverNames.filter((name) => name !== "worklab");
   if (otherServers.length) {
@@ -375,6 +373,7 @@ function buildBaseSections(input) {
   const {
     agent, skills, memory, journalTail, currentRunComments,
     allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir,
+    worklabToolSurfaceMarkdown,
   } = input;
   return [
     ["Role", agent.instructions || ""],
@@ -382,7 +381,7 @@ function buildBaseSections(input) {
     ["Skills", renderSkills(skills).trim()],
     ["Memory", memory || ""],
     ["Recent journal", journalTail || ""],
-    ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers })],
+    ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
     ["Workspace", formatWorkspaceGuidance(effectiveWorkdir)],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
   ];
@@ -458,12 +457,12 @@ export function buildSystemPrompt(input, mode) {
 
   if (mode === "review") {
     parts.push(formatWorkOutput(input.execution || {}));
-    parts.push(section("Task artifacts", formatTaskArtifactsForPrompt(input.taskArtifacts)));
+    parts.push(section("Task artifacts", input.taskArtifactsMarkdown || ""));
     parts.push(section("Available run logs", formatReviewRunLogs(input.execution)));
     sectionNames.push("Work output", "Task artifacts", "Available run logs");
   } else if (mode === "plan" || mode === "execute") {
     parts.push(section("Prior run history", formatPriorRuns(input.priorRuns)));
-    parts.push(section("Task artifacts", formatTaskArtifactsForPrompt(input.taskArtifacts)));
+    parts.push(section("Task artifacts", input.taskArtifactsMarkdown || ""));
     parts.push(section("Available run logs", formatAvailableRunLogs(input.priorRuns)));
     sectionNames.push("Prior run history", "Task artifacts", "Available run logs");
   }
