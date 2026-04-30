@@ -1,0 +1,36 @@
+// Public surface of the agent kernel. The kernel is consumed by the
+// worker, the assistant, the Slack triage path, and the coordinator's
+// run-spawn path. Everything below is intentionally re-exported; anything
+// not listed here is private to the kernel and should not be imported
+// from edge layers.
+
+export {
+  createAgentCompactionManager,
+  isLikelyContextTermination,
+} from "./compaction.js";
+
+export {
+  buildTranscriptTailSnapshot,
+  renderResumeSnapshot,
+} from "./transcript.js";
+
+export {
+  ALLOWLIST_MODE_ALL,
+  ALLOWLIST_MODE_CUSTOM,
+  inferAllowlistMode,
+  normalizeAllowlistMode,
+  normalizeList,
+  parseStoredAllowlist,
+  resolveAllowlist,
+  resolveAllowlistMap,
+  storedAllowlistMode,
+} from "./allowlists.js";
+
+export {
+  buildAutomationSystemPrompt,
+  buildConsolidationSystemPrompt,
+  buildExecuteSystemPrompt,
+  buildPlanSystemPrompt,
+  buildReviewSystemPrompt,
+  buildSystemPrompt,
+} from "./prompt/system-prompt.js";
