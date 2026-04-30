@@ -3,15 +3,18 @@ import { randomUUID } from "node:crypto";
 export const COMPACTED_CONTEXT_MARKER = "Compacted prior Worklab context";
 
 const DEFAULT_CONTEXT_WINDOW = 128000;
-const DEFAULT_TRIGGER_RATIO = 0.55;
+const DEFAULT_TRIGGER_RATIO = 0.85;
 const DEFAULT_KEEP_RECENT_TOKENS = 24000;
 const DEFAULT_SUMMARY_MAX_TOKENS = 16000;
+const DEFAULT_MIN_SAVINGS_TOKENS = 20000;
+const DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS = 0;
+const DEFAULT_TOOL_PRUNE_TRIGGER_TOKENS = 40000;
 const DEFAULT_TOOL_TEXT_LIMIT_CHARS = 16000;
 const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 20000;
 const DEFAULT_MCP_TEXT_LIMIT_CHARS = 12000;
+const DEFAULT_SEARCH_RESULT_LIMIT = 100;
 const DEFAULT_IMAGE_INLINE_MAX_BYTES = 250000;
 const DEFAULT_MCP_CALL_TIMEOUT_MS = 120000;
-const DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS = 80000;
 
 function clampNumber(value, fallback, min, max) {
   const n = Number(value);
@@ -104,12 +107,20 @@ export function resolveAgentCompactionPolicy(settings = {}, model = {}) {
     triggerTokens: Math.min(ratioTrigger, reserveTrigger),
     keepRecentTokens: clampInteger(settings.agent_compaction_keep_recent_tokens, DEFAULT_KEEP_RECENT_TOKENS, 4000, 200000),
     summaryMaxTokens: clampInteger(settings.agent_compaction_summary_max_tokens, DEFAULT_SUMMARY_MAX_TOKENS, 1000, 64000),
+    compactionMinSavingsTokens: clampInteger(settings.agent_compaction_min_savings_tokens, DEFAULT_MIN_SAVINGS_TOKENS, 0, 500000),
+    toolPayloadCompactionTriggerChars: clampInteger(
+      settings.agent_tool_payload_compaction_trigger_chars,
+      DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS,
+      0,
+      10 * 1024 * 1024,
+    ),
+    toolPruneTriggerTokens: clampInteger(settings.agent_tool_prune_trigger_tokens, DEFAULT_TOOL_PRUNE_TRIGGER_TOKENS, 0, 500000),
     toolTextLimitChars: clampInteger(settings.agent_tool_text_limit_chars, DEFAULT_TOOL_TEXT_LIMIT_CHARS, 1000, 200000),
     bashOutputLimitChars: clampInteger(settings.agent_bash_output_limit_chars, DEFAULT_BASH_OUTPUT_LIMIT_CHARS, 1000, 200000),
     mcpTextLimitChars: clampInteger(settings.agent_mcp_text_limit_chars, DEFAULT_MCP_TEXT_LIMIT_CHARS, 1000, 200000),
+    searchResultLimit: clampInteger(settings.agent_search_result_limit, DEFAULT_SEARCH_RESULT_LIMIT, 10, 1000),
     imageInlineMaxBytes: clampInteger(settings.agent_image_inline_max_bytes, DEFAULT_IMAGE_INLINE_MAX_BYTES, 0, 10 * 1024 * 1024),
     mcpCallTimeoutMs: clampInteger(settings.agent_mcp_call_timeout_ms, DEFAULT_MCP_CALL_TIMEOUT_MS, 1000, Number.MAX_SAFE_INTEGER),
-    toolPayloadCompactionTriggerChars: DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS,
   };
 }
 
@@ -239,6 +250,65 @@ function buildCompactionMessage({ id, seq, metrics, firstKeptIndex, compactedCou
   };
 }
 
+function pruneToolResultContent(message, metrics) {
+  const details = {
+    ...(message.details || {}),
+    context_pruned: true,
+    pruned_tokens_estimate: metrics.tokens,
+    pruned_chars_estimate: metrics.chars,
+  };
+  const artifact = details.artifact_path || details.full_output_path || details.path || null;
+  const content = [{
+    type: "text",
+    text: [
+      `[pruned older ${message.toolName || details.tool || "tool"} result from context]`,
+      `Estimated removed tokens: ${metrics.tokens}.`,
+      artifact ? `Full output artifact: ${artifact}` : "Use a targeted tool call if the raw output is needed again.",
+    ].join("\n"),
+  }];
+  return { ...message, content, details };
+}
+
+function pruneOldToolResults(messages, policy) {
+  if (!Array.isArray(messages) || !policy?.toolPruneTriggerTokens) {
+    return { changed: false, messages, prunedCount: 0, tokensBefore: 0, tokensAfter: 0 };
+  }
+  const firstProtectedIndex = chooseFirstKeptIndex(messages, policy.keepRecentTokens);
+  if (firstProtectedIndex <= 0) {
+    return { changed: false, messages, prunedCount: 0, tokensBefore: 0, tokensAfter: 0 };
+  }
+
+  let prunableTokens = 0;
+  const metricsByIndex = new Map();
+  for (let i = 0; i < firstProtectedIndex; i += 1) {
+    if (messages[i]?.role !== "toolResult") continue;
+    if (messages[i]?.details?.context_pruned) continue;
+    const metrics = estimateAgentMessageTokens(messages[i]);
+    prunableTokens += metrics.tokens;
+    metricsByIndex.set(i, metrics);
+  }
+  if (prunableTokens < policy.toolPruneTriggerTokens) {
+    return { changed: false, messages, prunedCount: 0, tokensBefore: prunableTokens, tokensAfter: prunableTokens };
+  }
+
+  let prunedCount = 0;
+  const next = messages.map((message, index) => {
+    const metrics = metricsByIndex.get(index);
+    if (!metrics) return message;
+    prunedCount += 1;
+    return pruneToolResultContent(message, metrics);
+  });
+  const tokensAfter = [...metricsByIndex.keys()]
+    .reduce((sum, index) => sum + estimateAgentMessageTokens(next[index]).tokens, 0);
+  return {
+    changed: prunedCount > 0,
+    messages: next,
+    prunedCount,
+    tokensBefore: prunableTokens,
+    tokensAfter,
+  };
+}
+
 function truncateText(text, limit, label) {
   const value = String(text || "");
   if (value.length <= limit) {
@@ -318,6 +388,7 @@ export function isLikelyContextTermination(message, diagnostics = {}) {
   return Boolean(
     diagnostics.context_compactions > 0
     || diagnostics.tool_results_compacted > 0
+    || diagnostics.tool_results_pruned > 0
     || (trigger > 0 && estimate >= trigger * 0.85)
   );
 }
@@ -334,12 +405,15 @@ export function createAgentCompactionManager({
   const policy = resolveAgentCompactionPolicy(settings, model);
   let compactionCount = 0;
   let toolResultsCompacted = 0;
+  let toolResultsPruned = 0;
   let toolPayloadCharsSinceCompaction = 0;
   let maxToolPayloadCharsSinceCompaction = 0;
   let forcedCompactionReason = null;
   let maxContextTokensEstimate = 0;
   let lastCompactionId = null;
   let lastError = null;
+  let skippedLowSavings = 0;
+  let lastLowSavingsSkipTokens = 0;
 
   function emit(event) {
     onEvent?.(event);
@@ -382,13 +456,36 @@ export function createAgentCompactionManager({
   }
 
   async function transformContext(messages = [], signal) {
-    const before = estimateAgentMessages(messages);
-    maxContextTokensEstimate = Math.max(maxContextTokensEstimate, before.tokens);
-    const trigger = forcedCompactionReason || (before.tokens >= policy.triggerTokens ? "token_budget" : null);
-    if (!policy.enabled || signal?.aborted || !trigger) return messages;
+    const original = estimateAgentMessages(messages);
+    maxContextTokensEstimate = Math.max(maxContextTokensEstimate, original.tokens);
+    if (!policy.enabled || signal?.aborted) return messages;
 
-    const firstKeptIndex = chooseFirstKeptIndex(messages, policy.keepRecentTokens);
-    if (firstKeptIndex <= 0) return messages;
+    let workingMessages = messages;
+    const pruned = pruneOldToolResults(workingMessages, policy);
+    if (pruned.changed) {
+      workingMessages = pruned.messages;
+      toolResultsPruned += pruned.prunedCount;
+      toolPayloadCharsSinceCompaction = 0;
+      const afterPrune = estimateAgentMessages(workingMessages);
+      emit({
+        type: "tool_context_pruned",
+        run_id: runId || null,
+        pruned_tool_results: pruned.prunedCount,
+        tokens_before: original.tokens,
+        tokens_after: afterPrune.tokens,
+        pruned_tool_tokens_before: pruned.tokensBefore,
+        pruned_tool_tokens_after: pruned.tokensAfter,
+      });
+    }
+
+    const before = estimateAgentMessages(workingMessages);
+    const trigger = forcedCompactionReason || (before.tokens >= policy.triggerTokens ? "token_budget" : null);
+    const lowSavingsBackoff = policy.compactionMinSavingsTokens > 0
+      && before.tokens <= lastLowSavingsSkipTokens + Math.max(1000, Math.floor(policy.compactionMinSavingsTokens / 2));
+    if (!trigger || lowSavingsBackoff) return workingMessages;
+
+    const firstKeptIndex = chooseFirstKeptIndex(workingMessages, policy.keepRecentTokens);
+    if (firstKeptIndex <= 0) return workingMessages;
 
     const id = `cmp_${randomUUID()}`;
     const seq = compactionCount + 1;
@@ -404,8 +501,8 @@ export function createAgentCompactionManager({
     });
 
     try {
-      const compacted = messages.slice(0, firstKeptIndex);
-      const recent = messages.slice(firstKeptIndex);
+      const compacted = workingMessages.slice(0, firstKeptIndex);
+      const recent = workingMessages.slice(firstKeptIndex);
       const summaryMaxChars = Math.max(4000, policy.summaryMaxTokens * 4);
       const summary = summarizeCompactedMessages(compacted, { maxChars: summaryMaxChars });
       const provisional = [
@@ -427,6 +524,30 @@ export function createAgentCompactionManager({
       });
       const nextMessages = [summaryMessage, ...recent];
       const finalAfter = estimateAgentMessages(nextMessages);
+      const savingsTokens = before.tokens - finalAfter.tokens;
+      const emergencyTriggerTokens = Math.floor(policy.contextWindow * 0.95);
+      if (
+        policy.compactionMinSavingsTokens > 0
+        && savingsTokens < policy.compactionMinSavingsTokens
+        && before.tokens < emergencyTriggerTokens
+      ) {
+        skippedLowSavings += 1;
+        lastLowSavingsSkipTokens = before.tokens;
+        forcedCompactionReason = null;
+        emit({
+          type: "runtime_warning",
+          warning_kind: "context_compaction_skipped_low_savings",
+          message: `Skipped context compaction because estimated savings were ${savingsTokens} tokens below the ${policy.compactionMinSavingsTokens} token minimum.`,
+          diagnostics: {
+            trigger,
+            tokens_before: before.tokens,
+            tokens_after: finalAfter.tokens,
+            savings_tokens: savingsTokens,
+            min_savings_tokens: policy.compactionMinSavingsTokens,
+          },
+        });
+        return workingMessages;
+      }
       compactionCount += 1;
       lastCompactionId = id;
       record({
@@ -443,6 +564,8 @@ export function createAgentCompactionManager({
           context_window: policy.contextWindow,
           trigger_tokens: policy.triggerTokens,
           keep_recent_tokens: policy.keepRecentTokens,
+          min_savings_tokens: policy.compactionMinSavingsTokens,
+          savings_tokens: savingsTokens,
           tool_payload_chars_since_compaction: toolPayloadCharsSinceCompaction,
           compacted_messages: compacted.length,
           kept_messages: recent.length,
@@ -482,17 +605,19 @@ export function createAgentCompactionManager({
         warning_kind: "context_compaction_failed",
         message: lastError,
       });
-      return messages;
+      return workingMessages;
     }
   }
 
   async function afterToolCall({ toolCall, result }, signal) {
     if (signal?.aborted) return undefined;
+    const compacted = compactToolResultForContext(result, policy, { toolName: toolCall?.name || "tool" });
+    const visibleResult = compacted.changed ? compacted.result : result;
     const payloadChars = estimateAgentMessageTokens({
       role: "toolResult",
       toolName: toolCall?.name || "tool",
-      content: result?.content || [],
-      details: result?.details || null,
+      content: visibleResult?.content || [],
+      details: visibleResult?.details || null,
     }).chars;
     toolPayloadCharsSinceCompaction += payloadChars;
     maxToolPayloadCharsSinceCompaction = Math.max(maxToolPayloadCharsSinceCompaction, toolPayloadCharsSinceCompaction);
@@ -503,7 +628,6 @@ export function createAgentCompactionManager({
     ) {
       forcedCompactionReason = forcedCompactionReason || "tool_payload_budget";
     }
-    const compacted = compactToolResultForContext(result, policy, { toolName: toolCall?.name || "tool" });
     if (!compacted.changed) return undefined;
     toolResultsCompacted += 1;
     emit({
@@ -527,18 +651,23 @@ export function createAgentCompactionManager({
       context_compactions: compactionCount,
       context_compaction_last_id: lastCompactionId,
       context_compaction_last_error: lastError,
+      context_compactions_skipped_low_savings: skippedLowSavings,
       context_window_tokens: policy.contextWindow,
       context_compaction_trigger_tokens: policy.triggerTokens,
       context_keep_recent_tokens: policy.keepRecentTokens,
+      context_compaction_min_savings_tokens: policy.compactionMinSavingsTokens,
       context_tokens_estimate_max: maxContextTokensEstimate,
       tool_results_compacted: toolResultsCompacted,
+      tool_results_pruned: toolResultsPruned,
       tool_payload_chars_since_compaction: toolPayloadCharsSinceCompaction,
       tool_payload_chars_since_compaction_max: maxToolPayloadCharsSinceCompaction,
       tool_payload_compaction_trigger_chars: policy.toolPayloadCompactionTriggerChars,
+      tool_prune_trigger_tokens: policy.toolPruneTriggerTokens,
       context_compaction_pending_reason: forcedCompactionReason,
       tool_text_limit_chars: policy.toolTextLimitChars,
       bash_output_limit_chars: policy.bashOutputLimitChars,
       mcp_text_limit_chars: policy.mcpTextLimitChars,
+      search_result_limit: policy.searchResultLimit,
       image_inline_max_bytes: policy.imageInlineMaxBytes,
       mcp_call_timeout_ms: policy.mcpCallTimeoutMs,
     };
