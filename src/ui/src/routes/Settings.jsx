@@ -173,12 +173,16 @@ export function settingsPayload(settings = {}) {
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
     agent_compaction_enabled: settings.agent_compaction_enabled !== false,
-    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.55),
+    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.85),
     agent_compaction_keep_recent_tokens: Number(settings.agent_compaction_keep_recent_tokens ?? 24000),
     agent_compaction_summary_max_tokens: Number(settings.agent_compaction_summary_max_tokens ?? 16000),
+    agent_compaction_min_savings_tokens: Number(settings.agent_compaction_min_savings_tokens ?? 20000),
+    agent_tool_payload_compaction_trigger_chars: Number(settings.agent_tool_payload_compaction_trigger_chars ?? 0),
+    agent_tool_prune_trigger_tokens: Number(settings.agent_tool_prune_trigger_tokens ?? 40000),
     agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 16000),
     agent_bash_output_limit_chars: Number(settings.agent_bash_output_limit_chars ?? 20000),
     agent_mcp_text_limit_chars: Number(settings.agent_mcp_text_limit_chars ?? 12000),
+    agent_search_result_limit: Number(settings.agent_search_result_limit ?? 100),
     agent_image_inline_max_bytes: Number(settings.agent_image_inline_max_bytes ?? 250000),
     agent_mcp_call_timeout_ms: Number(settings.agent_mcp_call_timeout_ms ?? 120000),
     agent_recovery_continuation_limit: Number(settings.agent_recovery_continuation_limit ?? 3),
@@ -828,16 +832,25 @@ export function Settings() {
                     description="Compact long transcripts before they exceed model context."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={11}>
+                <AdvancedSettings summary="Budgets and recovery" count={15}>
                   <FormGrid columns={3}>
                     <FormField label="Trigger ratio">
-                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.55} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
+                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
                     </FormField>
                     <FormField label="Keep recent tokens">
                       <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
                     </FormField>
                     <FormField label="Summary tokens">
                       <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
+                    </FormField>
+                    <FormField label="Min savings tokens">
+                      <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? 20000} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
+                    </FormField>
+                    <FormField label="Tool compaction chars">
+                      <NumberStepper min={0} max={10485760} step={10000} value={settings.agent_tool_payload_compaction_trigger_chars ?? 0} ariaLabel="Tool payload compaction character trigger" onChange={(value) => setSettings({ ...settings, agent_tool_payload_compaction_trigger_chars: value })} />
+                    </FormField>
+                    <FormField label="Tool prune tokens">
+                      <NumberStepper min={0} max={500000} step={1000} value={settings.agent_tool_prune_trigger_tokens ?? 40000} ariaLabel="Tool result prune token trigger" onChange={(value) => setSettings({ ...settings, agent_tool_prune_trigger_tokens: value })} />
                     </FormField>
                     <FormField label="Tool text chars">
                       <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
@@ -847,6 +860,9 @@ export function Settings() {
                     </FormField>
                     <FormField label="MCP text chars">
                       <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 12000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
+                    </FormField>
+                    <FormField label="Search result limit">
+                      <NumberStepper min={10} max={1000} step={10} value={settings.agent_search_result_limit ?? 100} ariaLabel="Search result limit" onChange={(value) => setSettings({ ...settings, agent_search_result_limit: value })} />
                     </FormField>
                     <FormField label="Image bytes">
                       <NumberStepper min={0} max={10485760} step={50000} value={settings.agent_image_inline_max_bytes ?? 250000} ariaLabel="Inline image byte limit" onChange={(value) => setSettings({ ...settings, agent_image_inline_max_bytes: value })} />

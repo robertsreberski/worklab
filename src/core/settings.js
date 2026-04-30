@@ -26,12 +26,16 @@ export const DEFAULT_SETTINGS = {
   assistant_run_timeout_ms: 300000,
   assistant_max_turns: 32,
   agent_compaction_enabled: true,
-  agent_compaction_trigger_ratio: 0.55,
+  agent_compaction_trigger_ratio: 0.85,
   agent_compaction_keep_recent_tokens: 24000,
   agent_compaction_summary_max_tokens: 16000,
+  agent_compaction_min_savings_tokens: 20000,
+  agent_tool_payload_compaction_trigger_chars: 0,
+  agent_tool_prune_trigger_tokens: 40000,
   agent_tool_text_limit_chars: 16000,
   agent_bash_output_limit_chars: 20000,
   agent_mcp_text_limit_chars: 12000,
+  agent_search_result_limit: 100,
   agent_image_inline_max_bytes: 250000,
   agent_mcp_call_timeout_ms: 120000,
   agent_recovery_continuation_limit: 3,
@@ -153,10 +157,18 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 4000, max: 200000 });
     case "agent_compaction_summary_max_tokens":
       return integerInRange(key, value, { min: 1000, max: 64000 });
+    case "agent_compaction_min_savings_tokens":
+      return integerInRange(key, value, { min: 0, max: 500000 });
+    case "agent_tool_payload_compaction_trigger_chars":
+      return integerInRange(key, value, { min: 0, max: 10 * 1024 * 1024 });
+    case "agent_tool_prune_trigger_tokens":
+      return integerInRange(key, value, { min: 0, max: 500000 });
     case "agent_tool_text_limit_chars":
     case "agent_bash_output_limit_chars":
     case "agent_mcp_text_limit_chars":
       return integerInRange(key, value, { min: 1000, max: 200000 });
+    case "agent_search_result_limit":
+      return integerInRange(key, value, { min: 10, max: 1000 });
     case "agent_image_inline_max_bytes":
       return integerInRange(key, value, { min: 0, max: 10 * 1024 * 1024 });
     case "agent_mcp_call_timeout_ms":
