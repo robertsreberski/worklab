@@ -1,7 +1,25 @@
 import { newAutomationId } from "../../core/ids.js";
 import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../../core/automations.js";
 import { resolveTaskRow } from "../../core/task-keys.js";
-import { deleteAutomation, getTaskAutomation, listTaskAutomations } from "../../core/db/queries/automations.js";
+import {
+  deleteAutomation,
+  getAutomationById,
+  getAutomationIdAndTaskId,
+  getTaskAutomation,
+  insertAutomation,
+  listAllAutomations,
+  listTaskAutomations,
+  updateAutomation,
+  updateTaskBoundAutomation,
+} from "../../core/db/queries/automations.js";
+import {
+  countAutomationRunsSince,
+  listAutomationRecentRuns,
+  listAutomationRecentTriggers,
+  listAutomationRunIds,
+} from "../../core/db/queries/automation-audit.js";
+import { deleteRunById } from "../../core/db/queries/runs.js";
+import { getTaskKeyById, getTaskTitle } from "../../core/db/queries/tasks.js";
 
 function validateAutomationInput(body = {}) {
   if (!body.title || typeof body.title !== "string" || !body.title.trim()) {
@@ -52,51 +70,24 @@ function runRowToPayload(row) {
 }
 
 function recentRuns(db, automationId, limit = 12) {
-  return db.prepare(`
-    SELECT
-      r.*,
-      ar.automation_id,
-      ar.trigger_type,
-      ar.fired_at,
-      l.model,
-      l.duration_ms,
-      l.input_tokens,
-      l.output_tokens,
-      l.cost_usd
-    FROM automation_runs ar
-    JOIN task_runs r ON r.id = ar.run_id
-    LEFT JOIN agent_logs l ON l.task_run_id = r.id
-    WHERE ar.automation_id = ?
-    ORDER BY ar.fired_at DESC
-    LIMIT ?
-  `).all(automationId, limit).map(runRowToPayload);
+  return listAutomationRecentRuns(db, automationId, limit).map(runRowToPayload);
 }
 
 function recentTriggers(db, automationId, limit = 12) {
-  return db.prepare(`
-    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
-    FROM automation_triggers
-    WHERE automation_id = ?
-    ORDER BY fired_at DESC, rowid DESC
-    LIMIT ?
-  `).all(automationId, limit);
+  return listAutomationRecentTriggers(db, automationId, limit);
 }
 
 function taskTitle(db, taskId) {
-  if (!taskId) return null;
-  return db.prepare("SELECT title FROM tasks WHERE id = ?").get(taskId)?.title || null;
+  return taskId ? getTaskTitle(db, taskId) : null;
 }
 
 function taskKey(db, taskId) {
-  if (!taskId) return null;
-  return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId)?.task_key || null;
+  return taskId ? getTaskKeyById(db, taskId) : null;
 }
 
 function listSummary(db, automation) {
   const windowStart = Date.now() - 30 * 86_400_000;
-  const recent30d = db.prepare(
-    "SELECT COUNT(*) AS count FROM automation_runs WHERE automation_id = ? AND fired_at >= ?",
-  ).get(automation.id, windowStart)?.count || 0;
+  const recent30d = countAutomationRunsSince(db, automation.id, windowStart);
   return {
     id: automation.id,
     task_id: automation.task_id || null,
@@ -158,15 +149,12 @@ function sendError(res, error, fallbackStatus = 400) {
 }
 
 function removeAutomationCascade(db, automationId) {
-  const existing = db.prepare("SELECT id, task_id FROM automations WHERE id = ?").get(automationId);
+  const existing = getAutomationIdAndTaskId(db, automationId);
   if (!existing) return false;
   db.transaction(() => {
-    const runs = existing.task_id
-      ? []
-      : db.prepare("SELECT run_id FROM automation_runs WHERE automation_id = ?").all(automationId);
+    const runs = existing.task_id ? [] : listAutomationRunIds(db, automationId);
     deleteAutomation(db, automationId);
-    const deleteRun = db.prepare("DELETE FROM task_runs WHERE id = ?");
-    for (const run of runs) deleteRun.run(run.run_id);
+    for (const run of runs) deleteRunById(db, run.run_id);
   })();
   return existing;
 }
@@ -192,25 +180,23 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       const trigger = normalizeTrigger(req.body?.trigger || {});
       const enabled = req.body?.enabled !== false;
       const next_fire_at = enabled ? nextFireAt(trigger, now) : null;
-      db.prepare(`
-        INSERT INTO automations (
-          id, task_id, title, instructions, agent_name, tags, trigger_json,
-          enabled, next_fire_at, created_at, updated_at
-        ) VALUES (?, ?, ?, '', NULL, '[]', ?, ?, ?, ?, ?)
-      `).run(
+      insertAutomation(db, {
         id,
-        task.id,
-        task.title,
-        JSON.stringify(trigger),
-        enabled ? 1 : 0,
-        next_fire_at,
-        now,
-        now,
-      );
+        taskId: task.id,
+        title: task.title,
+        instructions: "",
+        agentName: null,
+        tagsJson: "[]",
+        triggerJson: JSON.stringify(trigger),
+        enabled,
+        nextFireAt: next_fire_at,
+        createdAt: now,
+        updatedAt: now,
+      });
       automationManager?.refresh?.();
       broker?.broadcast?.("global", { type: "automation_created", id, taskId: task.id });
       broker?.broadcast?.("global", { type: "task_updated", id: task.id });
-      res.status(201).json({ automation: taskAutomationPayload(db, rowToAutomation(db.prepare("SELECT * FROM automations WHERE id = ?").get(id))) });
+      res.status(201).json({ automation: taskAutomationPayload(db, rowToAutomation(getAutomationById(db, id))) });
     } catch (error) {
       sendError(res, error);
     }
@@ -235,15 +221,19 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       const trigger = normalizeTrigger(nextTrigger || {});
       const enabled = "enabled" in (req.body || {}) ? req.body.enabled !== false : current.enabled !== false;
       const nextFire = enabled ? nextFireAt(trigger, now) : null;
-      db.prepare(`
-        UPDATE automations
-        SET title = ?, trigger_json = ?, enabled = ?, next_fire_at = ?, updated_at = ?
-        WHERE id = ? AND task_id = ?
-      `).run(task.title, JSON.stringify(trigger), enabled ? 1 : 0, nextFire, now, req.params.id, task.id);
+      updateTaskBoundAutomation(db, {
+        id: req.params.id,
+        taskId: task.id,
+        title: task.title,
+        triggerJson: JSON.stringify(trigger),
+        enabled,
+        nextFireAt: nextFire,
+        updatedAt: now,
+      });
       automationManager?.refresh?.();
       broker?.broadcast?.("global", { type: "automation_updated", id: req.params.id, taskId: task.id });
       broker?.broadcast?.("global", { type: "task_updated", id: task.id });
-      res.json({ automation: taskAutomationPayload(db, rowToAutomation(db.prepare("SELECT * FROM automations WHERE id = ?").get(req.params.id))) });
+      res.json({ automation: taskAutomationPayload(db, rowToAutomation(getAutomationById(db, req.params.id))) });
     } catch (error) {
       sendError(res, error);
     }
@@ -282,7 +272,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
   });
 
   app.get("/api/automations", (_req, res) => {
-    const rows = db.prepare("SELECT * FROM automations ORDER BY updated_at DESC, rowid DESC").all();
+    const rows = listAllAutomations(db);
     const automations = rows.map((row) => rowToAutomation(row)).map((automation) => listSummary(db, automation));
     res.json({ automations });
   });
@@ -295,39 +285,35 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       const trigger = normalizeTrigger(req.body?.trigger || {});
       const enabled = req.body?.enabled !== false;
       const next_fire_at = enabled ? nextFireAt(trigger, now) : null;
-      db.prepare(`
-        INSERT INTO automations (
-          id, title, instructions, agent_name, tags, trigger_json,
-          enabled, next_fire_at, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      insertAutomation(db, {
         id,
-        req.body.title.trim(),
-        req.body.instructions || "",
-        req.body.agent_name || null,
-        JSON.stringify(req.body.tags || []),
-        JSON.stringify(trigger),
-        enabled ? 1 : 0,
-        next_fire_at,
-        now,
-        now,
-      );
+        taskId: null,
+        title: req.body.title.trim(),
+        instructions: req.body.instructions,
+        agentName: req.body.agent_name,
+        tagsJson: JSON.stringify(req.body.tags || []),
+        triggerJson: JSON.stringify(trigger),
+        enabled,
+        nextFireAt: next_fire_at,
+        createdAt: now,
+        updatedAt: now,
+      });
       automationManager?.refresh?.();
       broker?.broadcast?.("global", { type: "automation_created", id });
-      res.status(201).json(detailPayload(db, rowToAutomation(db.prepare("SELECT * FROM automations WHERE id = ?").get(id))));
+      res.status(201).json(detailPayload(db, rowToAutomation(getAutomationById(db, id))));
     } catch (error) {
       res.status(error.status || 400).json({ error: { code: error.code || "validation", message: error.message } });
     }
   });
 
   app.get("/api/automations/:id", (req, res) => {
-    const row = db.prepare("SELECT * FROM automations WHERE id = ?").get(req.params.id);
+    const row = getAutomationById(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "automation not found" } });
     res.json(detailPayload(db, rowToAutomation(row)));
   });
 
   app.patch("/api/automations/:id", (req, res) => {
-    const existing = db.prepare("SELECT * FROM automations WHERE id = ?").get(req.params.id);
+    const existing = getAutomationById(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "automation not found" } });
     const current = rowToAutomation(existing);
     const next = {
@@ -343,32 +329,27 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       const trigger = normalizeTrigger(next.trigger || {});
       const enabled = next.enabled !== false;
       const nextFire = enabled ? nextFireAt(trigger, now) : null;
-      db.prepare(`
-        UPDATE automations
-        SET title = ?, instructions = ?, agent_name = ?, tags = ?,
-            trigger_json = ?, enabled = ?, next_fire_at = ?, updated_at = ?
-        WHERE id = ?
-      `).run(
-        String(next.title).trim(),
-        next.instructions || "",
-        next.agent_name || null,
-        JSON.stringify(next.tags || []),
-        JSON.stringify(trigger),
-        enabled ? 1 : 0,
-        nextFire,
-        now,
-        req.params.id,
-      );
+      updateAutomation(db, {
+        id: req.params.id,
+        title: String(next.title).trim(),
+        instructions: next.instructions,
+        agentName: next.agent_name,
+        tagsJson: JSON.stringify(next.tags || []),
+        triggerJson: JSON.stringify(trigger),
+        enabled,
+        nextFireAt: nextFire,
+        updatedAt: now,
+      });
       automationManager?.refresh?.();
       broker?.broadcast?.("global", { type: "automation_updated", id: req.params.id });
-      res.json(detailPayload(db, rowToAutomation(db.prepare("SELECT * FROM automations WHERE id = ?").get(req.params.id))));
+      res.json(detailPayload(db, rowToAutomation(getAutomationById(db, req.params.id))));
     } catch (error) {
       res.status(error.status || 400).json({ error: { code: error.code || "validation", message: error.message } });
     }
   });
 
   app.delete("/api/automations/:id", (req, res) => {
-    const existing = db.prepare("SELECT id, task_id FROM automations WHERE id = ?").get(req.params.id);
+    const existing = getAutomationIdAndTaskId(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "automation not found" } });
     if (automationManager?.isActive?.(req.params.id)) {
       return res.status(409).json({ error: { code: "automation_running", message: "automation is running" } });
