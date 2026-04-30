@@ -820,6 +820,46 @@ describe("task-watcher", () => {
     });
   });
 
+  it("seeds resume_snapshot from the parent run's transcript_tail_json", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const transcriptTail = {
+      schema: "worklab.transcript-tail.v1",
+      turn_count: 12,
+      turns: [{
+        assistant_text: "I read the tunables",
+        thinking: "checking jump arc",
+        tool_uses: [{ id: "call_1", name: "Read", input_summary: "{\"file_path\":\"/tmp/a.ts\"}" }],
+        tool_results: [{ tool_use_id: "call_1", is_error: false, content: "import { x } from 'y';" }],
+      }],
+    };
+    db.prepare("UPDATE task_runs SET status='error', process_status='failed', failure_kind='provider_unavailable', transcript_tail_json=? WHERE id = ?")
+      .run(JSON.stringify(transcriptTail), runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "terminated",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed.resume_snapshot).toMatchObject(transcriptTail);
+  });
+
   it("does not continue cancelled terminated runs", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });

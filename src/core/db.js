@@ -163,6 +163,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
+  addColumnIfMissing(db, "task_runs", "transcript_tail_json", "transcript_tail_json TEXT");
 }
 
 function normalizeWorkflowState(db) {

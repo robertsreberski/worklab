@@ -20,6 +20,7 @@ import { readSettings } from "./core/settings.js";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
 import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
+import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -244,9 +245,48 @@ async function main() {
     emit(event);
     process.exit(130);
   }
+  function readResumeSnapshotPrefix() {
+    if (!runId) return "";
+    try {
+      const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+      if (!row?.diagnostics_json) return "";
+      const diagnostics = JSON.parse(row.diagnostics_json);
+      const snapshot = diagnostics?.resume_snapshot;
+      if (!snapshot || typeof snapshot !== "object") return "";
+      return renderResumeSnapshot(snapshot);
+    } catch (err) {
+      emit({
+        type: "runtime_warning",
+        warning_kind: "resume_snapshot_read_failed",
+        message: err?.message || String(err),
+      });
+      return "";
+    }
+  }
+
+  function persistTranscriptTail(result) {
+    if (!runId) return;
+    if (!result?.events?.length) return;
+    if (result.failureKind !== "provider_unavailable") return;
+    const partialProgress = !!(result.diagnostics && result.diagnostics.had_partial_progress);
+    if (!partialProgress) return;
+    try {
+      const snapshot = buildTranscriptTailSnapshot(result.events);
+      if (!snapshot) return;
+      db.prepare("UPDATE task_runs SET transcript_tail_json = ? WHERE id = ?")
+        .run(JSON.stringify(snapshot), runId);
+    } catch (err) {
+      emit({
+        type: "runtime_warning",
+        warning_kind: "transcript_tail_persist_failed",
+        message: err?.message || String(err),
+      });
+    }
+  }
   function handleRuntimeStop(result) {
     emitRuntimeWarnings(result);
     if (result.error) {
+      persistTranscriptTail(result);
       emit({
         type: "error",
         message: result.error,
@@ -369,11 +409,16 @@ async function main() {
       mcpServers,
       allowedTools,
       disallowedTools,
-      systemPrompt,
       messages,
       promptDiagnostics,
       effectiveWorkdir,
     } = runInput;
+    let { systemPrompt } = runInput;
+    const resumePrefix = readResumeSnapshotPrefix();
+    if (resumePrefix) {
+      systemPrompt = `${systemPrompt}\n\n${resumePrefix}`;
+      emit({ type: "runtime_warning", warning_kind: "resume_snapshot_applied", message: "Continuing from prior run snapshot." });
+    }
     materializeExecenvRuntimeConfig({ agent, task, systemPrompt });
     if (promptDiagnostics) emit({ type: "prompt_built", diagnostics: promptDiagnostics });
     const model = resolveModel(agent.model);

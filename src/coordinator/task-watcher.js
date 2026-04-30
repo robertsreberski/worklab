@@ -257,9 +257,13 @@ function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) {
   const broadScan = Array.isArray(diagnostics.broad_scan_events) ? diagnostics.broad_scan_events[0] : null;
   const uniqueFiles = [...new Set(changedFiles)].slice(0, 12);
   const errorText = String(res?.error || "").trim();
+  const turnCount = Number(diagnostics.turn_count || diagnostics.turnCount || 0);
+  const piErrorCode = diagnostics.pi_error_code || null;
   const intro = reason === "usage_limit"
     ? `Previous run \`${runId}\` hit the model context limit.`
-    : `Previous run \`${runId}\` ended with a retryable provider error${providerInfo?.subkind ? ` (${providerInfo.subkind})` : ""}.`;
+    : providerInfo?.subkind === "terminated"
+      ? `Previous run \`${runId}\` was interrupted by a provider connection drop${turnCount ? ` after ${turnCount} turn(s)` : ""}${piErrorCode ? ` (${piErrorCode})` : ""}.`
+      : `Previous run \`${runId}\` ended with a retryable provider error${providerInfo?.subkind ? ` (${providerInfo.subkind})` : ""}.`;
   const lines = [
     intro,
     providerInfo?.requestId ? `Provider request ID: ${providerInfo.requestId}` : "",
@@ -918,6 +922,18 @@ export function createTaskWatcher({
     ).run(newCommentId(), taskId, body, Date.now());
   }
 
+  function loadResumeSnapshot(runId) {
+    if (!runId) return null;
+    try {
+      const row = db.prepare("SELECT transcript_tail_json FROM task_runs WHERE id = ?").get(runId);
+      if (!row?.transcript_tail_json) return null;
+      const parsed = safeParseJson(row.transcript_tail_json, null);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
   function patchRunDiagnostics(runId, patch) {
     const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
     if (!row) return;
@@ -1020,6 +1036,9 @@ export function createTaskWatcher({
     const continuationStage = ["plan", "execute"].includes(nextStageValue) ? nextStageValue : stage;
     const attempt = lineage.depth + 1;
     const delayMs = recovery.reason === "usage_limit" ? 0 : providerRecoveryDelay(settings, attempt);
+    const resumeSnapshot = recovery.reason === "provider_retryable"
+      ? loadResumeSnapshot(runId)
+      : null;
     const summary = compactRecoveryRunSummary({
       runId,
       res,
@@ -1079,6 +1098,7 @@ export function createTaskWatcher({
           retryable_provider_error: recovery.providerInfo?.retryable || undefined,
           provider_error_subkind: recovery.providerInfo?.subkind || undefined,
           provider_request_id: recovery.providerInfo?.requestId || undefined,
+          resume_snapshot: resumeSnapshot || undefined,
         },
       });
       patchRunDiagnostics(runId, {

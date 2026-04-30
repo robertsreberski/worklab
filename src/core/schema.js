@@ -149,7 +149,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
   execenv_path TEXT,
   workdir TEXT,
   project_context_hash TEXT,
-  cost_usd REAL
+  cost_usd REAL,
+  transcript_tail_json TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
