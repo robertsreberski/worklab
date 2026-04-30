@@ -44,7 +44,15 @@ function previewThinkingText(event) {
   return event?.text || event?.content || event?.thinking || "";
 }
 
-function mergePreviewThinkingText(current, next) {
+function isTextPreviewEvent(event) {
+  return event?.kind === "text" || event?.type === "text";
+}
+
+function previewText(event) {
+  return event?.text || event?.content || "";
+}
+
+function mergePreviewText(current, next) {
   const left = current || "";
   const right = next || "";
   if (!right) return left;
@@ -71,9 +79,20 @@ export function commanderLivePreviewEvents(events = [], { limit = 2 } = {}) {
       if (!text.trim()) continue;
       const last = preview[preview.length - 1];
       if (isThinkingPreviewEvent(last)) {
-        last.text = mergePreviewThinkingText(previewThinkingText(last), text);
+        last.text = mergePreviewText(previewThinkingText(last), text);
       } else {
         preview.push({ ...event, type: "thinking", text });
+      }
+      continue;
+    }
+    if (isTextPreviewEvent(event)) {
+      const text = previewText(event);
+      if (!text.trim()) continue;
+      const last = preview[preview.length - 1];
+      if (isTextPreviewEvent(last)) {
+        last.text = mergePreviewText(previewText(last), text);
+      } else {
+        preview.push({ ...event, type: "text", text });
       }
       continue;
     }

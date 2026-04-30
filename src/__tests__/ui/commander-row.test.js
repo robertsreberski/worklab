@@ -26,6 +26,30 @@ describe("commander row live preview", () => {
     ]);
   });
 
+  it("coalesces consecutive text fragments", () => {
+    const preview = commanderLivePreviewEvents([
+      { type: "assistant", message: { content: [{ type: "text", text: "Lo" }] } },
+      { type: "assistant", message: { content: [{ type: "text", text: "ading" }] } },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "text", text: "Loading" },
+    ]);
+  });
+
+  it("replaces streamed text fragments with a completed snapshot", () => {
+    const fullText = "Checking output and preparing the next edit.";
+    const preview = commanderLivePreviewEvents([
+      { type: "text", text: "Checking output" },
+      { type: "text", text: " and preparing" },
+      { type: "text", text: fullText },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "text", text: fullText },
+    ]);
+  });
+
   it("limits the preview to the latest two events", () => {
     const preview = commanderLivePreviewEvents([
       { type: "text", text: "first" },

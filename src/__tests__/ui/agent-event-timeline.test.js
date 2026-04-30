@@ -17,6 +17,32 @@ describe("agent event timeline normalization", () => {
     ]);
   });
 
+  it("coalesces consecutive text fragments", () => {
+    const events = normaliseAgentTimelineEvents([
+      { type: "text", text: "Hel" },
+      { type: "text", text: "lo" },
+      { type: "thinking", text: "Done" },
+    ]);
+
+    expect(events).toEqual([
+      { type: "text", text: "Hello" },
+      { type: "thinking", text: "Done" },
+    ]);
+  });
+
+  it("deduplicates completed text snapshots after streamed fragments", () => {
+    const fullText = "Checking output and preparing the next edit.";
+    const events = normaliseAgentTimelineEvents([
+      { type: "text", text: "Checking output" },
+      { type: "text", text: " and preparing" },
+      { type: "text", text: fullText },
+    ]);
+
+    expect(events).toEqual([
+      { type: "text", text: fullText },
+    ]);
+  });
+
   it("deduplicates Codex completed thinking snapshots after streamed fragments", () => {
     const fullText = "**Correcting structure output**\n\nI realized I emitted a structured progress object.";
     const events = normaliseAgentTimelineEvents([
