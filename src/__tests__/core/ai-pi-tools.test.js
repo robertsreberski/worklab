@@ -23,10 +23,11 @@ describe("pi MCP tool helpers", () => {
     expect(content).toEqual([{ type: "text", text: "ok" }]);
   });
 
-  it("hard-caps model-supplied built-in tool budgets for execution and schemas", () => {
+  it("hard-caps model-supplied built-in tool budgets during execution without schema maxima", () => {
     const toolLimits = {
       toolTextLimitChars: 16000,
       bashOutputLimitChars: 20000,
+      searchResultLimit: 100,
     };
 
     expect(normalizePiBuiltinToolParams("Read", {
@@ -42,16 +43,38 @@ describe("pi MCP tool helpers", () => {
       max_output_chars: 50000,
     }, { cwd: "/repo", toolLimits })).toMatchObject({
       command: "npm test",
+      workdir: "/repo",
       timeout: 120000,
       max_output_chars: 20000,
+    });
+    expect(normalizePiBuiltinToolParams("Glob", {
+      pattern: "**/*",
+      max_matches: 5000,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      pattern: "**/*",
+      path: undefined,
+      limit: 100,
+      workdir: "/repo",
+    });
+    expect(normalizePiBuiltinToolParams("Grep", {
+      pattern: "needle",
+      output_mode: "content",
+      max_matches: 5000,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      pattern: "needle",
+      output_mode: "content",
+      head_limit: 100,
+      workdir: "/repo",
     });
 
     const tools = getPiBuiltinTools(["Read", "Bash"], { toolLimits });
     const readSchema = tools.find((tool) => tool.name === "Read").parameters;
     const bashSchema = tools.find((tool) => tool.name === "Bash").parameters;
-    expect(readSchema.properties.max_output_chars.maximum).toBe(16000);
-    expect(bashSchema.properties.max_output_chars.maximum).toBe(20000);
-    expect(bashSchema.properties.timeout.maximum).toBe(120000);
+    expect(readSchema.properties.max_output_chars.maximum).toBeUndefined();
+    expect(readSchema.properties.start_line.type).toBe("integer");
+    expect(bashSchema.properties.max_output_chars.maximum).toBeUndefined();
+    expect(bashSchema.properties.timeout.maximum).toBeUndefined();
+    expect(bashSchema.properties.workdir.type).toBe("string");
   });
 
   it("resolves stdio MCP cwd from the run workdir", () => {

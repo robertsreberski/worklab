@@ -4,7 +4,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
 import {
   bashToolImpl,
   editToolImpl,
@@ -54,23 +54,26 @@ function absolutizePath(value, cwd) {
   return resolve(cwd, value);
 }
 
+function isInsidePath(root, target) {
+  if (!root || !target) return false;
+  const rel = relative(resolve(root), resolve(target));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function normalizeWorkdir(value, cwd) {
+  const base = resolve(cwd || process.env.WORKLAB_WORKSPACE || process.cwd());
+  const resolved = value ? resolve(absolutizePath(value, base)) : base;
+  return isInsidePath(base, resolved) ? resolved : base;
+}
+
 function withAbsolutePaths(name, params, cwd) {
   const next = { ...(params || {}) };
   if (["Read", "Write", "Edit"].includes(name)) next.file_path = absolutizePath(next.file_path, cwd);
   if (["Glob", "Grep"].includes(name)) next.path = absolutizePath(next.path, cwd);
-  return next;
-}
-
-async function withWorkspaceEnv(cwd, fn) {
-  if (!cwd) return fn();
-  const previous = process.env.WORKLAB_WORKSPACE;
-  process.env.WORKLAB_WORKSPACE = cwd;
-  try {
-    return await fn();
-  } finally {
-    if (previous === undefined) delete process.env.WORKLAB_WORKSPACE;
-    else process.env.WORKLAB_WORKSPACE = previous;
+  if (["Read", "Write", "Edit", "Glob", "Grep", "Bash"].includes(name)) {
+    next.workdir = normalizeWorkdir(next.workdir, cwd);
   }
+  return next;
 }
 
 function toolText(result) {
@@ -139,6 +142,15 @@ function withToolLimits(name, params, limits = {}) {
   if (["Read", "Glob", "Grep", "WebFetch"].includes(name)) {
     next.max_output_chars = limitedNumber(next.max_output_chars, limits.toolTextLimitChars || 16000);
   }
+  if (name === "Glob") {
+    next.limit = limitedNumber(next.limit ?? next.max_matches, limits.searchResultLimit || 100);
+    delete next.max_matches;
+  }
+  if (name === "Grep") {
+    next.head_limit = limitedNumber(next.head_limit ?? next.max_matches, limits.searchResultLimit || 100);
+    next.output_mode = next.output_mode || "files_with_matches";
+    delete next.max_matches;
+  }
   if (name === "Bash") {
     next.max_output_chars = limitedNumber(next.max_output_chars, limits.bashOutputLimitChars || limits.toolTextLimitChars || 20000);
     next.timeout = limitedNumber(next.timeout, limits.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
@@ -150,10 +162,8 @@ export function normalizePiBuiltinToolParams(name, params, { cwd, toolLimits } =
   return withToolLimits(name, withAbsolutePaths(name, params, cwd), toolLimits);
 }
 
-function cappedIntegerSchema(maximum) {
-  const schema = { type: "integer" };
-  if (Number.isFinite(Number(maximum)) && Number(maximum) > 0) schema.maximum = Number(maximum);
-  return schema;
+function integerSchema() {
+  return { type: "integer" };
 }
 
 function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent, toolLimits } = {}) {
@@ -184,7 +194,7 @@ function createBuiltinTool(name, label, description, parameters, execute, { cwd,
         }));
       }
 
-      const raw = await withWorkspaceEnv(cwd, () => execute(normalized));
+      const raw = await execute(normalized);
       const text = toolText(raw);
       if (isFileEdit && editState) {
         const failed = isErrorText(text);
@@ -248,13 +258,14 @@ export function createStructuredOutputTool(outputSchema, onStructuredOutput) {
 }
 
 export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent, toolLimits } = {}) {
-  const textLimitSchema = cappedIntegerSchema(toolLimits?.toolTextLimitChars || 16000);
-  const bashLimitSchema = cappedIntegerSchema(toolLimits?.bashOutputLimitChars || toolLimits?.toolTextLimitChars || 20000);
-  const bashTimeoutSchema = cappedIntegerSchema(toolLimits?.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
+  const textLimitSchema = integerSchema();
+  const bashLimitSchema = integerSchema();
+  const bashTimeoutSchema = integerSchema();
   const all = {
     Read: createBuiltinTool("Read", "Read", "Read a local file with line numbers.", objectSchema({
       file_path: { type: "string" },
       offset: { type: "integer" },
+      start_line: { type: "integer" },
       limit: { type: "integer" },
       max_output_chars: textLimitSchema,
     }, ["file_path"]), readToolImpl, { cwd, onEvent, toolLimits }),
@@ -271,20 +282,29 @@ export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd,
     Glob: createBuiltinTool("Glob", "Glob", "Find files matching a pattern.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
+      limit: { type: "integer" },
+      offset: { type: "integer" },
       max_matches: { type: "integer" },
       max_output_chars: textLimitSchema,
     }, ["pattern"]), globToolImpl, { cwd, onEvent, toolLimits }),
-    Grep: createBuiltinTool("Grep", "Grep", "Search file contents with grep.", objectSchema({
+    Grep: createBuiltinTool("Grep", "Grep", "Search file contents with ripgrep. Defaults to returning matching file paths; use output_mode='content' only for exact snippets.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
       glob: { type: "string" },
+      type: { type: "string" },
+      output_mode: { type: "string", enum: ["files_with_matches", "content", "count"] },
       context: { type: "integer" },
       case_insensitive: { type: "boolean" },
+      multiline: { type: "boolean" },
+      head_limit: { type: "integer" },
+      offset: { type: "integer" },
       max_matches: { type: "integer" },
       max_output_chars: textLimitSchema,
     }, ["pattern"]), grepToolImpl, { cwd, onEvent, toolLimits }),
     Bash: createBuiltinTool("Bash", "Bash", "Execute a shell command in the Worklab workspace.", objectSchema({
       command: { type: "string" },
+      workdir: { type: "string" },
+      description: { type: "string" },
       timeout: bashTimeoutSchema,
       max_output_chars: bashLimitSchema,
     }, ["command"]), bashToolImpl, { cwd, onEvent, toolLimits }),
