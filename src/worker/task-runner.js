@@ -74,7 +74,7 @@ export async function runTask(ctx) {
     });
     if (result.cancelled) return { kind: "task", cancelled: true };
     if (result.error) {
-      return { kind: "task", error: result.error, failureKind: result.failureKind };
+      return { kind: "task", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
     }
     const parsedResult = resultFromResponseOrFallback(result, {
       stage: task.stage || mode,

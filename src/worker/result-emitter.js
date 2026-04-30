@@ -46,7 +46,12 @@ export function emitFinalResult(ctx, result) {
     return 130;
   }
   if (result.error) {
-    emit({ type: "error", message: result.error, failureKind: result.failureKind });
+    emit({
+      type: "error",
+      message: result.error,
+      failureKind: result.failureKind,
+      ...(result.errorDetails ? { details: result.errorDetails } : {}),
+    });
     return 1;
   }
 

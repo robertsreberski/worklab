@@ -253,6 +253,44 @@ describe("spawnWorker", () => {
     expect(run).toMatchObject({ failure_kind: "provider_unavailable", error_text: "boom" });
   });
 
+  it("captures error.details and merges diagnostics from worker error events", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [{
+        type: "error",
+        message: "terminated",
+        failureKind: "provider_unavailable",
+        details: {
+          pi_stop_reason: "error",
+          last_tool_name: "Bash",
+          last_text_excerpt: "Reading files...",
+          had_partial_progress: true,
+        },
+        diagnostics: { custom_field: "x" },
+      }],
+      exitCode: 1,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+    });
+    const result = await handle.done;
+    expect(result.failureKind).toBe("provider_unavailable");
+    const run = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    const diag = JSON.parse(run.diagnostics_json);
+    expect(diag.error_details).toMatchObject({
+      pi_stop_reason: "error",
+      last_tool_name: "Bash",
+      last_text_excerpt: "Reading files...",
+      had_partial_progress: true,
+    });
+    expect(diag.custom_field).toBe("x");
+  });
+
   it("stores full raw events while truncating large tool results in display logs", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

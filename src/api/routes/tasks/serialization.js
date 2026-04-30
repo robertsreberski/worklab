@@ -378,8 +378,10 @@ function rowToRun(row) {
   } = row;
   const hasLog = Boolean(log_id);
   const artifacts = artifactsForRunRow({ ...run, artifacts_json, artifact_summary_json });
+  const diagnostics = safeParseJson(diagnostics_json, null);
   return {
     ...run,
+    parent_run_id: run.parent_run_id || null,
     process_status: run.process_status || "running",
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
     artifact_paths: artifactPaths(artifacts),
@@ -387,7 +389,8 @@ function rowToRun(row) {
     artifact_summary: safeParseJson(artifact_summary_json, null) || runArtifactSummary(artifacts),
     result: run.result_json ? JSON.parse(run.result_json) : null,
     warnings: safeParseJson(warnings_json, []),
-    diagnostics: safeParseJson(diagnostics_json, null),
+    diagnostics,
+    error_details: (diagnostics && typeof diagnostics === "object" && diagnostics.error_details) || null,
     cost_usd: run.cost_usd ?? log_cost_usd ?? null,
     log: hasLog ? {
       id: log_id,

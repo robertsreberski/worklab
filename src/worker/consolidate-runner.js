@@ -45,7 +45,7 @@ export async function runConsolidate(ctx) {
     });
     if (result.cancelled) return { kind: "consolidate", cancelled: true };
     if (result.error) {
-      return { kind: "consolidate", error: result.error, failureKind: result.failureKind };
+      return { kind: "consolidate", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
     }
     const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
     return {
