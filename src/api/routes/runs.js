@@ -1,6 +1,7 @@
 import { newCommentId } from "../../core/ids.js";
-import { getRunById } from "../../core/db/queries/runs.js";
+import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
+import { insertHumanComment } from "../../core/db/queries/comments.js";
 import { normalizeLiveInputBody, supportsLiveInputProvider } from "../../core/live-input.js";
 import { artifactPaths, artifactsForRunRow, runArtifactSummary } from "../../core/run-artifacts.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -99,10 +100,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
 
       const now = Date.now();
       const commentId = newCommentId();
-      db.prepare(
-        `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-         VALUES (?, ?, 'human', ?, ?)`,
-      ).run(commentId, row.task_id, normalized.body, now);
+      insertHumanComment(db, { id: commentId, taskId: row.task_id, body: normalized.body, createdAt: now });
       broker.broadcast("global", { type: "task_updated", id: row.task_id });
 
       const delivery = await watcher.sendRunMessage(row.id, {
@@ -129,7 +127,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
   });
 
   app.get("/api/runs/:id/raw-log", (req, res) => {
-    const row = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(req.params.id);
+    const row = getRunRawOutputPath(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     if (!row.raw_output_path) {
       return res.status(404).json({ error: { code: "not_found", message: "raw log not available" } });

@@ -13,6 +13,8 @@ import {
   updateProvider,
   upsertModel,
 } from "../../core/providers.js";
+import { countModelsForProvider } from "../../core/db/queries/providers.js";
+import { listAgentModelRefs } from "../../core/db/queries/agents.js";
 
 function error(res, status, code, message) {
   return res.status(status).json({ error: { code, message } });
@@ -31,15 +33,10 @@ function modelRunStatus(provider, model, capabilities = model.capabilities) {
 
 export function registerProviderRoutes(app, { db, dataDir, broker }) {
   app.get("/api/providers", (_req, res) => {
-    const providers = listProviders({ db, dataDir }).map((provider) => {
-      const summary = db.prepare(
-        "SELECT COUNT(*) AS model_count FROM custom_models WHERE provider_id = ?",
-      ).get(provider.id);
-      return {
-        ...provider,
-        model_count: summary?.model_count || 0,
-      };
-    });
+    const providers = listProviders({ db, dataDir }).map((provider) => ({
+      ...provider,
+      model_count: countModelsForProvider(db, provider.id),
+    }));
     res.json({ providers });
   });
 
@@ -160,8 +157,7 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
       return error(res, 404, "not_found", "provider not found");
     }
     const prefix = `vercel:${req.params.id}:`;
-    const rows = db.prepare("SELECT name, display_name, model, enabled FROM agents").all();
-    const agents = rows.filter((row) => (row.model || "").startsWith(prefix));
+    const agents = listAgentModelRefs(db).filter((row) => (row.model || "").startsWith(prefix));
     res.json({ agents });
   });
 }

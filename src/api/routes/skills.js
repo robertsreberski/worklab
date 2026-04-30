@@ -10,6 +10,10 @@ import {
 } from "../../core/skills.js";
 import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
 import { parseStoredAllowlist, storedAllowlistMode } from "../../core/agent-allowlists.js";
+import {
+  listAgentSkillsAllowlists,
+  listAgentSkillsAllowlistsWithNames,
+} from "../../core/db/queries/agents.js";
 
 function serializeSkill(meta, body) {
   const yamlLines = ["---"];
@@ -51,7 +55,7 @@ export function registerSkillRoutes(app, { dataDir, db }) {
 
   app.get("/api/skills", (_req, res) => {
     const agents = db
-      ? db.prepare("SELECT skills_allowlist, skills_allowlist_mode FROM agents").all().map((row) => ({
+      ? listAgentSkillsAllowlists(db).map((row) => ({
         list: parseStoredAllowlist(row.skills_allowlist),
         mode: storedAllowlistMode(row.skills_allowlist_mode),
       }))
@@ -160,7 +164,7 @@ export function registerSkillRoutes(app, { dataDir, db }) {
     if (!db) return res.json({ explicit: [], openAllowlist: 0 });
     const explicit = [];
     let openAllowlist = 0;
-    for (const row of db.prepare("SELECT name, display_name, skills_allowlist, skills_allowlist_mode FROM agents").all()) {
+    for (const row of listAgentSkillsAllowlistsWithNames(db)) {
       const allow = parseStoredAllowlist(row.skills_allowlist);
       if (storedAllowlistMode(row.skills_allowlist_mode) === "all") { openAllowlist++; continue; }
       if (allow.includes(req.params.name)) {
