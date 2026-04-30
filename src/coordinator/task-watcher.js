@@ -72,56 +72,14 @@ import {
   looksLikePlanBody,
 } from "./watcher/delegation-handler.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
-
-function runProcessStatus(runOrResult) {
-  return runOrResult?.processStatus || runOrResult?.process_status || "running";
-}
-
-function safeParseJson(value, fallback) {
-  try {
-    const parsed = JSON.parse(value || "");
-    return parsed == null ? fallback : parsed;
-  } catch {
-    return fallback;
-  }
-}
-
-function modeForStage(stage) {
-  if (stage === "plan") return "plan";
-  return stage === "review" ? "review" : "execute";
-}
+import {
+  buildFallbackResult,
+  modeForStage,
+  runProcessStatus,
+  safeParseJson,
+} from "./watcher/run-handler.js";
 
 const AUTO_RUN_POLICY = "auto_plan_execute";
-
-function buildFallbackResult({ stage, mode, res }) {
-  if (stage === "review" || mode === "review") {
-    // Worker's reviewResultFromText handles the verdict-line parse already; if
-    // we still don't have a worklab_result here it means the reviewer emitted
-    // neither valid JSON nor a usable VERDICT line. Returning null causes
-    // handleSuccessfulExit to escalate via handleFailedExit (failure_kind
-    // "invalid_result"). DO NOT synthesise an "advance" here — that would
-    // silently approve the reviewer's broken output.
-    const verdictEvent = Array.isArray(res.events)
-      ? res.events.find((event) => event?.type === "verdict")
-      : null;
-    const verdict = verdictEvent?.verdict || parseVerdict(res.finalText).verdict;
-    const notes = verdictEvent?.notes || parseVerdict(res.finalText).notes || "";
-    if (verdict === "APPROVE") {
-      return synthesizeWorklabResult({ stage: "review", decision: "approve", summary: notes || "Approved", details: res.finalText || "" });
-    }
-    if (verdict === "REJECT") {
-      return synthesizeWorklabResult({ stage: "review", decision: "reject", summary: notes || "Rejected", details: res.finalText || "" });
-    }
-    return null;
-  }
-  if (!String(res.finalText || "").trim()) return null;
-  return synthesizeWorklabResult({
-    stage,
-    decision: "advance",
-    summary: res.finalText ? String(res.finalText).trim().slice(0, 500) : "Run completed",
-    details: res.finalText || "",
-  });
-}
 
 export function createTaskWatcher({
   db,
