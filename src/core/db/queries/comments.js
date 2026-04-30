@@ -23,6 +23,13 @@ export function insertSystemComment(db, { id, taskId, body, createdAt }) {
   ).run(id, taskId, body, createdAt);
 }
 
+export function insertHumanComment(db, { id, taskId, body, createdAt }) {
+  db.prepare(
+    `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
+     VALUES (?, ?, 'human', ?, ?)`,
+  ).run(id, taskId, body, createdAt);
+}
+
 export function insertAuthoredComment(db, { id, taskId, authorType, authorId, body, createdAt }) {
   db.prepare(
     `INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)

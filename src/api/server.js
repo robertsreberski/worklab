@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import { SCHEMA_VERSION } from "../core/schema.js";
+import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
 import { createSseBroker } from "./sse.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
 import { registerSettingsRoutes } from "./routes/settings.js";
@@ -24,24 +25,6 @@ const DEFAULT_SLOW_API_MS = 250;
 function slowApiThresholdMs() {
   const value = Number(process.env.WORKLAB_SLOW_API_MS || DEFAULT_SLOW_API_MS);
   return Number.isFinite(value) && value >= 0 ? value : DEFAULT_SLOW_API_MS;
-}
-
-function readSchemaVersion(db) {
-  if (!db) return null;
-  try {
-    return db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get()?.value || null;
-  } catch {
-    return null;
-  }
-}
-
-function tableExists(db, table) {
-  if (!db) return false;
-  try {
-    return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
-  } catch {
-    return false;
-  }
 }
 
 function apiTimingMiddleware(logger) {
@@ -96,7 +79,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     uptime_ms: Math.round(process.uptime() * 1000),
     schema: {
       expected: SCHEMA_VERSION,
-      actual: readSchemaVersion(db),
+      actual: getSchemaVersion(db),
     },
     routes: {
       projects: tableExists(db, "projects"),

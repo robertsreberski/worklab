@@ -1,3 +1,5 @@
+import { listActivity, summarizeActivity } from "../../core/db/queries/activity.js";
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function parseTimeFilter(value, { endOfDay = false } = {}) {
@@ -56,47 +58,11 @@ export function registerActivityRoutes(app, { db }) {
       listFilters.unshift("r.started_at < ?");
       listParams.unshift(cursor);
     }
-    const cols = `
-      r.*,
-      t.title AS task_title,
-      t.task_key AS task_key,
-      ar.automation_id,
-      ar.trigger_type AS automation_trigger_type,
-      ar.fired_at AS automation_fired_at,
-      a.title AS automation_title,
-      l.model,
-      l.effort,
-      l.input_tokens,
-      l.output_tokens,
-      l.cache_read_tokens,
-      l.cache_creation_tokens,
-      COALESCE(r.cost_usd, l.cost_usd) AS cost_usd,
-      l.duration_ms,
-      l.num_turns
-    `;
-    const sql = `SELECT ${cols} FROM task_runs r
-      LEFT JOIN tasks t ON t.id = r.task_id
-      LEFT JOIN automation_runs ar ON ar.run_id = r.id
-      LEFT JOIN automations a ON a.id = ar.automation_id
-      LEFT JOIN agent_logs l ON l.task_run_id = r.id
-      ${listFilters.length ? `WHERE ${listFilters.join(" AND ")}` : ""}
-      ORDER BY r.started_at DESC LIMIT ?`;
-    const rows = db.prepare(sql).all(...listParams, limit + 1);
+    const rows = listActivity(db, { filters: listFilters, params: listParams, limit: limit + 1 });
     const items = rows.slice(0, limit);
     const nextCursor = rows.length > limit ? items[items.length - 1].started_at : null;
 
-    const summarySql = `
-      SELECT
-        COUNT(*) AS run_count,
-        COUNT(COALESCE(r.cost_usd, l.cost_usd)) AS costed_run_count,
-        COALESCE(SUM(COALESCE(r.cost_usd, l.cost_usd)), 0) AS total_cost_usd,
-        SUM(CASE WHEN r.status = 'running' OR r.process_status = 'running' THEN 1 ELSE 0 END) AS running_count,
-        SUM(CASE WHEN r.status IN ('error', 'failed') OR r.process_status IN ('error', 'failed') THEN 1 ELSE 0 END) AS error_count
-      FROM task_runs r
-      LEFT JOIN agent_logs l ON l.task_run_id = r.id
-      ${baseFilters.length ? `WHERE ${baseFilters.join(" AND ")}` : ""}
-    `;
-    const row = db.prepare(summarySql).get(...baseParams);
+    const row = summarizeActivity(db, { filters: baseFilters, params: baseParams });
     const costedRunCount = Number(row?.costed_run_count || 0);
     const totalCostUsd = Number(row?.total_cost_usd || 0);
     const summary = row ? {

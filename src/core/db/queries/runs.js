@@ -6,6 +6,10 @@ export function getRunById(db, runId) {
   return db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
 }
 
+export function getRunRawOutputPath(db, runId) {
+  return db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+}
+
 export function getRunCoreFields(db, runId) {
   return db
     .prepare("SELECT id, process_status, status, provider_kind FROM task_runs WHERE id = ?")
