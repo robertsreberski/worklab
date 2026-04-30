@@ -40,7 +40,7 @@ import { MarkdownContent } from "../components/Markdown.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../lib/runFormatting.js";
-import { artifactDeltaLabel, buildRunArtifactTree, extractRunArtifacts, runArtifactSummary } from "../lib/runArtifacts.js";
+import { aggregateRunArtifacts, artifactDeltaLabel, buildRunArtifactTree, extractRunArtifacts, runArtifactSummary } from "../lib/runArtifacts.js";
 import { collapseDuplicateParagraphs, normalizeCommentText, shouldHideComment } from "../lib/commentFormatting.js";
 
 function formatDate(v) { return v ? new Date(v).toLocaleString() : null; }
@@ -900,11 +900,13 @@ function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   );
 }
 
-function runArtifactsTitle(run) {
-  if (!run) return "";
-  const status = run.process_status || run.status;
-  const phase = formatRunSummaryTitle(run);
-  return [phase, status === "running" ? "running" : null].filter(Boolean).join(" · ");
+function taskArtifactsTitle(task, runningRun) {
+  const summary = task?.artifact_summary || {};
+  const runCount = Number(summary.run_count || 0);
+  const parts = ["Task total"];
+  if (runCount > 0) parts.push(`${runCount} run${runCount === 1 ? "" : "s"}`);
+  if (runningRun) parts.push("live run included");
+  return parts.join(" · ");
 }
 
 function RunArtifactMeta({ node }) {
@@ -920,11 +922,18 @@ function RunArtifactMeta({ node }) {
   return null;
 }
 
-function RunArtifactsSection({ run }) {
-  const processStatus = run?.process_status || run?.status;
-  const isStreaming = processStatus === "running";
-  const { events, loading } = useRunStream(run?.id, { subscribe: isStreaming });
-  const artifacts = useMemo(() => extractRunArtifacts(events), [events]);
+function RunArtifactsSection({ task, runningRun }) {
+  const isStreaming = Boolean(runningRun);
+  const { events, loading } = useRunStream(runningRun?.id, { subscribe: isStreaming });
+  const liveArtifacts = useMemo(() => extractRunArtifacts(events), [events]);
+  const artifacts = useMemo(() => {
+    const taskArtifacts = Array.isArray(task?.artifacts) ? task.artifacts : [];
+    if (!liveArtifacts.length) return taskArtifacts;
+    return aggregateRunArtifacts([
+      { artifacts: taskArtifacts },
+      { id: runningRun?.id || "running", started_at: runningRun?.started_at, artifacts: liveArtifacts },
+    ]);
+  }, [task?.artifacts, liveArtifacts, runningRun?.id, runningRun?.started_at]);
   const tree = useMemo(() => buildRunArtifactTree(artifacts), [artifacts]);
   const summary = useMemo(() => runArtifactSummary(artifacts), [artifacts]);
   const summaryLabel = summary.files > 0
@@ -939,7 +948,7 @@ function RunArtifactsSection({ run }) {
       ? "No file edits recorded yet."
       : "No file edits recorded.";
 
-  if (!run) return null;
+  if (!task) return null;
   return (
     <div class="run-artifacts-section">
       <div class="task-rail-section-head">
@@ -951,10 +960,10 @@ function RunArtifactsSection({ run }) {
           </span>
         )}
       </div>
-      <div class="run-artifacts-context" title={run.id}>{runArtifactsTitle(run)}</div>
+      <div class="run-artifacts-context" title={task.id}>{taskArtifactsTitle(task, runningRun)}</div>
       <FileTree
         files={tree}
-        ariaLabel="Run artifacts"
+        ariaLabel="Task artifacts"
         emptyText={emptyText}
         renderMeta={(node) => <RunArtifactMeta node={node} />}
         getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
@@ -1136,8 +1145,6 @@ export function TaskDetail({ id, runParam = null }) {
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
   const displayedStage = runningRun ? "running" : stage;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
-  const highlightedRun = highlightedRunId ? runs.find((r) => r.id === highlightedRunId) || null : null;
-  const artifactRun = runningRun || highlightedRun || runs[0] || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = !runningRun && (lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned");
   // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
@@ -1660,7 +1667,7 @@ export function TaskDetail({ id, runParam = null }) {
               )}
             </div>
           )}
-          {artifactRun && <RunArtifactsSection run={artifactRun} />}
+          <RunArtifactsSection task={task} runningRun={runningRun} />
         </Card>
 
         <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
