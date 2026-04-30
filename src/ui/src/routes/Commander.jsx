@@ -66,6 +66,39 @@ const GROUPS = [
   { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "●" },
 ];
 
+const GROUP_ORDER = Object.fromEntries(GROUPS.map((group, index) => [group.key, index]));
+const IN_PROGRESS_STAGES = new Set(["execute", "review", "awaiting_children", "awaiting_user", "blocked"]);
+
+function taskHasRunningRun(task) {
+  if (!task) return false;
+  if (task.running_run_id) return true;
+  if ((task.running_run?.process_status || task.running_run?.status) === "running") return true;
+  return Array.isArray(task.runs) && task.runs.some((run) => (run?.process_status || run?.status) === "running");
+}
+
+export function commanderTaskSortBucket(task) {
+  if (taskHasRunningRun(task)) return 0;
+  const stage = task?.stage || "plan";
+  if (IN_PROGRESS_STAGES.has(stage)) return 1;
+  if (stage === "plan") return 2;
+  return 3;
+}
+
+export function compareCommanderTasks(a = {}, b = {}) {
+  const bucketDelta = commanderTaskSortBucket(a) - commanderTaskSortBucket(b);
+  if (bucketDelta) return bucketDelta;
+  const updatedDelta = Number(b.updated_at || 0) - Number(a.updated_at || 0);
+  if (updatedDelta) return updatedDelta;
+  return String(a.title || "").localeCompare(String(b.title || ""));
+}
+
+export function compareCommanderGroups(a = {}, b = {}) {
+  const aBucket = Math.min(...(a.tasks || []).map(commanderTaskSortBucket));
+  const bBucket = Math.min(...(b.tasks || []).map(commanderTaskSortBucket));
+  if (aBucket !== bBucket) return aBucket - bBucket;
+  return (GROUP_ORDER[a.status] ?? 99) - (GROUP_ORDER[b.status] ?? 99);
+}
+
 export function groupKeyFor(task) {
   const stage = task.stage || "plan";
   if (stage === "done" && Number(task.automation_summary?.enabled_count || 0) > 0) {
@@ -139,6 +172,7 @@ function BulkTaskBar({
   busy,
   onClear,
   onSelectVisible,
+  onRun,
   onPatch,
   onDelete,
 }) {
@@ -167,6 +201,9 @@ function BulkTaskBar({
         </Button>
         <Button size="sm" variant="secondary" disabled={busy || visibleCount === 0} onClick={onSelectVisible}>
           Select visible
+        </Button>
+        <Button size="sm" variant="primary" iconLeft={<Icon name="play" size={12} />} disabled={busy} onClick={onRun}>
+          Run
         </Button>
         <Select
           class="bulk-action-select"
@@ -337,9 +374,13 @@ export function Commander() {
       .map((g) => ({
         status: g.key,
         meta: { label: g.label, color: g.color, icon: g.icon },
-        tasks: filtered.filter((entry) => entry.group === g.key).map((entry) => entry.task),
+        tasks: filtered
+          .filter((entry) => entry.group === g.key)
+          .map((entry) => entry.task)
+          .sort(compareCommanderTasks),
       }))
-      .filter((g) => g.tasks.length > 0);
+      .filter((g) => g.tasks.length > 0)
+      .sort(compareCommanderGroups);
   }, [filtered]);
   const orderedTasks = useMemo(() => grouped.flatMap((group) => group.tasks), [grouped]);
   const checkedTaskIds = useMemo(() => [...checkedIds], [checkedIds]);
@@ -421,7 +462,12 @@ export function Commander() {
       if (summary.failed > 0) {
         pushToast(`${summary.succeeded} succeeded, ${summary.failed} failed`, { variant: "error" });
       } else {
-        pushToast(operation === "delete" ? "Tasks deleted" : "Tasks updated", { variant: "success" });
+        const message = operation === "delete"
+          ? "Tasks deleted"
+          : operation === "run"
+            ? `${summary.succeeded} ${summary.succeeded === 1 ? "run" : "runs"} started`
+            : "Tasks updated";
+        pushToast(message, { variant: "success" });
       }
       setCheckedIds(new Set(failedIds));
       await reload();
@@ -487,6 +533,7 @@ export function Commander() {
               busy={bulkBusy}
               onClear={() => setCheckedIds(new Set())}
               onSelectVisible={selectVisibleTasks}
+              onRun={() => applyBulk("run")}
               onPatch={(patch) => applyBulk("patch", patch)}
               onDelete={() => setBulkDeleteOpen(true)}
             />

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { agentModelEffortLabel, taskDisplayKey, taskRouteId } from "../../ui/src/lib/display.js";
+import { agentModelEffortLabel, hasRunError, taskDisplayKey, taskRouteId } from "../../ui/src/lib/display.js";
 
 describe("task display helpers", () => {
   it("uses public task keys when present", () => {
@@ -15,5 +15,21 @@ describe("task display helpers", () => {
   it("describes agents with full model reference and effort", () => {
     expect(agentModelEffortLabel({ model: "codex:gpt-5.5", effort: "medium" })).toBe("codex:gpt-5.5 · medium effort");
     expect(agentModelEffortLabel({ model: "claude:claude-sonnet-4-6" })).toBe("claude:claude-sonnet-4-6");
+  });
+
+  it("hides stale run errors while a rerun is active", () => {
+    expect(hasRunError({
+      running_run_id: "run-active",
+      last_run: { status: "error", process_status: "failed" },
+    })).toBe(false);
+    expect(hasRunError({
+      runs: [
+        { id: "run-old", status: "error", process_status: "failed" },
+        { id: "run-active", status: "running", process_status: "running" },
+      ],
+    })).toBe(false);
+    expect(hasRunError({
+      last_run: { status: "error", process_status: "failed" },
+    })).toBe(true);
   });
 });

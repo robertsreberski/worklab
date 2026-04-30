@@ -1104,6 +1104,7 @@ export function TaskDetail({ id, runParam = null }) {
     if (automationChanged || runChanged) reloadAutomationsSoon();
     if (evt.type === "run_started" && (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))) {
       setHighlightedRunId(evt.runId);
+      setRunError(null);
     }
   });
 
@@ -1138,7 +1139,7 @@ export function TaskDetail({ id, runParam = null }) {
   const highlightedRun = highlightedRunId ? runs.find((r) => r.id === highlightedRunId) || null : null;
   const artifactRun = runningRun || highlightedRun || runs[0] || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
-  const hasLastRunError = lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned";
+  const hasLastRunError = !runningRun && (lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned");
   // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
   // NOT render the banner (prevents false positives).
   const showStuckBanner =
@@ -1217,6 +1218,7 @@ export function TaskDetail({ id, runParam = null }) {
           setHighlightedRunId(result.rerun.runId);
           setExpandedRunIds((s) => new Set([...s, result.rerun.runId]));
         }
+        setRunError(null);
         pushToast("Comment posted and run started", { variant: "success" });
       } else if (result?.rerun?.error) {
         pushToast(`Comment posted; rerun did not start: ${result.rerun.error.message}`, { variant: "error" });

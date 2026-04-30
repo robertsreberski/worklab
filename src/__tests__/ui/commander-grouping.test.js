@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { groupKeyFor, taskMatchesCommanderQuery } from "../../ui/src/routes/Commander.jsx";
+import {
+  commanderTaskSortBucket,
+  compareCommanderGroups,
+  compareCommanderTasks,
+  groupKeyFor,
+  taskMatchesCommanderQuery,
+} from "../../ui/src/routes/Commander.jsx";
 
 describe("commander task grouping", () => {
   it("uses the saved task stage even when the latest run errored", () => {
@@ -39,6 +45,33 @@ describe("commander task grouping", () => {
 
   it("falls back to execute for unknown stages", () => {
     expect(groupKeyFor({ stage: "legacy" })).toBe("execute");
+  });
+
+  it("sorts running and in-progress tasks before plan and done tasks", () => {
+    expect(commanderTaskSortBucket({ stage: "done", running_run_id: "run-1" })).toBe(0);
+    expect(commanderTaskSortBucket({ stage: "review" })).toBe(1);
+    expect(commanderTaskSortBucket({ stage: "plan" })).toBe(2);
+    expect(commanderTaskSortBucket({ stage: "done" })).toBe(3);
+
+    const tasks = [
+      { id: "done", title: "Done", stage: "done", updated_at: 4 },
+      { id: "plan", title: "Plan", stage: "plan", updated_at: 10 },
+      { id: "execute", title: "Execute", stage: "execute", updated_at: 1 },
+      { id: "running", title: "Running", stage: "done", running_run_id: "run-1", updated_at: 2 },
+    ].sort(compareCommanderTasks);
+
+    expect(tasks.map((task) => task.id)).toEqual(["running", "execute", "plan", "done"]);
+  });
+
+  it("moves groups with running or in-progress work ahead of plan and done groups", () => {
+    const groups = [
+      { status: "plan", tasks: [{ stage: "plan", updated_at: 10 }] },
+      { status: "done", tasks: [{ stage: "done", updated_at: 20 }] },
+      { status: "execute", tasks: [{ stage: "execute", updated_at: 1 }] },
+      { status: "review", tasks: [{ stage: "done", running_run_id: "run-1", updated_at: 2 }] },
+    ].sort(compareCommanderGroups);
+
+    expect(groups.map((group) => group.status)).toEqual(["review", "execute", "plan", "done"]);
   });
 
   it("matches planner assignments in commander search", () => {
