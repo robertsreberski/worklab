@@ -41,6 +41,11 @@ export const DEFAULT_SETTINGS = {
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
   agent_provider_recovery_base_delay_ms: 30000,
+  delegation_enabled: true,
+  delegation_max_depth: 1,
+  delegation_max_children_per_round: 5,
+  delegation_max_parallel_children: 3,
+  delegation_auto_run_children: true,
 };
 
 const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
@@ -149,6 +154,8 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 1, max: 200 });
     case "agent_compaction_enabled":
     case "agent_provider_recovery_enabled":
+    case "delegation_enabled":
+    case "delegation_auto_run_children":
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
     case "agent_compaction_trigger_ratio":
@@ -177,6 +184,12 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 0, max: 20 });
     case "agent_provider_recovery_base_delay_ms":
       return integerInRange(key, value, { min: 0, max: 300000 });
+    case "delegation_max_depth":
+      return integerInRange(key, value, { min: 0, max: 10 });
+    case "delegation_max_children_per_round":
+      return integerInRange(key, value, { min: 1, max: 50 });
+    case "delegation_max_parallel_children":
+      return integerInRange(key, value, { min: 1, max: 50 });
     default:
       throw new Error(`unknown setting: ${key}`);
   }

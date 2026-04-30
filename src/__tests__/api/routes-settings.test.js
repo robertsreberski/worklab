@@ -50,6 +50,11 @@ describe("settings", () => {
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);
+    expect(res.body.settings.delegation_enabled).toBe(true);
+    expect(res.body.settings.delegation_max_depth).toBe(1);
+    expect(res.body.settings.delegation_max_children_per_round).toBe(5);
+    expect(res.body.settings.delegation_max_parallel_children).toBe(3);
+    expect(res.body.settings.delegation_auto_run_children).toBe(true);
   });
 
   it("PATCH clears the embedding model when given empty string", async () => {
@@ -82,6 +87,11 @@ describe("settings", () => {
       assistant_max_turns: 48,
       agent_provider_recovery_enabled: false,
       agent_provider_recovery_base_delay_ms: 1000,
+      delegation_enabled: false,
+      delegation_max_depth: 2,
+      delegation_max_children_per_round: 7,
+      delegation_max_parallel_children: 4,
+      delegation_auto_run_children: false,
     }).expect(200);
     const res = await agent.get("/api/settings").expect(200);
     expect(res.body.settings.consolidation_hour).toBe(5);
@@ -96,11 +106,25 @@ describe("settings", () => {
     expect(res.body.settings.assistant_max_turns).toBe(48);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(false);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
+    expect(res.body.settings.delegation_enabled).toBe(false);
+    expect(res.body.settings.delegation_max_depth).toBe(2);
+    expect(res.body.settings.delegation_max_children_per_round).toBe(7);
+    expect(res.body.settings.delegation_max_parallel_children).toBe(4);
+    expect(res.body.settings.delegation_auto_run_children).toBe(false);
   });
 
   it("PATCH rejects unknown keys", async () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({ bogus: 1 }).expect(400);
+  });
+
+  it("PATCH rejects invalid delegation settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ delegation_enabled: "yes" }).expect(400);
+    await agent.patch("/api/settings").send({ delegation_max_depth: -1 }).expect(400);
+    await agent.patch("/api/settings").send({ delegation_max_children_per_round: 0 }).expect(400);
+    await agent.patch("/api/settings").send({ delegation_max_parallel_children: 0 }).expect(400);
+    await agent.patch("/api/settings").send({ delegation_auto_run_children: 1 }).expect(400);
   });
 
   it("PATCH rejects tier aliases for embedding models", async () => {
