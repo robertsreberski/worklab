@@ -13,7 +13,7 @@ import {
   stripWorklabResultJson,
 } from "../result/contract.js";
 import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
-import { createFileChangePayload } from "../../core/file-change-stats.js";
+import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../../core/cost.js";
 import { createStderrTail } from "../failure.js";
 import { backendCapabilities } from "../../core/backend.js";

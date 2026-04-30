@@ -21,8 +21,8 @@ import {
   fileChangeSummary,
   readFileChangeSnapshot,
   statsForCompletedChange,
-} from "../../core/file-change-stats.js";
-import { formatSkillBodyWithPathNote } from "../../core/skills.js";
+} from "../../ai/file-change-stats.js";
+import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
 
 function textResult(text, details = {}) {
   return {

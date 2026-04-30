@@ -7,7 +7,7 @@ import {
   fileChangeSummary,
   readFileChangeSnapshot,
   statsForCompletedChange,
-} from "../../core/file-change-stats.js";
+} from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../../core/live-input.js";
 import { estimateCost } from "../../core/cost.js";
 import { backendCapabilities } from "../../core/backend.js";
