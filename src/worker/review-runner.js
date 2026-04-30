@@ -1,0 +1,134 @@
+// Review mode has the same tool allowlist as execute. We document — but do not
+// enforce — that reviewers should not call kb_delete. Enforcement via per-tool
+// permissions is Phase 4+.
+import {
+  buildTaskRunInput,
+  generateResponse,
+  normalizeWorklabResult,
+  parseVerdict,
+  parseWorklabResultFromText,
+  resolveModel,
+  synthesizeWorklabResult,
+  validateWorklabResultSemantics,
+} from "../core/index.js";
+import { maxTurnsForModel } from "./util.js";
+
+function validateRuntimeResult(result) {
+  const validated = validateWorklabResultSemantics(result);
+  if (validated.ok) return { result, error: null, fatal: false };
+  return { result, error: validated.error, fatal: true };
+}
+
+function reviewResultFromText(text) {
+  const parsed = parseWorklabResultFromText(text, { stage: "review" });
+  if (parsed.ok) {
+    const validated = validateRuntimeResult(parsed.result);
+    return {
+      ...validated,
+      verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null,
+      notes: parsed.result.details || parsed.result.summary || "",
+    };
+  }
+
+  const { verdict, notes } = parseVerdict(text);
+  if (verdict === "APPROVE") {
+    return {
+      result: synthesizeWorklabResult({ stage: "review", decision: "approve", summary: notes || "Approved", details: text || "" }),
+      verdict,
+      notes,
+      error: parsed.error,
+    };
+  }
+  if (verdict === "REJECT") {
+    return {
+      result: synthesizeWorklabResult({ stage: "review", decision: "reject", summary: notes || "Rejected", details: text || "" }),
+      verdict,
+      notes,
+      error: parsed.error,
+    };
+  }
+  return { result: null, verdict: null, notes: "", error: parsed.error };
+}
+
+function reviewResultFromResponse(response) {
+  if (response?.worklabResult) {
+    const normalized = normalizeWorklabResult(response.worklabResult, { stage: "review" });
+    if (normalized.ok) {
+      const result = normalized.result;
+      return {
+        ...validateRuntimeResult(result),
+        verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
+        notes: result.details || result.summary || "",
+        source: response.structuredResultSource || "structured",
+      };
+    }
+    return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
+  }
+  return reviewResultFromText(response?.text || "");
+}
+
+export async function runReview(ctx) {
+  const { db, config, ac, emit, liveInput, agentName, runId, taskId } = ctx;
+
+  let input;
+  try {
+    input = buildTaskRunInput({
+      config,
+      db,
+      taskId,
+      agentName,
+      runId,
+      mode: "review",
+      priorRunId: process.env.WORKLAB_PRIOR_RUN_ID,
+      worklabToolSurfaceMarkdown: ctx.worklabToolSurfaceMarkdown,
+    });
+  } catch (err) {
+    return { kind: "review", error: err.message || String(err) };
+  }
+  const { agent, skills, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
+  const model = resolveModel(agent.model);
+
+  try {
+    const result = await generateResponse(systemPrompt, {
+      model,
+      effort: agent.effort || "medium",
+      db,
+      dataDir: config.dataDir,
+      skills,
+      messages,
+      cwd: config.workspace,
+      mcpServers,
+      allowedTools,
+      disallowedTools,
+      permissionMode: "bypassPermissions",
+      maxTurns: maxTurnsForModel(model, 30),
+      abortSignal: ac.signal,
+      liveInput,
+      onEvent: (event) => emit({ type: "sdk_event", event }),
+    });
+    if (result.cancelled) return { kind: "review", cancelled: true };
+    if (result.error) {
+      return { kind: "review", error: result.error, failureKind: result.failureKind };
+    }
+    const parsedReview = reviewResultFromResponse(result);
+    return {
+      kind: "review",
+      text: result.text,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+      runtimeWarnings: result.runtimeWarnings,
+      worklabResult: parsedReview.result,
+      verdict: parsedReview.verdict,
+      notes: parsedReview.notes,
+      parsedResultError: parsedReview.error || null,
+      parsedResultFatal: !!parsedReview.fatal,
+      parsedResultWarningKind: parsedReview.fatal ? "worklab_result_validation" : "review_result_parse",
+      parsedResultFatalMessage: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict",
+    };
+  } catch (err) {
+    return { kind: "review", error: err.message || String(err) };
+  }
+}

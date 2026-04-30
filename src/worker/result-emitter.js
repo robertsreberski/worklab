@@ -1,92 +1,142 @@
-// Result-shaping helpers used by the worker entry point. Pulled out of
-// worker.js so the big `main()` reads as orchestration; the parsing
-// produces canonical worklab_result shapes from raw provider responses.
+// Worker mode-runner result emission.
 //
-// Phase 5 first slice — the worker's mode-specific runners (execute, review,
-// consolidate, automation) still live inline in worker.js because they
-// share heavy state with `main()`. Future passes will lift them out.
+// Each runner under src/worker/*-runner.js returns a structured result
+// describing the worklab_result it produced (if any), terminal status, and
+// any side-effects (memory writes) to surface. This module owns the
+// translation from that result into the stdout events main() emits before
+// exiting. Streaming events (sdk_event, runtime_warning during the run)
+// remain emitted inline by the runner via ctx.emit — only terminal events
+// flow through here.
+//
+// The shape returned by runners is:
+//   {
+//     kind: "consolidate" | "automation" | "task" | "review",
+//     cancelled?: boolean,
+//     error?: string,
+//     failureKind?: string,
+//     text, usage, durationMs, numTurns, model, effort,    // generateResponse fields
+//     runtimeWarnings?: array,                              // forwarded warnings
+//     worklabResult?: object,                               // task/review only
+//     parsedResultError?: string,                           // pre-final runtime_warning
+//     parsedResultFatal?: boolean,                          // emit worklab_result_error, exit 1
+//     parsedResultWarningKind?: string,                     // warning_kind for parsedResultError
+//     parsedResultFatalMessage?: string,                    // override for fatal worklab_result_error
+//     verdict?: string|null,                                // review only
+//     notes?: string,                                       // review only
+//     memoryWritten?: { agent, path },                      // consolidate only
+//   }
 
-import { parseVerdict } from "../core/review.js";
-import {
-  normalizeWorklabResult,
-  parseWorklabResultFromText,
-  synthesizeWorklabResult,
-  validateWorklabResultSemantics,
-} from "../ai/result/contract.js";
-
-export function validateRuntimeResult(result) {
-  const validated = validateWorklabResultSemantics(result);
-  if (validated.ok) return { result, error: null, fatal: false };
-  return { result, error: validated.error, fatal: true };
-}
-
-export function resultFromTextOrFallback(text, fallback) {
-  const parsed = parseWorklabResultFromText(text, fallback);
-  if (parsed.ok) return validateRuntimeResult(parsed.result);
-  if (!String(text || "").trim()) {
-    return { result: null, error: "missing final output", fatal: true };
+function emitRuntimeWarnings(emit, response) {
+  const warnings = Array.isArray(response?.runtimeWarnings) ? response.runtimeWarnings : [];
+  for (const warning of warnings) {
+    emit({
+      type: "runtime_warning",
+      warning_kind: warning?.warning_kind || warning?.warningKind || "runtime",
+      message: warning?.message || String(warning || "runtime warning"),
+      ts: Date.now(),
+    });
   }
-  return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
 }
 
-export function resultFromResponseOrFallback(response, fallback) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, fallback);
-    if (normalized.ok) {
-      return {
-        ...validateRuntimeResult(normalized.result),
-        source: response.structuredResultSource || "structured",
-      };
+export function emitFinalResult(ctx, result) {
+  const { emit } = ctx;
+
+  if (result.cancelled) {
+    emit({ type: "cancelled" });
+    return 130;
+  }
+  if (result.error) {
+    emit({ type: "error", message: result.error, failureKind: result.failureKind });
+    return 1;
+  }
+
+  emitRuntimeWarnings(emit, result);
+
+  if (result.kind === "consolidate") {
+    if (result.memoryWritten) {
+      emit({ type: "memory_written", agent: result.memoryWritten.agent, path: result.memoryWritten.path });
     }
-    return { result: null, error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
-  }
-  return resultFromTextOrFallback(response?.text || "", fallback);
-}
-
-export function reviewResultFromText(text) {
-  const parsed = parseWorklabResultFromText(text, { stage: "review" });
-  if (parsed.ok) {
-    const validated = validateRuntimeResult(parsed.result);
-    return {
-      ...validated,
-      verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null,
-      notes: parsed.result.details || parsed.result.summary || "",
-    };
+    emit({
+      type: "final",
+      text: result.text,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+    });
+    return 0;
   }
 
-  const { verdict, notes } = parseVerdict(text);
-  if (verdict === "APPROVE") {
-    return {
-      result: synthesizeWorklabResult({ stage: "review", decision: "approve", summary: notes || "Approved", details: text || "" }),
-      verdict,
-      notes,
-      error: parsed.error,
-    };
+  if (result.kind === "automation") {
+    emit({
+      type: "final",
+      text: result.text,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+    });
+    return 0;
   }
-  if (verdict === "REJECT") {
-    return {
-      result: synthesizeWorklabResult({ stage: "review", decision: "reject", summary: notes || "Rejected", details: text || "" }),
-      verdict,
-      notes,
-      error: parsed.error,
-    };
-  }
-  return { result: null, verdict: null, notes: "", error: parsed.error };
-}
 
-export function reviewResultFromResponse(response) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, { stage: "review" });
-    if (normalized.ok) {
-      const result = normalized.result;
-      return {
-        ...validateRuntimeResult(result),
-        verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
-        notes: result.details || result.summary || "",
-        source: response.structuredResultSource || "structured",
-      };
+  if (result.kind === "task") {
+    if (result.parsedResultError) {
+      emit({
+        type: "runtime_warning",
+        warning_kind: result.parsedResultWarningKind,
+        message: result.parsedResultError,
+      });
     }
-    return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
+    if (result.parsedResultFatal || !result.worklabResult) {
+      emit({ type: "worklab_result_error", message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result" });
+      return 1;
+    }
+    emit({
+      type: "final",
+      text: result.text,
+      worklab_result: result.worklabResult,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+    });
+    return 0;
   }
-  return reviewResultFromText(response?.text || "");
+
+  if (result.kind === "review") {
+    if (result.parsedResultError) {
+      emit({
+        type: "runtime_warning",
+        warning_kind: result.parsedResultWarningKind,
+        message: result.parsedResultError,
+      });
+    }
+    if (result.parsedResultFatal || !result.worklabResult) {
+      emit({
+        type: "worklab_result_error",
+        message: result.parsedResultFatalMessage || result.parsedResultError || "Reviewer did not return a valid worklab_result or verdict",
+      });
+      return 1;
+    }
+    emit({
+      type: "final",
+      text: result.text,
+      worklab_result: result.worklabResult,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+    });
+    // Always emit verdict (null is valid); process exit reflects runtime
+    // success only — coordinator handles invalid semantic output.
+    emit({ type: "verdict", verdict: result.verdict, notes: result.notes });
+    return 0;
+  }
+
+  emit({ type: "error", message: `unknown runner kind: ${result.kind}` });
+  return 1;
 }
