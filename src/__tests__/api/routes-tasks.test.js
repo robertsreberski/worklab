@@ -273,6 +273,59 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
 
+  it("returns task-level artifact totals across all completed run outcomes", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const artifact = (runId, path, added, removed) => [{
+      path,
+      display_path: path,
+      kind: "update",
+      status: "completed",
+      added_lines: added,
+      removed_lines: removed,
+      has_line_delta: true,
+      run_ids: [runId],
+      first_run_id: runId,
+      last_run_id: runId,
+      first_seen_at: 1000,
+      last_seen_at: 1000,
+    }];
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, agent_name, started_at, ended_at, status, process_status,
+         artifact_paths_json, artifacts_json, artifact_summary_json)
+      VALUES (?, ?, 'execute', 'alpha', ?, ?, ?, ?, ?, ?, ?)
+    `);
+    insertRun.run(
+      "run-failed",
+      task.id,
+      1000,
+      1100,
+      "error",
+      "failed",
+      JSON.stringify(["src/a.js"]),
+      JSON.stringify(artifact("run-failed", "src/a.js", 2, 1)),
+      JSON.stringify({ files: 1, added_lines: 2, removed_lines: 1, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+    );
+    insertRun.run(
+      "run-complete",
+      task.id,
+      2000,
+      2100,
+      "complete",
+      "succeeded",
+      JSON.stringify(["src/b.js"]),
+      JSON.stringify(artifact("run-complete", "src/b.js", 3, 0)),
+      JSON.stringify({ files: 1, added_lines: 3, removed_lines: 0, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+    );
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.task.artifact_summary).toMatchObject({ files: 2, added_lines: 5, removed_lines: 1, run_count: 2 });
+    expect(res.body.task.artifacts.map((item) => item.path).sort()).toEqual(["src/a.js", "src/b.js"]);
+    expect(res.body.runs[0].artifact_summary.files).toBe(1);
+  });
+
   it("includes live input state on task detail runs", async () => {
     const watcher = {
       handleRunRequested: async () => ({ runId: "fake-run" }),

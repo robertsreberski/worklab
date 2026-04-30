@@ -27,6 +27,48 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.length).toBe(1);
   });
 
+  it("returns artifact metadata for a run", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    const artifacts = [{
+      path: "src/api.js",
+      display_path: "src/api.js",
+      kind: "update",
+      status: "completed",
+      added_lines: 5,
+      removed_lines: 2,
+      has_line_delta: true,
+      run_ids: [runId],
+      first_run_id: runId,
+      last_run_id: runId,
+      first_seen_at: now,
+      last_seen_at: now,
+    }];
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, agent_name, started_at, ended_at, status, process_status,
+         artifact_paths_json, artifacts_json, artifact_summary_json)
+      VALUES (?, ?, 'execute', 'a', ?, ?, 'complete', 'succeeded', ?, ?, ?)
+    `).run(
+      runId,
+      taskId,
+      now - 100,
+      now,
+      JSON.stringify(["src/api.js"]),
+      JSON.stringify(artifacts),
+      JSON.stringify({ files: 1, added_lines: 5, removed_lines: 2, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+    );
+
+    const res = await agent.get(`/api/runs/${runId}`).expect(200);
+
+    expect(res.body.run.artifact_paths).toEqual(["src/api.js"]);
+    expect(res.body.run.artifacts[0]).toMatchObject({ path: "src/api.js", added_lines: 5, removed_lines: 2 });
+    expect(res.body.run.artifact_summary).toMatchObject({ files: 1, added_lines: 5, removed_lines: 2, run_count: 1 });
+  });
+
   it("returns events for a still-running run", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();

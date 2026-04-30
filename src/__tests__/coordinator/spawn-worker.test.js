@@ -74,6 +74,78 @@ describe("spawnWorker", () => {
     expect(JSON.parse(run.diagnostics_json)).toMatchObject({ effective_workdir: "/workspace" });
   });
 
+  it("persists artifact metadata from completed file edit events", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{
+                type: "tool_use",
+                id: "file-1",
+                name: "file_edit",
+                input: {
+                  status: "in_progress",
+                  changes: [{ path: "src/pending.js", kind: "update" }],
+                },
+              }],
+            },
+          },
+        },
+        {
+          type: "sdk_event",
+          event: {
+            type: "user",
+            message: {
+              content: [{
+                type: "tool_result",
+                tool_use_id: "file-2",
+                content: {
+                  status: "completed",
+                  changes: [{
+                    path: "src/done.js",
+                    kind: "update",
+                    line_stats: { before_lines: 2, after_lines: 4, added_lines: 3, removed_lines: 1 },
+                  }],
+                },
+              }],
+            },
+          },
+        },
+        { type: "final", text: "done" },
+      ],
+      exitCode: 0,
+    };
+
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+    const result = await handle.done;
+
+    expect(result.artifactSummary).toMatchObject({ files: 1, added_lines: 3, removed_lines: 1 });
+    const run = db.prepare(`
+      SELECT artifact_paths_json, artifacts_json, artifact_summary_json
+      FROM task_runs WHERE id = ?
+    `).get(runId);
+    expect(JSON.parse(run.artifact_paths_json)).toEqual(["src/done.js"]);
+    expect(JSON.parse(run.artifacts_json)[0]).toMatchObject({
+      path: "src/done.js",
+      added_lines: 3,
+      removed_lines: 1,
+      last_run_id: runId,
+    });
+    expect(JSON.parse(run.artifact_summary_json)).toMatchObject({ files: 1, run_count: 1 });
+  });
+
   it("persists running events before the worker exits", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
