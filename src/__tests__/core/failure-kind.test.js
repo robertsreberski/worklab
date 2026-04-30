@@ -131,6 +131,19 @@ describe("retryableProviderFailureInfo", () => {
     });
   });
 
+  it("treats provider-side terminated aborts as retryable", () => {
+    expect(retryableProviderFailureInfo({
+      failureKind: "provider_unavailable",
+      errorText: "terminated",
+    })).toMatchObject({ retryable: true, subkind: "terminated" });
+  });
+
+  it("does not treat generic termination text as retryable without provider classification", () => {
+    expect(retryableProviderFailureInfo({
+      errorText: "terminated",
+    })).toMatchObject({ retryable: false, subkind: null });
+  });
+
   it("keeps nonretryable provider errors terminal", () => {
     expect(retryableProviderFailureInfo({
       failureKind: "provider_unavailable",

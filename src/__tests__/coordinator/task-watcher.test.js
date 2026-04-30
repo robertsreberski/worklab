@@ -772,6 +772,83 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("overloaded");
   });
 
+  it("starts a recovery continuation after a provider-side terminated abort", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "terminated",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "provider_retryable",
+      retryable_provider_error: true,
+      provider_error_subkind: "terminated",
+    });
+    const task = db.prepare("SELECT stage, stage_reason, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "execute",
+      stage_reason: "continuing after provider_retryable",
+      error_text: null,
+      last_failure_kind: "provider_unavailable",
+    });
+    const originalDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
+    expect(originalDiagnostics).toMatchObject({
+      continuation_reason: "provider_retryable",
+      continuation_run_id: expect.any(String),
+      retryable_provider_error: true,
+      provider_error_subkind: "terminated",
+    });
+  });
+
+  it("does not continue cancelled terminated runs", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({
+      exitCode: 130,
+      status: "cancelled",
+      processStatus: "cancelled",
+      failureKind: "cancelled_signal",
+      error: "terminated",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const comments = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation%'").all(taskId);
+    expect(comments).toHaveLength(0);
+  });
+
   it("uses request-id provider errors and high context risk for recovery diagnostics", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
