@@ -1,13 +1,11 @@
-import { mkdirSync } from "node:fs";
 import {
   DEFAULT_MAX_FAILURES,
   DEFAULT_MAX_REJECTIONS,
   nextStage,
 } from "../core/state-machine.js";
-import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
+import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
 import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../ai/result/contract.js";
-import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
@@ -15,10 +13,8 @@ import { readSettings } from "../core/settings.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
-import { prepareExecenv } from "../core/execenv.js";
 import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
-import { resolveTaskProjectRunContext } from "../core/projects.js";
 import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
@@ -27,16 +23,9 @@ import {
   getRunCoreFields,
   getRunDiagnostics,
   getRunTranscriptTail,
-  getRunWarningsAndDiagnostics,
-  setRunDiagnostics,
-  setRunExecenvPath,
-  setRunWorkerPid,
 } from "../core/db/queries/runs.js";
 import {
   enabledAgentExists,
-  getAgentBudget,
-  getAgentByName,
-  getAgentPerRunBudget,
   getAgentSelfReviewFlag,
 } from "../core/db/queries/agents.js";
 import {
@@ -78,6 +67,9 @@ import {
   runProcessStatus,
   safeParseJson,
 } from "./watcher/run-handler.js";
+import { checkBudget, recordPerRunBudgetOverage } from "./watcher/budget.js";
+import { spawnTaskRun } from "./watcher/spawn-run.js";
+import { reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
 
 const AUTO_RUN_POLICY = "auto_plan_execute";
 
@@ -145,40 +137,7 @@ export function createTaskWatcher({
     }
   }
 
-  {
-    const now = Date.now();
-    const reconcile = db.transaction(() => {
-      const stale = db.prepare(
-        `SELECT id, task_id, stage FROM task_runs
-         WHERE process_status = 'running' OR status = 'running'`,
-      ).all();
-      if (stale.length === 0) return 0;
-      const markRun = db.prepare(
-        `UPDATE task_runs
-         SET process_status = 'abandoned', status = 'error', ended_at = ?,
-             failure_kind = 'abandoned', error_text = ?,
-             cancel_initiator = COALESCE(cancel_initiator, 'stale_reconcile'),
-             cancel_reason = COALESCE(cancel_reason, 'coordinator restarted while run was active')
-         WHERE id = ?`,
-      );
-      const markTask = db.prepare(
-        `UPDATE tasks
-         SET stage = CASE WHEN stage = 'done' THEN stage ELSE COALESCE(?, stage, 'plan') END,
-             error_text = COALESCE(error_text, ?),
-             stage_reason = COALESCE(stage_reason, 'abandoned'),
-             updated_at = ?
-         WHERE id = ?`,
-      );
-      for (const row of stale) {
-        const retryStage = row.stage || "plan";
-        markRun.run(now, "coordinator restarted", row.id);
-        markTask.run(retryStage, "Previous run did not finish", now, row.task_id);
-      }
-      return stale.length;
-    });
-    const count = reconcile();
-    if (count > 0) logger?.warn?.({ count }, "reconciled stale running runs at boot");
-  }
+  reconcileStaleRunningRuns(db, logger);
 
   // Apply a list of side-effects to the DB inside a single transaction, plus
   // associated task-comments. spawn_worker / spawn_reviewer / create_subtasks
@@ -218,17 +177,6 @@ export function createTaskWatcher({
     applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage);
   }
 
-  function assertAgentRunnable(agentName) {
-    const agent = getAgentByName(db, agentName);
-    if (!agent) throw new Error(`agent not found: ${agentName}`);
-    if (!agent.enabled) throw new Error(`agent disabled: ${agentName}`);
-    try {
-      return { agent, providerKind: parseModelReference(agent.model).sdk };
-    } catch (err) {
-      throw new Error(`invalid agent model for ${agentName}: ${err.message}`);
-    }
-  }
-
   function hasOpenBlocker(taskId) {
     return findOpenBlocker(db, taskId);
   }
@@ -244,183 +192,24 @@ export function createTaskWatcher({
     `).get(taskId)?.id || null;
   }
 
-  function spawnRun({ task, stage, mode, agentName, parentRunId = null, diagnosticsSeed = null }) {
-    const { providerKind } = assertAgentRunnable(agentName);
-    const settings = readSettings(db);
-    const projectRunContext = resolveTaskProjectRunContext({
+  function spawnRun(options) {
+    return spawnTaskRun({
       db,
-      config: { workspace, repoRoot },
-      task,
-    });
-    if (projectRunContext.project?.workdir) {
-      mkdirSync(projectRunContext.project.workdir, { recursive: true });
-    }
-    const runId = newRunId();
-    const now = Date.now();
-    db.prepare(
-      `INSERT INTO task_runs
-        (id, task_id, project_id, parent_run_id, mode, stage, agent_name, provider_kind,
-         started_at, status, process_status, retry_stage, workdir, project_context_hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?)`,
-    ).run(
-      runId,
-      task.id,
-      projectRunContext.project?.id || null,
-      parentRunId,
-      mode,
-      stage,
-      agentName,
-      providerKind,
-      now,
-      stage,
-      projectRunContext.effectiveWorkdir || null,
-      projectRunContext.projectContextHash,
-    );
-    if (diagnosticsSeed && typeof diagnosticsSeed === "object") {
-      setRunDiagnostics(db, runId, JSON.stringify(diagnosticsSeed));
-    }
-
-    let execenvPath = null;
-    if (dataDir) {
-      try {
-        const env = prepareExecenv({ dataDir, runId, agent: { name: agentName }, task, providerKind });
-        execenvPath = env.root;
-        setRunExecenvPath(db, runId, execenvPath);
-      } catch (err) {
-        logger?.warn?.({ err: err.message, runId }, "execenv preparation failed");
-      }
-    }
-
-    const args = ["--task", task.id, "--mode", mode, "--agent", agentName];
-    const env = {
-      WORKLAB_RUN_ID: runId,
-      WORKLAB_DATA_DIR: dataDir || "",
-      WORKLAB_REPO_ROOT: repoRoot || "",
-      WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir || workspace || repoRoot || "",
-      ...(projectRunContext.project ? {
-        WORKLAB_PROJECT_ID: projectRunContext.project.id,
-        WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
-        WORKLAB_PROJECT_NAME: projectRunContext.project.name,
-      } : {}),
-      ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
-    };
-    if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
-
-    const handle = spawn({
-      binary: workerBinary,
-      args,
-      env,
-      runId,
-      taskId: task.id,
       broker,
-      db,
+      spawn,
+      workerBinary,
       logger,
+      repoRoot,
       dataDir,
-      cancelGraceMs: settings.cancel_grace_ms,
-      runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
+      workspace,
+      runTimeoutMs,
       runIdleWarningMs,
       logInlineLimit,
-      diagnosticsSeed,
+      active,
+      activeByRunId,
+      onWorkerExit,
+      ...options,
     });
-
-    setRunWorkerPid(db, runId, handle.pid);
-    active.set(task.id, { runId, handle });
-    activeByRunId.set(runId, { taskId: task.id, handle, providerKind });
-    broker.broadcast("global", buildRunLifecycleEvent(db, "run_started", runId, { taskId: task.id }));
-
-    handle.done
-      .then((result) => onWorkerExit(task.id, runId, result))
-      .catch((err) => {
-        logger?.error?.({ err, taskId: task.id, runId }, "worker promise rejected");
-        onWorkerExit(task.id, runId, {
-          exitCode: 1,
-          status: "error",
-          processStatus: "failed",
-          error: err.message,
-        });
-      });
-
-    return { runId };
-  }
-
-  function checkBudget({ agentName, taskId }) {
-    const settings = readSettings(db);
-    const agent = getAgentBudget(db, agentName);
-    const startOfDayUtc = new Date();
-    startOfDayUtc.setUTCHours(0, 0, 0, 0);
-    const since = startOfDayUtc.getTime();
-    const todayCostRow = db.prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS total
-      FROM task_runs
-      WHERE agent_name = ? AND started_at >= ? AND cost_usd IS NOT NULL
-    `).get(agentName, since);
-    const workspaceCostRow = db.prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS total
-      FROM task_runs
-      WHERE started_at >= ? AND cost_usd IS NOT NULL
-    `).get(since);
-    const agentSpend = Number(todayCostRow?.total || 0);
-    const workspaceSpend = Number(workspaceCostRow?.total || 0);
-    const workspaceBudget = Number(settings.daily_budget_usd || 0);
-    if (workspaceBudget > 0 && workspaceSpend >= workspaceBudget) {
-      return {
-        ok: false,
-        scope: "workspace",
-        spent: workspaceSpend,
-        cap: workspaceBudget,
-        message: `Daily workspace budget reached ($${workspaceSpend.toFixed(4)} of $${workspaceBudget.toFixed(2)}).`,
-      };
-    }
-    const agentDailyBudget = Number(agent?.daily_budget_usd || 0);
-    if (agentDailyBudget > 0 && agentSpend >= agentDailyBudget) {
-      return {
-        ok: false,
-        scope: "agent_daily",
-        spent: agentSpend,
-        cap: agentDailyBudget,
-        message: `Daily budget for ${agentName} reached ($${agentSpend.toFixed(4)} of $${agentDailyBudget.toFixed(2)}).`,
-      };
-    }
-    return { ok: true, agentSpend, workspaceSpend };
-  }
-
-  function recordPerRunBudgetOverage({ runId, agentName, costUsd }) {
-    const cost = Number(costUsd);
-    if (!Number.isFinite(cost)) return;
-    const agent = getAgentPerRunBudget(db, agentName);
-    const cap = Number(agent?.per_run_budget_usd || 0);
-    if (!(cap > 0) || cost <= cap) {
-      db.prepare("UPDATE task_runs SET cost_usd = COALESCE(cost_usd, ?) WHERE id = ?").run(cost, runId);
-      return;
-    }
-
-    const row = getRunWarningsAndDiagnostics(db, runId);
-    if (!row) return;
-    const warning = {
-      kind: "budget_exceeded",
-      source: "budget",
-      message: `Run cost $${cost.toFixed(4)} exceeded per-run budget $${cap.toFixed(2)} for ${agentName}.`,
-    };
-    const warnings = safeParseJson(row.warnings_json, []);
-    const diagnostics = safeParseJson(row.diagnostics_json, {});
-    warnings.push(warning);
-    db.prepare(`
-      UPDATE task_runs
-      SET cost_usd = COALESCE(cost_usd, ?),
-          warnings_json = ?,
-          diagnostics_json = ?
-      WHERE id = ?
-    `).run(
-      cost,
-      JSON.stringify(warnings),
-      JSON.stringify({
-        ...(diagnostics && typeof diagnostics === "object" && !Array.isArray(diagnostics) ? diagnostics : {}),
-        per_run_budget_exceeded: true,
-        per_run_budget_usd: cap,
-        cost_usd: cost,
-      }),
-      runId,
-    );
   }
 
   async function handleRunRequested(taskId, options = {}) {
@@ -453,7 +242,7 @@ export function createTaskWatcher({
     }
 
     if (!options.skipBudgetCheck) {
-      const budget = checkBudget({ agentName, taskId });
+      const budget = checkBudget({ db, agentName, taskId });
       if (!budget.ok) {
         annotateTaskFailure(taskId, {
           message: budget.message,
@@ -687,7 +476,7 @@ export function createTaskWatcher({
 
     const agentName = run.agent_name || agentForTaskStage(task, stage);
     if (!agentName) return null;
-    const budget = checkBudget({ agentName, taskId });
+    const budget = checkBudget({ db, agentName, taskId });
     if (!budget.ok) {
       postSystemComment(taskId, `Automatic continuation skipped: ${budget.message}`);
       return null;
@@ -1142,7 +931,7 @@ export function createTaskWatcher({
     } else {
       handleFailedExit(taskId, runId, res, task, run);
     }
-    recordPerRunBudgetOverage({ runId, agentName: run.agent_name, costUsd: res.costUsd ?? res.cost_usd });
+    recordPerRunBudgetOverage({ db, runId, agentName: run.agent_name, costUsd: res.costUsd ?? res.cost_usd });
 
     const endedEvent = buildRunLifecycleEvent(db, "run_ended", runId, { taskId });
     broker.broadcast("global", endedEvent);
