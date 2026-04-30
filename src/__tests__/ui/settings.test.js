@@ -50,6 +50,11 @@ describe("settings UI duration conversions", () => {
       slack_run_timeout_ms: minutesToMs("2"),
       assistant_run_timeout_ms: minutesToMs("5"),
       assistant_max_turns: 48,
+      delegation_enabled: false,
+      delegation_max_depth: 2,
+      delegation_max_children_per_round: 7,
+      delegation_max_parallel_children: 4,
+      delegation_auto_run_children: false,
       agent_compaction_enabled: true,
       agent_compaction_trigger_ratio: 0.7,
       agent_compaction_keep_recent_tokens: 32000,
@@ -72,6 +77,11 @@ describe("settings UI duration conversions", () => {
     expect(payload.slack_run_timeout_ms).toBe(120000);
     expect(payload.assistant_run_timeout_ms).toBe(300000);
     expect(payload.assistant_max_turns).toBe(48);
+    expect(payload.delegation_enabled).toBe(false);
+    expect(payload.delegation_max_depth).toBe(2);
+    expect(payload.delegation_max_children_per_round).toBe(7);
+    expect(payload.delegation_max_parallel_children).toBe(4);
+    expect(payload.delegation_auto_run_children).toBe(false);
     expect(payload.agent_compaction_trigger_ratio).toBe(0.7);
     expect(payload.agent_compaction_keep_recent_tokens).toBe(32000);
     expect(payload.agent_compaction_min_savings_tokens).toBe(18000);

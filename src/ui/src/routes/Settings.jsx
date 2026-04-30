@@ -172,6 +172,11 @@ export function settingsPayload(settings = {}) {
     assistant_effort: settings.assistant_effort || "high",
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
+    delegation_enabled: settings.delegation_enabled !== false,
+    delegation_max_depth: Number(settings.delegation_max_depth ?? 1),
+    delegation_max_children_per_round: Number(settings.delegation_max_children_per_round ?? 5),
+    delegation_max_parallel_children: Number(settings.delegation_max_parallel_children ?? 3),
+    delegation_auto_run_children: settings.delegation_auto_run_children !== false,
     agent_compaction_enabled: settings.agent_compaction_enabled !== false,
     agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.85),
     agent_compaction_keep_recent_tokens: Number(settings.agent_compaction_keep_recent_tokens ?? 24000),
@@ -831,9 +836,30 @@ export function Settings() {
                     label="Context compaction"
                     description="Compact long transcripts before they exceed model context."
                   />
+                  <Switch
+                    checked={settings.delegation_enabled !== false}
+                    onChange={(next) => setSettings({ ...settings, delegation_enabled: next })}
+                    label="Native delegation"
+                    description="Allow agents to create child tasks when work is separable."
+                  />
+                  <Switch
+                    checked={settings.delegation_auto_run_children !== false}
+                    onChange={(next) => setSettings({ ...settings, delegation_auto_run_children: next })}
+                    label="Auto-run delegated children"
+                    description="Start delegated child tasks automatically while respecting the parallel cap."
+                  />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={15}>
+                <AdvancedSettings summary="Budgets and recovery" count={18}>
                   <FormGrid columns={3}>
+                    <FormField label="Delegation depth">
+                      <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
+                    </FormField>
+                    <FormField label="Children per round">
+                      <NumberStepper min={1} max={50} value={settings.delegation_max_children_per_round ?? 5} ariaLabel="Delegation children per round" onChange={(value) => setSettings({ ...settings, delegation_max_children_per_round: value })} />
+                    </FormField>
+                    <FormField label="Parallel children">
+                      <NumberStepper min={1} max={50} value={settings.delegation_max_parallel_children ?? 3} ariaLabel="Delegation parallel children" onChange={(value) => setSettings({ ...settings, delegation_max_parallel_children: value })} />
+                    </FormField>
                     <FormField label="Trigger ratio">
                       <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
                     </FormField>

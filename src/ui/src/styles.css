@@ -3552,7 +3552,7 @@ html.assistant-resizing * {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--sp-3);
-  min-height: 40px;
+  min-height: 48px;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -3562,6 +3562,17 @@ html.assistant-resizing * {
 .task-subtask-link:hover {
   border-color: var(--border-strong);
   background: var(--surface-elevated);
+}
+.task-subtask-main {
+  display: grid;
+  gap: 2px;
+}
+.task-subtask-title {
+  font-weight: 650;
+}
+.task-subtask-summary {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
 }
 .task-subtask-meta {
   display: inline-flex;
@@ -8365,6 +8376,8 @@ html.assistant-resizing * {
   }
   .task-subtask-meta {
     justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
   }
   /* Commander row follows the mobile mockup: check/title/stage on line 1,
      deps/age on line 2, live run on a full-width third line. */
