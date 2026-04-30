@@ -1,6 +1,30 @@
 import Database from "better-sqlite3";
 import { SCHEMA_SQL, SCHEMA_VERSION } from "./schema.js";
-import { legacyRunStatusToProcessStatus, processStatusToLegacyStatus, STAGES } from "./state-machine.js";
+import { STAGES } from "./state-machine.js";
+
+// Legacy task_runs.status mapping kept inside the migration helpers — the rest
+// of the codebase reads `process_status` directly. Old DBs may have only the
+// `status` column populated; runMigrations backfills `process_status` from it.
+const LEGACY_STATUS_TO_PROCESS = {
+  complete: "succeeded",
+  succeeded: "succeeded",
+  error: "failed",
+  failed: "failed",
+  cancelled: "cancelled",
+  abandoned: "abandoned",
+  queued: "queued",
+  running: "running",
+};
+const PROCESS_STATUS_TO_LEGACY = {
+  succeeded: "complete",
+  failed: "error",
+  cancelled: "cancelled",
+  abandoned: "error",
+  queued: "running",
+  running: "running",
+};
+const legacyToProcess = (status) => LEGACY_STATUS_TO_PROCESS[status] || "running";
+const processToLegacy = (status) => PROCESS_STATUS_TO_LEGACY[status] || "running";
 import { backfillTaskKeys } from "./task-keys.js";
 
 let singleton = null;
@@ -190,9 +214,9 @@ function normalizeWorkflowState(db) {
     for (const row of runRows) {
       const processStatus = row.process_status && row.process_status !== "running"
         ? row.process_status
-        : legacyRunStatusToProcessStatus(row.status);
+        : legacyToProcess(row.status);
       const stage = row.stage && row.stage !== "execute" ? row.stage : (row.mode === "review" ? "review" : "execute");
-      updateRun.run(processStatus, processStatusToLegacyStatus(processStatus), stage, row.id);
+      updateRun.run(processStatus, processToLegacy(processStatus), stage, row.id);
     }
   });
   runTx();

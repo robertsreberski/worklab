@@ -2,9 +2,7 @@ import { mkdirSync } from "node:fs";
 import {
   DEFAULT_MAX_FAILURES,
   DEFAULT_MAX_REJECTIONS,
-  legacyRunStatusToProcessStatus,
   nextStage,
-  processStatusToLegacyStatus,
 } from "../core/state-machine.js";
 import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
@@ -29,7 +27,7 @@ const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KNOWLEDGE_LINK_RE = /#\/knowledge\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
 
 function runProcessStatus(runOrResult) {
-  return runOrResult?.processStatus || legacyRunStatusToProcessStatus(runOrResult?.status);
+  return runOrResult?.processStatus || runOrResult?.process_status || "running";
 }
 
 function safeParseJson(value, fallback) {

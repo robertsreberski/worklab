@@ -40,19 +40,4 @@ describe("run lifecycle events", () => {
     });
   });
 
-  it("normalizes legacy completed rows whose process status is stale", () => {
-    const db = makeTestDb();
-    seedAgent(db);
-    const now = Date.now();
-    db.prepare(`
-      INSERT INTO tasks (id, root_task_id, title, stage, owner_agent, created_at, updated_at)
-      VALUES ('task-1', 'task-1', 'Done task', 'done', 'coder', ?, ?)
-    `).run(now, now);
-    db.prepare(`
-      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at)
-      VALUES ('run-1', 'task-1', 'execute', 'execute', 'coder', 'complete', 'running', ?)
-    `).run(now);
-
-    expect(buildRunLifecycleEvent(db, "run_ended", "run-1").processStatus).toBe("succeeded");
-  });
 });

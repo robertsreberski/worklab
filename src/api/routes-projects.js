@@ -8,7 +8,6 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../core/projects.js";
-import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -47,13 +46,6 @@ function safeJson(value, fallback) {
   }
 }
 
-function normalizedProcessStatus(status, processStatus) {
-  if (status !== "running" && processStatus === "running") {
-    return legacyRunStatusToProcessStatus(status);
-  }
-  return processStatus || legacyRunStatusToProcessStatus(status);
-}
-
 function projectTaskSummary(row) {
   return {
     id: row.id,
@@ -77,13 +69,13 @@ function projectTaskSummary(row) {
     running_run: row.running_run_id ? {
       id: row.running_run_id,
       status: row.running_run_status,
-      process_status: row.running_run_process_status || legacyRunStatusToProcessStatus(row.running_run_status),
+      process_status: row.running_run_process_status || "running",
       started_at: row.running_run_started_at,
     } : null,
     last_run: row.last_run_id ? {
       id: row.last_run_id,
       status: row.last_run_status,
-      process_status: normalizedProcessStatus(row.last_run_status, row.last_run_process_status),
+      process_status: row.last_run_process_status || "running",
       failure_kind: row.last_run_failure_kind || null,
       ended_at: row.last_run_ended_at,
       stage: row.last_run_stage || (row.last_run_mode === "review" ? "review" : "execute"),

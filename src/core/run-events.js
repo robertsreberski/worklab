@@ -1,12 +1,5 @@
-import { legacyRunStatusToProcessStatus } from "./state-machine.js";
-
 function normalizedProcessStatus(run) {
-  const status = run?.status || null;
-  const processStatus = run?.process_status || run?.processStatus || null;
-  if (status && status !== "running" && processStatus === "running") {
-    return legacyRunStatusToProcessStatus(status);
-  }
-  return processStatus || legacyRunStatusToProcessStatus(status);
+  return run?.process_status || run?.processStatus || "running";
 }
 
 export function buildRunLifecycleEvent(db, type, runId, fallback = {}) {

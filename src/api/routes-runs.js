@@ -1,4 +1,3 @@
-import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 import { newCommentId } from "../core/ids.js";
 import { normalizeLiveInputBody, supportsLiveInputProvider } from "../core/live-input.js";
 import { artifactPaths, artifactsForRunRow, runArtifactSummary } from "../core/run-artifacts.js";
@@ -15,9 +14,7 @@ function parseEvents(value) {
 }
 
 function normalizeRun(row, liveInputState = null, events = null) {
-  const processStatus = row.status !== "running" && row.process_status === "running"
-    ? legacyRunStatusToProcessStatus(row.status)
-    : row.process_status;
+  const processStatus = row.process_status || "running";
   const supported = supportsLiveInputProvider(row.provider_kind);
   const artifacts = artifactsForRunRow(row, { events });
   return {
@@ -36,9 +33,7 @@ function normalizeRun(row, liveInputState = null, events = null) {
 }
 
 function runProcessStatus(row) {
-  return row.status !== "running" && row.process_status === "running"
-    ? legacyRunStatusToProcessStatus(row.status)
-    : row.process_status;
+  return row.process_status || "running";
 }
 
 function runEventLimit(value) {

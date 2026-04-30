@@ -1,7 +1,5 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
-import { legacyRunStatusToProcessStatus } from "./state-machine.js";
-
 function runLogError(code, message) {
   return Object.assign(new Error(message), { code });
 }
@@ -233,9 +231,7 @@ function normalizeRun(row) {
     stage: row.stage || (row.mode === "review" ? "review" : "execute"),
     agent_name: row.agent_name,
     status: row.status,
-    process_status: row.status !== "running" && row.process_status === "running"
-      ? legacyRunStatusToProcessStatus(row.status)
-      : (row.process_status || legacyRunStatusToProcessStatus(row.status)),
+    process_status: row.process_status || "running",
     started_at: row.started_at || null,
     ended_at: row.ended_at || null,
     raw_output_path: row.raw_output_path || null,

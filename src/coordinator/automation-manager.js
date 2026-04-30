@@ -1,6 +1,6 @@
 import { createAutomationRunRows, createAutomationTriggerRow, nextAutomationStateAfterFire, nextFireAt, rowToAutomation } from "../core/automations.js";
 import { parseModelReference } from "../core/ai.js";
-import { nextStage, processStatusToLegacyStatus } from "../core/state-machine.js";
+import { nextStage } from "../core/state-machine.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { newAutomationRunId } from "../core/ids.js";
 import { readSettings } from "../core/settings.js";
@@ -235,7 +235,7 @@ export function createAutomationManager({
       UPDATE task_runs
       SET status = ?, process_status = 'failed', ended_at = ?, failure_kind = 'spawn', error_text = ?
       WHERE id = ?
-    `).run(processStatusToLegacyStatus("failed"), now, message, runId);
+    `).run("error", now, message, runId);
     db.prepare(`
       UPDATE automations
       SET last_status = 'failed', last_error = ?, updated_at = ?

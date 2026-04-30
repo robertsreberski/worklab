@@ -146,7 +146,7 @@ describe("project API", () => {
     db.prepare(`
       INSERT INTO task_runs
         (id, task_id, project_id, mode, stage, agent_name, started_at, ended_at, status, process_status, failure_kind, decision, summary)
-      VALUES ('run-failed', ?, ?, 'execute', 'execute', 'builder', ?, ?, 'error', 'running', 'spawn', 'failed', 'worker failed')
+      VALUES ('run-failed', ?, ?, 'execute', 'execute', 'builder', ?, ?, 'error', 'failed', 'spawn', 'failed', 'worker failed')
     `).run(attentionTask.id, project.id, now - 2_000, now - 1_000);
 
     const detail = await agent.get(`/api/projects/${project.id}`).expect(200);

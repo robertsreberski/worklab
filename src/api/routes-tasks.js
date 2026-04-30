@@ -1,6 +1,6 @@
 import { newTaskId, newCommentId } from "../core/ids.js";
 import { enrichCommentRows } from "../core/comments.js";
-import { nextStage, STAGES, legacyRunStatusToProcessStatus } from "../core/state-machine.js";
+import { nextStage, STAGES } from "../core/state-machine.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../core/task-keys.js";
@@ -75,7 +75,7 @@ function latestTaskRunSummary(db, taskId) {
     mode: row.mode,
     stage: row.stage,
     status: row.status,
-    process_status: row.process_status || legacyRunStatusToProcessStatus(row.status),
+    process_status: row.process_status || "running",
     decision: row.decision || null,
     failure_kind: row.failure_kind || null,
     summary: row.summary || null,
@@ -131,7 +131,7 @@ function attachDerivedRunFields(db, task) {
     running_run: runningRow ? {
       id: runningRow.id,
       status: runningRow.status,
-      process_status: runningRow.process_status || legacyRunStatusToProcessStatus(runningRow.status),
+      process_status: runningRow.process_status || "running",
       started_at: runningRow.started_at,
       event_count: runningEvents.length,
       last_event: runningEvents[runningEvents.length - 1] || null,
@@ -139,9 +139,7 @@ function attachDerivedRunFields(db, task) {
     last_run: lastRow ? {
       id: lastRow.id,
       status: lastRow.status,
-      process_status: lastRow.status !== "running" && lastRow.process_status === "running"
-        ? legacyRunStatusToProcessStatus(lastRow.status)
-        : (lastRow.process_status || legacyRunStatusToProcessStatus(lastRow.status)),
+      process_status: lastRow.process_status || "running",
       failure_kind: lastRow.failure_kind || null,
       ended_at: lastRow.ended_at,
       stage: lastRow.stage || (lastRow.mode === "review" ? "review" : "execute"),
@@ -318,7 +316,7 @@ function enrichTaskList(db, tasks, config = null) {
     task.running_run = {
       id: row.id,
       status: row.status,
-      process_status: row.process_status || legacyRunStatusToProcessStatus(row.status),
+      process_status: row.process_status || "running",
       started_at: row.started_at,
       event_count: Number(row.event_count || 0),
       last_event: safeJson(row.last_event_json, null),
@@ -337,9 +335,7 @@ function enrichTaskList(db, tasks, config = null) {
     task.last_run = {
       id: row.id,
       status: row.status,
-      process_status: row.status !== "running" && row.process_status === "running"
-        ? legacyRunStatusToProcessStatus(row.status)
-        : (row.process_status || legacyRunStatusToProcessStatus(row.status)),
+      process_status: row.process_status || "running",
       failure_kind: row.failure_kind || null,
       ended_at: row.ended_at,
       stage: row.stage || (row.mode === "review" ? "review" : "execute"),
@@ -569,9 +565,7 @@ function rowToRun(row) {
   const artifacts = artifactsForRunRow({ ...run, artifacts_json, artifact_summary_json });
   return {
     ...run,
-    process_status: run.status !== "running" && run.process_status === "running"
-      ? legacyRunStatusToProcessStatus(run.status)
-      : (run.process_status || legacyRunStatusToProcessStatus(run.status)),
+    process_status: run.process_status || "running",
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
     artifact_paths: artifactPaths(artifacts),
     artifacts,

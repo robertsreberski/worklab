@@ -51,44 +51,6 @@ export const DEFAULT_MAX_FAILURES = 3;
 // can be diagnosed without poisoning execute-side failure budgets.
 export const DEFAULT_MAX_REJECTIONS = 3;
 
-export function legacyRunStatusToProcessStatus(status) {
-  switch (status) {
-    case "complete":
-    case "succeeded":
-      return "succeeded";
-    case "error":
-    case "failed":
-      return "failed";
-    case "cancelled":
-      return "cancelled";
-    case "abandoned":
-      return "abandoned";
-    case "queued":
-      return "queued";
-    case "running":
-    default:
-      return "running";
-  }
-}
-
-export function processStatusToLegacyStatus(status) {
-  switch (status) {
-    case "succeeded":
-      return "complete";
-    case "failed":
-      return "error";
-    case "cancelled":
-      return "cancelled";
-    case "abandoned":
-      return "error";
-    case "queued":
-      return "running";
-    case "running":
-    default:
-      return "running";
-  }
-}
-
 function unchanged(stage, sideEffects = []) {
   return { stage, sideEffects };
 }

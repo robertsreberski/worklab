@@ -1,6 +1,5 @@
 import { newAutomationId } from "../core/ids.js";
 import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../core/automations.js";
-import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 import { resolveTaskRow } from "../core/task-keys.js";
 
 function validateAutomationInput(body = {}) {
@@ -28,9 +27,7 @@ function validateTaskAutomationInput(body = {}) {
 
 function runRowToPayload(row) {
   if (!row) return null;
-  const processStatus = row.status !== "running" && row.process_status === "running"
-    ? legacyRunStatusToProcessStatus(row.status)
-    : (row.process_status || legacyRunStatusToProcessStatus(row.status));
+  const processStatus = row.process_status || "running";
   return {
     id: row.id,
     automation_id: row.automation_id,
