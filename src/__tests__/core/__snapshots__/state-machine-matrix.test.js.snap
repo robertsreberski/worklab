@@ -1,0 +1,2062 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`nextStage matrix snapshot > freezes children completion / blocking 1`] = `
+[
+  [
+    "awaiting_children|children_completed",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "reason": "required children completed",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|children_completed",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "cannot resume children from execute",
+          "type": "error",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "awaiting_children|child_blocked",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "message": "blocker",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "required_child_blocked",
+          "type": "set_stage_reason",
+        },
+        {
+          "blockingIssues": [
+            "blocker",
+          ],
+          "type": "set_blocking_issues",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "execute|child_blocked",
+    "execute",
+    {
+      "sideEffects": [],
+      "stage": "execute",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes failure / cancel / abandon at threshold and below 1`] = `
+[
+  [
+    "execute|run_failed|0",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "boom",
+          "type": "post_error_comment",
+        },
+        {
+          "message": "boom",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "spawn",
+          "type": "set_stage_reason",
+        },
+        {
+          "count": 1,
+          "type": "set_failure_count",
+        },
+        {
+          "kind": "spawn",
+          "type": "set_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|run_failed|2",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "boom",
+          "type": "post_error_comment",
+        },
+        {
+          "message": "boom",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "spawn",
+          "type": "set_stage_reason",
+        },
+        {
+          "count": 3,
+          "type": "set_failure_count",
+        },
+        {
+          "kind": "spawn",
+          "type": "set_last_failure_kind",
+        },
+        {
+          "blockingIssues": [
+            "Reached max failures (3). Last error: boom",
+          ],
+          "type": "set_blocking_issues",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "execute|run_cancelled|user",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": "cancelled (user)",
+          "type": "set_stage_reason",
+        },
+        {
+          "message": "user cancelled",
+          "type": "post_cancellation_comment",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|run_cancelled|stale",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": "cancelled (stale_reconcile)",
+          "type": "set_stage_reason",
+        },
+        {
+          "message": "stale",
+          "type": "post_cancellation_comment",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|run_cancelled|signal",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": "cancelled (signal)",
+          "type": "set_stage_reason",
+        },
+        {
+          "message": "Run cancelled.",
+          "type": "post_cancellation_comment",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|run_abandoned",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "coordinator restarted",
+          "type": "post_error_comment",
+        },
+        {
+          "message": "coordinator restarted",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "abandoned",
+          "type": "set_stage_reason",
+        },
+        {
+          "kind": "abandoned",
+          "type": "set_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes human_move target × current cross-product 1`] = `
+[
+  [
+    "human_move|plan->plan",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|plan->execute",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|plan->review",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|plan->awaiting_children",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|plan->awaiting_user",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|plan->blocked",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|plan->done",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|plan->not-a-stage",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|execute->plan",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|execute->execute",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|execute->review",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|execute->awaiting_children",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|execute->awaiting_user",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|execute->blocked",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|execute->done",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|execute->not-a-stage",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|review->plan",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|review->execute",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|review->review",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|review->awaiting_children",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|review->awaiting_user",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|review->blocked",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|review->done",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|review->not-a-stage",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|awaiting_children->plan",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|awaiting_children->execute",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|awaiting_children->review",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|awaiting_children->awaiting_children",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|awaiting_children->awaiting_user",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|awaiting_children->blocked",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|awaiting_children->done",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|awaiting_children->not-a-stage",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|awaiting_user->plan",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|awaiting_user->execute",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|awaiting_user->review",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|awaiting_user->awaiting_children",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|awaiting_user->awaiting_user",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|awaiting_user->blocked",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|awaiting_user->done",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|awaiting_user->not-a-stage",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|blocked->plan",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|blocked->execute",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|blocked->review",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|blocked->awaiting_children",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|blocked->awaiting_user",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|blocked->blocked",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|blocked->done",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|blocked->not-a-stage",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|done->plan",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "human_move|done->execute",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "human_move|done->review",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "human_move|done->awaiting_children",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "human_move|done->awaiting_user",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "human_move|done->blocked",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "clear_completed_at",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "human_move|done->done",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "reason": "user moved",
+          "type": "set_stage_reason",
+        },
+        {
+          "type": "set_completed_at",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "clear_error_text",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "human_move|done->not-a-stage",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "message": "invalid target not-a-stage",
+          "type": "error",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
+[
+  [
+    "plan|advance",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "plan|approve",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "plan|reject",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "message": "unknown decision: reject",
+          "type": "error",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "plan|block",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "message": "summary",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "summary",
+          "type": "set_stage_reason",
+        },
+        {
+          "blockingIssues": [
+            "needs eyes",
+          ],
+          "type": "set_blocking_issues",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "plan|pause",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "reason": "summary",
+          "type": "set_stage_reason",
+        },
+        {
+          "pendingActions": [
+            {
+              "command": "do thing",
+            },
+          ],
+          "type": "set_pending_actions",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "plan|delegate",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "reason": "waiting for delegated subtasks",
+          "type": "set_stage_reason",
+        },
+        {
+          "subtasks": [
+            {
+              "instructions": "do work",
+              "title": "child",
+            },
+          ],
+          "type": "create_subtasks",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "plan|unknown",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "message": "unknown decision: unknown",
+          "type": "error",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "execute|advance",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "execute|approve",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "execute|reject",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "unknown decision: reject",
+          "type": "error",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "execute|block",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "message": "summary",
+          "type": "set_error_text",
+        },
+        {
+          "reason": "summary",
+          "type": "set_stage_reason",
+        },
+        {
+          "blockingIssues": [
+            "needs eyes",
+          ],
+          "type": "set_blocking_issues",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "execute|pause",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "reason": "summary",
+          "type": "set_stage_reason",
+        },
+        {
+          "pendingActions": [
+            {
+              "command": "do thing",
+            },
+          ],
+          "type": "set_pending_actions",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "execute|delegate",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "reason": "waiting for delegated subtasks",
+          "type": "set_stage_reason",
+        },
+        {
+          "subtasks": [
+            {
+              "instructions": "do work",
+              "title": "child",
+            },
+          ],
+          "type": "create_subtasks",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "execute|unknown",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "message": "unknown decision: unknown",
+          "type": "error",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes review-stage decisions 1`] = `
+[
+  [
+    "review|advance",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "review must return approve or reject (got "advance")",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "review|approve",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_stage_reason",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "reset_rejection_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
+          "type": "set_completed_at",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+  [
+    "review|reject",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_completed_at",
+        },
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_blocking_issues",
+        },
+        {
+          "count": 1,
+          "type": "set_rejection_count",
+        },
+        {
+          "kind": "review_rejected",
+          "type": "set_last_failure_kind",
+        },
+        {
+          "reason": "review requested changes",
+          "type": "set_stage_reason",
+        },
+        {
+          "notes": "details",
+          "type": "post_review_comment",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "review|block",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "review must return approve or reject (got "block")",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "review|pause",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "review must return approve or reject (got "pause")",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "review|delegate",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "review must return approve or reject (got "delegate")",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "review|unknown",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "message": "review must return approve or reject (got "unknown")",
+          "type": "error",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes run_requested behavior across all stages 1`] = `
+[
+  [
+    "run_requested|plan",
+    "plan",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": null,
+          "type": "set_stage_reason",
+        },
+        {
+          "agentName": "owner",
+          "mode": "execute",
+          "stage": "plan",
+          "type": "spawn_worker",
+        },
+      ],
+      "stage": "plan",
+    },
+  ],
+  [
+    "run_requested|execute",
+    "execute",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": null,
+          "type": "set_stage_reason",
+        },
+        {
+          "agentName": "owner",
+          "mode": "execute",
+          "stage": "execute",
+          "type": "spawn_worker",
+        },
+      ],
+      "stage": "execute",
+    },
+  ],
+  [
+    "run_requested|review",
+    "review",
+    {
+      "sideEffects": [
+        {
+          "type": "clear_error_text",
+        },
+        {
+          "reason": null,
+          "type": "set_stage_reason",
+        },
+        {
+          "agentName": "owner",
+          "mode": "execute",
+          "stage": "review",
+          "type": "spawn_worker",
+        },
+      ],
+      "stage": "review",
+    },
+  ],
+  [
+    "run_requested|awaiting_children",
+    "awaiting_children",
+    {
+      "sideEffects": [
+        {
+          "message": "cannot run from awaiting_children",
+          "type": "error",
+        },
+      ],
+      "stage": "awaiting_children",
+    },
+  ],
+  [
+    "run_requested|awaiting_user",
+    "awaiting_user",
+    {
+      "sideEffects": [
+        {
+          "message": "cannot run from awaiting_user",
+          "type": "error",
+        },
+      ],
+      "stage": "awaiting_user",
+    },
+  ],
+  [
+    "run_requested|blocked",
+    "blocked",
+    {
+      "sideEffects": [
+        {
+          "message": "cannot run from blocked",
+          "type": "error",
+        },
+      ],
+      "stage": "blocked",
+    },
+  ],
+  [
+    "run_requested|done",
+    "done",
+    {
+      "sideEffects": [
+        {
+          "message": "cannot run from done",
+          "type": "error",
+        },
+      ],
+      "stage": "done",
+    },
+  ],
+]
+`;
+
+exports[`nextStage matrix snapshot > freezes unknown event handling 1`] = `
+{
+  "sideEffects": [
+    {
+      "message": "unknown event what",
+      "type": "error",
+    },
+  ],
+  "stage": "execute",
+}
+`;
