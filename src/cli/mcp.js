@@ -4,8 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { loadConfig, worklabBaseUrl } from "../core/config.js";
-import { readMcpToken } from "../core/service-token.js";
+import { loadConfig, readMcpToken, worklabBaseUrl } from "../core/index.js";
 // `worklab mcp` is the CLI entry point that spawns the admin MCP stdio
 // server and shares its tool surface with the HTTP server in mcp/admin.
 // This file is the single intentional wiring point — see cli/README.md.

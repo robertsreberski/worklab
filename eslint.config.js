@@ -74,6 +74,37 @@ const FORBID_API_DB_PREPARE = {
   ],
 };
 
+// PR-9: edge layers must consume core/ via the public barrel (src/core/index.js)
+// rather than reaching into individual core modules. The exceptions documented
+// alongside PR-9:
+//   - api/routes/* may import from src/core/db/queries/* (the agreed pattern after
+//     PR-2..PR-6 migrated raw db.prepare calls into named query helpers).
+//   - coordinator/task-watcher.js, coordinator/watcher/*.js, and
+//     coordinator/spawn-worker.js are internal coordinator plumbing and may keep
+//     deep imports.
+// Other deep imports surface as warn-level violations until the broader boundary
+// cleanup completes (PR-14 follow-on); they will be promoted to error in PR-16.
+//
+// no-restricted-imports patterns are matched with .gitignore semantics (the
+// `ignore` package), which doesn't support extended-glob !(...) — we use
+// allow-listed re-includes instead.
+// Edge layers consume core/ via the public barrel (src/core/index.js).
+// core/db/queries/* is explicitly allowed everywhere — the named query
+// helpers are the agreed cross-cutting DAL after PR-2..PR-6 migrated all
+// raw db.prepare() calls. (Routes were the original beneficiary; same
+// pattern applies wherever a non-test consumer needs DB access.)
+const FORBID_DEEP_CORE = {
+  group: [
+    "**/core/**",
+    "!**/core/index*",
+    "!**/core/db",
+    "!**/core/db/queries",
+    "!**/core/db/queries/**",
+  ],
+  message:
+    "Import from the core public barrel (src/core/index.js); core/db/queries/* is the only deep import allowed.",
+};
+
 export default [
   {
     ignores: [
@@ -111,16 +142,20 @@ export default [
     rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE),
   },
 
-  // src/api/ — HTTP edge
+  // src/api/ — HTTP edge. Edge consumers go through core/index.js; the
+  // FORBID_DEEP_CORE carve-out for core/db/queries/* applies here too.
   {
     files: ["src/api/**/*.js"],
-    rules: { ...restricted(FORBID_DB), ...FORBID_API_DB_PREPARE },
+    rules: {
+      ...restricted(FORBID_DB, FORBID_DEEP_CORE),
+      ...FORBID_API_DB_PREPARE,
+    },
   },
 
   // src/mcp/ — MCP edge
   {
     files: ["src/mcp/**/*.js"],
-    rules: restricted(FORBID_DB, {
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, {
       group: ["**/api/**", "**/integrations/**", "**/cli/**"],
       message: "MCP servers depend on core/agent/ai only.",
     }),
@@ -129,16 +164,36 @@ export default [
   // src/integrations/ — external integrations
   {
     files: ["src/integrations/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_API_LAYER),
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER),
   },
 
-  // src/cli/ — binary subcommands
+  // src/cli/ — binary subcommands. cli/doctor.js still uses the
+  // core/ai-tool-helpers.js re-export shim; carve it out until the CLI
+  // tooling stops depending on the shim.
   {
     files: ["src/cli/**/*.js"],
-    rules: restricted({
+    rules: restricted(FORBID_DEEP_CORE, {
       group: ["**/api/**", "**/integrations/**", "**/mcp/**"],
       message: "CLI uses core and coordinator only.",
     }),
+  },
+  {
+    files: ["src/cli/doctor.js"],
+    rules: { "no-restricted-imports": "off" },
+  },
+
+  // src/coordinator/ + src/coordinator.js + src/worker.js — process orchestration.
+  // task-watcher.js, watcher/*.js, and spawn-worker.js are explicitly carved out
+  // below; they need internal coordinator plumbing access to core internals.
+  {
+    files: [
+      "src/coordinator.js",
+      "src/coordinator/automation-manager.js",
+      "src/coordinator/consolidation-cron.js",
+      "src/coordinator/search-indexer.js",
+      "src/worker.js",
+    ],
+    rules: restricted(FORBID_DEEP_CORE),
   },
 
   // Tests, UI bundle source, generated/legacy: no boundary checks

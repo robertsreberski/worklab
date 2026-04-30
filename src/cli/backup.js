@@ -2,8 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { openDb } from "../core/db.js";
+import { loadConfig, openDb } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
 
 function timestamp(date = new Date()) {

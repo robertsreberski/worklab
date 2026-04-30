@@ -1,4 +1,4 @@
-import { buildSkillIndex } from "../../core/skills.js";
+import { buildSkillIndex } from "../../core/index.js";
 
 function section(title, body) {
   const text = String(body || "").trim();

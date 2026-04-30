@@ -1,4 +1,4 @@
-import { createWorklabAssistantService } from "../../core/assistant.js";
+import { createWorklabAssistantService } from "../../core/index.js";
 
 function errorResponse(res, err) {
   const status = err?.status || 500;

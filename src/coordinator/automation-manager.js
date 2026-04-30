@@ -1,10 +1,18 @@
-import { createAutomationRunRows, createAutomationTriggerRow, nextAutomationStateAfterFire, nextFireAt, rowToAutomation } from "../core/automations.js";
-import { parseModelReference } from "../core/ai.js";
-import { nextStage } from "../core/state-machine.js";
-import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
-import { newAutomationRunId } from "../core/ids.js";
-import { readSettings } from "../core/settings.js";
-import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
+import {
+  agentForTaskStage,
+  applyTaskSideEffects,
+  createAutomationRunRows,
+  createAutomationTriggerRow,
+  missingAgentMessageForTaskStage,
+  newAutomationRunId,
+  nextAutomationStateAfterFire,
+  nextFireAt,
+  nextStage,
+  parseModelReference,
+  readSettings,
+  rowToAutomation,
+  taskStage,
+} from "../core/index.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
 import { getAgentByName } from "../core/db/queries/agents.js";

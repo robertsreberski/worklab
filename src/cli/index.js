@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { bootstrapWorklabEnv } from "../core/env.js";
+import { bootstrapWorklabEnv } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
 
 const cmd = process.argv[2];

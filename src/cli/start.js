@@ -1,6 +1,6 @@
 import { startCoordinator } from "../coordinator.js";
 import { execFileSync } from "node:child_process";
-import { loadConfig, worklabBaseUrl } from "../core/config.js";
+import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { ensureServiceInstalled, startUserService } from "./install-service.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 import { assertServiceRuntimeReady, serviceErrorLogTail } from "./service-runtime.js";

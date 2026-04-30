@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { serviceStatus } from "../../core/host-service-status.js";
+import { serviceStatus } from "../../core/index.js";
 
 const string = (description) => ({ type: "string", description });
 const number = (description) => ({ type: "number", description });

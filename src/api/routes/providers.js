@@ -12,7 +12,7 @@ import {
   testProvider,
   updateProvider,
   upsertModel,
-} from "../../core/providers.js";
+} from "../../core/index.js";
 import { countModelsForProvider } from "../../core/db/queries/providers.js";
 import { listAgentModelRefs } from "../../core/db/queries/agents.js";
 

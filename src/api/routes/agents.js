@@ -1,11 +1,24 @@
-import { getBuiltinModelByReference, normalizeReasoningEffortForModel, parseModelReference } from "../../core/ai.js";
-import { buildModelCapabilities, getModelByProviderAndName, getProvider } from "../../core/providers.js";
-import { readRunSection } from "../../core/journal.js";
-import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
-import { getBuiltinProviderAvailability } from "../../core/credentials.js";
-import { loadSkills } from "../../core/skills.js";
-import { getMcpServerStatuses } from "../../core/mcp-config.js";
-import { readAgentMemoryState } from "../../core/memory.js";
+import {
+  ALLOWLIST_MODE_ALL,
+  buildModelCapabilities,
+  getBuiltinModelByReference,
+  getBuiltinProviderAvailability,
+  getMcpServerStatuses,
+  getModelByProviderAndName,
+  getProvider,
+  inferAllowlistMode,
+  isValidSlug,
+  loadSkills,
+  normalizeAllowlistMode,
+  normalizeList,
+  normalizeReasoningEffortForModel,
+  parseModelReference,
+  parseStoredAllowlist,
+  readAgentMemoryState,
+  readRunSection,
+  storedAllowlistMode,
+  uniqueSlug,
+} from "../../core/index.js";
 import {
   agentExists,
   deleteAgentByName,
@@ -18,14 +31,6 @@ import {
   agentHasRunningRun,
   listRecentAgentRuns,
 } from "../../core/db/queries/runs.js";
-import {
-  ALLOWLIST_MODE_ALL,
-  inferAllowlistMode,
-  normalizeAllowlistMode,
-  normalizeList,
-  parseStoredAllowlist,
-  storedAllowlistMode,
-} from "../../core/agent-allowlists.js";
 import { join } from "node:path";
 
 function rowToAgent(row) {

@@ -1,7 +1,7 @@
 // src/cli/stop.js
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
+import { loadConfig } from "../core/index.js";
 import { stopUserService } from "./install-service.js";
 import { applyConfigArgs } from "./args.js";
 

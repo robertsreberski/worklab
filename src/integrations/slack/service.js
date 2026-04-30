@@ -1,14 +1,24 @@
 import { App } from "@slack/bolt";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { readSettings } from "../../core/settings.js";
-import { newAgentLogId, newRunId, newSlackDeliveryId, newSlackInboundEventId } from "../../core/ids.js";
-import { appendJournalEntry, appendJournalSummary, appendMemoryFacts, readJournalTail } from "../../core/journal.js";
-import { readAgentMemoryContent } from "../../core/memory.js";
-import { generateResponse, resolveModel, WORKLAB_BUILTIN_TOOLS } from "../../core/ai.js";
-import { loadSkills } from "../../core/skills.js";
-import { getAvailableMcpServers } from "../../core/mcp-config.js";
-import { worklabBaseUrl } from "../../core/config.js";
+import {
+  appendJournalEntry,
+  appendJournalSummary,
+  appendMemoryFacts,
+  generateResponse,
+  getAvailableMcpServers,
+  loadSkills,
+  newAgentLogId,
+  newRunId,
+  newSlackDeliveryId,
+  newSlackInboundEventId,
+  readAgentMemoryContent,
+  readJournalTail,
+  readSettings,
+  resolveModel,
+  worklabBaseUrl,
+  WORKLAB_BUILTIN_TOOLS,
+} from "../../core/index.js";
 import { buildTriageMessages, buildTriageSystemPrompt } from "./context.js";
 import { slackMessageFilterReason } from "./filter.js";
 import { parseTriageResult, TRIAGE_RESULT_JSON_SCHEMA } from "./triage-result.js";

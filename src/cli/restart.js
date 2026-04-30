@@ -1,4 +1,4 @@
-import { loadConfig, worklabBaseUrl } from "../core/config.js";
+import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { ensureServiceInstalled, restartUserService } from "./install-service.js";
 import { buildUi, waitForHealth } from "./start.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
