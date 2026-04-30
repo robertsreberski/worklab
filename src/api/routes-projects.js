@@ -8,6 +8,7 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../core/projects.js";
+import { archiveProject, getProjectById } from "../core/db/queries/projects.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -224,7 +225,7 @@ export function registerProjectRoutes(app, { db, broker }) {
           return res.status(409).json({ error: { code: "conflict", message: "project slug is already in use" } });
         }
       }
-      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(id);
+      const row = getProjectById(db, id);
       broker?.broadcast?.("global", { type: "project_created", id, slug: row.slug });
       res.status(201).json({ project: projectFromRow(row) });
     } catch (error) {
@@ -307,7 +308,7 @@ export function registerProjectRoutes(app, { db, broker }) {
           throw error;
         }
       }
-      const row = db.prepare("SELECT * FROM projects WHERE id = ?").get(existing.id);
+      const row = getProjectById(db, existing.id);
       const wasArchived = !!existing.archived;
       const isArchived = !!row.archived;
       if (wasArchived !== isArchived) {
@@ -332,7 +333,7 @@ export function registerProjectRoutes(app, { db, broker }) {
       if (existing.archived) {
         return res.status(204).end();
       }
-      db.prepare("UPDATE projects SET archived = 1, updated_at = ? WHERE id = ?").run(Date.now(), existing.id);
+      archiveProject(db, existing.id, Date.now());
       broker?.broadcast?.("global", { type: "project_archived", id: existing.id, slug: existing.slug });
       res.status(204).end();
     } catch (error) {
