@@ -4,7 +4,7 @@ import {
   createStderrTail,
   FAILURE_KINDS,
   retryableProviderFailureInfo,
-} from "../../core/failure-kind.js";
+} from "../../ai/failure.js";
 
 describe("classifyFailure", () => {
   it("returns null for clean exit", () => {

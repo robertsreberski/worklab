@@ -7,11 +7,10 @@ import {
   isValidSlug,
   loadSkills,
   parseSkillFrontmatter,
-  parseStoredAllowlist,
   SkillImportError,
-  storedAllowlistMode,
   uniqueSlug,
 } from "../../core/index.js";
+import { parseStoredAllowlist, storedAllowlistMode } from "../../agent/allowlists.js";
 import {
   listAgentSkillsAllowlists,
   listAgentSkillsAllowlistsWithNames,

@@ -14,7 +14,7 @@ const PROCESS_TO_LEGACY_STATUS = {
   running: "running",
 };
 import { normalizeLiveInputBody } from "../core/live-input.js";
-import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
+import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../ai/failure.js";
 import { artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import { setRunRawOutputPath } from "../core/db/queries/runs.js";
 

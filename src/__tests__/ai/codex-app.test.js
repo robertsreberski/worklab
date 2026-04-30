@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { generateCodexAppResponse } from "../../core/ai-codex-app.js";
+import { generateCodexAppResponse } from "../../ai/providers/codex-app.js";
 import { createLiveInputQueue } from "../../core/live-input.js";
 
 function writeFakeCodexAppServer(dir) {

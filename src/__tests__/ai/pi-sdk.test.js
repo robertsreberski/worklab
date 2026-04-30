@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
-import { generatePiResponse } from "../../core/ai-pi.js";
+import { generatePiResponse } from "../../ai/providers/pi-sdk.js";
 import { resolveModel } from "../../core/ai.js";
 
 const EMPTY_USAGE = {

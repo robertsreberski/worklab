@@ -4,7 +4,7 @@ import {
   normalizeList,
   resolveAllowlist,
   resolveAllowlistMap,
-} from "../../core/agent-allowlists.js";
+} from "../../agent/allowlists.js";
 
 describe("agent allowlists", () => {
   it("normalizes and deduplicates selected names", () => {

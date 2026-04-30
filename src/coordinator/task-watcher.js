@@ -6,7 +6,7 @@ import {
 } from "../core/state-machine.js";
 import { newRunId, newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
-import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result.js";
+import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../ai/result/contract.js";
 import { parseModelReference } from "../core/ai.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
@@ -19,7 +19,7 @@ import { prepareExecenv } from "../core/execenv.js";
 import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
 import { resolveTaskProjectRunContext } from "../core/projects.js";
-import { retryableProviderFailureInfo } from "../core/failure-kind.js";
+import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
 import {

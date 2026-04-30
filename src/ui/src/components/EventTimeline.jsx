@@ -1,6 +1,6 @@
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
 import { normalizeCommentText } from "../lib/commentFormatting.js";
-import { normalizeCodexItemEvent } from "../../../core/codex-events.js";
+import { normalizeCodexItemEvent } from "../../../ai/streaming/codex-events.js";
 
 function visibleTextFromEvent(ev) {
   if (ev?.type === "sdk_event") return visibleTextFromEvent(ev.event);

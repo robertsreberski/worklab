@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildCliCommand, generateCliResponse } from "../../core/ai-cli.js";
+import { buildCliCommand, generateCliResponse } from "../../ai/providers/claude-cli.js";
 import { parseModelReference } from "../../core/ai.js";
-import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result.js";
-import { buildExecuteSystemPrompt } from "../../core/context.js";
+import { WORKLAB_RESULT_JSON_SCHEMA } from "../../ai/result/contract.js";
+import { buildExecuteSystemPrompt } from "../../agent/prompt/system-prompt.js";
 import { loadSkills } from "../../core/skills.js";
 
 describe("CLI provider adapters", () => {

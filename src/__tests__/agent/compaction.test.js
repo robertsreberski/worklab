@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { openDb, runMigrations } from "../../core/db.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
 import {
   COMPACTED_CONTEXT_MARKER,
   compactToolResultForContext,
   createAgentCompactionManager,
   isLikelyContextTermination,
   resolveAgentCompactionPolicy,
-} from "../../core/agent-compaction.js";
+} from "../../agent/compaction.js";
 
 function seedRun(db, runId = "run_1") {
   db.prepare("INSERT INTO task_runs (id, mode, agent_name, started_at) VALUES (?, 'execute', 'agent', 1)")

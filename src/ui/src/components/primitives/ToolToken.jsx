@@ -1,7 +1,7 @@
 // §3.16 ToolToken — compact representation of one tool call / thought / handoff /
 // text event. Mono label truncated at 320px (256 compact). Trailing status glyph.
 import { Icon } from "../Icon.jsx";
-import { normalizeCodexItemType } from "../../../../core/codex-events.js";
+import { normalizeCodexItemType } from "../../../../ai/streaming/codex-events.js";
 import { fileEditChangeLabel } from "../../lib/fileEditDisplay.js";
 
 const STATUS_GLYPH = {

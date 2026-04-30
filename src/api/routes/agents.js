@@ -1,24 +1,26 @@
 import {
-  ALLOWLIST_MODE_ALL,
   buildModelCapabilities,
   getBuiltinModelByReference,
   getBuiltinProviderAvailability,
   getMcpServerStatuses,
   getModelByProviderAndName,
   getProvider,
-  inferAllowlistMode,
   isValidSlug,
   loadSkills,
-  normalizeAllowlistMode,
-  normalizeList,
   normalizeReasoningEffortForModel,
   parseModelReference,
-  parseStoredAllowlist,
   readAgentMemoryState,
   readRunSection,
-  storedAllowlistMode,
   uniqueSlug,
 } from "../../core/index.js";
+import {
+  ALLOWLIST_MODE_ALL,
+  inferAllowlistMode,
+  normalizeAllowlistMode,
+  normalizeList,
+  parseStoredAllowlist,
+  storedAllowlistMode,
+} from "../../agent/allowlists.js";
 import {
   agentExists,
   deleteAgentByName,

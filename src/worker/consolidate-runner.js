@@ -1,11 +1,11 @@
 import {
-  buildConsolidationSystemPrompt,
   generateResponse,
   readAgentMemoryContent,
   readFullJournal,
   resolveModel,
   writeMemory,
 } from "../core/index.js";
+import { buildConsolidationSystemPrompt } from "../agent/prompt/system-prompt.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { maxTurnsForModel } from "./util.js";
 
