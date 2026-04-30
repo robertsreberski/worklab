@@ -7,6 +7,7 @@ import { agentJournalPath, agentMemoryPath } from "../core/journal.js";
 import { indexPath } from "../core/embeddings.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
 import { getEnabledAgentByName, listEnabledAgentNames } from "../core/db/queries/agents.js";
+import { getAgentConsolidationHash, upsertAgentConsolidation } from "../core/db/queries/agent-consolidations.js";
 
 const TICK_MS = 60_000;
 
@@ -43,14 +44,12 @@ export function createConsolidationManager({
   function completeRun(agentName, runId, journalHash, res) {
     active.delete(agentName);
     if (res.status === "complete") {
-      db.prepare(`
-        INSERT INTO agent_consolidations (agent_name, last_journal_hash, last_consolidated_at, last_run_id)
-        VALUES (?, ?, ?, ?)
-        ON CONFLICT(agent_name) DO UPDATE SET
-          last_journal_hash = excluded.last_journal_hash,
-          last_consolidated_at = excluded.last_consolidated_at,
-          last_run_id = excluded.last_run_id
-      `).run(agentName, journalHash, Date.now(), runId);
+      upsertAgentConsolidation(db, {
+        agentName,
+        journalHash,
+        consolidatedAt: Date.now(),
+        runId,
+      });
       const memoryPath = agentMemoryPath(dataDir, agentName);
       if (existsSync(memoryPath)) {
         indexPath({ db, dataDir, filePath: memoryPath }).catch((err) => {
@@ -69,7 +68,7 @@ export function createConsolidationManager({
     const journalPath = agentJournalPath(dataDir, agentName);
     const journalHash = hashFile(journalPath);
     if (!journalHash) throw new Error(`agent ${agentName} has no journal entries`);
-    const previous = db.prepare("SELECT last_journal_hash FROM agent_consolidations WHERE agent_name = ?").get(agentName);
+    const previous = getAgentConsolidationHash(db, agentName);
     if (!force && previous?.last_journal_hash === journalHash) return { skipped: true, reason: "journal unchanged" };
     const settings = readSettings(db);
 

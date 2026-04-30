@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { agentJournalPath, agentMemoryPath, readJournalTail } from "./journal.js";
+import { getAgentConsolidation } from "./db/queries/agent-consolidations.js";
 
 function sha256Buffer(buffer) {
   return createHash("sha256").update(buffer).digest("hex");
@@ -40,7 +41,7 @@ export function readAgentMemoryState({ db, dataDir, agent, consolidating = false
   const journalPath = agentJournalPath(dataDir, agent);
   const journalExists = existsSync(journalPath);
   const journalHash = journalExists ? sha256Buffer(readFileSync(journalPath)) : null;
-  const row = db?.prepare?.("SELECT * FROM agent_consolidations WHERE agent_name = ?").get(agent) || null;
+  const row = db ? getAgentConsolidation(db, agent) || null : null;
   const lastJournalHash = row?.last_journal_hash || null;
   const journalChanged = Boolean(journalHash && lastJournalHash && journalHash !== lastJournalHash);
 
