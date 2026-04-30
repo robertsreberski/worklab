@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { classifyFailure, createStderrTail, FAILURE_KINDS } from "../../core/failure-kind.js";
+import {
+  classifyFailure,
+  createStderrTail,
+  FAILURE_KINDS,
+  retryableProviderFailureInfo,
+} from "../../core/failure-kind.js";
 
 describe("classifyFailure", () => {
   it("returns null for clean exit", () => {
@@ -104,5 +109,32 @@ describe("createStderrTail", () => {
     tail.push(Buffer.from("hello "));
     tail.push("world");
     expect(tail.toString()).toContain("world");
+  });
+});
+
+describe("retryableProviderFailureInfo", () => {
+  it("marks overloaded provider errors as retryable", () => {
+    expect(retryableProviderFailureInfo({
+      failureKind: "provider_unavailable",
+      errorText: "Our servers are currently overloaded. Please try again later.",
+    })).toMatchObject({ retryable: true, subkind: "overloaded" });
+  });
+
+  it("extracts request IDs from generic retryable provider messages", () => {
+    expect(retryableProviderFailureInfo({
+      failureKind: "provider_unavailable",
+      errorText: "An error occurred while processing your request. You can retry your request. Please include the request ID 7e4dca0a-6e17-486c-9af6-59785816e5de.",
+    })).toMatchObject({
+      retryable: true,
+      subkind: "retryable_request",
+      requestId: "7e4dca0a-6e17-486c-9af6-59785816e5de",
+    });
+  });
+
+  it("keeps nonretryable provider errors terminal", () => {
+    expect(retryableProviderFailureInfo({
+      failureKind: "provider_unavailable",
+      errorText: "invalid_request_error: Unknown parameter: prompt_cache_retention",
+    })).toMatchObject({ retryable: false, subkind: "non_retryable" });
   });
 });
