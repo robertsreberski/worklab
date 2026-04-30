@@ -1,8 +1,7 @@
 // src/cli/status.js
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig, worklabBaseUrl } from "../core/index.js";
-import { serviceStatus } from "./install-service.js";
+import { loadConfig, serviceStatus, worklabBaseUrl } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 

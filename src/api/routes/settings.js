@@ -5,10 +5,10 @@ import {
   readRuntimeSettings,
   readSettings,
   runtimeEnvFromValues,
+  serviceStatus,
   writeRuntimeSettings,
   writeSettings,
 } from "../../core/index.js";
-import { serviceStatus } from "../../cli/install-service.js";
 
 function runtimeUnavailable(res) {
   return res.status(501).json({

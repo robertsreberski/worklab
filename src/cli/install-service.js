@@ -223,8 +223,3 @@ export async function installService(args = []) {
   await startUserService({ config });
   console.log(`installed ${installed.platform === "darwin" ? "launchd" : "systemd user"} service: ${installed.file}`);
 }
-
-// serviceStatus moved to src/core/host-service-status.js so the MCP admin
-// surface can import it without a cli back-reference. Re-exported here for
-// any straggling caller.
-export { serviceStatus } from "../core/index.js";
