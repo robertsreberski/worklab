@@ -60,6 +60,14 @@ export function countTasksByStageForProject(db, projectId) {
 // running/last run snapshots. Two correlated subqueries pin the most-recent
 // running and most-recent non-running run per task; the dependency subquery
 // counts open dependencies.
+export function getTaskTitle(db, id) {
+  return db.prepare("SELECT title FROM tasks WHERE id = ?").get(id)?.title || null;
+}
+
+export function getTaskKeyById(db, id) {
+  return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id)?.task_key || null;
+}
+
 export function listProjectTasksWithRunSnapshots(db, projectId) {
   return db.prepare(`
     SELECT
