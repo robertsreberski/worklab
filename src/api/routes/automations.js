@@ -1,7 +1,7 @@
-import { newAutomationId } from "../core/ids.js";
-import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../core/automations.js";
-import { resolveTaskRow } from "../core/task-keys.js";
-import { deleteAutomation, getTaskAutomation, listTaskAutomations } from "../core/db/queries/automations.js";
+import { newAutomationId } from "../../core/ids.js";
+import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../../core/automations.js";
+import { resolveTaskRow } from "../../core/task-keys.js";
+import { deleteAutomation, getTaskAutomation, listTaskAutomations } from "../../core/db/queries/automations.js";
 
 function validateAutomationInput(body = {}) {
   if (!body.title || typeof body.title !== "string" || !body.title.trim()) {

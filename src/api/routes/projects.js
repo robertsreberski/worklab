@@ -1,5 +1,5 @@
 import { mkdirSync } from "node:fs";
-import { newProjectId } from "../core/ids.js";
+import { newProjectId } from "../../core/ids.js";
 import {
   normalizeProjectWorkdir,
   parseProjectTags,
@@ -7,8 +7,8 @@ import {
   projectRouteError,
   resolveProjectRow,
   uniqueProjectSlug,
-} from "../core/projects.js";
-import { archiveProject, getProjectById } from "../core/db/queries/projects.js";
+} from "../../core/projects.js";
+import { archiveProject, getProjectById } from "../../core/db/queries/projects.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;

@@ -7,9 +7,9 @@ import {
   loadSkills,
   parseSkillFrontmatter,
   SkillImportError,
-} from "../core/skills.js";
-import { isValidSlug, uniqueSlug } from "../core/slugs.js";
-import { parseStoredAllowlist, storedAllowlistMode } from "../core/agent-allowlists.js";
+} from "../../core/skills.js";
+import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
+import { parseStoredAllowlist, storedAllowlistMode } from "../../core/agent-allowlists.js";
 
 function serializeSkill(meta, body) {
   const yamlLines = ["---"];

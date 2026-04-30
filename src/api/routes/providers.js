@@ -12,7 +12,7 @@ import {
   testProvider,
   updateProvider,
   upsertModel,
-} from "../core/providers.js";
+} from "../../core/providers.js";
 
 function error(res, status, code, message) {
   return res.status(status).json({ error: { code, message } });
