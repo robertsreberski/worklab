@@ -61,10 +61,11 @@ const restricted = (...patterns) => ({
 });
 
 // API routes must call helpers in src/core/db/queries/*.js, not db.prepare directly.
-// CLAUDE.md declares this invariant; this rule actually enforces it.
+// PR-1 introduced this at "warn" while PR-2..PR-6 migrated the 100 existing
+// sites; PR-7 flipped it to "error". CLAUDE.md states this invariant.
 const FORBID_API_DB_PREPARE = {
   "no-restricted-syntax": [
-    "warn",
+    "error",
     {
       selector: "CallExpression[callee.object.name='db'][callee.property.name='prepare']",
       message:
