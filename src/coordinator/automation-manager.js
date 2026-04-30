@@ -9,6 +9,7 @@ import { getTaskById } from "../core/db/queries/tasks.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { getAutomationById, listEnabledAutomations } from "../core/db/queries/automations.js";
+import { insertAutomationRun } from "../core/db/queries/automation-audit.js";
 
 const TICK_MS = 60_000;
 
@@ -199,10 +200,13 @@ export function createAutomationManager({
       const runnableTask = reopenDoneTask(task, now);
       const run = await watcher.handleRunRequested(runnableTask.id);
       db.transaction(() => {
-        db.prepare(`
-          INSERT INTO automation_runs (id, automation_id, run_id, trigger_type, fired_at)
-          VALUES (?, ?, ?, ?, ?)
-        `).run(newAutomationRunId(), automation.id, run.runId, triggerType, now);
+        insertAutomationRun(db, {
+          id: newAutomationRunId(),
+          automationId: automation.id,
+          runId: run.runId,
+          triggerType,
+          firedAt: now,
+        });
         updateAutomationAfterTrigger(automation, {
           triggerType,
           outcome: "started",
