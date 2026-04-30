@@ -478,8 +478,9 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("Do not repeat broad repository scans");
   });
 
-  it("does not recursively continue a usage-limit continuation", async () => {
+  it("continues usage-limit failures up to the configured continuation limit", async () => {
     const db = makeTestDb();
+    writeSettings(db, { agent_recovery_continuation_limit: 2, max_failure_streak: 10 });
     seedAgent(db, "coder");
     const taskId = seedTask(db, { owner: "coder" });
     const resolvers = [];
@@ -496,12 +497,25 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(spawn).toHaveBeenCalledTimes(2);
 
-    const continuationRun = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId);
-    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit' WHERE id = ?").run(continuationRun.id);
+    const firstContinuation = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit' WHERE id = ?").run(firstContinuation.id);
     resolvers[1]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "usage_limit", error: "context length" });
     await new Promise((r) => setTimeout(r, 20));
+    expect(spawn).toHaveBeenCalledTimes(3);
 
-    expect(spawn).toHaveBeenCalledTimes(2);
+    const secondContinuation = db.prepare("SELECT id, diagnostics_json FROM task_runs WHERE parent_run_id = ?").get(firstContinuation.id);
+    expect(JSON.parse(secondContinuation.diagnostics_json)).toMatchObject({
+      continuation_depth: 2,
+      continuation_limit: 2,
+      continuation_root_run_id: runId,
+    });
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'usage_limit' WHERE id = ?").run(secondContinuation.id);
+    resolvers[2]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "usage_limit", error: "context length" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(3);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation skipped:%'").get(taskId);
+    expect(comment.body).toContain("limit reached (2/2)");
   });
 
   it("successful worker exit without final output is invalid and does not advance", async () => {
