@@ -60,6 +60,19 @@ const restricted = (...patterns) => ({
   "no-restricted-imports": ["warn", { patterns }],
 });
 
+// API routes must call helpers in src/core/db/queries/*.js, not db.prepare directly.
+// CLAUDE.md declares this invariant; this rule actually enforces it.
+const FORBID_API_DB_PREPARE = {
+  "no-restricted-syntax": [
+    "warn",
+    {
+      selector: "CallExpression[callee.object.name='db'][callee.property.name='prepare']",
+      message:
+        "API routes must call helpers in src/core/db/queries/*.js, not db.prepare directly.",
+    },
+  ],
+};
+
 export default [
   {
     ignores: [
@@ -100,7 +113,7 @@ export default [
   // src/api/ — HTTP edge
   {
     files: ["src/api/**/*.js"],
-    rules: restricted(FORBID_DB),
+    rules: { ...restricted(FORBID_DB), ...FORBID_API_DB_PREPARE },
   },
 
   // src/mcp/ — MCP edge
