@@ -22,6 +22,7 @@ import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.
 import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
 import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
 import { getRunDiagnostics, setRunTranscriptTail } from "./core/db/queries/runs.js";
+import { getAgentByName } from "./core/db/queries/agents.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -173,7 +174,7 @@ function materializeExecenvRuntimeConfig({ agent, task, systemPrompt }) {
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
   const automation = db.prepare("SELECT * FROM automations WHERE id = ?").get(automationId);
   if (!automation) { emit({ type: "error", message: `automation ${automationId} not found` }); process.exit(1); }
-  const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+  const agent = getAgentByName(db, agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
   const settings = readSettings(db);
 
@@ -303,7 +304,7 @@ async function main() {
   process.on("SIGINT", () => { handleSignal("SIGINT"); });
 
   if (mode === "consolidate") {
-    const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+    const agent = getAgentByName(db, agentName);
     if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }
     const memory = readAgentMemoryContent({ dataDir: config.dataDir, agent: agentName });
     const journal = readFullJournal({ dataDir: config.dataDir, agent: agentName });

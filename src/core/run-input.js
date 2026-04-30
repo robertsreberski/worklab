@@ -15,6 +15,7 @@ import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agent
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { getTaskById } from "./db/queries/tasks.js";
 import { getRunById } from "./db/queries/runs.js";
+import { getAgentByName } from "./db/queries/agents.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
@@ -68,7 +69,7 @@ export function latestPriorExecuteRunId(db, taskId) {
 }
 
 export function assertAgentRunnable(db, agentName) {
-  const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+  const agent = getAgentByName(db, agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent not found: ${agentName}`);
   if (!agent.enabled) throw runInputError(400, "invalid_state", `agent disabled: ${agentName}`);
   try {
@@ -160,7 +161,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   requireDataDir(config);
   const task = getTaskById(db, taskId);
   if (!task) throw runInputError(404, "not_found", `task ${taskId} not found`);
-  const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+  const agent = getAgentByName(db, agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);

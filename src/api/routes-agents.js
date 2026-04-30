@@ -6,6 +6,7 @@ import { getBuiltinProviderAvailability } from "../core/credentials.js";
 import { loadSkills } from "../core/skills.js";
 import { getMcpServerStatuses } from "../core/mcp-config.js";
 import { readAgentMemoryState } from "../core/memory.js";
+import { agentExists, getAgentByName } from "../core/db/queries/agents.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -243,7 +244,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       return res.status(400).json({ error: { code: "validation", message: "invalid name (lowercase slug required)" } });
     }
     const finalName = name || uniqueSlug(display_name, (candidate) =>
-      Boolean(db.prepare("SELECT name FROM agents WHERE name = ?").get(candidate)),
+      agentExists(db, candidate),
       { fallback: "agent" },
     );
     let resolved;
@@ -253,7 +254,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
     }
 
-    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(finalName);
+    const existing = agentExists(db, finalName) ? { name: finalName } : null;
     if (existing) {
       return res.status(409).json({ error: { code: "conflict", message: "agent name already exists" } });
     }
@@ -298,12 +299,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
            allowSelfReview, dailyBudgetUsd, perRunBudgetUsd, enabled, now, now);
 
     broker.broadcast("global", { type: "agent_updated", name: finalName });
-    const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(finalName);
+    const row = getAgentByName(db, finalName);
     res.status(201).json({ agent: rowToAgent(row) });
   });
 
   app.get("/api/agents/:name", (req, res) => {
-    const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(req.params.name);
+    const row = getAgentByName(db, req.params.name);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     res.json({ agent: rowToAgent(row) });
   });
@@ -416,7 +417,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
 
     broker.broadcast("global", { type: "agent_updated", name: req.params.name });
-    const row = db.prepare("SELECT * FROM agents WHERE name = ?").get(req.params.name);
+    const row = getAgentByName(db, req.params.name);
     res.json({ agent: rowToAgent(row) });
   });
 
