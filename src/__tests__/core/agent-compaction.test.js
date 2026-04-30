@@ -4,6 +4,7 @@ import {
   COMPACTED_CONTEXT_MARKER,
   compactToolResultForContext,
   createAgentCompactionManager,
+  isLikelyContextTermination,
   resolveAgentCompactionPolicy,
 } from "../../core/agent-compaction.js";
 
@@ -241,5 +242,48 @@ describe("agent compaction", () => {
       context_compaction_pending_reason: null,
       tool_payload_compaction_trigger_chars: 0,
     });
+  });
+});
+
+describe("isLikelyContextTermination", () => {
+  it("returns false when only per-call pruning happened and context is well below the trigger", () => {
+    expect(isLikelyContextTermination("terminated", {
+      tool_results_pruned: 58,
+      tool_results_compacted: 0,
+      context_compactions: 0,
+      context_tokens_estimate_max: 78748,
+      context_compaction_trigger_tokens: 208000,
+    })).toBe(false);
+  });
+
+  it("returns true when compaction has run at least once", () => {
+    expect(isLikelyContextTermination("terminated", {
+      context_compactions: 1,
+      context_tokens_estimate_max: 50000,
+      context_compaction_trigger_tokens: 208000,
+    })).toBe(true);
+  });
+
+  it("returns true when the estimate sits above 85% of the trigger threshold", () => {
+    expect(isLikelyContextTermination("aborted before final output", {
+      context_compactions: 0,
+      context_tokens_estimate_max: 200000,
+      context_compaction_trigger_tokens: 208000,
+    })).toBe(true);
+  });
+
+  it("ignores high tool_results_pruned without genuine context pressure", () => {
+    expect(isLikelyContextTermination("stream aborted", {
+      tool_results_pruned: 200,
+      context_compactions: 0,
+      context_tokens_estimate_max: 100000,
+      context_compaction_trigger_tokens: 208000,
+    })).toBe(false);
+  });
+
+  it("returns false for unrelated error messages", () => {
+    expect(isLikelyContextTermination("rate limit reached", {
+      context_compactions: 5,
+    })).toBe(false);
   });
 });

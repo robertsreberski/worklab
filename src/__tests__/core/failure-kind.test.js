@@ -138,6 +138,19 @@ describe("retryableProviderFailureInfo", () => {
     })).toMatchObject({ retryable: true, subkind: "terminated" });
   });
 
+  it.each([
+    "socket hang up",
+    "UND_ERR_SOCKET",
+    "ECONNRESET while reading response",
+    "Premature close",
+    "Stream disconnected before completion",
+  ])("treats %s as a retryable provider termination", (message) => {
+    expect(retryableProviderFailureInfo({
+      failureKind: "provider_unavailable",
+      errorText: message,
+    })).toMatchObject({ retryable: true, subkind: "terminated" });
+  });
+
   it("does not treat generic termination text as retryable without provider classification", () => {
     expect(retryableProviderFailureInfo({
       errorText: "terminated",
