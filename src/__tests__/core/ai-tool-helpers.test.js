@@ -1,12 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { bashToolImpl, globToolImpl, grepToolImpl, readToolImpl, writeToolImpl } from "../../core/ai-tool-helpers.js";
+import {
+  bashToolImpl,
+  editToolImpl,
+  globToolImpl,
+  grepToolImpl,
+  readToolImpl,
+  resolveRgPath,
+  writeToolImpl,
+} from "../../core/ai-tool-helpers.js";
 
 const tempDirs = [];
 let previousWorkspace = process.env.WORKLAB_WORKSPACE;
 let previousDataDir = process.env.WORKLAB_DATA_DIR;
 let previousRunId = process.env.WORKLAB_RUN_ID;
+let previousRgPath = process.env.WORKLAB_RIPGREP_PATH;
+let previousPath = process.env.PATH;
 
 function tempWorkspace() {
   const dir = mkdtempSync(resolve("/tmp", "worklab-ai-tools-"));
@@ -27,6 +37,11 @@ afterEach(() => {
   else process.env.WORKLAB_DATA_DIR = previousDataDir;
   if (previousRunId === undefined) delete process.env.WORKLAB_RUN_ID;
   else process.env.WORKLAB_RUN_ID = previousRunId;
+  if (previousRgPath === undefined) delete process.env.WORKLAB_RIPGREP_PATH;
+  else process.env.WORKLAB_RIPGREP_PATH = previousRgPath;
+  if (previousPath === undefined) delete process.env.PATH;
+  else process.env.PATH = previousPath;
+  resolveRgPath({ refresh: true });
   while (tempDirs.length) rmSync(tempDirs.pop(), { recursive: true, force: true });
 });
 
@@ -151,5 +166,46 @@ describe("ai tool helpers", () => {
     expect(result).toContain("HEAD");
     expect(result).toContain("TAIL");
     expect(result).toContain("Full output saved to:");
+  });
+
+  it("returns a clean error when ripgrep is unavailable", async () => {
+    const root = tempWorkspace();
+    process.env.WORKLAB_RIPGREP_PATH = join(root, "missing-rg");
+    process.env.PATH = "";
+    resolveRgPath({ refresh: true });
+
+    const globResult = await globToolImpl({ path: root, pattern: "**/*" });
+    const grepResult = await grepToolImpl({ path: root, pattern: "needle" });
+
+    expect(globResult).toContain("ripgrep (rg) is not available");
+    expect(globResult).not.toContain("ENOENT");
+    expect(grepResult).toContain("ripgrep (rg) is not available");
+    expect(grepResult).not.toContain("ENOENT");
+  });
+
+  it("rejects absolute paths outside the workspace boundary", async () => {
+    tempWorkspace();
+    const outside = "/etc/worklab-not-real";
+    const outsideFile = `${outside}/secret.txt`;
+
+    const readResult = await readToolImpl({ file_path: outsideFile });
+    const writeResult = await writeToolImpl({ file_path: `${outside}/new.txt`, content: "x" });
+    const editResult = await editToolImpl({ file_path: outsideFile, old_string: "do", new_string: "x" });
+    const globResult = await globToolImpl({ path: outside, pattern: "**/*" });
+    const grepResult = await grepToolImpl({ path: outside, pattern: "do" });
+
+    expect(readResult).toContain("Path not allowed");
+    expect(writeResult).toContain("Path not allowed");
+    expect(editResult).toContain("Path not allowed");
+    expect(globResult).toContain("Path not allowed");
+    expect(grepResult).toContain("Path not allowed");
+  });
+
+  it("rejects bash workdir outside the workspace boundary", async () => {
+    tempWorkspace();
+
+    const result = await bashToolImpl({ command: "pwd", workdir: "/etc/worklab-not-real" });
+
+    expect(result).toContain("Working directory not allowed");
   });
 });

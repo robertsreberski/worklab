@@ -6,6 +6,7 @@ import { openDb, runMigrations } from "../core/db.js";
 import { getKeyFingerprint } from "../core/crypto.js";
 import { loadMcpConfig } from "../core/mcp-config.js";
 import { testEmbeddingBackend } from "../core/embeddings.js";
+import { resolveRgPath } from "../core/ai-tool-helpers.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
@@ -20,6 +21,9 @@ export async function doctor(args = []) {
 
   const serviceRuntime = inspectServiceRuntime(config);
   for (const problem of serviceRuntimeProblems(serviceRuntime)) problems.push(problem);
+
+  const rgPath = resolveRgPath({ refresh: true });
+  if (!rgPath) problems.push("ripgrep (rg) not found: install ripgrep on PATH or set WORKLAB_RIPGREP_PATH; agent Glob/Grep tools will fail without it");
 
   const dbPath = join(config.dataDir, "worklab.db");
   if (existsSync(dbPath)) {
