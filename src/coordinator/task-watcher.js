@@ -39,6 +39,11 @@ import {
   getAgentPerRunBudget,
   getAgentSelfReviewFlag,
 } from "../core/db/queries/agents.js";
+import {
+  findOpenBlocker,
+  insertDependency,
+  listDependentsOf,
+} from "../core/db/queries/task-dependencies.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -479,12 +484,7 @@ export function createTaskWatcher({
   }
 
   function maybeAutoStartDependents(taskId, onError) {
-    const rows = db.prepare(`
-      SELECT task_id
-      FROM task_dependencies
-      WHERE depends_on_task_id = ?
-      ORDER BY created_at ASC
-    `).all(taskId);
+    const rows = listDependentsOf(db, taskId);
     for (const row of rows) {
       scheduleAutoStart(row.task_id, onError || ((err) => {
         logger?.warn?.({ err, taskId: row.task_id, dependencyId: taskId }, "dependent task auto-run failed");
@@ -578,14 +578,7 @@ export function createTaskWatcher({
   }
 
   function hasOpenBlocker(taskId) {
-    return db.prepare(`
-      SELECT t.id, t.title
-      FROM task_dependencies d
-      JOIN tasks t ON t.id = d.depends_on_task_id
-      WHERE d.task_id = ? AND COALESCE(t.stage, 'plan') <> 'done'
-      ORDER BY t.updated_at DESC
-      LIMIT 1
-    `).get(taskId);
+    return findOpenBlocker(db, taskId);
   }
 
   function latestPriorExecuteRunId(taskId) {
@@ -1275,10 +1268,7 @@ export function createTaskWatcher({
             warnings.push(`Subtask "${subtask.title || "?"}": depends_on "${dep}" did not resolve and was dropped.`);
             continue;
           }
-          db.prepare(`
-            INSERT OR IGNORE INTO task_dependencies (task_id, depends_on_task_id, created_at)
-            VALUES (?, ?, ?)
-          `).run(child.id, depId, now);
+          insertDependency(db, child.id, depId, now);
         }
       }
     });
