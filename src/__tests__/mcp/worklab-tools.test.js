@@ -81,8 +81,36 @@ describe("worklab-tools handlers", () => {
     const result = await createToolHandlers(c).run_log_read({ run_id: "run-raw" });
 
     expect(result.source).toBe("raw_output_path");
+    expect(result.mode).toBe("tail");
     expect(result.content).toContain("\"type\":\"started\"");
     expect(result.run).toMatchObject({ id: "run-raw", task_id: "t1", mode: "execute" });
+  });
+
+  it("run_log_read tails large raw logs by default and can return full content explicitly", async () => {
+    const c = ctx();
+    const rawDir = join(c.dataDir, "logs", "runs");
+    const rawPath = join(rawDir, "run-large.jsonl");
+    mkdirSync(rawDir, { recursive: true });
+    const content = Array.from({ length: 200 }, (_, index) => JSON.stringify({ type: "event", index, text: "x".repeat(30) })).join("\n");
+    writeFileSync(rawPath, `${content}\n`);
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status, raw_output_path)
+        VALUES ('run-large', 't1', 'execute', 'execute', 'a', 1, 'complete', 'succeeded', ?)
+      `).run(rawPath);
+    });
+    const handlers = createToolHandlers(c);
+
+    const tail = await handlers.run_log_read({ run_id: "run-large", limit_bytes: 1000 });
+    const full = await handlers.run_log_read({ run_id: "run-large", mode: "full" });
+
+    expect(tail.truncated).toBe(true);
+    expect(tail.offset_bytes).toBeGreaterThan(0);
+    expect(Buffer.byteLength(tail.content)).toBeLessThanOrEqual(1000);
+    expect(full.truncated).toBe(false);
+    expect(full.content).toContain("\"index\":0");
   });
 
   it("run_log_read falls back to stored agent log events", async () => {
