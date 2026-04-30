@@ -1,18 +1,31 @@
 import { legacyRunStatusToProcessStatus } from "../core/state-machine.js";
 import { newCommentId } from "../core/ids.js";
 import { normalizeLiveInputBody, supportsLiveInputProvider } from "../core/live-input.js";
+import { artifactPaths, artifactsForRunRow, runArtifactSummary } from "../core/run-artifacts.js";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-function normalizeRun(row, liveInputState = null) {
+function parseEvents(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeRun(row, liveInputState = null, events = null) {
   const processStatus = row.status !== "running" && row.process_status === "running"
     ? legacyRunStatusToProcessStatus(row.status)
     : row.process_status;
   const supported = supportsLiveInputProvider(row.provider_kind);
+  const artifacts = artifactsForRunRow(row, { events });
   return {
     ...row,
     process_status: processStatus,
-    artifact_paths: JSON.parse(row.artifact_paths_json || "[]"),
+    artifact_paths: artifactPaths(artifacts),
+    artifacts,
+    artifact_summary: runArtifactSummary(artifacts),
     result: row.result_json ? JSON.parse(row.result_json) : null,
     live_input: {
       supported,
@@ -53,8 +66,8 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
     const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
-    const run = normalizeRun(row, liveInputState);
     const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(req.params.id);
+    const run = normalizeRun(row, liveInputState, parseEvents(logRow?.events));
     const log = shapeRunLog(logRow, req.query || {});
     res.json({ run, log });
   });

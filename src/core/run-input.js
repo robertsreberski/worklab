@@ -14,6 +14,7 @@ import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
+import { loadTaskArtifacts } from "./run-artifacts.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -284,6 +285,7 @@ function diagnosticsForPrompt(prompt, setup) {
       builtin: Array.isArray(allowedTools) ? allowedTools.filter((tool) => !disallowedTools.includes(tool)).length : 0,
       mcp: Object.keys(mcpServers || {}).length,
     },
+    artifacts: setup.taskArtifacts?.summary || null,
   };
 }
 
@@ -292,6 +294,14 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
   const mcpSignature = Object.keys(setup.mcpServers || {});
   const builtinSignature = setup.allowedTools || [];
   const pinnedSignature = (setup.pinnedKb || []).map((entry) => `${entry.slug || entry.title || ""}:${entry.updatedAt || entry.updated_at || ""}`);
+  const artifactSignature = (setup.taskArtifacts?.artifacts || [])
+    .map((artifact) => [
+      artifact.path,
+      artifact.added_lines || 0,
+      artifact.removed_lines || 0,
+      artifact.last_run_id || "",
+      artifact.last_seen_at || "",
+    ].join(":"));
   return makeContextCacheKey({
     taskId: setup.task?.id || "",
     agentName: setup.agent?.name || "",
@@ -308,6 +318,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     mcpHash: shortHash(mcpSignature.join("|")),
     builtinHash: shortHash(builtinSignature.join("|")),
     kbHash: shortHash(pinnedSignature.join("|")),
+    artifactsHash: shortHash(artifactSignature.join("|")),
     memoryHash: shortHash(setup.memory || ""),
     journalHash: shortHash(setup.journalTail || ""),
   });
@@ -318,10 +329,11 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools } = setup;
   const messages = buildTaskRunMessages({ mode, task });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
+  const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
 
   const cache = contextCache || getProcessContextCache();
   const cacheKey = makeSetupSignature(
-    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb },
+    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb, taskArtifacts },
     { mode, priorRunId },
   );
 
@@ -329,7 +341,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
-      comments: commentRows, currentRunComments, pinnedKb, priorRuns,
+      comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts,
       allowedTools, disallowedTools, mcpServers,
     };
     const cached = cache.get(cacheKey);
@@ -337,7 +349,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     if (!cached) cache.set(cacheKey, prompt);
     const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
     return {
-      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns,
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts,
       promptDiagnostics: diagnostics,
     };
   }
@@ -356,7 +368,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt({
       agent, task, skills, memory, journalTail,
-      comments: commentRows, currentRunComments, pinnedKb, execution,
+      comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
@@ -365,7 +377,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
-      priorRun, priorEvents, execution, promptDiagnostics: diagnostics,
+      priorRun, priorEvents, execution, taskArtifacts, promptDiagnostics: diagnostics,
     };
   }
 

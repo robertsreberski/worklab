@@ -8,6 +8,7 @@ import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildNextTaskRunPreview } from "../core/run-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../core/projects.js";
+import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -533,16 +534,21 @@ function rowToRun(row) {
     log_status,
     warnings_json,
     diagnostics_json,
+    artifacts_json,
+    artifact_summary_json,
     ...run
   } = row;
   const hasLog = Boolean(log_id);
+  const artifacts = artifactsForRunRow({ ...run, artifacts_json, artifact_summary_json });
   return {
     ...run,
     process_status: run.status !== "running" && run.process_status === "running"
       ? legacyRunStatusToProcessStatus(run.status)
       : (run.process_status || legacyRunStatusToProcessStatus(run.status)),
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
-    artifact_paths: JSON.parse(run.artifact_paths_json || "[]"),
+    artifact_paths: artifactPaths(artifacts),
+    artifacts,
+    artifact_summary: safeParseJson(artifact_summary_json, null) || runArtifactSummary(artifacts),
     result: run.result_json ? JSON.parse(run.result_json) : null,
     warnings: safeParseJson(warnings_json, []),
     diagnostics: safeParseJson(diagnostics_json, null),
@@ -1116,6 +1122,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       .all(row.id));
     const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id), watcher);
     const task = enrichTask(db, rowToTask(row), config);
+    const taskArtifacts = loadTaskArtifacts(db, row.id);
+    task.artifacts = taskArtifacts.artifacts;
+    task.artifact_summary = taskArtifacts.summary;
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
     task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
