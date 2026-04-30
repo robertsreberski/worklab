@@ -10,6 +10,7 @@ import {
   editToolImpl,
   globToolImpl,
   grepToolImpl,
+  normalizeBashTimeoutMs,
   readToolImpl,
   webFetchToolImpl,
   webSearchToolImpl,
@@ -153,7 +154,7 @@ function withToolLimits(name, params, limits = {}) {
   }
   if (name === "Bash") {
     next.max_output_chars = limitedNumber(next.max_output_chars, limits.bashOutputLimitChars || limits.toolTextLimitChars || 20000);
-    next.timeout = limitedNumber(next.timeout, limits.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
+    next.timeout = normalizeBashTimeoutMs(next.timeout, limits.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
   }
   return next;
 }
@@ -194,7 +195,7 @@ function createBuiltinTool(name, label, description, parameters, execute, { cwd,
         }));
       }
 
-      const raw = await execute(normalized);
+      const raw = await execute(normalized, { signal });
       const text = toolText(raw);
       if (isFileEdit && editState) {
         const failed = isErrorText(text);
@@ -260,7 +261,10 @@ export function createStructuredOutputTool(outputSchema, onStructuredOutput) {
 export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent, toolLimits } = {}) {
   const textLimitSchema = integerSchema();
   const bashLimitSchema = integerSchema();
-  const bashTimeoutSchema = integerSchema();
+  const bashTimeoutSchema = {
+    type: "integer",
+    description: "Timeout in milliseconds. Use 30000 for 30 seconds; small values like 30 are treated as seconds for compatibility.",
+  };
   const all = {
     Read: createBuiltinTool("Read", "Read", "Read a local file with line numbers.", objectSchema({
       file_path: { type: "string" },
