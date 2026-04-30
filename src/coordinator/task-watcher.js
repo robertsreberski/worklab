@@ -32,6 +32,13 @@ import {
   setRunExecenvPath,
   setRunWorkerPid,
 } from "../core/db/queries/runs.js";
+import {
+  enabledAgentExists,
+  getAgentBudget,
+  getAgentByName,
+  getAgentPerRunBudget,
+  getAgentSelfReviewFlag,
+} from "../core/db/queries/agents.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -560,7 +567,7 @@ export function createTaskWatcher({
   }
 
   function assertAgentRunnable(agentName) {
-    const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+    const agent = getAgentByName(db, agentName);
     if (!agent) throw new Error(`agent not found: ${agentName}`);
     if (!agent.enabled) throw new Error(`agent disabled: ${agentName}`);
     try {
@@ -693,7 +700,7 @@ export function createTaskWatcher({
 
   function checkBudget({ agentName, taskId }) {
     const settings = readSettings(db);
-    const agent = db.prepare("SELECT daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?").get(agentName);
+    const agent = getAgentBudget(db, agentName);
     const startOfDayUtc = new Date();
     startOfDayUtc.setUTCHours(0, 0, 0, 0);
     const since = startOfDayUtc.getTime();
@@ -735,7 +742,7 @@ export function createTaskWatcher({
   function recordPerRunBudgetOverage({ runId, agentName, costUsd }) {
     const cost = Number(costUsd);
     if (!Number.isFinite(cost)) return;
-    const agent = db.prepare("SELECT per_run_budget_usd FROM agents WHERE name = ?").get(agentName);
+    const agent = getAgentPerRunBudget(db, agentName);
     const cap = Number(agent?.per_run_budget_usd || 0);
     if (!(cap > 0) || cost <= cap) {
       db.prepare("UPDATE task_runs SET cost_usd = COALESCE(cost_usd, ?) WHERE id = ?").run(cost, runId);
@@ -820,7 +827,7 @@ export function createTaskWatcher({
   }
 
   function enforceNoSelfReview({ taskId, reviewerAgent }) {
-    const reviewer = db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get(reviewerAgent);
+    const reviewer = getAgentSelfReviewFlag(db, reviewerAgent);
     if (reviewer?.allow_self_review) return { ok: true };
     const lastExecutor = db.prepare(`
       SELECT agent_name
@@ -1174,7 +1181,7 @@ export function createTaskWatcher({
 
       const suggested = String(subtask?.suggested_agent || parentTask.owner_agent || "").trim();
       if (!suggested) return { ok: false, error: `subtask "${title}" has no owner agent` };
-      const agent = db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested);
+      const agent = enabledAgentExists(db, suggested) ? { name: suggested } : null;
       if (!agent) {
         return { ok: false, error: `subtask "${title}" suggested agent "${suggested}" was not found or is disabled` };
       }
@@ -1213,7 +1220,7 @@ export function createTaskWatcher({
         const subtask = subtasks[index] || {};
         if (!subtask.title || typeof subtask.title !== "string") continue;
         const suggested = subtask.suggested_agent || parentTask.owner_agent;
-        const agentName = db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested)?.name;
+        const agentName = enabledAgentExists(db, suggested) ? suggested : null;
         const childId = newTaskId();
         const taskKey = nextTaskKey(db);
         const required = subtask.required === false ? 0 : 1;

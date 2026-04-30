@@ -6,6 +6,7 @@ import { readSettings } from "../core/settings.js";
 import { agentJournalPath, agentMemoryPath } from "../core/journal.js";
 import { indexPath } from "../core/embeddings.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
+import { getEnabledAgentByName, listEnabledAgentNames } from "../core/db/queries/agents.js";
 
 const TICK_MS = 60_000;
 
@@ -62,7 +63,7 @@ export function createConsolidationManager({
   }
 
   function runNow(agentName, { force = true } = {}) {
-    const agent = db.prepare("SELECT * FROM agents WHERE name = ? AND enabled = 1").get(agentName);
+    const agent = getEnabledAgentByName(db, agentName);
     if (!agent) throw new Error(`enabled agent not found: ${agentName}`);
     if (active.has(agentName)) throw new Error(`consolidation already running for ${agentName}`);
     const journalPath = agentJournalPath(dataDir, agentName);
@@ -117,7 +118,7 @@ export function createConsolidationManager({
     if (hour !== Number(settings.consolidation_hour)) return { skipped: true, reason: "wrong hour" };
     if (lastTickDate === date) return { skipped: true, reason: "already checked today" };
     lastTickDate = date;
-    const agents = db.prepare("SELECT name FROM agents WHERE enabled = 1 ORDER BY name").all();
+    const agents = listEnabledAgentNames(db).map((name) => ({ name }));
     const started = [];
     for (const agent of agents) {
       try {

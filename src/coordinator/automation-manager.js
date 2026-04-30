@@ -7,6 +7,7 @@ import { readSettings } from "../core/settings.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
+import { getAgentByName } from "../core/db/queries/agents.js";
 
 const TICK_MS = 60_000;
 
@@ -40,7 +41,7 @@ export function createAutomationManager({
 
   function assertAgentRunnable(agentName) {
     if (!agentName) throw new Error("agent is required");
-    const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
+    const agent = getAgentByName(db, agentName);
     if (!agent) throw new Error(`agent not found: ${agentName}`);
     if (!agent.enabled) throw new Error(`agent disabled: ${agentName}`);
     try {

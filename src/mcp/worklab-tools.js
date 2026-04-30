@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import { getTaskById } from "../core/db/queries/tasks.js";
+import { agentExists, getAgentByName } from "../core/db/queries/agents.js";
 import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../core/journal.js";
 import { openDb, runMigrations } from "../core/db.js";
 import { search, indexPath, removeSource } from "../core/embeddings.js";
@@ -263,11 +264,11 @@ export function createToolHandlers(context) {
       return await withDb(dataDir, (db) => {
         const resolved = validateAgentModel({ db, dataDir, model: parsed.model });
         const finalName = parsed.name || uniqueSlug(parsed.display_name, (candidate) =>
-          Boolean(db.prepare("SELECT name FROM agents WHERE name = ?").get(candidate)),
+          agentExists(db, candidate),
           { fallback: "agent" },
         );
         if (!isValidSlug(finalName)) throw new Error("invalid name (lowercase slug required)");
-        if (db.prepare("SELECT name FROM agents WHERE name = ?").get(finalName)) {
+        if (agentExists(db, finalName)) {
           throw new Error(`agent already exists: ${finalName}`);
         }
         const skillsAllow = allowlistFor(parsed, "skills_allowlist", "skills_allowlist_mode");
@@ -304,7 +305,7 @@ export function createToolHandlers(context) {
           now,
           now,
         );
-        return { agent: agentSummary(db.prepare("SELECT * FROM agents WHERE name = ?").get(finalName)) };
+        return { agent: agentSummary(getAgentByName(db, finalName)) };
       });
     },
 
