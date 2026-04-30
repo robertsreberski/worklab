@@ -668,6 +668,7 @@ export function spawnWorker({
         ...(finalPayload?.diagnostics || {}),
         provider_session_id: providerSessionId,
         execenv_path: execenvPath,
+        effective_workdir: env.WORKLAB_WORKSPACE || null,
         warning_count: allWarnings.length,
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,

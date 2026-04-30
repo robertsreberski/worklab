@@ -281,6 +281,15 @@ function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpS
   return lines.join("\n");
 }
 
+function formatWorkspaceGuidance(effectiveWorkdir) {
+  if (!effectiveWorkdir) return "";
+  return [
+    `Tool working directory: \`${effectiveWorkdir}\`.`,
+    "Relative paths in built-in tools and stdio MCP tools resolve from this directory.",
+    "If you create temporary scripts that import project files, put them under this directory, such as `.worklab-tmp/`, rather than `/tmp`.",
+  ].join("\n");
+}
+
 const BASE_SECTION_NAMES = [
   "Role",
   "Pinned knowledge",
@@ -288,6 +297,7 @@ const BASE_SECTION_NAMES = [
   "Memory",
   "Recent journal",
   "Capabilities",
+  "Workspace",
   "Current Run Guidance",
 ];
 
@@ -298,7 +308,7 @@ const BASE_SECTION_NAMES = [
 function buildBaseSections(input) {
   const {
     agent, skills, memory, journalTail, currentRunComments,
-    allowedTools, disallowedTools, mcpServers, pinnedKb,
+    allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir,
   } = input;
   return [
     ["Role", agent.instructions || ""],
@@ -307,6 +317,7 @@ function buildBaseSections(input) {
     ["Memory", memory || ""],
     ["Recent journal", journalTail || ""],
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers })],
+    ["Workspace", formatWorkspaceGuidance(effectiveWorkdir)],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
   ];
 }

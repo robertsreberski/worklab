@@ -423,7 +423,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     if (structuredTool) reservedNames.add(structuredTool.name);
     const mcpInit = capabilities.tool_use === false
       ? { clients: [], tools: [], warnings: [] }
-      : await initPiMcpTools(options.mcpServers || {}, reservedNames, { limits: compaction.policy });
+      : await initPiMcpTools(options.mcpServers || {}, reservedNames, { limits: compaction.policy, cwd: options.cwd });
     mcpClients = mcpInit.clients;
     for (const warning of mcpInit.warnings || []) onEvent(warning);
 

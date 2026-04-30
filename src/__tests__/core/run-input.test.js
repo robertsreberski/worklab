@@ -205,6 +205,8 @@ describe("run input assembly", () => {
       expect(projectStart).toBeLessThan(taskStart);
       expect(input.systemPrompt).toContain("Use the Project Atlas conventions.");
       expect(input.systemPrompt).toContain("**Workdir:** `/tmp/project-atlas`");
+      expect(input.systemPrompt).toContain("Tool working directory: `/tmp/project-atlas`");
+      expect(input.systemPrompt).toContain("rather than `/tmp`");
       expect(input.promptDiagnostics.project).toMatchObject({
         id: project.id,
         slug: project.slug,
