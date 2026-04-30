@@ -389,14 +389,11 @@ export function compactToolResultForContext(result, policy, { toolName = "tool" 
 export function isLikelyContextTermination(message, diagnostics = {}) {
   const text = String(message || "");
   if (!/terminated|aborted before final output|aborted before final|stream.*aborted|context window|context budget/i.test(text)) return false;
+  const compactions = Number(diagnostics.context_compactions) || 0;
+  if (compactions > 0) return true;
   const estimate = Number(diagnostics.context_tokens_estimate_max || diagnostics.context_tokens_estimate || 0);
   const trigger = Number(diagnostics.context_compaction_trigger_tokens || 0);
-  return Boolean(
-    diagnostics.context_compactions > 0
-    || diagnostics.tool_results_compacted > 0
-    || diagnostics.tool_results_pruned > 0
-    || (trigger > 0 && estimate >= trigger * 0.85)
-  );
+  return Boolean(trigger > 0 && estimate >= trigger * 0.85);
 }
 
 export function createAgentCompactionManager({
