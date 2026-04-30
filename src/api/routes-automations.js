@@ -1,6 +1,7 @@
 import { newAutomationId } from "../core/ids.js";
 import { nextFireAt, normalizeTrigger, parseRunAt, rowToAutomation, triggerSummary, upcomingFireTimes } from "../core/automations.js";
 import { resolveTaskRow } from "../core/task-keys.js";
+import { deleteAutomation, getTaskAutomation, listTaskAutomations } from "../core/db/queries/automations.js";
 
 function validateAutomationInput(body = {}) {
   if (!body.title || typeof body.title !== "string" || !body.title.trim()) {
@@ -145,7 +146,7 @@ function getTaskOr404(db, taskId) {
 }
 
 function getTaskAutomationOr404(db, taskId, automationId) {
-  const row = db.prepare("SELECT * FROM automations WHERE id = ? AND task_id = ?").get(automationId, taskId);
+  const row = getTaskAutomation(db, automationId, taskId);
   if (!row) throw Object.assign(new Error("automation not found"), { status: 404, code: "not_found" });
   return rowToAutomation(row);
 }
@@ -163,7 +164,7 @@ function deleteAutomation(db, automationId) {
     const runs = existing.task_id
       ? []
       : db.prepare("SELECT run_id FROM automation_runs WHERE automation_id = ?").all(automationId);
-    db.prepare("DELETE FROM automations WHERE id = ?").run(automationId);
+    deleteAutomation(db, automationId);
     const deleteRun = db.prepare("DELETE FROM task_runs WHERE id = ?");
     for (const run of runs) deleteRun.run(run.run_id);
   })();
@@ -174,7 +175,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
   app.get("/api/tasks/:taskId/automations", (req, res) => {
     try {
       const task = getTaskOr404(db, req.params.taskId);
-      const rows = db.prepare("SELECT * FROM automations WHERE task_id = ? ORDER BY updated_at DESC, rowid DESC").all(task.id);
+      const rows = listTaskAutomations(db, task.id);
       const automations = rows.map(rowToAutomation).map((automation) => taskAutomationPayload(db, automation));
       res.json({ automations });
     } catch (error) {

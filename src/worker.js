@@ -23,6 +23,7 @@ import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
 import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
 import { getRunDiagnostics, setRunTranscriptTail } from "./core/db/queries/runs.js";
 import { getAgentByName } from "./core/db/queries/agents.js";
+import { getAutomationById } from "./core/db/queries/automations.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -172,7 +173,7 @@ function materializeExecenvRuntimeConfig({ agent, task, systemPrompt }) {
 }
 
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
-  const automation = db.prepare("SELECT * FROM automations WHERE id = ?").get(automationId);
+  const automation = getAutomationById(db, automationId);
   if (!automation) { emit({ type: "error", message: `automation ${automationId} not found` }); process.exit(1); }
   const agent = getAgentByName(db, agentName);
   if (!agent) { emit({ type: "error", message: `agent ${agentName} not found` }); process.exit(1); }

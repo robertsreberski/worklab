@@ -8,11 +8,12 @@ import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task
 import { getTaskById } from "../core/db/queries/tasks.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
+import { getAutomationById, listEnabledAutomations } from "../core/db/queries/automations.js";
 
 const TICK_MS = 60_000;
 
 function refreshEnabledAutomations(db, now = Date.now()) {
-  const rows = db.prepare("SELECT * FROM automations WHERE enabled = 1 ORDER BY updated_at DESC").all();
+  const rows = listEnabledAutomations(db);
   const update = db.prepare("UPDATE automations SET next_fire_at = ?, updated_at = ? WHERE id = ?");
   for (const row of rows) {
     const automation = rowToAutomation(row);
@@ -262,7 +263,7 @@ export function createAutomationManager({
   }
 
   async function runNow(automationId, { triggerType = "manual", now = Date.now() } = {}) {
-    const row = db.prepare("SELECT * FROM automations WHERE id = ?").get(automationId);
+    const row = getAutomationById(db, automationId);
     if (!row) throw new Error(`automation ${automationId} not found`);
     if (active.has(automationId)) throw new Error("automation already running");
     const automation = rowToAutomation(row);
