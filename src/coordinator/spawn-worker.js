@@ -6,6 +6,7 @@ import { newAgentLogId } from "../core/ids.js";
 import { processStatusToLegacyStatus } from "../core/state-machine.js";
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
+import { artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 
 const CONTEXT_BLOAT_TOP_EVENTS = 5;
 const RAW_RESULT_STORAGE_LIMIT = 4_000;
@@ -249,6 +250,7 @@ export function spawnWorker({
   });
 
   const events = [];
+  const rawEvents = [];
   const warnings = [];
   let promptDiagnostics = null;
   const stderrTail = createStderrTail({ limit: stderrTailLimit });
@@ -334,6 +336,7 @@ export function spawnWorker({
       { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 },
       { limit: RAW_RESULT_STORAGE_LIMIT },
     );
+    rawEvents.push(rawEvent);
     const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
     const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
@@ -620,6 +623,7 @@ export function spawnWorker({
         idleTimer = null;
       }
       const durationMs = Date.now() - startedAt;
+      const endedAt = Date.now();
       let processStatus = "succeeded";
       if (timedOut) processStatus = "failed";
       else if (cancelRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
@@ -645,6 +649,13 @@ export function spawnWorker({
       const providerSessionId = finalPayload?.provider_session_id
         || finalPayload?.providerSessionId
         || null;
+      const artifacts = extractRunArtifacts(rawEvents, {
+        includePending: false,
+        includeFailed: false,
+        run: { id: runId, started_at: startedAt, ended_at: endedAt },
+      });
+      const artifactSummary = runArtifactSummary(artifacts);
+      const paths = artifactPaths(artifacts);
       const execenvPath = env.WORKLAB_EXECENV_PATH || null;
       const costUsd = numberOrNull(
         finalPayload?.cost_usd
@@ -688,6 +699,7 @@ export function spawnWorker({
          SET status = ?, process_status = ?, ended_at = ?, exit_code = ?,
              error_text = ?, decision = ?, failure_kind = ?, summary = ?,
              details = ?, result_json = ?,
+             artifact_paths_json = ?, artifacts_json = ?, artifact_summary_json = ?,
              cancel_initiator = ?, cancel_reason = ?,
              warnings_json = ?, diagnostics_json = ?,
              provider_session_id = ?, execenv_path = ?, cost_usd = ?
@@ -695,7 +707,7 @@ export function spawnWorker({
       ).run(
         status,
         processStatus,
-        Date.now(),
+        endedAt,
         code,
         errorMessage || resultError,
         result?.decision || null,
@@ -703,6 +715,9 @@ export function spawnWorker({
         result?.summary || null,
         result?.details || null,
         result ? JSON.stringify(result) : null,
+        JSON.stringify(paths),
+        JSON.stringify(artifacts),
+        JSON.stringify(artifactSummary),
         cancelInitiator,
         cancelReason,
         JSON.stringify(allWarnings),
@@ -743,6 +758,8 @@ export function spawnWorker({
         diagnostics,
         finalText: finalPayload?.text || null,
         worklabResult: result,
+        artifacts,
+        artifactSummary,
         usage: finalPayload?.usage || {},
         costUsd,
         providerSessionId,
