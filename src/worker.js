@@ -7,15 +7,8 @@ import { buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./c
 import { resolveModel, generateResponse } from "./core/ai.js";
 import { writeRuntimeConfig } from "./core/execenv.js";
 import { join } from "node:path";
-import { parseVerdict } from "./core/review.js";
 import { kbListPinned } from "./core/kb.js";
-import {
-  normalizeWorklabResult,
-  parseWorklabResultFromText,
-  synthesizeWorklabResult,
-  validateWorklabResultSemantics,
-  WORKLAB_RESULT_JSON_SCHEMA,
-} from "./core/worklab-result.js";
+import { WORKLAB_RESULT_JSON_SCHEMA } from "./core/worklab-result.js";
 import { readSettings } from "./core/settings.js";
 import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
@@ -58,82 +51,13 @@ function startControlReader() {
   rl.on("close", () => liveInput.close());
 }
 
-function validateRuntimeResult(result) {
-  const validated = validateWorklabResultSemantics(result);
-  if (validated.ok) return { result, error: null, fatal: false };
-  return { result, error: validated.error, fatal: true };
-}
-
-function resultFromTextOrFallback(text, fallback) {
-  const parsed = parseWorklabResultFromText(text, fallback);
-  if (parsed.ok) return validateRuntimeResult(parsed.result);
-  if (!String(text || "").trim()) {
-    return { result: null, error: "missing final output", fatal: true };
-  }
-  return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
-}
-
-function resultFromResponseOrFallback(response, fallback) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, fallback);
-    if (normalized.ok) {
-      return {
-        ...validateRuntimeResult(normalized.result),
-        source: response.structuredResultSource || "structured",
-      };
-    }
-    return { result: null, error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
-  }
-  return resultFromTextOrFallback(response?.text || "", fallback);
-}
-
-function reviewResultFromText(text) {
-  const parsed = parseWorklabResultFromText(text, { stage: "review" });
-  if (parsed.ok) {
-    const validated = validateRuntimeResult(parsed.result);
-    return {
-      ...validated,
-      verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null,
-      notes: parsed.result.details || parsed.result.summary || "",
-    };
-  }
-
-  const { verdict, notes } = parseVerdict(text);
-  if (verdict === "APPROVE") {
-    return {
-      result: synthesizeWorklabResult({ stage: "review", decision: "approve", summary: notes || "Approved", details: text || "" }),
-      verdict,
-      notes,
-      error: parsed.error,
-    };
-  }
-  if (verdict === "REJECT") {
-    return {
-      result: synthesizeWorklabResult({ stage: "review", decision: "reject", summary: notes || "Rejected", details: text || "" }),
-      verdict,
-      notes,
-      error: parsed.error,
-    };
-  }
-  return { result: null, verdict: null, notes: "", error: parsed.error };
-}
-
-function reviewResultFromResponse(response) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, { stage: "review" });
-    if (normalized.ok) {
-      const result = normalized.result;
-      return {
-        ...validateRuntimeResult(result),
-        verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
-        notes: result.details || result.summary || "",
-        source: response.structuredResultSource || "structured",
-      };
-    }
-    return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
-  }
-  return reviewResultFromText(response?.text || "");
-}
+import {
+  resultFromResponseOrFallback,
+  resultFromTextOrFallback,
+  reviewResultFromResponse,
+  reviewResultFromText,
+  validateRuntimeResult,
+} from "./worker/result-emitter.js";
 
 function maxTurnsForModel(model, fallback) {
   if (["claude", "claude-code", "openai", "codex", "vercel", "pi"].includes(model?.sdk)) return undefined;
