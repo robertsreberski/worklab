@@ -17,7 +17,7 @@ import { registerAutomationRoutes } from "./routes/automations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
-import { registerAdminMcpRoutes } from "../mcp/admin-server.js";
+import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 
 const DEFAULT_SLOW_API_MS = 250;
 

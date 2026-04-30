@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { createToolHandlers, toolDefinitions } from "./worklab-tools.js";
+import { createToolHandlers, toolDefinitions } from "./tools.js";
 
 const context = {
   dataDir: process.env.WORKLAB_DATA_DIR,

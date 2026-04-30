@@ -6,7 +6,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import { loadConfig, worklabBaseUrl } from "../core/config.js";
 import { readMcpToken } from "../core/service-token.js";
-import { adminToolDefinitions, createAdminToolHandlers } from "../mcp/admin-tools.js";
+import { adminToolDefinitions, createAdminToolHandlers } from "../mcp/admin/tools.js";
 import { applyConfigArgs } from "./args.js";
 
 function authFetch(token) {
