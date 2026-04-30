@@ -22,9 +22,9 @@ src/cli/
 ├── start.js / stop.js / restart.js / status.js / serve.js
 ├── doctor.js             # environment diagnostics
 ├── backup.js
-├── mcp.js                # stdio MCP bridge for agents
+├── mcp.js                # stdio admin MCP bridge
 └── install-service.js / uninstall-service.js
 ```
 
-Subcommands that need the DB go through `src/core/db/queries/*` after the
-DAL extraction (Phase 2). Today some still call `db.prepare()` directly.
+Subcommands that need the DB go through core domain helpers or
+`src/core/db/queries/*`.
