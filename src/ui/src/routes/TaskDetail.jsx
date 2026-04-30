@@ -894,19 +894,9 @@ export function TaskDetail({ id, runParam = null }) {
             </section>
 
             <section class="task-workflow-section" aria-labelledby="task-workflow">
-              <SectionMarker id="task-workflow" num="03" kicker="Workflow" meta="Automation" />
+              <SectionMarker id="task-workflow" num="03" kicker="Workflow" meta="Hierarchy" />
 
               <TaskWorkflowMeta task={task} />
-
-              <TaskAutomationsCard
-                taskId={operationTaskId}
-                automations={taskAutomations}
-                loading={automationsLoading}
-                onChanged={() => {
-                  reload();
-                  reloadAutomations();
-                }}
-              />
 
               <TaskSubtasksCard
                 task={task}
@@ -919,6 +909,16 @@ export function TaskDetail({ id, runParam = null }) {
                 onOwner={(value) => setSubtaskOwner(value || "")}
                 onRequired={setSubtaskRequired}
                 onCreate={createManualSubtask}
+              />
+
+              <TaskAutomationsCard
+                taskId={operationTaskId}
+                automations={taskAutomations}
+                loading={automationsLoading}
+                onChanged={() => {
+                  reload();
+                  reloadAutomations();
+                }}
               />
 
               {showStuckBanner && (

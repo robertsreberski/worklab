@@ -97,36 +97,64 @@ function ProjectTaskAttentionChips({ items = [], limit = 3 }) {
   );
 }
 
-function ProjectTaskRow({ task }) {
+function formatChildTaskSummary(task) {
+  const childCount = Number(task.child_count || 0);
+  if (!childCount) return null;
+  const done = Number(task.child_counts?.done || 0);
+  const active = Number(task.child_counts?.in_progress || 0);
+  const parts = [`${done}/${childCount} child${childCount === 1 ? "" : "ren"} done`];
+  if (active > 0) parts.push(`${active} active`);
+  return parts.join(" / ");
+}
+
+function ProjectTaskRow({ task, nested = false }) {
   const displayStage = task.running_run_id ? "running" : (task.stage || "plan");
   const reason = task.stage_reason || task.error_text || task.last_run?.summary || "";
-  return (
-    <a class="project-task-row" href={`#/tasks/${taskRouteId(task)}`}>
+  const children = nested ? [] : (Array.isArray(task.child_tasks) ? task.child_tasks : []);
+  const childSummary = formatChildTaskSummary(task);
+  const row = (
+    <a class={`project-task-row${nested ? " is-child" : ""}`} href={`#/tasks/${taskRouteId(task)}`}>
       <span class="project-task-row-key pane-row-mono">{taskDisplayKey(task)}</span>
       <span class="project-task-row-main">
         <span class="project-task-row-title">{task.title}</span>
         <span class="project-task-row-meta">
           <StatusPill status={displayStage} size="sm" />
+          {nested && <span>Child task</span>}
           {task.owner_agent && <span>{task.owner_agent}</span>}
           {reason && <span class="truncate">{reason}</span>}
+          {childSummary && <span class="truncate">{childSummary}</span>}
         </span>
       </span>
       <ProjectTaskAttentionChips items={task.attention || []} />
       <span class="project-task-row-age">{formatProjectAge(task.updated_at)}</span>
     </a>
   );
+
+  if (!children.length) return row;
+
+  return (
+    <div class="project-task-row-block">
+      {row}
+      <div class="project-task-child-list" aria-label={`Child tasks for ${task.title}`}>
+        {children.map((child) => <ProjectTaskRow key={child.id} task={child} nested />)}
+      </div>
+    </div>
+  );
 }
 
-function ProjectTaskProgress({ tasks = [] }) {
-  const progress = useMemo(() => buildProjectTaskProgress(tasks), [tasks]);
+function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) {
+  const computedProgress = useMemo(() => buildProjectTaskProgress(tasks), [tasks]);
+  const progress = providedProgress || computedProgress;
   const total = progress.total;
   const attentionCount = progress.attention_tasks.length;
+  const childTotal = Number(progress.child_total || 0);
+  const nestedChildTotal = Number(progress.nested_child_total || 0);
   return (
     <div class="project-task-progress">
       <div class="project-task-progress-head">
         <div class="project-task-progress-copy">
           <strong>{progress.percent_done}%</strong>
-          <span>complete</span>
+          <span>complete across {total} top-level task{total === 1 ? "" : "s"}</span>
         </div>
         <div class="project-task-progress-counts" aria-label="Project task counts">
           {progress.groups.map((group) => (
@@ -135,10 +163,21 @@ function ProjectTaskProgress({ tasks = [] }) {
               {group.label}: {progress.counts[group.key] || 0}
             </span>
           ))}
+          {childTotal > 0 && (
+            <span data-group="children">
+              <span class="project-task-count-dot" aria-hidden="true" />
+              Children: {childTotal}
+            </span>
+          )}
         </div>
       </div>
+      {nestedChildTotal > 0 && (
+        <div class="field-hint">
+          {nestedChildTotal} delegated child task{nestedChildTotal === 1 ? "" : "s"} nested under parent tasks.
+        </div>
+      )}
 
-      <div class="project-task-progress-bar" role="img" aria-label={`${progress.percent_done}% complete across ${total} project tasks`}>
+      <div class="project-task-progress-bar" role="img" aria-label={`${progress.percent_done}% complete across ${total} top-level project tasks`}>
         {total > 0 ? progress.groups.map((group) => {
           const count = progress.counts[group.key] || 0;
           if (count === 0) return null;
@@ -413,6 +452,10 @@ function ProjectDetail({ selectedId, onChanged }) {
       </div>
     );
   }, [project]);
+  const taskProgress = useMemo(() => buildProjectTaskProgress(project?.tasks || []), [project?.tasks]);
+  const taskSectionMeta = taskProgress.child_total > 0
+    ? `${taskProgress.total} top-level + ${taskProgress.child_total} child${taskProgress.child_total === 1 ? "" : "ren"}`
+    : `${taskProgress.total} linked`;
 
   if (error) {
     return (
@@ -527,9 +570,9 @@ function ProjectDetail({ selectedId, onChanged }) {
             </section>
 
             <section class="knowledge-read-section" aria-labelledby="project-tasks">
-              <SectionMarker id="project-tasks" num="02" kicker="Tasks" meta={`${project.tasks?.length || 0} linked`} />
+              <SectionMarker id="project-tasks" num="02" kicker="Tasks" meta={taskSectionMeta} />
               {project.tasks?.length ? (
-                <ProjectTaskProgress tasks={project.tasks} />
+                <ProjectTaskProgress tasks={project.tasks} progress={taskProgress} />
               ) : (
                 <div class="task-plan-empty">No tasks are assigned to this project.</div>
               )}
