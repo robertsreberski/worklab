@@ -44,6 +44,10 @@ import {
   insertDependency,
   listDependentsOf,
 } from "../core/db/queries/task-dependencies.js";
+import {
+  deleteSubtaskEdgesForParent,
+  insertSubtaskEdge,
+} from "../core/db/queries/task-edges.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -1205,9 +1209,7 @@ export function createTaskWatcher({
     const tx = db.transaction(() => {
       // Supersede prior delegation: drop old subtask edges so
       // maybeResumeWaitingParents only tracks the current round.
-      db.prepare(
-        "DELETE FROM task_edges WHERE parent_task_id = ? AND edge_type = 'subtask'",
-      ).run(parentTask.id);
+      deleteSubtaskEdgesForParent(db, parentTask.id);
 
       for (let index = 0; index < subtasks.length; index += 1) {
         const subtask = subtasks[index] || {};
@@ -1243,11 +1245,13 @@ export function createTaskWatcher({
           now,
           now,
         );
-        db.prepare(`
-          INSERT INTO task_edges
-            (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
-          VALUES (?, ?, 'subtask', ?, ?, ?)
-        `).run(parentTask.id, childId, required, runId, now);
+        insertSubtaskEdge(db, {
+          parentTaskId: parentTask.id,
+          childTaskId: childId,
+          required,
+          createdByRunId: runId,
+          createdAt: now,
+        });
         created.push({ id: childId, taskKey, title: subtask.title.trim(), required: !!required, agentName });
         byTitle.set(subtask.title.trim(), childId);
       }

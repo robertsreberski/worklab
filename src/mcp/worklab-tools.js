@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { z } from "zod";
 import { getTaskById } from "../core/db/queries/tasks.js";
 import { agentExists, getAgentByName } from "../core/db/queries/agents.js";
+import { isSubtaskEdge } from "../core/db/queries/task-edges.js";
 import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../core/journal.js";
 import { openDb, runMigrations } from "../core/db.js";
 import { search, indexPath, removeSource } from "../core/embeddings.js";
@@ -230,11 +231,8 @@ export function createToolHandlers(context) {
       return await withDb(dataDir, (db) => {
         const child = getTaskById(db, child_task_id);
         if (!child) throw new Error(`not_found: ${child_task_id}`);
-        if (taskId) {
-          const edge = db.prepare(
-            "SELECT 1 FROM task_edges WHERE parent_task_id = ? AND child_task_id = ? AND edge_type = 'subtask'",
-          ).get(taskId, child_task_id);
-          if (!edge) throw new Error(`forbidden: ${child_task_id} is not a subtask of ${taskId}`);
+        if (taskId && !isSubtaskEdge(db, taskId, child_task_id)) {
+          throw new Error(`forbidden: ${child_task_id} is not a subtask of ${taskId}`);
         }
         const lastRun = db.prepare(`
           SELECT id, mode, stage, status, process_status, decision, failure_kind, summary, details, result_json,
