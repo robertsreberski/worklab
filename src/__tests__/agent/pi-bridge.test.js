@@ -1,10 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   coerceMcpContent,
   getPiBuiltinTools,
   normalizePiBuiltinToolParams,
   resolveMcpStdioCwd,
 } from "../../agent/tools/pi-bridge.js";
+
+const tempDirs = [];
+
+function tempWorkspace() {
+  const dir = mkdtempSync(resolve("/tmp", "worklab-pi-bridge-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(() => {
+  while (tempDirs.length) rmSync(tempDirs.pop(), { recursive: true, force: true });
+});
 
 describe("pi MCP tool helpers", () => {
   it("truncates oversized text results before returning them to the model", () => {
@@ -47,6 +61,22 @@ describe("pi MCP tool helpers", () => {
       timeout: 120000,
       max_output_chars: 20000,
     });
+    expect(normalizePiBuiltinToolParams("Bash", {
+      command: "ls",
+      timeout: 30,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      command: "ls",
+      workdir: "/repo",
+      timeout: 30000,
+    });
+    expect(normalizePiBuiltinToolParams("Bash", {
+      command: "ls",
+      timeout: 120000,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      command: "ls",
+      workdir: "/repo",
+      timeout: 120000,
+    });
     expect(normalizePiBuiltinToolParams("Glob", {
       pattern: "**/*",
       max_matches: 5000,
@@ -74,6 +104,7 @@ describe("pi MCP tool helpers", () => {
     expect(readSchema.properties.start_line.type).toBe("integer");
     expect(bashSchema.properties.max_output_chars.maximum).toBeUndefined();
     expect(bashSchema.properties.timeout.maximum).toBeUndefined();
+    expect(bashSchema.properties.timeout.description).toContain("milliseconds");
     expect(bashSchema.properties.workdir.type).toBe("string");
   });
 
@@ -81,5 +112,19 @@ describe("pi MCP tool helpers", () => {
     expect(resolveMcpStdioCwd({}, "/repo/project")).toBe("/repo/project");
     expect(resolveMcpStdioCwd({ cwd: "tools" }, "/repo/project")).toBe("/repo/project/tools");
     expect(resolveMcpStdioCwd({ cwd: "/opt/mcp" }, "/repo/project")).toBe("/opt/mcp");
+  });
+
+  it("passes abort signals to Bash tool execution", async () => {
+    const root = tempWorkspace();
+    const bash = getPiBuiltinTools(["Bash"], { cwd: root }).find((tool) => tool.name === "Bash");
+    const ac = new AbortController();
+    const promise = bash.execute("tool-1", {
+      command: `${process.execPath} -e "setTimeout(() => {}, 5000)"`,
+      timeout: 120000,
+    }, ac.signal);
+
+    setTimeout(() => ac.abort(), 50);
+
+    await expect(promise).rejects.toThrow("Error: Command aborted");
   });
 });

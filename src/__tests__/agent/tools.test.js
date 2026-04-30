@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
@@ -7,6 +8,7 @@ import {
   globToolImpl,
   grepToolImpl,
   readToolImpl,
+  normalizeBashTimeoutMs,
   resolveRgPath,
   writeToolImpl,
 } from "../../agent/tools/index.js";
@@ -46,6 +48,13 @@ afterEach(() => {
 });
 
 describe("ai tool helpers", () => {
+  it("normalizes small bash timeout values as seconds", () => {
+    expect(normalizeBashTimeoutMs(30)).toBe(30000);
+    expect(normalizeBashTimeoutMs(120)).toBe(120000);
+    expect(normalizeBashTimeoutMs(120000)).toBe(120000);
+    expect(normalizeBashTimeoutMs(999999)).toBe(120000);
+  });
+
   it("glob excludes generated and vendor paths by default", async () => {
     const root = tempWorkspace();
     writeFile(join(root, "src", "app.ts"), "source");
@@ -166,6 +175,22 @@ describe("ai tool helpers", () => {
     expect(result).toContain("HEAD");
     expect(result).toContain("TAIL");
     expect(result).toContain("Full output saved to:");
+  });
+
+  it("kills the bash process group on timeout", async () => {
+    const root = tempWorkspace();
+    const marker = `worklab-bash-timeout-${process.pid}-${Date.now()}`;
+
+    const result = await bashToolImpl({
+      command: `${process.execPath} -e "setTimeout(() => {}, 5000)" ${marker}`,
+      timeout: 1,
+      workdir: root,
+    });
+
+    expect(result).toContain("Command timed out after 1000ms");
+    await new Promise((resolvePromise) => setTimeout(resolvePromise, 250));
+    const processes = execFileSync("ps", ["axww", "-o", "command="], { encoding: "utf8" });
+    expect(processes).not.toContain(marker);
   });
 
   it("returns a clean error when ripgrep is unavailable", async () => {

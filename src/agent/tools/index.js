@@ -9,7 +9,7 @@ export { writeToolImpl } from "./write.js";
 export { editToolImpl } from "./edit.js";
 export { globToolImpl } from "./glob.js";
 export { grepToolImpl } from "./grep.js";
-export { bashToolImpl } from "./bash.js";
+export { bashToolImpl, normalizeBashTimeoutMs } from "./bash.js";
 export { webFetchToolImpl } from "./web-fetch.js";
 export { webSearchToolImpl } from "./web-search.js";
 
