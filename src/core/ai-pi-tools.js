@@ -31,9 +31,10 @@ function textResult(text, details = {}) {
   };
 }
 
-const MCP_TEXT_RESULT_LIMIT = 60_000;
-const MCP_RAW_DETAIL_LIMIT = 20_000;
+const MCP_TEXT_RESULT_LIMIT = 12_000;
+const MCP_RAW_DETAIL_LIMIT = 4_000;
 const MCP_IMAGE_INLINE_MAX_BYTES = 250_000;
+const DEFAULT_BASH_TIMEOUT_MS = 120_000;
 
 function objectSchema(properties, required = []) {
   return { type: "object", properties, required, additionalProperties: false };
@@ -136,12 +137,23 @@ function limitedNumber(value, fallback) {
 function withToolLimits(name, params, limits = {}) {
   const next = { ...(params || {}) };
   if (["Read", "Glob", "Grep", "WebFetch"].includes(name)) {
-    next.max_output_chars = limitedNumber(next.max_output_chars, limits.toolTextLimitChars || 24000);
+    next.max_output_chars = limitedNumber(next.max_output_chars, limits.toolTextLimitChars || 16000);
   }
   if (name === "Bash") {
-    next.max_output_chars = limitedNumber(next.max_output_chars, limits.bashOutputLimitChars || limits.toolTextLimitChars || 30000);
+    next.max_output_chars = limitedNumber(next.max_output_chars, limits.bashOutputLimitChars || limits.toolTextLimitChars || 20000);
+    next.timeout = limitedNumber(next.timeout, limits.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
   }
   return next;
+}
+
+export function normalizePiBuiltinToolParams(name, params, { cwd, toolLimits } = {}) {
+  return withToolLimits(name, withAbsolutePaths(name, params, cwd), toolLimits);
+}
+
+function cappedIntegerSchema(maximum) {
+  const schema = { type: "integer" };
+  if (Number.isFinite(Number(maximum)) && Number(maximum) > 0) schema.maximum = Number(maximum);
+  return schema;
 }
 
 function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent, toolLimits } = {}) {
@@ -153,7 +165,7 @@ function createBuiltinTool(name, label, description, parameters, execute, { cwd,
     executionMode: name === "Write" || name === "Edit" || name === "Bash" ? "sequential" : undefined,
     async execute(toolCallId, params, signal) {
       if (signal?.aborted) throw new Error("tool execution aborted");
-      const normalized = withToolLimits(name, withAbsolutePaths(name, params, cwd), toolLimits);
+      const normalized = normalizePiBuiltinToolParams(name, params, { cwd, toolLimits });
       const isFileEdit = name === "Write" || name === "Edit";
       let editState = null;
       if (isFileEdit && normalized.file_path) {
@@ -236,12 +248,15 @@ export function createStructuredOutputTool(outputSchema, onStructuredOutput) {
 }
 
 export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent, toolLimits } = {}) {
+  const textLimitSchema = cappedIntegerSchema(toolLimits?.toolTextLimitChars || 16000);
+  const bashLimitSchema = cappedIntegerSchema(toolLimits?.bashOutputLimitChars || toolLimits?.toolTextLimitChars || 20000);
+  const bashTimeoutSchema = cappedIntegerSchema(toolLimits?.bashTimeoutMs || DEFAULT_BASH_TIMEOUT_MS);
   const all = {
     Read: createBuiltinTool("Read", "Read", "Read a local file with line numbers.", objectSchema({
       file_path: { type: "string" },
       offset: { type: "integer" },
       limit: { type: "integer" },
-      max_output_chars: { type: "integer" },
+      max_output_chars: textLimitSchema,
     }, ["file_path"]), readToolImpl, { cwd, onEvent, toolLimits }),
     Write: createBuiltinTool("Write", "Write", "Write content to a local file.", objectSchema({
       file_path: { type: "string" },
@@ -257,7 +272,7 @@ export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd,
       pattern: { type: "string" },
       path: { type: "string" },
       max_matches: { type: "integer" },
-      max_output_chars: { type: "integer" },
+      max_output_chars: textLimitSchema,
     }, ["pattern"]), globToolImpl, { cwd, onEvent, toolLimits }),
     Grep: createBuiltinTool("Grep", "Grep", "Search file contents with grep.", objectSchema({
       pattern: { type: "string" },
@@ -266,17 +281,17 @@ export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd,
       context: { type: "integer" },
       case_insensitive: { type: "boolean" },
       max_matches: { type: "integer" },
-      max_output_chars: { type: "integer" },
+      max_output_chars: textLimitSchema,
     }, ["pattern"]), grepToolImpl, { cwd, onEvent, toolLimits }),
     Bash: createBuiltinTool("Bash", "Bash", "Execute a shell command in the Worklab workspace.", objectSchema({
       command: { type: "string" },
-      timeout: { type: "integer" },
-      max_output_chars: { type: "integer" },
+      timeout: bashTimeoutSchema,
+      max_output_chars: bashLimitSchema,
     }, ["command"]), bashToolImpl, { cwd, onEvent, toolLimits }),
     WebFetch: createBuiltinTool("WebFetch", "Web Fetch", "Fetch a URL and return text.", objectSchema({
       url: { type: "string" },
       headers: { type: "object", additionalProperties: { type: "string" } },
-      max_output_chars: { type: "integer" },
+      max_output_chars: textLimitSchema,
     }, ["url"]), webFetchToolImpl, { cwd, onEvent, toolLimits }),
     WebSearch: createBuiltinTool("WebSearch", "Web Search", "Search the web and return result summaries.", objectSchema({
       query: { type: "string" },

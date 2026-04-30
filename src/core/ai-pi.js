@@ -22,6 +22,7 @@ import {
   createStructuredOutputTool,
   getPiBuiltinTools,
   initPiMcpTools,
+  normalizePiBuiltinToolParams,
 } from "./ai-pi-tools.js";
 import { extractWorklabResult, formatWorklabResultText } from "./worklab-result.js";
 
@@ -211,6 +212,48 @@ function jsonSerializable(value, fallback = null) {
   } catch {
     return fallback;
   }
+}
+
+function compactJsonPreview(value, { limit = 4000 } = {}) {
+  let raw;
+  try {
+    raw = JSON.stringify(value || {});
+  } catch {
+    raw = String(value ?? "");
+  }
+  if (raw.length <= limit) return { value, truncated: false, originalLength: raw.length };
+  return {
+    value: {
+      truncated: true,
+      original_length: raw.length,
+      preview: `${raw.slice(0, limit)}\n[truncated raw tool result]`,
+    },
+    truncated: true,
+    originalLength: raw.length,
+  };
+}
+
+function compactToolRawResult(result, resultContent) {
+  const raw = compactJsonPreview(result);
+  const details = compactJsonPreview(result?.details || {});
+  return {
+    ...(raw.truncated ? {
+      truncated: true,
+      original_length: raw.originalLength,
+      preview: raw.value.preview,
+    } : {}),
+    content: {
+      omitted: true,
+      reason: "already represented by tool_result.content",
+      original_length: String(resultContent || "").length,
+    },
+    details: details.value,
+    ...(details.truncated ? { details_truncated: true } : {}),
+  };
+}
+
+function eventToolArgs(toolName, args, { cwd, toolLimits } = {}) {
+  return normalizePiBuiltinToolParams(toolName, args || {}, { cwd, toolLimits });
 }
 
 function emitCaptured(events, onEvent, event) {
@@ -435,16 +478,24 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           onEvent({ type: "assistant", message: { content: [{ type: "thinking", text: streamEvent.content }] } });
         }
       } else if (event.type === "tool_execution_start") {
+        const input = eventToolArgs(event.toolName, event.args, {
+          cwd: options.cwd,
+          toolLimits: compaction?.policy,
+        });
         onEvent({
           type: "assistant",
-          message: { content: [{ type: "tool_use", id: event.toolCallId, name: event.toolName, input: event.args || {} }] },
+          message: { content: [{ type: "tool_use", id: event.toolCallId, name: event.toolName, input }] },
         });
       } else if (event.type === "tool_execution_update") {
+        const input = eventToolArgs(event.toolName, event.args, {
+          cwd: options.cwd,
+          toolLimits: compaction?.policy,
+        });
         onEvent({
           type: "tool_update",
           tool_use_id: event.toolCallId,
           name: event.toolName,
-          input: event.args || {},
+          input,
           partial_result: jsonSerializable(event.partialResult, String(event.partialResult ?? "")),
         });
       } else if (event.type === "tool_execution_end") {
@@ -456,7 +507,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
               type: "tool_result",
               tool_use_id: event.toolCallId,
               content: resultContent,
-              raw_result: jsonSerializable(event.result, resultContent),
+              raw_result: compactToolRawResult(jsonSerializable(event.result, resultContent), resultContent),
               is_error: !!event.isError,
             }],
           },

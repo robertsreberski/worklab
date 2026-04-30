@@ -3,14 +3,15 @@ import { randomUUID } from "node:crypto";
 export const COMPACTED_CONTEXT_MARKER = "Compacted prior Worklab context";
 
 const DEFAULT_CONTEXT_WINDOW = 128000;
-const DEFAULT_TRIGGER_RATIO = 0.72;
+const DEFAULT_TRIGGER_RATIO = 0.55;
 const DEFAULT_KEEP_RECENT_TOKENS = 24000;
 const DEFAULT_SUMMARY_MAX_TOKENS = 16000;
-const DEFAULT_TOOL_TEXT_LIMIT_CHARS = 24000;
-const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 30000;
-const DEFAULT_MCP_TEXT_LIMIT_CHARS = 20000;
+const DEFAULT_TOOL_TEXT_LIMIT_CHARS = 16000;
+const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 20000;
+const DEFAULT_MCP_TEXT_LIMIT_CHARS = 12000;
 const DEFAULT_IMAGE_INLINE_MAX_BYTES = 250000;
 const DEFAULT_MCP_CALL_TIMEOUT_MS = 120000;
+const DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS = 80000;
 
 function clampNumber(value, fallback, min, max) {
   const n = Number(value);
@@ -108,6 +109,7 @@ export function resolveAgentCompactionPolicy(settings = {}, model = {}) {
     mcpTextLimitChars: clampInteger(settings.agent_mcp_text_limit_chars, DEFAULT_MCP_TEXT_LIMIT_CHARS, 1000, 200000),
     imageInlineMaxBytes: clampInteger(settings.agent_image_inline_max_bytes, DEFAULT_IMAGE_INLINE_MAX_BYTES, 0, 10 * 1024 * 1024),
     mcpCallTimeoutMs: clampInteger(settings.agent_mcp_call_timeout_ms, DEFAULT_MCP_CALL_TIMEOUT_MS, 1000, Number.MAX_SAFE_INTEGER),
+    toolPayloadCompactionTriggerChars: DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS,
   };
 }
 
@@ -202,7 +204,7 @@ function summarizeCompactedMessages(messages, { maxChars }) {
   }
 
   const sections = [
-    previousSummaries.length ? ["Prior compaction summaries:", ...previousSummaries.slice(-3).map((item) => `- ${item}`)].join("\n") : "",
+    previousSummaries.length ? ["Historical context from previous compactions:", ...previousSummaries.slice(-6).map((item) => `- ${item}`)].join("\n") : "",
     userNotes.length ? ["Recent user/task instructions from compacted prefix:", ...userNotes.slice(-8).map((item) => `- ${item}`)].join("\n") : "",
     assistantNotes.length ? ["Agent progress from compacted prefix:", ...assistantNotes.slice(-8).map((item) => `- ${item}`)].join("\n") : "",
     toolActions.length ? ["Tool activity from compacted prefix:", ...toolActions.slice(-20).map((item) => `- ${item}`)].join("\n") : "",
@@ -332,6 +334,9 @@ export function createAgentCompactionManager({
   const policy = resolveAgentCompactionPolicy(settings, model);
   let compactionCount = 0;
   let toolResultsCompacted = 0;
+  let toolPayloadCharsSinceCompaction = 0;
+  let maxToolPayloadCharsSinceCompaction = 0;
+  let forcedCompactionReason = null;
   let maxContextTokensEstimate = 0;
   let lastCompactionId = null;
   let lastError = null;
@@ -379,7 +384,8 @@ export function createAgentCompactionManager({
   async function transformContext(messages = [], signal) {
     const before = estimateAgentMessages(messages);
     maxContextTokensEstimate = Math.max(maxContextTokensEstimate, before.tokens);
-    if (!policy.enabled || signal?.aborted || before.tokens < policy.triggerTokens) return messages;
+    const trigger = forcedCompactionReason || (before.tokens >= policy.triggerTokens ? "token_budget" : null);
+    if (!policy.enabled || signal?.aborted || !trigger) return messages;
 
     const firstKeptIndex = chooseFirstKeptIndex(messages, policy.keepRecentTokens);
     if (firstKeptIndex <= 0) return messages;
@@ -391,7 +397,7 @@ export function createAgentCompactionManager({
       id,
       run_id: runId || null,
       seq,
-      trigger: "token_budget",
+      trigger,
       tokens_before: before.tokens,
       trigger_tokens: policy.triggerTokens,
       keep_recent_tokens: policy.keepRecentTokens,
@@ -426,7 +432,7 @@ export function createAgentCompactionManager({
       record({
         id,
         seq,
-        trigger: "token_budget",
+        trigger,
         tokensBefore: before.tokens,
         tokensAfter: finalAfter.tokens,
         charsBefore: before.chars,
@@ -437,10 +443,13 @@ export function createAgentCompactionManager({
           context_window: policy.contextWindow,
           trigger_tokens: policy.triggerTokens,
           keep_recent_tokens: policy.keepRecentTokens,
+          tool_payload_chars_since_compaction: toolPayloadCharsSinceCompaction,
           compacted_messages: compacted.length,
           kept_messages: recent.length,
         },
       });
+      toolPayloadCharsSinceCompaction = 0;
+      forcedCompactionReason = null;
       emit({
         type: "context_compaction_completed",
         id,
@@ -460,7 +469,7 @@ export function createAgentCompactionManager({
       record({
         id,
         seq,
-        trigger: "token_budget",
+        trigger,
         tokensBefore: before.tokens,
         charsBefore: before.chars,
         firstKeptIndex,
@@ -479,6 +488,21 @@ export function createAgentCompactionManager({
 
   async function afterToolCall({ toolCall, result }, signal) {
     if (signal?.aborted) return undefined;
+    const payloadChars = estimateAgentMessageTokens({
+      role: "toolResult",
+      toolName: toolCall?.name || "tool",
+      content: result?.content || [],
+      details: result?.details || null,
+    }).chars;
+    toolPayloadCharsSinceCompaction += payloadChars;
+    maxToolPayloadCharsSinceCompaction = Math.max(maxToolPayloadCharsSinceCompaction, toolPayloadCharsSinceCompaction);
+    if (
+      policy.enabled
+      && policy.toolPayloadCompactionTriggerChars > 0
+      && toolPayloadCharsSinceCompaction >= policy.toolPayloadCompactionTriggerChars
+    ) {
+      forcedCompactionReason = forcedCompactionReason || "tool_payload_budget";
+    }
     const compacted = compactToolResultForContext(result, policy, { toolName: toolCall?.name || "tool" });
     if (!compacted.changed) return undefined;
     toolResultsCompacted += 1;
@@ -508,6 +532,10 @@ export function createAgentCompactionManager({
       context_keep_recent_tokens: policy.keepRecentTokens,
       context_tokens_estimate_max: maxContextTokensEstimate,
       tool_results_compacted: toolResultsCompacted,
+      tool_payload_chars_since_compaction: toolPayloadCharsSinceCompaction,
+      tool_payload_chars_since_compaction_max: maxToolPayloadCharsSinceCompaction,
+      tool_payload_compaction_trigger_chars: policy.toolPayloadCompactionTriggerChars,
+      context_compaction_pending_reason: forcedCompactionReason,
       tool_text_limit_chars: policy.toolTextLimitChars,
       bash_output_limit_chars: policy.bashOutputLimitChars,
       mcp_text_limit_chars: policy.mcpTextLimitChars,
