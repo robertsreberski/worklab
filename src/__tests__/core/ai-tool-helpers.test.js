@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { globToolImpl, grepToolImpl } from "../../core/ai-tool-helpers.js";
+import { bashToolImpl, globToolImpl, grepToolImpl, readToolImpl, writeToolImpl } from "../../core/ai-tool-helpers.js";
 
 const tempDirs = [];
 let previousWorkspace = process.env.WORKLAB_WORKSPACE;
@@ -67,5 +67,18 @@ describe("ai tool helpers", () => {
     expect(result).not.toContain("dist/bundle");
     expect(result).not.toContain("bundle.js.map");
     expect(result).toContain("[truncated Grep result: showing 1 of 2 lines");
+  });
+
+  it("resolves relative file paths and shell commands from WORKLAB_WORKSPACE", async () => {
+    const root = tempWorkspace();
+
+    const writeResult = await writeToolImpl({ file_path: "src/relative.txt", content: "hello" });
+    const readResult = await readToolImpl({ file_path: "src/relative.txt" });
+    const bashResult = await bashToolImpl({ command: "pwd && test -f src/relative.txt && echo ok" });
+
+    expect(writeResult).toContain(join(root, "src", "relative.txt"));
+    expect(readResult).toContain("1\thello");
+    expect(bashResult).toContain(root);
+    expect(bashResult).toContain("ok");
   });
 });
