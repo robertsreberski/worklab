@@ -15,6 +15,7 @@ import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agent
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
+import { buildDelegationContext } from "./delegation.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -196,6 +197,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   });
 
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
+  const delegation = buildDelegationContext({ db, task, settings });
 
   return {
     task,
@@ -211,6 +213,8 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     allowedTools,
     disallowedTools,
     pinnedKb,
+    settings,
+    delegation,
   };
 }
 
@@ -302,6 +306,30 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
       artifact.last_run_id || "",
       artifact.last_seen_at || "",
     ].join(":"));
+  const delegation = setup.delegation || {};
+  const delegationSignature = [
+    delegation.enabled ? "1" : "0",
+    delegation.canDelegate ? "1" : "0",
+    delegation.depth ?? "",
+    delegation.maxDepth ?? "",
+    delegation.maxChildrenPerRound ?? "",
+    delegation.maxParallelChildren ?? "",
+    delegation.autoRunChildren ? "1" : "0",
+    (delegation.availableAgents || []).map((agent) => `${agent.name}:${agent.model}:${agent.effort}`).join("|"),
+    (delegation.childTasks || []).map((child) => {
+      const latest = child.latest_run || {};
+      return [
+        child.id,
+        child.stage,
+        child.required ? "1" : "0",
+        child.owner_agent || "",
+        latest.id || "",
+        latest.status || "",
+        latest.decision || "",
+        latest.summary || "",
+      ].join(":");
+    }).join("|"),
+  ].join("\n");
   return makeContextCacheKey({
     taskId: setup.task?.id || "",
     agentName: setup.agent?.name || "",
@@ -319,6 +347,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     builtinHash: shortHash(builtinSignature.join("|")),
     kbHash: shortHash(pinnedSignature.join("|")),
     artifactsHash: shortHash(artifactSignature.join("|")),
+    delegationHash: shortHash(delegationSignature),
     memoryHash: shortHash(setup.memory || ""),
     journalHash: shortHash(setup.journalTail || ""),
   });
@@ -326,7 +355,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
-  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools } = setup;
+  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools, delegation } = setup;
   const messages = buildTaskRunMessages({ mode, task });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
   const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
@@ -342,7 +371,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts,
-      allowedTools, disallowedTools, mcpServers,
+      allowedTools, disallowedTools, mcpServers, delegation,
     };
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt(promptInput, mode);
@@ -372,6 +401,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
+      delegation,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
     const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts }), contextCacheHit: !!cached };

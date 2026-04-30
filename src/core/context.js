@@ -23,6 +23,7 @@ const RESULT_FIELD_RULES = `Structured result rules:
 - Put execution steps and completed-work notes in \`details\`, not in \`pending_actions\`.
 - Use \`pending_actions\` only with decision "pause", for exact actions the human must take before the task can continue.
 - Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
+- When using \`subtasks\`, keep each child bounded, include enough instructions for another agent to run independently, set \`suggested_agent\` to an enabled agent name when a specific owner is appropriate, and use \`acceptance_criteria\` / \`expected_artifact\` for the child's done condition.
 - For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
 
 const PLAN_DIRECTIVE = `Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Do not do implementation work during planning.
@@ -291,6 +292,70 @@ function formatWorkspaceGuidance(effectiveWorkdir) {
   ].join("\n");
 }
 
+function formatDelegationPolicy(context) {
+  if (!context) return "";
+  const lines = [];
+  if (!context.enabled) {
+    lines.push("Delegation is disabled for this workspace. Do not return decision \"delegate\".");
+    if (context.disabledReason) lines.push(`Reason: ${context.disabledReason}.`);
+    return lines.join("\n");
+  }
+
+  lines.push(`Delegation policy: ${context.canDelegate ? "available" : "unavailable"} for this task.`);
+  lines.push(`Current depth: ${context.depth}/${context.maxDepth}. Max children per round: ${context.maxChildrenPerRound}. Max parallel child runs: ${context.maxParallelChildren}.`);
+  lines.push(context.autoRunChildren
+    ? "Delegated children auto-run when their dependencies are clear."
+    : "Delegated children are created but do not auto-run.");
+  if (!context.canDelegate) {
+    lines.push(`Do not return decision "delegate": ${context.disabledReason || "delegation is unavailable"}.`);
+    return lines.join("\n");
+  }
+  lines.push("Return decision \"delegate\" when the work naturally splits into independent investigation, implementation, research, drafting, QA, or specialist review tracks that can run in parallel or with clear dependencies.");
+  lines.push("Proceed with decision \"advance\" instead when the task is small, tightly coupled, already decomposed into children, or when delegation would create coordination overhead without reducing risk or time.");
+  lines.push("Use at most the configured child limit, prefer required children for work the parent must synthesize, and use optional children only for helpful extra validation.");
+  return lines.join("\n");
+}
+
+function formatAvailableAgents(context) {
+  const agents = context?.availableAgents || [];
+  if (!context?.enabled || agents.length === 0) return "";
+  return agents.map((agent) => {
+    const label = agent.display_name && agent.display_name !== agent.name
+      ? `\`${agent.name}\` (${agent.display_name})`
+      : `\`${agent.name}\``;
+    const runtime = [agent.sdk, agent.model, agent.effort].filter(Boolean).join(" / ");
+    const description = agent.description ? ` - ${agent.description}` : "";
+    return `- ${label}${runtime ? `: ${runtime}` : ""}${description}`;
+  }).join("\n");
+}
+
+function formatChildTasks(context) {
+  const children = context?.childTasks || [];
+  if (!children.length) return "";
+  return children.map((child) => {
+    const ref = child.task_key || child.id;
+    const owner = child.owner_agent ? `, owner ${child.owner_agent}` : "";
+    const required = child.required ? "required" : "optional";
+    const latest = child.latest_run;
+    const runLine = latest
+      ? `Last run: ${latest.status}/${latest.process_status}${latest.decision ? `, decision ${latest.decision}` : ""}${latest.failure_kind ? `, failure ${latest.failure_kind}` : ""}.`
+      : "Last run: none.";
+    const summary = latest?.summary || latest?.result?.summary || "";
+    const artifactSummary = latest?.artifact_summary;
+    const artifactText = artifactSummary && Object.keys(artifactSummary).length
+      ? ` Artifacts: ${formatContextText(JSON.stringify(artifactSummary), 500)}`
+      : "";
+    return [
+      `### ${ref}: ${child.title}`,
+      `Stage: ${child.stage} (${required}${owner}).`,
+      child.stage_reason ? `Reason: ${child.stage_reason}.` : "",
+      runLine,
+      summary ? `Summary: ${formatContextText(summary, 500)}` : "",
+      artifactText.trim(),
+    ].filter(Boolean).join("\n");
+  }).join("\n\n");
+}
+
 const BASE_SECTION_NAMES = [
   "Role",
   "Pinned knowledge",
@@ -381,6 +446,14 @@ export function buildSystemPrompt(input, mode) {
     if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments)));
     sectionNames.push("Task");
+    if (mode === "plan" || mode === "execute") {
+      parts.push(section("Child tasks", formatChildTasks(input.delegation)));
+      if (input.delegation?.childTasks?.length) sectionNames.push("Child tasks");
+      parts.push(section("Delegation policy", formatDelegationPolicy(input.delegation)));
+      if (input.delegation) sectionNames.push("Delegation policy");
+      parts.push(section("Available agents", formatAvailableAgents(input.delegation)));
+      if (input.delegation?.enabled && input.delegation?.availableAgents?.length) sectionNames.push("Available agents");
+    }
   }
 
   if (mode === "review") {
