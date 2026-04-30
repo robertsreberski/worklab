@@ -1,6 +1,12 @@
 import { z } from "zod";
 import { kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../../core/kb.js";
 import { uniqueSlug } from "../../core/slugs.js";
+import {
+  getTaskHeaderForKbUsage,
+  listTaskHeadersForKbUsage,
+} from "../../core/db/queries/tasks.js";
+import { listAllCommentBodiesForKbUsage } from "../../core/db/queries/comments.js";
+import { listAgentInstructionsForKbUsage } from "../../core/db/queries/agents.js";
 
 const CreateSchema = z.object({
   slug: z.string().optional(),
@@ -166,7 +172,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
 
     const tasks = [];
     const seenTasks = new Set();
-    for (const row of db.prepare("SELECT id, task_key, title, instructions, stage FROM tasks").all()) {
+    for (const row of listTaskHeadersForKbUsage(db)) {
       if (matches(row.title) || matches(row.instructions)) {
         if (!seenTasks.has(row.id)) {
           seenTasks.add(row.id);
@@ -174,9 +180,9 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
         }
       }
     }
-    for (const row of db.prepare("SELECT task_id, body FROM task_comments").all()) {
+    for (const row of listAllCommentBodiesForKbUsage(db)) {
       if (matches(row.body) && !seenTasks.has(row.task_id)) {
-        const task = db.prepare("SELECT id, task_key, title, stage FROM tasks WHERE id = ?").get(row.task_id);
+        const task = getTaskHeaderForKbUsage(db, row.task_id);
         if (task) {
           seenTasks.add(task.id);
           tasks.push({ id: task.id, task_key: task.task_key || null, title: task.title, stage: task.stage, via: "comment" });
@@ -185,7 +191,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     }
 
     const agents = [];
-    for (const row of db.prepare("SELECT name, display_name, instructions FROM agents").all()) {
+    for (const row of listAgentInstructionsForKbUsage(db)) {
       if (matches(row.instructions)) {
         agents.push({ name: row.name, display_name: row.display_name });
       }

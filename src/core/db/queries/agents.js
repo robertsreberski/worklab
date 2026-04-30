@@ -47,3 +47,7 @@ export function listAgentSkillsAllowlistsWithNames(db) {
 export function listAgentModelRefs(db) {
   return db.prepare("SELECT name, display_name, model, enabled FROM agents").all();
 }
+
+export function listAgentInstructionsForKbUsage(db) {
+  return db.prepare("SELECT name, display_name, instructions FROM agents").all();
+}

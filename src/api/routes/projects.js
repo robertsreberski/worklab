@@ -8,7 +8,17 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/projects.js";
-import { archiveProject, getProjectById } from "../../core/db/queries/projects.js";
+import {
+  archiveProject,
+  getProjectById,
+  insertProject,
+  listProjectsWithTaskCounts,
+  updateProjectFields,
+} from "../../core/db/queries/projects.js";
+import {
+  countTasksByStageForProject,
+  listProjectTasksWithRunSnapshots,
+} from "../../core/db/queries/tasks.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -88,12 +98,7 @@ function projectTaskSummary(row) {
 }
 
 function projectStats(db, projectId) {
-  const rows = db.prepare(`
-    SELECT stage, COUNT(*) AS count
-    FROM tasks
-    WHERE project_id = ?
-    GROUP BY stage
-  `).all(projectId);
+  const rows = countTasksByStageForProject(db, projectId);
   return {
     task_count: rows.reduce((sum, row) => sum + Number(row.count || 0), 0),
     by_stage: Object.fromEntries(rows.map((row) => [row.stage || "plan", row.count])),
@@ -172,18 +177,7 @@ export function registerProjectRoutes(app, { db, broker }) {
       params.push(like, like, like, like);
     }
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 200, 500));
-    const rows = db.prepare(`
-      SELECT
-        p.*,
-        COUNT(t.id) AS task_count,
-        SUM(CASE WHEN t.stage <> 'done' THEN 1 ELSE 0 END) AS active_task_count
-      FROM projects p
-      LEFT JOIN tasks t ON t.project_id = p.id
-      ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-      GROUP BY p.id
-      ORDER BY p.archived ASC, p.updated_at DESC, p.name ASC
-      LIMIT ?
-    `).all(...params, limit);
+    const rows = listProjectsWithTaskCounts(db, { filters: where, params, limit });
     res.json({ projects: rows.map(projectFromRow), limit });
   });
 
@@ -191,22 +185,18 @@ export function registerProjectRoutes(app, { db, broker }) {
     const insertProjectRow = (project) => {
       const id = newProjectId();
       const now = Date.now();
-      db.prepare(`
-        INSERT INTO projects
-          (id, slug, name, description, context_markdown, workdir, tags_json, archived, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
+      insertProject(db, {
         id,
-        project.slug,
-        project.name,
-        project.description,
-        project.context,
-        project.workdir,
-        JSON.stringify(project.tags),
-        project.archived,
-        now,
-        now,
-      );
+        slug: project.slug,
+        name: project.name,
+        description: project.description,
+        context: project.context,
+        workdir: project.workdir,
+        tagsJson: JSON.stringify(project.tags),
+        archived: project.archived,
+        createdAt: now,
+        updatedAt: now,
+      });
       return id;
     };
     try {
@@ -237,49 +227,7 @@ export function registerProjectRoutes(app, { db, broker }) {
   app.get("/api/projects/:id", (req, res) => {
     try {
       const row = projectOr404(db, req.params.id);
-      const tasks = db.prepare(`
-        SELECT
-          t.id, t.task_key, t.title, t.stage, t.stage_reason, t.run_policy,
-          t.owner_agent, t.planner_agent, t.reviewer_agent, t.parent_task_id,
-          t.pending_actions_json, t.blocking_issues_json, t.failure_count,
-          t.rejection_streak, t.last_failure_kind, t.error_text, t.updated_at,
-          (
-            SELECT COUNT(*)
-            FROM task_dependencies d
-            JOIN tasks dep ON dep.id = d.depends_on_task_id
-            WHERE d.task_id = t.id AND COALESCE(dep.stage, 'plan') <> 'done'
-          ) AS unresolved_dependency_count,
-          rr.id AS running_run_id,
-          rr.status AS running_run_status,
-          rr.process_status AS running_run_process_status,
-          rr.started_at AS running_run_started_at,
-          lr.id AS last_run_id,
-          lr.status AS last_run_status,
-          lr.process_status AS last_run_process_status,
-          lr.failure_kind AS last_run_failure_kind,
-          lr.ended_at AS last_run_ended_at,
-          lr.stage AS last_run_stage,
-          lr.mode AS last_run_mode,
-          lr.decision AS last_run_decision,
-          lr.summary AS last_run_summary
-        FROM tasks t
-        LEFT JOIN task_runs rr ON rr.id = (
-          SELECT r.id
-          FROM task_runs r
-          WHERE r.task_id = t.id AND r.status = 'running'
-          ORDER BY r.started_at DESC, r.rowid DESC
-          LIMIT 1
-        )
-        LEFT JOIN task_runs lr ON lr.id = (
-          SELECT r.id
-          FROM task_runs r
-          WHERE r.task_id = t.id AND r.status <> 'running'
-          ORDER BY r.started_at DESC, r.rowid DESC
-          LIMIT 1
-        )
-        WHERE t.project_id = ?
-        ORDER BY t.updated_at DESC
-      `).all(row.id).map(projectTaskSummary);
+      const tasks = listProjectTasksWithRunSnapshots(db, row.id).map(projectTaskSummary);
       res.json({
         project: {
           ...projectFromRow(row),
@@ -300,7 +248,7 @@ export function registerProjectRoutes(app, { db, broker }) {
         fields.push("updated_at = ?");
         values.push(Date.now(), existing.id);
         try {
-          db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+          updateProjectFields(db, fields, values);
         } catch (error) {
           if (isSqliteConstraint(error)) {
             return res.status(409).json({ error: { code: "conflict", message: "project slug is already in use" } });
