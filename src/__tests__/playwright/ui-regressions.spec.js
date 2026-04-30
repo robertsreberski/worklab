@@ -434,8 +434,15 @@ test.beforeAll(async () => {
     "log-live-existing",
     "run-live-existing",
     JSON.stringify([
-      { type: "text", text: "Existing streamed event", ts: now - 5_000 },
-      { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" } },
+      { type: "text", text: "Existing streamed event", ts: now - 5_000, _event_seq: 1 },
+      { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" }, _event_seq: 2 },
+      {
+        type: "tool_use",
+        tool_use_id: "tool-live-mobile-existing",
+        name: "mcp__worklab__journal_append",
+        input: { bullet: "confirming a mobile live preview value with enough text to require truncation" },
+        _event_seq: 3,
+      },
     ]),
     now - 5_000,
   );
@@ -1627,9 +1634,19 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   const touchTargetRow = page.locator(".commander-row").nth(1);
   await touchTargetRow.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true });
   await expect(touchTargetRow).toHaveClass(/selected/);
+  const runningDetailRow = page.locator(".commander-row", { hasText: "Running detail task" });
+  await expect(runningDetailRow.locator(".tool-token-name", { hasText: "mcp__worklab__journal_append" })).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const row = document.querySelector(".commander-row");
+    const densityRow = [...document.querySelectorAll(".commander-row")]
+      .find((entry) => !entry.querySelector(".commander-live-line")) || row;
+    const liveRow = [...document.querySelectorAll(".commander-row")]
+      .find((entry) => entry.textContent?.includes("Running detail task"));
+    const liveToken = [...(liveRow?.querySelectorAll(".commander-live-line .tool-token") || [])]
+      .find((entry) => entry.querySelector(".tool-token-name")?.textContent?.includes("mcp__worklab__journal_append"));
+    const liveName = liveToken?.querySelector(".tool-token-name");
+    const liveArg = liveToken?.querySelector(".tool-token-arg");
     const selectedRow = document.querySelector(".commander-row.selected");
     const baseRow = document.querySelector(".commander-row:not(.selected)");
     const id = row?.querySelector(".commander-cell-id");
@@ -1654,12 +1671,17 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const viewportMeta = document.querySelector('meta[name="viewport"]')?.getAttribute("content") || "";
     const bodyStyles = getComputedStyle(document.body);
     const rowStyles = row ? getComputedStyle(row) : null;
+    const liveNameRect = liveName?.getBoundingClientRect();
+    const liveArgRect = liveArg?.getBoundingClientRect();
+    const liveTokenRect = liveToken?.getBoundingClientRect();
+    const liveNameStyles = liveName ? getComputedStyle(liveName) : null;
+    const liveArgStyles = liveArg ? getComputedStyle(liveArg) : null;
     const navWidths = [...document.querySelectorAll(".app-tabbar a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
     const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
       .map((entry) => Math.round(entry.getBoundingClientRect().height));
     return {
-      rowHeight: row ? Math.round(row.getBoundingClientRect().height) : 0,
+      rowHeight: densityRow ? Math.round(densityRow.getBoundingClientRect().height) : 0,
       filterHeight: filter ? Math.round(filter.getBoundingClientRect().height) : 0,
       searchWidth: search ? Math.round(search.getBoundingClientRect().width) : 0,
       searchTop: search ? Math.round(search.getBoundingClientRect().top) : 0,
@@ -1681,6 +1703,16 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       viewportMeta,
       bodyTouchAction: bodyStyles.touchAction,
       rowTouchAction: rowStyles?.touchAction || "",
+      liveToolName: liveName?.textContent?.trim() || "",
+      liveToolValue: liveArg?.textContent?.trim() || "",
+      liveToolNameWhiteSpace: liveNameStyles?.whiteSpace || "",
+      liveToolValueWhiteSpace: liveArgStyles?.whiteSpace || "",
+      liveToolInline: liveNameRect && liveArgRect
+        ? Math.abs(Math.round(liveNameRect.top) - Math.round(liveArgRect.top)) <= 1
+          && Math.round(liveArgRect.left) >= Math.round(liveNameRect.right) - 1
+        : false,
+      liveToolNameSingleLine: liveNameRect ? Math.round(liveNameRect.height) <= 22 : false,
+      liveToolTokenSingleLine: liveTokenRect ? Math.round(liveTokenRect.height) <= 24 : false,
       inlineNewTaskDisplay: inlineNewTask ? getComputedStyle(inlineNewTask).display : "",
       selectedBorderLeftWidth: selectedStyles ? Math.round(parseFloat(selectedStyles.borderLeftWidth)) : 0,
       selectedBorderTopColor: selectedStyles?.borderTopColor || "",
@@ -1720,6 +1752,13 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.viewportMeta).toContain("user-scalable=no");
   expect(metrics.bodyTouchAction).toBe("manipulation");
   expect(metrics.rowTouchAction).toBe("manipulation");
+  expect(metrics.liveToolName).toBe("mcp__worklab__journal_append");
+  expect(metrics.liveToolValue).toContain("mobile live preview value");
+  expect(metrics.liveToolNameWhiteSpace).toBe("nowrap");
+  expect(metrics.liveToolValueWhiteSpace).toBe("nowrap");
+  expect(metrics.liveToolInline).toBe(true);
+  expect(metrics.liveToolNameSingleLine).toBe(true);
+  expect(metrics.liveToolTokenSingleLine).toBe(true);
   expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.inlineNewTaskDisplay).toBe("none");
   expect(metrics.selectedBorderLeftWidth).toBe(2);
