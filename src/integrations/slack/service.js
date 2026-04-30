@@ -12,6 +12,7 @@ import { worklabBaseUrl } from "../../core/config.js";
 import { buildTriageMessages, buildTriageSystemPrompt } from "./context.js";
 import { slackMessageFilterReason } from "./filter.js";
 import { parseTriageResult, TRIAGE_RESULT_JSON_SCHEMA } from "./triage-result.js";
+import { getTaskById } from "../../core/db/queries/tasks.js";
 
 function stringify(value) {
   try { return JSON.stringify(value); } catch { return "{}"; }
@@ -580,7 +581,7 @@ export class WorklabSlackService {
     const settings = this.currentSettings();
     if (!settings.slack_enabled || !this.running || !this.slackClient || !settings.slack_user_id) return null;
     if (!event?.runId || !event?.taskId) return null;
-    const task = this.db.prepare("SELECT * FROM tasks WHERE id = ?").get(event.taskId);
+    const task = getTaskById(this.db, event.taskId);
     if (!task) return null;
     const kind = classifyTaskNotification({ event, task });
     if (!kind) return null;

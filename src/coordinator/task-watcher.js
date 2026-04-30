@@ -21,6 +21,7 @@ import { slugify } from "../core/slugs.js";
 import { resolveTaskProjectRunContext } from "../core/projects.js";
 import { retryableProviderFailureInfo } from "../core/failure-kind.js";
 import { delegationDepth } from "../core/delegation.js";
+import { getTaskById } from "../core/db/queries/tasks.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -431,7 +432,7 @@ export function createTaskWatcher({
   const recoveryTimers = new Set();
 
   function canAutoStart(taskId) {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    const task = getTaskById(db, taskId);
     if (!task) return false;
     const stage = taskStage(task);
     if (task.run_policy !== AUTO_RUN_POLICY) return false;
@@ -534,7 +535,7 @@ export function createTaskWatcher({
   }
 
   function annotateTaskFailure(taskId, { message, failureKind = "spawn", retryStage }) {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    const task = getTaskById(db, taskId);
     if (!task) return;
     const stage = retryStage || taskStage(task);
     const next = nextStage(taskStage(task), {
@@ -762,7 +763,7 @@ export function createTaskWatcher({
   }
 
   async function handleRunRequested(taskId, options = {}) {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    const task = getTaskById(db, taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
     if (active.has(taskId)) throw new Error("task already running");
 
@@ -1472,7 +1473,7 @@ export function createTaskWatcher({
     const entry = active.get(taskId);
     if (entry?.runId === runId) active.delete(taskId);
     activeByRunId.delete(runId);
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    const task = getTaskById(db, taskId);
     if (!task) return;
     const run = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
     if (!run) return;

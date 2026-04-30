@@ -1,3 +1,5 @@
+import { getTaskById } from "./db/queries/tasks.js";
+
 const TASK_KEY_PREFIX = "T";
 const TASK_KEY_SETTING = "task_key_next";
 const TASK_KEY_RE = /^T-(\d+)$/i;
@@ -90,7 +92,7 @@ export function resolveTaskRow(db, value) {
     const byKey = db.prepare("SELECT * FROM tasks WHERE task_key = ?").get(key);
     if (byKey) return byKey;
   }
-  return db.prepare("SELECT * FROM tasks WHERE id = ?").get(raw) || null;
+  return getTaskById(db, raw) || null;
 }
 
 export function resolveTaskId(db, value) {

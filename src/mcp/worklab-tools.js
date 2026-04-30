@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import { getTaskById } from "../core/db/queries/tasks.js";
 import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../core/journal.js";
 import { openDb, runMigrations } from "../core/db.js";
 import { search, indexPath, removeSource } from "../core/embeddings.js";
@@ -226,7 +227,7 @@ export function createToolHandlers(context) {
     async get_child_result(input) {
       const { child_task_id } = getChildResultSchema.parse(input);
       return await withDb(dataDir, (db) => {
-        const child = db.prepare("SELECT * FROM tasks WHERE id = ?").get(child_task_id);
+        const child = getTaskById(db, child_task_id);
         if (!child) throw new Error(`not_found: ${child_task_id}`);
         if (taskId) {
           const edge = db.prepare(
