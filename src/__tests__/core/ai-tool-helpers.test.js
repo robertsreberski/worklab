@@ -5,6 +5,8 @@ import { bashToolImpl, globToolImpl, grepToolImpl, readToolImpl, writeToolImpl }
 
 const tempDirs = [];
 let previousWorkspace = process.env.WORKLAB_WORKSPACE;
+let previousDataDir = process.env.WORKLAB_DATA_DIR;
+let previousRunId = process.env.WORKLAB_RUN_ID;
 
 function tempWorkspace() {
   const dir = mkdtempSync(resolve("/tmp", "worklab-ai-tools-"));
@@ -19,7 +21,12 @@ function writeFile(path, content = "") {
 }
 
 afterEach(() => {
-  process.env.WORKLAB_WORKSPACE = previousWorkspace;
+  if (previousWorkspace === undefined) delete process.env.WORKLAB_WORKSPACE;
+  else process.env.WORKLAB_WORKSPACE = previousWorkspace;
+  if (previousDataDir === undefined) delete process.env.WORKLAB_DATA_DIR;
+  else process.env.WORKLAB_DATA_DIR = previousDataDir;
+  if (previousRunId === undefined) delete process.env.WORKLAB_RUN_ID;
+  else process.env.WORKLAB_RUN_ID = previousRunId;
   while (tempDirs.length) rmSync(tempDirs.pop(), { recursive: true, force: true });
 });
 
@@ -80,5 +87,69 @@ describe("ai tool helpers", () => {
     expect(readResult).toContain("1\thello");
     expect(bashResult).toContain(root);
     expect(bashResult).toContain("ok");
+  });
+
+  it("prefers an explicit tool workdir over the default workspace", async () => {
+    const root = tempWorkspace();
+    const project = mkdtempSync(resolve("/tmp", "worklab-project-tools-"));
+    tempDirs.push(project);
+    writeFile(join(project, "src", "project.txt"), "from project");
+
+    const writeResult = await writeToolImpl({ file_path: "src/new.txt", content: "new", workdir: project });
+    const readResult = await readToolImpl({ file_path: "src/project.txt", workdir: project });
+    const globResult = await globToolImpl({ path: ".", pattern: "src/*.txt", workdir: project });
+    const bashResult = await bashToolImpl({ command: "pwd && test -f src/project.txt && echo ok", workdir: project });
+
+    expect(writeResult).toContain(join(project, "src", "new.txt"));
+    expect(readResult).toContain("1\tfrom project");
+    expect(globResult).toContain("src/project.txt");
+    expect(globResult).not.toContain(root);
+    expect(bashResult).toContain(project);
+    expect(bashResult).toContain("ok");
+  });
+
+  it("bounds Read output by default and warns on repeated ranges", async () => {
+    const root = tempWorkspace();
+    writeFile(join(root, "src", "large.txt"), Array.from({ length: 300 }, (_, index) => `line ${index + 1}`).join("\n"));
+
+    const first = await readToolImpl({ file_path: "src/large.txt" });
+    const second = await readToolImpl({ file_path: "src/large.txt" });
+
+    expect(first).toContain("240\tline 240");
+    expect(first).not.toContain("241\tline 241");
+    expect(first).toContain("Next unread line: 241");
+    expect(second).toContain("already read");
+  });
+
+  it("supports bounded grep output modes", async () => {
+    const root = tempWorkspace();
+    writeFile(join(root, "src", "one.ts"), "needle one");
+    writeFile(join(root, "src", "two.ts"), "needle two");
+
+    const filesOnly = await grepToolImpl({ path: root, pattern: "needle", max_matches: 1 });
+    const content = await grepToolImpl({ path: root, pattern: "needle", output_mode: "content", head_limit: 2 });
+
+    expect(filesOnly).toMatch(/src\/(one|two)\.ts/);
+    expect(filesOnly).not.toContain("needle one");
+    expect(content).toContain("src/one.ts:1:needle one");
+    expect(content).toContain("src/two.ts:1:needle two");
+  });
+
+  it("keeps bash head and tail when truncating large output", async () => {
+    const root = tempWorkspace();
+    const dataDir = mkdtempSync(resolve("/tmp", "worklab-tool-artifacts-"));
+    tempDirs.push(dataDir);
+    process.env.WORKLAB_DATA_DIR = dataDir;
+    process.env.WORKLAB_RUN_ID = "run-tools";
+
+    const result = await bashToolImpl({
+      command: "printf 'HEAD'; printf '%04000d' 0; printf 'TAIL'",
+      max_output_chars: 500,
+      workdir: root,
+    });
+
+    expect(result).toContain("HEAD");
+    expect(result).toContain("TAIL");
+    expect(result).toContain("Full output saved to:");
   });
 });
