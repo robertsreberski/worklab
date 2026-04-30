@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { estimateCost } from "./cost.js";
 import { backendCapabilities } from "./backend.js";
 import { formatLiveInputGuidance } from "./live-input.js";
+import { readSettings } from "./settings.js";
+import {
+  createAgentCompactionManager,
+  isLikelyContextTermination,
+} from "./agent-compaction.js";
 import {
   buildModelCapabilities,
   getModelByProviderAndName,
@@ -304,6 +309,26 @@ export function isContextLimitError(message) {
   return /context[_ ]length[_ ]exceeded|exceeds the context window|too many tokens|maximum context length|token limit exceeded|prompt is too long/i.test(text);
 }
 
+function failureKindForPiError(message, diagnostics, { maxTurnsHit = false } = {}) {
+  if (!message) return null;
+  if (maxTurnsHit || isContextLimitError(message) || isLikelyContextTermination(message, diagnostics)) return "usage_limit";
+  return "provider_unavailable";
+}
+
+function readRuntimeSettings(db, explicitSettings, runtimeWarnings) {
+  if (explicitSettings) return explicitSettings;
+  if (!db) return {};
+  try {
+    return readSettings(db);
+  } catch (err) {
+    runtimeWarnings.push({
+      warning_kind: "settings_read_failed",
+      message: err?.message || String(err),
+    });
+    return {};
+  }
+}
+
 export async function generatePiResponse(systemPrompt, options = {}) {
   const resolved = options.model;
   const start = Date.now();
@@ -319,12 +344,25 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let externalAbort = false;
   let maxTurnsHit = false;
   let turnCount = 0;
+  let compaction = null;
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
 
   try {
     const runtime = resolvePiRuntimeModel(resolved, options);
     const capabilities = runtime.capabilities || {};
+    const settings = readRuntimeSettings(options.db, options.settings, runtimeWarnings);
+    const reference = resolved.reference
+      || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
+    compaction = createAgentCompactionManager({
+      db: options.db,
+      runId: options.runId || process.env.WORKLAB_RUN_ID || null,
+      providerKind: resolved.sdk,
+      modelReference: reference,
+      model: runtime.model,
+      settings,
+      onEvent,
+    });
     const builtIns = capabilities.tool_use === false
       ? []
       : getPiBuiltinTools(options.allowedTools, {
@@ -332,6 +370,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         dataDir: options.dataDir,
         cwd: options.cwd,
         onEvent,
+        toolLimits: compaction.policy,
       });
 
     const structuredTool = createStructuredOutputTool(options.outputSchema, (value) => {
@@ -341,7 +380,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     if (structuredTool) reservedNames.add(structuredTool.name);
     const mcpInit = capabilities.tool_use === false
       ? { clients: [], tools: [], warnings: [] }
-      : await initPiMcpTools(options.mcpServers || {}, reservedNames);
+      : await initPiMcpTools(options.mcpServers || {}, reservedNames, { limits: compaction.policy });
     mcpClients = mcpInit.clients;
     for (const warning of mcpInit.warnings || []) onEvent(warning);
 
@@ -359,6 +398,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         tools,
       },
       streamFn: options.streamFn,
+      transformContext: compaction.transformContext,
+      afterToolCall: compaction.afterToolCall,
       sessionId: options.sessionId || options.runId || process.env.WORKLAB_RUN_ID || randomUUID(),
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
@@ -461,6 +502,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
             max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
             turn_count: turnCount,
             external_abort: true,
+            ...(compaction?.diagnostics?.() || {}),
           },
         };
       }
@@ -509,8 +551,6 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const usage = usageFromMessages(transcript);
     const stopReason = lastAssistant?.stopReason || null;
     externalAbort ||= !!options.abortSignal?.aborted;
-    const reference = resolved.reference
-      || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
     const estimatedCost = estimateCost({
       db: options.db,
       model: reference,
@@ -532,6 +572,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
       external_abort: externalAbort,
+      ...(compaction?.diagnostics?.() || {}),
     };
 
     return {
@@ -553,7 +594,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       sdk: resolved.sdk,
       cancelled: externalAbort,
       error: errorMessage,
-      failureKind: errorMessage ? (maxTurnsHit || isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable") : null,
+      failureKind: failureKindForPiError(errorMessage, diagnostics, { maxTurnsHit }),
       runtimeWarnings,
       diagnostics,
       ...(worklabResult ? { worklabResult, structuredResultSource: structuredResult ? "StructuredOutput" : "message" } : {}),
@@ -572,7 +613,9 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       sdk: resolved?.sdk || "pi",
       cancelled: externalAbort,
       error: externalAbort ? null : errorMessage,
-      failureKind: externalAbort ? null : (isContextLimitError(errorMessage) ? "usage_limit" : "provider_unavailable"),
+      failureKind: externalAbort ? null : failureKindForPiError(errorMessage, {
+        ...(compaction?.diagnostics?.() || {}),
+      }, { maxTurnsHit }),
       runtimeWarnings,
       diagnostics: {
         pi_stop_reason: externalAbort ? "aborted" : "error",
@@ -580,6 +623,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
         turn_count: turnCount,
         external_abort: externalAbort,
+        ...(compaction?.diagnostics?.() || {}),
       },
     };
   } finally {

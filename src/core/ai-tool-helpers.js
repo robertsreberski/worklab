@@ -1,11 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { exec, execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
 const MAX_READ_LINES = 2000;
+const DEFAULT_MAX_READ_CHARS = 24_000;
+const DEFAULT_MAX_TOOL_OUTPUT_CHARS = 24_000;
+const DEFAULT_MAX_BASH_OUTPUT_CHARS = 30_000;
 const MAX_WRITE_BYTES = 10 * 1024 * 1024;
 const DEFAULT_EXCLUDED_DIRS = [
   ".git",
@@ -18,8 +21,17 @@ const DEFAULT_EXCLUDED_DIRS = [
 ];
 const DEFAULT_EXCLUDED_FILES = ["*.map"];
 const DEFAULT_MAX_SEARCH_LINES = 500;
-const DEFAULT_MAX_SEARCH_CHARS = 80_000;
+const DEFAULT_MAX_SEARCH_CHARS = 24_000;
 const SEARCH_MAX_BUFFER = 2 * 1024 * 1024;
+
+function workspaceRoot() {
+  return process.env.WORKLAB_WORKSPACE || process.cwd();
+}
+
+function resolveToolPath(path) {
+  if (!path || typeof path !== "string") return path;
+  return resolve(isAbsolute(path) ? path : resolve(workspaceRoot(), path));
+}
 
 function roots() {
   return [...new Set([
@@ -31,14 +43,27 @@ function roots() {
 }
 
 export function isPathAllowed(path) {
-  const r = resolve(path);
+  const r = resolveToolPath(path);
   return roots().some((root) => r === root || r.startsWith(root + "/"));
 }
 
-export async function readToolImpl({ file_path, offset = 0, limit }) {
-  if (!isPathAllowed(file_path)) return `Error: Path not allowed: ${file_path}`;
-  if (!existsSync(file_path)) return `Error: File not found: ${file_path}`;
-  const content = readFileSync(file_path, "utf8");
+function capChars(text, { label = "tool", maxChars = DEFAULT_MAX_TOOL_OUTPUT_CHARS } = {}) {
+  const value = String(text || "");
+  const limit = Number(maxChars) || DEFAULT_MAX_TOOL_OUTPUT_CHARS;
+  if (value.length <= limit) return value;
+  const suffix = [
+    "",
+    `[truncated ${label} output: showing ${limit} of ${value.length} characters.]`,
+    "Use a narrower path, range, command, or query for the missing detail.",
+  ].join("\n");
+  return `${value.slice(0, Math.max(0, limit - suffix.length))}${suffix}`;
+}
+
+export async function readToolImpl({ file_path, offset = 0, limit, max_output_chars }) {
+  const target = resolveToolPath(file_path);
+  if (!isPathAllowed(target)) return `Error: Path not allowed: ${file_path}`;
+  if (!existsSync(target)) return `Error: File not found: ${file_path}`;
+  const content = readFileSync(target, "utf8");
   let lines = content.split("\n");
   const total = lines.length;
   const start = Number(offset) || 0;
@@ -46,27 +71,32 @@ export async function readToolImpl({ file_path, offset = 0, limit }) {
   const truncated = lines.length > MAX_READ_LINES;
   if (truncated) lines = lines.slice(0, MAX_READ_LINES);
   const numbered = lines.map((line, i) => `${start + i + 1}\t${line}`).join("\n");
-  return `${numbered}${truncated ? `\n... (${total - MAX_READ_LINES} more lines)` : ""}`;
+  return capChars(`${numbered}${truncated ? `\n... (${total - MAX_READ_LINES} more lines)` : ""}`, {
+    label: "Read",
+    maxChars: Number(max_output_chars) || DEFAULT_MAX_READ_CHARS,
+  });
 }
 
 export async function writeToolImpl({ file_path, content }) {
-  if (!isPathAllowed(file_path)) return `Error: Path not allowed: ${file_path}`;
+  const target = resolveToolPath(file_path);
+  if (!isPathAllowed(target)) return `Error: Path not allowed: ${file_path}`;
   const bytes = Buffer.byteLength(content || "", "utf8");
   if (bytes > MAX_WRITE_BYTES) return `Error: Content too large (${bytes} bytes)`;
-  mkdirSync(dirname(file_path), { recursive: true });
-  writeFileSync(file_path, content || "", "utf8");
-  return `Successfully wrote ${bytes} bytes to ${file_path}`;
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, content || "", "utf8");
+  return `Successfully wrote ${bytes} bytes to ${target}`;
 }
 
 export async function editToolImpl({ file_path, old_string, new_string, replace_all = false }) {
-  if (!isPathAllowed(file_path)) return `Error: Path not allowed: ${file_path}`;
-  if (!existsSync(file_path)) return `Error: File not found: ${file_path}`;
-  const content = readFileSync(file_path, "utf8");
+  const target = resolveToolPath(file_path);
+  if (!isPathAllowed(target)) return `Error: Path not allowed: ${file_path}`;
+  if (!existsSync(target)) return `Error: File not found: ${file_path}`;
+  const content = readFileSync(target, "utf8");
   const count = content.split(old_string).length - 1;
-  if (count === 0) return `Error: old_string not found in ${file_path}`;
+  if (count === 0) return `Error: old_string not found in ${target}`;
   if (!replace_all && count > 1) return `Error: old_string found ${count} times`;
-  writeFileSync(file_path, replace_all ? content.replaceAll(old_string, new_string) : content.replace(old_string, new_string), "utf8");
-  return `Successfully edited ${file_path}`;
+  writeFileSync(target, replace_all ? content.replaceAll(old_string, new_string) : content.replace(old_string, new_string), "utf8");
+  return `Successfully edited ${target}`;
 }
 
 function findPruneArgs() {
@@ -120,7 +150,7 @@ function excludedPathSummary() {
 }
 
 export async function globToolImpl({ pattern, path, max_matches, max_output_chars }) {
-  const cwd = resolve(path || process.env.WORKLAB_WORKSPACE || process.cwd());
+  const cwd = resolveToolPath(path || workspaceRoot());
   if (!isPathAllowed(cwd)) return `Error: Path not allowed: ${cwd}`;
   const args = [
     cwd,
@@ -153,7 +183,7 @@ export async function globToolImpl({ pattern, path, max_matches, max_output_char
 }
 
 export async function grepToolImpl({ pattern, path, glob, context, case_insensitive, max_matches, max_output_chars }) {
-  const target = path || process.env.WORKLAB_WORKSPACE || process.cwd();
+  const target = resolveToolPath(path || workspaceRoot());
   if (!isPathAllowed(target)) return `Error: Path not allowed: ${target}`;
   const args = ["-rn"];
   if (case_insensitive) args.push("-i");
@@ -185,29 +215,34 @@ export async function grepToolImpl({ pattern, path, glob, context, case_insensit
   }
 }
 
-export async function bashToolImpl({ command, timeout = 120000 }) {
+export async function bashToolImpl({ command, timeout = 120000, max_output_chars }) {
+  const maxChars = Number(max_output_chars) || DEFAULT_MAX_BASH_OUTPUT_CHARS;
   try {
     const { stdout, stderr } = await execAsync(command, {
-      cwd: process.env.WORKLAB_WORKSPACE || process.cwd(),
+      cwd: workspaceRoot(),
       timeout,
       maxBuffer: 5 * 1024 * 1024,
       shell: "/bin/bash",
     });
-    if (stdout && stderr) return `STDOUT:\n${stdout}\nSTDERR:\n${stderr}`;
-    return stdout || stderr || "(no output)";
+    const output = stdout && stderr ? `STDOUT:\n${stdout}\nSTDERR:\n${stderr}` : (stdout || stderr || "(no output)");
+    return capChars(output, { label: "Bash", maxChars });
   } catch (err) {
     if (err.killed) return `Error: Command timed out after ${timeout}ms`;
-    return `Exit code ${err.code || 1}:\n${err.stdout || ""}${err.stderr || err.message}`;
+    return capChars(`Exit code ${err.code || 1}:\n${err.stdout || ""}${err.stderr || err.message}`, {
+      label: "Bash",
+      maxChars,
+    });
   }
 }
 
-export async function webFetchToolImpl({ url, headers = {} }) {
+export async function webFetchToolImpl({ url, headers = {}, max_output_chars }) {
+  const maxChars = Number(max_output_chars) || DEFAULT_MAX_TOOL_OUTPUT_CHARS;
   try { new URL(url); } catch { return "Error: Invalid URL"; }
   try {
     const resp = await fetch(url, { headers: { "User-Agent": "Worklab/0.1", ...headers }, signal: AbortSignal.timeout(15000) });
     const text = await resp.text();
     if (!resp.ok) return `HTTP ${resp.status}: ${text.slice(0, 500)}`;
-    return text.length > 100000 ? `${text.slice(0, 100000)}\n... [truncated]` : text;
+    return capChars(text, { label: "WebFetch", maxChars });
   } catch (err) {
     return `Error fetching URL: ${err.message}`;
   }
