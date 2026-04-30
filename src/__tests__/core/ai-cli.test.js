@@ -157,7 +157,7 @@ describe("CLI provider adapters", () => {
     expect(cmd.args).not.toContain("model_reasoning_summary=\"auto\"");
   });
 
-  it("treats exit 0 with no CLI output as an adapter error", async () => {
+  it("treats exit 0 with no CLI output as a retryable provider termination", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
     const fakeClaude = join(dir, "claude");
     const originalPath = process.env.PATH;
@@ -172,6 +172,8 @@ describe("CLI provider adapters", () => {
       });
       expect(result.text).toBe("");
       expect(result.error).toBe("claude completed without final output");
+      expect(result.failureKind).toBe("provider_unavailable");
+      expect(result.diagnostics).toMatchObject({ pi_error_code: "cli_stream_terminated" });
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });

@@ -279,4 +279,50 @@ describe("generateCodexAppResponse", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it("classifies premature codex app-server close as a retryable provider termination", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const script = join(dir, "fake-codex-prematureclose.cjs");
+    writeFileSync(script, `#!/usr/bin/env node
+const readline = require("node:readline");
+const rl = readline.createInterface({ input: process.stdin });
+function send(value) { process.stdout.write(JSON.stringify(value) + "\\n"); }
+rl.on("line", (line) => {
+  if (!line.trim()) return;
+  const request = JSON.parse(line);
+  if (request.method === "initialize") {
+    send({ id: request.id, result: { userAgent: "fake", codexHome: "/tmp/codex", platformFamily: "unix", platformOs: "linux" } });
+  } else if (request.method === "thread/start") {
+    send({ id: request.id, result: { thread: { id: "thread1", status: { type: "idle" }, cwd: request.params.cwd, modelProvider: "openai", cliVersion: "fake" }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd } });
+  } else if (request.method === "turn/start") {
+    send({ id: request.id, result: { turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
+    send({ method: "turn/started", params: { threadId: "thread1", turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
+    setTimeout(() => process.exit(1), 5);
+  }
+});
+`, "utf8");
+    chmodSync(script, 0o755);
+    const events = [];
+    const liveInput = createLiveInputQueue();
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "low",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        liveInput,
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: {},
+        onEvent: (event) => events.push(event),
+      });
+      expect(result.failureKind).toBe("provider_unavailable");
+      expect(result.error).toBeTruthy();
+      expect(result.diagnostics).toMatchObject({ pi_error_code: "codex_app_server_closed" });
+    } finally {
+      liveInput.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

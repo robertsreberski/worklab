@@ -791,6 +791,7 @@ export function spawnWorker({
           source: "worker",
           message: `worker emitted exit but not close within ${exitCloseGraceMs}ms; finalizing anyway`,
           ts: Date.now(),
+          diagnostics: { pi_error_code: "exit_without_close" },
         });
         finalize(exitCode, exitSignal);
       }, exitCloseGraceMs);
