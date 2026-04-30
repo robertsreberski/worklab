@@ -1,9 +1,10 @@
 # `src/agent/` — Agent Kernel
 
-Generic agent runtime: the run loop, transcript snapshotting, context
-compaction, allowlist resolution, and the built-in tool registry. The
-kernel takes injected dependencies (provider, DB-backed config, hooks)
-so the worker, the assistant, and Slack triage all share one runtime.
+Generic agent runtime helpers: transcript snapshotting, context compaction,
+allowlist resolution, prompt construction, built-in tools, and the PI MCP
+tool bridge. The worker, assistant, and integration paths pass DB-backed
+configuration into these helpers instead of letting the kernel read domain
+state directly.
 
 ## May import from
 
@@ -18,26 +19,20 @@ so the worker, the assistant, and Slack triage all share one runtime.
 - `src/core/`, `src/coordinator/`, `src/api/`, `src/mcp/`,
   `src/integrations/`, `src/cli/`, `src/worker/`
 
-## Future shape
+## Layout
 
 ```
 src/agent/
-├── index.js              # public re-exports
-├── types.js              # Agent, RunRequest, RunOutcome, ToolContext
-├── run.js                # the run loop
-├── compaction.js         # context-overflow handling
-├── transcript.js         # snapshot helpers
-├── allowlists.js         # skill / mcp / builtin filters
+├── index.js
+├── compaction.js
+├── transcript.js
+├── allowlists.js
 ├── tools/
-│   ├── registry.js
+│   ├── index.js
+│   ├── pi-bridge.js
 │   ├── read.js / write.js / edit.js / glob.js / grep.js / bash.js / web-fetch.js / web-search.js
+│   └── shared/
 └── prompt/
     ├── system-prompt.js
-    ├── skills-index.js
-    └── tool-surface.js
+    └── skill-index.js
 ```
-
-Phase 4 progressively populates this layout. The current pass moves the
-kernel-shaped helpers (compaction, transcript, allowlists,
-ai-tool-helpers) without yet introducing the run loop — that arrives in
-Phase 5 when worker.js gets decomposed.

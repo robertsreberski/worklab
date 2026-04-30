@@ -1,7 +1,8 @@
 # `src/api/` — HTTP Edge
 
-Express routes and SSE streaming. Every handler routes through `src/core/`
-helpers; direct DB access from this layer is forbidden by the boundary lint.
+Express routes and SSE streaming. Route handlers use `src/core/` domain
+helpers or `src/core/db/queries/*` DAL helpers; direct `db.prepare()` from
+this layer is forbidden by boundary lint.
 
 ## May import from
 
@@ -14,7 +15,7 @@ helpers; direct DB access from this layer is forbidden by the boundary lint.
 - `src/coordinator/`, `src/mcp/`, `src/integrations/`, `src/cli/`,
   `src/worker/`
 
-## Future shape
+## Layout
 
 ```
 src/api/
@@ -37,6 +38,3 @@ src/api/
     ├── mcp.js
     └── slack.js
 ```
-
-The current `routes-*.js` files lose their `routes-` prefix in Phase 7 and
-move under `routes/`.

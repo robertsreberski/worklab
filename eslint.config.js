@@ -3,8 +3,10 @@
 // All rules are at "error" level. PR-2..PR-6 cleared the db.prepare()
 // violations in src/api/**, PR-13..PR-15 + the PR-14 follow-on cleared every
 // cross-layer back-import, and PR-9 added the FORBID_DEEP_CORE rule that
-// requires edge layers to consume core/ via the public barrel
-// (src/core/index.js). The carve-outs are documented inline below.
+// requires edge layers to consume domain helpers via the public core barrel
+// (src/core/index.js). Canonical src/agent and src/ai imports are allowed
+// where the concern belongs to those layers. The carve-outs are documented
+// inline below.
 //
 // Layout the rules target (some directories don't exist yet — rules activate as we create them):
 //   src/ai/        provider layer; no DB, no domain layers
@@ -27,6 +29,33 @@ const FORBID_DB = {
 const FORBID_API_LAYER = {
   group: ["**/api/**"],
   message: "This layer must not depend on src/api/.",
+};
+
+const FORBID_CLI_LAYER = {
+  group: ["**/cli/**"],
+  message: "HTTP/API and service layers must not depend on src/cli/.",
+};
+
+const FORBID_REMOVED_SHIMS = {
+  group: [
+    "**/core/agent-allowlists.js",
+    "**/core/agent-compaction.js",
+    "**/core/ai-claude.js",
+    "**/core/ai-cli.js",
+    "**/core/ai-codex-app.js",
+    "**/core/ai-pi.js",
+    "**/core/ai-tool-helpers.js",
+    "**/core/codex-events.js",
+    "**/core/context.js",
+    "**/core/db.js",
+    "**/core/failure-kind.js",
+    "**/core/run-transcript.js",
+    "**/core/schema.js",
+    "**/core/worklab-result.js",
+    "**/mcp/admin/tools.js",
+    "**/mcp/agent/tools.js",
+  ],
+  message: "Compatibility shims were removed; import the canonical ai/agent/core/db/mcp module.",
 };
 
 const FORBID_DOMAIN_LAYERS = {
@@ -58,12 +87,10 @@ const FORBID_EDGE_FROM_CORE = {
   message: "src/core/ must not depend on coordinator/api/mcp/integrations/cli/worker.",
 };
 
-// Boundary rules at error level (PR-16). PR-2..PR-6 cleared the
-// db.prepare() violations and PR-9..PR-15 + the PR-14 follow-on cleared
-// every cross-layer back-import. New deep core/* imports outside the
+// Boundary rules at error level. New deep core/* imports outside the
 // documented carve-outs (src/coordinator/task-watcher.js,
-// coordinator/watcher/*.js, coordinator/spawn-worker.js, cli/doctor.js)
-// will fail npm run lint and the pre-commit hook.
+// coordinator/watcher/*.js, coordinator/spawn-worker.js) fail npm run lint
+// and the pre-commit guard.
 const restricted = (...patterns) => ({
   "no-restricted-imports": ["error", { patterns }],
 });
@@ -90,9 +117,6 @@ const FORBID_API_DB_PREPARE = {
 //   - coordinator/task-watcher.js, coordinator/watcher/*.js, and
 //     coordinator/spawn-worker.js are internal coordinator plumbing and may keep
 //     deep imports.
-// Other deep imports surface as warn-level violations until the broader boundary
-// cleanup completes (PR-14 follow-on); they will be promoted to error in PR-16.
-//
 // no-restricted-imports patterns are matched with .gitignore semantics (the
 // `ignore` package), which doesn't support extended-glob !(...) — we use
 // allow-listed re-includes instead.
@@ -134,20 +158,20 @@ export default [
   // src/ai/ — provider layer
   {
     files: ["src/ai/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS),
+    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
   },
 
   // src/agent/ — kernel
   {
     files: ["src/agent/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS),
+    rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
   },
 
   // src/core/ — domain (DB allowed inside src/core/db/**)
   {
     files: ["src/core/**/*.js"],
     ignores: ["src/core/db/**"],
-    rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE),
+    rules: restricted(FORBID_DB, FORBID_EDGE_FROM_CORE, FORBID_REMOVED_SHIMS),
   },
 
   // src/api/ — HTTP edge. Edge consumers go through core/index.js; the
@@ -155,7 +179,7 @@ export default [
   {
     files: ["src/api/**/*.js"],
     rules: {
-      ...restricted(FORBID_DB, FORBID_DEEP_CORE),
+      ...restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_CLI_LAYER, FORBID_REMOVED_SHIMS),
       ...FORBID_API_DB_PREPARE,
     },
   },
@@ -163,7 +187,7 @@ export default [
   // src/mcp/ — MCP edge
   {
     files: ["src/mcp/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, {
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, {
       group: ["**/api/**", "**/integrations/**", "**/cli/**"],
       message: "MCP servers depend on core/agent/ai only.",
     }),
@@ -172,13 +196,13 @@ export default [
   // src/integrations/ — external integrations
   {
     files: ["src/integrations/**/*.js"],
-    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER),
+    rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER, FORBID_REMOVED_SHIMS),
   },
 
   // src/cli/ — binary subcommands.
   {
     files: ["src/cli/**/*.js"],
-    rules: restricted(FORBID_DEEP_CORE, {
+    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS, {
       group: ["**/api/**", "**/integrations/**", "**/mcp/**"],
       message: "CLI uses core and coordinator only.",
     }),
@@ -195,12 +219,20 @@ export default [
       "src/coordinator/search-indexer.js",
       "src/worker.js",
     ],
-    rules: restricted(FORBID_DEEP_CORE),
+    rules: restricted(FORBID_DEEP_CORE, FORBID_REMOVED_SHIMS),
   },
 
   // Tests, UI bundle source, generated/legacy: no boundary checks
   {
     files: ["src/__tests__/**", "src/ui/**", "src/playwright/**"],
     rules: { "no-restricted-imports": "off" },
+  },
+
+  // Tests are exempt from boundary layering, but deleted compatibility paths
+  // should not creep back in. UI JSX is covered by the build plus reference
+  // scans because this ESLint config does not parse JSX.
+  {
+    files: ["src/__tests__/**/*.js"],
+    rules: restricted(FORBID_REMOVED_SHIMS),
   },
 ];

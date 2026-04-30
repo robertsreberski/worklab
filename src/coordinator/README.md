@@ -15,24 +15,19 @@ agent code in-process.
 - `src/api/`, `src/mcp/`, `src/integrations/`, `src/cli/`, `src/worker/`
 - `better-sqlite3` directly
 
-## Future shape
+## Layout
 
 ```
 src/coordinator/
-├── index.js                  # createCoordinator bootstrap
-├── watcher/                  # decomposed task-watcher.js
-│   ├── index.js              # main loop / event dispatch
+├── task-watcher.js
+├── watcher/
 │   ├── run-handler.js
-│   ├── stage-router.js
 │   ├── delegation-handler.js
-│   ├── parent-resumer.js
 │   ├── kb-publisher.js
 │   ├── failure-classifier.js
-│   ├── verdict-parser.js
 │   └── final-text.js
 ├── spawn-worker.js
 ├── automation-manager.js
 ├── consolidation-cron.js
-├── search-indexer.js
-└── stale-recovery.js
+└── search-indexer.js
 ```

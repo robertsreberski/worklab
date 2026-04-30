@@ -41,16 +41,17 @@ Local Worklab code:
 - `src/coordinator/spawn-worker.js`
 - `src/worker.js`
 - `src/core/ai.js`
-- `src/ai/providers/claude-sdk.js` (formerly `src/core/ai-claude.js`)
-- `src/ai/providers/codex-app.js` (formerly `src/core/ai-openai.js`)
-- (deleted in `de599f7`: `src/core/ai-vercel.js`)
-- `src/agent/tools/index.js` (formerly `src/core/ai-tool-helpers.js`)
+- `src/ai/providers/claude-sdk.js`
+- `src/ai/providers/codex-app.js`
+- `src/ai/providers/claude-cli.js`
+- `src/ai/providers/pi-sdk.js`
+- `src/agent/tools/index.js`
 - `src/api/routes/tasks.js`
 - `src/api/routes/agents.js`
 - `src/api/routes/automations.js`
-- `src/core/schema.js`
-- `src/core/db/{open.js,migrations/runner.js,queries/*.js}` (formerly `src/core/db.js`)
-- `src/mcp/{admin,agent}/tools.js` (formerly `src/mcp/worklab-tools.js`)
+- `src/core/db/schema/current.js`
+- `src/core/db/{open.js,migrations/runner.js,queries/*.js}`
+- `src/mcp/{admin,agent}/tools/index.js`
 - `src/ui/src/routes/TaskDetail.jsx`
 - `src/ui/src/routes/Commander.jsx`
 - `src/ui/src/routes/TaskEdit.jsx`
