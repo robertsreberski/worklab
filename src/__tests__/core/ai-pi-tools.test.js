@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { coerceMcpContent } from "../../core/ai-pi-tools.js";
+import {
+  coerceMcpContent,
+  getPiBuiltinTools,
+  normalizePiBuiltinToolParams,
+} from "../../core/ai-pi-tools.js";
 
 describe("pi MCP tool helpers", () => {
   it("truncates oversized text results before returning them to the model", () => {
@@ -16,5 +20,36 @@ describe("pi MCP tool helpers", () => {
     const content = coerceMcpContent({ content: [{ type: "text", text: "ok" }] });
 
     expect(content).toEqual([{ type: "text", text: "ok" }]);
+  });
+
+  it("hard-caps model-supplied built-in tool budgets for execution and schemas", () => {
+    const toolLimits = {
+      toolTextLimitChars: 16000,
+      bashOutputLimitChars: 20000,
+    };
+
+    expect(normalizePiBuiltinToolParams("Read", {
+      file_path: "src/app.ts",
+      max_output_chars: 50000,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      file_path: "/repo/src/app.ts",
+      max_output_chars: 16000,
+    });
+    expect(normalizePiBuiltinToolParams("Bash", {
+      command: "npm test",
+      timeout: 999999,
+      max_output_chars: 50000,
+    }, { cwd: "/repo", toolLimits })).toMatchObject({
+      command: "npm test",
+      timeout: 120000,
+      max_output_chars: 20000,
+    });
+
+    const tools = getPiBuiltinTools(["Read", "Bash"], { toolLimits });
+    const readSchema = tools.find((tool) => tool.name === "Read").parameters;
+    const bashSchema = tools.find((tool) => tool.name === "Bash").parameters;
+    expect(readSchema.properties.max_output_chars.maximum).toBe(16000);
+    expect(bashSchema.properties.max_output_chars.maximum).toBe(20000);
+    expect(bashSchema.properties.timeout.maximum).toBe(120000);
   });
 });

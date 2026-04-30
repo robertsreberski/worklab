@@ -222,13 +222,13 @@ describe("spawnWorker", () => {
     }
   });
 
-  it("truncates large tool inputs and raw_result payloads only in display logs", async () => {
+  it("truncates large tool inputs and compacts raw_result payloads before storage", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-spawn-"));
     const { taskId, runId } = seedTaskAndRun(db);
     const largeInput = "i".repeat(80);
-    const largeRawResult = "r".repeat(80);
+    const largeRawResult = "r".repeat(5000);
     const script = {
       events: [
         {
@@ -271,7 +271,8 @@ describe("spawnWorker", () => {
       const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
       const rawLog = readFileSync(run.raw_output_path, "utf8");
       expect(rawLog).toContain(largeInput);
-      expect(rawLog).toContain(largeRawResult);
+      expect(rawLog).not.toContain(largeRawResult);
+      expect(rawLog).toContain("[truncated stored raw_result]");
 
       const displayEvents = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
       const inputBlock = displayEvents[0].event.message.content[0];

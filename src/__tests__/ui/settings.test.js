@@ -60,6 +60,8 @@ describe("settings UI duration conversions", () => {
       agent_image_inline_max_bytes: 200000,
       agent_mcp_call_timeout_ms: secondsToMs("90"),
       agent_recovery_continuation_limit: 4,
+      agent_provider_recovery_enabled: true,
+      agent_provider_recovery_base_delay_ms: secondsToMs("45"),
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
     expect(payload.cancel_grace_ms).toBe(5000);
@@ -71,6 +73,8 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_tool_text_limit_chars).toBe(18000);
     expect(payload.agent_mcp_call_timeout_ms).toBe(90000);
     expect(payload.agent_recovery_continuation_limit).toBe(4);
+    expect(payload.agent_provider_recovery_enabled).toBe(true);
+    expect(payload.agent_provider_recovery_base_delay_ms).toBe(45000);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {

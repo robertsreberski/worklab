@@ -173,15 +173,17 @@ export function settingsPayload(settings = {}) {
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
     agent_compaction_enabled: settings.agent_compaction_enabled !== false,
-    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.72),
+    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.55),
     agent_compaction_keep_recent_tokens: Number(settings.agent_compaction_keep_recent_tokens ?? 24000),
     agent_compaction_summary_max_tokens: Number(settings.agent_compaction_summary_max_tokens ?? 16000),
-    agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 24000),
-    agent_bash_output_limit_chars: Number(settings.agent_bash_output_limit_chars ?? 30000),
-    agent_mcp_text_limit_chars: Number(settings.agent_mcp_text_limit_chars ?? 20000),
+    agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 16000),
+    agent_bash_output_limit_chars: Number(settings.agent_bash_output_limit_chars ?? 20000),
+    agent_mcp_text_limit_chars: Number(settings.agent_mcp_text_limit_chars ?? 12000),
     agent_image_inline_max_bytes: Number(settings.agent_image_inline_max_bytes ?? 250000),
     agent_mcp_call_timeout_ms: Number(settings.agent_mcp_call_timeout_ms ?? 120000),
     agent_recovery_continuation_limit: Number(settings.agent_recovery_continuation_limit ?? 3),
+    agent_provider_recovery_enabled: settings.agent_provider_recovery_enabled !== false,
+    agent_provider_recovery_base_delay_ms: Number(settings.agent_provider_recovery_base_delay_ms ?? 30000),
   };
 }
 
@@ -826,10 +828,10 @@ export function Settings() {
                     description="Compact long transcripts before they exceed model context."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={9}>
+                <AdvancedSettings summary="Budgets and recovery" count={11}>
                   <FormGrid columns={3}>
                     <FormField label="Trigger ratio">
-                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.72} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
+                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.55} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
                     </FormField>
                     <FormField label="Keep recent tokens">
                       <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
@@ -838,13 +840,13 @@ export function Settings() {
                       <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
                     </FormField>
                     <FormField label="Tool text chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 24000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
                     </FormField>
                     <FormField label="Bash chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_bash_output_limit_chars ?? 30000} ariaLabel="Bash output character limit" onChange={(value) => setSettings({ ...settings, agent_bash_output_limit_chars: value })} />
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_bash_output_limit_chars ?? 20000} ariaLabel="Bash output character limit" onChange={(value) => setSettings({ ...settings, agent_bash_output_limit_chars: value })} />
                     </FormField>
                     <FormField label="MCP text chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 20000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 12000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
                     </FormField>
                     <FormField label="Image bytes">
                       <NumberStepper min={0} max={10485760} step={50000} value={settings.agent_image_inline_max_bytes ?? 250000} ariaLabel="Inline image byte limit" onChange={(value) => setSettings({ ...settings, agent_image_inline_max_bytes: value })} />
@@ -854,6 +856,12 @@ export function Settings() {
                     </FormField>
                     <FormField label="Continuations">
                       <NumberStepper min={0} max={20} value={settings.agent_recovery_continuation_limit ?? 3} ariaLabel="Recovery continuation limit" onChange={(value) => setSettings({ ...settings, agent_recovery_continuation_limit: value })} />
+                    </FormField>
+                    <FormField label="Provider recovery">
+                      <Switch checked={settings.agent_provider_recovery_enabled !== false} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_enabled: value })} label="Provider recovery" description="Retry transient provider failures automatically." />
+                    </FormField>
+                    <FormField label="Provider retry delay">
+                      <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
                     </FormField>
                   </FormGrid>
                 </AdvancedSettings>

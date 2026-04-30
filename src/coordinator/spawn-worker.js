@@ -8,6 +8,7 @@ import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
 
 const CONTEXT_BLOAT_TOP_EVENTS = 5;
+const RAW_RESULT_STORAGE_LIMIT = 4_000;
 
 function makeRawLogPath(dataDir, runId) {
   if (!dataDir || !runId) return null;
@@ -70,6 +71,56 @@ function truncateStructuredDisplayValue(value, options) {
     truncated: true,
     originalLength: raw.length,
   };
+}
+
+function compactStructuredStorageValue(value, options = {}) {
+  const limit = options.limit || RAW_RESULT_STORAGE_LIMIT;
+  if (!limit || limit < 1 || value == null) {
+    return { value, truncated: false, originalLength: 0 };
+  }
+  let raw;
+  try {
+    raw = JSON.stringify(value);
+  } catch {
+    raw = String(value);
+  }
+  if (raw.length <= limit) return { value, truncated: false, originalLength: raw.length };
+  return {
+    value: {
+      truncated: true,
+      original_length: raw.length,
+      preview: `${raw.slice(0, limit)}\n[truncated stored raw_result]`,
+    },
+    truncated: true,
+    originalLength: raw.length,
+  };
+}
+
+function compactStorageToolResultBlock(block, options) {
+  if (!block || typeof block !== "object" || block.type !== "tool_result" || !("raw_result" in block)) return block;
+  const clipped = compactStructuredStorageValue(block.raw_result, options);
+  if (!clipped.truncated) return block;
+  return {
+    ...block,
+    raw_result: clipped.value,
+    raw_result_truncated: true,
+    raw_result_original_length: clipped.originalLength,
+  };
+}
+
+function compactStorageEvent(event, options = {}) {
+  if (!event) return event;
+  const next = JSON.parse(JSON.stringify(event));
+  const target = next.type === "sdk_event" && next.event ? next.event : next;
+  if (Array.isArray(target?.message?.content)) {
+    target.message.content = target.message.content.map((block) => compactStorageToolResultBlock(block, options));
+  }
+  if (target?.type === "tool_result") {
+    const clipped = compactStorageToolResultBlock(target, options);
+    if (next.type === "sdk_event" && next.event) next.event = clipped;
+    else return clipped;
+  }
+  return next;
 }
 
 function truncateToolUseBlock(block, options) {
@@ -279,7 +330,10 @@ export function spawnWorker({
   }
 
   function emitEvent(parsed) {
-    const rawEvent = { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 };
+    const rawEvent = compactStorageEvent(
+      { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 },
+      { limit: RAW_RESULT_STORAGE_LIMIT },
+    );
     const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
     const event = truncateDisplayEvent(rawEvent, { limit: logInlineLimit, rawLogPath });
