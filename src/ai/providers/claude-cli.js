@@ -3,8 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import { normalizeReasoningEffortForModel } from "../../core/ai.js";
-import { getSkillAccessDirs } from "../../core/skills.js";
+import { getSkillAccessDirs } from "../../agent/prompt/skill-index.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
   extractWorklabResult,
@@ -268,9 +267,10 @@ export function buildCliCommand({
   maxTurns,
   skillDirs,
 }) {
-  const normalizedEffort = effort
-    ? normalizeReasoningEffortForModel({ sdk, model }, effort)
-    : null;
+  // Effort is expected to be pre-normalized by core/ai.js#generateResponse
+  // before reaching this provider. Direct callers of buildCliCommand must
+  // pass an already-normalized reasoning level (low/medium/high/xhigh/none).
+  const normalizedEffort = typeof effort === "string" && effort.trim() ? effort : null;
   if (sdk === "claude-code") {
     const args = [
       "-p",
@@ -350,7 +350,9 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     disallowedTools: options.disallowedTools,
     permissionMode: options.permissionMode,
     maxTurns: options.maxTurns,
-    skillDirs: getSkillAccessDirs(options.skills || []),
+    skillDirs: Array.isArray(options.skillDirs)
+      ? options.skillDirs
+      : getSkillAccessDirs(options.skills || []),
   });
 
   const events = [];

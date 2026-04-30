@@ -4,18 +4,10 @@ import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
-import { readSettings } from "../../core/settings.js";
 import {
   createAgentCompactionManager,
   isLikelyContextTermination,
-} from "../../core/agent-compaction.js";
-import {
-  buildModelCapabilities,
-  getModelByProviderAndName,
-  getProvider,
-  isPrivateBaseUrl,
-  resolveReasoningCapabilities,
-} from "../../core/providers.js";
+} from "../../agent/compaction.js";
 import { resolvePiApiKey } from "../pi-oauth.js";
 import {
   closePiMcpClients,
@@ -54,40 +46,46 @@ function customProviderName(provider) {
   return `worklab-${provider.id}`;
 }
 
-function customProviderKey(provider) {
+function customProviderKey(provider, isPrivate) {
   if (provider?.api_key) return provider.api_key;
-  return isPrivateBaseUrl(provider?.base_url) ? "ollama" : "";
+  return isPrivate ? "ollama" : "";
 }
 
-function customCompat(provider, capabilities) {
-  const local = isPrivateBaseUrl(provider?.base_url);
+function customCompat(capabilities, isPrivate) {
   return {
     supportsStore: false,
-    supportsDeveloperRole: !local,
+    supportsDeveloperRole: !isPrivate,
     supportsReasoningEffort: capabilities?.reasoning_mode === "effort",
     maxTokensField: "max_tokens",
   };
 }
 
+// Build the pi-runtime view of a custom (vercel) provider/model from
+// pre-resolved primitives. The caller (core/ai.js#generateResponse) reads
+// the provider/model rows and computes the capabilities + isPrivate flag
+// before invoking the provider, so this function never reaches into the
+// domain layer.
 function resolveCustomPiModel(resolved, options) {
-  const provider = getProvider({
-    db: options.db,
-    dataDir: options.dataDir,
-    id: resolved.providerId,
-    includeKey: true,
-  });
-  if (!provider) throw new Error(`provider not found: ${resolved.providerId}`);
+  const provider = options.customProvider;
+  if (!provider) {
+    throw new Error(
+      `vercel provider context missing for ${resolved.providerId}: caller must pass options.customProvider`,
+    );
+  }
   if (!provider.enabled) throw new Error(`provider disabled: ${resolved.providerId}`);
-  const modelRow = getModelByProviderAndName({
-    db: options.db,
-    providerId: resolved.providerId,
-    modelName: resolved.modelName,
-  });
-  if (modelRow && !modelRow.enabled) throw new Error(`model disabled: ${resolved.modelName}`);
-
-  const capabilities = modelRow
-    ? buildModelCapabilities(provider.provider_type, resolved.modelName, modelRow.capabilities)
-    : resolveReasoningCapabilities(provider.provider_type, resolved.modelName, {});
+  const modelRow = options.customModel || null;
+  if (modelRow && modelRow.enabled === false) {
+    throw new Error(`model disabled: ${resolved.modelName}`);
+  }
+  const capabilities = options.modelCapabilities;
+  if (!capabilities || typeof capabilities !== "object") {
+    throw new Error(
+      `vercel model capabilities missing for ${resolved.modelName}: caller must pass options.modelCapabilities`,
+    );
+  }
+  const isPrivate = typeof options.isPrivateProvider === "boolean"
+    ? options.isPrivateProvider
+    : false;
   const providerName = customProviderName(provider);
   const pricing = modelRow?.pricing || {};
   return {
@@ -107,10 +105,10 @@ function resolveCustomPiModel(resolved, options) {
       },
       contextWindow: Number(capabilities.context_window || capabilities.num_ctx) || 128000,
       maxTokens: Number(capabilities.max_tokens) || 16384,
-      compat: customCompat(provider, capabilities),
+      compat: customCompat(capabilities, isPrivate),
     },
     capabilities,
-    apiKeys: new Map([[providerName, customProviderKey(provider)]]),
+    apiKeys: new Map([[providerName, customProviderKey(provider, isPrivate)]]),
   };
 }
 
@@ -404,18 +402,11 @@ function pickPiErrorCodeFromException(err) {
   );
 }
 
-function readRuntimeSettings(db, explicitSettings, runtimeWarnings) {
-  if (explicitSettings) return explicitSettings;
-  if (!db) return {};
-  try {
-    return readSettings(db);
-  } catch (err) {
-    runtimeWarnings.push({
-      warning_kind: "settings_read_failed",
-      message: err?.message || String(err),
-    });
-    return {};
-  }
+function readRuntimeSettings(explicitSettings) {
+  // Settings are now resolved by the caller (core/ai.js#generateResponse)
+  // and passed in via options.settings. The provider no longer reaches
+  // back into core/settings.js.
+  return explicitSettings && typeof explicitSettings === "object" ? explicitSettings : {};
 }
 
 export async function generatePiResponse(systemPrompt, options = {}) {
@@ -442,7 +433,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   try {
     const runtime = resolvePiRuntimeModel(resolved, options);
     const capabilities = runtime.capabilities || {};
-    const settings = readRuntimeSettings(options.db, options.settings, runtimeWarnings);
+    const settings = readRuntimeSettings(options.settings);
     const reference = resolved.reference
       || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
     compaction = createAgentCompactionManager({

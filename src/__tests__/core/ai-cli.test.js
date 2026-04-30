@@ -129,18 +129,21 @@ describe("CLI provider adapters", () => {
     expect(cmd.args.at(-1)).toBe("system\n\ndo work");
   });
 
-  it("normalizes stale max effort before passing it to Codex", () => {
+  it("passes the pre-normalized effort through to Codex verbatim", () => {
+    // The caller (core/ai.js#generateResponse) is responsible for
+    // normalizing the reasoning effort against the model's capabilities
+    // before invoking the provider. buildCliCommand therefore trusts the
+    // value it receives.
     const cmd = buildCliCommand({
       sdk: "codex",
       model: "gpt-5.5",
-      effort: "max",
+      effort: "xhigh",
       cwd: "/repo",
       schemaPath: "/tmp/schema.json",
       systemPrompt: "system",
       prompt: "do work",
     });
     expect(cmd.args).toContain("model_reasoning_effort=xhigh");
-    expect(cmd.args).not.toContain("model_reasoning_effort=max");
   });
 
   it("does not request Codex reasoning summaries when effort is disabled", () => {

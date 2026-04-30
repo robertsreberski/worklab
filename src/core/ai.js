@@ -1,4 +1,13 @@
 import { getModel as getPiModel, getModels as getPiModels, supportsXhigh } from "@mariozechner/pi-ai";
+import { getSkillAccessDirs } from "../agent/prompt/skill-index.js";
+import { readSettings } from "./settings.js";
+import {
+  buildModelCapabilities,
+  getModelByProviderAndName,
+  getProvider,
+  isPrivateBaseUrl,
+  resolveReasoningCapabilities,
+} from "./providers.js";
 
 export const BUILTIN_CLAUDE_MODELS = [
   "claude-haiku-4-5-20251001",
@@ -465,11 +474,87 @@ export async function resolveBackendFor(modelRef, { liveInput = false } = {}) {
   return loadBackend(resolved.sdk, { liveInput });
 }
 
+function loadSettingsSafely(db) {
+  if (!db) return {};
+  try {
+    return readSettings(db);
+  } catch {
+    return {};
+  }
+}
+
+function resolveCustomProviderContext(resolved, { db, dataDir }) {
+  if (resolved.sdk !== "vercel") return null;
+  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: true });
+  if (!provider) {
+    throw new Error(`provider not found: ${resolved.providerId}`);
+  }
+  const modelRow = getModelByProviderAndName({
+    db,
+    providerId: resolved.providerId,
+    modelName: resolved.modelName,
+  }) || null;
+  const capabilities = modelRow
+    ? buildModelCapabilities(provider.provider_type, resolved.modelName, modelRow.capabilities)
+    : resolveReasoningCapabilities(provider.provider_type, resolved.modelName, {});
+  return {
+    customProvider: provider,
+    customModel: modelRow,
+    modelCapabilities: capabilities,
+    isPrivateProvider: isPrivateBaseUrl(provider.base_url),
+  };
+}
+
+function vercelProviderError(resolved, message) {
+  return {
+    text: null,
+    events: [],
+    usage: {},
+    durationMs: 0,
+    numTurns: 0,
+    model: resolved?.reference || resolved?.model || null,
+    effort: null,
+    sdk: "vercel",
+    cancelled: false,
+    error: message,
+    failureKind: "provider_unavailable",
+    runtimeWarnings: [],
+    diagnostics: { vercel_provider_error: true },
+  };
+}
+
+// Caller-side dependency injection: providers (src/ai/providers/*) must not
+// reach back into core/. generateResponse pre-computes everything those
+// adapters need — normalized effort, settings, skill access dirs, and (for
+// custom/vercel models) the provider/model rows + capabilities — and passes
+// them through options.
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
+  const skillDirs = Array.isArray(options.skillDirs)
+    ? options.skillDirs
+    : getSkillAccessDirs(options.skills || []);
+  const settings = options.settings || loadSettingsSafely(options.db);
+  let customContext = null;
+  if (resolved.sdk === "vercel") {
+    try {
+      customContext = resolveCustomProviderContext(resolved, {
+        db: options.db,
+        dataDir: options.dataDir,
+      });
+    } catch (err) {
+      return vercelProviderError(resolved, err?.message || String(err));
+    }
+  }
+  const baseOptions = {
+    ...options,
+    model: resolved,
+    skillDirs,
+    settings,
+    ...(customContext || {}),
+  };
   const nextOptions = resolved.sdk === "vercel"
-    ? { ...options, model: resolved }
-    : { ...options, model: resolved, effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium") };
+    ? baseOptions
+    : { ...baseOptions, effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium") };
   const backend = await loadBackend(resolved.sdk, { liveInput: !!options.liveInput });
   return backend.execute(systemPrompt, nextOptions);
 }

@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import { normalizeReasoningEffortForModel } from "../../core/ai.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
   extractWorklabResult,
@@ -255,8 +254,10 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   const start = Date.now();
   const resolved = options.model;
   const prompt = promptFromMessages(options.messages);
-  const normalizedEffort = options.effort
-    ? normalizeReasoningEffortForModel(resolved, options.effort)
+  // Effort is expected to be pre-normalized by core/ai.js#generateResponse
+  // before reaching this provider. We trust options.effort verbatim.
+  const normalizedEffort = typeof options.effort === "string" && options.effort.trim()
+    ? options.effort
     : null;
   const events = [];
   const texts = [];
