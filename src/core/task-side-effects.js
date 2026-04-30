@@ -1,4 +1,5 @@
 import { newCommentId } from "./ids.js";
+import { insertSystemComment } from "./db/queries/comments.js";
 
 export function taskStage(task) {
   return task?.stage || "plan";
@@ -79,32 +80,35 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
         values.push(null);
         break;
       case "post_error_comment":
-        db.prepare(
-          `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-           VALUES (?, ?, 'system', ?, ?)`,
-        ).run(newCommentId(), taskId, `ERROR: ${sideEffect.message || "run failed"}`, now);
+        insertSystemComment(db, {
+          id: newCommentId(),
+          taskId,
+          body: `ERROR: ${sideEffect.message || "run failed"}`,
+          createdAt: now,
+        });
         break;
       case "post_cancellation_comment":
-        db.prepare(
-          `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-           VALUES (?, ?, 'system', ?, ?)`,
-        ).run(newCommentId(), taskId, sideEffect.message || "Run cancelled.", now);
+        insertSystemComment(db, {
+          id: newCommentId(),
+          taskId,
+          body: sideEffect.message || "Run cancelled.",
+          createdAt: now,
+        });
         break;
       case "post_review_comment": {
         const body = sideEffect.notes && sideEffect.notes.trim().length > 0
           ? sideEffect.notes
           : "Review rejected.";
-        db.prepare(
-          `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-           VALUES (?, ?, 'system', ?, ?)`,
-        ).run(newCommentId(), taskId, body, now);
+        insertSystemComment(db, { id: newCommentId(), taskId, body, createdAt: now });
         break;
       }
       case "post_review_verdict":
-        db.prepare(
-          `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
-           VALUES (?, ?, 'system', ?, ?)`,
-        ).run(newCommentId(), taskId, `VERDICT: ${sideEffect.verdict}`, now);
+        insertSystemComment(db, {
+          id: newCommentId(),
+          taskId,
+          body: `VERDICT: ${sideEffect.verdict}`,
+          createdAt: now,
+        });
         break;
       case "set_plan_body":
         if (typeof sideEffect.body === "string") {

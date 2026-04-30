@@ -1,5 +1,6 @@
 import { DEFAULT_EMBEDDING_MODEL, parseEmbeddingReference } from "./embeddings.js";
 import { isValidModelReference } from "./ai.js";
+import { listSettings, upsertSetting } from "./db/queries/settings.js";
 
 export const DEFAULT_SETTINGS = {
   consolidation_hour: 3,
@@ -55,7 +56,7 @@ function coerceStored(value) {
 }
 
 export function readSettings(db) {
-  const rows = db.prepare("SELECT key, value FROM settings").all();
+  const rows = listSettings(db);
   const out = { ...DEFAULT_SETTINGS };
   for (const row of rows) out[row.key] = coerceStored(row.value);
   return out;
@@ -205,11 +206,8 @@ export function validateSettingsPatch(patch = {}) {
 
 export function writeSettings(db, patch = {}) {
   const validated = validateSettingsPatch(patch);
-  const stmt = db.prepare(
-    "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-  );
   const tx = db.transaction((entries) => {
-    for (const [key, value] of entries) stmt.run(key, JSON.stringify(value));
+    for (const [key, value] of entries) upsertSetting(db, key, JSON.stringify(value));
   });
   tx(Object.entries(validated));
   return readSettings(db);

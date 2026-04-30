@@ -5,6 +5,7 @@ import { newEmbeddingId } from "./ids.js";
 import { kbList, kbRead } from "./kb.js";
 import { agentJournalPath, agentMemoryPath } from "./journal.js";
 import { getProvider, isPrivateBaseUrl } from "./providers.js";
+import { getSettingValue } from "./db/queries/settings.js";
 
 const MAX_CHUNK_CHARS = 1800;
 const MAX_EMBED_CHARS = 8000;
@@ -162,10 +163,10 @@ export function isEmbeddingBackendReady({ db, dataDir, modelRef }) {
 }
 
 export function getEmbeddingModel(db) {
-  const row = db.prepare("SELECT value FROM settings WHERE key = 'default_embedding_model'").get();
-  if (!row) return DEFAULT_EMBEDDING_MODEL;
+  const raw = getSettingValue(db, "default_embedding_model");
+  if (raw == null) return DEFAULT_EMBEDDING_MODEL;
   let value;
-  try { value = JSON.parse(row.value); } catch { value = row.value; }
+  try { value = JSON.parse(raw); } catch { value = raw; }
   return value || "";
 }
 

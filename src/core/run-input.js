@@ -16,6 +16,7 @@ import { getProcessContextCache, makeContextCacheKey, shortHash } from "./contex
 import { getTaskById } from "./db/queries/tasks.js";
 import { getRunById } from "./db/queries/runs.js";
 import { getAgentByName } from "./db/queries/agents.js";
+import { listTaskComments } from "./db/queries/comments.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
@@ -175,7 +176,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
 
   const commentRows = enrichCommentRows(
     db,
-    db.prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at").all(taskId),
+    listTaskComments(db, taskId),
   );
 
   const { memory, journalTail } = readAgentMemoryContext({

@@ -1,4 +1,5 @@
 import { getTaskById } from "./db/queries/tasks.js";
+import { getSettingValue, upsertSetting } from "./db/queries/settings.js";
 
 const TASK_KEY_PREFIX = "T";
 const TASK_KEY_SETTING = "task_key_next";
@@ -26,18 +27,14 @@ export function taskKeyNumber(value) {
 }
 
 function readTaskKeySetting(db) {
-  const row = db.prepare("SELECT value FROM settings WHERE key = ?").get(TASK_KEY_SETTING);
-  if (!row) return null;
-  const parsed = Number(row.value);
+  const value = getSettingValue(db, TASK_KEY_SETTING);
+  if (value == null) return null;
+  const parsed = Number(value);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 function writeTaskKeySetting(db, next) {
-  db.prepare(`
-    INSERT INTO settings (key, value)
-    VALUES (?, ?)
-    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).run(TASK_KEY_SETTING, String(next));
+  upsertSetting(db, TASK_KEY_SETTING, String(next));
 }
 
 export function maxTaskKeyNumber(db) {
