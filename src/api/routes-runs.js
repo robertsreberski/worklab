@@ -1,4 +1,5 @@
 import { newCommentId } from "../core/ids.js";
+import { getRunById } from "../core/db/queries/runs.js";
 import { normalizeLiveInputBody, supportsLiveInputProvider } from "../core/live-input.js";
 import { artifactPaths, artifactsForRunRow, runArtifactSummary } from "../core/run-artifacts.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -58,7 +59,7 @@ function shapeRunLog(logRow, query = {}) {
 
 export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
   app.get("/api/runs/:id", (req, res) => {
-    const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
+    const row = getRunById(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
     const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(req.params.id);
@@ -69,7 +70,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
 
   app.post("/api/runs/:id/messages", async (req, res, next) => {
     try {
-      const row = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(req.params.id);
+      const row = getRunById(db, req.params.id);
       if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
 
       const normalized = normalizeLiveInputBody(req.body?.body);

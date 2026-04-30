@@ -21,6 +21,7 @@ import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
 import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
 import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
+import { getRunDiagnostics, setRunTranscriptTail } from "./core/db/queries/runs.js";
 
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
@@ -248,7 +249,7 @@ async function main() {
   function readResumeSnapshotPrefix() {
     if (!runId) return "";
     try {
-      const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+      const row = getRunDiagnostics(db, runId);
       if (!row?.diagnostics_json) return "";
       const diagnostics = JSON.parse(row.diagnostics_json);
       const snapshot = diagnostics?.resume_snapshot;
@@ -273,8 +274,7 @@ async function main() {
     try {
       const snapshot = buildTranscriptTailSnapshot(result.events);
       if (!snapshot) return;
-      db.prepare("UPDATE task_runs SET transcript_tail_json = ? WHERE id = ?")
-        .run(JSON.stringify(snapshot), runId);
+      setRunTranscriptTail(db, runId, JSON.stringify(snapshot));
     } catch (err) {
       emit({
         type: "runtime_warning",

@@ -14,6 +14,7 @@ import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { getTaskById } from "./db/queries/tasks.js";
+import { getRunById } from "./db/queries/runs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
@@ -388,7 +389,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     if (!priorRunId) {
       throw runInputError(400, "invalid_state", "WORKLAB_PRIOR_RUN_ID is required for review mode");
     }
-    const priorRun = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(priorRunId);
+    const priorRun = getRunById(db, priorRunId);
     if (!priorRun) {
       throw runInputError(400, "invalid_state", `prior run ${priorRunId} not found`);
     }

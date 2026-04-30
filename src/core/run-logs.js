@@ -1,5 +1,6 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
+import { getRunById } from "./db/queries/runs.js";
 function runLogError(code, message) {
   return Object.assign(new Error(message), { code });
 }
@@ -245,7 +246,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
   const normalizedMode = normalizeMode(mode);
   const normalizedLimitBytes = normalizeLimitBytes(limitBytes);
 
-  const run = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
+  const run = getRunById(db, runId);
   if (!run) throw runLogError("not_found", "run not found");
 
   if (run.raw_output_path) {

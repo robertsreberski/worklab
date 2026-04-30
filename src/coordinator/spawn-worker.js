@@ -16,6 +16,7 @@ const PROCESS_TO_LEGACY_STATUS = {
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
 import { artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import { setRunRawOutputPath } from "../core/db/queries/runs.js";
 
 const CONTEXT_BLOAT_TOP_EVENTS = 5;
 const RAW_RESULT_STORAGE_LIMIT = 4_000;
@@ -310,7 +311,7 @@ export function spawnWorker({
   try {
     rawLogPath = makeRawLogPath(dataDir, runId);
     if (rawLogPath) {
-      db.prepare("UPDATE task_runs SET raw_output_path = ? WHERE id = ?").run(rawLogPath, runId);
+      setRunRawOutputPath(db, runId, rawLogPath);
     }
   } catch (err) {
     rawLogPath = null;

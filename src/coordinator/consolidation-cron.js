@@ -5,6 +5,7 @@ import { newRunId } from "../core/ids.js";
 import { readSettings } from "../core/settings.js";
 import { agentJournalPath, agentMemoryPath } from "../core/journal.js";
 import { indexPath } from "../core/embeddings.js";
+import { setRunWorkerPid } from "../core/db/queries/runs.js";
 
 const TICK_MS = 60_000;
 
@@ -96,7 +97,7 @@ export function createConsolidationManager({
       runIdleWarningMs,
       logInlineLimit,
     });
-    db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
+    setRunWorkerPid(db, runId, handle.pid);
     active.set(agentName, { runId, handle });
     broker?.broadcast?.("global", { type: "run_started", runId, taskId: null, mode: "consolidate", agent: agentName });
 

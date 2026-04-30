@@ -6,6 +6,7 @@ import { newAutomationRunId } from "../core/ids.js";
 import { readSettings } from "../core/settings.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
+import { setRunWorkerPid } from "../core/db/queries/runs.js";
 
 const TICK_MS = 60_000;
 
@@ -314,7 +315,7 @@ export function createAutomationManager({
         runIdleWarningMs,
         logInlineLimit,
       });
-      db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
+      setRunWorkerPid(db, runId, handle.pid);
       active.set(automation.id, { runId, handle });
       broker?.broadcast?.("global", { type: "run_started", runId, taskId: null, mode: "automation", automationId: automation.id });
       broker?.broadcast?.("global", { type: "automation_triggered", id: automation.id, runId, trigger: triggerType });

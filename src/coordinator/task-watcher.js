@@ -22,6 +22,16 @@ import { resolveTaskProjectRunContext } from "../core/projects.js";
 import { retryableProviderFailureInfo } from "../core/failure-kind.js";
 import { delegationDepth } from "../core/delegation.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
+import {
+  getRunById,
+  getRunCoreFields,
+  getRunDiagnostics,
+  getRunTranscriptTail,
+  getRunWarningsAndDiagnostics,
+  setRunDiagnostics,
+  setRunExecenvPath,
+  setRunWorkerPid,
+} from "../core/db/queries/runs.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -615,8 +625,7 @@ export function createTaskWatcher({
       projectRunContext.projectContextHash,
     );
     if (diagnosticsSeed && typeof diagnosticsSeed === "object") {
-      db.prepare("UPDATE task_runs SET diagnostics_json = ? WHERE id = ?")
-        .run(JSON.stringify(diagnosticsSeed), runId);
+      setRunDiagnostics(db, runId, JSON.stringify(diagnosticsSeed));
     }
 
     let execenvPath = null;
@@ -624,7 +633,7 @@ export function createTaskWatcher({
       try {
         const env = prepareExecenv({ dataDir, runId, agent: { name: agentName }, task, providerKind });
         execenvPath = env.root;
-        db.prepare("UPDATE task_runs SET execenv_path = ? WHERE id = ?").run(execenvPath, runId);
+        setRunExecenvPath(db, runId, execenvPath);
       } catch (err) {
         logger?.warn?.({ err: err.message, runId }, "execenv preparation failed");
       }
@@ -662,7 +671,7 @@ export function createTaskWatcher({
       diagnosticsSeed,
     });
 
-    db.prepare("UPDATE task_runs SET worker_pid = ? WHERE id = ?").run(handle.pid || null, runId);
+    setRunWorkerPid(db, runId, handle.pid);
     active.set(task.id, { runId, handle });
     activeByRunId.set(runId, { taskId: task.id, handle, providerKind });
     broker.broadcast("global", buildRunLifecycleEvent(db, "run_started", runId, { taskId: task.id }));
@@ -733,7 +742,7 @@ export function createTaskWatcher({
       return;
     }
 
-    const row = db.prepare("SELECT warnings_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    const row = getRunWarningsAndDiagnostics(db, runId);
     if (!row) return;
     const warning = {
       kind: "budget_exceeded",
@@ -924,7 +933,7 @@ export function createTaskWatcher({
   function loadResumeSnapshot(runId) {
     if (!runId) return null;
     try {
-      const row = db.prepare("SELECT transcript_tail_json FROM task_runs WHERE id = ?").get(runId);
+      const row = getRunTranscriptTail(db, runId);
       if (!row?.transcript_tail_json) return null;
       const parsed = safeParseJson(row.transcript_tail_json, null);
       return parsed && typeof parsed === "object" ? parsed : null;
@@ -934,7 +943,7 @@ export function createTaskWatcher({
   }
 
   function patchRunDiagnostics(runId, patch) {
-    const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    const row = getRunDiagnostics(db, runId);
     if (!row) return;
     const existing = safeParseJson(row.diagnostics_json, {});
     db.prepare("UPDATE task_runs SET diagnostics_json = ? WHERE id = ?").run(
@@ -1475,7 +1484,7 @@ export function createTaskWatcher({
     activeByRunId.delete(runId);
     const task = getTaskById(db, taskId);
     if (!task) return;
-    const run = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
+    const run = getRunById(db, runId);
     if (!run) return;
 
     const processStatus = runProcessStatus(res);
@@ -1502,7 +1511,7 @@ export function createTaskWatcher({
   }
 
   function getRunLiveInputState(runId) {
-    const run = db.prepare("SELECT id, process_status, status, provider_kind FROM task_runs WHERE id = ?").get(runId);
+    const run = getRunCoreFields(db, runId);
     if (!run) return { supported: false, active: false, reason: "not_found" };
     if (!supportsLiveInputProvider(run.provider_kind)) {
       return { supported: false, active: false, reason: "unsupported_provider" };
