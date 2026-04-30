@@ -21,7 +21,7 @@ import {
   supportsLiveInputProvider,
   taskStage,
 } from "../../core/index.js";
-import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools.js";
+import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools/index.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 import {

@@ -4,7 +4,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { adminToolDefinitions, createAdminToolHandlers } from "./tools.js";
+import { adminToolDefinitions, createAdminToolHandlers } from "./tools/index.js";
 import { ensureMcpToken, tokenMatches } from "../../core/index.js";
 
 function bearer(req) {

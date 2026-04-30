@@ -9,7 +9,7 @@ import { loadConfig, readMcpToken, worklabBaseUrl } from "../core/index.js";
 // server and shares its tool surface with the HTTP server in mcp/admin.
 // This file is the single intentional wiring point — see cli/README.md.
 // eslint-disable-next-line no-restricted-imports
-import { adminToolDefinitions, createAdminToolHandlers } from "../mcp/admin/tools.js";
+import { adminToolDefinitions, createAdminToolHandlers } from "../mcp/admin/tools/index.js";
 import { applyConfigArgs } from "./args.js";
 
 function authFetch(token) {

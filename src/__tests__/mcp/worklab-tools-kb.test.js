@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createToolHandlers, toolDefinitions } from "../../mcp/agent/tools.js";
+import { createToolHandlers, toolDefinitions } from "../../mcp/agent/tools/index.js";
 
 describe("worklab-tools KB handlers", () => {
   const dirs = [];

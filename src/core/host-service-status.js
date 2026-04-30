@@ -1,7 +1,7 @@
 // Cross-platform probe for the launchd / systemd-user host service that
 // runs `worklab serve` in the background. The CLI's install-service module
 // owns install/uninstall; this status probe lives in core/ so the MCP admin
-// tool surface (mcp/admin/tools.js) can expose it without a back-import
+// tool surface (mcp/admin/tools/index.js) can expose it without a back-import
 // into the CLI layer.
 
 import { execFileSync } from "node:child_process";
