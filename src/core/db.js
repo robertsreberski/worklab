@@ -96,19 +96,25 @@ function ensureNullableTaskRunsTaskId(db) {
       details TEXT,
       raw_output_path TEXT,
       artifact_paths_json TEXT NOT NULL DEFAULT '[]',
+      artifacts_json TEXT NOT NULL DEFAULT '[]',
+      artifact_summary_json TEXT NOT NULL DEFAULT '{}',
       result_json TEXT
     );
     INSERT INTO task_runs_new
       (id, task_id, parent_run_id, mode, stage, agent_name, provider_kind, worker_pid,
        status, process_status, decision, failure_kind, retry_stage, started_at, ended_at,
-       exit_code, error_text, summary, details, raw_output_path, artifact_paths_json, result_json)
+       exit_code, error_text, summary, details, raw_output_path, artifact_paths_json,
+       artifacts_json, artifact_summary_json, result_json)
     SELECT id, task_id, ${runColumn("parent_run_id")}, mode, ${stageExpression}, agent_name,
            ${runColumn("provider_kind")}, ${runColumn("worker_pid")}, ${statusExpression},
            ${processStatusExpression}, ${runColumn("decision")}, ${runColumn("failure_kind")},
            ${runColumn("retry_stage")}, ${runColumn("started_at", "0")},
            ${runColumn("ended_at")}, ${runColumn("exit_code")}, ${runColumn("error_text")},
            ${runColumn("summary")}, ${runColumn("details")}, ${runColumn("raw_output_path")},
-           ${runColumn("artifact_paths_json", "'[]'")}, ${runColumn("result_json")}
+           ${runColumn("artifact_paths_json", "'[]'")},
+           ${runColumn("artifacts_json", "'[]'")},
+           ${runColumn("artifact_summary_json", "'{}'")},
+           ${runColumn("result_json")}
     FROM task_runs;
     DROP TABLE task_runs;
     ALTER TABLE task_runs_new RENAME TO task_runs;
@@ -152,6 +158,8 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "details", "details TEXT");
   addColumnIfMissing(db, "task_runs", "raw_output_path", "raw_output_path TEXT");
   addColumnIfMissing(db, "task_runs", "artifact_paths_json", "artifact_paths_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
@@ -385,6 +393,8 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
+  addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");
