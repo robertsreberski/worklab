@@ -9,6 +9,7 @@ import { buildNextTaskRunPreview } from "../core/run-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../core/projects.js";
 import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import { getTaskById } from "../core/db/queries/tasks.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -181,7 +182,7 @@ function attachTaskGraph(db, task) {
     ORDER BY t.subtask_order ASC, t.created_at ASC
   `).all(task.id);
   const parentRow = task.parent_task_id
-    ? db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.parent_task_id)
+    ? getTaskById(db, task.parent_task_id)
     : null;
   return {
     ...task,
@@ -688,7 +689,7 @@ async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
   }
 
   try {
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+    const task = getTaskById(db, taskId);
     if (!task) return rerunResponseError({ code: "not_found", message: "task not found" }, "not_found");
 
     const currentStage = taskStage(task);
@@ -709,7 +710,7 @@ async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
 }
 
 function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, config = null }) {
-  const existing = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  const existing = getTaskById(db, taskId);
   if (!existing) throw routeError(404, "not_found", "task not found");
   if ("executor_agent" in (patch || {})) {
     throw routeError(400, "validation", "executor_agent is not supported; use owner_agent");
@@ -839,7 +840,7 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
   }
   watcher?.maybeAutoStart?.(taskId);
 
-  const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  const row = getTaskById(db, taskId);
   const enriched = enrichTask(db, rowToTask(row), config);
   if (projectCascadeCount > 0) enriched.cascade = { project_id_descendants: projectCascadeCount };
   return enriched;
@@ -1077,7 +1078,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       }
       throw error;
     }
-    const row = db.prepare("SELECT * FROM tasks WHERE id = ?").get(id);
+    const row = getTaskById(db, id);
     const task = enrichTask(db, rowToTask(row), config);
     broker.broadcast("global", { type: "task_created", id, taskKey: task.task_key || null });
     watcher?.maybeAutoStart?.(id);
@@ -1245,8 +1246,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       throw error;
     }
 
-    const child = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(childId)), config);
-    const updatedParent = enrichTask(db, rowToTask(db.prepare("SELECT * FROM tasks WHERE id = ?").get(parent.id)), config);
+    const child = enrichTask(db, rowToTask(getTaskById(db, childId)), config);
+    const updatedParent = enrichTask(db, rowToTask(getTaskById(db, parent.id)), config);
     broker.broadcast("global", { type: "task_created", id: childId, taskKey: child.task_key || null });
     broker.broadcast("global", { type: "task_updated", id: parent.id, taskKey: updatedParent.task_key || null });
     watcher?.maybeAutoStart?.(childId);

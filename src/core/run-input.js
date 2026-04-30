@@ -13,6 +13,7 @@ import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
+import { getTaskById } from "./db/queries/tasks.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
@@ -156,7 +157,7 @@ export function loadAgentCapabilities({ config, agent, agentName, runId, env }) 
 
 export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   requireDataDir(config);
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  const task = getTaskById(db, taskId);
   if (!task) throw runInputError(404, "not_found", `task ${taskId} not found`);
   const agent = db.prepare("SELECT * FROM agents WHERE name = ?").get(agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
@@ -416,7 +417,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
 
 export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }) {
   requireDataDir(config);
-  const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
+  const task = getTaskById(db, taskId);
   if (!task) throw runInputError(404, "not_found", "task not found");
 
   const stage = taskStage(task);

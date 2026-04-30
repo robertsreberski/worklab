@@ -5,6 +5,7 @@ import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { newAutomationRunId } from "../core/ids.js";
 import { readSettings } from "../core/settings.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
+import { getTaskById } from "../core/db/queries/tasks.js";
 
 const TICK_MS = 60_000;
 
@@ -157,12 +158,12 @@ export function createAutomationManager({
       applyTaskSideEffects(db, task.id, result.sideEffects, currentStage, result.stage, { now, logger });
     })();
     broker?.broadcast?.("global", { type: "task_updated", id: task.id });
-    return db.prepare("SELECT * FROM tasks WHERE id = ?").get(task.id);
+    return getTaskById(db, task.id);
   }
 
   async function runTaskAutomation(automation, { triggerType = "manual", now = Date.now() } = {}) {
     if (!watcher?.handleRunRequested) throw new Error("task watcher not wired");
-    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(automation.task_id);
+    const task = getTaskById(db, automation.task_id);
     if (!task) {
       const reason = `task ${automation.task_id} not found`;
       updateAutomationAfterTrigger(automation, { triggerType, outcome: "failed", reason, now });
