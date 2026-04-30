@@ -34,6 +34,37 @@ describe("worklab event timeline normalization", () => {
     });
   });
 
+  it("compacts final result payloads after fragmented assistant text", () => {
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "Do" }] },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "ne." }] },
+        },
+      },
+      {
+        type: "final",
+        text: "Done.",
+        model: "model-a",
+      },
+    ]);
+
+    expect(events[2]).toMatchObject({
+      type: "final",
+      compact: true,
+      text: "Done.",
+      model: "model-a",
+    });
+  });
+
   it("keeps different delivered final text visible after intermediate assistant text", () => {
     const events = normalizeWorklabEvents([
       {

@@ -90,7 +90,7 @@ function normaliseBlock(block) {
   return block;
 }
 
-function mergeThinkingText(current, next) {
+function mergeStreamingText(current, next) {
   const left = current || "";
   const right = next || "";
   if (!right) return left;
@@ -125,8 +125,8 @@ function flattenEvents(events) {
   const coalesced = [];
   for (const event of flat) {
     const last = coalesced[coalesced.length - 1];
-    if (event?.type === "thinking" && last?.type === "thinking") {
-      last.text = mergeThinkingText(last.text, event.text);
+    if ((event?.type === "thinking" || event?.type === "text") && last?.type === event.type) {
+      last.text = mergeStreamingText(last.text, event.text);
     } else {
       coalesced.push(event);
     }

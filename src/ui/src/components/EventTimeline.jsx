@@ -13,6 +13,32 @@ function visibleTextFromEvent(ev) {
     .join("");
 }
 
+function isVisibleTextEvent(ev) {
+  if (ev?.type === "sdk_event") return isVisibleTextEvent(ev.event);
+  if (ev?.type !== "assistant" && ev?.type !== "message") return false;
+  const content = ev?.message?.content || ev?.content;
+  return Array.isArray(content)
+    && content.length > 0
+    && content.every((block) => block?.type === "text" && String(block.text || "").trim());
+}
+
+function mergeVisibleText(current, next) {
+  const left = current || "";
+  const right = next || "";
+  if (!right) return left;
+  if (!left) return right;
+  if (left === right) return left;
+
+  const leftTrimmed = left.trim();
+  const rightTrimmed = right.trim();
+  if (leftTrimmed && rightTrimmed) {
+    if (leftTrimmed === rightTrimmed) return left;
+    if (rightTrimmed.length >= leftTrimmed.length && rightTrimmed.startsWith(leftTrimmed)) return right;
+  }
+
+  return `${left}${right}`;
+}
+
 function formatFinalUsage(ev) {
   const usage = ev.usage || {};
   return [
@@ -151,6 +177,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
 
 export function normalizeWorklabEvents(events = []) {
   const visibleTexts = new Set();
+  let visibleTextTail = "";
   return events.map((event) => {
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
@@ -163,7 +190,15 @@ export function normalizeWorklabEvents(events = []) {
       compactFinal,
     });
     const visibleText = normalizeCommentText(visibleTextFromEvent(event));
-    if (visibleText) visibleTexts.add(visibleText);
+    if (visibleText) {
+      visibleTextTail = isVisibleTextEvent(event)
+        ? mergeVisibleText(visibleTextTail, visibleText)
+        : visibleText;
+      visibleTexts.add(visibleText);
+      visibleTexts.add(visibleTextTail);
+    } else if (!isVisibleTextEvent(event)) {
+      visibleTextTail = "";
+    }
     return normalized;
   }).filter(Boolean);
 }

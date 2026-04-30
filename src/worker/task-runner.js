@@ -9,6 +9,7 @@ import {
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
 } from "../ai/result/contract.js";
+import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
 function validateRuntimeResult(result) {
@@ -51,6 +52,7 @@ export async function runTask(ctx) {
   }
   const { task, agent, skills, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
   const model = resolveModel(agent.model);
+  const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
   try {
     const result = await generateResponse(systemPrompt, {
@@ -68,7 +70,7 @@ export async function runTask(ctx) {
       maxTurns: maxTurnsForModel(model, 30),
       abortSignal: ac.signal,
       liveInput,
-      onEvent: (event) => emit({ type: "sdk_event", event }),
+      onEvent: sdkEvents.emit,
     });
     if (result.cancelled) return { kind: "task", cancelled: true };
     if (result.error) {
@@ -95,5 +97,7 @@ export async function runTask(ctx) {
     };
   } catch (err) {
     return { kind: "task", error: err.message || String(err) };
+  } finally {
+    sdkEvents.flush();
   }
 }

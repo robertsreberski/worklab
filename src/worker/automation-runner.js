@@ -9,6 +9,7 @@ import {
 import { buildAutomationSystemPrompt } from "../agent/prompt/system-prompt.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { getAutomationById } from "../core/db/queries/automations.js";
+import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
 function loadAutomationSetup({ config, db, automationId, agentName, runId }) {
@@ -47,6 +48,7 @@ export async function runAutomation(ctx) {
   const { automation, agent, skills, memory, journalTail, mcpServers, allowedTools, disallowedTools, pinnedKb } = setup;
   const systemPrompt = buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb });
   const model = resolveModel(agent.model);
+  const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
   try {
     const result = await generateResponse(systemPrompt, {
       model,
@@ -62,7 +64,7 @@ export async function runAutomation(ctx) {
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
       abortSignal: ac.signal,
-      onEvent: (event) => emit({ type: "sdk_event", event }),
+      onEvent: sdkEvents.emit,
     });
     if (result.cancelled) return { kind: "automation", cancelled: true };
     if (result.error) {
@@ -80,5 +82,7 @@ export async function runAutomation(ctx) {
     };
   } catch (err) {
     return { kind: "automation", error: err.message || String(err) };
+  } finally {
+    sdkEvents.flush();
   }
 }

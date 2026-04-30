@@ -7,6 +7,7 @@ import {
 } from "../core/index.js";
 import { buildConsolidationSystemPrompt } from "../agent/prompt/system-prompt.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
+import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
 export async function runConsolidate(ctx) {
@@ -24,6 +25,7 @@ export async function runConsolidate(ctx) {
 
   const systemPrompt = buildConsolidationSystemPrompt({ agent, memory, journal });
   const model = resolveModel(agent.model);
+  const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
   try {
     const result = await generateResponse(systemPrompt, {
       model,
@@ -39,7 +41,7 @@ export async function runConsolidate(ctx) {
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 10),
       abortSignal: ac.signal,
-      onEvent: (event) => emit({ type: "sdk_event", event }),
+      onEvent: sdkEvents.emit,
     });
     if (result.cancelled) return { kind: "consolidate", cancelled: true };
     if (result.error) {
@@ -59,5 +61,7 @@ export async function runConsolidate(ctx) {
     };
   } catch (err) {
     return { kind: "consolidate", error: err.message || String(err) };
+  } finally {
+    sdkEvents.flush();
   }
 }
