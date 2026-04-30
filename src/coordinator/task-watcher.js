@@ -22,6 +22,7 @@ import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
 import { resolveTaskProjectRunContext } from "../core/projects.js";
 import { retryableProviderFailureInfo } from "../core/failure-kind.js";
+import { delegationDepth } from "../core/delegation.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -386,6 +387,21 @@ function detectSubtaskCycles(subtasks) {
     if (color[i] === WHITE && visit(i)) return true;
   }
   return false;
+}
+
+function appendDelegationDoneCriteria(instructions, subtask) {
+  const parts = [String(instructions || "").trim()].filter(Boolean);
+  const acceptance = Array.isArray(subtask?.acceptance_criteria)
+    ? subtask.acceptance_criteria.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  if (acceptance.length) {
+    parts.push(`Acceptance criteria:\n- ${acceptance.join("\n- ")}`);
+  }
+  const artifact = String(subtask?.expected_artifact || "").trim();
+  if (artifact) {
+    parts.push(`Expected artifact: ${artifact}`);
+  }
+  return parts.join("\n\n");
 }
 
 export function createTaskWatcher({
@@ -1099,13 +1115,58 @@ export function createTaskWatcher({
     }
   }
 
+  function validateDelegationRequest(parentTask, subtasks) {
+    const settings = readSettings(db);
+    const items = Array.isArray(subtasks) ? subtasks.filter(Boolean) : [];
+    if (settings.delegation_enabled === false) {
+      return { ok: false, error: "delegation is disabled by settings" };
+    }
+    const maxDepth = Number(settings.delegation_max_depth ?? 1);
+    const depth = delegationDepth(db, parentTask);
+    if (depth >= maxDepth) {
+      return { ok: false, error: `delegation depth limit reached (${depth}/${maxDepth})` };
+    }
+    if (items.length === 0) {
+      return { ok: false, error: "delegate requires at least one valid subtask" };
+    }
+    const maxChildren = Number(settings.delegation_max_children_per_round ?? 5);
+    if (items.length > maxChildren) {
+      return { ok: false, error: `delegation requested ${items.length} subtasks, max is ${maxChildren}` };
+    }
+    if (detectSubtaskCycles(items)) {
+      return { ok: false, error: "delegated subtasks form a dependency cycle" };
+    }
+
+    const titles = new Set();
+    for (const [index, subtask] of items.entries()) {
+      const title = String(subtask?.title || "").trim();
+      if (!title) return { ok: false, error: `subtask ${index + 1} is missing a title` };
+      if (titles.has(title)) return { ok: false, error: `duplicate subtask title: ${title}` };
+      titles.add(title);
+
+      const suggested = String(subtask?.suggested_agent || parentTask.owner_agent || "").trim();
+      if (!suggested) return { ok: false, error: `subtask "${title}" has no owner agent` };
+      const agent = db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested);
+      if (!agent) {
+        return { ok: false, error: `subtask "${title}" suggested agent "${suggested}" was not found or is disabled` };
+      }
+
+      for (const dep of subtask.depends_on || []) {
+        const depRef = String(dep || "").trim();
+        if (!depRef) continue;
+        if (depRef === title) return { ok: false, error: `subtask "${title}" cannot depend on itself` };
+        if (items.some((candidate) => String(candidate?.title || "").trim() === depRef)) continue;
+        if (!resolveTaskId(db, depRef)) {
+          return { ok: false, error: `subtask "${title}" depends_on "${depRef}" did not resolve` };
+        }
+      }
+    }
+
+    return { ok: true, settings, subtasks: items };
+  }
+
   function createDelegatedSubtasks(parentTask, runId, subtasks) {
     if (!Array.isArray(subtasks) || subtasks.length === 0) return [];
-
-    if (detectSubtaskCycles(subtasks)) {
-      postSystemComment(parentTask.id, "Delegation rejected: subtasks form a dependency cycle.");
-      return [];
-    }
 
     const created = [];
     const byTitle = new Map();
@@ -1124,16 +1185,11 @@ export function createTaskWatcher({
         const subtask = subtasks[index] || {};
         if (!subtask.title || typeof subtask.title !== "string") continue;
         const suggested = subtask.suggested_agent || parentTask.owner_agent;
-        const agentExists = suggested
-          ? db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested)
-          : null;
-        const agentName = agentExists?.name || parentTask.owner_agent;
-        if (subtask.suggested_agent && !agentExists) {
-          warnings.push(`Subtask "${subtask.title.trim()}": suggested agent "${subtask.suggested_agent}" not found or disabled — falling back to "${agentName || "(none)"}".`);
-        }
+        const agentName = db.prepare("SELECT name FROM agents WHERE name = ? AND enabled = 1").get(suggested)?.name;
         const childId = newTaskId();
         const taskKey = nextTaskKey(db);
         const required = subtask.required === false ? 0 : 1;
+        const instructions = appendDelegationDoneCriteria(subtask.instructions || "", subtask);
         db.prepare(`
           INSERT INTO tasks
             (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
@@ -1150,7 +1206,7 @@ export function createTaskWatcher({
           agentName,
           parentTask.project_id || null,
           subtask.title.trim(),
-          subtask.instructions || "",
+          instructions,
           parentTask.run_policy || "manual",
           index,
           required,
@@ -1205,8 +1261,31 @@ export function createTaskWatcher({
     return created;
   }
 
-  function maybeRunDelegatedChildren(children) {
-    for (const child of children) {
+  function delegatedChildRows(parentTaskId) {
+    return db.prepare(`
+      SELECT t.id
+      FROM task_edges e
+      JOIN tasks t ON t.id = e.child_task_id
+      WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
+      ORDER BY t.subtask_order ASC, t.created_at ASC
+    `).all(parentTaskId);
+  }
+
+  function scheduleDelegatedChildren(parentTaskId, children = null) {
+    const settings = readSettings(db);
+    if (settings.delegation_auto_run_children === false) return;
+    const candidates = children || delegatedChildRows(parentTaskId);
+    const childIds = new Set(delegatedChildRows(parentTaskId).map((child) => child.id));
+    const activeCount = [...childIds].filter((id) => active.has(id) || pendingStarts.has(id)).length;
+    const limit = Math.max(1, Number(settings.delegation_max_parallel_children ?? candidates.length));
+    const slots = Math.max(0, limit - activeCount);
+    if (slots <= 0) return;
+    let scheduled = 0;
+    for (const child of candidates) {
+      if (scheduled >= slots) break;
+      if (active.has(child.id) || pendingStarts.has(child.id)) continue;
+      if (!canAutoStart(child.id)) continue;
+      scheduled += 1;
       scheduleAutoStart(child.id, (err) => {
         logger?.warn?.({ err, childId: child.id }, "delegated child auto-run failed");
         annotateTaskFailure(child.id, { message: `Auto-start failed: ${err.message}`, failureKind: "spawn", retryStage: "execute" });
@@ -1214,7 +1293,25 @@ export function createTaskWatcher({
     }
   }
 
+  function maybeRunDelegatedChildren(parentTaskId, children) {
+    scheduleDelegatedChildren(parentTaskId, children);
+  }
+
+  function maybeRunMoreDelegatedSiblings(childTaskId) {
+    const parents = db.prepare(`
+      SELECT p.id
+      FROM task_edges e
+      JOIN tasks p ON p.id = e.parent_task_id
+      WHERE e.child_task_id = ? AND e.edge_type = 'subtask'
+    `).all(childTaskId);
+    for (const parent of parents) {
+      const row = db.prepare("SELECT stage FROM tasks WHERE id = ?").get(parent.id);
+      if (taskStage(row) === "awaiting_children") scheduleDelegatedChildren(parent.id);
+    }
+  }
+
   function maybeResumeWaitingParents(childTaskId) {
+    maybeRunMoreDelegatedSiblings(childTaskId);
     resumeWaitingParents({
       db,
       childTaskId,
@@ -1242,6 +1339,20 @@ export function createTaskWatcher({
         failureKind: "invalid_result",
       }, task, run);
       return;
+    }
+
+    if (result.decision === "delegate") {
+      const validation = validateDelegationRequest(task, result.subtasks);
+      if (!validation.ok) {
+        handleFailedExit(taskId, runId, {
+          ...res,
+          error: `invalid delegation: ${validation.error}`,
+          processStatus: "failed",
+          failureKind: "invalid_result",
+        }, task, run);
+        return;
+      }
+      result.subtasks = validation.subtasks;
     }
 
     updateRunResult(runId, result);
@@ -1283,7 +1394,7 @@ export function createTaskWatcher({
     const delegated = next.sideEffects.find((sideEffect) => sideEffect.type === "create_subtasks");
     if (delegated) {
       const children = createDelegatedSubtasks({ ...task, stage: next.stage }, runId, delegated.subtasks);
-      maybeRunDelegatedChildren(children);
+      maybeRunDelegatedChildren(taskId, children);
     }
 
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
