@@ -1,9 +1,5 @@
 import { describe, it, expect } from "vitest";
-import {
-  legacyRunStatusToProcessStatus,
-  nextStage,
-  processStatusToLegacyStatus,
-} from "../../core/state-machine.js";
+import { nextStage } from "../../core/state-machine.js";
 
 describe("workflow stage reducer", () => {
   it("starts a runnable stage without changing the workflow stage", () => {
@@ -277,11 +273,3 @@ describe("workflow stage reducer", () => {
   });
 });
 
-describe("run process status compatibility mapping", () => {
-  it("maps run process status to legacy run status", () => {
-    expect(legacyRunStatusToProcessStatus("complete")).toBe("succeeded");
-    expect(legacyRunStatusToProcessStatus("error")).toBe("failed");
-    expect(processStatusToLegacyStatus("succeeded")).toBe("complete");
-    expect(processStatusToLegacyStatus("failed")).toBe("error");
-  });
-});

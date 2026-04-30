@@ -3,7 +3,16 @@ import { createInterface } from "node:readline";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { newAgentLogId } from "../core/ids.js";
-import { processStatusToLegacyStatus } from "../core/state-machine.js";
+// Compat for the legacy task_runs.status column (kept alongside process_status
+// so older readers don't see NULLs). New writers go through process_status.
+const PROCESS_TO_LEGACY_STATUS = {
+  succeeded: "complete",
+  failed: "error",
+  cancelled: "cancelled",
+  abandoned: "error",
+  queued: "running",
+  running: "running",
+};
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../core/failure-kind.js";
 import { artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
@@ -629,7 +638,7 @@ export function spawnWorker({
       else if (cancelRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
       else if (signal === "SIGKILL" && !code) processStatus = "abandoned";
       else if (code !== 0 || resultError) processStatus = "failed";
-      const status = processStatusToLegacyStatus(processStatus);
+      const status = PROCESS_TO_LEGACY_STATUS[processStatus] || "running";
       const failureKind = processStatus === "succeeded"
         ? null
         : (classifyFailure({
