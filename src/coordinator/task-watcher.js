@@ -907,13 +907,45 @@ export function createTaskWatcher({
     );
   }
 
+  function continuationLineage(run) {
+    const seen = new Set();
+    const lineage = [run.id];
+    let parentId = run.parent_run_id;
+    while (parentId && !seen.has(parentId) && lineage.length < 50) {
+      seen.add(parentId);
+      const parent = db.prepare("SELECT id, parent_run_id FROM task_runs WHERE id = ?").get(parentId);
+      if (!parent) break;
+      lineage.push(parent.id);
+      parentId = parent.parent_run_id;
+    }
+    return {
+      rootRunId: lineage[lineage.length - 1] || run.id,
+      depth: lineage.length - 1,
+      lineage,
+    };
+  }
+
   function maybeStartUsageLimitContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
     if (failureKind !== "usage_limit" || processStatus !== "failed") return null;
     if (!["plan", "execute"].includes(stage)) return null;
     if (nextStageValue === "blocked") return null;
-    if (run.parent_run_id) return null;
     const existing = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ? LIMIT 1").get(runId);
     if (existing) return null;
+    const settings = readSettings(db);
+    const continuationLimit = Number(settings.agent_recovery_continuation_limit ?? 3);
+    if (continuationLimit <= 0) return null;
+    const lineage = continuationLineage(run);
+    if (lineage.depth >= continuationLimit) {
+      postSystemComment(taskId, `Automatic continuation skipped: usage-limit continuation limit reached (${lineage.depth}/${continuationLimit}).`);
+      patchRunDiagnostics(runId, {
+        continuation_skipped: true,
+        continuation_skip_reason: "limit_reached",
+        continuation_depth: lineage.depth,
+        continuation_limit: continuationLimit,
+        continuation_root_run_id: lineage.rootRunId,
+      });
+      return null;
+    }
 
     const agentName = run.agent_name || agentForTaskStage(task, stage);
     if (!agentName) return null;
@@ -945,10 +977,18 @@ export function createTaskWatcher({
         parentRunId: runId,
         diagnosticsSeed: {
           continuation_of_run_id: runId,
+          continuation_root_run_id: lineage.rootRunId,
           continuation_reason: "usage_limit",
+          continuation_depth: lineage.depth + 1,
+          continuation_limit: continuationLimit,
         },
       });
-      patchRunDiagnostics(runId, { continuation_run_id: continuation.runId });
+      patchRunDiagnostics(runId, {
+        continuation_run_id: continuation.runId,
+        continuation_depth: lineage.depth,
+        continuation_limit: continuationLimit,
+        continuation_root_run_id: lineage.rootRunId,
+      });
       return continuation;
     } catch (err) {
       postSystemComment(taskId, `Automatic continuation failed to start: ${err.message || String(err)}`);
