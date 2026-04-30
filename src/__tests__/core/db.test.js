@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { openDb, runMigrations } from "../../core/db.js";
 import { newTaskId } from "../../core/ids.js";
+import { SCHEMA_VERSION } from "../../core/schema.js";
 
 describe("openDb + runMigrations", () => {
   it("creates all tables on first call", () => {
@@ -18,7 +19,7 @@ describe("openDb + runMigrations", () => {
         "agent_consolidations", "task_dependencies", "automations", "automation_runs",
         "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
         "slack_agent_logs", "slack_delivery_log", "assistant_threads", "assistant_messages",
-        "assistant_runs", "assistant_agent_logs",
+        "assistant_runs", "assistant_agent_logs", "run_compactions",
       ]),
     );
   });
@@ -50,7 +51,7 @@ describe("openDb + runMigrations", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const row = db.prepare("SELECT value FROM schema_meta WHERE key='version'").get();
-    expect(row.value).toBe("19");
+    expect(row.value).toBe(String(SCHEMA_VERSION));
   });
 
   it("migrates assistant run diagnostics columns", () => {
