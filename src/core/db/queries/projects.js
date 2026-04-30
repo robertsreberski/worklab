@@ -50,3 +50,9 @@ export function updateProjectFields(db, fields, values) {
   if (!fields.length) return;
   db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 }
+
+export function listProjectsByIds(db, ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders})`).all(...ids);
+}

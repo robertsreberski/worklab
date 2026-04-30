@@ -23,3 +23,26 @@ export function insertSubtaskEdge(db, { parentTaskId, childTaskId, required, cre
      VALUES (?, ?, 'subtask', ?, ?, ?)`,
   ).run(parentTaskId, childTaskId, required ? 1 : 0, createdByRunId || null, createdAt);
 }
+
+export function listSubtaskChildrenForParent(db, parentTaskId) {
+  return db.prepare(`
+    SELECT t.*, e.required AS edge_required, e.edge_type
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
+    ORDER BY t.subtask_order ASC, t.created_at ASC
+  `).all(parentTaskId);
+}
+
+// Bulk: subtask children for many parents — owner_task_id is the parent.
+export function listSubtaskChildrenForParents(db, parentTaskIds) {
+  if (!parentTaskIds.length) return [];
+  const placeholders = parentTaskIds.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT e.parent_task_id AS owner_task_id, e.required AS edge_required, e.edge_type, t.*
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    WHERE e.parent_task_id IN (${placeholders}) AND e.edge_type = 'subtask'
+    ORDER BY e.parent_task_id, t.subtask_order ASC, t.created_at ASC
+  `).all(...parentTaskIds);
+}

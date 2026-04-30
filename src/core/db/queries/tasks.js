@@ -68,6 +68,35 @@ export function getTaskKeyById(db, id) {
   return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id)?.task_key || null;
 }
 
+export function getTaskKeyRow(db, id) {
+  return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id);
+}
+
+export function getTaskByClientRequestId(db, requestId) {
+  return db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
+}
+
+// Filter clauses + bound params come from the route. Helper owns the column
+// projection and ordering.
+export function listFilteredTasks(db, { filters, params }) {
+  const where = filters.length ? ` WHERE ${filters.join(" AND ")}` : "";
+  return db.prepare(`SELECT * FROM tasks${where} ORDER BY updated_at DESC`).all(...params);
+}
+
+export function listTasksByIds(db, ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids);
+}
+
+export function getMaxSubtaskOrder(db, parentTaskId) {
+  return (
+    db
+      .prepare("SELECT COALESCE(MAX(subtask_order), -1) AS max_order FROM tasks WHERE parent_task_id = ?")
+      .get(parentTaskId)?.max_order ?? -1
+  );
+}
+
 export function listProjectTasksWithRunSnapshots(db, projectId) {
   return db.prepare(`
     SELECT

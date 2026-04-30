@@ -22,6 +22,51 @@ export function getTaskAutomation(db, automationId, taskId) {
     .get(automationId, taskId);
 }
 
+// Per-task automation summary rows — used by tasks API to derive next-fire
+// and enabled/paused counts.
+export function listAutomationSummaryForTask(db, taskId) {
+  return db.prepare(`
+    SELECT id, enabled, next_fire_at, last_status, last_error
+    FROM automations
+    WHERE task_id = ?
+  `).all(taskId);
+}
+
+// Bulk variant for the tasks-list enrichment.
+export function listAutomationSummariesForTasks(db, taskIds) {
+  if (!taskIds.length) return [];
+  const placeholders = taskIds.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT id, task_id, enabled, next_fire_at, last_status, last_error
+    FROM automations
+    WHERE task_id IN (${placeholders})
+  `).all(...taskIds);
+}
+
+// Latest automation_triggers row for a task (single).
+export function getLatestAutomationTriggerForTask(db, taskId) {
+  return db.prepare(`
+    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
+    FROM automation_triggers
+    WHERE task_id = ?
+    ORDER BY fired_at DESC, rowid DESC
+    LIMIT 1
+  `).get(taskId);
+}
+
+// Latest automation_triggers row per task (bulk) — caller deduplicates by
+// task_id via firstRowsByTask.
+export function listLatestAutomationTriggersForTasks(db, taskIds) {
+  if (!taskIds.length) return [];
+  const placeholders = taskIds.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
+    FROM automation_triggers
+    WHERE task_id IN (${placeholders})
+    ORDER BY task_id, fired_at DESC, rowid DESC
+  `).all(...taskIds);
+}
+
 export function deleteAutomation(db, id) {
   db.prepare("DELETE FROM automations WHERE id = ?").run(id);
 }

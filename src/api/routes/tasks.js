@@ -9,8 +9,48 @@ import { buildNextTaskRunPreview } from "../../core/run-input.js";
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../../core/projects.js";
 import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../../core/run-artifacts.js";
-import { getTaskById } from "../../core/db/queries/tasks.js";
+import {
+  getMaxSubtaskOrder,
+  getTaskById,
+  getTaskByClientRequestId,
+  getTaskKeyById,
+  listFilteredTasks,
+  listTasksByIds,
+} from "../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../core/db/queries/agent-logs.js";
+import {
+  getCostSummaryByAgentSince,
+  getCostSummarySince,
+  getLastNonRunningTaskRun,
+  getLatestRetryStageRow,
+  getLatestTaskRunSummary,
+  getRunningRunIdForTask,
+  getRunningTaskRun,
+  getStaleRunningRunForTask,
+  listLastNonRunningRunsForTasks,
+  listRunningRunsWithEventsForTasks,
+  selectRunsWithLogJoin,
+  taskHasRunningRun,
+} from "../../core/db/queries/runs.js";
+import {
+  listBlockedByForTasks,
+  listBlocksForTasks,
+  listDependsOnTaskIds,
+  listDirectDependencyRows,
+  listDirectDependentRows,
+} from "../../core/db/queries/task-dependencies.js";
+import {
+  listSubtaskChildrenForParent,
+  listSubtaskChildrenForParents,
+} from "../../core/db/queries/task-edges.js";
+import {
+  getLatestAutomationTriggerForTask,
+  listAutomationSummariesForTasks,
+  listAutomationSummaryForTask,
+  listLatestAutomationTriggersForTasks,
+} from "../../core/db/queries/automations.js";
+import { listProjectsByIds } from "../../core/db/queries/projects.js";
+import { getCommentById, getTaskCommentById } from "../../core/db/queries/comments.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -63,14 +103,7 @@ function compactTaskSummary(row) {
 }
 
 function latestTaskRunSummary(db, taskId) {
-  const row = db.prepare(`
-    SELECT id, mode, stage, status, process_status, decision, failure_kind,
-           summary, details, artifact_summary_json, started_at, ended_at
-    FROM task_runs
-    WHERE task_id = ?
-    ORDER BY started_at DESC, rowid DESC
-    LIMIT 1
-  `).get(taskId);
+  const row = getLatestTaskRunSummary(db, taskId);
   if (!row) return null;
   return {
     id: row.id,
@@ -112,21 +145,12 @@ function parseEvents(value) {
 //              error-chip policy.
 function attachDerivedRunFields(db, task) {
   if (!task) return task;
-  const runningRow = db.prepare(
-    `SELECT id, status, process_status, started_at FROM task_runs
-     WHERE task_id = ? AND status = 'running'
-     ORDER BY started_at DESC LIMIT 1`
-  ).get(task.id);
+  const runningRow = getRunningTaskRun(db, task.id);
   const runningLog = runningRow
     ? getAgentLogEvents(db, runningRow.id)
     : null;
   const runningEvents = runningLog ? parseEvents(runningLog.events) : [];
-  const lastRow = db.prepare(
-    `SELECT id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
-     FROM task_runs
-     WHERE task_id = ? AND status <> 'running'
-     ORDER BY started_at DESC LIMIT 1`
-  ).get(task.id);
+  const lastRow = getLastNonRunningTaskRun(db, task.id);
   return {
     ...task,
     running_run_id: runningRow?.id || null,
@@ -151,37 +175,11 @@ function attachDerivedRunFields(db, task) {
   };
 }
 
-function directDependencyRows(db, taskId) {
-  return db.prepare(`
-    SELECT t.*
-    FROM task_dependencies d
-    JOIN tasks t ON t.id = d.depends_on_task_id
-    WHERE d.task_id = ?
-    ORDER BY t.updated_at DESC, t.rowid DESC
-  `).all(taskId);
-}
-
-function directDependentRows(db, taskId) {
-  return db.prepare(`
-    SELECT t.*
-    FROM task_dependencies d
-    JOIN tasks t ON t.id = d.task_id
-    WHERE d.depends_on_task_id = ?
-    ORDER BY t.updated_at DESC, t.rowid DESC
-  `).all(taskId);
-}
-
 function attachTaskGraph(db, task) {
   if (!task) return task;
-  const dependencyRows = directDependencyRows(db, task.id);
-  const dependentRows = directDependentRows(db, task.id);
-  const childRows = db.prepare(`
-    SELECT t.*, e.required AS edge_required, e.edge_type
-    FROM task_edges e
-    JOIN tasks t ON t.id = e.child_task_id
-    WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
-    ORDER BY t.subtask_order ASC, t.created_at ASC
-  `).all(task.id);
+  const dependencyRows = listDirectDependencyRows(db, task.id);
+  const dependentRows = listDirectDependentRows(db, task.id);
+  const childRows = listSubtaskChildrenForParent(db, task.id);
   const parentRow = task.parent_task_id
     ? getTaskById(db, task.parent_task_id)
     : null;
@@ -197,23 +195,13 @@ function attachTaskGraph(db, task) {
 
 function attachAutomationSummary(db, task) {
   if (!task) return task;
-  const rows = db.prepare(`
-    SELECT id, enabled, next_fire_at, last_status, last_error
-    FROM automations
-    WHERE task_id = ?
-  `).all(task.id);
+  const rows = listAutomationSummaryForTask(db, task.id);
   const enabled = rows.filter((row) => row.enabled !== 0);
   const nextFireAt = enabled
     .map((row) => row.next_fire_at)
     .filter((value) => value != null)
     .sort((a, b) => a - b)[0] || null;
-  const latestTrigger = db.prepare(`
-    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
-    FROM automation_triggers
-    WHERE task_id = ?
-    ORDER BY fired_at DESC, rowid DESC
-    LIMIT 1
-  `).get(task.id) || null;
+  const latestTrigger = getLatestAutomationTriggerForTask(db, task.id) || null;
   return {
     ...task,
     automation_summary: {
@@ -239,10 +227,6 @@ function attachProject(db, task, config = null) {
 
 function enrichTask(db, task, config = null) {
   return attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config);
-}
-
-function placeholders(values) {
-  return values.map(() => "?").join(", ");
 }
 
 function defaultAutomationSummary() {
@@ -280,7 +264,6 @@ function pushMapped(map, key, value) {
 function enrichTaskList(db, tasks, config = null) {
   if (!tasks.length) return [];
   const taskIds = tasks.map((task) => task.id);
-  const taskIdSql = placeholders(taskIds);
   const output = tasks.map((task) => ({
     ...task,
     dependency_ids: [],
@@ -297,20 +280,7 @@ function enrichTaskList(db, tasks, config = null) {
   }));
   const byId = new Map(output.map((task) => [task.id, task]));
 
-  const runningRows = firstRowsByTask(db.prepare(`
-    SELECT
-      r.id, r.task_id, r.status, r.process_status, r.started_at,
-      json_array_length(l.events) AS event_count,
-      CASE
-        WHEN l.events IS NOT NULL AND json_valid(l.events) AND json_array_length(l.events) > 0
-        THEN json_extract(l.events, '$[' || (json_array_length(l.events) - 1) || ']')
-        ELSE NULL
-      END AS last_event_json
-    FROM task_runs r
-    LEFT JOIN agent_logs l ON l.task_run_id = r.id
-    WHERE r.task_id IN (${taskIdSql}) AND r.status = 'running'
-    ORDER BY r.task_id, r.started_at DESC, r.rowid DESC
-  `).all(...taskIds));
+  const runningRows = firstRowsByTask(listRunningRunsWithEventsForTasks(db, taskIds));
   for (const [taskId, row] of runningRows.entries()) {
     const task = byId.get(taskId);
     if (!task) continue;
@@ -325,12 +295,7 @@ function enrichTaskList(db, tasks, config = null) {
     };
   }
 
-  const lastRows = firstRowsByTask(db.prepare(`
-    SELECT id, task_id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
-    FROM task_runs
-    WHERE task_id IN (${taskIdSql}) AND status <> 'running'
-    ORDER BY task_id, started_at DESC, rowid DESC
-  `).all(...taskIds));
+  const lastRows = firstRowsByTask(listLastNonRunningRunsForTasks(db, taskIds));
   for (const [taskId, row] of lastRows.entries()) {
     const task = byId.get(taskId);
     if (!task) continue;
@@ -347,42 +312,22 @@ function enrichTaskList(db, tasks, config = null) {
   }
 
   const blockedBy = new Map();
-  for (const row of db.prepare(`
-    SELECT d.task_id AS owner_task_id, t.*
-    FROM task_dependencies d
-    JOIN tasks t ON t.id = d.depends_on_task_id
-    WHERE d.task_id IN (${taskIdSql})
-    ORDER BY d.task_id, t.updated_at DESC, t.rowid DESC
-  `).all(...taskIds)) {
+  for (const row of listBlockedByForTasks(db, taskIds)) {
     pushMapped(blockedBy, row.owner_task_id, compactTaskSummary(row));
   }
   const blocks = new Map();
-  for (const row of db.prepare(`
-    SELECT d.depends_on_task_id AS owner_task_id, t.*
-    FROM task_dependencies d
-    JOIN tasks t ON t.id = d.task_id
-    WHERE d.depends_on_task_id IN (${taskIdSql})
-    ORDER BY d.depends_on_task_id, t.updated_at DESC, t.rowid DESC
-  `).all(...taskIds)) {
+  for (const row of listBlocksForTasks(db, taskIds)) {
     pushMapped(blocks, row.owner_task_id, compactTaskSummary(row));
   }
   const children = new Map();
-  for (const row of db.prepare(`
-    SELECT e.parent_task_id AS owner_task_id, e.required AS edge_required, e.edge_type, t.*
-    FROM task_edges e
-    JOIN tasks t ON t.id = e.child_task_id
-    WHERE e.parent_task_id IN (${taskIdSql}) AND e.edge_type = 'subtask'
-    ORDER BY e.parent_task_id, t.subtask_order ASC, t.created_at ASC
-  `).all(...taskIds)) {
+  for (const row of listSubtaskChildrenForParents(db, taskIds)) {
     pushMapped(children, row.owner_task_id, compactChildTaskSummary(db, row));
   }
 
   const parentIds = [...new Set(output.map((task) => task.parent_task_id).filter(Boolean))];
   const parents = new Map();
-  if (parentIds.length) {
-    for (const row of db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders(parentIds)})`).all(...parentIds)) {
-      parents.set(row.id, compactTaskSummary(row));
-    }
+  for (const row of listTasksByIds(db, parentIds)) {
+    parents.set(row.id, compactTaskSummary(row));
   }
   for (const task of output) {
     task.dependency_ids = (blockedBy.get(task.id) || []).map((row) => row.id);
@@ -393,11 +338,7 @@ function enrichTaskList(db, tasks, config = null) {
   }
 
   const automationSummaries = new Map(output.map((task) => [task.id, defaultAutomationSummary()]));
-  for (const row of db.prepare(`
-    SELECT id, task_id, enabled, next_fire_at, last_status, last_error
-    FROM automations
-    WHERE task_id IN (${taskIdSql})
-  `).all(...taskIds)) {
+  for (const row of listAutomationSummariesForTasks(db, taskIds)) {
     const summary = automationSummaries.get(row.task_id);
     if (!summary) continue;
     summary.count += 1;
@@ -410,12 +351,7 @@ function enrichTaskList(db, tasks, config = null) {
       summary.paused_count += 1;
     }
   }
-  const latestTriggers = firstRowsByTask(db.prepare(`
-    SELECT id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
-    FROM automation_triggers
-    WHERE task_id IN (${taskIdSql})
-    ORDER BY task_id, fired_at DESC, rowid DESC
-  `).all(...taskIds));
+  const latestTriggers = firstRowsByTask(listLatestAutomationTriggersForTasks(db, taskIds));
   for (const [taskId, trigger] of latestTriggers.entries()) {
     const summary = automationSummaries.get(taskId);
     if (summary) summary.last_trigger = trigger;
@@ -424,10 +360,8 @@ function enrichTaskList(db, tasks, config = null) {
 
   const projectIds = [...new Set(output.map((task) => task.project_id).filter(Boolean))];
   const projects = new Map();
-  if (projectIds.length) {
-    for (const row of db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders(projectIds)})`).all(...projectIds)) {
-      projects.set(row.id, compactProject(row));
-    }
+  for (const row of listProjectsByIds(db, projectIds)) {
+    projects.set(row.id, compactProject(row));
   }
   for (const task of output) {
     task.project = projects.get(task.project_id) || null;
@@ -459,8 +393,7 @@ function pathExists(db, startId, targetId, seen = new Set()) {
   if (startId === targetId) return true;
   if (seen.has(startId)) return false;
   seen.add(startId);
-  const rows = db.prepare("SELECT depends_on_task_id FROM task_dependencies WHERE task_id = ?").all(startId);
-  for (const row of rows) {
+  for (const row of listDependsOnTaskIds(db, startId)) {
     if (pathExists(db, row.depends_on_task_id, targetId, seen)) return true;
   }
   return false;
@@ -525,7 +458,7 @@ function applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentS
     applyTaskSideEffects(db, taskId, sideEffects, currentStage, newStage, { logger });
   });
   tx();
-  const taskKey = db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId)?.task_key || null;
+  const taskKey = getTaskKeyById(db, taskId);
   broker.broadcast("global", { type: "task_updated", id: taskId, taskKey });
 }
 
@@ -610,32 +543,7 @@ function attachLiveInputState(runs, watcher) {
 }
 
 function selectRunsWithLog(db, whereClause, ...params) {
-  return db.prepare(`
-    SELECT
-      r.*,
-      l.id AS log_id,
-      l.model AS log_model,
-      l.effort AS log_effort,
-      l.input_tokens AS log_input_tokens,
-      l.output_tokens AS log_output_tokens,
-      l.cache_read_tokens AS log_cache_read_tokens,
-      l.cache_creation_tokens AS log_cache_creation_tokens,
-      l.cost_usd AS log_cost_usd,
-	      l.duration_ms AS log_duration_ms,
-	      l.num_turns AS log_num_turns,
-	      l.status AS log_status,
-	      ar.automation_id,
-	      ar.trigger_type AS automation_trigger_type,
-	      ar.fired_at AS automation_fired_at,
-	      a.title AS automation_title,
-	      a.task_id AS automation_task_id
-	    FROM task_runs r
-	    LEFT JOIN agent_logs l ON l.task_run_id = r.id
-	    LEFT JOIN automation_runs ar ON ar.run_id = r.id
-	    LEFT JOIN automations a ON a.id = ar.automation_id
-	    ${whereClause}
-	    ${RUNS_ORDER_BY}
-  `).all(...params).map(rowToRun);
+  return selectRunsWithLogJoin(db, whereClause, ...params).map(rowToRun);
 }
 
 function routeError(status, code, message) {
@@ -661,14 +569,7 @@ function rerunResponseError(error, fallbackCode = "invalid_state") {
 }
 
 function latestRetryStage(db, taskId, fallback = "execute") {
-  const row = db.prepare(`
-    SELECT retry_stage, stage
-    FROM task_runs
-    WHERE task_id = ?
-      AND (retry_stage IN ('plan', 'execute', 'review') OR stage IN ('plan', 'execute', 'review'))
-    ORDER BY COALESCE(ended_at, started_at, 0) DESC, started_at DESC, rowid DESC
-    LIMIT 1
-  `).get(taskId);
+  const row = getLatestRetryStageRow(db, taskId);
   const stage = row?.retry_stage || row?.stage || fallback;
   return RUNNABLE_STAGES.includes(stage) ? stage : fallback;
 }
@@ -678,13 +579,7 @@ async function requestCommentRerun({ db, broker, watcher, logger, taskId }) {
     return rerunResponseError({ code: "not_configured", message: "watcher not wired" });
   }
 
-  const runningRow = db.prepare(`
-    SELECT id
-    FROM task_runs
-    WHERE task_id = ? AND status = 'running'
-    ORDER BY started_at DESC
-    LIMIT 1
-  `).get(taskId);
+  const runningRow = getRunningRunIdForTask(db, taskId);
   if (watcher.isActive?.(taskId) || runningRow) {
     return rerunResponseError({ code: "already_running", message: "task already running" });
   }
@@ -848,18 +743,13 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
 }
 
 function deleteTaskById({ db, broker, watcher, taskId }) {
-  const existing = db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(taskId);
-  const running = db.prepare(
-    `SELECT id FROM task_runs
-     WHERE task_id = ? AND status = 'running'
-     LIMIT 1`,
-  ).get(taskId);
-  if (running || watcher?.isActive?.(taskId)) {
+  const existingTaskKey = getTaskKeyById(db, taskId);
+  if (taskHasRunningRun(db, taskId) || watcher?.isActive?.(taskId)) {
     throw routeError(409, "task_running", "cancel the active run before deleting this task");
   }
   const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   if (r.changes === 0) throw routeError(404, "not_found", "task not found");
-  broker?.broadcast?.("global", { type: "task_deleted", id: taskId, taskKey: existing?.task_key || null });
+  broker?.broadcast?.("global", { type: "task_deleted", id: taskId, taskKey: existingTaskKey });
 }
 
 function normalizeBulkIds(value) {
@@ -926,23 +816,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
     const weekStart = todayStart.getTime() - 6 * 24 * 60 * 60 * 1000;
-    const today = db.prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
-      FROM task_runs
-      WHERE started_at >= ? AND cost_usd IS NOT NULL
-    `).get(todayStart.getTime());
-    const week = db.prepare(`
-      SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
-      FROM task_runs
-      WHERE started_at >= ? AND cost_usd IS NOT NULL
-    `).get(weekStart);
-    const byAgent = db.prepare(`
-      SELECT agent_name, COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
-      FROM task_runs
-      WHERE started_at >= ? AND cost_usd IS NOT NULL
-      GROUP BY agent_name
-      ORDER BY total DESC
-    `).all(todayStart.getTime());
+    const today = getCostSummarySince(db, todayStart.getTime());
+    const week = getCostSummarySince(db, weekStart);
+    const byAgent = getCostSummaryByAgentSince(db, todayStart.getTime());
     res.json({
       today: { total_usd: Number(today.total || 0), run_count: today.runs },
       week: { total_usd: Number(week.total || 0), run_count: week.runs },
@@ -986,8 +862,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!["full", "summary"].includes(view)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid view" } });
     }
-    const sql = `SELECT * FROM tasks${where.length ? " WHERE " + where.join(" AND ") : ""} ORDER BY updated_at DESC`;
-    const rows = db.prepare(sql).all(...params);
+    const rows = listFilteredTasks(db, { filters: where, params });
     const baseTasks = rows.map(rowToTask);
     const tasks = view === "summary" ? baseTasks : enrichTaskList(db, baseTasks, config);
     res.json({ tasks });
@@ -1019,7 +894,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     } = req.body || {};
     const requestId = normaliseClientRequestId(client_request_id);
     if (requestId) {
-      const existing = db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
+      const existing = getTaskByClientRequestId(db, requestId);
       if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing), config) });
     }
     if (!title || typeof title !== "string") {
@@ -1074,7 +949,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       })();
     } catch (error) {
       if (requestId && String(error?.code || "").includes("SQLITE_CONSTRAINT")) {
-        const existing = db.prepare("SELECT * FROM tasks WHERE client_request_id = ?").get(requestId);
+        const existing = getTaskByClientRequestId(db, requestId);
         if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing), config) });
       }
       throw error;
@@ -1189,8 +1064,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const now = Date.now();
     const childId = newTaskId();
     const rootTaskId = parent.root_task_id || parent.id;
-    const orderRow = db.prepare("SELECT COALESCE(MAX(subtask_order), -1) AS max_order FROM tasks WHERE parent_task_id = ?").get(parent.id);
-    const subtaskOrder = Number(orderRow?.max_order ?? -1) + 1;
+    const subtaskOrder = Number(getMaxSubtaskOrder(db, parent.id)) + 1;
     const shouldWait = required === 1 && !["done", "blocked"].includes(taskStage(parent));
 
     try {
@@ -1280,7 +1154,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     `).run(id, existing.id, body, now);
     db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
     broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
-    const row = enrichCommentRows(db, db.prepare("SELECT * FROM task_comments WHERE id = ?").all(id))[0];
+    const row = enrichCommentRows(db, [getCommentById(db, id)])[0];
     const payload = { comment: row };
     if (rerun === true) {
       payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
@@ -1292,11 +1166,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     try {
       const existing = taskOr404(db, req.params.id);
       const requestedCommentId = String(req.params.commentId || "");
-      let comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
-        .get(requestedCommentId, existing.id);
+      let comment = getTaskCommentById(db, requestedCommentId, existing.id);
       if (!comment && requestedCommentId.startsWith("c-")) {
-        comment = db.prepare("SELECT * FROM task_comments WHERE id = ? AND task_id = ?")
-          .get(requestedCommentId.slice(2), existing.id);
+        comment = getTaskCommentById(db, requestedCommentId.slice(2), existing.id);
       }
       if (!comment) throw routeError(404, "not_found", "comment not found");
       if (comment.author_type !== "human") {
@@ -1386,11 +1258,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
 
     // No live worker — check for a stale `running` row left behind by a crashed
     // worker or coordinator restart. If found, reconcile so the UI can move on.
-    const staleRun = db.prepare(
-      `SELECT id, stage FROM task_runs
-       WHERE task_id = ? AND status = 'running'
-       ORDER BY started_at DESC LIMIT 1`
-    ).get(taskId);
+    const staleRun = getStaleRunningRunForTask(db, taskId);
     if (!staleRun) return res.status(404).json({ error: { code: "not_running", message: "no active run" } });
 
     const now = Date.now();
