@@ -158,6 +158,78 @@ describe("run input assembly", () => {
     });
   });
 
+  it("injects prior task artifacts into run context", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      const priorArtifact = [{
+        path: "src/prior.js",
+        display_path: "src/prior.js",
+        kind: "update",
+        status: "completed",
+        added_lines: 6,
+        removed_lines: 2,
+        has_line_delta: true,
+        run_ids: ["run-prior"],
+        first_run_id: "run-prior",
+        last_run_id: "run-prior",
+        first_seen_at: 2000,
+        last_seen_at: 2000,
+      }];
+      const currentArtifact = [{
+        path: "src/current.js",
+        display_path: "src/current.js",
+        kind: "update",
+        status: "completed",
+        added_lines: 99,
+        removed_lines: 0,
+        has_line_delta: true,
+        run_ids: ["run-current"],
+        first_run_id: "run-current",
+        last_run_id: "run-current",
+        first_seen_at: 3000,
+        last_seen_at: 3000,
+      }];
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status,
+           artifacts_json, artifact_summary_json, artifact_paths_json)
+        VALUES ('run-prior', ?, 'execute', 'execute', 'owner', 1000, 2000, 'complete', 'succeeded', ?, ?, ?)
+      `).run(
+        task.id,
+        JSON.stringify(priorArtifact),
+        JSON.stringify({ files: 1, added_lines: 6, removed_lines: 2, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+        JSON.stringify(["src/prior.js"]),
+      );
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status,
+           artifacts_json, artifact_summary_json, artifact_paths_json)
+        VALUES ('run-current', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running', ?, ?, ?)
+      `).run(
+        task.id,
+        JSON.stringify(currentArtifact),
+        JSON.stringify({ files: 1, added_lines: 99, removed_lines: 0, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+        JSON.stringify(["src/current.js"]),
+      );
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-current",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Task artifacts");
+      expect(input.systemPrompt).toContain("Task-wide file changes before this run: 1 file, +6 -2 across 1 run.");
+      expect(input.systemPrompt).toContain("`src/prior.js` (+6 -2, last run `run-prior`)");
+      expect(input.systemPrompt).not.toContain("src/current.js");
+      expect(input.promptDiagnostics.artifacts).toMatchObject({ files: 1, added_lines: 6, removed_lines: 2 });
+    });
+  });
+
   it("uses the same assembled payload for plan previews and worker input", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "planner", "Plan as owner.");

@@ -347,7 +347,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt(promptInput, mode);
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
+    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts }), contextCacheHit: !!cached };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts,
       promptDiagnostics: diagnostics,
@@ -374,7 +374,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       effectiveWorkdir: setup.effectiveWorkdir,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, setup), contextCacheHit: !!cached };
+    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts }), contextCacheHit: !!cached };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
       priorRun, priorEvents, execution, taskArtifacts, promptDiagnostics: diagnostics,
