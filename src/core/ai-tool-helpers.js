@@ -1,11 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { exec, execFile } from "node:child_process";
+import { createRequire } from "node:module";
+import { delimiter } from "node:path";
 import { promisify } from "node:util";
 import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+const requireFromHere = createRequire(import.meta.url);
 const DEFAULT_READ_LINES = 240;
 const MAX_READ_LINES = 500;
 const MAX_READ_LINE_CHARS = 2_000;
@@ -33,6 +36,49 @@ function workspaceRoot(workdir) {
   return resolve(workdir || process.env.WORKLAB_WORKSPACE || process.env.WORKLAB_REPO_ROOT || process.cwd());
 }
 
+const RIPGREP_MISSING_MESSAGE =
+  "Error: ripgrep (rg) is not available. Set WORKLAB_RIPGREP_PATH or install ripgrep on PATH; run `worklab doctor` for details.";
+
+let cachedRgPath;
+
+function vendoredRgPath() {
+  try {
+    const sdkPkg = requireFromHere.resolve("@anthropic-ai/claude-agent-sdk/package.json");
+    const platform = process.platform === "win32" ? "win32" : process.platform;
+    const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : null;
+    if (!arch) return null;
+    const binaryName = process.platform === "win32" ? "rg.exe" : "rg";
+    const candidate = join(dirname(sdkPkg), "vendor", "ripgrep", `${arch}-${platform}`, binaryName);
+    return existsSync(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+function rgFromPath() {
+  const pathEnv = process.env.PATH || "";
+  if (!pathEnv) return null;
+  const exts = process.platform === "win32" ? (process.env.PATHEXT || ".EXE").split(";") : [""];
+  for (const dir of pathEnv.split(delimiter)) {
+    if (!dir) continue;
+    for (const ext of exts) {
+      const candidate = join(dir, `rg${ext.toLowerCase()}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+export function resolveRgPath({ refresh = false } = {}) {
+  if (!refresh && cachedRgPath !== undefined) return cachedRgPath;
+  if (process.env.WORKLAB_RIPGREP_PATH) {
+    cachedRgPath = existsSync(process.env.WORKLAB_RIPGREP_PATH) ? process.env.WORKLAB_RIPGREP_PATH : null;
+  } else {
+    cachedRgPath = vendoredRgPath() || rgFromPath() || null;
+  }
+  return cachedRgPath;
+}
+
 function resolveToolPath(path, workdir) {
   if (!path || typeof path !== "string") return path;
   return resolve(isAbsolute(path) ? path : resolve(workspaceRoot(workdir), path));
@@ -51,6 +97,21 @@ function roots(workdir) {
 export function isPathAllowed(path, workdir) {
   const r = resolveToolPath(path, workdir);
   return roots(workdir).some((root) => r === root || r.startsWith(root + "/"));
+}
+
+function envRoots() {
+  return [...new Set([
+    process.env.WORKLAB_WORKSPACE,
+    process.env.WORKLAB_REPO_ROOT,
+    process.cwd(),
+    "/tmp",
+  ].filter(Boolean).map((p) => resolve(p)))];
+}
+
+export function isWorkdirAllowed(workdir) {
+  if (!workdir) return true;
+  const r = resolve(workdir);
+  return envRoots().some((root) => r === root || r.startsWith(root + "/"));
 }
 
 function boundedInt(value, fallback, { min = 1, max = Number.MAX_SAFE_INTEGER } = {}) {
@@ -261,8 +322,10 @@ export async function globToolImpl({ pattern, path, limit, offset = 0, max_match
     normalizeGlobPattern(pattern),
     ...excludedGlobArgs(),
   ];
+  const rgPath = resolveRgPath();
+  if (!rgPath) return RIPGREP_MISSING_MESSAGE;
   try {
-    const { stdout } = await execFileAsync("rg", args, { cwd, timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
+    const { stdout } = await execFileAsync(rgPath, args, { cwd, timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
     const lines = stdout.trim().split("\n").filter(Boolean).sort((a, b) => {
       const aStat = safeStat(resolve(cwd, a));
       const bStat = safeStat(resolve(cwd, b));
@@ -324,8 +387,10 @@ export async function grepToolImpl({
   if (type) args.push("--type", type);
   args.push(...excludedGlobArgs(), "--", pattern, searchTarget);
   const resultLimit = boundedInt(head_limit ?? max_matches, DEFAULT_MAX_SEARCH_LINES, { min: 1, max: 1000 });
+  const rgPath = resolveRgPath();
+  if (!rgPath) return RIPGREP_MISSING_MESSAGE;
   try {
-    const { stdout } = await execFileAsync("rg", args, { cwd, timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
+    const { stdout } = await execFileAsync(rgPath, args, { cwd, timeout: 15000, maxBuffer: SEARCH_MAX_BUFFER });
     const normalized = stdout.trim().split("\n").filter(Boolean).map((line) => line.replace(/^\.\//, ""));
     const formatted = capLines(normalized.join("\n"), {
       label: "Grep",
@@ -351,6 +416,7 @@ export async function grepToolImpl({
 }
 
 export async function bashToolImpl({ command, timeout = 120000, max_output_chars, workdir }) {
+  if (workdir && !isWorkdirAllowed(workdir)) return `Error: Working directory not allowed: ${workdir}`;
   const cwd = workspaceRoot(workdir);
   if (!isPathAllowed(cwd, workdir)) return `Error: Working directory not allowed: ${cwd}`;
   if (!existsSync(cwd)) return `Error: Working directory not found: ${cwd}`;
