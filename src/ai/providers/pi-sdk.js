@@ -173,6 +173,21 @@ function pickPiErrorCodeFromException(err) {
   );
 }
 
+function lastTextSnippet(...sources) {
+  for (let i = sources.length - 1; i >= 0; i -= 1) {
+    const arr = sources[i];
+    if (!Array.isArray(arr)) continue;
+    for (let j = arr.length - 1; j >= 0; j -= 1) {
+      const text = arr[j];
+      if (typeof text === "string" && text.trim()) {
+        const trimmed = text.trim();
+        return trimmed.length > 200 ? trimmed.slice(-200) : trimmed;
+      }
+    }
+  }
+  return null;
+}
+
 function readRuntimeSettings(explicitSettings) {
   // Settings are now resolved by the caller (core/ai.js#generateResponse)
   // and passed in via options.settings. The provider no longer reaches
@@ -198,6 +213,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let compaction = null;
   let piErrorPayload = null;
   let toolResultsSeen = 0;
+  let lastToolName = null;
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
 
@@ -288,6 +304,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           onEvent({ type: "assistant", message: { content: [{ type: "thinking", text: streamEvent.content }] } });
         }
       } else if (event.type === "tool_execution_start") {
+        if (event.toolName) lastToolName = event.toolName;
         const input = eventToolArgs(event.toolName, event.args, {
           cwd: options.cwd,
           toolLimits: compaction?.policy,
@@ -437,6 +454,17 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const hadPartialProgress = !externalAbort
       && (stopReason === "error" || stopReason === "aborted")
       && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
+    const errorDetails = errorMessage ? {
+      pi_stop_reason: stopReason,
+      pi_error_code: piErrorPayload?.code || null,
+      pi_request_id: piErrorPayload?.request_id || null,
+      last_text_excerpt: lastTextSnippet(assistantTexts, assistantThinking),
+      last_tool_name: lastToolName,
+      had_partial_progress: hadPartialProgress,
+      tool_results_seen: toolResultsSeen,
+      turn_count: turnCount || assistantMessages.length || finalMessages.length,
+      max_turns_hit: maxTurnsHit,
+    } : null;
     const diagnostics = {
       pi_stop_reason: stopReason,
       max_turns_hit: maxTurnsHit,
@@ -469,6 +497,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       sdk: resolved.sdk,
       cancelled: externalAbort,
       error: errorMessage,
+      errorDetails,
       failureKind: failureKindForPiError(errorMessage, diagnostics, { maxTurnsHit }),
       runtimeWarnings,
       diagnostics,
@@ -482,6 +511,17 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     );
     const hadPartialProgress = !externalAbort
       && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
+    const errorDetails = (!externalAbort && errorMessage) ? {
+      pi_stop_reason: "error",
+      pi_error_code: piErrorPayload?.code || exceptionCode || null,
+      pi_request_id: piErrorPayload?.request_id || null,
+      last_text_excerpt: lastTextSnippet(assistantTexts, assistantThinking),
+      last_tool_name: lastToolName,
+      had_partial_progress: hadPartialProgress,
+      tool_results_seen: toolResultsSeen,
+      turn_count: turnCount,
+      max_turns_hit: maxTurnsHit,
+    } : null;
     return {
       text: assistantTexts.join("") || null,
       events,
@@ -493,6 +533,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       sdk: resolved?.sdk || "pi",
       cancelled: externalAbort,
       error: externalAbort ? null : errorMessage,
+      errorDetails,
       failureKind: externalAbort ? null : failureKindForPiError(errorMessage, {
         ...(compaction?.diagnostics?.() || {}),
       }, { maxTurnsHit }),

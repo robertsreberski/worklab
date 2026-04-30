@@ -68,7 +68,7 @@ export async function runAutomation(ctx) {
     });
     if (result.cancelled) return { kind: "automation", cancelled: true };
     if (result.error) {
-      return { kind: "automation", error: result.error, failureKind: result.failureKind };
+      return { kind: "automation", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
     }
     return {
       kind: "automation",

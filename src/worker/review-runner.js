@@ -112,7 +112,7 @@ export async function runReview(ctx) {
     });
     if (result.cancelled) return { kind: "review", cancelled: true };
     if (result.error) {
-      return { kind: "review", error: result.error, failureKind: result.failureKind };
+      return { kind: "review", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
     }
     const parsedReview = reviewResultFromResponse(result);
     return {

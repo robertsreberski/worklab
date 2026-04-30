@@ -69,6 +69,7 @@ export function spawnWorker({
   let resultError = null;
   let workerDiagnostics = null;
   let explicitFailureKind = null;
+  let errorDetails = null;
   let exitCode = null;
   let exitSignal = null;
   let workerCancelSignal = null;
@@ -328,6 +329,7 @@ export function spawnWorker({
     if (rawEvent.type === "error") {
       errorMessage = rawEvent.message;
       explicitFailureKind = rawEvent.failureKind || rawEvent.failure_kind || explicitFailureKind;
+      if (rawEvent.details) errorDetails = rawEvent.details;
     }
     if (rawEvent.type === "cancelled") {
       cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
@@ -502,6 +504,7 @@ export function spawnWorker({
           provider_error_subkind: providerFailureInfo.subkind,
           ...(providerFailureInfo.requestId ? { provider_request_id: providerFailureInfo.requestId } : {}),
         } : {}),
+        ...(errorDetails ? { error_details: errorDetails } : {}),
       };
 
       db.prepare(
