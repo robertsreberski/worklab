@@ -40,3 +40,7 @@ export function insertAuthoredComment(db, { id, taskId, authorType, authorId, bo
      VALUES (?, ?, ?, ?, ?, ?)`,
   ).run(id, taskId, authorType, authorId || null, body, createdAt);
 }
+
+export function deleteCommentByIdAndTaskId(db, commentId, taskId) {
+  db.prepare("DELETE FROM task_comments WHERE id = ? AND task_id = ?").run(commentId, taskId);
+}
