@@ -41,6 +41,7 @@ describe("run artifact extraction", () => {
       removed_lines: 1,
       pending_files: 0,
       unavailable_count: 0,
+      run_count: 0,
     });
     expect(buildRunArtifactTree(artifacts)).toEqual([
       {
