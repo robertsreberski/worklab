@@ -1,6 +1,7 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { getRunById } from "./db/queries/runs.js";
+import { getAgentLogEvents } from "./db/queries/agent-logs.js";
 function runLogError(code, message) {
   return Object.assign(new Error(message), { code });
 }
@@ -283,7 +284,7 @@ export function readRunLog({ db, dataDir, runId, mode = "summary", limitBytes = 
     }
   }
 
-  const logRow = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId);
+  const logRow = getAgentLogEvents(db, runId);
   if (!logRow) throw runLogError("not_found", "run log not available");
   const events = parseEvents(logRow.events);
   const content = jsonlFromEvents(events);

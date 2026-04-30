@@ -1,4 +1,5 @@
 import { normalizeCodexItemEvent } from "./codex-events.js";
+import { getAgentLogEvents } from "./db/queries/agent-logs.js";
 
 const DEFAULT_CONTEXT_LIMIT = 25;
 
@@ -391,7 +392,7 @@ export function loadTaskArtifacts(db, taskId, { excludeRunId = null, fallbackToL
     let events = null;
     const processStatus = row.process_status || row.status;
     if (fallbackToLogs && processStatus !== "running" && !normalizeStoredArtifacts(row.artifacts_json).length) {
-      const log = db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(row.id);
+      const log = getAgentLogEvents(db, row.id);
       events = safeJsonParse(log?.events, []);
     }
     return {

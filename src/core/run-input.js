@@ -17,6 +17,7 @@ import { getTaskById } from "./db/queries/tasks.js";
 import { getRunById } from "./db/queries/runs.js";
 import { getAgentByName } from "./db/queries/agents.js";
 import { listTaskComments } from "./db/queries/comments.js";
+import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
@@ -231,7 +232,7 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
   ).all(taskId, currentRunId, limit);
 
   return runs.map((run) => {
-    const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(run.id);
+    const logRow = getAgentLogByRunId(db, run.id);
     const priorEvents = logRow ? parseEvents(logRow.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, run);
     return {
@@ -395,7 +396,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     if (!priorRun) {
       throw runInputError(400, "invalid_state", `prior run ${priorRunId} not found`);
     }
-    const priorLog = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(priorRun.id);
+    const priorLog = getAgentLogByRunId(db, priorRun.id);
     const priorEvents = priorLog ? parseEvents(priorLog.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
     const cached = cache.get(cacheKey);
