@@ -33,6 +33,7 @@ function textResult(text, details = {}) {
 
 const MCP_TEXT_RESULT_LIMIT = 60_000;
 const MCP_RAW_DETAIL_LIMIT = 20_000;
+const MCP_IMAGE_INLINE_MAX_BYTES = 250_000;
 
 function objectSchema(properties, required = []) {
   return { type: "object", properties, required, additionalProperties: false };
@@ -77,6 +78,13 @@ function toolText(result) {
   try { return JSON.stringify(result); } catch { return String(result); }
 }
 
+function base64Bytes(data) {
+  const text = String(data || "");
+  if (!text) return 0;
+  const clean = text.includes(",") ? text.slice(text.indexOf(",") + 1) : text;
+  return Math.floor(clean.length * 0.75);
+}
+
 function truncateMcpText(text, limit = MCP_TEXT_RESULT_LIMIT) {
   const value = String(text || "");
   if (value.length <= limit) return { text: value, truncated: false, originalLength: value.length };
@@ -119,7 +127,24 @@ function fileEditPayload(change, { status, before, after, error } = {}) {
   };
 }
 
-function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent } = {}) {
+function limitedNumber(value, fallback) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  return Math.min(Math.floor(n), fallback);
+}
+
+function withToolLimits(name, params, limits = {}) {
+  const next = { ...(params || {}) };
+  if (["Read", "Glob", "Grep", "WebFetch"].includes(name)) {
+    next.max_output_chars = limitedNumber(next.max_output_chars, limits.toolTextLimitChars || 24000);
+  }
+  if (name === "Bash") {
+    next.max_output_chars = limitedNumber(next.max_output_chars, limits.bashOutputLimitChars || limits.toolTextLimitChars || 30000);
+  }
+  return next;
+}
+
+function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent, toolLimits } = {}) {
   return {
     name,
     label,
@@ -128,7 +153,7 @@ function createBuiltinTool(name, label, description, parameters, execute, { cwd,
     executionMode: name === "Write" || name === "Edit" || name === "Bash" ? "sequential" : undefined,
     async execute(toolCallId, params, signal) {
       if (signal?.aborted) throw new Error("tool execution aborted");
-      const normalized = withAbsolutePaths(name, params, cwd);
+      const normalized = withToolLimits(name, withAbsolutePaths(name, params, cwd), toolLimits);
       const isFileEdit = name === "Write" || name === "Edit";
       let editState = null;
       if (isFileEdit && normalized.file_path) {
@@ -210,42 +235,49 @@ export function createStructuredOutputTool(outputSchema, onStructuredOutput) {
   };
 }
 
-export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent } = {}) {
+export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent, toolLimits } = {}) {
   const all = {
     Read: createBuiltinTool("Read", "Read", "Read a local file with line numbers.", objectSchema({
       file_path: { type: "string" },
       offset: { type: "integer" },
       limit: { type: "integer" },
-    }, ["file_path"]), readToolImpl, { cwd, onEvent }),
+      max_output_chars: { type: "integer" },
+    }, ["file_path"]), readToolImpl, { cwd, onEvent, toolLimits }),
     Write: createBuiltinTool("Write", "Write", "Write content to a local file.", objectSchema({
       file_path: { type: "string" },
       content: { type: "string" },
-    }, ["file_path", "content"]), writeToolImpl, { cwd, onEvent }),
+    }, ["file_path", "content"]), writeToolImpl, { cwd, onEvent, toolLimits }),
     Edit: createBuiltinTool("Edit", "Edit", "Replace an exact string in a local file.", objectSchema({
       file_path: { type: "string" },
       old_string: { type: "string" },
       new_string: { type: "string" },
       replace_all: { type: "boolean" },
-    }, ["file_path", "old_string", "new_string"]), editToolImpl, { cwd, onEvent }),
+    }, ["file_path", "old_string", "new_string"]), editToolImpl, { cwd, onEvent, toolLimits }),
     Glob: createBuiltinTool("Glob", "Glob", "Find files matching a pattern.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
-    }, ["pattern"]), globToolImpl, { cwd, onEvent }),
+      max_matches: { type: "integer" },
+      max_output_chars: { type: "integer" },
+    }, ["pattern"]), globToolImpl, { cwd, onEvent, toolLimits }),
     Grep: createBuiltinTool("Grep", "Grep", "Search file contents with grep.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
       glob: { type: "string" },
       context: { type: "integer" },
       case_insensitive: { type: "boolean" },
-    }, ["pattern"]), grepToolImpl, { cwd, onEvent }),
+      max_matches: { type: "integer" },
+      max_output_chars: { type: "integer" },
+    }, ["pattern"]), grepToolImpl, { cwd, onEvent, toolLimits }),
     Bash: createBuiltinTool("Bash", "Bash", "Execute a shell command in the Worklab workspace.", objectSchema({
       command: { type: "string" },
       timeout: { type: "integer" },
-    }, ["command"]), bashToolImpl, { cwd, onEvent }),
+      max_output_chars: { type: "integer" },
+    }, ["command"]), bashToolImpl, { cwd, onEvent, toolLimits }),
     WebFetch: createBuiltinTool("WebFetch", "Web Fetch", "Fetch a URL and return text.", objectSchema({
       url: { type: "string" },
       headers: { type: "object", additionalProperties: { type: "string" } },
-    }, ["url"]), webFetchToolImpl, { cwd, onEvent }),
+      max_output_chars: { type: "integer" },
+    }, ["url"]), webFetchToolImpl, { cwd, onEvent, toolLimits }),
     WebSearch: createBuiltinTool("WebSearch", "Web Search", "Search the web and return result summaries.", objectSchema({
       query: { type: "string" },
       limit: { type: "integer" },
@@ -279,26 +311,39 @@ async function connectMcpClient(name, cfg) {
   return { name, client, transport };
 }
 
-export function coerceMcpContent(out) {
+export function coerceMcpContent(out, { textLimit = MCP_TEXT_RESULT_LIMIT, imageInlineMaxBytes = MCP_IMAGE_INLINE_MAX_BYTES } = {}) {
   if (Array.isArray(out?.content) && out.content.length) {
     return out.content.map((part) => {
-      if (part.type === "text") return { type: "text", text: truncateMcpText(part.text || "").text };
-      if (part.type === "image") return {
-        type: "image",
-        data: part.data,
-        mimeType: part.mimeType || part.mime_type || "image/png",
-      };
-      return { type: "text", text: truncateMcpText(JSON.stringify(part)).text };
+      if (part.type === "text") return { type: "text", text: truncateMcpText(part.text || "", textLimit).text };
+      if (part.type === "image") {
+        const bytes = base64Bytes(part.data);
+        if (bytes > imageInlineMaxBytes) {
+          return {
+            type: "text",
+            text: `[omitted MCP image result: ${bytes} bytes exceeds ${imageInlineMaxBytes} byte context budget]`,
+          };
+        }
+        return {
+          type: "image",
+          data: part.data,
+          mimeType: part.mimeType || part.mime_type || "image/png",
+        };
+      }
+      return { type: "text", text: truncateMcpText(JSON.stringify(part), textLimit).text };
     });
   }
-  return [{ type: "text", text: truncateMcpText(JSON.stringify(out || {})).text }];
+  return [{ type: "text", text: truncateMcpText(JSON.stringify(out || {}), textLimit).text }];
 }
 
-function mcpContentWasTruncated(out) {
+function mcpContentWasTruncated(out, { textLimit = MCP_TEXT_RESULT_LIMIT, imageInlineMaxBytes = MCP_IMAGE_INLINE_MAX_BYTES } = {}) {
   if (Array.isArray(out?.content) && out.content.length) {
-    return out.content.some((part) => part.type === "text" && truncateMcpText(part.text || "").truncated);
+    return out.content.some((part) => {
+      if (part.type === "text") return truncateMcpText(part.text || "", textLimit).truncated;
+      if (part.type === "image") return base64Bytes(part.data) > imageInlineMaxBytes;
+      return truncateMcpText(JSON.stringify(part), textLimit).truncated;
+    });
   }
-  return truncateMcpText(JSON.stringify(out || {})).truncated;
+  return truncateMcpText(JSON.stringify(out || {}), textLimit).truncated;
 }
 
 function mcpToolName(serverName, toolName, reservedNames) {
@@ -306,7 +351,17 @@ function mcpToolName(serverName, toolName, reservedNames) {
   return `mcp__${serverName}__${toolName}`;
 }
 
-export async function initPiMcpTools(mcpConfig, reservedNames = new Set()) {
+function withTimeout(promise, timeoutMs, signal, label) {
+  if (signal?.aborted) return Promise.reject(new Error("tool execution aborted"));
+  const ms = Number(timeoutMs) || 120000;
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(`${label || "MCP tool"} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
+}
+
+export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { limits = {} } = {}) {
   const clients = [];
   const tools = [];
   const entries = Object.entries(mcpConfig || {});
@@ -352,13 +407,20 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set()) {
         parameters: sourceTool.inputSchema || sourceTool.input_schema || objectSchema({}),
         async execute(_toolCallId, params, signal) {
           if (signal?.aborted) throw new Error("tool execution aborted");
-          const out = await connected.client.callTool({ name: sourceTool.name, arguments: params || {} });
+          const textLimit = limits.mcpTextLimitChars || MCP_TEXT_RESULT_LIMIT;
+          const imageInlineMaxBytes = limits.imageInlineMaxBytes ?? MCP_IMAGE_INLINE_MAX_BYTES;
+          const out = await withTimeout(
+            connected.client.callTool({ name: sourceTool.name, arguments: params || {} }),
+            limits.mcpCallTimeoutMs || 120000,
+            signal,
+            `${serverName}:${sourceTool.name}`,
+          );
           return {
-            content: coerceMcpContent(out),
+            content: coerceMcpContent(out, { textLimit, imageInlineMaxBytes }),
             details: {
               server: serverName,
               tool: sourceTool.name,
-              result_truncated: mcpContentWasTruncated(out),
+              result_truncated: mcpContentWasTruncated(out, { textLimit, imageInlineMaxBytes }),
               raw: compactRawMcpResult(out),
             },
           };
