@@ -9,18 +9,10 @@
 // then dispatches kbCreate / kbUpdate via core/kb.js.
 
 import { slugify } from "../../core/slugs.js";
+import { safeParseJson } from "./run-handler.js";
 
 const KB_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const KNOWLEDGE_LINK_RE = /#\/knowledge\/([a-z0-9]+(?:-[a-z0-9]+)*)/g;
-
-function safeParseJson(value, fallback) {
-  try {
-    const parsed = JSON.parse(value || "");
-    return parsed == null ? fallback : parsed;
-  } catch {
-    return fallback;
-  }
-}
 
 export function runResultKbSlug(runId) {
   return slugify(`run-${runId}`, "run-result");
