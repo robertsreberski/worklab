@@ -35,7 +35,7 @@ describe("task run preview formatting", () => {
         }],
         tools: [{
           name: "run_log_read",
-          purpose: "Read a full prior run JSONL log on demand.",
+          purpose: "Read a compact prior-run diagnostic summary on demand.",
         }],
       },
     });
@@ -50,6 +50,6 @@ describe("task run preview formatting", () => {
     expect(text).toContain("### user message 1");
     expect(text).not.toContain('Work on task \\"Demo\\".');
     expect(text).toContain("# Work on task\n\nTask: \"Demo\"");
-    expect(text).toContain("## On-demand tools\n\n- `run_log_read`: Read a full prior run JSONL log on demand.");
+    expect(text).toContain("## On-demand tools\n\n- `run_log_read`: Read a compact prior-run diagnostic summary on demand.");
   });
 });
