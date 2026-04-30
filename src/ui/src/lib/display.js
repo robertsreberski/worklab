@@ -121,6 +121,9 @@ export function taskRouteId(task) {
 // workflow stage display and grouping come from task.stage.
 export function hasRunError(task) {
   if (!task) return false;
+  if (task.running_run_id) return false;
+  if ((task.running_run?.process_status || task.running_run?.status) === "running") return false;
+  if (Array.isArray(task.runs) && task.runs.some((run) => (run?.process_status || run?.status) === "running")) return false;
   if (task.last_run?.status === "error" || task.last_run?.process_status === "failed" || task.last_run?.process_status === "abandoned") return true;
   if (Array.isArray(task.runs) && task.runs.length) {
     const last = task.runs[task.runs.length - 1];
