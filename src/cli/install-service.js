@@ -224,21 +224,7 @@ export async function installService(args = []) {
   console.log(`installed ${installed.platform === "darwin" ? "launchd" : "systemd user"} service: ${installed.file}`);
 }
 
-export async function serviceStatus() {
-  const p = platform();
-  if (p === "darwin") {
-    const file = join(homedir(), "Library", "LaunchAgents", "ai.worklab.plist");
-    return { platform: p, file, installed: existsSync(file), scope: `gui/${userInfo().uid}` };
-  }
-  if (p === "linux") {
-    const file = join(homedir(), ".config", "systemd", "user", "worklab.service");
-    let active = null;
-    try {
-      active = execFileSync("systemctl", ["--user", "is-active", "worklab"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    } catch {
-      active = "inactive";
-    }
-    return { platform: p, file, installed: existsSync(file), active };
-  }
-  return { platform: p, installed: false };
-}
+// serviceStatus moved to src/core/host-service-status.js so the MCP admin
+// surface can import it without a cli back-reference. Re-exported here for
+// any straggling caller.
+export { serviceStatus } from "../core/host-service-status.js";
