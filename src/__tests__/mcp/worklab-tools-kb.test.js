@@ -258,5 +258,8 @@ describe("worklab-tools KB handlers", () => {
 
   it("toolDefinitions has 15 total entries (4 existing + agent create + 5 KB + 3 search + 2 subtask graph)", () => {
     expect(toolDefinitions.length).toBe(15);
+    // Snapshot-style guard against drift after the per-domain split.
+    const names = toolDefinitions.map((tool) => tool.name);
+    expect(new Set(names).size).toBe(toolDefinitions.length);
   });
 });
