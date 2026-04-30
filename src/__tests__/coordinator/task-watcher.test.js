@@ -720,6 +720,105 @@ describe("task-watcher", () => {
     expect(comment.body).toContain("limit reached (2/2)");
   });
 
+  it("tags the final exhausted provider_unavailable continuation with provider_unavailable_exhausted", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_recovery_continuation_limit: 2, max_failure_streak: 10, agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(runId);
+    resolvers[0]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "provider_unavailable", error: "terminated" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(spawn).toHaveBeenCalledTimes(2);
+
+    const firstContinuation = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(firstContinuation.id);
+    resolvers[1]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "provider_unavailable", error: "terminated" });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(spawn).toHaveBeenCalledTimes(3);
+
+    const secondContinuation = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(firstContinuation.id);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(secondContinuation.id);
+    resolvers[2]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "provider_unavailable", error: "terminated" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(3);
+
+    const finalRun = db.prepare("SELECT failure_kind, error_text, details FROM task_runs WHERE id = ?").get(secondContinuation.id);
+    expect(finalRun.failure_kind).toBe("provider_unavailable_exhausted");
+    expect(finalRun.error_text).toMatch(/Auto-recovery exhausted/);
+
+    const originalRun = db.prepare("SELECT failure_kind FROM task_runs WHERE id = ?").get(runId);
+    const firstRun = db.prepare("SELECT failure_kind FROM task_runs WHERE id = ?").get(firstContinuation.id);
+    expect(originalRun.failure_kind).toBe("provider_unavailable");
+    expect(firstRun.failure_kind).toBe("provider_unavailable");
+
+    const task = db.prepare("SELECT stage, stage_reason FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage_reason).toMatch(/Provider repeatedly terminated/);
+  });
+
+  it("escalates to blocked with provider_unavailable_exhausted when defaults exhaust the budget", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_recovery_continuation_limit: 3, max_failure_streak: 3, agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const failRun = (id) => {
+      db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(id);
+    };
+    const completeResolver = (idx) => {
+      resolvers[idx]({ exitCode: 1, status: "error", processStatus: "failed", failureKind: "provider_unavailable", error: "terminated" });
+    };
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    failRun(runId);
+    completeResolver(0);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const cont1 = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId);
+    failRun(cont1.id);
+    completeResolver(1);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const cont2 = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(cont1.id);
+    failRun(cont2.id);
+    completeResolver(2);
+    await new Promise((r) => setTimeout(r, 20));
+
+    const cont3 = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(cont2.id);
+    failRun(cont3.id);
+    completeResolver(3);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(4);
+
+    const finalRun = db.prepare("SELECT failure_kind, error_text FROM task_runs WHERE id = ?").get(cont3.id);
+    expect(finalRun.failure_kind).toBe("provider_unavailable_exhausted");
+    expect(finalRun.error_text).toMatch(/Auto-recovery exhausted/);
+
+    const task = db.prepare("SELECT stage, stage_reason, failure_count FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("blocked");
+    expect(task.failure_count).toBeGreaterThanOrEqual(3);
+    expect(task.stage_reason).toMatch(/Provider repeatedly terminated/);
+  });
+
   it("starts a delayed recovery continuation after a retryable provider overload", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_provider_recovery_base_delay_ms: 1 });
@@ -818,6 +917,43 @@ describe("task-watcher", () => {
       retryable_provider_error: true,
       provider_error_subkind: "terminated",
     });
+  });
+
+  it("recovery continuation does not reset failure_count (only user retry does)", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    // Simulate that the user already burned a non-zero failure budget on this
+    // task before this run started — e.g., earlier validation/spawn failures.
+    db.prepare("UPDATE tasks SET failure_count = 2, last_failure_kind = 'spawn' WHERE id = ?").run(taskId);
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "terminated",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    // The continuation has spawned, but failure_count must not be reset by the
+    // coordinator — it stays inside the same logical attempt and is bounded by
+    // agent_recovery_continuation_limit instead.
+    const task = db.prepare("SELECT failure_count FROM tasks WHERE id = ?").get(taskId);
+    expect(task.failure_count).toBeGreaterThanOrEqual(2);
   });
 
   it("seeds resume_snapshot from the parent run's transcript_tail_json", async () => {

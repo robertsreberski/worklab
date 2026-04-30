@@ -408,6 +408,42 @@ function rowToRun(row) {
   };
 }
 
+// Decorate runs with continuation lineage derived purely from the array.
+// Walks `parent_run_id` ancestors within the array (no DB calls) so a single
+// task-detail call doesn't N+1 the chain.
+export function attachContinuationLinks(runs) {
+  if (!Array.isArray(runs) || runs.length === 0) return runs;
+  const byId = new Map();
+  for (const run of runs) {
+    if (run?.id) byId.set(run.id, run);
+  }
+  const continuationFor = new Map();
+  for (const run of runs) {
+    let depth = 0;
+    let rootId = run.id;
+    let cursor = run.parent_run_id ? byId.get(run.parent_run_id) : null;
+    const visited = new Set([run.id]);
+    while (cursor && !visited.has(cursor.id)) {
+      visited.add(cursor.id);
+      depth += 1;
+      rootId = cursor.id;
+      cursor = cursor.parent_run_id ? byId.get(cursor.parent_run_id) : null;
+    }
+    continuationFor.set(run.id, { depth, root_run_id: rootId });
+  }
+  const childOf = new Map();
+  for (const run of runs) {
+    if (run?.parent_run_id && byId.has(run.parent_run_id)) {
+      if (!childOf.has(run.parent_run_id)) childOf.set(run.parent_run_id, run.id);
+    }
+  }
+  return runs.map((run) => ({
+    ...run,
+    continuation: continuationFor.get(run.id) || { depth: 0, root_run_id: run.id },
+    continuation_child_id: childOf.get(run.id) || null,
+  }));
+}
+
 function liveInputForRun(run, watcher) {
   const supported = supportsLiveInputProvider(run?.provider_kind);
   const state = watcher?.getRunLiveInputState?.(run.id) || null;

@@ -23,6 +23,7 @@ import {
   getRunCoreFields,
   getRunDiagnostics,
   getRunTranscriptTail,
+  overrideRunFailureKind,
 } from "../core/db/queries/runs.js";
 import {
   enabledAgentExists,
@@ -471,6 +472,22 @@ export function createTaskWatcher({
         continuation_limit: continuationLimit,
         continuation_root_run_id: lineage.rootRunId,
       });
+      if (failureKind === "provider_unavailable") {
+        const attempts = lineage.depth + 1;
+        overrideRunFailureKind(db, runId, {
+          failureKind: "provider_unavailable_exhausted",
+          errorText: `Auto-recovery exhausted after ${attempts} attempts.`,
+          details: `Auto-recovery exhausted after ${attempts} attempts.`,
+        });
+        const currentTask = getTaskById(db, taskId);
+        const currentStage = taskStage(currentTask);
+        applySideEffects(
+          taskId,
+          [{ type: "set_stage_reason", reason: "Provider repeatedly terminated; manual retry required." }],
+          currentStage,
+          currentStage,
+        );
+      }
       return null;
     }
 

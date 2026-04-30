@@ -77,7 +77,13 @@ describe("classifyFailure", () => {
   it("FAILURE_KINDS includes the new entries", () => {
     expect(FAILURE_KINDS).toEqual(expect.arrayContaining([
       "budget_exceeded", "child_failed", "cancelled", "cancelled_user", "cancelled_stale", "cancelled_signal",
+      "provider_unavailable_exhausted",
     ]));
+  });
+
+  it("FAILURE_KINDS distinguishes provider_unavailable from provider_unavailable_exhausted", () => {
+    expect(FAILURE_KINDS).toContain("provider_unavailable");
+    expect(FAILURE_KINDS).toContain("provider_unavailable_exhausted");
   });
 });
 
