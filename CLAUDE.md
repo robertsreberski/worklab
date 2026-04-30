@@ -12,7 +12,7 @@ The task/agent workflow is being redesigned ("v2"). The authoritative reference 
 
 ## Module Boundaries
 
-Worklab is layered. Each layer's `README.md` lists what it owns and what it must not import; the matching ESLint rules in `eslint.config.js` enforce the boundary at warn level (`npm run lint`, `./scripts/guard-imports.sh`).
+Worklab is layered. Each layer's `README.md` lists what it owns and what it must not import; the matching ESLint rules in `eslint.config.js` enforce the boundary. The direct-`db.prepare()` ban in `src/api/**` is at error level — any new SQL outside `core/db/queries/*` fails CI. The cross-layer back-import rules are still at warn while the remaining provider-side imports are inverted via DI (tracked in `~/.claude/plans/modularization-followup-implementation.md`). Run `npm run lint` and `./scripts/guard-imports.sh` to check.
 
 - `src/ai/` — Provider layer: SDK/CLI adapters (`providers/{claude-sdk,pi-sdk,claude-cli,codex-app}.js`), the `worklab_result` contract (`result/contract.js`), failure-kind taxonomy (`failure.js`), streaming-event normalization (`streaming/codex-events.js`), and a registry (`registry.js`). No DB, no domain layers.
 - `src/agent/` — Agent kernel: context compaction (`compaction.js`), transcript snapshots (`transcript.js`), allowlist resolution (`allowlists.js`), built-in tool implementations (`tools/index.js`), the PI tool bridge (`tools/pi-bridge.js`), and the prompt builders (`prompt/system-prompt.js`). May use `src/ai/` only.
@@ -41,7 +41,7 @@ npm run dev:ui             # Vite dev server with HMR; proxies /api to dev:api
 npm start                  # build:ui then `worklab serve`
 npm run test:e2e:ollama    # Playwright against a freshly built UI (chromium, serial)
 ./scripts/guard-banned-tokens.sh   # UI design-token lint (see below)
-npm run lint                       # boundary-import lint (warn-level)
+npm run lint                       # boundary-import + db.prepare lint
 ./scripts/guard-imports.sh         # same, formatted for pre-commit
 ```
 
