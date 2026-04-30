@@ -190,4 +190,34 @@ describe("worklab-tools handlers", () => {
     });
     await expect(createToolHandlers(c).get_child_result({ child_task_id: "rogue" })).rejects.toThrow(/forbidden/);
   });
+
+  it("agent_create creates a runnable Worklab agent", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, () => {});
+
+    const result = await createToolHandlers(c).agent_create({
+      display_name: "Review Specialist",
+      model: "codex:gpt-5.5",
+      effort: "high",
+      description: "Reviews implementation work.",
+      instructions: "Review changes and report concrete risks.",
+      builtin_allowlist_mode: "custom",
+      builtin_allowlist: ["Read", "Grep"],
+    });
+
+    expect(result.agent).toMatchObject({
+      name: "review-specialist",
+      display_name: "Review Specialist",
+      model: "codex:gpt-5.5",
+      sdk: "codex",
+      effort: "high",
+      enabled: true,
+      builtin_allowlist_mode: "custom",
+    });
+    seedDb(c.dataDir, (db) => {
+      const row = db.prepare("SELECT instructions, builtin_allowlist FROM agents WHERE name = 'review-specialist'").get();
+      expect(row.instructions).toContain("Review changes");
+      expect(JSON.parse(row.builtin_allowlist)).toEqual(["Read", "Grep"]);
+    });
+  });
 });
