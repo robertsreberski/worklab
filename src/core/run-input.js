@@ -21,7 +21,6 @@ import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
-import { renderToolSurfaceMarkdown } from "../mcp/agent/tools.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -359,7 +358,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
   });
 }
 
-export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null }) {
+export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "" }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
   const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools, delegation } = setup;
   const messages = buildTaskRunMessages({ mode, task });
@@ -378,7 +377,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
-      worklabToolSurfaceMarkdown: renderToolSurfaceMarkdown(null),
+      worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers, delegation,
     };
     const cached = cache.get(cacheKey);
@@ -407,7 +406,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
-      worklabToolSurfaceMarkdown: renderToolSurfaceMarkdown(null),
+      worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
@@ -424,7 +423,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   throw runInputError(400, "invalid_state", `mode ${mode} not implemented`);
 }
 
-export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }) {
+export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now(), worklabToolSurfaceMarkdown = "" }) {
   requireDataDir(config);
   const task = getTaskById(db, taskId);
   if (!task) throw runInputError(404, "not_found", "task not found");
@@ -455,6 +454,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
     runId: `preview-${now}`,
     mode,
     priorRunId,
+    worklabToolSurfaceMarkdown,
   });
 
   const metadata = {

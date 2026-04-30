@@ -1,9 +1,9 @@
 import { Agent } from "@mariozechner/pi-agent-core";
 import { getModel as getPiModel } from "@mariozechner/pi-ai";
 import { randomUUID } from "node:crypto";
-import { estimateCost } from "../../core/cost.js";
-import { backendCapabilities } from "../../core/backend.js";
-import { formatLiveInputGuidance } from "../../core/live-input.js";
+import { estimateCost } from "../cost.js";
+import { backendCapabilities } from "../backend.js";
+import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { readSettings } from "../../core/settings.js";
 import {
   createAgentCompactionManager,
@@ -16,14 +16,14 @@ import {
   isPrivateBaseUrl,
   resolveReasoningCapabilities,
 } from "../../core/providers.js";
-import { resolvePiApiKey } from "../../core/pi-oauth.js";
+import { resolvePiApiKey } from "../pi-oauth.js";
 import {
   closePiMcpClients,
   createStructuredOutputTool,
   getPiBuiltinTools,
   initPiMcpTools,
   normalizePiBuiltinToolParams,
-} from "../../core/ai-pi-tools.js";
+} from "../../agent/tools/pi-bridge.js";
 import { extractWorklabResult, formatWorklabResultText } from "../result/contract.js";
 
 const EMPTY_USAGE = {

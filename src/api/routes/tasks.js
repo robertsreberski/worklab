@@ -6,6 +6,9 @@ import { resumeWaitingParents } from "../../core/task-joins.js";
 import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../../core/task-keys.js";
 import { supportsLiveInputProvider } from "../../core/live-input.js";
 import { buildNextTaskRunPreview } from "../../core/run-input.js";
+import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools.js";
+
+const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../../core/projects.js";
 import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../../core/run-artifacts.js";
@@ -1185,6 +1188,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           dataDir: config?.dataDir || dataDir,
           repoRoot: config?.repoRoot || repoRoot,
         },
+        worklabToolSurfaceMarkdown: WORKLAB_TOOL_SURFACE_MARKDOWN,
       });
       res.json({ preview });
     } catch (error) {

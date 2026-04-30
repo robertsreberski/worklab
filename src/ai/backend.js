@@ -1,10 +1,15 @@
-import { parseModelReference } from "./ai.js";
-import { PROVIDER_KINDS } from "./agent-contract.js";
-
 // Static capability map per provider kind. The runtime/native_runtime_config
 // fields drive execenv decisions (per-task workdir + provider-native config
 // file). supports_session_resume reflects whether the runtime can resume a
 // prior session ID — only Claude Code CLI exposes this today.
+//
+// Lives in src/ai/ because providers are the only consumers; PR-13/PR-14
+// inverted the back-import. The PROVIDER_KINDS list duplicates the canonical
+// list in core/agent-contract.js for the local validation below — keep them
+// in sync if a new SDK is added.
+
+const PROVIDER_KINDS = ["claude", "openai", "vercel", "claude-code", "codex", "pi"];
+
 export const BACKEND_CAPABILITIES = {
   claude: {
     runtime: "sdk",
@@ -74,14 +79,14 @@ export const BACKEND_CAPABILITIES = {
   },
 };
 
-export function backendCapabilities(modelOrSdk) {
-  if (!modelOrSdk) throw new Error("backendCapabilities requires a model reference or sdk kind");
+export function backendCapabilities(sdkOrModel) {
+  if (!sdkOrModel) throw new Error("backendCapabilities requires a model reference or sdk kind");
   let sdk;
-  if (typeof modelOrSdk === "string") {
-    if (PROVIDER_KINDS.includes(modelOrSdk)) sdk = modelOrSdk;
-    else sdk = parseModelReference(modelOrSdk).sdk;
-  } else if (modelOrSdk?.sdk) {
-    sdk = modelOrSdk.sdk;
+  if (typeof sdkOrModel === "string") {
+    if (PROVIDER_KINDS.includes(sdkOrModel)) sdk = sdkOrModel;
+    else throw new Error(`unknown provider sdk: ${sdkOrModel}`);
+  } else if (sdkOrModel?.sdk) {
+    sdk = sdkOrModel.sdk;
   } else {
     throw new Error("backendCapabilities: unrecognized argument");
   }

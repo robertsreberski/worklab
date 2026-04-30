@@ -14,6 +14,9 @@ import { createInterface } from "node:readline";
 import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
 import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
 import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
+import { renderToolSurfaceMarkdown } from "./mcp/agent/tools.js";
+
+const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 import { getRunDiagnostics, setRunTranscriptTail } from "./core/db/queries/runs.js";
 import { getAgentByName } from "./core/db/queries/agents.js";
 import { getAutomationById } from "./core/db/queries/automations.js";
@@ -318,7 +321,7 @@ async function main() {
 
   function loadTaskRunInputOrExit(options) {
     try {
-      return buildTaskRunInput(options);
+      return buildTaskRunInput({ ...options, worklabToolSurfaceMarkdown: WORKLAB_TOOL_SURFACE_MARKDOWN });
     } catch (err) {
       emit({ type: "error", message: err.message || String(err) });
       process.exit(1);

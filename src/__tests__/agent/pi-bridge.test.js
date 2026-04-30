@@ -4,7 +4,7 @@ import {
   getPiBuiltinTools,
   normalizePiBuiltinToolParams,
   resolveMcpStdioCwd,
-} from "../../core/ai-pi-tools.js";
+} from "../../agent/tools/pi-bridge.js";
 
 describe("pi MCP tool helpers", () => {
   it("truncates oversized text results before returning them to the model", () => {

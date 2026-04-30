@@ -21,16 +21,11 @@ export function normalizeLiveInputBody(value, { limit = LIVE_INPUT_MAX_BODY_LENG
   return { ok: true, body };
 }
 
-export function formatLiveInputGuidance(text) {
-  return [
-    "Live guidance from the user:",
-    String(text || ""),
-    "",
-    "Apply this guidance before continuing. It may correct, narrow, or override your current approach.",
-    "Keep satisfying the original Worklab task and existing comments except where this live guidance conflicts with them.",
-    "When there is a conflict, the newest human live guidance wins. Do not discard the broader task unless the user explicitly asks to replace it.",
-  ].join("\n");
-}
+// formatLiveInputGuidance moved to src/ai/live-input-prompt.js — providers
+// are the only consumers and that location keeps the kernel/edge layer free
+// of the prompt-string concern. Re-exported here so any straggling callers
+// keep working.
+export { formatLiveInputGuidance } from "../ai/live-input-prompt.js";
 
 export function createLiveInputQueue() {
   const items = [];
