@@ -10,10 +10,8 @@ Two MCP transports:
 Tool definitions are split per domain under each server's `tools/`
 directory (e.g. `admin/tools/projects.js`, `agent/tools/kb.js`). Shared
 JSON-Schema builders, compact-output helpers, and the HTTP `apiRequest`
-plumbing live in `mcp/shared/`. The thin `admin/tools.js` and
-`agent/tools.js` files re-export the public surface so existing callers
-(`cli/mcp.js`, `worker.js`, `api/routes/tasks.js`) keep their import
-paths.
+plumbing live in `mcp/shared/`. Callers import the public surface from each
+server's `tools/index.js` aggregator.
 
 ## May import from
 
@@ -34,7 +32,6 @@ src/mcp/
 │   └── tool-registry.js    # apiRequest + spec-tuple handler builder
 ├── admin/
 │   ├── server.js
-│   ├── tools.js            # re-export shim
 │   └── tools/
 │       ├── index.js        # aggregates definitions + handlers
 │       ├── service.js      # status / service control
@@ -51,7 +48,6 @@ src/mcp/
 │       └── api-escape.js   # worklab_api_request
 └── agent/
     ├── server.js
-    ├── tools.js            # re-export shim
     └── tools/
         ├── index.js        # aggregates definitions + handlers
         ├── shared.js       # withDb / safeParse
