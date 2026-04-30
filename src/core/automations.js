@@ -1,4 +1,5 @@
 import { newAutomationRunId, newAutomationTriggerId, newRunId } from "./ids.js";
+import { insertAutomationRun, insertAutomationTrigger } from "./db/queries/automation-audit.js";
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -161,10 +162,13 @@ export function createAutomationRunRows({ db, automation, triggerType = "manual"
       started_at, status, process_status, retry_stage
     ) VALUES (?, NULL, 'automation', 'execute', ?, ?, ?, 'running', 'running', 'execute')
   `).run(runId, automation.agent_name, providerKind, now);
-  db.prepare(`
-    INSERT INTO automation_runs (id, automation_id, run_id, trigger_type, fired_at)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(automationRunId, automation.id, runId, triggerType, now);
+  insertAutomationRun(db, {
+    id: automationRunId,
+    automationId: automation.id,
+    runId,
+    triggerType,
+    firedAt: now,
+  });
   return { runId, automationRunId };
 }
 
@@ -178,19 +182,15 @@ export function createAutomationTriggerRow({
   now = Date.now(),
 }) {
   const id = newAutomationTriggerId();
-  db.prepare(`
-    INSERT INTO automation_triggers (
-      id, automation_id, task_id, run_id, trigger_type, outcome, reason, fired_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+  insertAutomationTrigger(db, {
     id,
-    automation.id,
-    automation.task_id || null,
-    runId || null,
+    automationId: automation.id,
+    taskId: automation.task_id,
+    runId,
     triggerType,
     outcome,
     reason,
-    now,
-  );
+    firedAt: now,
+  });
   return { triggerId: id };
 }
