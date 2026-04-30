@@ -32,7 +32,7 @@ describe("e2e smoke", () => {
     let res = await fetch(`${baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "smoke task", description: "e2e" }),
+      body: JSON.stringify({ title: "smoke task" }),
     });
     expect(res.status).toBe(201);
     const { task } = await res.json();
