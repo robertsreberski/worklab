@@ -297,6 +297,208 @@ describe("task-watcher", () => {
     expect(child).toMatchObject({ project_id: project.id, title: "Child work" });
   });
 
+  it("adds delegated acceptance criteria and expected artifact to child instructions", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{
+          title: "Child work",
+          instructions: "Do child work.",
+          acceptance_criteria: ["Pass focused tests", "Document result"],
+          expected_artifact: "summary markdown",
+        }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const child = db.prepare("SELECT instructions FROM tasks WHERE parent_task_id = ?").get(taskId);
+    expect(child.instructions).toContain("Do child work.");
+    expect(child.instructions).toContain("Acceptance criteria:");
+    expect(child.instructions).toContain("- Pass focused tests");
+    expect(child.instructions).toContain("Expected artifact: summary markdown");
+  });
+
+  it("rejects delegated subtasks that exceed policy limits", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    writeSettings(db, { delegation_max_children_per_round: 1 });
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "A" }, { title: "B" }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT stage, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.error_text).toMatch(/invalid delegation: delegation requested 2 subtasks, max is 1/);
+    expect(task.last_failure_kind).toBe("invalid_result");
+    expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(0);
+  });
+
+  it("rejects delegated subtasks with disabled or missing suggested agents", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "A", suggested_agent: "missing-agent" }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const task = db.prepare("SELECT error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task.error_text).toMatch(/suggested agent "missing-agent" was not found or is disabled/);
+    expect(task.last_failure_kind).toBe("invalid_result");
+    expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(0);
+  });
+
+  it("caps delegated child auto-starts and starts more as children finish", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    writeSettings(db, { delegation_max_parallel_children: 2 });
+    const taskId = seedTask(db, { owner: "coder", runPolicy: "auto_plan_execute" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: 1, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "A" }, { title: "B" }, { title: "C" }, { title: "D" }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(3);
+    const firstChildTaskId = spawn.mock.calls[1][0].taskId;
+    resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "done", worklabResult: advanceResult });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(4);
+    expect(spawn.mock.calls[1][0].taskId).toBe(firstChildTaskId);
+  });
+
+  it("honors delegation_auto_run_children=false", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    writeSettings(db, { delegation_auto_run_children: false });
+    const taskId = seedTask(db, { owner: "coder", runPolicy: "auto_plan_execute" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    await watcher.handleRunRequested(taskId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Delegated.",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "execute",
+        decision: "delegate",
+        summary: "Delegated",
+        details: "",
+        artifacts: {},
+        blocking_issues: [],
+        pending_actions: [],
+        subtasks: [{ title: "A" }, { title: "B" }],
+      },
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(2);
+    expect(spawn).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects plan run_requested without planner or owner", async () => {
     const db = makeTestDb();
     const taskId = seedTask(db, { stage: "plan" });
