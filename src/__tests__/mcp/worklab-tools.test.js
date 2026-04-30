@@ -63,7 +63,7 @@ describe("worklab-tools handlers", () => {
     expect(r.content).toBe("# memory\nstuff");
   });
 
-  it("run_log_read returns raw JSONL when the raw output file is available", async () => {
+  it("run_log_read returns raw JSONL when tail mode is requested", async () => {
     const c = ctx();
     const rawDir = join(c.dataDir, "logs", "runs");
     const rawPath = join(rawDir, "run-raw.jsonl");
@@ -78,7 +78,7 @@ describe("worklab-tools handlers", () => {
       `).run(rawPath);
     });
 
-    const result = await createToolHandlers(c).run_log_read({ run_id: "run-raw" });
+    const result = await createToolHandlers(c).run_log_read({ run_id: "run-raw", mode: "tail" });
 
     expect(result.source).toBe("raw_output_path");
     expect(result.mode).toBe("tail");
@@ -86,7 +86,41 @@ describe("worklab-tools handlers", () => {
     expect(result.run).toMatchObject({ id: "run-raw", task_id: "t1", mode: "execute" });
   });
 
-  it("run_log_read tails large raw logs by default and can return full content explicitly", async () => {
+  it("run_log_read returns a compact summary by default", async () => {
+    const c = ctx();
+    const rawDir = join(c.dataDir, "logs", "runs");
+    const rawPath = join(rawDir, "run-summary.jsonl");
+    mkdirSync(rawDir, { recursive: true });
+    writeFileSync(rawPath, [
+      JSON.stringify({
+        type: "sdk_event",
+        event: { type: "assistant", message: { content: [{ type: "tool_use", id: "glob-1", name: "Glob", input: { pattern: "**/*" } }] } },
+      }),
+      JSON.stringify({
+        type: "sdk_event",
+        event: { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "glob-1", content: "a\nb\nc", is_error: false }] } },
+      }),
+      JSON.stringify({ type: "runtime_warning", warning_kind: "context_bloat", message: "large output" }),
+    ].join("\n") + "\n");
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status, raw_output_path)
+        VALUES ('run-summary', 't1', 'execute', 'execute', 'a', 1, 'complete', 'succeeded', ?)
+      `).run(rawPath);
+    });
+
+    const result = await createToolHandlers(c).run_log_read({ run_id: "run-summary" });
+
+    expect(result.mode).toBe("summary");
+    expect(result.content_type).toBe("application/json");
+    expect(result.summary.tool_calls).toContainEqual({ name: "Glob", count: 1 });
+    expect(result.summary.largest_tool_results[0]).toMatchObject({ tool: "Glob" });
+    expect(result.summary.warnings[0]).toMatchObject({ kind: "context_bloat" });
+  });
+
+  it("run_log_read tails large raw logs on request and can return full content explicitly", async () => {
     const c = ctx();
     const rawDir = join(c.dataDir, "logs", "runs");
     const rawPath = join(rawDir, "run-large.jsonl");
@@ -103,7 +137,7 @@ describe("worklab-tools handlers", () => {
     });
     const handlers = createToolHandlers(c);
 
-    const tail = await handlers.run_log_read({ run_id: "run-large", limit_bytes: 1000 });
+    const tail = await handlers.run_log_read({ run_id: "run-large", mode: "tail", limit_bytes: 1000 });
     const full = await handlers.run_log_read({ run_id: "run-large", mode: "full" });
 
     expect(tail.truncated).toBe(true);
@@ -126,7 +160,7 @@ describe("worklab-tools handlers", () => {
         .run(JSON.stringify([{ type: "started" }, { type: "final", text: "ok" }]));
     });
 
-    const result = await createToolHandlers(c).run_log_read({ run_id: "run-events" });
+    const result = await createToolHandlers(c).run_log_read({ run_id: "run-events", mode: "tail" });
 
     expect(result.source).toBe("agent_logs.events");
     expect(result.event_count).toBe(2);

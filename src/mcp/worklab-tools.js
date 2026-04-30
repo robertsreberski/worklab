@@ -15,7 +15,7 @@ export const journalSummarySchema = z.object({ text: z.string().min(1, "text is 
 export const memoryReadSchema = z.object({});
 export const runLogReadSchema = z.object({
   run_id: z.string().min(1, "run_id is required"),
-  mode: z.enum(["tail", "full"]).optional(),
+  mode: z.enum(["summary", "tail", "full"]).optional(),
   limit_bytes: z.number().int().min(1000).max(5 * 1024 * 1024).optional(),
 });
 export const listChildrenSchema = z.object({ task_id: z.string().optional() });
@@ -192,7 +192,7 @@ export function createToolHandlers(context) {
         db,
         dataDir,
         runId: targetRunId,
-        mode: mode || "tail",
+        mode: mode || "summary",
         limitBytes: limit_bytes,
       }));
     },
@@ -409,13 +409,13 @@ export const toolDefinitions = [
   {
     name: "run_log_read",
     description:
-      "Read a byte-bounded JSONL tail for a prior Worklab run on demand. Use mode='full' only when the complete raw log is required.",
+      "Read a compact diagnostic summary for a prior Worklab run on demand. Use mode='tail' for raw JSONL tails and mode='full' only when the complete raw log is required.",
     inputSchema: {
       type: "object",
       properties: {
         run_id: { type: "string", description: "Task run id to inspect" },
-        mode: { type: "string", enum: ["tail", "full"], description: "Default tail. Full can be large." },
-        limit_bytes: { type: "number", minimum: 1000, maximum: 5242880, description: "Tail byte budget. Default 60000." },
+        mode: { type: "string", enum: ["summary", "tail", "full"], description: "Default summary. Tail/full return raw JSONL and can be large." },
+        limit_bytes: { type: "number", minimum: 1000, maximum: 5242880, description: "Tail or summary byte budget. Default 60000." },
       },
       required: ["run_id"],
     },

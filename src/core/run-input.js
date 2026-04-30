@@ -423,7 +423,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now() }
   const tools = [
     {
       name: "run_log_read",
-      purpose: "Read a full prior run JSONL log on demand when compact summaries are insufficient.",
+      purpose: "Read a compact prior-run diagnostic summary on demand; request tail/full raw JSONL only when necessary.",
     },
   ];
 
