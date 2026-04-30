@@ -305,7 +305,14 @@ export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd,
   return tools;
 }
 
-async function connectMcpClient(name, cfg) {
+export function resolveMcpStdioCwd(cfg = {}, cwd = null) {
+  const configured = cfg.cwd || null;
+  if (configured && isAbsolute(configured)) return configured;
+  if (configured) return resolve(cwd || process.cwd(), configured);
+  return cwd || process.cwd();
+}
+
+async function connectMcpClient(name, cfg, { cwd } = {}) {
   const client = new McpClient({ name: `worklab/${name}`, version: "0.1.0" }, { capabilities: {} });
   let transport;
   if (cfg.type === "http") {
@@ -319,6 +326,7 @@ async function connectMcpClient(name, cfg) {
     transport = new StdioClientTransport({
       command: cfg.command,
       args: cfg.args || [],
+      cwd: resolveMcpStdioCwd(cfg, cwd),
       env: { ...process.env, ...(cfg.env || {}) },
     });
   }
@@ -376,11 +384,11 @@ function withTimeout(promise, timeoutMs, signal, label) {
   return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
 }
 
-export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { limits = {} } = {}) {
+export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { limits = {}, cwd = null } = {}) {
   const clients = [];
   const tools = [];
   const entries = Object.entries(mcpConfig || {});
-  const settled = await Promise.allSettled(entries.map(([name, cfg]) => connectMcpClient(name, cfg)));
+  const settled = await Promise.allSettled(entries.map(([name, cfg]) => connectMcpClient(name, cfg, { cwd })));
   const warnings = [];
   const seen = new Set(reservedNames);
 

@@ -3,6 +3,7 @@ import {
   coerceMcpContent,
   getPiBuiltinTools,
   normalizePiBuiltinToolParams,
+  resolveMcpStdioCwd,
 } from "../../core/ai-pi-tools.js";
 
 describe("pi MCP tool helpers", () => {
@@ -51,5 +52,11 @@ describe("pi MCP tool helpers", () => {
     expect(readSchema.properties.max_output_chars.maximum).toBe(16000);
     expect(bashSchema.properties.max_output_chars.maximum).toBe(20000);
     expect(bashSchema.properties.timeout.maximum).toBe(120000);
+  });
+
+  it("resolves stdio MCP cwd from the run workdir", () => {
+    expect(resolveMcpStdioCwd({}, "/repo/project")).toBe("/repo/project");
+    expect(resolveMcpStdioCwd({ cwd: "tools" }, "/repo/project")).toBe("/repo/project/tools");
+    expect(resolveMcpStdioCwd({ cwd: "/opt/mcp" }, "/repo/project")).toBe("/opt/mcp");
   });
 });

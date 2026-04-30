@@ -49,7 +49,7 @@ describe("spawnWorker", () => {
     const handle = spawnWorker({
       binary: fakeBinary,
       args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
-      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId, WORKLAB_WORKSPACE: "/workspace" },
       runId, taskId, broker, db,
       persistDebounceMs: 10,
     });
@@ -57,6 +57,7 @@ describe("spawnWorker", () => {
     expect(result.exitCode).toBe(0);
     expect(result.finalText).toBe("hi");
     expect(result.usage.input_tokens).toBe(5);
+    expect(result.diagnostics.effective_workdir).toBe("/workspace");
     const types = broker.broadcasts.filter(b => b.ch === runId).map(b => b.p.type);
     expect(types).toContain("started");
     expect(types).toContain("sdk_event");
@@ -69,6 +70,8 @@ describe("spawnWorker", () => {
     const events = JSON.parse(log.events);
     expect(events.length).toBe(3);
     expect(events.map((event) => event._event_seq)).toEqual([1, 2, 3]);
+    const run = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({ effective_workdir: "/workspace" });
   });
 
   it("persists running events before the worker exits", async () => {
