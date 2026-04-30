@@ -12,7 +12,7 @@ const EMPTY_USAGE = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-function abortedStream(message = "terminated") {
+function abortedStream(message = "terminated", { code = null, requestId = null, reason = "aborted", stopReason = "aborted" } = {}) {
   return (model) => {
     const stream = createAssistantMessageEventStream();
     queueMicrotask(() => {
@@ -23,11 +23,13 @@ function abortedStream(message = "terminated") {
         provider: model.provider,
         model: model.id,
         usage: EMPTY_USAGE,
-        stopReason: "aborted",
+        stopReason,
         errorMessage: message,
         timestamp: Date.now(),
+        ...(code ? { code } : {}),
+        ...(requestId ? { requestId } : {}),
       };
-      stream.push({ type: "error", reason: "aborted", error });
+      stream.push({ type: "error", reason, error });
     });
     return stream;
   };
@@ -80,6 +82,31 @@ describe("generatePiResponse cancellation handling", () => {
     expect(result.diagnostics).toMatchObject({
       pi_stop_reason: "aborted",
       external_abort: true,
+    });
+  });
+
+  it("captures pi_error_code from the stream error event", async () => {
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: abortedStream("terminated", { code: "UND_ERR_SOCKET", requestId: "req_abc123" }),
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.error).toBe("terminated");
+    expect(result.failureKind).toBe("provider_unavailable");
+    expect(result.diagnostics).toMatchObject({
+      pi_error_code: "UND_ERR_SOCKET",
+      pi_request_id: "req_abc123",
+    });
+    expect(result.diagnostics.pi_error_payload).toMatchObject({
+      error_message: "terminated",
+      code: "UND_ERR_SOCKET",
+      request_id: "req_abc123",
     });
   });
 });
