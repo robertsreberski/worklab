@@ -17,6 +17,15 @@ describe("admin MCP tools", () => {
     expect(names).toContain("worklab_service_restart");
   });
 
+  // Snapshot-style guard: catches accidental drift after the per-domain
+  // tool-module split. Tool names must be unique and the total count must
+  // not change without an explicit edit to this number.
+  it("registers exactly 66 unique admin tool definitions", () => {
+    expect(adminToolDefinitions.length).toBe(66);
+    const names = adminToolDefinitions.map((tool) => tool.name);
+    expect(new Set(names).size).toBe(adminToolDefinitions.length);
+  });
+
   it("defines create-agent with explicit MCP fields", () => {
     const tool = adminToolDefinitions.find((definition) => definition.name === "worklab_agent_create");
 
