@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  describeFailure,
   formatCost,
   formatDuration,
   formatMode,
@@ -81,7 +82,7 @@ describe("run formatting helpers", () => {
     });
   });
 
-  it("prefers failed run error text over stale successful result metadata", () => {
+  it("prefers a structured failure summary over stale successful result metadata", () => {
     expect(runResultPreview({
       process_status: "failed",
       error_text: "Claude stopped before final output: max turns reached",
@@ -93,7 +94,7 @@ describe("run formatting helpers", () => {
       },
     })).toEqual({
       decision: "failed",
-      summary: "Claude stopped before final output: max turns reached",
+      summary: "Run failed.",
       details: "",
       tone: "error",
       hasResult: true,
@@ -135,5 +136,38 @@ describe("run formatting helpers", () => {
 
   it("keeps neutral decision tones neutral", () => {
     expect(runResultPreview({ decision: "delegate", summary: "Split work" }).tone).toBe("");
+  });
+
+  it("describes provider termination with auto-retry messaging when below limit", () => {
+    expect(describeFailure({
+      failure_kind: "provider_unavailable",
+      diagnostics: { provider_error_subkind: "terminated", retryable_provider_error: true },
+      continuation: { depth: 1 },
+    }, { continuationLimit: 3 })).toBe(
+      "Provider stream was interrupted before the agent finished. Worklab is retrying automatically.",
+    );
+  });
+
+  it("switches to retry-prompt at the continuation limit", () => {
+    expect(describeFailure({
+      failure_kind: "provider_unavailable",
+      diagnostics: { provider_error_subkind: "terminated", retryable_provider_error: true },
+      continuation: { depth: 3 },
+    }, { continuationLimit: 3 })).toBe(
+      "Provider stream was interrupted before the agent finished. Click Retry to try again.",
+    );
+  });
+
+  it("describes the exhausted continuation case", () => {
+    const result = describeFailure({ failure_kind: "provider_unavailable_exhausted" });
+    expect(result).toContain("exhausted");
+  });
+
+  it("returns null when the failure kind is unknown and the run is not failed", () => {
+    expect(describeFailure({ failure_kind: "weird" })).toBeNull();
+  });
+
+  it("falls back to a generic message for failed runs without a failure kind", () => {
+    expect(describeFailure({ process_status: "failed" })).toBe("Run failed.");
   });
 });

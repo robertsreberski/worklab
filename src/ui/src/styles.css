@@ -7970,6 +7970,80 @@ html.assistant-resizing * {
 .run-warning-message {
   color: var(--text);
 }
+.run-continuation-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.run-continuation-link a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.run-continuation-link a:hover {
+  text-decoration: underline;
+}
+.run-failure-details {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.run-failure-row {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: var(--sp-2);
+  align-items: baseline;
+}
+.run-failure-row dt {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.run-failure-row dd {
+  margin: 0;
+  color: var(--text);
+}
+.run-failure-row code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  background: var(--surface-sunken);
+  padding: 0 var(--sp-1);
+  border-radius: var(--radius-xs);
+}
+.run-failure-snippet {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.run-failure-stderr {
+  margin: 0;
+  padding: var(--sp-2);
+  background: var(--surface-sunken);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow: auto;
+}
+.run-failure-stderr-full {
+  margin-top: var(--sp-1);
+}
+.run-failure-stderr-full summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
 .run-diagnostics {
   padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
