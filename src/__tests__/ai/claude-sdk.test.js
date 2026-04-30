@@ -353,6 +353,7 @@ describe("generateClaudeResponse", () => {
                   added_lines: 1,
                   removed_lines: 0,
                   changed_lines: 1,
+                  hunks: [{ start: 3, end: 3 }],
                 },
               }],
               status: "completed",
