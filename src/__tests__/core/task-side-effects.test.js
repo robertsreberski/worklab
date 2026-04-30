@@ -110,6 +110,15 @@ describe("applyTaskSideEffects", () => {
     expect(readTask(db, id).failure_count).toBe(0);
   });
 
+  it("set_last_failure_kind and clear_last_failure_kind update last_failure_kind", () => {
+    const db = makeTestDb();
+    const id = seedTask(db);
+    applyTaskSideEffects(db, id, [{ type: "set_last_failure_kind", kind: "provider_unavailable" }], "plan", "plan");
+    expect(readTask(db, id).last_failure_kind).toBe("provider_unavailable");
+    applyTaskSideEffects(db, id, [{ type: "clear_last_failure_kind" }], "plan", "plan");
+    expect(readTask(db, id).last_failure_kind).toBeNull();
+  });
+
   it("post_error_comment, post_cancellation_comment, post_review_comment, post_review_verdict insert system comments", () => {
     const db = makeTestDb();
     const id = seedTask(db);

@@ -426,6 +426,56 @@ describe("GET /api/tasks/:id", () => {
       status: "complete",
     });
   });
+
+  it("surfaces error_details and continuation chain on serialized runs", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, parent_run_id, mode, agent_name, started_at, ended_at,
+         status, process_status, failure_kind, diagnostics_json)
+      VALUES (?, ?, ?, 'execute', 'alpha', ?, ?, ?, ?, ?, ?)
+    `);
+    insertRun.run(
+      "run-failed",
+      task.id,
+      null,
+      1000,
+      1500,
+      "error",
+      "failed",
+      "provider_unavailable",
+      JSON.stringify({
+        retryable_provider_error: true,
+        provider_error_subkind: "terminated",
+        error_details: { last_tool_name: "Bash", last_text_excerpt: "running" },
+      }),
+    );
+    insertRun.run(
+      "run-continuation",
+      task.id,
+      "run-failed",
+      2000,
+      null,
+      "running",
+      "running",
+      null,
+      null,
+    );
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    const runs = res.body.runs;
+    const failedRun = runs.find((r) => r.id === "run-failed");
+    const continuationRun = runs.find((r) => r.id === "run-continuation");
+    expect(failedRun.error_details.last_tool_name).toBe("Bash");
+    expect(failedRun.error_details.last_text_excerpt).toBe("running");
+    expect(failedRun.continuation_child_id).toBe("run-continuation");
+    expect(failedRun.continuation).toEqual({ depth: 0, root_run_id: "run-failed" });
+    expect(continuationRun.parent_run_id).toBe("run-failed");
+    expect(continuationRun.continuation.depth).toBe(1);
+    expect(continuationRun.continuation.root_run_id).toBe("run-failed");
+  });
 });
 
 describe("PATCH /api/tasks/:id", () => {
@@ -1338,6 +1388,50 @@ describe("POST /api/tasks/:id/run", () => {
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     const res = await agent.post(`/api/tasks/${task.id}/run`).expect(400);
     expect(res.body.error.message).toMatch(/no owner/);
+  });
+
+  it("resets failure_count and last_failure_kind when retrying a runnable task with prior failures", async () => {
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r-retry" }),
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare(
+      "UPDATE tasks SET stage = 'execute', failure_count = 2, last_failure_kind = 'provider_unavailable', updated_at = ? WHERE id = ?",
+    ).run(Date.now(), task.id);
+
+    await agent.post(`/api/tasks/${task.id}/run`).expect(200);
+
+    const after = db.prepare("SELECT stage, failure_count, last_failure_kind FROM tasks WHERE id = ?").get(task.id);
+    expect(after.stage).toBe("execute");
+    expect(after.failure_count).toBe(0);
+    expect(after.last_failure_kind).toBeNull();
+  });
+
+  it("does not touch failure_count when there is no prior failure streak", async () => {
+    const { agent, broker, db } = makeTestServer({
+      watcher: {
+        handleRunRequested: async () => ({ runId: "r-clean" }),
+        cancel: () => true, shutdown: async () => {}, isActive: () => false,
+      },
+    });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    db.prepare("UPDATE tasks SET stage = 'execute', updated_at = ? WHERE id = ?").run(Date.now(), task.id);
+
+    const broadcasts = [];
+    const originalBroadcast = broker.broadcast.bind(broker);
+    broker.broadcast = (channel, payload) => { broadcasts.push({ channel, payload }); return originalBroadcast(channel, payload); };
+
+    await agent.post(`/api/tasks/${task.id}/run`).expect(200);
+
+    const after = db.prepare("SELECT failure_count, last_failure_kind FROM tasks WHERE id = ?").get(task.id);
+    expect(after.failure_count).toBe(0);
+    expect(after.last_failure_kind).toBeNull();
+    // No `task_updated` broadcast from a human_retry side-effect application,
+    // because no transition was dispatched.
+    expect(broadcasts.filter((b) => b.payload?.type === "task_updated" && b.payload.id === task.id)).toHaveLength(0);
   });
 });
 

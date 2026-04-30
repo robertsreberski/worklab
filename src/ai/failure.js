@@ -6,6 +6,7 @@ export const FAILURE_KINDS = [
   "invalid_result",
   "tool_failure",
   "provider_unavailable",
+  "provider_unavailable_exhausted",
   "child_failed",
   "budget_exceeded",
   "cancelled",

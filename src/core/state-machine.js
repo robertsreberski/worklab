@@ -296,6 +296,22 @@ export function nextStage(currentStage, event) {
         { type: "set_blocking_issues", blockingIssues: [event.message || "required child blocked"] },
       ]);
 
+    case "human_retry": {
+      // User clicked "Run" again on a task that's already in a runnable stage.
+      // Reset the failure budget so a flaky streak from earlier provider errors
+      // doesn't escalate to `blocked` on the next failure. Coordinator-driven
+      // recovery continuations stay inside one logical attempt and must not
+      // emit this event — they remain bounded by `agent_recovery_continuation_limit`.
+      if (!canStartRun(current)) {
+        return unchanged(current, [{ type: "error", message: `cannot human_retry from ${current}` }]);
+      }
+      return unchanged(current, [
+        { type: "reset_failure_count" },
+        { type: "reset_rejection_count" },
+        { type: "clear_last_failure_kind" },
+      ]);
+    }
+
     case "human_move": {
       const target = event.target;
       if (!STAGES.includes(target)) {

@@ -259,6 +259,26 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "clear_blocking_issues" });
   });
 
+  it("human_retry resets the failure streak without changing stage", () => {
+    const r = nextStage("execute", { type: "human_retry" });
+    expect(r.stage).toBe("execute");
+    expect(r.sideEffects).toContainEqual({ type: "reset_failure_count" });
+    expect(r.sideEffects).toContainEqual({ type: "reset_rejection_count" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
+  });
+
+  it("human_retry rejects from non-runnable stages", () => {
+    const r = nextStage("blocked", { type: "human_retry" });
+    expect(r.stage).toBe("blocked");
+    expect(r.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("cannot human_retry from blocked") });
+    expect(r.sideEffects.some((se) => se.type === "reset_failure_count")).toBe(false);
+  });
+
+  it("human_retry is allowed from plan and review as well", () => {
+    expect(nextStage("plan", { type: "human_retry" }).stage).toBe("plan");
+    expect(nextStage("review", { type: "human_retry" }).stage).toBe("review");
+  });
+
   it("review approve clears pending/blocking arrays alongside completed_at", () => {
     const r = nextStage("review", {
       type: "run_succeeded",

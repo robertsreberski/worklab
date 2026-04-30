@@ -63,6 +63,7 @@ import {
   validateDependencyIds,
 } from "./tasks/mutations.js";
 import {
+  attachContinuationLinks,
   attachLiveInputState,
   enrichTask,
   enrichTaskList,
@@ -270,7 +271,10 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const row = resolveTaskRow(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const comments = enrichCommentRows(db, listTaskComments(db, row.id));
-    const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id), watcher);
+    const runs = attachLiveInputState(
+      attachContinuationLinks(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id)),
+      watcher,
+    );
     const task = enrichTask(db, rowToTask(row), config);
     const taskArtifacts = loadTaskArtifacts(db, row.id);
     task.artifacts = taskArtifacts.artifacts;
@@ -431,7 +435,10 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   app.get("/api/tasks/:id/runs", (req, res) => {
     const existing = resolveTaskRow(db, req.params.id);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id), watcher);
+    const runs = attachLiveInputState(
+      attachContinuationLinks(selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id)),
+      watcher,
+    );
     res.json({ runs });
   });
 
@@ -459,6 +466,15 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!watcher) return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
     try {
       const taskRow = taskOr404(db, req.params.id);
+      const currentStage = taskStage(taskRow);
+      const hasFailureStreak = (taskRow.failure_count || 0) > 0 || taskRow.last_failure_kind != null;
+      if (hasFailureStreak && ["plan", "execute", "review"].includes(currentStage)) {
+        const transition = nextStage(currentStage, { type: "human_retry" });
+        const errorSideEffect = transition.sideEffects.find((se) => se.type === "error");
+        if (!errorSideEffect) {
+          applyRouteSideEffects(db, broker, logger, taskRow.id, transition.sideEffects, currentStage, transition.stage);
+        }
+      }
       const result = await watcher.handleRunRequested(taskRow.id);
       res.json(result);
     } catch (err) {

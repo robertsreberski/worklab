@@ -42,6 +42,22 @@ export function setRunDiagnostics(db, runId, diagnosticsJson) {
   db.prepare("UPDATE task_runs SET diagnostics_json = ? WHERE id = ?").run(diagnosticsJson, runId);
 }
 
+// Reclassify a run's failure_kind. Used by the watcher when the auto-recovery
+// continuation depth limit is reached: the original `provider_unavailable`
+// kind is overridden with a more specific terminal kind so the UI can render
+// "exhausted; manual retry required". Only fills in `error_text`/`details`
+// when they are currently empty so richer messages are not overwritten.
+export function overrideRunFailureKind(db, runId, { failureKind, errorText = null, details = null } = {}) {
+  if (!failureKind) return;
+  db.prepare(`
+    UPDATE task_runs
+    SET failure_kind = ?,
+        error_text = COALESCE(NULLIF(error_text, ''), ?),
+        details = COALESCE(NULLIF(details, ''), ?)
+    WHERE id = ?
+  `).run(failureKind, errorText, details, runId);
+}
+
 export function setRunExecenvPath(db, runId, execenvPath) {
   db.prepare("UPDATE task_runs SET execenv_path = ? WHERE id = ?").run(execenvPath, runId);
 }
