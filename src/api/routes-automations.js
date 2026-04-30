@@ -157,7 +157,7 @@ function sendError(res, error, fallbackStatus = 400) {
   });
 }
 
-function deleteAutomation(db, automationId) {
+function removeAutomationCascade(db, automationId) {
   const existing = db.prepare("SELECT id, task_id FROM automations WHERE id = ?").get(automationId);
   if (!existing) return false;
   db.transaction(() => {
@@ -256,7 +256,7 @@ export function registerAutomationRoutes(app, { db, broker, automationManager })
       if (automationManager?.isActive?.(req.params.id)) {
         return res.status(409).json({ error: { code: "automation_running", message: "automation is running" } });
       }
-      deleteAutomation(db, req.params.id);
+      removeAutomationCascade(db, req.params.id);
       automationManager?.refresh?.();
       broker?.broadcast?.("global", { type: "automation_deleted", id: req.params.id, taskId: task.id });
       broker?.broadcast?.("global", { type: "task_updated", id: task.id });
