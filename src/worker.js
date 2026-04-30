@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { openDb } from "./core/db.js";
+import { openDb, runMigrations } from "./core/db.js";
 import { loadConfig } from "./core/config.js";
 import { readFullJournal, writeMemory } from "./core/journal.js";
 import { readAgentMemoryContent, readAgentMemoryContext } from "./core/memory.js";
@@ -223,6 +223,7 @@ async function main() {
   emit({ type: "started", runId, ts: Date.now() });
 
   const db = openDb(join(config.dataDir, "worklab.db"));
+  runMigrations(db);
 
   const ac = new AbortController();
   let signalReceived = null;
