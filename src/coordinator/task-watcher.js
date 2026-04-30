@@ -544,7 +544,7 @@ export function createTaskWatcher({
       retryStage: stage,
       failureKind,
       message,
-      failureCount: task.retry_count || 0,
+      failureCount: task.failure_count || 0,
       maxFailures: maxFailureLimit(),
     });
     applySideEffects(taskId, next.sideEffects, taskStage(task), next.stage);
@@ -1441,7 +1441,7 @@ export function createTaskWatcher({
       retryStage: stage,
       failureKind,
       message: res.error || (processStatus === "cancelled" ? "Run cancelled." : "run failed"),
-      failureCount: task.retry_count || 0,
+      failureCount: task.failure_count || 0,
       maxFailures: maxFailureLimit(),
       cancelInitiator: res.cancelInitiator || res.cancel_initiator || null,
       cancelReason: res.cancelReason || res.cancel_reason || null,

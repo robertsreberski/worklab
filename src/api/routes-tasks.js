@@ -24,7 +24,7 @@ function rowToTask(row) {
     ...row,
     stage,
     tags: JSON.parse(row.tags || "[]"),
-    retry_count: row.retry_count ?? 0,
+    failure_count: row.failure_count ?? 0,
     run_policy: row.run_policy || DEFAULT_RUN_POLICY,
     project_id: row.project_id || null,
     root_task_id: row.root_task_id || row.id,

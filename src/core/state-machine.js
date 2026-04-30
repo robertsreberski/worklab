@@ -47,8 +47,8 @@ export const FAILURE_KINDS = [
 export const DEFAULT_MAX_FAILURES = 3;
 
 // Default reviewer-rejection streak before the task escalates to `blocked`.
-// Tracked separately from `retry_count` (executor failures) so a flaky reviewer
-// can be diagnosed without poisoning execute-side retry budgets.
+// Tracked separately from `failure_count` (executor failures) so a flaky reviewer
+// can be diagnosed without poisoning execute-side failure budgets.
 export const DEFAULT_MAX_REJECTIONS = 3;
 
 export function legacyRunStatusToProcessStatus(status) {

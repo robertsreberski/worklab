@@ -101,13 +101,13 @@ describe("applyTaskSideEffects", () => {
     expect(row.blocking_issues_json).toBe("[]");
   });
 
-  it("set_failure_count and reset_failure_count update retry_count", () => {
+  it("set_failure_count and reset_failure_count update failure_count", () => {
     const db = makeTestDb();
     const id = seedTask(db);
     applyTaskSideEffects(db, id, [{ type: "set_failure_count", count: 2 }], "plan", "plan");
-    expect(readTask(db, id).retry_count).toBe(2);
+    expect(readTask(db, id).failure_count).toBe(2);
     applyTaskSideEffects(db, id, [{ type: "reset_failure_count" }], "plan", "plan");
-    expect(readTask(db, id).retry_count).toBe(0);
+    expect(readTask(db, id).failure_count).toBe(0);
   });
 
   it("post_error_comment, post_cancellation_comment, post_review_comment, post_review_verdict insert system comments", () => {

@@ -142,9 +142,9 @@ describe("e2e: full task lifecycle regressions", () => {
     await requestRun(harness.baseUrl, task.id);
 
     const after = await pollTask(harness.baseUrl, task.id, (t) => t.task.last_failure_kind);
-    // Stage stays in execute (the retry-dead-end fix). retry_count is now 1.
+    // Stage stays in execute (the retry-dead-end fix). failure_count is now 1.
     expect(after.task.stage).toBe("execute");
-    expect(after.task.retry_count).toBe(1);
+    expect(after.task.failure_count).toBe(1);
     expect(after.task.last_failure_kind).toBeTruthy();
 
     // A second run can still be requested — the audit's "retry dead end".
@@ -189,7 +189,7 @@ describe("e2e: full task lifecycle regressions", () => {
 
   it("user-initiated cancel keeps the task retryable with a cancellation reason", async () => {
     // Long-running fake worker: SIGTERM lands during the 1.5s sleep before it
-    // reaches the final event. The cancel path should not increment retry_count.
+    // reaches the final event. The cancel path should not increment failure_count.
     harness = await setupHarness({
       execute: {
         events: [
@@ -216,7 +216,7 @@ describe("e2e: full task lifecycle regressions", () => {
       return reason.includes("cancel");
     });
     expect(after.task.stage).toBe("execute");
-    expect(after.task.retry_count ?? 0).toBe(0);
+    expect(after.task.failure_count ?? 0).toBe(0);
     expect(after.task.stage_reason).toMatch(/cancel/);
   }, 30000);
 });
