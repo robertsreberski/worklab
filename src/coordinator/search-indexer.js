@@ -1,6 +1,6 @@
 import { watch } from "chokidar";
 import { join } from "node:path";
-import { getEmbeddingModel, indexAllSources, indexPath } from "../core/embeddings.js";
+import { getEmbeddingModel, indexAllSources, indexPath } from "../core/index.js";
 
 const DEBOUNCE_MS = 500;
 

@@ -1,6 +1,12 @@
 import { z } from "zod";
-import { kbList, kbRead, kbCreate, kbUpdate, kbDelete } from "../../core/kb.js";
-import { uniqueSlug } from "../../core/slugs.js";
+import {
+  kbCreate,
+  kbDelete,
+  kbList,
+  kbRead,
+  kbUpdate,
+  uniqueSlug,
+} from "../../core/index.js";
 import {
   getTaskHeaderForKbUsage,
   listTaskHeadersForKbUsage,

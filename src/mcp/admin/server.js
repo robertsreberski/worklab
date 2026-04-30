@@ -5,7 +5,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { adminToolDefinitions, createAdminToolHandlers } from "./tools.js";
-import { ensureMcpToken, tokenMatches } from "../../core/service-token.js";
+import { ensureMcpToken, tokenMatches } from "../../core/index.js";
 
 function bearer(req) {
   const value = req.get("authorization") || "";

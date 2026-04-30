@@ -1,17 +1,34 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
+import {
+  agentMemoryPath,
+  appendJournalEntry,
+  appendJournalSummary,
+  getBuiltinModelByReference,
+  getModelByProviderAndName,
+  getProvider,
+  indexPath,
+  isValidSlug,
+  kbCreate,
+  kbDelete,
+  kbList,
+  kbPath,
+  kbRead,
+  kbUpdate,
+  normalizeReasoningEffortForModel,
+  openDb,
+  parseModelReference,
+  readRunLog,
+  removeSource,
+  runMigrations,
+  search,
+  uniqueSlug,
+  WORKLAB_BUILTIN_TOOLS,
+} from "../../core/index.js";
 import { getTaskById } from "../../core/db/queries/tasks.js";
 import { agentExists, getAgentByName } from "../../core/db/queries/agents.js";
 import { isSubtaskEdge } from "../../core/db/queries/task-edges.js";
-import { appendJournalEntry, appendJournalSummary, agentMemoryPath } from "../../core/journal.js";
-import { openDb, runMigrations } from "../../core/db.js";
-import { search, indexPath, removeSource } from "../../core/embeddings.js";
-import { kbCreate, kbUpdate, kbDelete, kbRead, kbList, kbPath } from "../../core/kb.js";
-import { readRunLog } from "../../core/run-logs.js";
-import { getBuiltinModelByReference, normalizeReasoningEffortForModel, parseModelReference, WORKLAB_BUILTIN_TOOLS } from "../../core/ai.js";
-import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
-import { getModelByProviderAndName, getProvider } from "../../core/providers.js";
 
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
 export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });

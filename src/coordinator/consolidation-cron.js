@@ -1,10 +1,13 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { newRunId } from "../core/ids.js";
-import { readSettings } from "../core/settings.js";
-import { agentJournalPath, agentMemoryPath } from "../core/journal.js";
-import { indexPath } from "../core/embeddings.js";
+import {
+  agentJournalPath,
+  agentMemoryPath,
+  indexPath,
+  newRunId,
+  readSettings,
+} from "../core/index.js";
 import { setRunWorkerPid } from "../core/db/queries/runs.js";
 import { getEnabledAgentByName, listEnabledAgentNames } from "../core/db/queries/agents.js";
 import { getAgentConsolidationHash, upsertAgentConsolidation } from "../core/db/queries/agent-consolidations.js";

@@ -7,10 +7,13 @@ import { monitorEventLoopDelay } from "node:perf_hooks";
 import { promisify } from "node:util";
 import express from "express";
 import { createServer } from "./api/server.js";
-import { getDb, closeDb } from "./core/db.js";
-import { logger } from "./core/logger.js";
-import { loadConfig } from "./core/config.js";
-import { seedDataFromTemplate } from "./core/first-boot.js";
+import {
+  closeDb,
+  getDb,
+  loadConfig,
+  logger,
+  seedDataFromTemplate,
+} from "./core/index.js";
 import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";

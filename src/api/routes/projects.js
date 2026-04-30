@@ -1,13 +1,13 @@
 import { mkdirSync } from "node:fs";
-import { newProjectId } from "../../core/ids.js";
 import {
+  newProjectId,
   normalizeProjectWorkdir,
   parseProjectTags,
   projectFromRow,
   projectRouteError,
   resolveProjectRow,
   uniqueProjectSlug,
-} from "../../core/projects.js";
+} from "../../core/index.js";
 import {
   archiveProject,
   getProjectById,

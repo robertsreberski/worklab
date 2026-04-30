@@ -1,11 +1,18 @@
 // src/cli/doctor.js
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { openDb, runMigrations } from "../core/db.js";
-import { getKeyFingerprint } from "../core/crypto.js";
-import { loadMcpConfig } from "../core/mcp-config.js";
-import { testEmbeddingBackend } from "../core/embeddings.js";
+import {
+  getKeyFingerprint,
+  loadConfig,
+  loadMcpConfig,
+  openDb,
+  runMigrations,
+  testEmbeddingBackend,
+} from "../core/index.js";
+// resolveRgPath transitively loads src/agent/tools/glob.js whose module
+// initialization calls promisify(execFile); pulling it through the core
+// barrel breaks tests that mock node:child_process partially. Keep this
+// import deep so doctor.js is the only loader of that module path.
 import { resolveRgPath } from "../core/ai-tool-helpers.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";

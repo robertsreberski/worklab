@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getMcpServerStatuses, loadMcpConfig } from "../../core/mcp-config.js";
+import { getMcpServerStatuses, loadMcpConfig } from "../../core/index.js";
 
 export function registerMcpRoutes(app, { dataDir, repoRoot = process.cwd() }) {
   const mcpPath = () => join(dataDir, "config", "mcp.json");

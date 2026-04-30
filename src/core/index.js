@@ -1,8 +1,14 @@
-// Public surface of the Worklab domain layer. Re-exports the most-used
-// helpers across the codebase so edge layers (api, mcp, integrations,
-// cli) and the coordinator/worker can prefer `from "core"` over deep
+// Public surface of the Worklab domain layer. Re-exports the helpers used
+// across the codebase so edge layers (api, mcp, integrations, cli) and the
+// coordinator/worker can prefer `from "../core/index.js"` over deep
 // per-file paths. Modules not re-exported here are private to the domain.
+//
+// SQL helpers in src/core/db/queries/* are intentionally NOT re-exported.
+// API routes are allowed to reach into them directly (the agreed pattern
+// after PR-2..PR-6 migrated raw db.prepare calls into named query helpers).
+// Other edge layers should call higher-level domain modules instead.
 
+// ---------- Database lifecycle + schema ----------
 export {
   closeDb,
   getDb,
@@ -12,6 +18,7 @@ export {
 export { runMigrations } from "./db/migrations/runner.js";
 export { SCHEMA_SQL, SCHEMA_VERSION } from "./db/schema/current.js";
 
+// ---------- Task workflow + state machine ----------
 export {
   DECISIONS,
   DEFAULT_MAX_FAILURES,
@@ -36,18 +43,72 @@ export {
 } from "./task-agents.js";
 
 export {
+  backfillTaskKeys,
+  formatTaskKey,
+  maxTaskKeyNumber,
+  nextTaskKey,
+  normalizeTaskKey,
+  resolveTaskId,
+  resolveTaskRow,
+  taskKeyNumber,
+} from "./task-keys.js";
+
+// ---------- AI + provider dispatch ----------
+export {
+  BUILTIN_CLAUDE_MODELS,
+  BUILTIN_CODEX_MODELS,
+  BUILTIN_OPENAI_MODELS,
+  VALID_MODEL_SDKS,
   WORKLAB_BUILTIN_TOOLS,
   generateResponse,
+  getBuiltinModelByReference,
+  getBuiltinModelGroups,
+  getBuiltinModels,
+  isValidModelReference,
+  normalizeReasoningEffortForModel,
   parseModelReference,
+  resolveBackendFor,
   resolveModel,
 } from "./ai.js";
 
+export {
+  buildModelCapabilities,
+  createProvider,
+  createVercelClient,
+  defaultOllamaNumCtx,
+  deleteProvider,
+  discoverModels,
+  getModel,
+  getModelByProviderAndName,
+  getProvider,
+  inferOllamaReasoningProfile,
+  isOpenAICompatibleProviderType,
+  isPrivateBaseUrl,
+  isValidProviderType,
+  listModels,
+  listProviders,
+  OPENAI_COMPAT_PROVIDER_TYPES,
+  PROVIDER_TYPES,
+  resolveAgentRunnableStatus,
+  resolveReasoningCapabilities,
+  resolveVercelModel,
+  setModelEnabled,
+  testProvider,
+  updateProvider,
+  upsertModel,
+  validateBaseUrl,
+} from "./providers.js";
+
+export { getBuiltinProviderAvailability } from "./credentials.js";
+
+// ---------- IDs + slugs ----------
 export {
   newAgentLogId,
   newAutomationId,
   newAutomationRunId,
   newAutomationTriggerId,
   newCommentId,
+  newProjectId,
   newRunId,
   newSlackDeliveryId,
   newSlackInboundEventId,
@@ -55,3 +116,248 @@ export {
 } from "./ids.js";
 
 export { isValidSlug, slugify, uniqueSlug } from "./slugs.js";
+
+// ---------- Settings + runtime ----------
+export {
+  DEFAULT_SETTINGS,
+  readSettings,
+  validateSetting,
+  validateSettingsPatch,
+  writeSettings,
+} from "./settings.js";
+
+export {
+  RUNTIME_SETTING_FIELDS,
+  readRuntimeEnvFile,
+  readRuntimeSettings,
+  runtimeEnvFromValues,
+  validateRuntimeSetting,
+  validateRuntimeSettingsPatch,
+  writeRuntimeSettings,
+} from "./runtime-settings.js";
+
+// ---------- Configuration + bootstrap ----------
+export { config, loadConfig, localClientHost, worklabBaseUrl } from "./config.js";
+export {
+  bootstrapWorklabEnv,
+  defaultDataDir,
+  loadEnvFile,
+  resolveDataDirFromEnv,
+} from "./env.js";
+export { seedDataFromTemplate } from "./first-boot.js";
+export { logger, createLogger } from "./logger.js";
+
+// ---------- Crypto + tokens + service ----------
+export {
+  decrypt,
+  encrypt,
+  getKeyFingerprint,
+  getKeySource,
+} from "./crypto.js";
+
+export {
+  ensureMcpToken,
+  mcpTokenPath,
+  readMcpToken,
+  tokenMatches,
+} from "./service-token.js";
+
+export { serviceStatus } from "./host-service-status.js";
+
+// ---------- Runs (input, events, logs, artifacts) ----------
+export {
+  assertAgentRunnable,
+  buildNextTaskRunPreview,
+  buildTaskRunInput,
+  buildTaskRunMessages,
+  hasOpenBlocker,
+  latestPriorExecuteRunId,
+  loadAgentCapabilities,
+  loadPriorRunSummaries,
+  loadTaskRunSetup,
+  modeForTaskStage,
+  selectCurrentRunComments,
+} from "./run-input.js";
+
+export { buildRunLifecycleEvent } from "./run-events.js";
+
+export {
+  aggregateRunArtifacts,
+  artifactDeltaLabel,
+  artifactPaths,
+  artifactsForRunRow,
+  artifactsFromPaths,
+  buildRunArtifactTree,
+  extractRunArtifacts,
+  formatTaskArtifactsForPrompt,
+  loadTaskArtifacts,
+  normalizeArtifactPath,
+  normalizeStoredArtifacts,
+  runArtifactSummary,
+} from "./run-artifacts.js";
+
+export { readRunLog } from "./run-logs.js";
+
+// ---------- Live input + comments ----------
+export {
+  LIVE_INPUT_MAX_BODY_LENGTH,
+  createLiveInputQueue,
+  formatLiveInputGuidance,
+  normalizeLiveInputBody,
+  supportsLiveInputProvider,
+} from "./live-input.js";
+
+export { enrichCommentRows } from "./comments.js";
+
+// ---------- Knowledge base ----------
+export {
+  kbCreate,
+  kbDelete,
+  kbList,
+  kbListPinned,
+  kbPath,
+  kbRead,
+  kbUpdate,
+} from "./kb.js";
+
+// ---------- Journals + memory ----------
+export {
+  agentJournalPath,
+  agentMemoryPath,
+  appendJournalEntry,
+  appendJournalSummary,
+  appendMemoryFacts,
+  readFullJournal,
+  readJournalTail,
+  readRunSection,
+  writeMemory,
+} from "./journal.js";
+
+export {
+  agentJournalHash,
+  readAgentMemoryContent,
+  readAgentMemoryContext,
+  readAgentMemoryState,
+} from "./memory.js";
+
+// ---------- Projects ----------
+export {
+  compactProject,
+  loadRunSnapshot,
+  normalizeProjectSlug,
+  normalizeProjectWorkdir,
+  parseProjectTags,
+  projectContextHash,
+  projectFromRow,
+  projectRouteError,
+  resolveProjectId,
+  resolveProjectRow,
+  resolveTaskProjectRunContext,
+  uniqueProjectSlug,
+} from "./projects.js";
+
+// ---------- Automations ----------
+export {
+  createAutomationRunRows,
+  createAutomationTriggerRow,
+  nextAutomationStateAfterFire,
+  nextFireAt,
+  normalizeTrigger,
+  parseRunAt,
+  rowToAutomation,
+  triggerSummary,
+  upcomingFireTimes,
+} from "./automations.js";
+
+// ---------- Agent allowlists (re-exported via core/agent-allowlists.js shim) ----------
+export {
+  ALLOWLIST_MODE_ALL,
+  ALLOWLIST_MODE_CUSTOM,
+  inferAllowlistMode,
+  normalizeAllowlistMode,
+  normalizeList,
+  parseStoredAllowlist,
+  resolveAllowlist,
+  resolveAllowlistMap,
+  storedAllowlistMode,
+} from "./agent-allowlists.js";
+
+// ---------- Prompt builders (re-exported via core/context.js shim) ----------
+export {
+  buildAutomationSystemPrompt,
+  buildConsolidationSystemPrompt,
+  buildExecuteSystemPrompt,
+  buildPlanSystemPrompt,
+  buildReviewSystemPrompt,
+  buildSystemPrompt,
+} from "./context.js";
+
+// ---------- Transcript snapshots (re-exported via core/run-transcript.js shim) ----------
+export {
+  buildTranscriptTailSnapshot,
+  renderResumeSnapshot,
+} from "./run-transcript.js";
+
+// ---------- Skills + MCP config ----------
+export {
+  SkillImportError,
+  buildSkillFileTree,
+  buildSkillIndex,
+  importSkillZip,
+  loadSkills,
+  parseSkillFrontmatter,
+  stripFrontmatter,
+} from "./skills.js";
+
+export {
+  getAvailableMcpServers,
+  getBuiltinMcpServers,
+  getMcpServerStatuses,
+  loadMcpConfig,
+  pickMcpServers,
+  validateMcpServerConfig,
+} from "./mcp-config.js";
+
+// ---------- Embeddings ----------
+export {
+  DEFAULT_EMBEDDING_MODEL,
+  bufferToFloatArray,
+  chunkMarkdown,
+  cosineSimilarity,
+  floatArrayToBuffer,
+  generateEmbedding,
+  getEmbeddingModel,
+  getIndexStatus,
+  hashText,
+  indexAllSources,
+  indexPath,
+  indexSource,
+  isEmbeddingBackendReady,
+  parseEmbeddingReference,
+  removeSource,
+  scanSources,
+  search,
+  testEmbeddingBackend,
+} from "./embeddings.js";
+
+// ---------- worklab_result contract + execenv ----------
+export {
+  WORKLAB_RESULT_JSON_SCHEMA,
+} from "./worklab-result.js";
+
+export {
+  execenvBaseDir,
+  execenvRoot,
+  prepareExecenv,
+  teardownExecenv,
+  writeRuntimeConfig,
+} from "./execenv.js";
+
+// ---------- Assistant ----------
+export {
+  ASSISTANT_RESULT_JSON_SCHEMA,
+  DEFAULT_ASSISTANT_THREAD_ID,
+  WorklabAssistantService,
+  createWorklabAssistantService,
+  parseAssistantResult,
+} from "./assistant.js";

@@ -1,11 +1,13 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { DEFAULT_SETTINGS, readSettings, writeSettings } from "../../core/settings.js";
 import {
+  DEFAULT_SETTINGS,
   readRuntimeSettings,
+  readSettings,
   runtimeEnvFromValues,
   writeRuntimeSettings,
-} from "../../core/runtime-settings.js";
+  writeSettings,
+} from "../../core/index.js";
 import { serviceStatus } from "../../cli/install-service.js";
 
 function runtimeUnavailable(res) {

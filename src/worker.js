@@ -1,19 +1,29 @@
 import { parseArgs } from "node:util";
-import { openDb, runMigrations } from "./core/db.js";
-import { loadConfig } from "./core/config.js";
-import { readFullJournal, writeMemory } from "./core/journal.js";
-import { readAgentMemoryContent, readAgentMemoryContext } from "./core/memory.js";
-import { buildConsolidationSystemPrompt, buildAutomationSystemPrompt } from "./core/context.js";
-import { resolveModel, generateResponse } from "./core/ai.js";
-import { writeRuntimeConfig } from "./core/execenv.js";
 import { join } from "node:path";
-import { kbListPinned } from "./core/kb.js";
-import { WORKLAB_RESULT_JSON_SCHEMA } from "./core/worklab-result.js";
-import { readSettings } from "./core/settings.js";
 import { createInterface } from "node:readline";
-import { createLiveInputQueue, normalizeLiveInputBody } from "./core/live-input.js";
-import { buildTaskRunInput, loadAgentCapabilities } from "./core/run-input.js";
-import { buildTranscriptTailSnapshot, renderResumeSnapshot } from "./core/run-transcript.js";
+import {
+  buildAutomationSystemPrompt,
+  buildConsolidationSystemPrompt,
+  buildTaskRunInput,
+  buildTranscriptTailSnapshot,
+  createLiveInputQueue,
+  generateResponse,
+  kbListPinned,
+  loadAgentCapabilities,
+  loadConfig,
+  normalizeLiveInputBody,
+  openDb,
+  readAgentMemoryContent,
+  readAgentMemoryContext,
+  readFullJournal,
+  readSettings,
+  renderResumeSnapshot,
+  resolveModel,
+  runMigrations,
+  WORKLAB_RESULT_JSON_SCHEMA,
+  writeMemory,
+  writeRuntimeConfig,
+} from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);

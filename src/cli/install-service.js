@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
+import { loadConfig } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
 
 const LAUNCHD_LABEL = "ai.worklab";
@@ -227,4 +227,4 @@ export async function installService(args = []) {
 // serviceStatus moved to src/core/host-service-status.js so the MCP admin
 // surface can import it without a cli back-reference. Re-exported here for
 // any straggling caller.
-export { serviceStatus } from "../core/host-service-status.js";
+export { serviceStatus } from "../core/index.js";

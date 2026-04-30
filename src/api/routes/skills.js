@@ -4,12 +4,14 @@ import express from "express";
 import {
   buildSkillFileTree,
   importSkillZip,
+  isValidSlug,
   loadSkills,
   parseSkillFrontmatter,
+  parseStoredAllowlist,
   SkillImportError,
-} from "../../core/skills.js";
-import { isValidSlug, uniqueSlug } from "../../core/slugs.js";
-import { parseStoredAllowlist, storedAllowlistMode } from "../../core/agent-allowlists.js";
+  storedAllowlistMode,
+  uniqueSlug,
+} from "../../core/index.js";
 import {
   listAgentSkillsAllowlists,
   listAgentSkillsAllowlistsWithNames,

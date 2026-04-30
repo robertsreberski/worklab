@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { SCHEMA_VERSION } from "../core/schema.js";
+import { SCHEMA_VERSION } from "../core/index.js";
 import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
 import { createSseBroker } from "./sse.js";
 import { registerTaskRoutes } from "./routes/tasks.js";

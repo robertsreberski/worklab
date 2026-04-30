@@ -1,17 +1,29 @@
-import { newTaskId, newCommentId } from "../../core/ids.js";
-import { enrichCommentRows } from "../../core/comments.js";
-import { nextStage, STAGES } from "../../core/state-machine.js";
-import { applyTaskSideEffects, taskStage } from "../../core/task-side-effects.js";
-import { resumeWaitingParents } from "../../core/task-joins.js";
-import { nextTaskKey, resolveTaskId, resolveTaskRow } from "../../core/task-keys.js";
-import { supportsLiveInputProvider } from "../../core/live-input.js";
-import { buildNextTaskRunPreview } from "../../core/run-input.js";
+import {
+  applyTaskSideEffects,
+  artifactPaths,
+  artifactsForRunRow,
+  buildNextTaskRunPreview,
+  buildRunLifecycleEvent,
+  compactProject,
+  enrichCommentRows,
+  loadTaskArtifacts,
+  newCommentId,
+  newTaskId,
+  nextStage,
+  nextTaskKey,
+  resolveProjectId,
+  resolveProjectRow,
+  resolveTaskId,
+  resolveTaskRow,
+  resumeWaitingParents,
+  runArtifactSummary,
+  STAGES,
+  supportsLiveInputProvider,
+  taskStage,
+} from "../../core/index.js";
 import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
-import { buildRunLifecycleEvent } from "../../core/run-events.js";
-import { compactProject, resolveProjectId, resolveProjectRow } from "../../core/projects.js";
-import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../../core/run-artifacts.js";
 import {
   applyStaleRunReconcileToTask,
   cascadeProjectToDescendants,
