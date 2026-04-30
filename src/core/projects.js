@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { isValidSlug, uniqueSlug } from "./slugs.js";
+import { getProjectIdBySlug, resolveProjectByIdOrSlug } from "./db/queries/projects.js";
 
 export function projectRouteError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -50,7 +51,7 @@ export function normalizeProjectSlug(value) {
 export function uniqueProjectSlug(db, { name, slug, existingId = null }) {
   const requested = normalizeProjectSlug(slug);
   const candidate = uniqueSlug(requested || name, (value) => {
-    const row = db.prepare("SELECT id FROM projects WHERE slug = ?").get(value);
+    const row = resolveProjectByIdOrSlug(db, value);
     return !!(row && row.id !== existingId);
   }, { fallback: "project" });
   if (!isValidSlug(candidate)) {
@@ -99,7 +100,7 @@ export function compactProject(row) {
 
 export function resolveProjectRow(db, value) {
   if (value === undefined || value === null || value === "") return null;
-  return db.prepare("SELECT * FROM projects WHERE id = ? OR slug = ?").get(value, value) || null;
+  return resolveProjectByIdOrSlug(db, value) || null;
 }
 
 export function resolveProjectId(db, value) {
