@@ -667,12 +667,12 @@ describe("task-watcher", () => {
     const originalDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
     expect(originalDiagnostics.continuation_run_id).toBe(continuationRun.id);
 
-    const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    const task = db.prepare("SELECT stage, stage_reason, error_text, failure_count, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
     expect(task).toMatchObject({
       stage: "execute",
       stage_reason: "continuing after usage_limit",
       error_text: null,
-      retry_count: 1,
+      failure_count: 1,
       last_failure_kind: "usage_limit",
     });
     const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic continuation%'").get(taskId);

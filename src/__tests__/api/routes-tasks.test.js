@@ -1368,10 +1368,10 @@ describe("POST /api/tasks/:id/retry", () => {
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
     db.prepare("UPDATE tasks SET stage = 'blocked', error_text = 'too many failures', updated_at = ? WHERE id = ?").run(Date.now(), task.id);
     await agent.post(`/api/tasks/${task.id}/retry`).expect(200);
-    const after = db.prepare("SELECT stage, error_text, retry_count FROM tasks WHERE id = ?").get(task.id);
+    const after = db.prepare("SELECT stage, error_text, failure_count FROM tasks WHERE id = ?").get(task.id);
     expect(after.stage).toBe("execute");
     expect(after.error_text).toBeNull();
-    expect(after.retry_count).toBe(0);
+    expect(after.failure_count).toBe(0);
     expect(calls).toEqual([task.id]);
   });
 
@@ -1396,10 +1396,10 @@ describe("POST /api/tasks/:id/retry", () => {
 
     await agent.post(`/api/tasks/${task.id}/retry`).expect(200);
 
-    const after = db.prepare("SELECT stage, error_text, retry_count FROM tasks WHERE id = ?").get(task.id);
+    const after = db.prepare("SELECT stage, error_text, failure_count FROM tasks WHERE id = ?").get(task.id);
     expect(after.stage).toBe("review");
     expect(after.error_text).toBeNull();
-    expect(after.retry_count).toBe(0);
+    expect(after.failure_count).toBe(0);
     expect(calls).toEqual(["review"]);
   });
 

@@ -127,7 +127,7 @@ describe("project API", () => {
       SET
         pending_actions_json = ?,
         blocking_issues_json = ?,
-        retry_count = 2,
+        failure_count = 2,
         rejection_streak = 1,
         last_failure_kind = 'review_rejected',
         error_text = 'needs a human decision',
@@ -165,7 +165,7 @@ describe("project API", () => {
       stage_reason: "confirm release gate",
       pending_actions: ["confirm release"],
       blocking_issues: ["missing approval"],
-      retry_count: 2,
+      failure_count: 2,
       rejection_streak: 1,
       last_failure_kind: "review_rejected",
       error_text: "needs a human decision",

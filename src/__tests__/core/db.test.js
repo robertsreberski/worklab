@@ -172,6 +172,8 @@ describe("openDb + runMigrations", () => {
     expect(taskCols).not.toContain("status");
     expect(taskCols).not.toContain("executor_agent");
     expect(taskCols).not.toContain("source_schedule_id");
+    expect(taskCols).not.toContain("retry_count");
+    expect(taskCols).toContain("failure_count");
     expect(tables).not.toContain("schedules");
     expect(tables).not.toContain("schedule_spawns");
     const taskRow = db.prepare("SELECT id, task_key, title, instructions, stage, owner_agent, root_task_id, run_policy FROM tasks WHERE id='t1'").get();

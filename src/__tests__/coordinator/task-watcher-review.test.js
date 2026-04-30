@@ -89,9 +89,9 @@ describe("task-watcher v2 workflow", () => {
     resolvers[0]({ exitCode: 1, status: "error", processStatus: "failed", error: "boom" });
     await new Promise((r) => setTimeout(r, 20));
 
-    const task = db.prepare("SELECT stage, retry_count, last_failure_kind, blocking_issues_json FROM tasks WHERE id = ?").get(taskId);
+    const task = db.prepare("SELECT stage, failure_count, last_failure_kind, blocking_issues_json FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("blocked");
-    expect(task.retry_count).toBe(1);
+    expect(task.failure_count).toBe(1);
     expect(task.last_failure_kind).toBe("spawn");
     expect(JSON.parse(task.blocking_issues_json)[0]).toMatch(/Reached max failures/);
   });
@@ -315,11 +315,11 @@ describe("task-watcher v2 workflow", () => {
     resolvers[1]({ exitCode: 130, status: "cancelled", processStatus: "cancelled", error: "Run cancelled." });
     await new Promise((r) => setTimeout(r, 20));
 
-    const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count FROM tasks WHERE id = ?").get(taskId);
+    const task = db.prepare("SELECT stage, stage_reason, error_text, failure_count FROM tasks WHERE id = ?").get(taskId);
     // Cancellation must not be conflated with failure: no error_text, no
-    // retry_count bump, distinct stage_reason. UI renders an amber chip from
+    // failure_count bump, distinct stage_reason. UI renders an amber chip from
     // the stage_reason rather than a red error chip.
-    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (runtime)", error_text: null, retry_count: 0 });
+    expect(task).toMatchObject({ stage: "review", stage_reason: "cancelled (runtime)", error_text: null, failure_count: 0 });
     const cancelComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body = 'Run cancelled.'").get(taskId);
     expect(cancelComment).toBeTruthy();
   });
@@ -342,12 +342,12 @@ describe("task-watcher v2 workflow", () => {
     });
     await new Promise((r) => setTimeout(r, 20));
 
-    const task = db.prepare("SELECT stage, stage_reason, error_text, retry_count FROM tasks WHERE id = ?").get(taskId);
+    const task = db.prepare("SELECT stage, stage_reason, error_text, failure_count FROM tasks WHERE id = ?").get(taskId);
     expect(task).toMatchObject({
       stage: "execute",
       stage_reason: "cancelled (api_cancel: user clicked cancel)",
       error_text: null,
-      retry_count: 0,
+      failure_count: 0,
     });
   });
 

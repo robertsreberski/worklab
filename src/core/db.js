@@ -285,7 +285,7 @@ function rebuildTaskWorkflowTables(db) {
         reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
         tags TEXT NOT NULL DEFAULT '[]',
         error_text TEXT,
-        retry_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
         completed_at INTEGER
@@ -295,7 +295,7 @@ function rebuildTaskWorkflowTables(db) {
         client_request_id, title, instructions, stage, stage_reason, run_policy, join_policy, subtask_order, required,
         pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
         plan_source_run_id, reviewer_agent, tags,
-        error_text, retry_count, created_at, updated_at, completed_at
+        error_text, failure_count, created_at, updated_at, completed_at
       )
       SELECT
         id,
@@ -324,7 +324,9 @@ function rebuildTaskWorkflowTables(db) {
         ${taskColumn("plan_source_run_id")},
         reviewer_agent,
         tags,
-        error_text, retry_count, created_at, updated_at, completed_at
+        error_text,
+        ${taskColumns.includes("failure_count") ? "failure_count" : "retry_count"},
+        created_at, updated_at, completed_at
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
@@ -385,6 +387,12 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
+  // v22: retry_count → failure_count rename. The column was always a generic
+  // failure counter, not a retry counter; rename so callers stop assuming
+  // retry semantics. Existing DBs upgrade in place via RENAME COLUMN.
+  if (hasColumn(db, "tasks", "retry_count") && !hasColumn(db, "tasks", "failure_count")) {
+    db.exec("ALTER TABLE tasks RENAME COLUMN retry_count TO failure_count");
+  }
   addColumnIfMissing(db, "task_runs", "cancel_initiator", "cancel_initiator TEXT");
   addColumnIfMissing(db, "task_runs", "cancel_reason", "cancel_reason TEXT");
   addColumnIfMissing(db, "task_runs", "warnings_json", "warnings_json TEXT NOT NULL DEFAULT '[]'");

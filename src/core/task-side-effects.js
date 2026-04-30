@@ -55,11 +55,11 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
         values.push("[]");
         break;
       case "set_failure_count":
-        fields.push("retry_count = ?");
+        fields.push("failure_count = ?");
         values.push(sideEffect.count ?? 0);
         break;
       case "reset_failure_count":
-        fields.push("retry_count = ?");
+        fields.push("failure_count = ?");
         values.push(0);
         break;
       case "set_rejection_count":
