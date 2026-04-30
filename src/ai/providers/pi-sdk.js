@@ -1,5 +1,4 @@
 import { Agent } from "@mariozechner/pi-agent-core";
-import { getModel as getPiModel } from "@mariozechner/pi-ai";
 import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
@@ -14,251 +13,23 @@ import {
   createStructuredOutputTool,
   getPiBuiltinTools,
   initPiMcpTools,
-  normalizePiBuiltinToolParams,
 } from "../../agent/tools/pi-bridge.js";
 import { extractWorklabResult, formatWorklabResultText } from "../result/contract.js";
-
-const EMPTY_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-};
-
-const SDK_PI_PROVIDERS = {
-  openai: "openai",
-  codex: "openai-codex",
-};
-
-function rootUrl(baseUrl) {
-  return String(baseUrl || "").replace(/\/+$/, "").replace(/\/(api|v1)$/, "");
-}
-
-function openAiCompatBaseUrl(provider) {
-  const baseUrl = String(provider?.base_url || "").replace(/\/+$/, "");
-  if (provider?.provider_type === "ollama") return `${rootUrl(baseUrl)}/v1`;
-  return /\/v\d+$/.test(baseUrl) ? baseUrl : `${baseUrl}/v1`;
-}
-
-function customProviderName(provider) {
-  return `worklab-${provider.id}`;
-}
-
-function customProviderKey(provider, isPrivate) {
-  if (provider?.api_key) return provider.api_key;
-  return isPrivate ? "ollama" : "";
-}
-
-function customCompat(capabilities, isPrivate) {
-  return {
-    supportsStore: false,
-    supportsDeveloperRole: !isPrivate,
-    supportsReasoningEffort: capabilities?.reasoning_mode === "effort",
-    maxTokensField: "max_tokens",
-  };
-}
-
-// Build the pi-runtime view of a custom (vercel) provider/model from
-// pre-resolved primitives. The caller (core/ai.js#generateResponse) reads
-// the provider/model rows and computes the capabilities + isPrivate flag
-// before invoking the provider, so this function never reaches into the
-// domain layer.
-function resolveCustomPiModel(resolved, options) {
-  const provider = options.customProvider;
-  if (!provider) {
-    throw new Error(
-      `vercel provider context missing for ${resolved.providerId}: caller must pass options.customProvider`,
-    );
-  }
-  if (!provider.enabled) throw new Error(`provider disabled: ${resolved.providerId}`);
-  const modelRow = options.customModel || null;
-  if (modelRow && modelRow.enabled === false) {
-    throw new Error(`model disabled: ${resolved.modelName}`);
-  }
-  const capabilities = options.modelCapabilities;
-  if (!capabilities || typeof capabilities !== "object") {
-    throw new Error(
-      `vercel model capabilities missing for ${resolved.modelName}: caller must pass options.modelCapabilities`,
-    );
-  }
-  const isPrivate = typeof options.isPrivateProvider === "boolean"
-    ? options.isPrivateProvider
-    : false;
-  const providerName = customProviderName(provider);
-  const pricing = modelRow?.pricing || {};
-  return {
-    model: {
-      id: resolved.modelName,
-      name: modelRow?.display_name || resolved.modelName,
-      api: "openai-completions",
-      provider: providerName,
-      baseUrl: openAiCompatBaseUrl(provider),
-      reasoning: !!capabilities.reasoning,
-      input: capabilities.vision === false ? ["text"] : ["text", "image"],
-      cost: {
-        input: Number(pricing.input_per_million) || 0,
-        output: Number(pricing.output_per_million) || 0,
-        cacheRead: Number(pricing.cached_input_per_million) || 0,
-        cacheWrite: 0,
-      },
-      contextWindow: Number(capabilities.context_window || capabilities.num_ctx) || 128000,
-      maxTokens: Number(capabilities.max_tokens) || 16384,
-      compat: customCompat(capabilities, isPrivate),
-    },
-    capabilities,
-    apiKeys: new Map([[providerName, customProviderKey(provider, isPrivate)]]),
-  };
-}
-
-function resolvePiRuntimeModel(resolved, options) {
-  if (resolved.sdk === "vercel") return resolveCustomPiModel(resolved, options);
-  const provider = resolved.sdk === "pi" ? resolved.provider : SDK_PI_PROVIDERS[resolved.sdk];
-  if (!provider) throw new Error(`unsupported pi sdk: ${resolved.sdk}`);
-  const model = getPiModel(provider, resolved.model);
-  return {
-    model,
-    capabilities: {
-      tool_use: true,
-      reasoning: !!model.reasoning,
-      reasoning_mode: model.reasoning ? "effort" : "none",
-      reasoning_levels: model.reasoning ? ["none", "low", "medium", "high", "xhigh"] : undefined,
-      reasoning_disable_supported: true,
-      vision: Array.isArray(model.input) ? model.input.includes("image") : false,
-      json_mode: true,
-    },
-    apiKeys: new Map(),
-  };
-}
-
-function promptTextFromMessages(messages) {
-  if (!Array.isArray(messages) || !messages.length) return "";
-  return messages
-    .filter((message) => message?.role === "user")
-    .map((message) => typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? ""))
-    .join("\n");
-}
-
-function messageContent(value) {
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) {
-    return value.map((part) => {
-      if (typeof part === "string") return { type: "text", text: part };
-      if (part?.type === "text" && typeof part.text === "string") return { type: "text", text: part.text };
-      if (part?.type === "image" && part.data) return { type: "image", data: part.data, mimeType: part.mimeType || part.mime_type || "image/png" };
-      return { type: "text", text: JSON.stringify(part ?? "") };
-    });
-  }
-  return String(value ?? "");
-}
-
-function toAgentMessages(messages, model) {
-  const source = Array.isArray(messages) && messages.length
-    ? messages
-    : [{ role: "user", content: "" }];
-  return source.flatMap((message) => {
-    const timestamp = message.timestamp || Date.now();
-    if (message.role === "user") return [{ role: "user", content: messageContent(message.content), timestamp }];
-    if (message.role === "assistant") {
-      return [{
-        role: "assistant",
-        content: [{ type: "text", text: typeof message.content === "string" ? message.content : JSON.stringify(message.content ?? "") }],
-        api: model.api,
-        provider: model.provider,
-        model: model.id,
-        usage: EMPTY_USAGE,
-        stopReason: "stop",
-        timestamp,
-      }];
-    }
-    if (message.role === "toolResult") return [message];
-    return [];
-  });
-}
-
-function textFromContent(content) {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "text" && typeof block.text === "string")
-    .map((block) => block.text)
-    .join("");
-}
-
-function thinkingFromContent(content) {
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block) => block?.type === "thinking" && typeof block.thinking === "string")
-    .map((block) => block.thinking)
-    .join("");
-}
-
-function toolResultContent(result) {
-  const content = result?.content;
-  if (!Array.isArray(content)) return "";
-  return content.map((block) => block?.type === "text" ? block.text || "" : JSON.stringify(block)).filter(Boolean).join("\n");
-}
-
-function streamContentKey(streamEvent, fallback) {
-  return streamEvent?.contentIndex ?? fallback;
-}
-
-function jsonSerializable(value, fallback = null) {
-  try {
-    JSON.stringify(value);
-    return value;
-  } catch {
-    return fallback;
-  }
-}
-
-function compactJsonPreview(value, { limit = 4000 } = {}) {
-  let raw;
-  try {
-    raw = JSON.stringify(value || {});
-  } catch {
-    raw = String(value ?? "");
-  }
-  if (raw.length <= limit) return { value, truncated: false, originalLength: raw.length };
-  return {
-    value: {
-      truncated: true,
-      original_length: raw.length,
-      preview: `${raw.slice(0, limit)}\n[truncated raw tool result]`,
-    },
-    truncated: true,
-    originalLength: raw.length,
-  };
-}
-
-function compactToolRawResult(result, resultContent) {
-  const raw = compactJsonPreview(result);
-  const details = compactJsonPreview(result?.details || {});
-  return {
-    ...(raw.truncated ? {
-      truncated: true,
-      original_length: raw.originalLength,
-      preview: raw.value.preview,
-    } : {}),
-    content: {
-      omitted: true,
-      reason: "already represented by tool_result.content",
-      original_length: String(resultContent || "").length,
-    },
-    details: details.value,
-    ...(details.truncated ? { details_truncated: true } : {}),
-  };
-}
-
-function eventToolArgs(toolName, args, { cwd, toolLimits } = {}) {
-  return normalizePiBuiltinToolParams(toolName, args || {}, { cwd, toolLimits });
-}
-
-function emitCaptured(events, onEvent, event) {
-  if (!event) return;
-  events.push(event);
-  onEvent?.(event);
-}
+import { resolvePiRuntimeModel } from "./pi-models.js";
+import {
+  promptTextFromMessages,
+  textFromContent,
+  thinkingFromContent,
+  toAgentMessages,
+  toolResultContent,
+} from "./pi-messages.js";
+import {
+  compactToolRawResult,
+  emitCaptured,
+  eventToolArgs,
+  jsonSerializable,
+  streamContentKey,
+} from "./pi-events.js";
 
 function usageFromMessages(messages = []) {
   const usage = {

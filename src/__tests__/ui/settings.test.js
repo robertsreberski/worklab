@@ -11,7 +11,7 @@ import {
   settingsPayload,
   slackRejectedSenderLabel,
   slackUserMatchesBot,
-} from "../../ui/src/routes/Settings.jsx";
+} from "../../ui/src/routes/settings/helpers.js";
 
 describe("settings UI duration conversions", () => {
   it("formats millisecond timeout values as minutes", () => {

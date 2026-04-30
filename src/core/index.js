@@ -322,9 +322,11 @@ export {
 
 // ---------- Assistant ----------
 export {
-  ASSISTANT_RESULT_JSON_SCHEMA,
   DEFAULT_ASSISTANT_THREAD_ID,
   WorklabAssistantService,
   createWorklabAssistantService,
-  parseAssistantResult,
 } from "./assistant.js";
+export {
+  ASSISTANT_RESULT_JSON_SCHEMA,
+  parseAssistantResult,
+} from "./assistant/result.js";
