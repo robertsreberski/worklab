@@ -172,6 +172,16 @@ export function settingsPayload(settings = {}) {
     assistant_effort: settings.assistant_effort || "high",
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
+    agent_compaction_enabled: settings.agent_compaction_enabled !== false,
+    agent_compaction_trigger_ratio: Number(settings.agent_compaction_trigger_ratio ?? 0.72),
+    agent_compaction_keep_recent_tokens: Number(settings.agent_compaction_keep_recent_tokens ?? 24000),
+    agent_compaction_summary_max_tokens: Number(settings.agent_compaction_summary_max_tokens ?? 16000),
+    agent_tool_text_limit_chars: Number(settings.agent_tool_text_limit_chars ?? 24000),
+    agent_bash_output_limit_chars: Number(settings.agent_bash_output_limit_chars ?? 30000),
+    agent_mcp_text_limit_chars: Number(settings.agent_mcp_text_limit_chars ?? 20000),
+    agent_image_inline_max_bytes: Number(settings.agent_image_inline_max_bytes ?? 250000),
+    agent_mcp_call_timeout_ms: Number(settings.agent_mcp_call_timeout_ms ?? 120000),
+    agent_recovery_continuation_limit: Number(settings.agent_recovery_continuation_limit ?? 3),
   };
 }
 
@@ -806,6 +816,47 @@ export function Settings() {
                   <FieldNote label="Memory name" value={settings.slack_agent_name || "assistant"} mono />
                   <FieldNote label="Journal tail" value={`${settings.journal_tail_lines ?? 80} lines`} />
                 </div>
+              </SettingPanel>
+              <SettingPanel icon="terminal" title="Agent robustness" meta="Context compaction, tool budgets, and continuation limits." class="span-2">
+                <div class="settings-switch-stack">
+                  <Switch
+                    checked={settings.agent_compaction_enabled !== false}
+                    onChange={(next) => setSettings({ ...settings, agent_compaction_enabled: next })}
+                    label="Context compaction"
+                    description="Compact long transcripts before they exceed model context."
+                  />
+                </div>
+                <AdvancedSettings summary="Budgets and recovery" count={9}>
+                  <FormGrid columns={3}>
+                    <FormField label="Trigger ratio">
+                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.72} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
+                    </FormField>
+                    <FormField label="Keep recent tokens">
+                      <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
+                    </FormField>
+                    <FormField label="Summary tokens">
+                      <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
+                    </FormField>
+                    <FormField label="Tool text chars">
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 24000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
+                    </FormField>
+                    <FormField label="Bash chars">
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_bash_output_limit_chars ?? 30000} ariaLabel="Bash output character limit" onChange={(value) => setSettings({ ...settings, agent_bash_output_limit_chars: value })} />
+                    </FormField>
+                    <FormField label="MCP text chars">
+                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 20000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
+                    </FormField>
+                    <FormField label="Image bytes">
+                      <NumberStepper min={0} max={10485760} step={50000} value={settings.agent_image_inline_max_bytes ?? 250000} ariaLabel="Inline image byte limit" onChange={(value) => setSettings({ ...settings, agent_image_inline_max_bytes: value })} />
+                    </FormField>
+                    <FormField label="MCP timeout">
+                      <DurationInput unit="seconds" value={settings.agent_mcp_call_timeout_ms ?? 120000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_mcp_call_timeout_ms: value })} ariaLabel="MCP call timeout" />
+                    </FormField>
+                    <FormField label="Continuations">
+                      <NumberStepper min={0} max={20} value={settings.agent_recovery_continuation_limit ?? 3} ariaLabel="Recovery continuation limit" onChange={(value) => setSettings({ ...settings, agent_recovery_continuation_limit: value })} />
+                    </FormField>
+                  </FormGrid>
+                </AdvancedSettings>
               </SettingPanel>
             </div>
           </SettingsSection>
