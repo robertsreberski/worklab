@@ -1,267 +1,35 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { z } from "zod";
 import { appendJournalEntry, appendJournalSummary, appendMemoryFacts, readJournalTail } from "./journal.js";
 import { readAgentMemoryContent } from "./memory.js";
 import { readSettings } from "./settings.js";
 import { generateResponse, resolveModel, WORKLAB_BUILTIN_TOOLS } from "./ai.js";
-import { loadSkills, buildSkillIndex } from "./skills.js";
-import { getAvailableMcpServers } from "./mcp-config.js";
+import { loadSkills } from "./skills.js";
 import { newAssistantMessageId, newRunId } from "./ids.js";
+import {
+  ASSISTANT_RESULT_JSON_SCHEMA,
+  fallbackAssistantResult,
+  parseAssistantResult,
+} from "./assistant/result.js";
+import {
+  abortSignalWithTimeout,
+  assistantMcpServers,
+  clip,
+  formatHistory,
+  renderSkills,
+  section,
+} from "./assistant/prompt.js";
+import {
+  eventLimit,
+  parseJson,
+  rawLogPath,
+  truncateAssistantEvent,
+  usageInt,
+  usageNumber,
+  warningRows,
+} from "./assistant/logging.js";
 
 export const DEFAULT_ASSISTANT_THREAD_ID = "personal";
-
-export const ASSISTANT_RESULT_JSON_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  properties: {
-    schema: { type: "string", const: "worklab.assistant.v1" },
-    reply_text: { type: "string" },
-    summary: { type: "string" },
-    journal_bullets: { type: "array", items: { type: "string" } },
-    memory_facts: { type: "array", items: { type: "string" } },
-    action_items: { type: "array", items: { type: "string" } },
-  },
-  required: ["schema", "reply_text", "summary", "journal_bullets", "memory_facts", "action_items"],
-};
-
-const assistantResultSchema = z.object({
-  schema: z.literal("worklab.assistant.v1"),
-  reply_text: z.string().default(""),
-  summary: z.string().min(1),
-  journal_bullets: z.array(z.string()).default([]),
-  memory_facts: z.array(z.string()).default([]),
-  action_items: z.array(z.string()).default([]),
-});
-
-function stringify(value) {
-  try { return JSON.stringify(value); } catch { return "{}"; }
-}
-
-function parseJson(value, fallback = null) {
-  try { return JSON.parse(value || ""); } catch { return fallback; }
-}
-
-function stripFence(text) {
-  const value = String(text || "").trim();
-  const match = /^```(?:json)?\s*([\s\S]*?)\s*```$/i.exec(value);
-  return match ? match[1].trim() : value;
-}
-
-function extractJson(text) {
-  const unfenced = stripFence(text);
-  try {
-    return JSON.parse(unfenced);
-  } catch {
-    const start = unfenced.indexOf("{");
-    const end = unfenced.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(unfenced.slice(start, end + 1));
-    throw new Error("Assistant did not return a JSON object");
-  }
-}
-
-function cleanArray(values) {
-  return (values || []).map((value) => String(value || "").trim()).filter(Boolean);
-}
-
-export function parseAssistantResult(text) {
-  const parsed = assistantResultSchema.parse(extractJson(text));
-  const summary = parsed.summary.trim();
-  return {
-    ...parsed,
-    reply_text: parsed.reply_text.trim() || summary,
-    summary,
-    journal_bullets: cleanArray(parsed.journal_bullets),
-    memory_facts: cleanArray(parsed.memory_facts),
-    action_items: cleanArray(parsed.action_items),
-  };
-}
-
-function fallbackAssistantResult(text, error) {
-  const reply = String(text || "").trim() || "I could not produce a usable response.";
-  return {
-    schema: "worklab.assistant.v1",
-    reply_text: reply,
-    summary: reply.slice(0, 500),
-    journal_bullets: [],
-    memory_facts: [],
-    action_items: [],
-    parse_error: error?.message || String(error || "unstructured response"),
-  };
-}
-
-function section(title, body) {
-  const text = String(body || "").trim();
-  return text ? `## ${title}\n\n${text}\n` : "";
-}
-
-function clip(text, maxChars = 5000) {
-  const value = String(text || "").trim();
-  if (value.length <= maxChars) return value;
-  return `${value.slice(0, maxChars)}\n...[truncated]`;
-}
-
-function renderSkills(skills) {
-  const enabled = (skills || []).filter((skill) => skill.enabled !== false);
-  return enabled.length ? buildSkillIndex(enabled).trim() : "";
-}
-
-function formatHistory(messages = []) {
-  return messages.map((message) => {
-    const who = message.role === "assistant" ? "Assistant" : "Robert";
-    const status = message.status && message.status !== "complete" ? ` (${message.status})` : "";
-    return `${who}${status}: ${clip(message.body, 1200)}`;
-  }).filter(Boolean).join("\n\n");
-}
-
-function adminMcpServer(config) {
-  return {
-    command: process.execPath,
-    args: [join(config.repoRoot, "src", "cli", "index.js"), "mcp"],
-    env: {
-      WORKLAB_DATA_DIR: config.dataDir,
-      WORKLAB_HOST: config.host,
-      WORKLAB_PORT: String(config.port),
-      WORKLAB_WORKSPACE: config.workspace,
-    },
-  };
-}
-
-function assistantMcpServers(config) {
-  return {
-    ...getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot }),
-    worklab: adminMcpServer(config),
-  };
-}
-
-function abortSignalWithTimeout(ms, parentSignal) {
-  const ac = new AbortController();
-  let details = null;
-  const abortWith = ({ kind, initiator, message, reason }) => {
-    if (ac.signal.aborted) return;
-    details = { kind, initiator, message, reason: reason || message || null };
-    ac.abort(Object.assign(new Error(message || "assistant run aborted"), details));
-  };
-  const onAbort = () => abortWith({
-    kind: "parent_abort",
-    initiator: "parent",
-    message: parentSignal?.reason?.message || "assistant run aborted",
-    reason: parentSignal?.reason?.message || null,
-  });
-  if (parentSignal) {
-    if (parentSignal.aborted) onAbort();
-    else parentSignal.addEventListener("abort", onAbort, { once: true });
-  }
-  const timeout = Number.isFinite(Number(ms)) && Number(ms) > 0
-    ? setTimeout(() => abortWith({
-      kind: "timeout",
-      initiator: "assistant_timeout",
-      message: `assistant run timed out after ${Number(ms)}ms`,
-    }), Number(ms))
-    : null;
-  timeout?.unref?.();
-  return {
-    signal: ac.signal,
-    cancel: (options = {}) => abortWith({
-      kind: "user_cancel",
-      initiator: options.initiator || "api_cancel",
-      message: "Assistant run cancelled",
-      reason: options.reason || "user requested cancellation",
-    }),
-    details: () => details,
-    cleanup: () => {
-      if (timeout) clearTimeout(timeout);
-      if (parentSignal) parentSignal.removeEventListener("abort", onAbort);
-    },
-  };
-}
-
-function usageInt(usage, key) {
-  return Number.isFinite(Number(usage?.[key])) ? Number(usage[key]) : null;
-}
-
-function usageNumber(usage, key) {
-  return Number.isFinite(Number(usage?.[key])) ? Number(usage[key]) : null;
-}
-
-function rawLogPath(dataDir, runId) {
-  const dir = join(dataDir, "logs", "assistant");
-  mkdirSync(dir, { recursive: true });
-  return join(dir, `${runId}.jsonl`);
-}
-
-function eventLimit(value) {
-  const parsed = Number(value || 200);
-  if (!Number.isInteger(parsed) || parsed < 1) return 200;
-  return Math.min(parsed, 500);
-}
-
-function truncateText(value, { limit, rawLogPath: path, label }) {
-  const text = String(value || "");
-  if (!limit || text.length <= limit) return text;
-  const omitted = text.length - limit;
-  return `${text.slice(0, limit)}\n\n[truncated ${label}: ${omitted} chars omitted; raw log: ${path || "unavailable"}]`;
-}
-
-function jsonSize(value) {
-  try { return JSON.stringify(value).length; } catch { return Infinity; }
-}
-
-function truncateAssistantEvent(event, { limit = 12_000, rawLogPath: path } = {}) {
-  const content = event?.message?.content;
-  if (!Array.isArray(content)) return event;
-  let changed = false;
-  const nextContent = content.map((block) => {
-    if (!block || typeof block !== "object") return block;
-    if (block.type !== "tool_result" && block.type !== "tool_use") return block;
-    const next = { ...block };
-    if (typeof next.content === "string") {
-      const truncated = truncateText(next.content, { limit, rawLogPath: path, label: "assistant tool result" });
-      if (truncated !== next.content) {
-        next.content = truncated;
-        changed = true;
-      }
-    } else if (next.content != null) {
-      const size = jsonSize(next.content);
-      if (size > limit) {
-        next.content = `[truncated assistant tool result: ${size} JSON chars; raw log: ${path || "unavailable"}]`;
-        changed = true;
-      }
-    }
-    for (const key of ["raw_result", "input"]) {
-      const size = jsonSize(next[key]);
-      if (size > limit) {
-        next[key] = { truncated: true, original_json_chars: size, raw_log_path: path || null };
-        changed = true;
-      }
-    }
-    return next;
-  });
-  return changed ? { ...event, message: { ...event.message, content: nextContent } } : event;
-}
-
-function warningRows(events = [], extras = []) {
-  const rows = [];
-  for (const event of events) {
-    if (event?.type !== "runtime_warning") continue;
-    rows.push({
-      kind: event.warning_kind || "runtime",
-      source: event.source || null,
-      message: typeof event.message === "string" ? event.message : "",
-      ts: event.ts || Date.now(),
-    });
-  }
-  for (const warning of extras || []) {
-    if (!warning) continue;
-    rows.push({
-      kind: warning.warning_kind || warning.kind || "runtime",
-      source: warning.source || null,
-      message: typeof warning.message === "string" ? warning.message : "",
-      ts: warning.ts || Date.now(),
-    });
-  }
-  return rows;
-}
 
 function rowToMessage(row, run = null) {
   if (!row) return null;
