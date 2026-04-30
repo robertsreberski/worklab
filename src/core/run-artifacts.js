@@ -2,6 +2,7 @@ import { normalizeCodexItemEvent } from "../ai/streaming/codex-events.js";
 import { getAgentLogEvents } from "./db/queries/agent-logs.js";
 
 const DEFAULT_CONTEXT_LIMIT = 25;
+const STORED_HUNK_LIMIT = 32;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -101,6 +102,39 @@ function lineNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function normalizeHunks(value) {
+  if (!Array.isArray(value)) return [];
+  const result = [];
+  for (const item of value) {
+    const start = lineNumber(item?.start);
+    const end = lineNumber(item?.end);
+    if (start == null || end == null) continue;
+    if (start < 1 || end < start) continue;
+    result.push({ start, end });
+  }
+  return result;
+}
+
+function mergeHunkRanges(existing, incoming) {
+  const all = [...normalizeHunks(existing), ...normalizeHunks(incoming)]
+    .sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const range of all) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end + 1) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      merged.push({ start: range.start, end: range.end });
+    }
+  }
+  return merged.slice(0, STORED_HUNK_LIMIT);
+}
+
+function clampHunks(hunks) {
+  const normalized = normalizeHunks(hunks);
+  return normalized.length <= STORED_HUNK_LIMIT ? normalized : normalized.slice(0, STORED_HUNK_LIMIT);
+}
+
 function isFailedStatus(status) {
   return status === "failed" || status === "error" || status === "errored";
 }
@@ -149,6 +183,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     before_lines: null,
     after_lines: null,
     unavailable_reason: null,
+    hunks: [],
     run_ids: [],
     first_run_id: null,
     last_run_id: null,
@@ -159,6 +194,15 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const removed = lineNumber(stats.removed_lines);
   const before = lineNumber(stats.before_lines);
   const after = lineNumber(stats.after_lines);
+  const incomingHunks = Array.isArray(stats.hunks) && stats.hunks.length > 0 ? stats.hunks : null;
+  const incomingRunId = meta.run_id || meta.runId || null;
+  let nextHunks = normalizeHunks(existing.hunks);
+  if (incomingHunks) {
+    const sameRun = !existing.last_run_id || !incomingRunId || existing.last_run_id === incomingRunId;
+    nextHunks = sameRun
+      ? mergeHunkRanges(existing.hunks, incomingHunks)
+      : clampHunks(incomingHunks);
+  }
   map.set(rawPath, {
     ...existing,
     ...mergeRunMetadata(existing, meta),
@@ -170,6 +214,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     before_lines: existing.before_lines == null && before != null ? before : existing.before_lines,
     after_lines: after != null ? after : existing.after_lines,
     unavailable_reason: stats.unavailable_reason || existing.unavailable_reason,
+    hunks: nextHunks,
   });
 }
 
@@ -266,6 +311,7 @@ export function normalizeStoredArtifacts(value) {
       before_lines: lineNumber(item.before_lines),
       after_lines: lineNumber(item.after_lines),
       unavailable_reason: item.unavailable_reason || null,
+      hunks: clampHunks(item.hunks),
       run_ids: asArray(item.run_ids),
       first_run_id: item.first_run_id || null,
       last_run_id: item.last_run_id || null,
@@ -291,6 +337,7 @@ export function artifactsFromPaths(paths = [], run = null) {
       before_lines: null,
       after_lines: null,
       unavailable_reason: null,
+      hunks: [],
       run_ids: [],
       first_run_id: null,
       last_run_id: null,
@@ -337,6 +384,7 @@ export function aggregateRunArtifacts(runs = []) {
           added_lines: artifact.added_lines,
           removed_lines: artifact.removed_lines,
           unavailable_reason: artifact.unavailable_reason,
+          hunks: artifact.hunks,
         },
       }, artifact.status || "completed", isFailedStatus(artifact.status), {
         run_id: artifact.last_run_id || run?.id,
@@ -416,6 +464,41 @@ export function artifactDeltaLabel(artifact = {}) {
   return "";
 }
 
+function compactRangesForDisplay(hunks, { collapseGap = 2 } = {}) {
+  const sorted = normalizeHunks(hunks).sort((a, b) => a.start - b.start);
+  const collapsed = [];
+  for (const range of sorted) {
+    const last = collapsed[collapsed.length - 1];
+    if (last && range.start <= last.end + 1 + collapseGap) {
+      last.end = Math.max(last.end, range.end);
+    } else {
+      collapsed.push({ start: range.start, end: range.end });
+    }
+  }
+  return collapsed;
+}
+
+export function formatHunkRanges(hunks, { max = 6 } = {}) {
+  const collapsed = compactRangesForDisplay(hunks);
+  if (!collapsed.length) return "";
+  const shown = collapsed.slice(0, max);
+  const omitted = collapsed.length - shown.length;
+  if (shown.length === 1) {
+    const only = shown[0];
+    return only.start === only.end ? `line ${only.start}` : `lines ${only.start}-${only.end}`;
+  }
+  const labels = shown.map((r) => (r.start === r.end ? `${r.start}` : `${r.start}-${r.end}`));
+  const tail = omitted > 0 ? `, +${omitted} more` : "";
+  return `lines ${labels.join(", ")}${tail}`;
+}
+
+function artifactKindLabel(artifact = {}) {
+  const kind = String(artifact.kind || "").trim().toLowerCase();
+  if (kind === "add") return "new file";
+  if (kind === "delete") return "deleted";
+  return "";
+}
+
 function ensureFolder(parent, name, fullPath) {
   let folder = parent.children.find((node) => node.type === "folder" && node.name === name);
   if (!folder) {
@@ -474,8 +557,12 @@ export function formatTaskArtifactsForPrompt(taskArtifacts, { limit = DEFAULT_CO
     "",
     ...shown.map((artifact) => {
       const delta = artifactDeltaLabel(artifact);
+      const kindLabel = artifactKindLabel(artifact);
+      const ranges = kindLabel ? "" : formatHunkRanges(artifact.hunks);
       const details = [
         delta,
+        kindLabel,
+        ranges,
         artifact.last_run_id ? `last run \`${artifact.last_run_id}\`` : "",
         artifact.unavailable_reason || "",
       ].filter(Boolean);

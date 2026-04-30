@@ -180,6 +180,7 @@ describe("generateCodexAppResponse", () => {
                   added_lines: 2,
                   removed_lines: 1,
                   changed_lines: 3,
+                  hunks: [{ start: 2, end: 2 }, { start: 4, end: 4 }],
                 },
               }],
               status: "completed",
