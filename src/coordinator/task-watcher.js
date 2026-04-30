@@ -1127,7 +1127,7 @@ export function createTaskWatcher({
       return { ok: false, error: `delegation depth limit reached (${depth}/${maxDepth})` };
     }
     if (items.length === 0) {
-      return { ok: false, error: "delegate requires at least one valid subtask" };
+      return { ok: false, error: "delegate requires at least one subtask" };
     }
     const maxChildren = Number(settings.delegation_max_children_per_round ?? 5);
     if (items.length > maxChildren) {
@@ -1271,6 +1271,10 @@ export function createTaskWatcher({
     `).all(parentTaskId);
   }
 
+  function hasTaskRuns(taskId) {
+    return !!db.prepare("SELECT 1 FROM task_runs WHERE task_id = ? LIMIT 1").get(taskId);
+  }
+
   function scheduleDelegatedChildren(parentTaskId, children = null) {
     const settings = readSettings(db);
     if (settings.delegation_auto_run_children === false) return;
@@ -1284,6 +1288,7 @@ export function createTaskWatcher({
     for (const child of candidates) {
       if (scheduled >= slots) break;
       if (active.has(child.id) || pendingStarts.has(child.id)) continue;
+      if (hasTaskRuns(child.id)) continue;
       if (!canAutoStart(child.id)) continue;
       scheduled += 1;
       scheduleAutoStart(child.id, (err) => {
