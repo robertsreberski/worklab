@@ -6,7 +6,18 @@ import { getBuiltinProviderAvailability } from "../../core/credentials.js";
 import { loadSkills } from "../../core/skills.js";
 import { getMcpServerStatuses } from "../../core/mcp-config.js";
 import { readAgentMemoryState } from "../../core/memory.js";
-import { agentExists, getAgentByName } from "../../core/db/queries/agents.js";
+import {
+  agentExists,
+  deleteAgentByName,
+  getAgentByName,
+  insertAgent,
+  listAgentsWithRunStats,
+  updateAgentFields,
+} from "../../core/db/queries/agents.js";
+import {
+  agentHasRunningRun,
+  listRecentAgentRuns,
+} from "../../core/db/queries/runs.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -219,18 +230,7 @@ function patchAllowlist({ body, existing, listKey, dataDir, model }) {
 export function registerAgentRoutes(app, { db, broker, consolidation, dataDir }) {
   app.get("/api/agents", (_req, res) => {
     const since = Date.now() - (30 * 24 * 60 * 60 * 1000);
-    const rows = db.prepare(`
-      SELECT
-        a.*,
-        MAX(r.started_at) AS last_run_at,
-        COUNT(CASE WHEN r.started_at >= ? THEN 1 END) AS run_count_30d,
-        AVG(CASE WHEN r.started_at >= ? THEN l.duration_ms END) AS avg_run_duration_ms
-      FROM agents a
-      LEFT JOIN task_runs r ON r.agent_name = a.name
-      LEFT JOIN agent_logs l ON l.task_run_id = r.id
-      GROUP BY a.name
-      ORDER BY a.name
-    `).all(since, since);
+    const rows = listAgentsWithRunStats(db, since);
     res.json({ agents: rows.map(rowToAgent) });
   });
 
@@ -285,18 +285,27 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
 
-    db.prepare(`
-      INSERT INTO agents
-        (name, display_name, description, sdk, model, effort, instructions,
-         skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
-         builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-         daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(finalName, display_name, description, resolved.sdk, model, effort, instructions,
-           JSON.stringify(skillsAllow.list), skillsAllow.mode,
-           JSON.stringify(mcpAllow.list), mcpAllow.mode,
-           JSON.stringify(builtinAllow.list), builtinAllow.mode,
-           allowSelfReview, dailyBudgetUsd, perRunBudgetUsd, enabled, now, now);
+    insertAgent(db, {
+      name: finalName,
+      displayName: display_name,
+      description,
+      sdk: resolved.sdk,
+      model,
+      effort,
+      instructions,
+      skillsAllowlistJson: JSON.stringify(skillsAllow.list),
+      skillsAllowlistMode: skillsAllow.mode,
+      mcpAllowlistJson: JSON.stringify(mcpAllow.list),
+      mcpAllowlistMode: mcpAllow.mode,
+      builtinAllowlistJson: JSON.stringify(builtinAllow.list),
+      builtinAllowlistMode: builtinAllow.mode,
+      allowSelfReview,
+      dailyBudgetUsd,
+      perRunBudgetUsd,
+      enabled,
+      createdAt: now,
+      updatedAt: now,
+    });
 
     broker.broadcast("global", { type: "agent_updated", name: finalName });
     const row = getAgentByName(db, finalName);
@@ -311,8 +320,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
 
   app.get("/api/agents/:name/memory", (req, res) => {
     if (!dataDir) return res.status(501).json({ error: { code: "not_configured", message: "data directory not configured" } });
-    const row = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
-    if (!row) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    if (!agentExists(db, req.params.name)) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     const memory = readAgentMemoryState({
       db,
       dataDir,
@@ -333,7 +341,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   });
 
   app.patch("/api/agents/:name", (req, res) => {
-    const existing = db.prepare("SELECT * FROM agents WHERE name = ?").get(req.params.name);
+    const existing = getAgentByName(db, req.params.name);
     if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
 
     const fields = [];
@@ -413,7 +421,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       fields.push("updated_at = ?");
       values.push(Date.now());
       values.push(req.params.name);
-      db.prepare(`UPDATE agents SET ${fields.join(", ")} WHERE name = ?`).run(...values);
+      updateAgentFields(db, fields, values);
     }
 
     broker.broadcast("global", { type: "agent_updated", name: req.params.name });
@@ -422,15 +430,10 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   });
 
   app.delete("/api/agents/:name", (req, res) => {
-    const running = db.prepare(
-      `SELECT id FROM task_runs
-       WHERE agent_name = ? AND status = 'running'
-       LIMIT 1`,
-    ).get(req.params.name);
-    if (running || consolidation?.isActive?.(req.params.name)) {
+    if (agentHasRunningRun(db, req.params.name) || consolidation?.isActive?.(req.params.name)) {
       return res.status(409).json({ error: { code: "agent_running", message: "wait for active runs to finish before deleting this agent" } });
     }
-    const r = db.prepare("DELETE FROM agents WHERE name = ?").run(req.params.name);
+    const r = deleteAgentByName(db, req.params.name);
     if (r.changes === 0) {
       return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     }
@@ -441,30 +444,16 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   // Recent runs (joined with task_runs, agent_logs, tasks) — powers the
   // "Recent runs" section on AgentEdit and the "N runs" pill on Agents.
   app.get("/api/agents/:name/runs", (req, res) => {
-    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
-    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    if (!agentExists(db, req.params.name)) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
-    const rows = db.prepare(`
-      SELECT r.id, r.task_id, r.mode, r.status, r.started_at, r.ended_at,
-             t.title AS task_title,
-             t.task_key AS task_key,
-             l.model, l.cost_usd, l.duration_ms, l.input_tokens, l.output_tokens
-      FROM task_runs r
-      LEFT JOIN tasks t ON t.id = r.task_id
-      LEFT JOIN agent_logs l ON l.task_run_id = r.id
-      WHERE r.agent_name = ?
-      ORDER BY r.started_at DESC
-      LIMIT ?
-    `).all(req.params.name, limit);
-    res.json({ runs: rows });
+    res.json({ runs: listRecentAgentRuns(db, req.params.name, limit) });
   });
 
   // Run-scoped journal section — renders inline below the event timeline
   // in TaskDetail, closing the gap between "what the SDK did" (events) and
   // "what the agent decided" (journal).
   app.get("/api/agents/:name/journal", (req, res) => {
-    const existing = db.prepare("SELECT name FROM agents WHERE name = ?").get(req.params.name);
-    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    if (!agentExists(db, req.params.name)) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
     const runId = req.query.run;
     if (!runId) return res.status(400).json({ error: { code: "validation", message: "run query param required" } });
     const section = readRunSection({ dataDir, agent: req.params.name, runId: String(runId) });

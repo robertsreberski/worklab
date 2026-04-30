@@ -53,3 +53,29 @@ export function setRunTranscriptTail(db, runId, transcriptTailJson) {
 export function deleteRunById(db, runId) {
   db.prepare("DELETE FROM task_runs WHERE id = ?").run(runId);
 }
+
+export function agentHasRunningRun(db, agentName) {
+  return Boolean(
+    db
+      .prepare("SELECT id FROM task_runs WHERE agent_name = ? AND status = 'running' LIMIT 1")
+      .get(agentName),
+  );
+}
+
+// Recent runs for an agent — used by AgentEdit's "Recent runs" panel and the
+// "N runs" pill on the Agents list. Joins task title/key and agent-log usage
+// data to render in a single round-trip.
+export function listRecentAgentRuns(db, agentName, limit) {
+  return db.prepare(`
+    SELECT r.id, r.task_id, r.mode, r.status, r.started_at, r.ended_at,
+           t.title AS task_title,
+           t.task_key AS task_key,
+           l.model, l.cost_usd, l.duration_ms, l.input_tokens, l.output_tokens
+    FROM task_runs r
+    LEFT JOIN tasks t ON t.id = r.task_id
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    WHERE r.agent_name = ?
+    ORDER BY r.started_at DESC
+    LIMIT ?
+  `).all(agentName, limit);
+}
