@@ -61,6 +61,133 @@ function RunDiagnosticsDisclosure({ run }) {
   );
 }
 
+function shortRunId(id) {
+  return id ? String(id).slice(-6) : "";
+}
+
+function navigateToRun(event, runId) {
+  if (!runId) return;
+  event.preventDefault();
+  const hash = window.location.hash || "";
+  const [pathPart] = hash.replace(/^#/, "").split("?");
+  const next = `#${pathPart}?run=${encodeURIComponent(runId)}`;
+  if (window.location.hash !== next) window.location.hash = next;
+}
+
+function RunContinuationLinks({ run }) {
+  const continuationDepth = Number(run?.continuation?.depth || 0);
+  const rootId = run?.continuation?.root_run_id;
+  const childId = run?.continuation_child_id;
+  if (!childId && continuationDepth === 0) return null;
+  return (
+    <div class="run-continuation-links">
+      {continuationDepth > 0 && rootId && (
+        <span class="run-continuation-link">
+          Continuation #{continuationDepth} of run{" "}
+          <a
+            href={`#?run=${encodeURIComponent(rootId)}`}
+            onClick={(event) => navigateToRun(event, rootId)}
+          >
+            #{shortRunId(rootId)}
+          </a>
+        </span>
+      )}
+      {childId && (
+        <span class="run-continuation-link">
+          Continued as run{" "}
+          <a
+            href={`#?run=${encodeURIComponent(childId)}`}
+            onClick={(event) => navigateToRun(event, childId)}
+          >
+            #{shortRunId(childId)}
+          </a>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RunFailureDetails({ run }) {
+  const processStatus = run?.process_status || run?.status;
+  const isFailed = processStatus === "failed" || processStatus === "abandoned" || run?.status === "error";
+  if (!isFailed) return null;
+  const failureKind = run?.failure_kind;
+  const subkind = run?.diagnostics?.provider_error_subkind;
+  const errorDetails = run?.error_details || {};
+  const lastText = typeof errorDetails.last_text_excerpt === "string"
+    ? errorDetails.last_text_excerpt.trim()
+    : "";
+  const lastTool = typeof errorDetails.last_tool_name === "string"
+    ? errorDetails.last_tool_name.trim()
+    : "";
+  const cancelInitiator = typeof run?.cancel_initiator === "string" ? run.cancel_initiator.trim() : "";
+  const cancelReason = typeof run?.cancel_reason === "string" ? run.cancel_reason.trim() : "";
+  const stderrTail = typeof run?.diagnostics?.stderr_tail === "string"
+    ? run.diagnostics.stderr_tail
+    : "";
+  const stderrTailTrimmed = stderrTail.trim();
+  const hasAny = Boolean(
+    failureKind || subkind || lastText || lastTool || cancelInitiator || cancelReason || stderrTailTrimmed,
+  );
+  if (!hasAny) return null;
+  const stderrTruncated = stderrTailTrimmed.length > 400
+    ? stderrTailTrimmed.slice(0, 400)
+    : stderrTailTrimmed;
+  const stderrHasMore = stderrTailTrimmed.length > 400;
+  return (
+    <dl class="run-failure-details">
+      {failureKind && (
+        <div class="run-failure-row">
+          <dt>Failure kind</dt>
+          <dd><code>{failureKind}</code></dd>
+        </div>
+      )}
+      {subkind && (
+        <div class="run-failure-row">
+          <dt>Provider subkind</dt>
+          <dd><code>{subkind}</code></dd>
+        </div>
+      )}
+      {(cancelInitiator || cancelReason) && (
+        <div class="run-failure-row">
+          <dt>Cancel</dt>
+          <dd>
+            {cancelInitiator && <code>{cancelInitiator}</code>}
+            {cancelInitiator && cancelReason ? ": " : null}
+            {cancelReason}
+          </dd>
+        </div>
+      )}
+      {lastText && (
+        <div class="run-failure-row">
+          <dt>Last assistant text</dt>
+          <dd class="run-failure-snippet">{lastText}</dd>
+        </div>
+      )}
+      {lastTool && (
+        <div class="run-failure-row">
+          <dt>Last tool</dt>
+          <dd><code>{lastTool}</code></dd>
+        </div>
+      )}
+      {stderrTailTrimmed && (
+        <div class="run-failure-row">
+          <dt>stderr tail</dt>
+          <dd>
+            <pre class="run-failure-stderr">{stderrTruncated}</pre>
+            {stderrHasMore && (
+              <details class="run-failure-stderr-full">
+                <summary>Show more</summary>
+                <pre class="run-failure-stderr">{stderrTailTrimmed}</pre>
+              </details>
+            )}
+          </dd>
+        </div>
+      )}
+    </dl>
+  );
+}
+
 export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
   const metrics = runMetricItems(run);
@@ -151,6 +278,8 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
       )}
       <RunCancellationNote run={run} />
       <RunWarningsList warnings={warnings} />
+      <RunContinuationLinks run={run} />
+      <RunFailureDetails run={run} />
       <RunDiagnosticsDisclosure run={run} />
       <div class="run-card-events">
         {loading ? (

@@ -71,13 +71,66 @@ function cancellationSummary(run = {}) {
   return "Run cancelled";
 }
 
-export function runResultPreview(run = {}) {
+const PROVIDER_SUBKIND_TEXT = {
+  terminated: "Provider stream was interrupted before the agent finished.",
+  overloaded: "Provider reported it was overloaded.",
+  rate_limited: "Provider rate limit hit.",
+  timeout: "Provider request timed out.",
+  network: "Network error reaching the provider.",
+  server_error: "Provider returned a server error.",
+};
+
+const FAILURE_KIND_TEXT = {
+  provider_unavailable_exhausted: "Provider repeatedly terminated; auto-recovery exhausted.",
+  usage_limit: "Provider usage or context limit hit.",
+  stall: "Run stalled with no events.",
+  timeout: "Run exceeded the configured time limit.",
+  invalid_result: "Agent did not return a valid worklab_result.",
+  spawn: "Worker process failed to start.",
+  abandoned: "Worker process ended without a final result.",
+};
+
+const CANCEL_FAMILY = new Set(["cancelled", "cancelled_signal", "cancelled_stale"]);
+
+export function describeFailure(run = {}, { continuationLimit = 3 } = {}) {
+  const processStatus = cleanText(run?.process_status) || cleanText(run?.status);
+  const failureKind = cleanText(run?.failure_kind);
+  const subkind = cleanText(run?.diagnostics?.provider_error_subkind);
+
+  if (CANCEL_FAMILY.has(failureKind)) return cancellationSummary(run);
+
+  let base = null;
+  if (!failureKind) {
+    if (processStatus === "failed") base = "Run failed.";
+  } else if (failureKind === "provider_unavailable") {
+    base = PROVIDER_SUBKIND_TEXT[subkind] || "Provider was unavailable.";
+  } else if (FAILURE_KIND_TEXT[failureKind]) {
+    base = FAILURE_KIND_TEXT[failureKind];
+  }
+
+  if (!base) return null;
+
+  const retryable = run?.diagnostics?.retryable_provider_error === true;
+  if (retryable) {
+    const depth = Number(run?.continuation?.depth || 0);
+    if (depth < continuationLimit) {
+      return `${base} Worklab is retrying automatically.`;
+    }
+    return `${base} Click Retry to try again.`;
+  }
+  return base;
+}
+
+export function runResultPreview(run = {}, { continuationLimit = 3 } = {}) {
   const processStatus = cleanText(run?.process_status) || cleanText(run?.status);
   const failedDecision = failureDecision(processStatus);
   if (failedDecision) {
     const summary = failedDecision === "cancelled"
       ? cancellationSummary(run)
-      : cleanText(run?.error_text) || cleanText(run?.failure_kind) || "Run failed";
+      : describeFailure(run, { continuationLimit })
+        || cleanText(run?.error_text)
+        || cleanText(run?.failure_kind)
+        || "Run failed";
     return {
       decision: failedDecision,
       summary,
