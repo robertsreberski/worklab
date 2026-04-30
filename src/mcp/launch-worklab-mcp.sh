@@ -1,4 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-exec node "$DIR/worklab-tools-server.js"
+exec node "$DIR/agent/server.js"

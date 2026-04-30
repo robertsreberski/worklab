@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { join } from "node:path";
-import { serviceStatus } from "../cli/install-service.js";
+import { serviceStatus } from "../../cli/install-service.js";
 
 const string = (description) => ({ type: "string", description });
 const number = (description) => ({ type: "number", description });

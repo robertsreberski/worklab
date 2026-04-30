@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { buildSkillIndex } from "../../core/skills.js";
 import { stripWorklabResultJson } from "../../ai/result/contract.js";
 import { formatTaskArtifactsForPrompt } from "../../core/run-artifacts.js";
-import { renderToolSurfaceMarkdown } from "../../mcp/worklab-tools.js";
+import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 

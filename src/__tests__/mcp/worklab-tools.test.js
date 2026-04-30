@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb, runMigrations } from "../../core/db.js";
-import { createToolHandlers } from "../../mcp/worklab-tools.js";
+import { createToolHandlers } from "../../mcp/agent/tools.js";
 
 describe("worklab-tools handlers", () => {
   const dirs = [];

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { adminToolDefinitions, apiRequest, createAdminToolHandlers } from "../../mcp/admin-tools.js";
+import { adminToolDefinitions, apiRequest, createAdminToolHandlers } from "../../mcp/admin/tools.js";
 
 describe("admin MCP tools", () => {
   it("exposes full-access API escape hatch and task wrappers", () => {
