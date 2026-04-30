@@ -10,15 +10,24 @@ import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../../core/projects.js";
 import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../../core/run-artifacts.js";
 import {
+  applyStaleRunReconcileToTask,
+  cascadeProjectToDescendants,
+  deleteTaskByIdRow,
   getMaxSubtaskOrder,
   getTaskById,
   getTaskByClientRequestId,
   getTaskKeyById,
+  insertManualSubtask,
+  insertTask,
   listFilteredTasks,
   listTasksByIds,
+  markParentAwaitingChildren,
+  touchTaskUpdatedAt,
+  updateTaskFields,
 } from "../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../core/db/queries/agent-logs.js";
 import {
+  applyStaleRunReconcileToRun,
   getCostSummaryByAgentSince,
   getCostSummarySince,
   getLastNonRunningTaskRun,
@@ -38,8 +47,10 @@ import {
   listDependsOnTaskIds,
   listDirectDependencyRows,
   listDirectDependentRows,
+  replaceDependenciesForTask,
 } from "../../core/db/queries/task-dependencies.js";
 import {
+  insertSubtaskEdge,
   listSubtaskChildrenForParent,
   listSubtaskChildrenForParents,
 } from "../../core/db/queries/task-edges.js";
@@ -50,7 +61,13 @@ import {
   listLatestAutomationTriggersForTasks,
 } from "../../core/db/queries/automations.js";
 import { listProjectsByIds } from "../../core/db/queries/projects.js";
-import { getCommentById, getTaskCommentById } from "../../core/db/queries/comments.js";
+import {
+  deleteCommentByIdAndTaskId,
+  getCommentById,
+  getTaskCommentById,
+  insertAuthoredComment,
+  listTaskComments,
+} from "../../core/db/queries/comments.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -424,33 +441,16 @@ function normalizeProjectPatchValue(db, value) {
 }
 
 function cascadeProjectToEligibleDescendants(db, taskId, previousProjectId, nextProjectId, now) {
-  const result = db.prepare(`
-    WITH RECURSIVE descendants(id) AS (
-      SELECT child_task_id
-      FROM task_edges
-      WHERE parent_task_id = ? AND edge_type = 'subtask'
-      UNION
-      SELECT e.child_task_id
-      FROM task_edges e
-      JOIN descendants d ON e.parent_task_id = d.id
-      WHERE e.edge_type = 'subtask'
-    )
-    UPDATE tasks
-    SET project_id = ?, updated_at = ?
-    WHERE id IN (SELECT id FROM descendants)
-      AND (project_id IS NULL OR project_id IS ?)
-  `).run(taskId, nextProjectId, now, previousProjectId);
-  return Number(result?.changes || 0);
+  return cascadeProjectToDescendants(db, {
+    taskId,
+    previousProjectId,
+    nextProjectId,
+    updatedAt: now,
+  });
 }
 
 function replaceTaskDependencies(db, taskId, dependencyIds) {
-  const insert = db.prepare("INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)");
-  const tx = db.transaction((ids) => {
-    db.prepare("DELETE FROM task_dependencies WHERE task_id = ?").run(taskId);
-    const now = Date.now();
-    for (const dependencyId of ids) insert.run(taskId, dependencyId, now);
-  });
-  tx(dependencyIds);
+  replaceDependenciesForTask(db, taskId, dependencyIds, Date.now());
 }
 
 function applyRouteSideEffects(db, broker, logger, taskId, sideEffects, currentStage, newStage) {
@@ -695,9 +695,8 @@ function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, c
       values.push(updatedAt);
     }
     values.push(taskId);
-    const updateSql = `UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`;
     db.transaction(() => {
-      db.prepare(updateSql).run(...values);
+      updateTaskFields(db, fields, values);
       if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
         projectCascadeCount = cascadeProjectToEligibleDescendants(
           db,
@@ -747,7 +746,7 @@ function deleteTaskById({ db, broker, watcher, taskId }) {
   if (taskHasRunningRun(db, taskId) || watcher?.isActive?.(taskId)) {
     throw routeError(409, "task_running", "cancel the active run before deleting this task");
   }
-  const r = db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  const r = deleteTaskByIdRow(db, taskId);
   if (r.changes === 0) throw routeError(404, "not_found", "task not found");
   broker?.broadcast?.("global", { type: "task_deleted", id: taskId, taskKey: existingTaskKey });
 }
@@ -918,33 +917,27 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
     const now = Date.now();
-    const insertTask = db.prepare(`
-      INSERT INTO tasks
-        (id, task_key, project_id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
-         planner_agent, reviewer_agent, run_policy, tags, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
     let id;
     try {
       db.transaction(() => {
         id = newTaskId();
-        insertTask.run(
+        insertTask(db, {
           id,
-          nextTaskKey(db),
+          taskKey: nextTaskKey(db),
           projectId,
-          id,
-          requestId,
+          rootTaskId: id,
+          clientRequestId: requestId,
           title,
           instructions,
           stage,
-          owner_agent,
-          planner_agent,
-          reviewer_agent,
-          normalizedRunPolicy,
-          JSON.stringify(tags),
-          now,
-          now,
-        );
+          ownerAgent: owner_agent,
+          plannerAgent: planner_agent,
+          reviewerAgent: reviewer_agent,
+          runPolicy: normalizedRunPolicy,
+          tagsJson: JSON.stringify(tags),
+          createdAt: now,
+          updatedAt: now,
+        });
         replaceTaskDependencies(db, id, dependencyIds);
       })();
     } catch (error) {
@@ -1015,9 +1008,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   app.get("/api/tasks/:id", (req, res) => {
     const row = resolveTaskRow(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const comments = enrichCommentRows(db, db
-      .prepare("SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at")
-      .all(row.id));
+    const comments = enrichCommentRows(db, listTaskComments(db, row.id));
     const runs = attachLiveInputState(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id), watcher);
     const task = enrichTask(db, rowToTask(row), config);
     const taskArtifacts = loadTaskArtifacts(db, row.id);
@@ -1069,49 +1060,35 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
 
     try {
       db.transaction(() => {
-        db.prepare(`
-          INSERT INTO tasks
-            (id, task_key, root_task_id, parent_task_id, owner_agent, planner_agent, reviewer_agent,
-             project_id, title, instructions, stage, run_policy, join_policy, subtask_order, required,
-             tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
-        `).run(
-          childId,
-          nextTaskKey(db),
+        insertManualSubtask(db, {
+          id: childId,
+          taskKey: nextTaskKey(db),
           rootTaskId,
-          parent.id,
+          parentTaskId: parent.id,
           ownerAgent,
           plannerAgent,
           reviewerAgent,
-          parent.project_id || null,
+          projectId: parent.project_id || null,
           title,
           instructions,
-          parent.run_policy || DEFAULT_RUN_POLICY,
+          runPolicy: parent.run_policy || DEFAULT_RUN_POLICY,
           subtaskOrder,
           required,
-          JSON.stringify([]),
-          now,
-          now,
-        );
-        db.prepare(`
-          INSERT INTO task_edges
-            (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
-          VALUES (?, ?, 'subtask', ?, NULL, ?)
-        `).run(parent.id, childId, required, now);
+          tagsJson: JSON.stringify([]),
+          createdAt: now,
+          updatedAt: now,
+        });
+        insertSubtaskEdge(db, {
+          parentTaskId: parent.id,
+          childTaskId: childId,
+          required,
+          createdByRunId: null,
+          createdAt: now,
+        });
         if (shouldWait) {
-          db.prepare(`
-            UPDATE tasks
-            SET stage = 'awaiting_children',
-                stage_reason = 'waiting for manual subtasks',
-                error_text = NULL,
-                completed_at = NULL,
-                pending_actions_json = '[]',
-                blocking_issues_json = '[]',
-                updated_at = ?
-            WHERE id = ?
-          `).run(now, parent.id);
+          markParentAwaitingChildren(db, parent.id, now);
         } else {
-          db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, parent.id);
+          touchTaskUpdatedAt(db, parent.id, now);
         }
       })();
     } catch (error) {
@@ -1148,11 +1125,15 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     }
     const id = newCommentId();
     const now = Date.now();
-    db.prepare(`
-      INSERT INTO task_comments (id, task_id, author_type, author_id, body, created_at)
-      VALUES (?, ?, 'human', NULL, ?, ?)
-    `).run(id, existing.id, body, now);
-    db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
+    insertAuthoredComment(db, {
+      id,
+      taskId: existing.id,
+      authorType: "human",
+      authorId: null,
+      body,
+      createdAt: now,
+    });
+    touchTaskUpdatedAt(db, existing.id, now);
     broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
     const row = enrichCommentRows(db, [getCommentById(db, id)])[0];
     const payload = { comment: row };
@@ -1176,8 +1157,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       }
       const now = Date.now();
       db.transaction(() => {
-        db.prepare("DELETE FROM task_comments WHERE id = ? AND task_id = ?").run(comment.id, existing.id);
-        db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(now, existing.id);
+        deleteCommentByIdAndTaskId(db, comment.id, existing.id);
+        touchTaskUpdatedAt(db, existing.id, now);
       })();
       broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
       res.status(204).end();
@@ -1263,22 +1244,18 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
 
     const now = Date.now();
     db.transaction(() => {
-      db.prepare(
-        `UPDATE task_runs
-         SET status = 'error', process_status = 'abandoned', ended_at = ?,
-             failure_kind = 'abandoned', error_text = ?,
-             cancel_initiator = COALESCE(cancel_initiator, 'stale_reconcile'),
-             cancel_reason = COALESCE(cancel_reason, ?)
-         WHERE id = ?`
-      ).run(now, "worker exited", reason || "stale run reconciled by API cancel", staleRun.id);
-      const retryStage = staleRun.stage || "execute";
-      db.prepare(
-        `UPDATE tasks SET stage = CASE WHEN stage = 'done' THEN stage ELSE ? END,
-                          error_text = COALESCE(error_text, ?),
-                          stage_reason = COALESCE(stage_reason, 'abandoned'),
-                          updated_at = ?
-         WHERE id = ?`
-      ).run(retryStage, "Previous run did not finish", now, taskId);
+      applyStaleRunReconcileToRun(db, {
+        runId: staleRun.id,
+        endedAt: now,
+        errorText: "worker exited",
+        reason: reason || "stale run reconciled by API cancel",
+      });
+      applyStaleRunReconcileToTask(db, {
+        taskId,
+        retryStage: staleRun.stage || "execute",
+        errorTextFallback: "Previous run did not finish",
+        updatedAt: now,
+      });
     })();
 
     broker.broadcast("global", buildRunLifecycleEvent(db, "run_ended", staleRun.id, {

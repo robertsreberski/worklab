@@ -79,3 +79,19 @@ export function listDirectDependentRows(db, taskId) {
     ORDER BY t.updated_at DESC, t.rowid DESC
   `).all(taskId);
 }
+
+export function deleteAllDependenciesForTask(db, taskId) {
+  db.prepare("DELETE FROM task_dependencies WHERE task_id = ?").run(taskId);
+}
+
+// Replace the full dependency edge set for a task in a single transaction.
+// Caller must pre-validate the IDs (no self-dep, no cycles).
+export function replaceDependenciesForTask(db, taskId, dependencyIds, createdAt) {
+  const insert = db.prepare(
+    "INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)",
+  );
+  db.transaction(() => {
+    db.prepare("DELETE FROM task_dependencies WHERE task_id = ?").run(taskId);
+    for (const dependencyId of dependencyIds) insert.run(taskId, dependencyId, createdAt);
+  })();
+}

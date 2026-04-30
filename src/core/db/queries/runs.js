@@ -231,3 +231,17 @@ export function getCostSummaryByAgentSince(db, sinceMs) {
     ORDER BY total DESC
   `).all(sinceMs);
 }
+
+// Stale-run reconcile path: when /cancel is called on a task whose worker
+// is no longer alive, mark the orphaned task_runs row as abandoned.
+// COALESCE preserves whatever cancel metadata might already be present.
+export function applyStaleRunReconcileToRun(db, { runId, endedAt, errorText, reason }) {
+  db.prepare(`
+    UPDATE task_runs
+    SET status = 'error', process_status = 'abandoned', ended_at = ?,
+        failure_kind = 'abandoned', error_text = ?,
+        cancel_initiator = COALESCE(cancel_initiator, 'stale_reconcile'),
+        cancel_reason = COALESCE(cancel_reason, ?)
+    WHERE id = ?
+  `).run(endedAt, errorText, reason, runId);
+}

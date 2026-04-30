@@ -97,6 +97,133 @@ export function getMaxSubtaskOrder(db, parentTaskId) {
   );
 }
 
+// Recursive UPDATE: walk task_edges (subtask only) and re-set project_id on
+// every descendant whose project_id is NULL or matches the previous one.
+export function cascadeProjectToDescendants(db, { taskId, previousProjectId, nextProjectId, updatedAt }) {
+  const result = db.prepare(`
+    WITH RECURSIVE descendants(id) AS (
+      SELECT child_task_id
+      FROM task_edges
+      WHERE parent_task_id = ? AND edge_type = 'subtask'
+      UNION
+      SELECT e.child_task_id
+      FROM task_edges e
+      JOIN descendants d ON e.parent_task_id = d.id
+      WHERE e.edge_type = 'subtask'
+    )
+    UPDATE tasks
+    SET project_id = ?, updated_at = ?
+    WHERE id IN (SELECT id FROM descendants)
+      AND (project_id IS NULL OR project_id IS ?)
+  `).run(taskId, nextProjectId, updatedAt, previousProjectId);
+  return Number(result?.changes || 0);
+}
+
+// Dynamic-field UPDATE on tasks. Caller shapes fields/values; the row id
+// must be last in values (UPDATE ... WHERE id = ?).
+export function updateTaskFields(db, fields, values) {
+  if (!fields.length) return;
+  db.prepare(`UPDATE tasks SET ${fields.join(", ")} WHERE id = ?`).run(...values);
+}
+
+export function deleteTaskByIdRow(db, taskId) {
+  return db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+}
+
+export function insertTask(db, {
+  id,
+  taskKey,
+  projectId,
+  rootTaskId,
+  clientRequestId,
+  title,
+  instructions,
+  stage,
+  ownerAgent,
+  plannerAgent,
+  reviewerAgent,
+  runPolicy,
+  tagsJson,
+  createdAt,
+  updatedAt,
+}) {
+  db.prepare(`
+    INSERT INTO tasks
+      (id, task_key, project_id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
+       planner_agent, reviewer_agent, run_policy, tags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, taskKey, projectId, rootTaskId, clientRequestId, title, instructions, stage,
+    ownerAgent, plannerAgent, reviewerAgent, runPolicy, tagsJson, createdAt, updatedAt,
+  );
+}
+
+// Manual subtask creation — fixed stage='plan' and join_policy='all_required'
+// per the manual-subtask path; agents create children through other helpers.
+export function insertManualSubtask(db, {
+  id,
+  taskKey,
+  rootTaskId,
+  parentTaskId,
+  ownerAgent,
+  plannerAgent,
+  reviewerAgent,
+  projectId,
+  title,
+  instructions,
+  runPolicy,
+  subtaskOrder,
+  required,
+  tagsJson,
+  createdAt,
+  updatedAt,
+}) {
+  db.prepare(`
+    INSERT INTO tasks
+      (id, task_key, root_task_id, parent_task_id, owner_agent, planner_agent, reviewer_agent,
+       project_id, title, instructions, stage, run_policy, join_policy, subtask_order, required,
+       tags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'plan', ?, 'all_required', ?, ?, ?, ?, ?)
+  `).run(
+    id, taskKey, rootTaskId, parentTaskId, ownerAgent, plannerAgent, reviewerAgent,
+    projectId, title, instructions, runPolicy, subtaskOrder, required ? 1 : 0, tagsJson,
+    createdAt, updatedAt,
+  );
+}
+
+// Switch a parent task into the awaiting_children stage when a manual
+// required subtask is created. Clears stage_reason / error_text / actions /
+// blocking issues so the UI shows a clean waiting state.
+export function markParentAwaitingChildren(db, parentTaskId, updatedAt) {
+  db.prepare(`
+    UPDATE tasks
+    SET stage = 'awaiting_children',
+        stage_reason = 'waiting for manual subtasks',
+        error_text = NULL,
+        completed_at = NULL,
+        pending_actions_json = '[]',
+        blocking_issues_json = '[]',
+        updated_at = ?
+    WHERE id = ?
+  `).run(updatedAt, parentTaskId);
+}
+
+export function touchTaskUpdatedAt(db, taskId, updatedAt) {
+  db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(updatedAt, taskId);
+}
+
+// Stale-run reconcile path: a worker is gone but `tasks.stage` may still be
+// running. Don't clobber 'done'; otherwise force back to retryStage.
+export function applyStaleRunReconcileToTask(db, { taskId, retryStage, errorTextFallback, updatedAt }) {
+  db.prepare(`
+    UPDATE tasks SET stage = CASE WHEN stage = 'done' THEN stage ELSE ? END,
+                     error_text = COALESCE(error_text, ?),
+                     stage_reason = COALESCE(stage_reason, 'abandoned'),
+                     updated_at = ?
+    WHERE id = ?
+  `).run(retryStage, errorTextFallback, updatedAt, taskId);
+}
+
 export function listProjectTasksWithRunSnapshots(db, projectId) {
   return db.prepare(`
     SELECT
