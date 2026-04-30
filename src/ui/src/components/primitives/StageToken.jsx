@@ -31,6 +31,11 @@ export function StageToken({
     <>
       <span class="stage-token-glyph" aria-hidden="true" />
       <span class="stage-token-label status-pill-label">{label || meta.label}</span>
+      {variant === "grid" && (
+        <span class="stage-token-selection" aria-hidden="true">
+          {active && <Icon name="check" size={12} strokeWidth={2.4} />}
+        </span>
+      )}
       {variant === "menu" && <Icon name="chevron-down" size={12} class="stage-token-chevron" aria-hidden="true" />}
     </>
   );
