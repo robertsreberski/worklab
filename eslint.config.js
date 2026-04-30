@@ -1,8 +1,10 @@
 // Module-boundary lint for the modularization plan.
 //
-// Rules are at "warn" until Phase 7. Today many violations exist (api/integrations
-// touching better-sqlite3, slack reaching into core, etc.). The warnings document
-// what each phase needs to clean up; nothing fails until we promote to "error".
+// All rules are at "error" level. PR-2..PR-6 cleared the db.prepare()
+// violations in src/api/**, PR-13..PR-15 + the PR-14 follow-on cleared every
+// cross-layer back-import, and PR-9 added the FORBID_DEEP_CORE rule that
+// requires edge layers to consume core/ via the public barrel
+// (src/core/index.js). The carve-outs are documented inline below.
 //
 // Layout the rules target (some directories don't exist yet — rules activate as we create them):
 //   src/ai/        provider layer; no DB, no domain layers
@@ -56,8 +58,14 @@ const FORBID_EDGE_FROM_CORE = {
   message: "src/core/ must not depend on coordinator/api/mcp/integrations/cli/worker.",
 };
 
+// Boundary rules at error level (PR-16). PR-2..PR-6 cleared the
+// db.prepare() violations and PR-9..PR-15 + the PR-14 follow-on cleared
+// every cross-layer back-import. New deep core/* imports outside the
+// documented carve-outs (src/coordinator/task-watcher.js,
+// coordinator/watcher/*.js, coordinator/spawn-worker.js, cli/doctor.js)
+// will fail npm run lint and the pre-commit hook.
 const restricted = (...patterns) => ({
-  "no-restricted-imports": ["warn", { patterns }],
+  "no-restricted-imports": ["error", { patterns }],
 });
 
 // API routes must call helpers in src/core/db/queries/*.js, not db.prepare directly.
@@ -167,19 +175,13 @@ export default [
     rules: restricted(FORBID_DB, FORBID_DEEP_CORE, FORBID_API_LAYER),
   },
 
-  // src/cli/ — binary subcommands. cli/doctor.js still uses the
-  // core/ai-tool-helpers.js re-export shim; carve it out until the CLI
-  // tooling stops depending on the shim.
+  // src/cli/ — binary subcommands.
   {
     files: ["src/cli/**/*.js"],
     rules: restricted(FORBID_DEEP_CORE, {
       group: ["**/api/**", "**/integrations/**", "**/mcp/**"],
       message: "CLI uses core and coordinator only.",
     }),
-  },
-  {
-    files: ["src/cli/doctor.js"],
-    rules: { "no-restricted-imports": "off" },
   },
 
   // src/coordinator/ + src/coordinator.js + src/worker.js — process orchestration.
