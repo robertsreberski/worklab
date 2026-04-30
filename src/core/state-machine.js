@@ -1,12 +1,10 @@
-export const STAGES = [
-  "plan",
-  "execute",
-  "review",
-  "awaiting_children",
-  "awaiting_user",
-  "blocked",
-  "done",
-];
+// STAGES and DECISIONS live in the provider/result layer
+// (src/ai/result/decisions.js) — that's the source of truth for the
+// worklab_result contract; the workflow re-exports them so existing
+// importers don't have to chase the new path until Phase 7.
+import { DECISIONS, STAGES } from "../ai/result/decisions.js";
+
+export { DECISIONS, STAGES };
 
 export const PROCESS_STATUSES = [
   "queued",
@@ -15,15 +13,6 @@ export const PROCESS_STATUSES = [
   "failed",
   "cancelled",
   "abandoned",
-];
-
-export const DECISIONS = [
-  "advance",
-  "approve",
-  "reject",
-  "block",
-  "pause",
-  "delegate",
 ];
 
 export const FAILURE_KINDS = [
