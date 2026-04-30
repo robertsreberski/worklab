@@ -48,13 +48,17 @@ describe("agent compaction", () => {
       onEvent: (event) => events.push(event),
     });
 
+    const originalLength = messages.length;
     const compacted = await manager.transformContext(messages);
 
-    expect(compacted.length).toBeLessThan(messages.length);
+    expect(compacted).toBe(messages);
+    expect(compacted.length).toBeLessThan(originalLength);
     expect(compacted[0].role).toBe("user");
     expect(compacted[0].content).toContain(COMPACTED_CONTEXT_MARKER);
     expect(manager.diagnostics()).toMatchObject({ context_compactions: 1 });
     expect(events.map((event) => event.type)).toContain("context_compaction_completed");
+    await manager.transformContext(messages);
+    expect(events.filter((event) => event.type === "context_compaction_completed")).toHaveLength(1);
     const row = db.prepare("SELECT task_run_id, seq, tokens_before, tokens_after, summary FROM run_compactions").get();
     expect(row.task_run_id).toBe("run_1");
     expect(row.seq).toBe(1);
@@ -110,6 +114,7 @@ describe("agent compaction", () => {
 
     const pruned = await manager.transformContext(messages);
 
+    expect(pruned).toBe(messages);
     expect(pruned).toHaveLength(messages.length);
     expect(pruned.some((message) => message.role === "toolResult" && message.details?.context_pruned)).toBe(true);
     expect(manager.diagnostics()).toMatchObject({
@@ -117,6 +122,48 @@ describe("agent compaction", () => {
       tool_results_pruned: expect.any(Number),
     });
     expect(events.map((event) => event.type)).toContain("tool_context_pruned");
+    const pruneEvent = events.find((event) => event.type === "tool_context_pruned");
+    expect(pruneEvent.tokens_saved).toBe(pruneEvent.tokens_before - pruneEvent.tokens_after);
+    expect(pruneEvent.pruned_tool_tokens_saved).toBe(pruneEvent.pruned_tool_tokens_before - pruneEvent.pruned_tool_tokens_after);
+  });
+
+  it("does not repeatedly report the same pruned tool results", async () => {
+    const events = [];
+    const manager = createAgentCompactionManager({
+      model: { id: "gpt-test", contextWindow: 32000 },
+      settings: {
+        agent_compaction_trigger_ratio: 0.95,
+        agent_compaction_keep_recent_tokens: 4000,
+        agent_tool_prune_trigger_tokens: 1000,
+      },
+      onEvent: (event) => events.push(event),
+    });
+    const messages = [];
+    for (let index = 0; index < 18; index += 1) {
+      messages.push({ role: "user", content: `step ${index}` });
+      messages.push({ role: "assistant", content: [{ type: "toolCall", id: `read-${index}`, name: "Read", arguments: { file_path: `file-${index}.js` } }] });
+      messages.push({
+        role: "toolResult",
+        toolName: "Read",
+        content: [{ type: "text", text: `output ${index} ${"x".repeat(4000)}` }],
+        details: { tool: "Read" },
+      });
+    }
+    messages.push({ role: "user", content: "recent instruction" });
+
+    await manager.transformContext(messages);
+    const firstPruned = manager.diagnostics().tool_results_pruned;
+    messages.push({ role: "assistant", content: [{ type: "toolCall", id: "edit-small", name: "Edit", arguments: { file_path: "file.js" } }] });
+    messages.push({
+      role: "toolResult",
+      toolName: "Edit",
+      content: [{ type: "text", text: "Successfully edited file.js" }],
+      details: { tool: "Edit" },
+    });
+    await manager.transformContext(messages);
+
+    expect(events.filter((event) => event.type === "tool_context_pruned")).toHaveLength(1);
+    expect(manager.diagnostics().tool_results_pruned).toBe(firstPruned);
   });
 
   it("does not force full compaction from tool payload accounting by default", async () => {
@@ -171,8 +218,10 @@ describe("agent compaction", () => {
       timestamp: index + 1,
     }));
 
+    const originalLength = messages.length;
     const first = await manager.transformContext(messages);
-    expect(first.length).toBeLessThan(messages.length);
+    expect(first).toBe(messages);
+    expect(first.length).toBeLessThan(originalLength);
     expect(db.prepare("SELECT trigger FROM run_compactions WHERE seq = 1").get().trigger).toBe("token_budget");
 
     const secondMessages = [
