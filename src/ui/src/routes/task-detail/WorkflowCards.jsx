@@ -13,7 +13,7 @@ import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { api } from "../../lib/api.js";
 import { collapseDuplicateParagraphs } from "../../lib/commentFormatting.js";
-import { taskRouteId } from "../../lib/display.js";
+import { taskDisplayKey, taskRouteId } from "../../lib/display.js";
 import { pushToast } from "../../lib/toast.js";
 import {
   formatDate,
@@ -38,6 +38,7 @@ function automationDraftFrom(automation) {
 }
 
 export function TaskContextList({ task }) {
+  const showParent = task?.parent && task.parent.id && task.parent.id !== task.id;
   const items = [
     task.project ? {
       label: "Project",
@@ -45,6 +46,16 @@ export function TaskContextList({ task }) {
         <a href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link">
           <Icon name="folder" size={12} />
           <span>{task.project.name || task.project.slug}</span>
+        </a>
+      ),
+      mono: false,
+    } : null,
+    showParent ? {
+      label: "Parent",
+      value: (
+        <a href={`#/tasks/${taskRouteId(task.parent)}`} class="task-meta-project-link">
+          <Icon name="corner-up-left" size={12} />
+          <span>{taskDisplayKey(task.parent)} - {task.parent.title}</span>
         </a>
       ),
       mono: false,
@@ -95,7 +106,9 @@ export function TaskWorkflowMeta({ task }) {
         <a class="task-workflow-parent" href={`#/tasks/${taskRouteId(task.parent)}`}>
           <Icon name="corner-up-left" size={12} />
           <span class="task-workflow-parent-label">Parent</span>
+          <span class="pane-row-mono">{taskDisplayKey(task.parent)}</span>
           <span class="truncate">{task.parent.title}</span>
+          <StatusPill status={task.parent.stage || "plan"} size="sm" />
         </a>
       )}
       {showStageReason && (
@@ -195,17 +208,20 @@ export function TaskSubtasksCard({
 }) {
   const children = Array.isArray(task?.children) ? task.children : [];
   return (
-    <Card title={`Subtasks (${children.length})`} class="task-subtasks-card">
+    <Card title={`Child tasks (${children.length})`} class="task-subtasks-card">
       {children.length > 0 ? (
         <ul class="task-subtasks-list">
           {children.map((child) => {
-            const lastRun = child.last_run || null;
+            const lastRun = child.last_run || child.latest_run || null;
             const runSummary = lastRun?.summary || lastRun?.details || "";
             return (
               <li key={child.id}>
                 <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
                   <span class="task-subtask-main min-w-0">
-                    <span class="task-subtask-title truncate">{child.title}</span>
+                    <span class="task-subtask-title truncate">
+                      <span class="pane-row-mono">{taskDisplayKey(child)}</span>
+                      <span>{child.title}</span>
+                    </span>
                     {runSummary && <span class="task-subtask-summary truncate">{runSummary}</span>}
                   </span>
                   <span class="task-subtask-meta">
@@ -230,7 +246,7 @@ export function TaskSubtasksCard({
           })}
         </ul>
       ) : (
-        <div class="task-subtasks-empty">No subtasks yet.</div>
+        <div class="task-subtasks-empty">No child tasks yet.</div>
       )}
       <form class="task-subtasks-add" onSubmit={onCreate}>
         <Input

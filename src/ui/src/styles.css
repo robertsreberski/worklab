@@ -3573,7 +3573,17 @@ html.assistant-resizing * {
   gap: 2px;
 }
 .task-subtask-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
   font-weight: 650;
+}
+.task-subtask-title > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .task-subtask-summary {
   color: var(--text-subtle);
@@ -7541,6 +7551,7 @@ html.assistant-resizing * {
 .project-task-progress-counts [data-group="todo"] .project-task-count-dot { background: color-mix(in srgb, var(--text-muted) 60%, transparent); }
 .project-task-progress-counts [data-group="in_progress"] .project-task-count-dot { background: var(--status-progress); }
 .project-task-progress-counts [data-group="done"] .project-task-count-dot { background: var(--status-done); }
+.project-task-progress-counts [data-group="children"] .project-task-count-dot { background: var(--text-muted); }
 .project-task-progress-bar {
   display: flex;
   align-items: stretch;
@@ -7614,6 +7625,17 @@ html.assistant-resizing * {
   overflow: hidden;
   background: var(--surface);
 }
+.project-task-row-block {
+  min-width: 0;
+  display: grid;
+  border-top: 1px solid var(--border);
+}
+.project-task-row-block:first-child {
+  border-top: 0;
+}
+.project-task-row-block > .project-task-row {
+  border-top: 0;
+}
 .project-task-row {
   min-width: 0;
   display: grid;
@@ -7629,6 +7651,22 @@ html.assistant-resizing * {
   border-top: 0;
 }
 .project-task-row:hover {
+  background: var(--surface-elevated);
+}
+.project-task-child-list {
+  display: grid;
+  border-top: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+.project-task-row.is-child {
+  grid-template-columns: minmax(52px, max-content) minmax(0, 1fr) minmax(0, auto) 48px;
+  padding-left: var(--sp-6);
+  background: color-mix(in srgb, var(--surface-sunken) 84%, var(--surface));
+}
+.project-task-row.is-child:first-child {
+  border-top: 0;
+}
+.project-task-row.is-child:hover {
   background: var(--surface-elevated);
 }
 .project-task-row-key,
@@ -7727,6 +7765,9 @@ html.assistant-resizing * {
   .project-task-row {
     grid-template-columns: minmax(48px, max-content) minmax(0, 1fr) 44px;
     align-items: start;
+  }
+  .project-task-row.is-child {
+    padding-left: var(--sp-4);
   }
   .project-task-row-main {
     grid-column: 2;

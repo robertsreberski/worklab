@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildProjectTaskProgress,
+  isProjectChildTask,
   projectTaskAttentionItems,
   projectTaskGroupKey,
 } from "../../ui/src/lib/projectTaskProgress.js";
@@ -60,5 +61,36 @@ describe("project task progress helpers", () => {
     expect(progress.groups.map((group) => group.key)).toEqual(["todo", "in_progress", "done"]);
     expect(progress.groups[1].tasks.map((task) => task.id)).toEqual(["failed", "normal"]);
     expect(progress.attention_tasks.map((task) => task.id)).toEqual(["failed"]);
+  });
+
+  it("nests child tasks under their parent without inflating top-level counts", () => {
+    const progress = buildProjectTaskProgress([
+      { id: "parent", title: "Parent", stage: "execute", updated_at: 4, owner_agent: "owner" },
+      { id: "child-done", parent_task_id: "parent", title: "Done child", stage: "done", updated_at: 3, owner_agent: "owner" },
+      {
+        id: "child-blocked",
+        parent_task_id: "parent",
+        title: "Blocked child",
+        stage: "blocked",
+        updated_at: 5,
+        owner_agent: "owner",
+        blocking_issues: ["missing context"],
+      },
+      { id: "top-done", title: "Top done", stage: "done", updated_at: 2, owner_agent: "owner" },
+    ]);
+
+    expect(isProjectChildTask({ parent_task_id: "parent" })).toBe(true);
+    expect(progress.total).toBe(2);
+    expect(progress.task_total).toBe(4);
+    expect(progress.child_total).toBe(2);
+    expect(progress.nested_child_total).toBe(2);
+    expect(progress.counts).toEqual({ todo: 0, in_progress: 1, done: 1 });
+    expect(progress.percent_done).toBe(50);
+
+    const parent = progress.groups[1].tasks.find((task) => task.id === "parent");
+    expect(parent.child_tasks.map((task) => task.id)).toEqual(["child-blocked", "child-done"]);
+    expect(parent.child_counts).toEqual({ todo: 0, in_progress: 1, done: 1 });
+    expect(parent.attention.map((item) => item.key)).toEqual(["child_attention"]);
+    expect(progress.attention_tasks.map((task) => task.id)).toEqual(["parent"]);
   });
 });
