@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import { legacyRunStatusToProcessStatus } from "./state-machine.js";
 
@@ -17,6 +17,66 @@ function parseEvents(value) {
 
 function jsonlFromEvents(events = []) {
   return events.map((event) => JSON.stringify(event)).join("\n") + (events.length ? "\n" : "");
+}
+
+function normalizeMode(value) {
+  return value === "full" ? "full" : "tail";
+}
+
+function normalizeLimitBytes(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n <= 0) return 60_000;
+  return Math.min(Math.max(n, 1_000), 5 * 1024 * 1024);
+}
+
+function tailString(content, limitBytes) {
+  const buffer = Buffer.from(String(content || ""), "utf8");
+  if (buffer.length <= limitBytes) {
+    return {
+      content: buffer.toString("utf8"),
+      byte_length: buffer.length,
+      returned_byte_length: buffer.length,
+      offset_bytes: 0,
+      truncated: false,
+    };
+  }
+  const offset = buffer.length - limitBytes;
+  return {
+    content: buffer.subarray(offset).toString("utf8"),
+    byte_length: buffer.length,
+    returned_byte_length: limitBytes,
+    offset_bytes: offset,
+    truncated: true,
+  };
+}
+
+function tailFile(filePath, limitBytes) {
+  const stat = statSync(filePath);
+  if (stat.size <= limitBytes) {
+    const content = readFileSync(filePath, "utf8");
+    return {
+      content,
+      byte_length: stat.size,
+      returned_byte_length: Buffer.byteLength(content),
+      offset_bytes: 0,
+      truncated: false,
+    };
+  }
+  const offset = stat.size - limitBytes;
+  const fd = openSync(filePath, "r");
+  try {
+    const buffer = Buffer.alloc(limitBytes);
+    const bytesRead = readSync(fd, buffer, 0, limitBytes, offset);
+    return {
+      content: buffer.subarray(0, bytesRead).toString("utf8"),
+      byte_length: stat.size,
+      returned_byte_length: bytesRead,
+      offset_bytes: offset,
+      truncated: true,
+    };
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function assertInsideDataDir(filePath, dataDir) {
@@ -45,10 +105,12 @@ function normalizeRun(row) {
   };
 }
 
-export function readRunLog({ db, dataDir, runId }) {
+export function readRunLog({ db, dataDir, runId, mode = "tail", limitBytes = 60_000 }) {
   if (!runId || typeof runId !== "string") {
     throw runLogError("validation", "run_id is required");
   }
+  const normalizedMode = normalizeMode(mode);
+  const normalizedLimitBytes = normalizeLimitBytes(limitBytes);
 
   const run = db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
   if (!run) throw runLogError("not_found", "run not found");
@@ -56,13 +118,21 @@ export function readRunLog({ db, dataDir, runId }) {
   if (run.raw_output_path) {
     const rawPath = assertInsideDataDir(run.raw_output_path, dataDir);
     if (existsSync(rawPath)) {
-      const content = readFileSync(rawPath, "utf8");
+      const payload = normalizedMode === "full"
+        ? {
+            content: readFileSync(rawPath, "utf8"),
+            byte_length: statSync(rawPath).size,
+            returned_byte_length: statSync(rawPath).size,
+            offset_bytes: 0,
+            truncated: false,
+          }
+        : tailFile(rawPath, normalizedLimitBytes);
       return {
         run: normalizeRun(run),
         source: "raw_output_path",
         content_type: "application/jsonl",
-        content,
-        byte_length: Buffer.byteLength(content),
+        mode: normalizedMode,
+        ...payload,
       };
     }
   }
@@ -71,12 +141,21 @@ export function readRunLog({ db, dataDir, runId }) {
   if (!logRow) throw runLogError("not_found", "run log not available");
   const events = parseEvents(logRow.events);
   const content = jsonlFromEvents(events);
+  const payload = normalizedMode === "full"
+    ? {
+        content,
+        byte_length: Buffer.byteLength(content),
+        returned_byte_length: Buffer.byteLength(content),
+        offset_bytes: 0,
+        truncated: false,
+      }
+    : tailString(content, normalizedLimitBytes);
   return {
     run: normalizeRun(run),
     source: "agent_logs.events",
     content_type: "application/jsonl",
-    content,
+    mode: normalizedMode,
+    ...payload,
     event_count: events.length,
-    byte_length: Buffer.byteLength(content),
   };
 }

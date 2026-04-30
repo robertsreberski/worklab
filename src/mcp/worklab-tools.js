@@ -10,7 +10,11 @@ import { readRunLog } from "../core/run-logs.js";
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
 export const journalSummarySchema = z.object({ text: z.string().min(1, "text is required") });
 export const memoryReadSchema = z.object({});
-export const runLogReadSchema = z.object({ run_id: z.string().min(1, "run_id is required") });
+export const runLogReadSchema = z.object({
+  run_id: z.string().min(1, "run_id is required"),
+  mode: z.enum(["tail", "full"]).optional(),
+  limit_bytes: z.number().int().min(1000).max(5 * 1024 * 1024).optional(),
+});
 export const listChildrenSchema = z.object({ task_id: z.string().optional() });
 export const getChildResultSchema = z.object({ child_task_id: z.string().min(1, "child_task_id is required") });
 
@@ -105,8 +109,14 @@ export function createToolHandlers(context) {
     },
 
     async run_log_read(input) {
-      const { run_id: targetRunId } = runLogReadSchema.parse(input);
-      return await withDb(dataDir, (db) => readRunLog({ db, dataDir, runId: targetRunId }));
+      const { run_id: targetRunId, mode, limit_bytes } = runLogReadSchema.parse(input);
+      return await withDb(dataDir, (db) => readRunLog({
+        db,
+        dataDir,
+        runId: targetRunId,
+        mode: mode || "tail",
+        limitBytes: limit_bytes,
+      }));
     },
 
     async list_children(input) {
@@ -271,11 +281,13 @@ export const toolDefinitions = [
   {
     name: "run_log_read",
     description:
-      "Read the full raw JSONL log for a prior Worklab run on demand. Use when compact prior-run summaries are insufficient for debugging or review.",
+      "Read a byte-bounded JSONL tail for a prior Worklab run on demand. Use mode='full' only when the complete raw log is required.",
     inputSchema: {
       type: "object",
       properties: {
         run_id: { type: "string", description: "Task run id to inspect" },
+        mode: { type: "string", enum: ["tail", "full"], description: "Default tail. Full can be large." },
+        limit_bytes: { type: "number", minimum: 1000, maximum: 5242880, description: "Tail byte budget. Default 60000." },
       },
       required: ["run_id"],
     },
