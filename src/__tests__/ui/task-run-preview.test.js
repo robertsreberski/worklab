@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatRunPreviewForCopy } from "../../ui/src/routes/TaskDetail.jsx";
+import { formatRunPreviewForCopy } from "../../ui/src/routes/task-detail/runPreview.js";
 
 describe("task run preview formatting", () => {
   it("formats structured run input for copying", () => {
