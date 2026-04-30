@@ -405,6 +405,8 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
+  db.exec("CREATE TABLE IF NOT EXISTS run_compactions (id TEXT PRIMARY KEY, task_run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE, seq INTEGER NOT NULL, trigger TEXT NOT NULL, provider_kind TEXT, model TEXT, tokens_before INTEGER, tokens_after INTEGER, chars_before INTEGER, chars_after INTEGER, first_kept_index INTEGER, summary TEXT NOT NULL DEFAULT '', metadata_json TEXT NOT NULL DEFAULT '{}', status TEXT NOT NULL DEFAULT 'succeeded', error_text TEXT, created_at INTEGER NOT NULL)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_run_compactions_run_seq ON run_compactions(task_run_id, seq)");
   db.exec("CREATE TABLE IF NOT EXISTS automations (id TEXT PRIMARY KEY, task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE, title TEXT NOT NULL, instructions TEXT NOT NULL DEFAULT '', agent_name TEXT REFERENCES agents(name) ON DELETE SET NULL, tags TEXT NOT NULL DEFAULT '[]', trigger_json TEXT NOT NULL DEFAULT '{}', enabled INTEGER NOT NULL DEFAULT 1, next_fire_at INTEGER, last_fired_at INTEGER, last_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL, last_status TEXT, last_error TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_automations_enabled_next_fire ON automations(enabled, next_fire_at)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_automations_task ON automations(task_id, updated_at DESC)");

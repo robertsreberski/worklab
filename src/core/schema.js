@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 19;
+export const SCHEMA_VERSION = 20;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -169,6 +169,26 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_logs_run ON agent_logs(task_run_id);
+
+CREATE TABLE IF NOT EXISTS run_compactions (
+  id TEXT PRIMARY KEY,
+  task_run_id TEXT NOT NULL REFERENCES task_runs(id) ON DELETE CASCADE,
+  seq INTEGER NOT NULL,
+  trigger TEXT NOT NULL,
+  provider_kind TEXT,
+  model TEXT,
+  tokens_before INTEGER,
+  tokens_after INTEGER,
+  chars_before INTEGER,
+  chars_after INTEGER,
+  first_kept_index INTEGER,
+  summary TEXT NOT NULL DEFAULT '',
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'succeeded',
+  error_text TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_run_compactions_run_seq ON run_compactions(task_run_id, seq);
 
 CREATE TABLE IF NOT EXISTS custom_providers (
   id TEXT PRIMARY KEY,
