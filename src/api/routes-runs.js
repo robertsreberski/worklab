@@ -1,5 +1,6 @@
 import { newCommentId } from "../core/ids.js";
 import { getRunById } from "../core/db/queries/runs.js";
+import { getAgentLogByRunId } from "../core/db/queries/agent-logs.js";
 import { normalizeLiveInputBody, supportsLiveInputProvider } from "../core/live-input.js";
 import { artifactPaths, artifactsForRunRow, runArtifactSummary } from "../core/run-artifacts.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -62,7 +63,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
     const row = getRunById(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
-    const logRow = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(req.params.id);
+    const logRow = getAgentLogByRunId(db, req.params.id);
     const run = normalizeRun(row, liveInputState, parseEvents(logRow?.events));
     const log = shapeRunLog(logRow, req.query || {});
     res.json({ run, log });

@@ -10,6 +10,7 @@ import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { compactProject, resolveProjectId, resolveProjectRow } from "../core/projects.js";
 import { artifactPaths, artifactsForRunRow, loadTaskArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import { getTaskById } from "../core/db/queries/tasks.js";
+import { getAgentLogEvents } from "../core/db/queries/agent-logs.js";
 
 const RUNS_ORDER_BY = "ORDER BY r.started_at DESC, r.rowid DESC";
 const RUN_POLICIES = ["manual", "auto_plan_execute"];
@@ -117,7 +118,7 @@ function attachDerivedRunFields(db, task) {
      ORDER BY started_at DESC LIMIT 1`
   ).get(task.id);
   const runningLog = runningRow
-    ? db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runningRow.id)
+    ? getAgentLogEvents(db, runningRow.id)
     : null;
   const runningEvents = runningLog ? parseEvents(runningLog.events) : [];
   const lastRow = db.prepare(
