@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SCHEMA_VERSION } from "../../core/schema.js";
+import { SCHEMA_VERSION } from "../../core/db/schema/current.js";
 import { makeTestServer } from "../helpers/test-server.js";
 
 describe("GET /api/health", () => {

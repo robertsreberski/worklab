@@ -460,12 +460,12 @@ export function resolveModel(value) {
 }
 
 async function loadBackend(sdk, { liveInput = false } = {}) {
-  if (sdk === "claude") return (await import("./ai-claude.js")).claudeSdkBackend;
-  if (sdk === "claude-code") return (await import("./ai-claude.js")).claudeSdkBackend;
-  if (sdk === "openai") return (await import("./ai-pi.js")).piOpenAiBackend;
-  if (sdk === "vercel") return (await import("./ai-pi.js")).piVercelBackend;
-  if (sdk === "codex") return (await import("./ai-pi.js")).piCodexBackend;
-  if (sdk === "pi") return (await import("./ai-pi.js")).piGenericBackend;
+  if (sdk === "claude") return (await import("../ai/providers/claude-sdk.js")).claudeSdkBackend;
+  if (sdk === "claude-code") return (await import("../ai/providers/claude-sdk.js")).claudeSdkBackend;
+  if (sdk === "openai") return (await import("../ai/providers/pi-sdk.js")).piOpenAiBackend;
+  if (sdk === "vercel") return (await import("../ai/providers/pi-sdk.js")).piVercelBackend;
+  if (sdk === "codex") return (await import("../ai/providers/pi-sdk.js")).piCodexBackend;
+  if (sdk === "pi") return (await import("../ai/providers/pi-sdk.js")).piGenericBackend;
   throw new Error(`unsupported sdk: ${sdk}`);
 }
 

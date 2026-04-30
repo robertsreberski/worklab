@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTranscriptTailSnapshot,
   renderResumeSnapshot,
-} from "../../core/run-transcript.js";
+} from "../../agent/transcript.js";
 
 function turnEvents(seq, { thought, response, toolName, toolInput, toolResult }) {
   return [

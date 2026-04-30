@@ -1,5 +1,4 @@
 import {
-  buildAutomationSystemPrompt,
   generateResponse,
   kbListPinned,
   loadAgentCapabilities,
@@ -7,6 +6,7 @@ import {
   readSettings,
   resolveModel,
 } from "../core/index.js";
+import { buildAutomationSystemPrompt } from "../agent/prompt/system-prompt.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { getAutomationById } from "../core/db/queries/automations.js";
 import { maxTurnsForModel } from "./util.js";

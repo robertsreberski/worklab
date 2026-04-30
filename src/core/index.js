@@ -269,35 +269,6 @@ export {
   upcomingFireTimes,
 } from "./automations.js";
 
-// ---------- Agent allowlists (re-exported via core/agent-allowlists.js shim) ----------
-export {
-  ALLOWLIST_MODE_ALL,
-  ALLOWLIST_MODE_CUSTOM,
-  inferAllowlistMode,
-  normalizeAllowlistMode,
-  normalizeList,
-  parseStoredAllowlist,
-  resolveAllowlist,
-  resolveAllowlistMap,
-  storedAllowlistMode,
-} from "./agent-allowlists.js";
-
-// ---------- Prompt builders (re-exported via core/context.js shim) ----------
-export {
-  buildAutomationSystemPrompt,
-  buildConsolidationSystemPrompt,
-  buildExecuteSystemPrompt,
-  buildPlanSystemPrompt,
-  buildReviewSystemPrompt,
-  buildSystemPrompt,
-} from "./context.js";
-
-// ---------- Transcript snapshots (re-exported via core/run-transcript.js shim) ----------
-export {
-  buildTranscriptTailSnapshot,
-  renderResumeSnapshot,
-} from "./run-transcript.js";
-
 // ---------- Skills + MCP config ----------
 export {
   SkillImportError,
@@ -340,11 +311,7 @@ export {
   testEmbeddingBackend,
 } from "./embeddings.js";
 
-// ---------- worklab_result contract + execenv ----------
-export {
-  WORKLAB_RESULT_JSON_SCHEMA,
-} from "./worklab-result.js";
-
+// ---------- Execenv ----------
 export {
   execenvBaseDir,
   execenvRoot,

@@ -9,7 +9,7 @@ import {
   readToolImpl,
   resolveRgPath,
   writeToolImpl,
-} from "../../core/ai-tool-helpers.js";
+} from "../../agent/tools/index.js";
 
 const tempDirs = [];
 let previousWorkspace = process.env.WORKLAB_WORKSPACE;

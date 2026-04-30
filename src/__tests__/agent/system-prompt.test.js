@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildPlanSystemPrompt, buildReviewSystemPrompt } from "../../core/context.js";
+import { buildConsolidationSystemPrompt, buildExecuteSystemPrompt, buildPlanSystemPrompt, buildReviewSystemPrompt } from "../../agent/prompt/system-prompt.js";
 
 describe("buildExecuteSystemPrompt", () => {
   const baseAgent = { name: "coder", instructions: "you are a coder" };

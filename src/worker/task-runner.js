@@ -1,12 +1,14 @@
 import {
   buildTaskRunInput,
   generateResponse,
+  resolveModel,
+} from "../core/index.js";
+import {
   normalizeWorklabResult,
   parseWorklabResultFromText,
-  resolveModel,
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
-} from "../core/index.js";
+} from "../ai/result/contract.js";
 import { maxTurnsForModel } from "./util.js";
 
 function validateRuntimeResult(result) {

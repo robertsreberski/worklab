@@ -13,7 +13,8 @@ import { tmpdir } from "node:os";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "../../api/server.js";
-import { openDb, runMigrations } from "../../core/db.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
 

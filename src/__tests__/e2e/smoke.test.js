@@ -5,7 +5,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "../../api/server.js";
-import { openDb, runMigrations } from "../../core/db.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
 
 describe("e2e smoke", () => {
   let http, baseUrl, tmp, db;

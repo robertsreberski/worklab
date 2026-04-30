@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb, runMigrations } from "../../core/db.js";
+import { openDb } from "../../core/db/open.js";
+import { runMigrations } from "../../core/db/migrations/runner.js";
 import {
   chunkMarkdown,
   cosineSimilarity,
