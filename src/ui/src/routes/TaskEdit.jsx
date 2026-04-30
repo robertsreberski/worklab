@@ -27,7 +27,7 @@ import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navi
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 
 // Stage grid in the right rail.
-const STATUS_OPTIONS = [
+const TASK_STAGE_OPTIONS = [
   { value: "plan" },
   { value: "execute" },
   { value: "review" },
@@ -36,6 +36,11 @@ const STATUS_OPTIONS = [
   { value: "blocked" },
   { value: "done" },
 ];
+const TASK_CREATE_STAGE_OPTIONS = TASK_STAGE_OPTIONS.filter((option) => ["plan", "execute"].includes(option.value));
+
+export function taskStageOptionsForMode(mode) {
+  return mode === "create" ? TASK_CREATE_STAGE_OPTIONS : TASK_STAGE_OPTIONS;
+}
 
 const TASK_EDIT_SECTIONS = [
   { id: "task-edit-title", num: "01", label: "Title", meta: "Required" },
@@ -258,11 +263,12 @@ export function TaskEdit({ mode = "create", id = null }) {
   const railCardCount = 7;
 
   function renderTaskEditRail() {
+    const stageOptions = taskStageOptionsForMode(mode);
     return (
       <div class="task-edit-rail-content">
-        <FormField label="Stage">
+        <FormField label={mode === "create" ? "Initial stage" : "Stage"}>
           <div class="stage-grid status-grid">
-            {STATUS_OPTIONS.map((opt) => (
+            {stageOptions.map((opt) => (
               <StageToken
                 key={opt.value}
                 stage={opt.value}
