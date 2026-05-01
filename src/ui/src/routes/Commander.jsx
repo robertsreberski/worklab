@@ -31,6 +31,8 @@ const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awa
 const HIDDEN_DONE_LIMIT = 0;
 const SHOWN_DONE_LIMIT = 200;
 const RUN_PROGRESS_PREVIEW_LIMIT = 12;
+const COMMANDER_TASK_LIST_CACHE_LIMIT = 4;
+const commanderTaskListCache = new Map();
 
 export function formatCommanderCost(value) {
   if (value == null) return null;
@@ -206,6 +208,57 @@ function showCompletedFromQuery(query = {}) {
     || query.group === "completed";
 }
 
+function initialRuntimeGroupFilter(routeQuery = {}) {
+  return normalizeRuntimeGroup(
+    routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
+  );
+}
+
+function commanderTaskListIncludesCompleted({
+  showCompleted = false,
+  groupFilter = "all",
+  stageFilter = "all",
+} = {}) {
+  return showCompleted || stageFilter === "done" || groupFilter === "completed";
+}
+
+export function commanderTaskListRequestQuery(filters = {}) {
+  return {
+    scope: "runtime",
+    done_limit: String(commanderTaskListIncludesCompleted(filters) ? SHOWN_DONE_LIMIT : HIDDEN_DONE_LIMIT),
+  };
+}
+
+export function commanderTaskListCacheKey(filters = {}) {
+  return `runtime:${commanderTaskListRequestQuery(filters).done_limit}`;
+}
+
+export function readCommanderTaskListCache(cacheKey) {
+  const snapshot = commanderTaskListCache.get(cacheKey);
+  if (!snapshot) return null;
+  return {
+    tasks: [...(snapshot.tasks || [])],
+    summary: snapshot.summary || null,
+  };
+}
+
+export function writeCommanderTaskListCache(cacheKey, snapshot = {}) {
+  if (!cacheKey) return;
+  if (commanderTaskListCache.has(cacheKey)) commanderTaskListCache.delete(cacheKey);
+  commanderTaskListCache.set(cacheKey, {
+    tasks: [...(snapshot.tasks || [])],
+    summary: snapshot.summary || null,
+  });
+  while (commanderTaskListCache.size > COMMANDER_TASK_LIST_CACHE_LIMIT) {
+    const oldestKey = commanderTaskListCache.keys().next().value;
+    commanderTaskListCache.delete(oldestKey);
+  }
+}
+
+export function clearCommanderTaskListCache() {
+  commanderTaskListCache.clear();
+}
+
 function BulkTaskBar({
   count,
   visibleCount,
@@ -322,14 +375,19 @@ function BulkTaskBar({
 }
 
 export function Commander({ query: routeQuery = {} }) {
-  const [tasks, setTasks] = useState(null);
-  const [runtimeSummary, setRuntimeSummary] = useState(null);
+  const initialShowCompleted = showCompletedFromQuery(routeQuery);
+  const initialGroupFilter = initialRuntimeGroupFilter(routeQuery);
+  const initialTaskListSnapshot = readCommanderTaskListCache(commanderTaskListCacheKey({
+    showCompleted: initialShowCompleted,
+    groupFilter: initialGroupFilter,
+    stageFilter: "all",
+  }));
+  const [tasks, setTasks] = useState(() => initialTaskListSnapshot?.tasks || null);
+  const [runtimeSummary, setRuntimeSummary] = useState(() => initialTaskListSnapshot?.summary || null);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [showCompleted, setShowCompleted] = useState(() => showCompletedFromQuery(routeQuery));
-  const [groupFilter, setGroupFilter] = useState(() => normalizeRuntimeGroup(
-    routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
-  ));
+  const [showCompleted, setShowCompleted] = useState(() => initialShowCompleted);
+  const [groupFilter, setGroupFilter] = useState(() => initialGroupFilter);
   const [stageFilter, setStageFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -346,35 +404,52 @@ export function Commander({ query: routeQuery = {} }) {
 
   useEffect(() => {
     setShowCompleted(showCompletedFromQuery(routeQuery));
-    setGroupFilter(normalizeRuntimeGroup(
-      routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
-    ));
+    setGroupFilter(initialRuntimeGroupFilter(routeQuery));
   }, [routeQuery.group, routeQuery.scope, routeQuery.show_completed]);
+
+  const taskListCacheKey = useMemo(() => commanderTaskListCacheKey({
+    showCompleted,
+    groupFilter,
+    stageFilter,
+  }), [groupFilter, showCompleted, stageFilter]);
+
+  useEffect(() => {
+    const cached = readCommanderTaskListCache(taskListCacheKey);
+    if (!cached) return;
+    setTasks(cached.tasks);
+    setRuntimeSummary(cached.summary);
+    setError(null);
+  }, [taskListCacheKey]);
 
   const reload = useCallback(() => {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
     setError(null);
-    const includeCompleted = showCompleted || stageFilter === "done" || groupFilter === "completed";
-    const requestQuery = {
-      scope: "runtime",
-      done_limit: String(includeCompleted ? SHOWN_DONE_LIMIT : HIDDEN_DONE_LIMIT),
-    };
+    const requestQuery = commanderTaskListRequestQuery({ showCompleted, groupFilter, stageFilter });
     return api.listTasks(requestQuery, { signal: controller.signal })
       .then((r) => {
         if (!controller.signal.aborted) {
-          setTasks(r.tasks || []);
-          setRuntimeSummary(r.summary || null);
+          const nextTasks = r.tasks || [];
+          const nextSummary = r.summary || null;
+          writeCommanderTaskListCache(taskListCacheKey, { tasks: nextTasks, summary: nextSummary });
+          setTasks(nextTasks);
+          setRuntimeSummary(nextSummary);
         }
       })
       .catch((e) => {
         if (e?.name === "AbortError") return;
-        setTasks([]);
-        setRuntimeSummary(null);
+        const cached = readCommanderTaskListCache(taskListCacheKey);
+        if (cached) {
+          setTasks(cached.tasks);
+          setRuntimeSummary(cached.summary);
+        } else {
+          setTasks((current) => current || []);
+          setRuntimeSummary((current) => current || null);
+        }
         setError(e.message || "Failed to load tasks");
       });
-  }, [groupFilter, showCompleted, stageFilter]);
+  }, [groupFilter, showCompleted, stageFilter, taskListCacheKey]);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadProjects = useCallback(() => {
     projectsReloadAbortRef.current?.abort?.();

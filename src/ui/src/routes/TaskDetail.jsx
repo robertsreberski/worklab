@@ -154,7 +154,6 @@ export function TaskDetail({ id, runParam = null }) {
     setRunError(null);
     setPlanEditing(false);
     setPlanDraft("");
-    setSubtaskTitle("");
     setTaskAutomations(null);
     setCommentRerun(true);
     setCommentDeleteTarget(null);
@@ -171,13 +170,6 @@ export function TaskDetail({ id, runParam = null }) {
     if (!currentTask || planEditing) return;
     setPlanDraft(currentTask.plan_body || "");
   }, [data?.task?.id, data?.task?.plan_body, planEditing]);
-
-  useEffect(() => {
-    const currentTask = data?.task;
-    if (!currentTask) return;
-    setSubtaskOwner(currentTask.owner_agent || "");
-    setSubtaskRequired(true);
-  }, [data?.task?.id, data?.task?.owner_agent]);
 
   useSSE("global", (evt) => {
     const currentTask = data?.task;
