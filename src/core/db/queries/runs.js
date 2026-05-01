@@ -108,6 +108,21 @@ export function getLatestTaskRunSummary(db, taskId) {
   `).get(taskId);
 }
 
+export function getLatestExecuteRunSummary(db, taskId) {
+  return db.prepare(`
+    SELECT id, task_id, mode, stage, agent_name, status, process_status,
+           decision, failure_kind, summary, details, result_json,
+           artifact_summary_json, started_at, ended_at
+    FROM task_runs
+    WHERE task_id = ?
+      AND mode = 'execute'
+      AND COALESCE(process_status, status, '') <> 'running'
+      AND COALESCE(status, '') <> 'running'
+    ORDER BY COALESCE(ended_at, started_at, 0) DESC, started_at DESC, rowid DESC
+    LIMIT 1
+  `).get(taskId);
+}
+
 // Currently-running run for a task (for §9.3 derived running_run_id).
 export function getRunningTaskRun(db, taskId) {
   return db.prepare(`

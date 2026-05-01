@@ -14,13 +14,14 @@ import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { getTaskById } from "./db/queries/tasks.js";
-import { getRunById } from "./db/queries/runs.js";
+import { getLatestExecuteRunSummary, getRunById } from "./db/queries/runs.js";
 import { getAgentByName } from "./db/queries/agents.js";
 import { listTaskComments } from "./db/queries/comments.js";
 import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
+import { formatWorklabResultText } from "../ai/result/contract.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -39,6 +40,12 @@ function parseEvents(value) {
   } catch {
     return [];
   }
+}
+
+function safeParseJson(value, fallback = null) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return fallback; }
 }
 
 export function modeForTaskStage(stage) {
@@ -250,6 +257,66 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
   });
 }
 
+function executionOutputForRun(run, events = []) {
+  if (!run) return "";
+  const execution = extractExecutionFromEvents(events, run);
+  if (execution.finalText) return execution.finalText;
+  const resultText = formatWorklabResultText(safeParseJson(run.result_json, null));
+  if (resultText) return resultText;
+  if (run.summary && run.details && run.summary !== run.details) return `${run.summary}\n\n${run.details}`;
+  return run.details || run.summary || run.error_text || "";
+}
+
+export function loadResolvedBlockerContext(db, taskId, { limit = 8 } = {}) {
+  if (!db || !taskId) return [];
+  const blockers = db.prepare(`
+    SELECT t.id, t.task_key, t.title, t.stage, t.stage_reason,
+           t.owner_agent, t.reviewer_agent, t.completed_at, t.updated_at
+    FROM task_dependencies d
+    JOIN tasks t ON t.id = d.depends_on_task_id
+    WHERE d.task_id = ?
+      AND COALESCE(t.stage, 'plan') = 'done'
+    ORDER BY t.updated_at DESC, t.rowid DESC
+    LIMIT ?
+  `).all(taskId, limit);
+
+  return blockers.map((blocker) => {
+    const latestExecute = getLatestExecuteRunSummary(db, blocker.id);
+    const logRow = latestExecute ? getAgentLogByRunId(db, latestExecute.id) : null;
+    const events = logRow ? parseEvents(logRow.events) : [];
+    const taskArtifacts = loadTaskArtifacts(db, blocker.id);
+    return {
+      id: blocker.id,
+      task_key: blocker.task_key || null,
+      title: blocker.title,
+      stage: blocker.stage || "plan",
+      stage_reason: blocker.stage_reason || null,
+      owner_agent: blocker.owner_agent || null,
+      reviewer_agent: blocker.reviewer_agent || null,
+      completed_at: blocker.completed_at || null,
+      updated_at: blocker.updated_at || null,
+      latest_execute_run: latestExecute ? {
+        id: latestExecute.id,
+        mode: latestExecute.mode,
+        stage: latestExecute.stage,
+        agentName: latestExecute.agent_name ?? "unknown",
+        status: latestExecute.status,
+        process_status: latestExecute.process_status || latestExecute.status || null,
+        decision: latestExecute.decision || null,
+        failure_kind: latestExecute.failure_kind || null,
+        summary: latestExecute.summary || null,
+        details: latestExecute.details || null,
+        finalText: executionOutputForRun(latestExecute, events),
+        startedAt: latestExecute.started_at ?? null,
+        endedAt: latestExecute.ended_at ?? null,
+        artifact_summary: safeParseJson(latestExecute.artifact_summary_json, {}),
+      } : null,
+      artifacts: taskArtifacts.artifacts,
+      artifact_summary: taskArtifacts.summary,
+    };
+  });
+}
+
 export function selectCurrentRunComments(db, taskId, currentRunId, comments = []) {
   const currentRun = db.prepare(
     "SELECT started_at FROM task_runs WHERE id = ? AND task_id = ?",
@@ -295,6 +362,7 @@ function diagnosticsForPrompt(prompt, setup) {
       mcp: Object.keys(mcpServers || {}).length,
     },
     artifacts: setup.taskArtifacts?.summary || null,
+    resolvedBlockers: Array.isArray(setup.resolvedBlockers) ? setup.resolvedBlockers.length : 0,
   };
 }
 
@@ -311,6 +379,25 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
       artifact.last_run_id || "",
       artifact.last_seen_at || "",
     ].join(":"));
+  const blockerSignature = (setup.resolvedBlockers || []).map((blocker) => {
+    const latest = blocker.latest_execute_run || {};
+    const summary = blocker.artifact_summary || {};
+    return [
+      blocker.id,
+      blocker.stage,
+      blocker.updated_at || "",
+      latest.id || "",
+      latest.status || "",
+      latest.process_status || "",
+      latest.decision || "",
+      latest.summary || "",
+      latest.finalText || "",
+      summary.files || 0,
+      summary.added_lines || 0,
+      summary.removed_lines || 0,
+      summary.run_count || 0,
+    ].join(":");
+  });
   const delegation = setup.delegation || {};
   const delegationSignature = [
     delegation.enabled ? "1" : "0",
@@ -352,6 +439,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     builtinHash: shortHash(builtinSignature.join("|")),
     kbHash: shortHash(pinnedSignature.join("|")),
     artifactsHash: shortHash(artifactSignature.join("|")),
+    resolvedBlockersHash: shortHash(blockerSignature.join("|")),
     delegationHash: shortHash(delegationSignature),
     memoryHash: shortHash(setup.memory || ""),
     journalHash: shortHash(setup.journalTail || ""),
@@ -364,10 +452,11 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   const messages = buildTaskRunMessages({ mode, task });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
   const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
+  const resolvedBlockers = loadResolvedBlockerContext(db, taskId);
 
   const cache = contextCache || getProcessContextCache();
   const cacheKey = makeSetupSignature(
-    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb, taskArtifacts },
+    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb, taskArtifacts, resolvedBlockers },
     { mode, priorRunId },
   );
 
@@ -375,7 +464,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
-      comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts,
+      comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers, delegation,
@@ -383,9 +472,9 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt(promptInput, mode);
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts }), contextCacheHit: !!cached };
+    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts, resolvedBlockers }), contextCacheHit: !!cached };
     return {
-      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts,
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers,
       promptDiagnostics: diagnostics,
     };
   }
@@ -405,6 +494,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const prompt = cached || buildSystemPrompt({
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
+      resolvedBlockers,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers,
@@ -413,10 +503,10 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       delegation,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts }), contextCacheHit: !!cached };
+    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts, resolvedBlockers }), contextCacheHit: !!cached };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
-      priorRun, priorEvents, execution, taskArtifacts, promptDiagnostics: diagnostics,
+      priorRun, priorEvents, execution, taskArtifacts, resolvedBlockers, promptDiagnostics: diagnostics,
     };
   }
 

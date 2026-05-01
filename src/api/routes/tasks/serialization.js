@@ -2,6 +2,7 @@ import {
   artifactPaths,
   artifactsForRunRow,
   compactProject,
+  loadTaskArtifacts,
   resolveProjectRow,
   runArtifactSummary,
   supportsLiveInputProvider,
@@ -13,6 +14,7 @@ import {
 import { getAgentLogEvents } from "../../../core/db/queries/agent-logs.js";
 import {
   getLastNonRunningTaskRun,
+  getLatestExecuteRunSummary,
   getLatestTaskRunSummary,
   getRunningTaskRun,
   listLastNonRunningRunsForTasks,
@@ -100,6 +102,37 @@ function latestTaskRunSummary(db, taskId) {
   };
 }
 
+function latestExecuteRunSummary(db, taskId) {
+  const row = getLatestExecuteRunSummary(db, taskId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    mode: row.mode,
+    stage: row.stage,
+    agent_name: row.agent_name || null,
+    status: row.status,
+    process_status: row.process_status || row.status || null,
+    decision: row.decision || null,
+    failure_kind: row.failure_kind || null,
+    summary: row.summary || null,
+    details: row.details || null,
+    artifact_summary: safeJson(row.artifact_summary_json, {}),
+    started_at: row.started_at || null,
+    ended_at: row.ended_at || null,
+  };
+}
+
+function compactDependencySummary(db, row) {
+  const summary = compactTaskSummary(row);
+  if (!summary) return null;
+  const artifacts = loadTaskArtifacts(db, summary.id);
+  return {
+    ...summary,
+    latest_execute_run: latestExecuteRunSummary(db, summary.id),
+    artifact_summary: artifacts.summary,
+  };
+}
+
 function compactChildTaskSummary(db, row) {
   return {
     ...compactTaskSummary(row),
@@ -165,8 +198,8 @@ function attachTaskGraph(db, task) {
   return {
     ...task,
     dependency_ids: dependencyRows.map((row) => row.id),
-    blocked_by: dependencyRows.map(compactTaskSummary),
-    blocks: dependentRows.map(compactTaskSummary),
+    blocked_by: dependencyRows.map((row) => compactDependencySummary(db, row)).filter(Boolean),
+    blocks: dependentRows.map((row) => compactDependencySummary(db, row)).filter(Boolean),
     parent: compactTaskSummary(parentRow),
     children: childRows.map((row) => compactChildTaskSummary(db, row)),
   };
