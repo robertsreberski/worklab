@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import supertest from "supertest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createServer } from "../../api/server.js";
@@ -9,6 +10,23 @@ import { createServer } from "../../api/server.js";
 describe("mcp config", () => {
   const dirs = [];
   afterEach(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); dirs.length = 0; });
+  function writeToolServerScript(dir) {
+    const script = join(dir, "tool-server.mjs");
+    const sdkRoot = join(process.cwd(), "node_modules", "@modelcontextprotocol", "sdk", "dist", "esm");
+    writeFileSync(script, `
+import { Server } from "${pathToFileURL(join(sdkRoot, "server", "index.js")).href}";
+import { StdioServerTransport } from "${pathToFileURL(join(sdkRoot, "server", "stdio.js")).href}";
+import { ListToolsRequestSchema } from "${pathToFileURL(join(sdkRoot, "types.js")).href}";
+
+const server = new Server({ name: "route-test-mcp", version: "1.0.0" }, { capabilities: { tools: {} } });
+server.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [{ name: "route_ping", description: "Ping", inputSchema: { type: "object", properties: {} } }],
+}));
+await server.connect(new StdioServerTransport());
+`);
+    return script;
+  }
+
   function mkServer() {
     const d = mkdtempSync(join(tmpdir(), "worklab-mcp-route-")); dirs.push(d);
     mkdirSync(join(d, "config"));
@@ -60,6 +78,35 @@ describe("mcp config", () => {
       source: "builtin",
       available: true,
     });
+  });
+
+  it("POST /api/mcp/health probes draft servers without saving them", async () => {
+    const { agent, dataDir } = mkServer();
+    const script = writeToolServerScript(dataDir);
+    const res = await agent.post("/api/mcp/health").send({
+      includeBuiltins: false,
+      mcpServers: {
+        draft_tools: { command: process.execPath, args: [script] },
+      },
+      names: ["draft_tools"],
+    }).expect(200);
+
+    expect(res.body.results).toHaveLength(1);
+    expect(res.body.results[0]).toMatchObject({
+      name: "draft_tools",
+      source: "draft",
+      health: "ok",
+      tool_count: 1,
+    });
+    expect(res.body.results[0].tools_preview).toContain("route_ping");
+    const saved = await agent.get("/api/mcp").expect(200);
+    expect(saved.body.mcpServers).toEqual({});
+  });
+
+  it("POST /api/mcp/health validates request shape", async () => {
+    const { agent } = mkServer();
+    await agent.post("/api/mcp/health").send({ mcpServers: [] }).expect(400);
+    await agent.post("/api/mcp/health").send({ names: "worklab" }).expect(400);
   });
 
   it("protects the admin MCP endpoint with the local token", async () => {

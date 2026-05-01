@@ -281,8 +281,10 @@ export {
 } from "./skills.js";
 
 export {
+  checkMcpServerHealth,
   getAvailableMcpServers,
   getBuiltinMcpServers,
+  getMcpServerHealth,
   getMcpServerStatuses,
   loadMcpConfig,
   pickMcpServers,

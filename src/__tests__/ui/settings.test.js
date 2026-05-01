@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mcpAvailabilitySummary,
+  mcpServerFromRow,
   minutesToMs,
   minutesValue,
   runtimePayload,
@@ -157,5 +158,41 @@ describe("settings UI duration conversions", () => {
       user: 0,
       unavailable: 0,
     });
+  });
+
+  it("builds a single MCP server config from a settings row for health checks", () => {
+    expect(mcpServerFromRow({
+      name: "local_tools",
+      transport: "stdio",
+      command: "/usr/bin/node",
+      argsText: "server.js\n--flag",
+      envText: '{"TOKEN":"x"}',
+    })).toEqual({
+      name: "local_tools",
+      config: {
+        command: "/usr/bin/node",
+        args: ["server.js", "--flag"],
+        env: { TOKEN: "x" },
+      },
+    });
+    expect(mcpServerFromRow({
+      name: "http_tools",
+      transport: "http",
+      url: "http://localhost:3000/mcp",
+      headersText: '{"Authorization":"Bearer token"}',
+    })).toEqual({
+      name: "http_tools",
+      config: {
+        type: "http",
+        url: "http://localhost:3000/mcp",
+        headers: { Authorization: "Bearer token" },
+      },
+    });
+  });
+
+  it("surfaces MCP row validation errors before health checks", () => {
+    expect(() => mcpServerFromRow({ name: "", transport: "stdio", command: "/usr/bin/node" })).toThrow(/name is required/i);
+    expect(() => mcpServerFromRow({ name: "bad", transport: "stdio", command: "" })).toThrow(/requires an absolute command path/i);
+    expect(() => mcpServerFromRow({ name: "bad", transport: "http", url: "" })).toThrow(/requires a URL/i);
   });
 });

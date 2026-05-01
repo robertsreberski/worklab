@@ -36,6 +36,7 @@ import {
   jsonEqual,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
+  mcpServerFromRow,
   mcpServersFromRows,
   minutesValue,
   modelSelectOptions,
@@ -53,6 +54,73 @@ import {
   textFromList,
 } from "./settings/helpers.js";
 
+const MCP_HEALTH_ALL_KEY = "__all";
+
+function mcpHealthRowKey(id) {
+  return `row:${id}`;
+}
+
+function mcpHealthBuiltinKey(name) {
+  return `builtin:${name}`;
+}
+
+function localMcpHealthError(row, message) {
+  return {
+    name: row.name || "Draft",
+    source: "draft",
+    transport: row.transport || "stdio",
+    health: "error",
+    static_available: false,
+    message,
+    duration_ms: 0,
+    tool_count: 0,
+    tools_preview: [],
+  };
+}
+
+function mcpHealthMeta(result) {
+  if (!result) return null;
+  if (result.health === "ok") return { status: "enabled", label: "Healthy" };
+  return { status: "error", label: "Check failed" };
+}
+
+function mcpHealthDetail(result) {
+  if (!result) return "";
+  const parts = [result.message || (result.health === "ok" ? "Connected" : "Health check failed")];
+  if (Number.isFinite(Number(result.duration_ms))) parts.push(`${Math.round(Number(result.duration_ms))}ms`);
+  if (result.health === "ok" && result.tools_preview?.length) {
+    parts.push(`Tools: ${result.tools_preview.join(", ")}`);
+  }
+  return parts.filter(Boolean).join(" / ");
+}
+
+function buildMcpHealthDraft(rows = []) {
+  const servers = {};
+  const rowByName = new Map();
+  const rowsByName = new Map();
+  const errors = {};
+  for (const row of rows) {
+    try {
+      const { name, config } = mcpServerFromRow(row);
+      const duplicate = rowsByName.get(name);
+      if (duplicate) {
+        const message = `Duplicate MCP server name: ${name}`;
+        errors[mcpHealthRowKey(duplicate.id)] = localMcpHealthError(duplicate, message);
+        errors[mcpHealthRowKey(row.id)] = localMcpHealthError(row, message);
+        delete servers[name];
+        rowByName.delete(name);
+        continue;
+      }
+      rowsByName.set(name, row);
+      rowByName.set(name, row.id);
+      servers[name] = config;
+    } catch (err) {
+      errors[mcpHealthRowKey(row.id)] = localMcpHealthError(row, err.message || String(err));
+    }
+  }
+  return { servers, rowByName, errors };
+}
+
 export function Settings() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
@@ -67,6 +135,8 @@ export function Settings() {
   const [mcpStatus, setMcpStatus] = useState(null);
   const [mcpRows, setMcpRows] = useState([]);
   const [mcpBaselineRows, setMcpBaselineRows] = useState([]);
+  const [mcpHealthResults, setMcpHealthResults] = useState({});
+  const [mcpHealthBusy, setMcpHealthBusy] = useState({});
   const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => browserNotificationSettings());
@@ -112,6 +182,8 @@ export function Settings() {
     setMcpRows(rows);
     setMcpBaselineRows(rows);
     setMcpStatus(status);
+    setMcpHealthResults({});
+    setMcpHealthBusy({});
   }, []);
 
   const loadSlackStatus = useCallback(async () => {
@@ -202,6 +274,11 @@ export function Settings() {
 
   function updateMcpRow(id, patch) {
     setMcpRows((rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row));
+    setMcpHealthResults((results) => {
+      const next = { ...results };
+      delete next[mcpHealthRowKey(id)];
+      return next;
+    });
   }
 
   function addMcpRow() {
@@ -216,6 +293,75 @@ export function Settings() {
       url: "",
       headersText: "",
     }]);
+  }
+
+  function setMcpBusy(key, busy) {
+    setMcpHealthBusy((current) => {
+      const next = { ...current };
+      if (busy) next[key] = true;
+      else delete next[key];
+      return next;
+    });
+  }
+
+  function setMcpHealthForRow(id, result) {
+    setMcpHealthResults((current) => ({ ...current, [mcpHealthRowKey(id)]: result }));
+  }
+
+  function deleteMcpRow(id) {
+    setMcpRows((rows) => rows.filter((item) => item.id !== id));
+    setMcpHealthResults((results) => {
+      const next = { ...results };
+      delete next[mcpHealthRowKey(id)];
+      return next;
+    });
+  }
+
+  async function checkMcpRowHealth(row) {
+    const key = mcpHealthRowKey(row.id);
+    setMcpBusy(key, true);
+    try {
+      const { name, config } = mcpServerFromRow(row);
+      const response = await api.checkMcpHealth({
+        includeBuiltins: false,
+        mcpServers: { [name]: config },
+        names: [name],
+      });
+      setMcpHealthForRow(row.id, response.results?.[0] || localMcpHealthError(row, "No health result returned"));
+    } catch (err) {
+      setMcpHealthForRow(row.id, localMcpHealthError(row, err.message || String(err)));
+    } finally {
+      setMcpBusy(key, false);
+    }
+  }
+
+  async function checkAllMcpHealth() {
+    const { servers, rowByName, errors } = buildMcpHealthDraft(mcpRows);
+    setMcpBusy(MCP_HEALTH_ALL_KEY, true);
+    setMcpHealthResults((current) => {
+      const next = { ...current };
+      for (const row of mcpRows) delete next[mcpHealthRowKey(row.id)];
+      for (const server of builtinMcpServers) delete next[mcpHealthBuiltinKey(server.name)];
+      return { ...next, ...errors };
+    });
+    try {
+      const response = await api.checkMcpHealth({ includeBuiltins: true, mcpServers: servers });
+      const nextResults = {};
+      for (const result of response.results || []) {
+        if (result.source === "builtin") {
+          nextResults[mcpHealthBuiltinKey(result.name)] = result;
+        } else {
+          const rowId = rowByName.get(result.name);
+          if (rowId) nextResults[mcpHealthRowKey(rowId)] = result;
+        }
+      }
+      setMcpHealthResults((current) => ({ ...current, ...nextResults }));
+      pushToast("MCP health check complete.", { variant: "success" });
+    } catch (err) {
+      pushToast(`MCP health check failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setMcpBusy(MCP_HEALTH_ALL_KEY, false);
+    }
   }
 
   async function updateBrowserNotifications(enabled) {
@@ -280,6 +426,7 @@ export function Settings() {
       .filter((server) => server.source === "user")
       .map((server) => [server.name, server]),
   );
+  const mcpAllBusy = !!mcpHealthBusy[MCP_HEALTH_ALL_KEY];
   const endpointLabel = runtimeDraft.host || runtimeDraft.port
     ? `${runtimeDraft.host || "-"}:${runtimeDraft.port || "-"}`
     : "-";
@@ -747,18 +894,24 @@ export function Settings() {
           >
             {mcpStatus?.config_error && <Banner variant="error" title="MCP config error" detail={mcpStatus.config_error} />}
             <div class="settings-panel-grid">
-              {builtinMcpServers.map((server) => (
-                <SettingPanel
-                  key={server.name}
-                  icon="terminal"
-                  title={server.name}
-                  meta={`${server.transport} / built-in`}
-                  status={server.available === false ? "error" : "enabled"}
-                  statusLabel={server.available === false ? "Unavailable" : "Available"}
-                >
-                  <div class="settings-inline-status">{server.unavailable_reason || "Ready for agent MCP allowlists."}</div>
-                </SettingPanel>
-              ))}
+              {builtinMcpServers.map((server) => {
+                const health = mcpHealthResults[mcpHealthBuiltinKey(server.name)];
+                const healthMeta = mcpHealthMeta(health);
+                return (
+                  <SettingPanel
+                    key={server.name}
+                    icon="terminal"
+                    title={server.name}
+                    meta={`${server.transport} / built-in`}
+                    status={mcpAllBusy ? "running" : (healthMeta?.status || (server.available === false ? "error" : "enabled"))}
+                    statusLabel={mcpAllBusy ? "Checking" : (healthMeta?.label || (server.available === false ? "Unavailable" : "Available"))}
+                  >
+                    <div class={`settings-inline-status ${health?.health === "ok" ? "ok" : health ? "error" : ""}`.trim()}>
+                      {health ? mcpHealthDetail(health) : (server.unavailable_reason || "Ready for agent MCP allowlists.")}
+                    </div>
+                  </SettingPanel>
+                );
+              })}
               {builtinMcpServers.length === 0 && (
                 <SettingPanel icon="terminal" title="Built-in servers" meta="No built-in MCP servers reported." status="disabled" statusLabel="None">
                   <div class="settings-inline-status">No built-in MCP servers are available.</div>
@@ -770,12 +923,19 @@ export function Settings() {
                 <h3>External MCP servers</h3>
                 <p>{mcpRows.length ? `${mcpRows.length} configured` : "No external servers configured"}</p>
               </div>
-              <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
+              <div class="settings-list-actions">
+                <Button size="sm" variant="secondary" loading={mcpAllBusy} iconLeft={<Icon name="refresh-cw" size={12} />} onClick={checkAllMcpHealth}>Health check</Button>
+                <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
+              </div>
             </div>
             <div class="settings-list">
               {mcpRows.length === 0 && <div class="settings-empty-note">External MCP servers can be added when an agent needs tools outside Worklab.</div>}
               {mcpRows.map((row) => {
                 const serverStatus = userMcpStatusByName.get(row.name);
+                const healthKey = mcpHealthRowKey(row.id);
+                const rowHealth = mcpHealthResults[healthKey];
+                const rowHealthMeta = mcpHealthMeta(rowHealth);
+                const rowBusy = !!mcpHealthBusy[healthKey] || mcpAllBusy;
                 const status = row.name
                   ? (serverStatus?.available === false ? "error" : "enabled")
                   : "disabled";
@@ -790,10 +950,12 @@ export function Settings() {
                       <div class="settings-row-sub">{row.transport} / external</div>
                     </div>
                     <div class="settings-row-actions">
-                      <StatusPill status={status} label={statusLabel} size="sm" />
-                      <Button variant="destructive" size="sm" iconLeft={<Icon name="trash" size={12} />} onClick={() => setMcpRows((rows) => rows.filter((item) => item.id !== row.id))}>Delete</Button>
+                      <StatusPill status={rowBusy ? "running" : (rowHealthMeta?.status || status)} label={rowBusy ? "Checking" : (rowHealthMeta?.label || statusLabel)} size="sm" />
+                      <Button variant="secondary" size="sm" loading={!!mcpHealthBusy[healthKey]} disabled={mcpAllBusy} iconLeft={<Icon name="check-circle" size={12} />} onClick={() => checkMcpRowHealth(row)}>Check</Button>
+                      <Button variant="destructive" size="sm" iconLeft={<Icon name="trash" size={12} />} onClick={() => deleteMcpRow(row.id)}>Delete</Button>
                     </div>
                   </div>
+                  {rowHealth && <div class={`settings-health-note ${rowHealth.health}`.trim()}>{mcpHealthDetail(rowHealth)}</div>}
                   <FormGrid columns={3}>
                     <FormField label="Name">
                       <Input value={row.name} onInput={(event) => updateMcpRow(row.id, { name: event.target.value })} />
