@@ -11,8 +11,14 @@ export const TASK_STAGE_META = {
   done: { label: "Done", tone: "var(--status-done)", icon: "check-circle" },
 };
 
+function formatStageLabel(stage) {
+  const label = String(stage || "Stage").replace(/[_-]+/g, " ").trim();
+  if (!label) return "Stage";
+  return `${label.slice(0, 1).toUpperCase()}${label.slice(1)}`;
+}
+
 export function taskStageMeta(stage) {
-  return TASK_STAGE_META[stage] || { label: stage || "Stage", tone: "var(--status-muted)", icon: "circle" };
+  return TASK_STAGE_META[stage] || { label: formatStageLabel(stage), tone: "var(--status-muted)", icon: "circle" };
 }
 
 export function StageToken({
