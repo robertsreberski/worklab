@@ -16,6 +16,7 @@ const RESULT_FIELD_RULES = `Structured result rules:
 - Do not preface the final JSON with process narration such as "now I will output the result"; put user-facing text in \`final_text\`.
 - During the run, use normal prose or journal entries for progress. If a structured progress object appears before completion, keep going; the final valid result supersedes earlier structured progress.
 - Put the human-facing final comment in \`final_text\`. Keep it concise; for structured-only runtimes, this is the text Worklab will post as the final comment.
+- JSON string fields must be valid JSON strings: escape double quotes inside \`summary\`, \`details\`, and \`final_text\` as \`\\"\`.
 - Keep \`summary\` and \`details\` as structured metadata for Worklab, not as the main user-visible answer.
 - For plan-stage runs, put the complete implementation plan in \`details\` / the plan body and use \`final_text\` only for a short status comment.
 - Put execution steps and completed-work notes in \`details\`, not in \`pending_actions\`.
@@ -88,6 +89,7 @@ Return a structured Worklab result as JSON when you finish:
   "subtasks": []
 }
 
+Escape double quotes inside review notes or final_text so the response remains valid JSON.
 Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";

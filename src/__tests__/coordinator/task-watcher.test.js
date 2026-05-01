@@ -382,6 +382,7 @@ describe("task-watcher", () => {
     expect(task.error_text).toMatch(/invalid delegation: delegation requested 2 subtasks, max is 1/);
     expect(task.last_failure_kind).toBe("invalid_result");
     expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(0);
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("rejects delegated subtasks with disabled or missing suggested agents", async () => {
@@ -420,6 +421,7 @@ describe("task-watcher", () => {
     expect(task.error_text).toMatch(/suggested agent "missing-agent" was not found or is disabled/);
     expect(task.last_failure_kind).toBe("invalid_result");
     expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(0);
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("caps delegated child auto-starts and starts more as children finish", async () => {

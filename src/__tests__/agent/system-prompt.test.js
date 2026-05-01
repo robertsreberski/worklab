@@ -157,6 +157,7 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("Do not preface the final JSON with process narration");
     expect(p).toContain("the final valid result supersedes earlier structured progress");
     expect(p).toContain("Put the human-facing final comment in `final_text`");
+    expect(p).toContain("escape double quotes inside `summary`, `details`, and `final_text`");
     expect(p).toContain("For plan-stage runs, put the complete implementation plan in `details` / the plan body");
     expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
     expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
@@ -484,6 +485,7 @@ Return a structured Worklab result as JSON when you finish:
   "subtasks": []
 }
 
+Escape double quotes inside review notes or final_text so the response remains valid JSON.
 Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
     expect(p.trim().endsWith(directive)).toBe(true);
   });
