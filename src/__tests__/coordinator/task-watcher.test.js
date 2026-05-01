@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { mkdtempSync } from "node:fs";
+import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
@@ -251,10 +251,13 @@ describe("task-watcher", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(spawn.mock.calls[0][0].env).toMatchObject({
       WORKLAB_WORKSPACE: workdir,
+      WORKLAB_QA_OUTPUT_DIR: join(workdir, ".worklab-tmp", "artifacts", runId),
+      PLAYWRIGHT_MCP_OUTPUT_DIR: join(workdir, ".worklab-tmp", "artifacts", runId),
       WORKLAB_PROJECT_ID: project.id,
       WORKLAB_PROJECT_SLUG: project.slug,
       WORKLAB_PROJECT_NAME: project.name,
     });
+    expect(existsSync(join(workdir, ".worklab-tmp", "artifacts", runId))).toBe(true);
     const run = db.prepare("SELECT project_id, workdir, project_context_hash FROM task_runs WHERE id = ?").get(runId);
     expect(run).toMatchObject({ project_id: project.id, workdir });
     expect(run.project_context_hash).toMatch(/^[0-9a-f]{16}$/);

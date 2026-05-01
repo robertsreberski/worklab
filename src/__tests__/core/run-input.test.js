@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
@@ -356,6 +356,7 @@ describe("run input assembly", () => {
 
       expect(input.project).toMatchObject({ id: project.id, slug: project.slug, name: project.name });
       expect(input.effectiveWorkdir).toBe("/tmp/project-atlas");
+      expect(input.qaOutputDir).toBe("/tmp/project-atlas/.worklab-tmp/artifacts/run-project");
       const projectStart = input.systemPrompt.indexOf("## Project");
       const taskStart = input.systemPrompt.indexOf("## Task");
       expect(projectStart).toBeGreaterThan(0);
@@ -364,10 +365,43 @@ describe("run input assembly", () => {
       expect(input.systemPrompt).toContain("**Workdir:** `/tmp/project-atlas`");
       expect(input.systemPrompt).toContain("Tool working directory: `/tmp/project-atlas`");
       expect(input.systemPrompt).toContain("rather than `/tmp`");
+      expect(input.systemPrompt).toContain("Temporary QA artifact directory: `/tmp/project-atlas/.worklab-tmp/artifacts/run-project`");
+      expect(input.systemPrompt).toContain("WORKLAB_QA_OUTPUT_DIR");
       expect(input.promptDiagnostics.project).toMatchObject({
         id: project.id,
         slug: project.slug,
         workdir: "/tmp/project-atlas",
+      });
+    });
+  });
+
+  it("passes run artifact env and cwd through stdio MCP servers", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const project = seedProject(db, { workdir: "/tmp/project-mcp" });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+      mkdirSync(join(config.dataDir, "config"), { recursive: true });
+      writeFileSync(join(config.dataDir, "config", "mcp.json"), JSON.stringify({
+        mcpServers: {
+          playwright: { command: process.execPath, args: ["mock-playwright"], cwd: "." },
+        },
+      }));
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-mcp",
+        mode: "execute",
+      });
+
+      expect(input.mcpServers.playwright.cwd).toBe(".");
+      expect(input.mcpServers.playwright.env).toMatchObject({
+        WORKLAB_RUN_ID: "run-mcp",
+        WORKLAB_WORKSPACE: "/tmp/project-mcp",
+        WORKLAB_QA_OUTPUT_DIR: "/tmp/project-mcp/.worklab-tmp/artifacts/run-mcp",
+        PLAYWRIGHT_MCP_OUTPUT_DIR: "/tmp/project-mcp/.worklab-tmp/artifacts/run-mcp",
       });
     });
   });

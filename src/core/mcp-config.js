@@ -42,6 +42,12 @@ function validateStdio(name, config) {
   const out = { command: config.command };
   if (config.args) out.args = config.args;
   if (config.env) out.env = config.env;
+  if (config.cwd !== undefined) {
+    if (typeof config.cwd !== "string" || !config.cwd.trim()) {
+      throw new Error(`mcp server "${name}" cwd must be a non-empty string`);
+    }
+    out.cwd = config.cwd;
+  }
   return out;
 }
 

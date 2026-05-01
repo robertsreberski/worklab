@@ -229,6 +229,7 @@ function codexMcpConfigArgs(mcpServers = {}) {
     if (cfg.command) {
       args.push("--config", `${prefix}.command=${tomlValue(cfg.command)}`);
       if (Array.isArray(cfg.args) && cfg.args.length) args.push("--config", `${prefix}.args=${tomlValue(cfg.args)}`);
+      if (cfg.cwd && typeof cfg.cwd === "string") args.push("--config", `${prefix}.cwd=${tomlValue(cfg.cwd)}`);
       if (cfg.env && typeof cfg.env === "object") {
         for (const [key, value] of Object.entries(cfg.env)) {
           if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {

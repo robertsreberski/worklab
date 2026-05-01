@@ -19,6 +19,7 @@ import { getAgentByName } from "./db/queries/agents.js";
 import { listTaskComments } from "./db/queries/comments.js";
 import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
+import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
 import { formatWorklabResultText } from "../ai/result/contract.js";
@@ -142,15 +143,21 @@ export function loadAgentCapabilities({ config, agent, agentName, runId, env }) 
     all: allMcpServers,
   });
 
-  if (mcpServers.worklab) {
-    mcpServers.worklab = {
-      ...mcpServers.worklab,
+  const baseMcpEnv = {
+    WORKLAB_RUN_ID: runId,
+    ...(env || {}),
+  };
+  for (const [name, server] of Object.entries(mcpServers)) {
+    if (!server?.command) continue;
+    mcpServers[name] = {
+      ...server,
       env: {
-        ...(mcpServers.worklab.env || {}),
-        WORKLAB_DATA_DIR: config.dataDir,
-        WORKLAB_AGENT_NAME: agentName,
-        WORKLAB_RUN_ID: runId,
-        ...env,
+        ...(server.env || {}),
+        ...baseMcpEnv,
+        ...(name === "worklab" ? {
+          WORKLAB_DATA_DIR: config.dataDir,
+          WORKLAB_AGENT_NAME: agentName,
+        } : {}),
       },
     };
   }
@@ -175,6 +182,10 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
   const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
+  const qaOutputDir = resolveRunArtifactDir({
+    workdir: projectRunContext.effectiveWorkdir,
+    runId,
+  });
   if (runSnapshot && projectRunContext.projectContextHash
     && runSnapshot.project_context_hash
     && runSnapshot.project_context_hash !== projectRunContext.projectContextHash) {
@@ -200,6 +211,11 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     env: {
       WORKLAB_TASK_ID: taskId,
       WORKLAB_TASK_TITLE: task.title,
+      WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir,
+      ...(qaOutputDir ? {
+        WORKLAB_QA_OUTPUT_DIR: qaOutputDir,
+        PLAYWRIGHT_MCP_OUTPUT_DIR: qaOutputDir,
+      } : {}),
       ...(projectRunContext.project ? {
         WORKLAB_PROJECT_ID: projectRunContext.project.id,
         WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
@@ -216,6 +232,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     agent,
     project: projectRunContext.project,
     effectiveWorkdir: projectRunContext.effectiveWorkdir,
+    qaOutputDir,
     projectContextHash: projectRunContext.projectContextHash,
     commentRows,
     skills,
@@ -432,6 +449,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     projectId: setup.project?.id || "",
     projectUpdatedAt: setup.project?.updated_at || 0,
     projectWorkdirHash: shortHash(setup.effectiveWorkdir || ""),
+    qaOutputHash: shortHash(setup.qaOutputDir || ""),
     projectContextHash: setup.projectContextHash || "",
     commentsHash: shortHash((setup.commentRows || []).map((c) => `${c.id}:${c.created_at}`).join("|")),
     skillsHash: shortHash(skillsSignature.join("|")),
@@ -463,7 +481,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
-      agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, skills, memory, journalTail,
+      agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
@@ -500,6 +518,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
+      qaOutputDir: setup.qaOutputDir,
       delegation,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
