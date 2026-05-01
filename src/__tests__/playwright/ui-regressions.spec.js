@@ -596,7 +596,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     { title: "Desktop needs owner task", text: "Needs owner" },
     { title: "Desktop review task", text: "Review" },
     { title: "Desktop blocked task", text: "Waiting on 1" },
-    { title: "Desktop running task", text: "Running" },
+    { title: "Desktop running task", text: "Execute" },
     { title: "Desktop running task", text: "Desktop running event" },
     { title: "Desktop errored task", text: "Error" },
   ];
@@ -613,6 +613,9 @@ test("desktop task list keeps every task state legible without clipped controls"
     for (const row of stateRows) {
       await expect(page.locator(".commander-row", { hasText: row.title })).toContainText(row.text);
     }
+    const runningStageLabel = page.locator(".commander-row", { hasText: "Desktop running task" }).locator(".commander-cell-pill .stage-token-label");
+    await expect(runningStageLabel).toHaveText("Execute");
+    await expect(runningStageLabel).toHaveCSS("text-transform", "none");
 
     const rowLayoutMetrics = await page.evaluate(() => {
       const reviewRow = [...document.querySelectorAll(".commander-row")]

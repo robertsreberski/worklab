@@ -110,6 +110,12 @@ export function commanderRunningPreviewEvents(task, runProgressEvents = []) {
   return commanderLivePreviewEvents(mergeRunEvents(initial, progressEvents).slice(-12), { limit: 2 });
 }
 
+export function commanderRowStagePresentation(task) {
+  const displayStage = task?.stage || "plan";
+  const runtimeStatus = runningRunIdFromTask(task) ? "running" : displayStage;
+  return { displayStage, runtimeStatus };
+}
+
 export function CommanderRow({
   task,
   agents = [],
@@ -125,8 +131,8 @@ export function CommanderRow({
   const previewEvents = useMemo(() => {
     return commanderRunningPreviewEvents(task, runProgressEvents);
   }, [runProgressEvents, task]);
-  const displayStage = task.stage || "plan";
-  const meta = statusMeta(task.running_run_id ? "running" : displayStage);
+  const { displayStage, runtimeStatus } = commanderRowStagePresentation(task);
+  const meta = statusMeta(runtimeStatus);
 
   const runnerName = task.owner_agent;
   const runnerRole = "Owner";
@@ -312,7 +318,7 @@ export function CommanderRow({
         class="commander-cell-pill"
         title={task.stage_reason || undefined}
       >
-        <StageToken stage={task.running_run_id ? "running" : displayStage} />
+        <StageToken stage={displayStage} />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
       {isStreaming && previewEvents.length > 0 && (
