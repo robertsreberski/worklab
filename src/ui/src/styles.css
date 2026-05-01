@@ -6526,6 +6526,32 @@ html.assistant-resizing * {
 .settings-index-status.has-errors .settings-note {
   border-color: color-mix(in srgb, var(--status-progress) 38%, var(--border));
 }
+.settings-page .number-stepper,
+.settings-page .duration-input {
+  min-height: 0;
+}
+.settings-page .number-stepper {
+  height: 32px;
+}
+.settings-page .number-stepper-input {
+  height: 30px;
+  min-height: 0;
+}
+.settings-page .number-stepper-buttons {
+  align-self: stretch;
+  justify-content: center;
+}
+.settings-page .number-stepper-buttons .icon-button,
+.settings-page .number-stepper-buttons .icon-button.sm {
+  width: 22px;
+  min-width: 22px;
+  height: 15px;
+  min-height: 0;
+  padding: 0;
+}
+.settings-row-actions .button.sm {
+  min-height: 0;
+}
 @media (max-width: 760px) {
   .settings-page-head,
   .settings-section-head,
@@ -6567,6 +6593,16 @@ html.assistant-resizing * {
   .settings-row-actions {
     justify-content: flex-start;
     width: 100%;
+  }
+  .settings-page .number-stepper {
+    height: 36px;
+  }
+  .settings-page .number-stepper-input {
+    height: 34px;
+  }
+  .settings-row-actions .button.sm {
+    height: 32px;
+    min-height: 0;
   }
 }
 
