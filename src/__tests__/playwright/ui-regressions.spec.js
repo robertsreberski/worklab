@@ -1959,6 +1959,48 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(page.locator(".app-tabbar button", { hasText: "More" })).toHaveClass(/active/);
 });
 
+test("commander stage and project filters share selector sizing", async ({ page }) => {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${baseUrl}/#/tasks`);
+    await expect(page.locator(".commander-row").first()).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      function selectorMetrics(selector) {
+        const root = document.querySelector(selector);
+        const control = root?.matches("select")
+          ? root
+          : root?.querySelector(".select-trigger");
+        const rect = control?.getBoundingClientRect();
+        const styles = control ? getComputedStyle(control) : null;
+        return {
+          tagName: control?.tagName?.toLowerCase() || "",
+          width: rect ? Math.round(rect.width) : 0,
+          height: rect ? Math.round(rect.height) : 0,
+          fontFamily: styles?.fontFamily || "",
+          fontSize: styles?.fontSize || "",
+        };
+      }
+      return {
+        stage: selectorMetrics(".commander-stage-filter"),
+        project: selectorMetrics(".commander-project-filter"),
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.stage.tagName).toBe("button");
+    expect(metrics.project.tagName).toBe("button");
+    expect(Math.abs(metrics.stage.width - metrics.project.width)).toBeLessThanOrEqual(1);
+    expect(metrics.stage.height).toBe(metrics.project.height);
+    expect(metrics.stage.fontFamily).toBe(metrics.project.fontFamily);
+    expect(metrics.stage.fontSize).toBe(metrics.project.fontSize);
+    expect(metrics.overflow).toBeLessThanOrEqual(0);
+  }
+});
+
 test("mobile commander uses deliberate row density without exposing task ids", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);

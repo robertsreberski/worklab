@@ -2913,13 +2913,10 @@ html.assistant-resizing * {
   scrollbar-width: none;
 }
 .commander-filter .tabs::-webkit-scrollbar { display: none; }
+.commander-stage-filter,
 .commander-project-filter {
   flex: 0 0 160px;
   width: 160px;
-}
-.commander-stage-filter {
-  flex: 0 0 132px;
-  width: 132px;
 }
 .commander-filter .filter-divider { width: 1px; height: 16px; background: var(--border); }
 .commander-filter-actions {

@@ -731,7 +731,7 @@ export function Commander({ query: routeQuery = {} }) {
             />
             <Select
               class="commander-stage-filter"
-              variant="native"
+              variant="menu"
               value={stageFilter}
               onChange={setStageFilter}
               options={STAGE_FILTER_OPTIONS}
