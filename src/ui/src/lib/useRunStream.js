@@ -2,6 +2,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 
 const runStreams = new Map();
+const DEFAULT_INITIAL_EVENT_LIMIT = 24;
+const DEFAULT_MAX_EVENTS = 80;
 
 function eventKey(event) {
   if (!event) return null;
@@ -46,15 +48,136 @@ function runStreamUrl(runId) {
 function ensureRunStream(runId) {
   let entry = runStreams.get(runId);
   if (entry) return entry;
-  entry = { callbacks: new Set(), source: null, done: false };
+  entry = {
+    eventCallbacks: new Set(),
+    stateCallbacks: new Set(),
+    source: null,
+    done: false,
+    loading: false,
+    run: null,
+    events: [],
+    maxEvents: DEFAULT_MAX_EVENTS,
+    streamRefCount: 0,
+    hydratePromise: null,
+    hydrateController: null,
+    hydrateKey: null,
+    refreshTimer: null,
+    notifyTimer: null,
+  };
   runStreams.set(runId, entry);
   return entry;
+}
+
+function clearRunRefresh(entry) {
+  if (entry?.refreshTimer) clearTimeout(entry.refreshTimer);
+  if (entry) entry.refreshTimer = null;
+}
+
+function clearRunNotify(entry) {
+  if (!entry?.notifyTimer) return;
+  if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(entry.notifyTimer);
+  else clearTimeout(entry.notifyTimer);
+  entry.notifyTimer = null;
 }
 
 function closeRunStream(runId, entry) {
   entry?.source?.close?.();
   if (entry) entry.source = null;
-  if (!entry || entry.callbacks.size === 0) runStreams.delete(runId);
+  if (!entry || (entry.eventCallbacks.size === 0 && entry.stateCallbacks.size === 0)) {
+    entry?.hydrateController?.abort?.();
+    clearRunRefresh(entry);
+    clearRunNotify(entry);
+    runStreams.delete(runId);
+  }
+}
+
+function runStateSnapshot(entry) {
+  return {
+    events: [...(entry?.events || [])],
+    run: entry?.run || null,
+    done: Boolean(entry?.done),
+    loading: Boolean(entry?.loading),
+  };
+}
+
+function notifyRunState(entry) {
+  if (!entry || entry.notifyTimer || entry.stateCallbacks.size === 0) return;
+  const flush = () => {
+    entry.notifyTimer = null;
+    const snapshot = runStateSnapshot(entry);
+    for (const callback of [...entry.stateCallbacks]) callback(snapshot);
+  };
+  entry.notifyTimer = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame(flush)
+    : setTimeout(flush, 0);
+}
+
+function runUrl(runId, initialEventLimit) {
+  if (initialEventLimit === null) return `/api/runs/${runId}`;
+  const query = new URLSearchParams({
+    events: "tail",
+    limit: String(initialEventLimit ?? DEFAULT_INITIAL_EVENT_LIMIT),
+  });
+  return `/api/runs/${runId}?${query}`;
+}
+
+function hydrationKey(initialEventLimit) {
+  return initialEventLimit === null ? "full" : `tail:${initialEventLimit ?? DEFAULT_INITIAL_EVENT_LIMIT}`;
+}
+
+function applyRunHydration(entry, data, maxEvents) {
+  if (data?.run) entry.run = data.run;
+  if (data?.log?.events?.length) {
+    entry.events = limitRunEvents(
+      mergeRunEvents(entry.events, data.log.events),
+      maxEvents,
+    );
+  }
+  const status = data?.run?.process_status || data?.run?.status;
+  if (status && status !== "running") entry.done = true;
+  return { status, liveInput: data?.run?.live_input };
+}
+
+function hydrateRunState(runId, entry, {
+  initialEventLimit = DEFAULT_INITIAL_EVENT_LIMIT,
+  maxEvents = DEFAULT_MAX_EVENTS,
+  subscribe = true,
+} = {}) {
+  const nextKey = hydrationKey(initialEventLimit);
+  entry.maxEvents = Math.max(entry.maxEvents || DEFAULT_MAX_EVENTS, maxEvents || DEFAULT_MAX_EVENTS);
+  if (entry.hydratePromise && entry.hydrateKey === nextKey) return entry.hydratePromise;
+  if (entry.hydrateKey === nextKey && entry.run) return Promise.resolve(runStateSnapshot(entry));
+  entry.hydrateController?.abort?.();
+  const controller = new AbortController();
+  entry.hydrateController = controller;
+  entry.hydrateKey = nextKey;
+  entry.loading = true;
+  notifyRunState(entry);
+  const promise = fetch(runUrl(runId, initialEventLimit), { signal: controller.signal })
+    .then((response) => response.ok ? response.json() : null)
+    .then((data) => {
+      if (controller.signal.aborted || !data) return null;
+      const { status, liveInput } = applyRunHydration(entry, data, entry.maxEvents);
+      clearRunRefresh(entry);
+      if (subscribe && status === "running" && liveInput?.supported && !liveInput.active) {
+        entry.refreshTimer = setTimeout(() => {
+          entry.hydrateKey = null;
+          hydrateRunState(runId, entry, { initialEventLimit, maxEvents, subscribe });
+        }, 1000);
+      }
+      return runStateSnapshot(entry);
+    })
+    .catch(() => null)
+    .finally(() => {
+      if (!controller.signal.aborted) {
+        entry.loading = false;
+        notifyRunState(entry);
+      }
+      if (entry.hydrateController === controller) entry.hydrateController = null;
+      if (entry.hydratePromise === promise) entry.hydratePromise = null;
+    });
+  entry.hydratePromise = promise;
+  return entry.hydratePromise;
 }
 
 function openRunStream(runId, entry) {
@@ -67,11 +190,16 @@ function openRunStream(runId, entry) {
     } catch {
       return;
     }
-    for (const callback of [...entry.callbacks]) callback(payload);
+    for (const callback of [...entry.eventCallbacks]) callback(payload);
     if (payload?.type === "done") {
       entry.done = true;
+      entry.loading = false;
+      notifyRunState(entry);
       closeRunStream(runId, entry);
+      return;
     }
+    entry.events = limitRunEvents(mergeRunEvents(entry.events, [payload]), entry.maxEvents || DEFAULT_MAX_EVENTS);
+    notifyRunState(entry);
   };
   source.onerror = () => {
     closeRunStream(runId, entry);
@@ -82,22 +210,58 @@ function openRunStream(runId, entry) {
 export function subscribeRunStream(runId, onEvent) {
   if (!runId || typeof onEvent !== "function") return () => {};
   const entry = ensureRunStream(runId);
-  entry.callbacks.add(onEvent);
+  entry.eventCallbacks.add(onEvent);
+  entry.streamRefCount += 1;
   openRunStream(runId, entry);
   return () => {
-    entry.callbacks.delete(onEvent);
-    if (entry.callbacks.size === 0) closeRunStream(runId, entry);
+    entry.eventCallbacks.delete(onEvent);
+    entry.streamRefCount = Math.max(0, entry.streamRefCount - 1);
+    if (entry.streamRefCount === 0) closeRunStream(runId, entry);
+  };
+}
+
+export function subscribeRunState(runId, onSnapshot, options = {}) {
+  if (!runId || typeof onSnapshot !== "function") return () => {};
+  const entry = ensureRunStream(runId);
+  const {
+    subscribe = true,
+    initialEventLimit = DEFAULT_INITIAL_EVENT_LIMIT,
+    maxEvents = DEFAULT_MAX_EVENTS,
+  } = options;
+  entry.maxEvents = Math.max(entry.maxEvents || DEFAULT_MAX_EVENTS, maxEvents || DEFAULT_MAX_EVENTS);
+  entry.stateCallbacks.add(onSnapshot);
+  if (subscribe) {
+    entry.streamRefCount += 1;
+    openRunStream(runId, entry);
+  }
+  onSnapshot(runStateSnapshot(entry));
+  hydrateRunState(runId, entry, { initialEventLimit, maxEvents, subscribe });
+  return () => {
+    entry.stateCallbacks.delete(onSnapshot);
+    if (subscribe) entry.streamRefCount = Math.max(0, entry.streamRefCount - 1);
+    if (entry.stateCallbacks.size === 0 && entry.eventCallbacks.size === 0) {
+      closeRunStream(runId, entry);
+      return;
+    }
+    if (entry.streamRefCount === 0) closeRunStream(runId, entry);
   };
 }
 
 export function closeRunStreamsForTests() {
   for (const [runId, entry] of runStreams.entries()) {
+    entry.hydrateController?.abort?.();
+    clearRunRefresh(entry);
+    clearRunNotify(entry);
     closeRunStream(runId, entry);
   }
   runStreams.clear();
 }
 
-export function useRunStream(runId, { subscribe = true, initialEventLimit = 200, maxEvents = 200 } = {}) {
+export function useRunStream(runId, {
+  subscribe = true,
+  initialEventLimit = DEFAULT_INITIAL_EVENT_LIMIT,
+  maxEvents = DEFAULT_MAX_EVENTS,
+} = {}) {
   const [events, setEvents] = useState([]);
   const [run, setRun] = useState(null);
   const [done, setDone] = useState(false);
@@ -112,51 +276,17 @@ export function useRunStream(runId, { subscribe = true, initialEventLimit = 200,
       setLoading(false);
       return;
     }
-    setEvents([]); setRun(null); setDone(false); setLoading(true);
-    const controller = new AbortController();
-    let cancelled = false;
-    let runRefreshTimer = null;
-    function clearRunRefresh() {
-      if (runRefreshTimer) clearTimeout(runRefreshTimer);
-      runRefreshTimer = null;
-    }
-    function runUrl() {
-      if (initialEventLimit === null) return `/api/runs/${runId}`;
-      const query = new URLSearchParams({ events: "tail", limit: String(initialEventLimit) });
-      return `/api/runs/${runId}?${query}`;
-    }
-    function mergeIncoming(prev, incoming) {
-      return limitRunEvents(mergeRunEvents(prev, incoming), maxEvents);
-    }
-
-    function hydrateRun() {
-      clearRunRefresh();
-      // Preload any already-recorded events (run may have ended before we connected)
-      return fetch(runUrl(), { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
-        if (cancelled) return;
-        if (data?.run) setRun(data.run);
-        if (data?.log?.events?.length) setEvents((prev) => mergeIncoming(prev, data.log.events));
-        const status = data?.run?.process_status || data?.run?.status;
-        if (status && status !== "running") setDone(true);
-        const liveInput = data?.run?.live_input;
-        if (subscribe && status === "running" && liveInput?.supported && !liveInput.active) {
-          runRefreshTimer = setTimeout(hydrateRun, 1000);
-        }
-      }).catch(() => {}).finally(() => { if (!cancelled) setLoading(false); });
-    }
-    hydrateRun();
-    if (!subscribe) return () => { cancelled = true; controller.abort(); };
-    unsubscribeRef.current = subscribeRunStream(runId, (payload) => {
-      if (payload.type === "done") {
-        setDone(true);
-        return;
-      }
-      setEvents((prev) => mergeIncoming(prev, [payload]));
-    });
+    setEvents([]);
+    setRun(null);
+    setDone(false);
+    setLoading(true);
+    unsubscribeRef.current = subscribeRunState(runId, (snapshot) => {
+      setEvents(snapshot.events);
+      setRun(snapshot.run);
+      setDone(snapshot.done);
+      setLoading(snapshot.loading);
+    }, { subscribe, initialEventLimit, maxEvents });
     return () => {
-      cancelled = true;
-      clearRunRefresh();
-      controller.abort();
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
     };

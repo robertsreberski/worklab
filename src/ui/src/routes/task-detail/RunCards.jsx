@@ -189,7 +189,12 @@ function RunFailureDetails({ run }) {
 }
 
 export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
-  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, { subscribe });
+  const live = Boolean(subscribe);
+  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, {
+    subscribe,
+    initialEventLimit: live ? 24 : 200,
+    maxEvents: live ? 80 : 200,
+  });
   const metrics = runMetricItems(run);
   const resultPreview = runResultPreview(run);
   const startedAt = formatDate(run.started_at);
@@ -314,9 +319,12 @@ function RunArtifactMeta({ node }) {
   return null;
 }
 
-export function RunArtifactsSection({ task, runningRun }) {
+export function RunArtifactsSection({ task, runningRun, streamState = null }) {
   const isStreaming = Boolean(runningRun);
-  const { events, loading } = useRunStream(runningRun?.id, { subscribe: isStreaming });
+  const fallbackStream = useRunStream(streamState ? null : runningRun?.id, { subscribe: isStreaming });
+  const effectiveStream = streamState || fallbackStream;
+  const events = effectiveStream.events || [];
+  const loading = effectiveStream.loading;
   const liveArtifacts = useMemo(() => extractRunArtifacts(events), [events]);
   const artifacts = useMemo(() => {
     const taskArtifacts = Array.isArray(task?.artifacts) ? task.artifacts : [];
