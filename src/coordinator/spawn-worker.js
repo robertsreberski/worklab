@@ -162,6 +162,14 @@ export function spawnWorker({
     }
     schedulePersist();
     broker.broadcast(runId, event);
+    broker.broadcast("global", {
+      type: "run_progress",
+      runId,
+      taskId,
+      eventSeq: event._event_seq ?? rawEvent._event_seq ?? events.length,
+      eventCount: events.length,
+      lastEvent: event,
+    });
     resetIdleTimer();
     if (contextWarning) emitEvent(contextWarning);
     return { rawEvent, event };
