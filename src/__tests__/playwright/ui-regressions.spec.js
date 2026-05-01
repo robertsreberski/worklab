@@ -296,10 +296,15 @@ test.beforeAll(async () => {
     },
     ok: [201],
   });
+  const futureDailyAutomation = new Date(Date.now() + 60 * 60_000);
   await requestJson(`/api/tasks/${taskId}/automations`, {
     method: "POST",
     body: {
-      trigger: { type: "daily", hour: 9, minute: 15 },
+      trigger: {
+        type: "daily",
+        hour: futureDailyAutomation.getUTCHours(),
+        minute: futureDailyAutomation.getUTCMinutes(),
+      },
       enabled: true,
     },
     ok: [201],
@@ -368,9 +373,9 @@ test.beforeAll(async () => {
   };
   db.prepare(
     `INSERT INTO task_runs
-      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at,
+      (id, task_id, mode, agent_name, worker_pid, status, process_status, started_at, ended_at,
        exit_code, error_text, decision, summary, details, result_json)
-     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'complete', ?, ?,
+     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'complete', 'complete', ?, ?,
        0, NULL, ?, ?, ?, ?)`,
   ).run(
     "run-complete-existing",
@@ -2298,6 +2303,47 @@ test("mobile task detail keeps activity first with a compact premium composer", 
   expect(afterFocus.tabbarDisplay).toBe("none");
   expect(afterFocus.dockTransform).not.toBe("none");
   expect(afterFocus.overflow).toBeLessThanOrEqual(0);
+});
+
+test("mobile task detail review wraps idle dock actions into two rows", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/${desktopReviewTaskId}`);
+  await expect(page.locator(".task-hero-title", { hasText: "Desktop review task" })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const buttons = dock ? [...dock.querySelectorAll(".button")] : [];
+    const rows = [];
+    for (const button of buttons) {
+      const top = Math.round(button.getBoundingClientRect().top);
+      if (!rows.some((rowTop) => Math.abs(rowTop - top) <= 4)) rows.push(top);
+    }
+    const dockRect = dock?.getBoundingClientRect();
+    const assistantRect = assistantLauncher?.getBoundingClientRect();
+    const appBody = document.querySelector(".app-body");
+    const bodyPaddingBottom = appBody ? Math.round(parseFloat(getComputedStyle(appBody).paddingBottom) || 0) : 0;
+    return {
+      labels: buttons.map((button) => button.textContent.replace(/\s+/g, " ").trim()),
+      rowCount: rows.length,
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
+      bodyPaddingBottom,
+      dockInsideViewport: dockRect ? Math.round(dockRect.bottom) <= window.innerHeight + 1 : false,
+      assistantAboveDock: dockRect && assistantRect
+        ? Math.round(assistantRect.bottom) <= Math.round(dockRect.top) - 1
+        : false,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.labels).toEqual(["Edit", "Run input", "Run review", "Approve", "Request changes"]);
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.rowCount).toBe(2);
+  expect(metrics.bodyPaddingBottom).toBeGreaterThanOrEqual(metrics.dockHeight - 1);
+  expect(metrics.dockInsideViewport).toBe(true);
+  expect(metrics.assistantAboveDock).toBe(true);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("mobile task detail omits redundant header labels", async ({ page }) => {

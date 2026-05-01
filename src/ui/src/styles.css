@@ -3336,6 +3336,7 @@ html.assistant-resizing * {
   font-size: var(--text-sm);
 }
 .task-hero-actions { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.task-mobile-action-dock { display: contents; }
 .run-input-preview {
   display: flex;
   flex-direction: column;
@@ -10203,6 +10204,9 @@ html.assistant-resizing * {
     grid-template-columns: minmax(0, 1fr);
     padding-bottom: var(--mobile-tabbar-height);
   }
+  .app.responsive:has(.task-mobile-action-dock.review-idle) {
+    --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)) + 1px);
+  }
   .app.responsive.has-dock {
     padding-bottom: 0;
   }
@@ -10246,6 +10250,22 @@ html.assistant-resizing * {
     height: 44px;
     min-height: 44px;
     min-width: 0;
+  }
+  .app.responsive .task-mobile-action-dock.review-idle {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--sp-2);
+    width: 100%;
+  }
+  .app.responsive .task-mobile-action-dock.review-idle .button {
+    width: 100%;
+    padding: 0 var(--sp-2);
+  }
+  .app.responsive .task-mobile-action-dock.review-idle .button:nth-child(-n+3) {
+    grid-column: span 2;
+  }
+  .app.responsive .task-mobile-action-dock.review-idle .button:nth-child(n+4) {
+    grid-column: span 3;
   }
   .app.responsive.has-dock .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body,
   .app.responsive.has-dock .task-detail,
@@ -10498,5 +10518,8 @@ html.assistant-resizing * {
   }
   .app.responsive:has(.commander-new-task-fab) .assistant-launcher {
     bottom: calc(112px + var(--sp-4) + var(--sp-3) + env(safe-area-inset-bottom));
+  }
+  .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-launcher {
+    bottom: calc(var(--mobile-action-dock-height) + var(--sp-4));
   }
 }

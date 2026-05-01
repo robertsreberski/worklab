@@ -774,7 +774,7 @@ export function TaskDetail({ id, runParam = null }) {
     </>
   );
   const mobileActionDock = task && (
-    <>
+    <div class={`task-mobile-action-dock${stage === "review" && !runningRun ? " review-idle" : ""}`}>
       <Button variant="secondary" iconLeft={<Icon name="settings" size={13} />} onClick={() => { navigateHash(`#/tasks/${currentTaskRouteId}/edit`); }}>
         Edit
       </Button>
@@ -784,7 +784,7 @@ export function TaskDetail({ id, runParam = null }) {
         </Button>
       )}
       {renderPrimaryAction()}
-    </>
+    </div>
   );
   const detailMeta = task && (
     <span class="task-hero-status-row">
