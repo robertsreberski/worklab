@@ -24,6 +24,9 @@ function resultFromTextOrFallback(text, fallback) {
   if (!String(text || "").trim()) {
     return { result: null, error: "missing final output", fatal: true };
   }
+  if (parsed.worklabCandidate) {
+    return { result: null, error: parsed.error, fatal: true };
+  }
   return { result: synthesizeWorklabResult({ ...fallback, details: text || "" }), error: parsed.error };
 }
 

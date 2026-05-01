@@ -42,6 +42,32 @@ describe("worklab_result contract", () => {
     expect(parsed.result.final_text).toBe("Final comment.");
   });
 
+  it("normalizes string subtask acceptance criteria into an array", () => {
+    const text = JSON.stringify({
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "delegate",
+      summary: "split",
+      details: "delegate the work",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [{
+        title: "child",
+        instructions: "do it",
+        suggested_agent: "helper",
+        required: true,
+        acceptance_criteria: "Provide a short report.",
+        expected_artifact: "Report",
+      }],
+    });
+
+    const parsed = parseWorklabResultFromText(text);
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.subtasks[0].acceptance_criteria).toEqual(["Provide a short report."]);
+  });
+
   it("uses final_text for human-facing result text with legacy summary/details fallback", () => {
     const normalized = normalizeWorklabResult({
       schema: "worklab.v2",
