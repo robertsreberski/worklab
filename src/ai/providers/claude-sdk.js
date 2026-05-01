@@ -8,6 +8,11 @@ import {
   readFileChangeSnapshot,
   statsForCompletedChange,
 } from "../file-change-stats.js";
+import {
+  extractWorklabResult,
+  formatWorklabResultText,
+  stripWorklabResultJson,
+} from "../result/contract.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
@@ -69,6 +74,18 @@ function makeRuntimeWarning(message) {
     warning_kind: "claude_post_success_error",
     message,
   };
+}
+
+function finalTextFromOutput(worklabResult, text) {
+  const delivered = stripWorklabResultJson(text);
+  return delivered || formatWorklabResultText(worklabResult) || text;
+}
+
+function structuredSourceFromEvent(event) {
+  if (event?.type === "result" && event.result != null) return "result";
+  if (event?.type === "result" && event.final_output != null) return "final_output";
+  if (event?.type === "assistant") return "message";
+  return "event";
 }
 
 const CLAUDE_FILE_EDIT_MATCHER = "Edit|Write|NotebookEdit";
@@ -278,11 +295,14 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let failureKind = null;
   let successfulResultSeen = false;
   let postSuccessErrorSeen = false;
+  let worklabResult = null;
+  let structuredResultSource = null;
 
-  const finalText = () => resultText || text;
+  const rawFinalText = () => resultText || text;
+  const finalText = () => finalTextFromOutput(worklabResult, rawFinalText());
 
   function hasUsableFinalOutput() {
-    return String(finalText() || "").trim().length > 0;
+    return Boolean(worklabResult) || String(finalText() || "").trim().length > 0;
   }
 
   function preservePostSuccessError(message) {
@@ -303,6 +323,11 @@ export async function generateClaudeResponse(systemPrompt, options) {
   try {
     for await (const event of stream) {
       emitEvent(event);
+      const structured = extractWorklabResult(event);
+      if (structured.ok) {
+        worklabResult = structured.result;
+        structuredResultSource = structuredSourceFromEvent(event);
+      }
       if (event.type === "assistant") text += extractText(event);
       else if (event.type === "error") {
         const message = event.error?.message || event.error || "sdk stream error";
@@ -370,6 +395,8 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
   return {
     text: finalText(),
+    worklabResult,
+    structuredResultSource,
     events: capturedEvents,
     usage: enrichedUsage,
     durationMs,

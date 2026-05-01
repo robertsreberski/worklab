@@ -130,6 +130,43 @@ describe("generateClaudeResponse", () => {
     expect(r.text).toBe("# Report\n\nFinal delivered answer.");
   });
 
+  it("extracts worklab_result from SDK result text and strips schema from final text", async () => {
+    const structured = {
+      schema: "worklab.v2",
+      stage: "review",
+      decision: "approve",
+      summary: "Review passed.",
+      details: "Verified output.",
+      final_text: "Approved for release.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    mockQuery.mockReturnValue(mockStream([
+      { type: "assistant", message: { content: [{ type: "text", text: "Reviewing." }] } },
+      {
+        type: "result",
+        result: `\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``,
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 2,
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+
+    expect(r.worklabResult).toMatchObject(structured);
+    expect(r.structuredResultSource).toBe("result");
+    expect(r.text).toBe("Approved for release.");
+    expect(r.text).not.toContain('"schema"');
+  });
+
   it("does not pass maxTurns by default", async () => {
     mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
     await generateClaudeResponse("sys", {
