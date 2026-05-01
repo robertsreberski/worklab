@@ -20,9 +20,9 @@ export function RunHistoryNotice({
     <div class="run-history-notice">
       <span class="run-history-copy">
         {hasHiddenHistory
-          ? `Showing latest ${visible} of ${total} events`
+          ? "Showing latest logs"
           : showLoadedState
-            ? `Full history loaded${total ? ` (${total} events)` : ""}`
+            ? "Full history loaded"
             : "Run log"}
       </span>
       <span class="run-history-actions">
