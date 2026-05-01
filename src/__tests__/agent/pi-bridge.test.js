@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   coerceMcpContent,
   getPiBuiltinTools,
+  normalizeMcpToolParams,
   normalizePiBuiltinToolParams,
   resolveMcpStdioCwd,
 } from "../../agent/tools/pi-bridge.js";
@@ -112,6 +113,33 @@ describe("pi MCP tool helpers", () => {
     expect(resolveMcpStdioCwd({}, "/repo/project")).toBe("/repo/project");
     expect(resolveMcpStdioCwd({ cwd: "tools" }, "/repo/project")).toBe("/repo/project/tools");
     expect(resolveMcpStdioCwd({ cwd: "/opt/mcp" }, "/repo/project")).toBe("/opt/mcp");
+  });
+
+  it("routes Playwright MCP relative artifact filenames into the QA output directory", () => {
+    const root = tempWorkspace();
+    const qaOutputDir = join(root, ".worklab-tmp", "artifacts", "run-1");
+
+    const screenshot = normalizeMcpToolParams("playwright", "browser_take_screenshot", {
+      filename: "screens/title.png",
+      fullPage: true,
+    }, { qaOutputDir });
+    expect(screenshot.filename).toBe(join(qaOutputDir, "screens", "title.png"));
+    expect(existsSync(join(qaOutputDir, "screens"))).toBe(true);
+
+    const snapshot = normalizeMcpToolParams("playwright", "browser_snapshot", {
+      filename: "../snapshot.md",
+    }, { qaOutputDir });
+    expect(snapshot.filename).toBe(join(qaOutputDir, "snapshot.md"));
+
+    const absolute = normalizeMcpToolParams("playwright", "browser_console_messages", {
+      filename: "/tmp/console.log",
+    }, { qaOutputDir });
+    expect(absolute.filename).toBe("/tmp/console.log");
+
+    const code = normalizeMcpToolParams("playwright", "browser_run_code", {
+      filename: "result.json",
+    }, { qaOutputDir });
+    expect(code.filename).toBe("result.json");
   });
 
   it("passes abort signals to Bash tool execution", async () => {

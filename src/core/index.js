@@ -196,6 +196,8 @@ export {
   runArtifactSummary,
 } from "./run-artifacts.js";
 
+export { resolveRunArtifactDir } from "./run-artifact-paths.js";
+
 export { readRunLog } from "./run-logs.js";
 
 // ---------- Live input + comments ----------

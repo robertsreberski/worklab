@@ -358,13 +358,18 @@ function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpS
   return lines.join("\n");
 }
 
-function formatWorkspaceGuidance(effectiveWorkdir) {
+function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir) {
   if (!effectiveWorkdir) return "";
-  return [
+  const lines = [
     `Tool working directory: \`${effectiveWorkdir}\`.`,
     "Relative paths in built-in tools and stdio MCP tools resolve from this directory.",
     "If you create temporary scripts that import project files, put them under this directory, such as `.worklab-tmp/`, rather than `/tmp`.",
-  ].join("\n");
+  ];
+  if (qaOutputDir) {
+    lines.push(`Temporary QA artifact directory: \`${qaOutputDir}\`.`);
+    lines.push("Use `WORKLAB_QA_OUTPUT_DIR` for browser screenshots, browser snapshots, console captures, and raw QA logs unless the user explicitly asks for durable repo artifacts.");
+  }
+  return lines.join("\n");
 }
 
 function formatDelegationPolicy(context) {
@@ -449,7 +454,7 @@ const BASE_SECTION_NAMES = [
 function buildBaseSections(input) {
   const {
     agent, skills, memory, journalTail, currentRunComments,
-    allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir,
+    allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir, qaOutputDir,
     worklabToolSurfaceMarkdown,
   } = input;
   return [
@@ -459,7 +464,7 @@ function buildBaseSections(input) {
     ["Memory", memory || ""],
     ["Recent journal", journalTail || ""],
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
-    ["Workspace", formatWorkspaceGuidance(effectiveWorkdir)],
+    ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir)],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
   ];
 }

@@ -55,6 +55,7 @@ function codexMcpConfig(mcpServers = {}) {
         command: cfg.command,
         ...(Array.isArray(cfg.args) ? { args: cfg.args } : {}),
         ...(cfg.env && typeof cfg.env === "object" ? { env: cfg.env } : {}),
+        ...(cfg.cwd && typeof cfg.cwd === "string" ? { cwd: cfg.cwd } : {}),
         enabled: true,
         required: false,
       };

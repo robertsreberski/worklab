@@ -51,6 +51,11 @@ describe("loadMcpConfig", () => {
     expect(loadMcpConfig(d).s).toEqual({ command: "/usr/bin/node", args: ["x"] });
   });
 
+  it("preserves stdio cwd for workspace-relative MCP servers", () => {
+    const d = mk({ mcpServers: { s: { command: "/usr/bin/node", args: ["x"], cwd: "." } } });
+    expect(loadMcpConfig(d).s).toEqual({ command: "/usr/bin/node", args: ["x"], cwd: "." });
+  });
+
   it("rejects stdio server with relative command path", () => {
     const d = mk({ mcpServers: { s: { command: "node" } } });
     expect(() => loadMcpConfig(d)).toThrow(/absolute path/i);

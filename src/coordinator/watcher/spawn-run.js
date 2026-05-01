@@ -10,6 +10,7 @@ import {
 import { prepareExecenv } from "../../core/execenv.js";
 import { newRunId } from "../../core/ids.js";
 import { resolveTaskProjectRunContext } from "../../core/projects.js";
+import { resolveRunArtifactDir } from "../../core/run-artifact-paths.js";
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
 
@@ -57,6 +58,17 @@ export function spawnTaskRun({
     mkdirSync(projectRunContext.project.workdir, { recursive: true });
   }
   const runId = newRunId();
+  const effectiveWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
+  let qaOutputDir = null;
+  if (effectiveWorkspace) {
+    qaOutputDir = resolveRunArtifactDir({ workdir: effectiveWorkspace, runId });
+    try {
+      mkdirSync(qaOutputDir, { recursive: true });
+    } catch (err) {
+      logger?.warn?.({ err: err.message, runId, qaOutputDir }, "qa artifact directory preparation failed");
+      qaOutputDir = null;
+    }
+  }
   const now = Date.now();
   db.prepare(
     `INSERT INTO task_runs
@@ -97,7 +109,8 @@ export function spawnTaskRun({
     WORKLAB_RUN_ID: runId,
     WORKLAB_DATA_DIR: dataDir || "",
     WORKLAB_REPO_ROOT: repoRoot || "",
-    WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir || workspace || repoRoot || "",
+    WORKLAB_WORKSPACE: effectiveWorkspace,
+    ...(qaOutputDir ? { WORKLAB_QA_OUTPUT_DIR: qaOutputDir, PLAYWRIGHT_MCP_OUTPUT_DIR: qaOutputDir } : {}),
     ...(projectRunContext.project ? {
       WORKLAB_PROJECT_ID: projectRunContext.project.id,
       WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,

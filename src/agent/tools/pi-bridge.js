@@ -3,8 +3,8 @@ import { Client as McpClient } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, relative, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, relative, resolve } from "node:path";
 import {
   bashToolImpl,
   editToolImpl,
@@ -59,6 +59,30 @@ function isInsidePath(root, target) {
   if (!root || !target) return false;
   const rel = relative(resolve(root), resolve(target));
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+const PLAYWRIGHT_FILENAME_TOOLS = new Set([
+  "browser_console_messages",
+  "browser_snapshot",
+  "browser_take_screenshot",
+]);
+
+function artifactFilename(filename, outputDir) {
+  if (!filename || typeof filename !== "string" || isAbsolute(filename) || !outputDir) return filename;
+  const base = resolve(outputDir);
+  const requested = resolve(base, filename);
+  const target = isInsidePath(base, requested) ? requested : resolve(base, basename(filename));
+  mkdirSync(dirname(target), { recursive: true });
+  return target;
+}
+
+export function normalizeMcpToolParams(_serverName, toolName, params, { qaOutputDir = process.env.WORKLAB_QA_OUTPUT_DIR } = {}) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) return params;
+  if (!PLAYWRIGHT_FILENAME_TOOLS.has(toolName) || !params.filename || isAbsolute(String(params.filename))) return params;
+  return {
+    ...params,
+    filename: artifactFilename(params.filename, qaOutputDir),
+  };
 }
 
 function normalizeWorkdir(value, cwd) {
@@ -456,8 +480,9 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { lim
           if (signal?.aborted) throw new Error("tool execution aborted");
           const textLimit = limits.mcpTextLimitChars || MCP_TEXT_RESULT_LIMIT;
           const imageInlineMaxBytes = limits.imageInlineMaxBytes ?? MCP_IMAGE_INLINE_MAX_BYTES;
+          const normalizedParams = normalizeMcpToolParams(serverName, sourceTool.name, params || {});
           const out = await withTimeout(
-            connected.client.callTool({ name: sourceTool.name, arguments: params || {} }),
+            connected.client.callTool({ name: sourceTool.name, arguments: normalizedParams || {} }),
             limits.mcpCallTimeoutMs || 120000,
             signal,
             `${serverName}:${sourceTool.name}`,
