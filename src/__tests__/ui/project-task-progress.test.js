@@ -49,6 +49,24 @@ describe("project task progress helpers", () => {
     expect(items).toEqual([]);
   });
 
+  it("ignores stale failure kind after a successful retry delegated work", () => {
+    const task = {
+      stage: "awaiting_children",
+      owner_agent: "owner",
+      failure_count: 0,
+      last_failure_kind: "provider_unavailable",
+      last_run: {
+        status: "complete",
+        process_status: "succeeded",
+        decision: "delegate",
+        failure_kind: null,
+      },
+    };
+
+    expect(projectTaskAttentionItems(task)).toEqual([]);
+    expect(projectTaskGroupKey(task)).toBe("in_progress");
+  });
+
   it("surfaces active recovery as a secondary attention badge", () => {
     const items = projectTaskAttentionItems({
       stage: "review",

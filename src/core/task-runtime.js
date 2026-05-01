@@ -31,6 +31,13 @@ export function taskHasRunError(task = {}) {
   return false;
 }
 
+function taskHasStaleResolvedFailureKind(task = {}) {
+  if (!task.last_failure_kind || task.last_failure_kind === "review_rejected") return false;
+  if (Number(task.failure_count || 0) > 0 || task.error_text) return false;
+  const status = task.last_run?.process_status || task.last_run?.status || null;
+  return status === "succeeded" || status === "complete";
+}
+
 export function taskRecoveryState(task = {}) {
   const recovery = task?.last_run?.recovery || null;
   return recovery?.active_run_id ? recovery : null;
@@ -79,7 +86,7 @@ export function runtimeTaskAttentionItems(task = {}) {
   if (pendingActions.length > 0) {
     items.push({ key: "pending_actions", label: `${pendingActions.length} action${pendingActions.length === 1 ? "" : "s"}`, tone: "warn" });
   }
-  if (task.last_failure_kind && !taskHasRunError(task)) {
+  if (task.last_failure_kind && !taskHasRunError(task) && !taskHasStaleResolvedFailureKind(task)) {
     items.push({ key: "failure_kind", label: `Failure: ${task.last_failure_kind}`, tone: "warn" });
   }
   if (!task.owner_agent && stage !== "done") {

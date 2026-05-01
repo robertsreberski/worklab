@@ -45,6 +45,24 @@ describe("runtime task grouping", () => {
     })).toEqual([]);
   });
 
+  it("ignores stale failure kind after a successful retry delegated work", () => {
+    const task = {
+      stage: "awaiting_children",
+      owner_agent: "owner",
+      failure_count: 0,
+      last_failure_kind: "provider_unavailable",
+      last_run: {
+        status: "complete",
+        process_status: "succeeded",
+        decision: "delegate",
+        failure_kind: null,
+      },
+    };
+
+    expect(runtimeTaskAttentionItems(task)).toEqual([]);
+    expect(runtimeTaskGroupKey(task)).toBe("waiting");
+  });
+
   it("limits visible completed tasks and reports hidden completed count", () => {
     const tasks = [
       { id: "running", title: "Running", stage: "execute", running_run_id: "run-1", updated_at: 1 },

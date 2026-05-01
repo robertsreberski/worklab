@@ -16,6 +16,7 @@ describe("workflow stage reducer", () => {
     });
     expect(r.stage).toBe("execute");
     expect(r.sideEffects).toContainEqual({ type: "reset_failure_count" });
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
   });
 
   it("rejects run_requested without an assigned agent", () => {
@@ -32,6 +33,7 @@ describe("workflow stage reducer", () => {
       result: { decision: "advance" },
     });
     expect(r.stage).toBe("review");
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
     expect(r.sideEffects).not.toContainEqual({ type: "spawn_reviewer", agentName: "checker" });
   });
 
@@ -90,14 +92,17 @@ describe("workflow stage reducer", () => {
       result: { decision: "delegate", subtasks },
     });
     expect(r.stage).toBe("awaiting_children");
+    expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
     expect(r.sideEffects).toContainEqual({ type: "create_subtasks", subtasks });
   });
 
   it("pause and block produce user-action stages", () => {
-    expect(nextStage("execute", {
+    const paused = nextStage("execute", {
       type: "run_succeeded",
       result: { decision: "pause", summary: "need approval", pending_actions: ["approve"] },
-    }).stage).toBe("awaiting_user");
+    });
+    expect(paused.stage).toBe("awaiting_user");
+    expect(paused.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
     expect(nextStage("execute", {
       type: "run_succeeded",
       result: { decision: "block", summary: "missing key", blocking_issues: ["OPENAI_API_KEY"] },
@@ -105,7 +110,9 @@ describe("workflow stage reducer", () => {
   });
 
   it("required children completion resumes execute; blocked child blocks parent", () => {
-    expect(nextStage("awaiting_children", { type: "children_completed" }).stage).toBe("execute");
+    const resumed = nextStage("awaiting_children", { type: "children_completed" });
+    expect(resumed.stage).toBe("execute");
+    expect(resumed.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
     expect(nextStage("awaiting_children", { type: "child_blocked", message: "child blocked" }).stage).toBe("blocked");
   });
 
@@ -292,4 +299,3 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
   });
 });
-
