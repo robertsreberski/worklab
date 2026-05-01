@@ -4,7 +4,6 @@
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
-import { formatCost } from "../lib/runFormatting.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
@@ -25,6 +24,13 @@ import { pushToast } from "../lib/toast.js";
 
 const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
 
+export function formatCommanderCost(value) {
+  if (value == null) return null;
+  const number = Number(value);
+  if (!Number.isFinite(number)) return null;
+  return `$${number.toFixed(2)}`;
+}
+
 function DailyCostChip() {
   const [summary, setSummary] = useState(null);
   useEffect(() => {
@@ -39,14 +45,14 @@ function DailyCostChip() {
     return () => { cancelled = true; clearInterval(handle); };
   }, []);
   if (!summary?.today || !Number.isFinite(summary.today.total_usd) || summary.today.run_count === 0) return null;
-  const todayLabel = formatCost(summary.today.total_usd);
-  const weekLabel = formatCost(summary.week.total_usd);
+  const todayLabel = formatCommanderCost(summary.today.total_usd);
+  const weekLabel = formatCommanderCost(summary.week.total_usd);
   const titleLines = [`Today: ${todayLabel} across ${summary.today.run_count} run${summary.today.run_count === 1 ? "" : "s"}`];
   if (summary.week.run_count > summary.today.run_count) {
     titleLines.push(`This week: ${weekLabel} across ${summary.week.run_count} runs`);
   }
   for (const row of summary.today_by_agent || []) {
-    titleLines.push(`  - ${row.agent || "unattributed"}: ${formatCost(row.total_usd)}`);
+    titleLines.push(`  - ${row.agent || "unattributed"}: ${formatCommanderCost(row.total_usd)}`);
   }
   return (
     <span class="commander-cost-chip" title={titleLines.join("\n")}>

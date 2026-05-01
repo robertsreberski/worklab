@@ -3,11 +3,18 @@ import {
   commanderTaskSortBucket,
   compareCommanderGroups,
   compareCommanderTasks,
+  formatCommanderCost,
   groupKeyFor,
   taskMatchesCommanderQuery,
 } from "../../ui/src/routes/Commander.jsx";
 
 describe("commander task grouping", () => {
+  it("formats task-list cost summary values to two decimals", () => {
+    expect(formatCommanderCost(35.8315)).toBe("$35.83");
+    expect(formatCommanderCost(0)).toBe("$0.00");
+    expect(formatCommanderCost(null)).toBeNull();
+  });
+
   it("uses the saved task stage even when the latest run errored", () => {
     expect(groupKeyFor({
       stage: "done",
