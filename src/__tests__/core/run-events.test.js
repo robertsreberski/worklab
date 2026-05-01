@@ -6,7 +6,7 @@ function seedAgent(db, name = "coder") {
   const now = Date.now();
   db.prepare(
     "INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(name, name, "claude", "claude:claude-sonnet-4-6", now, now);
+  ).run(name, "Code Specialist", "claude", "claude:claude-sonnet-4-6", now, now);
 }
 
 describe("run lifecycle events", () => {
@@ -33,6 +33,7 @@ describe("run lifecycle events", () => {
       mode: "execute",
       stage: "execute",
       agentName: "coder",
+      agentDisplayName: "Code Specialist",
       status: "error",
       processStatus: "failed",
       failureKind: "spawn",

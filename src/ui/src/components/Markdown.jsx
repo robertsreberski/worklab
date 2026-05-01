@@ -168,7 +168,11 @@ function safeHref(url) {
 }
 
 function renderAnchor(href, label) {
-  return `<a href="${safeHref(href)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+  const safe = safeHref(href);
+  const externalAttrs = /^(https?:|mailto:|tel:)/i.test(safe)
+    ? ' target="_blank" rel="noopener noreferrer"'
+    : "";
+  return `<a href="${safe}"${externalAttrs}>${label}</a>`;
 }
 
 function renderInline(text) {

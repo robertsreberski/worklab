@@ -827,7 +827,7 @@ describe("task-watcher v2 workflow", () => {
   it("budget pre-flight rejects when the per-agent daily cap is hit", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    db.prepare("UPDATE agents SET daily_budget_usd = 0.01 WHERE name = 'coder'").run();
+    db.prepare("UPDATE agents SET display_name = 'Code Specialist', daily_budget_usd = 0.01 WHERE name = 'coder'").run();
     const taskId = seedTask(db, { owner: "coder" });
     const now = Date.now();
     db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status, cost_usd)
@@ -837,7 +837,7 @@ describe("task-watcher v2 workflow", () => {
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", maxFailures: 5 });
 
     await expect(watcher.handleRunRequested(taskId)).rejects.toMatchObject({
-      message: expect.stringContaining("Daily budget for coder"),
+      message: expect.stringContaining("Daily budget for Code Specialist"),
       code: "budget_exceeded",
     });
     expect(spawn).not.toHaveBeenCalled();

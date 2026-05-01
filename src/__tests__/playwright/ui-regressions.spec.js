@@ -880,6 +880,41 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(freshComment).toHaveCount(0);
 });
 
+test("agent references in messages and avatars navigate to agent editor", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  const db = new Database(join(dataDir, "worklab.db"));
+  db.prepare(
+    `INSERT OR REPLACE INTO task_comments
+      (id, task_id, author_type, author_id, body, created_at)
+     VALUES (?, ?, 'system', NULL, ?, ?)`,
+  ).run(
+    "comment-agent-budget-link",
+    taskId,
+    "ERROR: Parent resume failed: Daily budget for Regression Agent reached ($59.7195 of $50.00).",
+    Date.now(),
+  );
+  db.close();
+
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  const messageLink = page
+    .locator(".activity-feed-entry.comment.system", { hasText: "Daily budget" })
+    .locator("a[href='#/agents/regression-agent']", { hasText: "Regression Agent" })
+    .first();
+  await expect(messageLink).toHaveAttribute("href", "#/agents/regression-agent");
+  await messageLink.click();
+  await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  const taskRow = page.locator(".commander-row", { hasText: "UI regression task" }).first();
+  await expect(taskRow).toBeVisible();
+  const avatarLink = taskRow.locator(".commander-cell-assignees .agent-link[aria-label='Regression Agent']").first();
+  await expect(avatarLink).toHaveAttribute("href", "#/agents/regression-agent");
+  await avatarLink.click();
+  await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
+});
+
 test("desktop task detail states keep actions and context obvious without clipped controls", async ({ page }) => {
   const viewports = [
     { width: 1440, height: 900, label: "desktop-1440" },

@@ -93,7 +93,7 @@ export function buildRunNotification(event = {}) {
   if (!kind) return null;
   const label = taskLabel(event) || "Task run";
   const phase = formatMode(event.stage || event.mode);
-  const agent = event.agentName ? String(event.agentName) : "";
+  const agent = (event.agentDisplayName || event.agentName) ? String(event.agentDisplayName || event.agentName) : "";
   const base = [phase, agent].filter(Boolean).join(" · ");
   if (kind === "started") {
     return {

@@ -9,6 +9,7 @@ import { safeParseJson } from "./run-handler.js";
 export function checkBudget({ db, agentName }) {
   const settings = readSettings(db);
   const agent = getAgentBudget(db, agentName);
+  const agentLabel = agent?.display_name || agent?.name || agentName;
   const startOfDayUtc = new Date();
   startOfDayUtc.setUTCHours(0, 0, 0, 0);
   const since = startOfDayUtc.getTime();
@@ -41,7 +42,7 @@ export function checkBudget({ db, agentName }) {
       scope: "agent_daily",
       spent: agentSpend,
       cap: agentDailyBudget,
-      message: `Daily budget for ${agentName} reached ($${agentSpend.toFixed(4)} of $${agentDailyBudget.toFixed(2)}).`,
+      message: `Daily budget for ${agentLabel} reached ($${agentSpend.toFixed(4)} of $${agentDailyBudget.toFixed(2)}).`,
     };
   }
   return { ok: true, agentSpend, workspaceSpend };

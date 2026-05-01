@@ -1315,6 +1315,42 @@ select,
 }
 .agent-pair .agent-avatar + .agent-avatar { margin-left: -6px; box-shadow: 0 0 0 2px var(--surface); }
 .agent-pair .agent-pair-arrow { color: var(--text-subtle); margin: 0 var(--sp-1); }
+.agent-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 600;
+}
+.agent-link:hover,
+.agent-link:focus-visible {
+  text-decoration: underline;
+}
+.agent-link.with-avatar {
+  color: inherit;
+}
+.agent-link.icon-only {
+  line-height: 0;
+}
+.agent-link.icon-only:hover,
+.agent-link.icon-only:focus-visible {
+  text-decoration: none;
+}
+.agent-link > span:not(.agent-avatar) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-feed-dot .agent-link,
+.commander-cell-assignees .agent-link {
+  border-radius: 50%;
+}
+.activity-author-badge .agent-link,
+.comment-author .agent-link {
+  color: inherit;
+}
 
 /* §3.18 Badge */
 .badge {
