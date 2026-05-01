@@ -5,7 +5,7 @@
 // "Stuck" chip: running_run_id && is_locked===false (§5.2).
 
 import { useMemo } from "preact/hooks";
-import { mergeRunEvents, useRunStream } from "../lib/useRunStream.js";
+import { mergeRunEvents } from "../lib/useRunStream.js";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
 import { statusMeta } from "./primitives/StatusPill.jsx";
@@ -101,6 +101,14 @@ export function commanderLivePreviewEvents(events = [], { limit = 2 } = {}) {
   return preview.slice(-limit);
 }
 
+export function commanderRunningPreviewEvents(task, runProgressEvents = []) {
+  const runningRunId = runningRunIdFromTask(task);
+  if (!runningRunId) return [];
+  const initial = task?.running_run?.last_event ? [task.running_run.last_event] : [];
+  const progressEvents = (runProgressEvents || []).filter((event) => event);
+  return commanderLivePreviewEvents(mergeRunEvents(initial, progressEvents).slice(-12), { limit: 2 });
+}
+
 export function CommanderRow({
   task,
   agents = [],
@@ -109,15 +117,13 @@ export function CommanderRow({
   onSelect,
   onToggleCheck,
   onOpen,
+  runProgressEvents = [],
 }) {
   const runningRunId = runningRunIdFromTask(task);
   const isStreaming = !!runningRunId;
-  const { events } = useRunStream(runningRunId, { subscribe: isStreaming, initialEventLimit: 12 });
   const previewEvents = useMemo(() => {
-    if (!isStreaming) return [];
-    const initial = task.running_run?.last_event ? [task.running_run.last_event] : [];
-    return commanderLivePreviewEvents(mergeRunEvents(initial, events || []).slice(-12), { limit: 2 });
-  }, [events, isStreaming, task.running_run?.last_event]);
+    return commanderRunningPreviewEvents(task, runProgressEvents);
+  }, [runProgressEvents, task]);
   const displayStage = task.stage || "plan";
   const meta = statusMeta(task.running_run_id ? "running" : displayStage);
 

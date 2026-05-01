@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { commanderLivePreviewEvents } from "../../ui/src/components/CommanderRow.jsx";
+import { commanderLivePreviewEvents, commanderRunningPreviewEvents } from "../../ui/src/components/CommanderRow.jsx";
 
 describe("commander row live preview", () => {
   it("coalesces consecutive thinking fragments", () => {
@@ -60,6 +60,22 @@ describe("commander row live preview", () => {
     expect(preview).toEqual([
       { type: "tool_use", name: "read", input: { file: "a.js" }, arg: "{\"file\":\"a.js\"}" },
       { type: "text", text: "latest" },
+    ]);
+  });
+
+  it("uses compact progress events for running row previews", () => {
+    const preview = commanderRunningPreviewEvents({
+      id: "task-1",
+      running_run_id: "run-1",
+      running_run: { id: "run-1", last_event: { type: "text", text: "hydrated", _event_seq: 1 } },
+    }, [
+      { type: "text", text: "live", _event_seq: 2 },
+      { type: "tool_use", name: "read", input: { file: "b.js" }, _event_seq: 3 },
+    ]);
+
+    expect(preview).toEqual([
+      { type: "text", text: "hydratedlive", _event_seq: 1 },
+      { type: "tool_use", name: "read", input: { file: "b.js" }, _event_seq: 3, arg: "{\"file\":\"b.js\"}" },
     ]);
   });
 });

@@ -63,6 +63,15 @@ describe("spawnWorker", () => {
     expect(types).toContain("sdk_event");
     expect(types).toContain("final");
     expect(broker.broadcasts.find(b => b.ch === runId && b.p.type === "started").p._event_seq).toBe(1);
+    const progressEvents = broker.broadcasts.filter(b => b.ch === "global" && b.p.type === "run_progress");
+    expect(progressEvents).toHaveLength(3);
+    expect(progressEvents[0].p).toMatchObject({
+      runId,
+      taskId,
+      eventSeq: 1,
+      eventCount: 1,
+      lastEvent: { type: "started", _event_seq: 1 },
+    });
     const log = db.prepare("SELECT * FROM agent_logs WHERE task_run_id = ?").get(runId);
     expect(log).toBeTruthy();
     expect(log.status).toBe("complete");

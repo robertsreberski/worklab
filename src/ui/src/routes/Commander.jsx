@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { mergeRunEvents } from "../lib/useRunStream.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -29,6 +30,7 @@ import {
 const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
 const HIDDEN_DONE_LIMIT = 0;
 const SHOWN_DONE_LIMIT = 200;
+const RUN_PROGRESS_PREVIEW_LIMIT = 12;
 
 export function formatCommanderCost(value) {
   if (value == null) return null;
@@ -337,6 +339,7 @@ export function Commander({ query: routeQuery = {} }) {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [listOwnsFocus, setListOwnsFocus] = useState(false);
+  const [runProgressEventsByRunId, setRunProgressEventsByRunId] = useState(() => new Map());
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
   const projectsReloadAbortRef = useRef(null);
@@ -395,6 +398,22 @@ export function Commander({ query: routeQuery = {} }) {
     projectsReloadAbortRef.current?.abort?.();
   }, []);
   useSSE("global", (evt) => {
+    if (evt.type === "run_progress" && evt.runId && evt.lastEvent) {
+      setRunProgressEventsByRunId((current) => {
+        const next = new Map(current);
+        next.set(evt.runId, mergeRunEvents(next.get(evt.runId) || [], [evt.lastEvent], { limit: RUN_PROGRESS_PREVIEW_LIMIT }));
+        return next;
+      });
+      return;
+    }
+    if (evt.type === "run_ended" && evt.runId) {
+      setRunProgressEventsByRunId((current) => {
+        if (!current.has(evt.runId)) return current;
+        const next = new Map(current);
+        next.delete(evt.runId);
+        return next;
+      });
+    }
     if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reloadSoon();
     if (evt.type?.startsWith("project_")) {
       reloadProjectsSoon();
@@ -675,6 +694,7 @@ export function Commander({ query: routeQuery = {} }) {
                     agents={agents}
                     selected={task.id === selectedTaskId}
                     checked={checkedIds.has(task.id)}
+                    runProgressEvents={runProgressEventsByRunId.get(task.running_run_id) || []}
                     onSelect={() => setSelectedTaskId(task.id)}
                     onToggleCheck={(nextChecked) => {
                       setCheckedIds((current) => {
