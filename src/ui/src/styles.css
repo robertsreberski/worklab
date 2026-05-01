@@ -4159,6 +4159,36 @@ html.assistant-resizing * {
   justify-content: flex-start;
   padding: 0 var(--sp-4) var(--sp-3);
 }
+.run-history-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  background: color-mix(in srgb, var(--surface) 82%, var(--status-progress-bg-10));
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.run-history-copy {
+  min-width: 0;
+}
+.run-history-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex: 0 0 auto;
+}
+.run-history-link {
+  color: var(--accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-decoration: none;
+}
+.run-history-link:hover {
+  text-decoration: underline;
+}
 .task-live-events {
   padding: var(--sp-4) var(--sp-4) var(--sp-5);
   background: var(--surface-sunken);

@@ -3,6 +3,7 @@ import { useMemo } from "preact/hooks";
 import { EventTimeline } from "../../components/EventTimeline.jsx";
 import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
+import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../../lib/runFormatting.js";
@@ -190,11 +191,12 @@ function RunFailureDetails({ run }) {
 
 export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
   const live = Boolean(subscribe);
-  const { events, loading } = useRunStream(expanded || subscribe ? run?.id : null, {
+  const runStream = useRunStream(expanded || subscribe ? run?.id : null, {
     subscribe,
     initialEventLimit: live ? 24 : 200,
     maxEvents: live ? 80 : 200,
   });
+  const { events, loading } = runStream;
   const metrics = runMetricItems(run);
   const resultPreview = runResultPreview(run);
   const startedAt = formatDate(run.started_at);
@@ -286,8 +288,16 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
       <RunContinuationLinks run={run} />
       <RunFailureDetails run={run} />
       <RunDiagnosticsDisclosure run={run} />
+      <RunHistoryNotice
+        eventCount={runStream.eventCount}
+        visibleCount={events.length}
+        eventsTruncated={runStream.eventsTruncated}
+        fullHistoryLoaded={runStream.fullHistoryLoaded}
+        loading={loading}
+        onLoadFullHistory={runStream.loadFullHistory}
+      />
       <div class="run-card-events">
-        {loading ? (
+        {loading && events.length === 0 ? (
           <div class="run-card-events-loading">Loading events…</div>
         ) : (
           <EventTimeline events={events} streaming={processStatus === "running"} />

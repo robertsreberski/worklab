@@ -10,6 +10,7 @@ import { Button } from "./primitives/Button.jsx";
 import { Textarea } from "./primitives/Textarea.jsx";
 import { Icon } from "./Icon.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
+import { RunHistoryNotice } from "./RunHistoryNotice.jsx";
 import { useRunStream } from "../lib/useRunStream.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { api } from "../lib/api.js";
@@ -35,6 +36,9 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
   const effectiveRun = effectiveStream.run || run;
   const visibleEvents = events.length ? events : effectiveStream.events;
   const loading = effectiveStream.loading;
+  const rawLogHref = effectiveRun?.raw_output_path && effectiveRun?.id
+    ? `/api/runs/${effectiveRun.id}/raw-log`
+    : null;
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
@@ -91,8 +95,17 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           ))}
         </div>
       )}
+      <RunHistoryNotice
+        eventCount={effectiveStream.eventCount}
+        visibleCount={visibleEvents.length}
+        eventsTruncated={effectiveStream.eventsTruncated}
+        fullHistoryLoaded={effectiveStream.fullHistoryLoaded}
+        loading={loading}
+        onLoadFullHistory={effectiveStream.loadFullHistory}
+        rawLogHref={rawLogHref}
+      />
       <div class="task-live-events">
-        {loading ? (
+        {loading && visibleEvents.length === 0 ? (
           <div class="run-card-events-loading">Loading events…</div>
         ) : (
           <EventTimeline events={visibleEvents} streaming={isStreaming} />
