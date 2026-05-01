@@ -1,6 +1,8 @@
 // src/ui/src/lib/useRunStream.js
 import { useEffect, useRef, useState } from "preact/hooks";
 
+const runStreams = new Map();
+
 function eventKey(event) {
   if (!event) return null;
   if (event._event_seq != null) return `seq:${event._event_seq}`;
@@ -12,7 +14,13 @@ function eventKey(event) {
   }
 }
 
-export function mergeRunEvents(current = [], incoming = []) {
+function limitRunEvents(events, limit) {
+  const parsed = Number(limit);
+  if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
+  return events.slice(-parsed);
+}
+
+export function mergeRunEvents(current = [], incoming = [], { limit = null } = {}) {
   const merged = [];
   const positions = new Map();
   for (const event of [...(current || []), ...(incoming || [])]) {
@@ -28,15 +36,73 @@ export function mergeRunEvents(current = [], incoming = []) {
   return merged.sort((a, b) => {
     if (a?._event_seq == null || b?._event_seq == null) return 0;
     return Number(a._event_seq) - Number(b._event_seq);
-  });
+  }).slice(limit ? -limit : undefined);
 }
 
-export function useRunStream(runId, { subscribe = true, initialEventLimit = null } = {}) {
+function runStreamUrl(runId) {
+  return `/api/runs/${runId}/stream`;
+}
+
+function ensureRunStream(runId) {
+  let entry = runStreams.get(runId);
+  if (entry) return entry;
+  entry = { callbacks: new Set(), source: null, done: false };
+  runStreams.set(runId, entry);
+  return entry;
+}
+
+function closeRunStream(runId, entry) {
+  entry?.source?.close?.();
+  if (entry) entry.source = null;
+  if (!entry || entry.callbacks.size === 0) runStreams.delete(runId);
+}
+
+function openRunStream(runId, entry) {
+  if (entry.source || entry.done || typeof EventSource === "undefined") return;
+  const source = new EventSource(runStreamUrl(runId));
+  source.onmessage = (e) => {
+    let payload;
+    try {
+      payload = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    for (const callback of [...entry.callbacks]) callback(payload);
+    if (payload?.type === "done") {
+      entry.done = true;
+      closeRunStream(runId, entry);
+    }
+  };
+  source.onerror = () => {
+    closeRunStream(runId, entry);
+  };
+  entry.source = source;
+}
+
+export function subscribeRunStream(runId, onEvent) {
+  if (!runId || typeof onEvent !== "function") return () => {};
+  const entry = ensureRunStream(runId);
+  entry.callbacks.add(onEvent);
+  openRunStream(runId, entry);
+  return () => {
+    entry.callbacks.delete(onEvent);
+    if (entry.callbacks.size === 0) closeRunStream(runId, entry);
+  };
+}
+
+export function closeRunStreamsForTests() {
+  for (const [runId, entry] of runStreams.entries()) {
+    closeRunStream(runId, entry);
+  }
+  runStreams.clear();
+}
+
+export function useRunStream(runId, { subscribe = true, initialEventLimit = 200, maxEvents = 200 } = {}) {
   const [events, setEvents] = useState([]);
   const [run, setRun] = useState(null);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
-  const esRef = useRef(null);
+  const unsubscribeRef = useRef(null);
 
   useEffect(() => {
     if (!runId) {
@@ -55,9 +121,12 @@ export function useRunStream(runId, { subscribe = true, initialEventLimit = null
       runRefreshTimer = null;
     }
     function runUrl() {
-      if (!initialEventLimit) return `/api/runs/${runId}`;
+      if (initialEventLimit === null) return `/api/runs/${runId}`;
       const query = new URLSearchParams({ events: "tail", limit: String(initialEventLimit) });
       return `/api/runs/${runId}?${query}`;
+    }
+    function mergeIncoming(prev, incoming) {
+      return limitRunEvents(mergeRunEvents(prev, incoming), maxEvents);
     }
 
     function hydrateRun() {
@@ -66,7 +135,7 @@ export function useRunStream(runId, { subscribe = true, initialEventLimit = null
       return fetch(runUrl(), { signal: controller.signal }).then(r => r.ok ? r.json() : null).then(data => {
         if (cancelled) return;
         if (data?.run) setRun(data.run);
-        if (data?.log?.events?.length) setEvents((prev) => mergeRunEvents(prev, data.log.events));
+        if (data?.log?.events?.length) setEvents((prev) => mergeIncoming(prev, data.log.events));
         const status = data?.run?.process_status || data?.run?.status;
         if (status && status !== "running") setDone(true);
         const liveInput = data?.run?.live_input;
@@ -77,18 +146,21 @@ export function useRunStream(runId, { subscribe = true, initialEventLimit = null
     }
     hydrateRun();
     if (!subscribe) return () => { cancelled = true; controller.abort(); };
-    const es = new EventSource(`/api/runs/${runId}/stream`);
-    esRef.current = es;
-    es.onmessage = (e) => {
-      try {
-        const payload = JSON.parse(e.data);
-        if (payload.type === "done") { setDone(true); es.close(); return; }
-        setEvents(prev => mergeRunEvents(prev, [payload]));
-      } catch {}
+    unsubscribeRef.current = subscribeRunStream(runId, (payload) => {
+      if (payload.type === "done") {
+        setDone(true);
+        return;
+      }
+      setEvents((prev) => mergeIncoming(prev, [payload]));
+    });
+    return () => {
+      cancelled = true;
+      clearRunRefresh();
+      controller.abort();
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
     };
-    es.onerror = () => { es.close(); };
-    return () => { cancelled = true; clearRunRefresh(); controller.abort(); es.close(); };
-  }, [runId, subscribe, initialEventLimit]);
+  }, [runId, subscribe, initialEventLimit, maxEvents]);
 
   return { events, run, done, loading };
 }
