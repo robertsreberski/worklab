@@ -1,6 +1,8 @@
-import { listActivity, summarizeActivity } from "../../core/db/queries/activity.js";
+import { listActivity, summarizeActivity, summarizeActivityCostByDay } from "../../core/db/queries/activity.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_COST_CHART_DAYS = 7;
+const MAX_FILLED_COST_CHART_DAYS = 45;
 
 function parseTimeFilter(value, { endOfDay = false } = {}) {
   if (value == null || value === "") return null;
@@ -24,7 +26,48 @@ function emptySummary() {
     average_cost_usd: null,
     running_count: 0,
     error_count: 0,
+    cost_by_day: [],
   };
+}
+
+function startOfUtcDay(value) {
+  const date = new Date(value);
+  date.setUTCHours(0, 0, 0, 0);
+  return date.getTime();
+}
+
+function isoDay(value) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function costChartRange(from, to) {
+  if (from == null && to == null) {
+    const end = startOfUtcDay(Date.now());
+    return { start: end - ((DEFAULT_COST_CHART_DAYS - 1) * DAY_MS), end };
+  }
+  if (from == null || to == null) return null;
+  const start = startOfUtcDay(from);
+  const end = startOfUtcDay(to);
+  if (end < start) return null;
+  const dayCount = Math.floor((end - start) / DAY_MS) + 1;
+  if (dayCount > MAX_FILLED_COST_CHART_DAYS) return null;
+  return { start, end };
+}
+
+function normalizeCostByDay(rows, range) {
+  const normalized = rows.map((row) => ({
+    date: row.date,
+    total_cost_usd: Number(row.total_cost_usd || 0),
+    costed_run_count: Number(row.costed_run_count || 0),
+  }));
+  if (!range || normalized.length === 0) return normalized;
+  const byDate = new Map(normalized.map((row) => [row.date, row]));
+  const days = [];
+  for (let day = range.start; day <= range.end; day += DAY_MS) {
+    const date = isoDay(day);
+    days.push(byDate.get(date) || { date, total_cost_usd: 0, costed_run_count: 0 });
+  }
+  return days;
 }
 
 export function registerActivityRoutes(app, { db }) {
@@ -63,6 +106,19 @@ export function registerActivityRoutes(app, { db }) {
     const nextCursor = rows.length > limit ? items[items.length - 1].started_at : null;
 
     const row = summarizeActivity(db, { filters: baseFilters, params: baseParams });
+    const costRange = costChartRange(from, to);
+    const costFilters = [...baseFilters];
+    const costParams = [...baseParams];
+    if (from == null && to == null && costRange) {
+      costFilters.push("r.started_at >= ?");
+      costParams.push(costRange.start);
+      costFilters.push("r.started_at <= ?");
+      costParams.push(costRange.end + DAY_MS - 1);
+    }
+    const costByDay = normalizeCostByDay(
+      summarizeActivityCostByDay(db, { filters: costFilters, params: costParams }),
+      costRange,
+    );
     const costedRunCount = Number(row?.costed_run_count || 0);
     const totalCostUsd = Number(row?.total_cost_usd || 0);
     const summary = row ? {
@@ -72,6 +128,7 @@ export function registerActivityRoutes(app, { db }) {
       average_cost_usd: costedRunCount > 0 ? totalCostUsd / costedRunCount : null,
       running_count: Number(row.running_count || 0),
       error_count: Number(row.error_count || 0),
+      cost_by_day: costByDay,
     } : emptySummary();
 
     res.json({ items, nextCursor, summary });

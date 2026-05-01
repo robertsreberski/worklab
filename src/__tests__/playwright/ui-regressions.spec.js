@@ -2146,7 +2146,7 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   await expect(page.locator(".activity-row").first()).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Filter by agent" })).toContainText("All agents");
   await expect(page.getByRole("combobox", { name: "Filter by status" })).toContainText("All statuses");
-  await expect(page.locator(".activity-stat-card", { hasText: "Spend" })).toBeVisible();
+  await expect(page.locator(".activity-stat-card", { hasText: "Cost history" })).toBeVisible();
   await expect(page.locator(".activity-stat-card", { hasText: "Run Health" })).toBeVisible();
 
   const metrics = await page.evaluate(() => {
@@ -2167,7 +2167,7 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
       statColumns: stats.length
         ? getComputedStyle(stats[0].parentElement).gridTemplateColumns.split(" ").filter(Boolean).length
         : 0,
-      visualBars: document.querySelectorAll(".activity-stat-meter, .activity-health-bar").length,
+      visualBars: document.querySelectorAll(".activity-cost-chart, .activity-health-bar").length,
     };
   });
 
@@ -2178,7 +2178,7 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   expect(metrics.rowRadius).toBeGreaterThanOrEqual(6);
   expect(metrics.statusVisible).toBe(true);
   expect(metrics.timeVisible).toBe(true);
-  expect(metrics.statCount).toBe(5);
+  expect(metrics.statCount).toBe(2);
   expect(metrics.statColumns).toBe(2);
   expect(metrics.visualBars).toBeGreaterThanOrEqual(2);
   await expectNoHorizontalOverflow(page, "mobile activity rows");

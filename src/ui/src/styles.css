@@ -5714,8 +5714,7 @@ html.assistant-resizing * {
   pointer-events: none;
 }
 .activity-stat-card-primary {
-  grid-column: span 3;
-  min-height: 152px;
+  min-height: 172px;
 }
 .activity-stat-mini {
   grid-column: span 2;
@@ -5724,8 +5723,14 @@ html.assistant-resizing * {
   align-content: start;
   gap: var(--sp-2);
 }
-.activity-stat-cost { --activity-stat-tone: var(--accent); }
-.activity-stat-health { --activity-stat-tone: var(--status-done); }
+.activity-stat-cost {
+  --activity-stat-tone: var(--accent);
+  grid-column: span 7;
+}
+.activity-stat-health {
+  --activity-stat-tone: var(--status-done);
+  grid-column: span 5;
+}
 .activity-stat-running { --activity-stat-tone: var(--status-progress); }
 .activity-stat-error { --activity-stat-tone: var(--status-error); }
 .activity-stat-head {
@@ -5804,6 +5809,59 @@ html.assistant-resizing * {
   min-width: 0;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--accent), var(--status-done));
+}
+.activity-cost-chart {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  align-items: end;
+  gap: var(--sp-2);
+  min-height: 78px;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+.activity-cost-day {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.activity-cost-bar {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 52px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-sunken) 82%, transparent), var(--surface-sunken));
+  overflow: hidden;
+}
+.activity-cost-bar > span {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 64%, var(--status-done)));
+}
+.activity-cost-day-label {
+  min-width: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.activity-cost-empty {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  min-height: 52px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
 }
 .activity-health-bar {
   display: flex;
