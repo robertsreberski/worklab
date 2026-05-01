@@ -50,6 +50,8 @@ describe("runtime task grouping", () => {
     expect(result.tasks.map((task) => task.id)).toEqual(["running", "ready", "done-new"]);
     expect(result.summary.groups).toMatchObject({ running: 1, ready: 1, completed: 2 });
     expect(result.summary.hidden_done_count).toBe(1);
+    expect(runtimeTaskVisibility(tasks).tasks.map((task) => task.id)).toEqual(["running", "ready"]);
+    expect(runtimeTaskVisibility(tasks).summary.hidden_done_count).toBe(2);
     expect(buildRuntimeTaskSummary(tasks).hidden_done_count).toBe(0);
   });
 });

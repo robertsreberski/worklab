@@ -83,6 +83,16 @@ describe("GET /api/tasks", () => {
       VALUES ('run-runtime-active', ?, 'execute', 'owner', ?, 'running')
     `).run(runningDone.id, now);
 
+    const defaultRuntime = await agent.get("/api/tasks?scope=runtime").expect(200);
+    const defaultIds = defaultRuntime.body.tasks.map((task) => task.id);
+
+    expect(defaultIds).toContain(runningDone.id);
+    expect(defaultIds).toContain(automated.id);
+    expect(defaultIds).not.toContain(doneOld.id);
+    expect(defaultIds).not.toContain(doneNew.id);
+    expect(defaultRuntime.body.summary.hidden_done_count).toBe(2);
+    expect(defaultRuntime.body.summary.visible_done_count).toBe(0);
+
     const runtime = await agent.get("/api/tasks?scope=runtime&done_limit=1").expect(200);
     const ids = runtime.body.tasks.map((task) => task.id);
 

@@ -129,8 +129,8 @@ export function buildRuntimeTaskSummary(tasks = [], { visibleCompletedCount = nu
   };
 }
 
-export function runtimeTaskVisibility(tasks = [], { doneLimit = 8 } = {}) {
-  const limit = Math.max(0, Number.isFinite(Number(doneLimit)) ? Number(doneLimit) : 8);
+export function runtimeTaskVisibility(tasks = [], { doneLimit = 0 } = {}) {
+  const limit = Math.max(0, Number.isFinite(Number(doneLimit)) ? Number(doneLimit) : 0);
   const completed = [];
   const visible = [];
 
