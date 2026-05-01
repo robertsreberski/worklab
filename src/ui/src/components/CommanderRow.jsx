@@ -13,7 +13,7 @@ import { StageToken } from "./primitives/StageToken.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
-import { agentDisplayName, hasRunError, taskDisplayKey } from "../lib/display.js";
+import { agentDisplayName, hasRunError, taskDisplayKey, taskRecoveryLabel } from "../lib/display.js";
 
 function formatAge(value) {
   if (!value) return "";
@@ -133,16 +133,7 @@ export function CommanderRow({
   const runError = hasRunError(task);
   const stuck = task.running_run_id && task.is_locked === false;
   const needsOwner = !runnerName && displayStage !== "done";
-  const lastRunId = task.last_run?.id;
-  const autoRetrying = Boolean(
-    task.last_run?.diagnostics?.retryable_provider_error
-      && lastRunId
-      && Array.isArray(task.runs)
-      && task.runs.some((r) => (
-        r.parent_run_id === lastRunId
-        && (r.process_status === "running" || r.process_status === "queued")
-      )),
-  );
+  const recoveryLabel = taskRecoveryLabel(task);
   const autoRun = task.run_policy === "auto_plan_execute";
   const schedule = task.automation_summary || {};
   const hasSchedule = Number(schedule.count || 0) > 0;
@@ -161,10 +152,10 @@ export function CommanderRow({
         <Icon name="alert-triangle" size={10} /> Stuck — reset
       </span>
     );
-  } else if (autoRetrying) {
+  } else if (recoveryLabel) {
     metaChip = (
       <span class="chip chip-warn">
-        <Icon name="refresh-cw" size={10} /> Auto-retrying
+        <Icon name="refresh-cw" size={10} /> {recoveryLabel}
       </span>
     );
   } else if (runError) {

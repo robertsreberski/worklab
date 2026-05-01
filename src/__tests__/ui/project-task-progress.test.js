@@ -40,6 +40,22 @@ describe("project task progress helpers", () => {
     expect(items[0]).toMatchObject({ label: "Failed: spawn", tone: "error" });
   });
 
+  it("surfaces active recovery as a secondary attention badge", () => {
+    const items = projectTaskAttentionItems({
+      stage: "review",
+      running_run_id: "run-retry",
+      last_run: {
+        recovery: {
+          active_run_id: "run-retry",
+          stage: "review",
+          subkind: "terminated",
+        },
+      },
+    });
+
+    expect(items[0]).toMatchObject({ key: "auto_retry", label: "Retrying review", tone: "warn" });
+  });
+
   it("builds counts, percent done, grouped tasks, and attention ordering", () => {
     const progress = buildProjectTaskProgress([
       { id: "done", title: "Done", stage: "done", updated_at: 1, owner_agent: "owner" },

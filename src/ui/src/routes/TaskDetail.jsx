@@ -10,7 +10,7 @@ import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { agentDisplayName, taskDisplayKey, taskRouteId } from "../lib/display.js";
+import { agentDisplayName, taskDisplayKey, taskRecoveryLabel, taskRouteId } from "../lib/display.js";
 import { selectHighlightedRunId } from "./taskDetailRuns.js";
 
 import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
@@ -230,6 +230,10 @@ export function TaskDetail({ id, runParam = null }) {
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = !runningRun && (lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned");
+  const recoveryLabel = taskRecoveryLabel(task);
+  const recoveryDetail = recoveryLabel
+    ? `${task?.last_run?.recovery?.subkind || "Provider"} interruption; retry is active.`
+    : null;
   // §5.2 stuck-task: requires backend is_locked field. Until it ships, we do
   // NOT render the banner (prevents false positives).
   const showStuckBanner =
@@ -669,6 +673,11 @@ export function TaskDetail({ id, runParam = null }) {
           <Icon name="alert-triangle" size={10} /> Error
         </span>
       )}
+      {recoveryLabel && (
+        <span class="chip chip-warn">
+          <Icon name="refresh-cw" size={10} /> {recoveryLabel}
+        </span>
+      )}
       {showStuckBanner && (
         <span class="chip chip-error">
           <Icon name="alert-triangle" size={10} /> Stuck - reset
@@ -959,6 +968,15 @@ export function TaskDetail({ id, runParam = null }) {
                       <Button variant="primary"  size="sm" onClick={retryStuck}>Retry</Button>
                     </>
                   }
+                  dismissible={false}
+                />
+              )}
+
+              {recoveryLabel && (
+                <Banner
+                  variant="warn"
+                  title={recoveryLabel}
+                  detail={recoveryDetail}
                   dismissible={false}
                 />
               )}

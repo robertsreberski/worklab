@@ -151,6 +151,66 @@ function parseEvents(value) {
   }
 }
 
+function isContinuationOfRun(runningRow, lastRow) {
+  if (!runningRow || !lastRow?.id) return false;
+  const runningDiagnostics = safeJson(runningRow.diagnostics_json, {});
+  if (runningDiagnostics?.continuation_of_run_id === lastRow.id) return true;
+  const lastDiagnostics = safeJson(lastRow.diagnostics_json, {});
+  if (lastDiagnostics?.continuation_run_id === runningRow.id) return true;
+  const runningMode = runningRow.mode || null;
+  const lastMode = lastRow.mode || null;
+  const runningStage = runningRow.stage || runningMode;
+  const lastStage = lastRow.stage || lastMode;
+  return Boolean(
+    runningRow.parent_run_id === lastRow.id
+    && (!runningMode || !lastMode || runningMode === lastMode)
+    && (!runningStage || !lastStage || runningStage === lastStage)
+  );
+}
+
+function compactRunRecovery(lastRow, runningRow) {
+  if (!lastRow) return null;
+  const lastDiagnostics = safeJson(lastRow.diagnostics_json, {});
+  const runningDiagnostics = safeJson(runningRow?.diagnostics_json, {});
+  const active = isContinuationOfRun(runningRow, lastRow);
+  const retryable = lastDiagnostics?.retryable_provider_error === true
+    || runningDiagnostics?.retryable_provider_error === true
+    || lastDiagnostics?.continuation_scheduled === true
+    || active;
+  if (!retryable) return null;
+  const depth = active
+    ? runningDiagnostics?.continuation_depth
+    : lastDiagnostics?.continuation_depth;
+  const limit = runningDiagnostics?.continuation_limit ?? lastDiagnostics?.continuation_limit ?? null;
+  return {
+    retryable: true,
+    subkind: lastDiagnostics?.provider_error_subkind || runningDiagnostics?.provider_error_subkind || null,
+    active_run_id: active ? runningRow.id : null,
+    continuation_of_run_id: active
+      ? (runningDiagnostics?.continuation_of_run_id || lastRow.id)
+      : (lastDiagnostics?.continuation_of_run_id || null),
+    depth: Number.isFinite(Number(depth)) ? Number(depth) : null,
+    limit: Number.isFinite(Number(limit)) ? Number(limit) : null,
+    context_risk: lastDiagnostics?.context_risk || runningDiagnostics?.context_risk || null,
+    stage: lastRow.stage || (lastRow.mode === "review" ? "review" : "execute"),
+  };
+}
+
+function compactLastRun(row, runningRow = null) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    status: row.status,
+    process_status: row.process_status || "running",
+    failure_kind: row.failure_kind || null,
+    ended_at: row.ended_at,
+    stage: row.stage || (row.mode === "review" ? "review" : "execute"),
+    decision: row.decision || null,
+    summary: row.summary || null,
+    recovery: compactRunRecovery(row, runningRow),
+  };
+}
+
 // §9.3 derived fields.
 // `running_run_id` — latest task_runs row where status='running', or null.
 // `last_run` — latest completed run summary (id, status, ended_at) for §5.3
@@ -174,16 +234,7 @@ function attachDerivedRunFields(db, task) {
       event_count: runningEvents.length,
       last_event: runningEvents[runningEvents.length - 1] || null,
     } : null,
-    last_run: lastRow ? {
-      id: lastRow.id,
-      status: lastRow.status,
-      process_status: lastRow.process_status || "running",
-      failure_kind: lastRow.failure_kind || null,
-      ended_at: lastRow.ended_at,
-      stage: lastRow.stage || (lastRow.mode === "review" ? "review" : "execute"),
-      decision: lastRow.decision || null,
-      summary: lastRow.summary || null,
-    } : null,
+    last_run: compactLastRun(lastRow, runningRow),
   };
 }
 
@@ -311,16 +362,7 @@ export function enrichTaskList(db, tasks, config = null) {
   for (const [taskId, row] of lastRows.entries()) {
     const task = byId.get(taskId);
     if (!task) continue;
-    task.last_run = {
-      id: row.id,
-      status: row.status,
-      process_status: row.process_status || "running",
-      failure_kind: row.failure_kind || null,
-      ended_at: row.ended_at,
-      stage: row.stage || (row.mode === "review" ? "review" : "execute"),
-      decision: row.decision || null,
-      summary: row.summary || null,
-    };
+    task.last_run = compactLastRun(row, runningRows.get(taskId) || null);
   }
 
   const blockedBy = new Map();
@@ -450,24 +492,40 @@ export function attachContinuationLinks(runs) {
   for (const run of runs) {
     if (run?.id) byId.set(run.id, run);
   }
+  const continuationParentId = (run) => {
+    const diagnosticParentId = run?.diagnostics?.continuation_of_run_id || null;
+    if (diagnosticParentId && byId.has(diagnosticParentId)) return diagnosticParentId;
+    if (!run?.parent_run_id || !byId.has(run.parent_run_id)) return null;
+    const parent = byId.get(run.parent_run_id);
+    const runMode = run.mode || null;
+    const parentMode = parent.mode || null;
+    const runStage = run.stage || runMode;
+    const parentStage = parent.stage || parentMode;
+    if (runMode && parentMode && runMode !== parentMode) return null;
+    if (runStage && parentStage && runStage !== parentStage) return null;
+    return run.parent_run_id;
+  };
   const continuationFor = new Map();
   for (const run of runs) {
     let depth = 0;
     let rootId = run.id;
-    let cursor = run.parent_run_id ? byId.get(run.parent_run_id) : null;
+    let cursorId = continuationParentId(run);
+    let cursor = cursorId ? byId.get(cursorId) : null;
     const visited = new Set([run.id]);
     while (cursor && !visited.has(cursor.id)) {
       visited.add(cursor.id);
       depth += 1;
       rootId = cursor.id;
-      cursor = cursor.parent_run_id ? byId.get(cursor.parent_run_id) : null;
+      cursorId = continuationParentId(cursor);
+      cursor = cursorId ? byId.get(cursorId) : null;
     }
     continuationFor.set(run.id, { depth, root_run_id: rootId });
   }
   const childOf = new Map();
   for (const run of runs) {
-    if (run?.parent_run_id && byId.has(run.parent_run_id)) {
-      if (!childOf.has(run.parent_run_id)) childOf.set(run.parent_run_id, run.id);
+    const parentId = continuationParentId(run);
+    if (parentId) {
+      if (!childOf.has(parentId)) childOf.set(parentId, run.id);
     }
   }
   return runs.map((run) => ({

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { agentModelEffortLabel, hasRunError, taskDisplayKey, taskRouteId } from "../../ui/src/lib/display.js";
+import {
+  agentModelEffortLabel,
+  hasRunError,
+  taskDisplayKey,
+  taskRecoveryLabel,
+  taskRecoveryState,
+  taskRouteId,
+} from "../../ui/src/lib/display.js";
 
 describe("task display helpers", () => {
   it("uses public task keys when present", () => {
@@ -31,5 +38,26 @@ describe("task display helpers", () => {
     expect(hasRunError({
       last_run: { status: "error", process_status: "failed" },
     })).toBe(true);
+  });
+
+  it("labels active recovery retries from compact task metadata", () => {
+    const task = {
+      stage: "review",
+      last_run: {
+        recovery: {
+          active_run_id: "run-retry",
+          stage: "review",
+          subkind: "terminated",
+        },
+      },
+    };
+
+    expect(taskRecoveryState(task)).toMatchObject({ active_run_id: "run-retry" });
+    expect(taskRecoveryLabel(task)).toBe("Retrying review");
+    expect(taskRecoveryLabel({
+      stage: "execute",
+      last_run: { recovery: { active_run_id: "run-retry", stage: "execute" } },
+    })).toBe("Auto-retrying");
+    expect(taskRecoveryLabel({ last_run: { recovery: { active_run_id: null } } })).toBeNull();
   });
 });
