@@ -1,7 +1,32 @@
 import { describe, expect, it } from "vitest";
-import { commanderLivePreviewEvents, commanderRunningPreviewEvents } from "../../ui/src/components/CommanderRow.jsx";
+import {
+  commanderLivePreviewEvents,
+  commanderRowStagePresentation,
+  commanderRunningPreviewEvents,
+} from "../../ui/src/components/CommanderRow.jsx";
 
 describe("commander row live preview", () => {
+  it("keeps the workflow stage separate from running runtime state", () => {
+    expect(commanderRowStagePresentation({ stage: "execute", running_run_id: "run-1" })).toEqual({
+      displayStage: "execute",
+      runtimeStatus: "running",
+    });
+    expect(commanderRowStagePresentation({
+      stage: "review",
+      runs: [{ id: "run-2", status: "running", process_status: "running" }],
+    })).toEqual({
+      displayStage: "review",
+      runtimeStatus: "running",
+    });
+  });
+
+  it("falls back to plan when a task has no saved stage", () => {
+    expect(commanderRowStagePresentation({ running_run_id: "run-1" })).toEqual({
+      displayStage: "plan",
+      runtimeStatus: "running",
+    });
+  });
+
   it("coalesces consecutive thinking fragments", () => {
     const preview = commanderLivePreviewEvents([
       { type: "assistant", message: { content: [{ type: "thinking", text: "Looking " }] } },

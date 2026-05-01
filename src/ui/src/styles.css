@@ -9428,7 +9428,6 @@ html.assistant-resizing * {
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0;
-  text-transform: lowercase;
   white-space: nowrap;
 }
 .stage-token-glyph {
