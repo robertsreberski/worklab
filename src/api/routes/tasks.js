@@ -132,8 +132,8 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const baseTasks = rows.map(rowToTask);
     const tasks = scope === "runtime" || view !== "summary" ? enrichTaskList(db, baseTasks, config) : baseTasks;
     if (scope === "runtime") {
-      const requestedDoneLimit = Number(req.query.done_limit ?? 8);
-      const doneLimit = Math.max(0, Math.min(Number.isFinite(requestedDoneLimit) ? requestedDoneLimit : 8, 200));
+      const requestedDoneLimit = Number(req.query.done_limit ?? 0);
+      const doneLimit = Math.max(0, Math.min(Number.isFinite(requestedDoneLimit) ? requestedDoneLimit : 0, 200));
       const runtime = runtimeTaskVisibility(tasks, { doneLimit });
       return res.json({ tasks: runtime.tasks, summary: runtime.summary });
     }
