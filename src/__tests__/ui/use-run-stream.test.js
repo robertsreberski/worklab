@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeRunStreamsForTests,
+  loadFullRunHistory,
   subscribeRunState,
   subscribeRunStream,
 } from "../../ui/src/lib/useRunStream.js";
@@ -85,5 +86,72 @@ describe("shared run stream subscriptions", () => {
 
     unsubscribeFirst();
     unsubscribeSecond();
+  });
+
+  it("can upgrade a compact live hydration to full history without trimming future events", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      const events = Array.from({ length: 10 }, (_, index) => ({
+        type: "text",
+        text: `event ${index + 1}`,
+        _event_seq: index + 1,
+      }));
+      return {
+        ok: true,
+        json: async () => ({
+          run: { id: "run-full", status: "running", process_status: "running" },
+          log: requestUrl.includes("events=tail")
+            ? { events: events.slice(-3), event_count: 10, events_truncated: true }
+            : { events, event_count: 10, events_truncated: false },
+        }),
+      };
+    });
+
+    const unsubscribe = subscribeRunState("run-full", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      initialEventLimit: 3,
+      maxEvents: 3,
+    });
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([8, 9, 10]);
+      expect(latest.eventCount).toBe(10);
+      expect(latest.eventsTruncated).toBe(true);
+      expect(latest.fullHistoryLoaded).toBe(false);
+    });
+
+    await loadFullRunHistory("run-full");
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+      expect(latest.eventCount).toBe(10);
+      expect(latest.eventsTruncated).toBe(false);
+      expect(latest.fullHistoryLoaded).toBe(true);
+    });
+
+    FakeEventSource.instances[0].onmessage({ data: JSON.stringify({ type: "text", text: "event 11", _event_seq: 11 }) });
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+      expect(latest.eventCount).toBe(11);
+      expect(latest.eventsTruncated).toBe(false);
+    });
+
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/runs/run-full?events=tail&limit=3",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(globalThis.fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/runs/run-full",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+
+    unsubscribe();
   });
 });

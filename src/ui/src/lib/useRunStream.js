@@ -18,6 +18,7 @@ function eventKey(event) {
 }
 
 function limitRunEvents(events, limit) {
+  if (limit === null) return events;
   const parsed = Number(limit);
   if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
   return events.slice(-parsed);
@@ -57,6 +58,9 @@ function ensureRunStream(runId) {
     loading: false,
     run: null,
     events: [],
+    eventCount: 0,
+    eventsTruncated: false,
+    fullHistoryLoaded: false,
     maxEvents: DEFAULT_MAX_EVENTS,
     streamRefCount: 0,
     hydratePromise: null,
@@ -96,6 +100,9 @@ function runStateSnapshot(entry) {
   return {
     events: [...(entry?.events || [])],
     run: entry?.run || null,
+    eventCount: Number(entry?.eventCount || entry?.events?.length || 0),
+    eventsTruncated: Boolean(entry?.eventsTruncated),
+    fullHistoryLoaded: Boolean(entry?.fullHistoryLoaded),
     done: Boolean(entry?.done),
     loading: Boolean(entry?.loading),
   };
@@ -126,13 +133,40 @@ function hydrationKey(initialEventLimit) {
   return initialEventLimit === null ? "full" : `tail:${initialEventLimit ?? DEFAULT_INITIAL_EVENT_LIMIT}`;
 }
 
-function applyRunHydration(entry, data, maxEvents) {
+function normalizeMaxEvents(maxEvents) {
+  if (maxEvents === null) return null;
+  const parsed = Number(maxEvents ?? DEFAULT_MAX_EVENTS);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_EVENTS;
+}
+
+function expandEntryMaxEvents(entry, maxEvents) {
+  const nextMax = normalizeMaxEvents(maxEvents);
+  if (entry.maxEvents === null || nextMax === null) {
+    entry.maxEvents = null;
+    return;
+  }
+  entry.maxEvents = Math.max(entry.maxEvents || DEFAULT_MAX_EVENTS, nextMax);
+}
+
+function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {}) {
   if (data?.run) entry.run = data.run;
   if (data?.log?.events?.length) {
     entry.events = limitRunEvents(
       mergeRunEvents(entry.events, data.log.events),
       maxEvents,
     );
+  }
+  if (data?.log) {
+    entry.eventCount = Number(data.log.event_count ?? entry.events.length);
+    entry.eventsTruncated = Boolean(data.log.events_truncated);
+  } else {
+    entry.eventCount = Math.max(Number(entry.eventCount || 0), entry.events.length);
+    entry.eventsTruncated = entry.maxEvents !== null && entry.events.length < entry.eventCount;
+  }
+  if (fullHistory) {
+    entry.fullHistoryLoaded = true;
+    entry.eventsTruncated = false;
+    entry.eventCount = Math.max(Number(entry.eventCount || 0), entry.events.length);
   }
   const status = data?.run?.process_status || data?.run?.status;
   if (status && status !== "running") entry.done = true;
@@ -145,7 +179,7 @@ function hydrateRunState(runId, entry, {
   subscribe = true,
 } = {}) {
   const nextKey = hydrationKey(initialEventLimit);
-  entry.maxEvents = Math.max(entry.maxEvents || DEFAULT_MAX_EVENTS, maxEvents || DEFAULT_MAX_EVENTS);
+  expandEntryMaxEvents(entry, maxEvents);
   if (entry.hydratePromise && entry.hydrateKey === nextKey) return entry.hydratePromise;
   if (entry.hydrateKey === nextKey && entry.run) return Promise.resolve(runStateSnapshot(entry));
   entry.hydrateController?.abort?.();
@@ -158,7 +192,9 @@ function hydrateRunState(runId, entry, {
     .then((response) => response.ok ? response.json() : null)
     .then((data) => {
       if (controller.signal.aborted || !data) return null;
-      const { status, liveInput } = applyRunHydration(entry, data, entry.maxEvents);
+      const { status, liveInput } = applyRunHydration(entry, data, entry.maxEvents, {
+        fullHistory: initialEventLimit === null,
+      });
       clearRunRefresh(entry);
       if (subscribe && status === "running" && liveInput?.supported && !liveInput.active) {
         entry.refreshTimer = setTimeout(() => {
@@ -192,7 +228,14 @@ function openRunStream(runId, entry) {
       closeRunStream(runId, entry);
       return;
     }
-    entry.events = limitRunEvents(mergeRunEvents(entry.events, [payload]), entry.maxEvents || DEFAULT_MAX_EVENTS);
+    entry.events = limitRunEvents(mergeRunEvents(entry.events, [payload]), entry.maxEvents);
+    const seq = Number(payload?._event_seq);
+    entry.eventCount = Math.max(
+      Number(entry.eventCount || 0),
+      Number.isFinite(seq) ? seq : 0,
+      entry.events.length,
+    );
+    entry.eventsTruncated = !entry.fullHistoryLoaded && entry.events.length < entry.eventCount;
     notifyRunState(entry);
   });
 }
@@ -218,7 +261,7 @@ export function subscribeRunState(runId, onSnapshot, options = {}) {
     initialEventLimit = DEFAULT_INITIAL_EVENT_LIMIT,
     maxEvents = DEFAULT_MAX_EVENTS,
   } = options;
-  entry.maxEvents = Math.max(entry.maxEvents || DEFAULT_MAX_EVENTS, maxEvents || DEFAULT_MAX_EVENTS);
+  expandEntryMaxEvents(entry, maxEvents);
   entry.stateCallbacks.add(onSnapshot);
   if (subscribe) {
     entry.streamRefCount += 1;
@@ -235,6 +278,16 @@ export function subscribeRunState(runId, onSnapshot, options = {}) {
     }
     if (entry.streamRefCount === 0) closeRunStream(runId, entry);
   };
+}
+
+export function loadFullRunHistory(runId, { subscribe = true } = {}) {
+  if (!runId) return Promise.resolve(null);
+  const entry = ensureRunStream(runId);
+  return hydrateRunState(runId, entry, {
+    initialEventLimit: null,
+    maxEvents: null,
+    subscribe,
+  });
 }
 
 export function closeRunStreamsForTests() {
@@ -255,6 +308,9 @@ export function useRunStream(runId, {
 } = {}) {
   const [events, setEvents] = useState([]);
   const [run, setRun] = useState(null);
+  const [eventCount, setEventCount] = useState(0);
+  const [eventsTruncated, setEventsTruncated] = useState(false);
+  const [fullHistoryLoaded, setFullHistoryLoaded] = useState(false);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const unsubscribeRef = useRef(null);
@@ -263,17 +319,26 @@ export function useRunStream(runId, {
     if (!runId) {
       setEvents([]);
       setRun(null);
+      setEventCount(0);
+      setEventsTruncated(false);
+      setFullHistoryLoaded(false);
       setDone(false);
       setLoading(false);
       return;
     }
     setEvents([]);
     setRun(null);
+    setEventCount(0);
+    setEventsTruncated(false);
+    setFullHistoryLoaded(false);
     setDone(false);
     setLoading(true);
     unsubscribeRef.current = subscribeRunState(runId, (snapshot) => {
       setEvents(snapshot.events);
       setRun(snapshot.run);
+      setEventCount(snapshot.eventCount);
+      setEventsTruncated(snapshot.eventsTruncated);
+      setFullHistoryLoaded(snapshot.fullHistoryLoaded);
       setDone(snapshot.done);
       setLoading(snapshot.loading);
     }, { subscribe, initialEventLimit, maxEvents });
@@ -283,5 +348,7 @@ export function useRunStream(runId, {
     };
   }, [runId, subscribe, initialEventLimit, maxEvents]);
 
-  return { events, run, done, loading };
+  const loadFullHistory = () => loadFullRunHistory(runId, { subscribe });
+
+  return { events, run, eventCount, eventsTruncated, fullHistoryLoaded, done, loading, loadFullHistory };
 }

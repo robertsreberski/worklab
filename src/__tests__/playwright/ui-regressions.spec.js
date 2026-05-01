@@ -439,6 +439,24 @@ test.beforeAll(async () => {
       (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
      VALUES (?, ?, 'execute', 'regression-agent', ?, 'running', ?, NULL, NULL, NULL)`,
   ).run("run-live-existing", runningTaskId, process.pid, now - 10_000);
+  const liveExistingEvents = [
+    { type: "text", text: "Oldest preserved event", ts: now - 9_000, _event_seq: 1 },
+    ...Array.from({ length: 25 }, (_, index) => ({
+      type: "text",
+      text: `Intermediate live event ${index + 2}`,
+      ts: now - 8_900 + index,
+      _event_seq: index + 2,
+    })),
+    { type: "text", text: "Existing streamed event", ts: now - 5_000, _event_seq: 27 },
+    { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" }, _event_seq: 28 },
+    {
+      type: "tool_use",
+      tool_use_id: "tool-live-mobile-existing",
+      name: "mcp__worklab__journal_append",
+      input: { bullet: "confirming a mobile live preview value with enough text to require truncation" },
+      _event_seq: 29,
+    },
+  ];
   db.prepare(
     `INSERT INTO agent_logs
       (id, task_run_id, events, model, effort, input_tokens, output_tokens,
@@ -447,17 +465,7 @@ test.beforeAll(async () => {
   ).run(
     "log-live-existing",
     "run-live-existing",
-    JSON.stringify([
-      { type: "text", text: "Existing streamed event", ts: now - 5_000, _event_seq: 1 },
-      { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" }, _event_seq: 2 },
-      {
-        type: "tool_use",
-        tool_use_id: "tool-live-mobile-existing",
-        name: "mcp__worklab__journal_append",
-        input: { bullet: "confirming a mobile live preview value with enough text to require truncation" },
-        _event_seq: 3,
-      },
-    ]),
+    JSON.stringify(liveExistingEvents),
     now - 5_000,
   );
   db.prepare(
@@ -1072,7 +1080,7 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
   expect(bottomPadding).toBeGreaterThan(0);
 });
 
-test("running task detail hydrates live run once with a compact tail", async ({ page }) => {
+test("running task detail can load full history after compact live hydration", async ({ page }) => {
   const runRequests = [];
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -1084,9 +1092,17 @@ test("running task detail hydrates live run once with a compact tail", async ({ 
   await page.goto(`${baseUrl}/#/tasks/${runningTaskId}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Loading task…")).toHaveCount(0);
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
-  await page.waitForTimeout(250);
+  await expect(page.locator(".task-live-panel", { hasText: "Showing latest 24 of 29 events" })).toBeVisible();
+  await expect(page.locator(".task-live-panel", { hasText: "Oldest preserved event" })).toHaveCount(0);
 
-  expect(runRequests).toEqual(["/api/runs/run-live-existing?events=tail&limit=24"]);
+  await page.getByRole("button", { name: "Load full history" }).click();
+  await expect(page.locator(".task-live-panel", { hasText: "Oldest preserved event" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Load full history" })).toHaveCount(0);
+
+  expect(runRequests).toEqual([
+    "/api/runs/run-live-existing?events=tail&limit=24",
+    "/api/runs/run-live-existing",
+  ]);
 });
 
 test("task detail shows an optimistic running state while start-run reload is pending", async ({ page }) => {
