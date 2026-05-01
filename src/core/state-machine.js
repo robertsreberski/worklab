@@ -149,6 +149,7 @@ export function nextStage(currentStage, event) {
           { type: "clear_error_text" },
           ...RESET_USER_ARRAYS,
           { type: "reset_failure_count" },
+          { type: "clear_last_failure_kind" },
           { type: "set_stage_reason", reason: "waiting for delegated subtasks" },
           { type: "create_subtasks", subtasks },
         ]);
@@ -164,6 +165,7 @@ export function nextStage(currentStage, event) {
           { type: "clear_error_text" },
           { type: "clear_blocking_issues" },
           { type: "reset_failure_count" },
+          { type: "clear_last_failure_kind" },
           { type: "set_stage_reason", reason: result.summary || "awaiting user action" },
           { type: "set_pending_actions", pendingActions },
         ]);
@@ -192,6 +194,7 @@ export function nextStage(currentStage, event) {
           { type: "clear_stage_reason" },
           ...RESET_USER_ARRAYS,
           { type: "reset_failure_count" },
+          { type: "clear_last_failure_kind" },
         ]);
       }
 
@@ -202,6 +205,8 @@ export function nextStage(currentStage, event) {
           { type: "clear_error_text" },
           { type: "clear_stage_reason" },
           ...RESET_USER_ARRAYS,
+          { type: "reset_failure_count" },
+          { type: "clear_last_failure_kind" },
         ]);
       }
       return change("done", [
@@ -284,6 +289,8 @@ export function nextStage(currentStage, event) {
       return change("execute", [
         { type: "clear_error_text" },
         ...RESET_USER_ARRAYS,
+        { type: "reset_failure_count" },
+        { type: "clear_last_failure_kind" },
         { type: "set_stage_reason", reason: "required children completed" },
       ]);
 

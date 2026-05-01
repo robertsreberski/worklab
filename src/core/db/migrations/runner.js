@@ -222,6 +222,39 @@ function resetLegacyEmbeddings(db) {
   `);
 }
 
+function clearResolvedTaskFailureKinds(db) {
+  if (!tableExists(db, "tasks") || !tableExists(db, "task_runs")) return;
+  const taskColumns = db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name);
+  const runColumns = db.prepare("PRAGMA table_info(task_runs)").all().map((row) => row.name);
+  if (!taskColumns.includes("last_failure_kind") || !taskColumns.includes("failure_count")) return;
+  if (!runColumns.includes("process_status") || !runColumns.includes("status")) return;
+
+  db.exec(`
+    UPDATE tasks
+    SET last_failure_kind = NULL
+    WHERE last_failure_kind IS NOT NULL
+      AND last_failure_kind <> 'review_rejected'
+      AND COALESCE(failure_count, 0) = 0
+      AND error_text IS NULL
+      AND EXISTS (
+        SELECT 1
+        FROM task_runs latest
+        WHERE latest.id = (
+          SELECT r.id
+          FROM task_runs r
+          WHERE r.task_id = tasks.id
+            AND COALESCE(r.process_status, r.status) <> 'running'
+          ORDER BY COALESCE(r.ended_at, r.started_at, 0) DESC, r.started_at DESC, r.id DESC
+          LIMIT 1
+        )
+          AND (
+            latest.process_status = 'succeeded'
+            OR latest.status IN ('complete', 'succeeded')
+          )
+      )
+  `);
+}
+
 // SQLite doesn't reliably support `ALTER TABLE DROP COLUMN`, so any schema
 // cleanup that removes columns rebuilds the table inside a single transaction.
 function rebuildTaskWorkflowTables(db) {
@@ -476,9 +509,9 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
   normalizeWorkflowState(db);
   backfillTaskKeys(db);
+  clearResolvedTaskFailureKinds(db);
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));
 }
-

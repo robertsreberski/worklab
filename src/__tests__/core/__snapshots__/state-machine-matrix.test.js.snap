@@ -17,6 +17,12 @@ exports[`nextStage matrix snapshot > freezes children completion / blocking 1`] 
           "type": "clear_blocking_issues",
         },
         {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
+        {
           "reason": "required children completed",
           "type": "set_stage_reason",
         },
@@ -1481,6 +1487,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         {
           "type": "reset_failure_count",
         },
+        {
+          "type": "clear_last_failure_kind",
+        },
       ],
       "stage": "execute",
     },
@@ -1504,6 +1513,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
         },
       ],
       "stage": "execute",
@@ -1563,6 +1575,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           "type": "reset_failure_count",
         },
         {
+          "type": "clear_last_failure_kind",
+        },
+        {
           "reason": "summary",
           "type": "set_stage_reason",
         },
@@ -1594,6 +1609,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
         },
         {
           "reason": "waiting for delegated subtasks",
@@ -1642,6 +1660,12 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         {
           "type": "clear_blocking_issues",
         },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
+        },
       ],
       "stage": "review",
     },
@@ -1662,6 +1686,12 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "clear_blocking_issues",
+        },
+        {
+          "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
         },
       ],
       "stage": "review",
@@ -1721,6 +1751,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           "type": "reset_failure_count",
         },
         {
+          "type": "clear_last_failure_kind",
+        },
+        {
           "reason": "summary",
           "type": "set_stage_reason",
         },
@@ -1752,6 +1785,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "reset_failure_count",
+        },
+        {
+          "type": "clear_last_failure_kind",
         },
         {
           "reason": "waiting for delegated subtasks",

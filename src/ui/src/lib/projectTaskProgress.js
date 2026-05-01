@@ -23,6 +23,13 @@ export function isProjectChildTask(task = {}) {
   return Boolean(task.parent_task_id);
 }
 
+function hasStaleResolvedFailureKind(task = {}) {
+  if (!task.last_failure_kind || task.last_failure_kind === "review_rejected") return false;
+  if (Number(task.failure_count || 0) > 0 || task.error_text) return false;
+  const status = task.last_run?.process_status || task.last_run?.status || null;
+  return status === "succeeded" || status === "complete";
+}
+
 export function projectTaskAttentionItems(task = {}) {
   const items = [];
   const stage = task.stage || "plan";
@@ -53,7 +60,7 @@ export function projectTaskAttentionItems(task = {}) {
   if (pendingActions.length > 0) {
     items.push({ key: "pending_actions", label: `${pendingActions.length} action${pendingActions.length === 1 ? "" : "s"}`, tone: "warn", title: pendingActions.join("\n") });
   }
-  if (task.last_failure_kind && !runError) {
+  if (task.last_failure_kind && !runError && !hasStaleResolvedFailureKind(task)) {
     items.push({ key: "failure_kind", label: `Failure: ${task.last_failure_kind}`, tone: "warn" });
   }
   if (!task.owner_agent && projectTaskGroupKey(task) !== "done") {

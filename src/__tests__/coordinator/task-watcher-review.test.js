@@ -479,8 +479,13 @@ describe("task-watcher v2 workflow", () => {
     resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "delegating", worklabResult: delegateResult });
     await new Promise((r) => setTimeout(r, 30));
 
-    const parent = db.prepare("SELECT stage, stage_reason FROM tasks WHERE id = ?").get(taskId);
-    expect(parent).toMatchObject({ stage: "awaiting_children", stage_reason: "waiting for delegated subtasks" });
+    const parent = db.prepare("SELECT stage, stage_reason, failure_count, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(parent).toMatchObject({
+      stage: "awaiting_children",
+      stage_reason: "waiting for delegated subtasks",
+      failure_count: 0,
+      last_failure_kind: null,
+    });
     const children = db.prepare("SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY subtask_order").all(taskId);
     expect(children).toHaveLength(2);
     expect(children[0]).toMatchObject({ title: "Required child", owner_agent: "helper", required: 1, stage: "execute" });
@@ -490,6 +495,45 @@ describe("task-watcher v2 workflow", () => {
     const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'system' AND body LIKE 'Delegated %'").get(taskId);
     expect(comment.body).toContain("Required child");
     expect(comment.body).toContain("Optional child");
+  });
+
+  it("successful delegate after a provider retry clears stale failure attention", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "helper");
+    const taskId = seedTask(db, { owner: "coder", stage: "plan" });
+    db.prepare(
+      "UPDATE tasks SET failure_count = 1, last_failure_kind = 'provider_unavailable', error_text = NULL WHERE id = ?",
+    ).run(taskId);
+    const { resolvers, spawn } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const delegateResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "delegate",
+      summary: "split work",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [
+        { title: "Required child", instructions: "do required", suggested_agent: "helper", required: true },
+      ],
+    };
+
+    await watcher.handleRunRequested(taskId);
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "delegating", worklabResult: delegateResult });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const parent = db.prepare("SELECT stage, failure_count, last_failure_kind, error_text FROM tasks WHERE id = ?").get(taskId);
+    expect(parent).toMatchObject({
+      stage: "awaiting_children",
+      failure_count: 0,
+      last_failure_kind: null,
+      error_text: null,
+    });
+    const children = db.prepare("SELECT * FROM tasks WHERE parent_task_id = ?").all(taskId);
+    expect(children).toHaveLength(1);
   });
 
   it("parent resumes after required child finishes while optional child failure remains a warning", async () => {

@@ -38,6 +38,34 @@ describe("openDb + runMigrations", () => {
     expect(db.prepare("SELECT run_policy FROM tasks WHERE id = ?").get(taskId).run_policy).toBe("auto_plan_execute");
   });
 
+  it("clears stale task failure kind when the latest run succeeded", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    const taskId = newTaskId();
+    db.prepare(
+      "INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("coder", "Coder", "claude", "claude:claude-sonnet-4-6", now, now);
+    db.prepare(
+      `INSERT INTO tasks
+        (id, root_task_id, title, stage, failure_count, last_failure_kind, error_text, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(taskId, taskId, "retry recovered", "awaiting_children", 0, "provider_unavailable", null, now, now);
+    db.prepare(
+      `INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, status, process_status, decision, failure_kind, started_at, ended_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run("run-success", taskId, "plan", "plan", "coder", "complete", "succeeded", "delegate", null, now - 10, now);
+
+    runMigrations(db);
+
+    expect(db.prepare("SELECT failure_count, last_failure_kind, error_text FROM tasks WHERE id = ?").get(taskId)).toMatchObject({
+      failure_count: 0,
+      last_failure_kind: null,
+      error_text: null,
+    });
+  });
+
   it("enforces foreign keys", () => {
     const db = openDb(":memory:");
     runMigrations(db);
