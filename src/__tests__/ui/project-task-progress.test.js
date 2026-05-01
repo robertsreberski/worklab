@@ -34,10 +34,19 @@ describe("project task progress helpers", () => {
       "awaiting_user",
       "blocking_issues",
       "pending_actions",
-      "dependencies",
       "owner",
     ]);
     expect(items[0]).toMatchObject({ label: "Failed: spawn", tone: "error" });
+  });
+
+  it("does not mark dependency-only queued tasks as attention", () => {
+    const items = projectTaskAttentionItems({
+      stage: "execute",
+      owner_agent: "owner",
+      unresolved_dependency_count: 1,
+    });
+
+    expect(items).toEqual([]);
   });
 
   it("surfaces active recovery as a secondary attention badge", () => {

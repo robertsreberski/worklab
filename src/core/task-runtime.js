@@ -43,14 +43,18 @@ export function taskRecoveryLabel(task = {}) {
   return stage === "review" ? "Retrying review" : "Auto-retrying";
 }
 
+export function runtimeTaskUnresolvedDependencyCount(task = {}) {
+  if (Array.isArray(task.blocked_by)) {
+    return task.blocked_by.filter((dependency) => (dependency.stage || "plan") !== "done").length;
+  }
+  return Number(task.unresolved_dependency_count || 0);
+}
+
 export function runtimeTaskAttentionItems(task = {}) {
   const items = [];
   const stage = task.stage || "plan";
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
-  const blockedByCount = Array.isArray(task.blocked_by)
-    ? task.blocked_by.filter((dependency) => (dependency.stage || "plan") !== "done").length
-    : Number(task.unresolved_dependency_count || 0);
 
   if (task.running_run_id && task.is_locked === false) {
     items.push({ key: "stuck", label: "Stuck", tone: "error" });
@@ -75,9 +79,6 @@ export function runtimeTaskAttentionItems(task = {}) {
   if (pendingActions.length > 0) {
     items.push({ key: "pending_actions", label: `${pendingActions.length} action${pendingActions.length === 1 ? "" : "s"}`, tone: "warn" });
   }
-  if (blockedByCount > 0) {
-    items.push({ key: "dependencies", label: `Blocked by ${blockedByCount}`, tone: "warn" });
-  }
   if (task.last_failure_kind && !taskHasRunError(task)) {
     items.push({ key: "failure_kind", label: `Failure: ${task.last_failure_kind}`, tone: "warn" });
   }
@@ -94,7 +95,7 @@ export function runtimeTaskGroupKey(task = {}) {
   if (stage === "done" && taskHasEnabledAutomation(task)) return "automated";
   if (stage === "done") return "completed";
   if (runtimeTaskAttentionItems(task).length > 0) return "attention";
-  if (stage === "awaiting_children") return "waiting";
+  if (stage === "awaiting_children" || runtimeTaskUnresolvedDependencyCount(task) > 0) return "waiting";
   return "ready";
 }
 

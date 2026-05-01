@@ -12,6 +12,7 @@ describe("runtime task grouping", () => {
     expect(runtimeTaskGroupKey({ stage: "done", automation_summary: { enabled_count: 1 } })).toBe("automated");
     expect(runtimeTaskGroupKey({ stage: "done" })).toBe("completed");
     expect(runtimeTaskGroupKey({ stage: "awaiting_children", owner_agent: "owner" })).toBe("waiting");
+    expect(runtimeTaskGroupKey({ stage: "execute", owner_agent: "owner", blocked_by: [{ stage: "review" }] })).toBe("waiting");
     expect(runtimeTaskGroupKey({ stage: "execute", owner_agent: "owner" })).toBe("ready");
     expect(runtimeTaskGroupKey({ stage: "plan" })).toBe("attention");
   });
@@ -31,10 +32,17 @@ describe("runtime task grouping", () => {
       "awaiting_user",
       "blocking_issues",
       "pending_actions",
-      "dependencies",
       "owner",
     ]);
     expect(items[0]).toMatchObject({ label: "Failed: spawn", tone: "error" });
+  });
+
+  it("does not treat dependency-only waiting as attention", () => {
+    expect(runtimeTaskAttentionItems({
+      stage: "execute",
+      owner_agent: "owner",
+      blocked_by: [{ stage: "review" }],
+    })).toEqual([]);
   });
 
   it("limits visible completed tasks and reports hidden completed count", () => {
