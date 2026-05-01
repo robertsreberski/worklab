@@ -107,6 +107,84 @@ describe("worklab_result contract", () => {
     expect(fenced.result.decision).toBe("pause");
   });
 
+  it("recovers unambiguous malformed review approvals with unescaped quotes in final_text", () => {
+    const malformed = `\`\`\`json
+{
+  "schema": "worklab.v2",
+  "stage": "review",
+  "decision": "approve",
+  "summary": "Review passed.",
+  "details": "Verified the owner output.",
+  "final_text": "Approve. The UI shows "Reveal archived history" and "default V1 path" correctly.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+\`\`\``;
+
+    const parsed = parseWorklabResultFromText(malformed, { stage: "review" });
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.worklabCandidate).toBe(true);
+    expect(parsed.result).toMatchObject({
+      schema: "worklab.v2",
+      stage: "review",
+      decision: "approve",
+      summary: "Review passed.",
+      details: "Verified the owner output.",
+      pending_actions: [],
+      subtasks: [],
+    });
+    expect(parsed.result.final_text).toContain('"Reveal archived history"');
+  });
+
+  it("treats malformed non-review worklab JSON as a candidate instead of prose fallback", () => {
+    const malformed = `\`\`\`json
+{
+  "schema": "worklab.v2",
+  "stage": "execute",
+  "decision": "advance",
+  "summary": "Done.",
+  "details": "Details mention "quoted text" without escaping.",
+  "final_text": "Done.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": []
+}
+\`\`\``;
+
+    const parsed = parseWorklabResultFromText(malformed, { stage: "execute" });
+
+    expect(parsed.ok).toBe(false);
+    expect(parsed.worklabCandidate).toBe(true);
+    expect(parsed.error).toMatch(/malformed/i);
+  });
+
+  it("does not recover malformed review JSON when subtasks are present", () => {
+    const malformed = `\`\`\`json
+{
+  "schema": "worklab.v2",
+  "stage": "review",
+  "decision": "approve",
+  "summary": "Review passed.",
+  "details": "Details mention "quoted text" without escaping.",
+  "final_text": "Approve.",
+  "artifacts": {},
+  "blocking_issues": [],
+  "pending_actions": [],
+  "subtasks": [{"title":"child"}]
+}
+\`\`\``;
+
+    const parsed = parseWorklabResultFromText(malformed, { stage: "review" });
+
+    expect(parsed.ok).toBe(false);
+    expect(parsed.worklabCandidate).toBe(true);
+    expect(parsed.error).toMatch(/malformed/i);
+  });
+
   it("parses the last worklab result from concatenated progress JSON", () => {
     const first = {
       schema: "worklab.v2",

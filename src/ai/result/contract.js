@@ -143,10 +143,108 @@ export function parseWorklabResultFromText(text, fallback = {}) {
   } catch {
     // Continue with fenced or concatenated JSON payloads.
   }
-  const { results, errors } = parseWorklabResultCandidates(raw, fallback);
+  const { results, errors, worklabCandidate } = parseWorklabResultCandidates(raw, fallback);
   if (results.length > 0) return { ok: true, error: null, result: results[results.length - 1], worklabCandidate: true };
   if (errors.length > 0) return { ok: false, error: errors[errors.length - 1], result: null, worklabCandidate: true };
+  if (worklabCandidate) return { ok: false, error: "malformed worklab_result JSON", result: null, worklabCandidate: true };
   return { ok: false, error: "final text is not JSON", result: null, worklabCandidate: false };
+}
+
+function hasWorklabSchemaMarker(text) {
+  return /"schema"\s*:\s*"worklab\.v2"/.test(String(text || ""));
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isUnescapedQuote(text, index) {
+  let slashCount = 0;
+  for (let i = index - 1; i >= 0 && text[i] === "\\"; i -= 1) slashCount += 1;
+  return slashCount % 2 === 0;
+}
+
+function isLooseStringTerminator(text, quoteIndex) {
+  let i = quoteIndex + 1;
+  while (/\s/.test(text[i] || "")) i += 1;
+  if (text[i] === "}") return true;
+  if (text[i] !== ",") return false;
+  i += 1;
+  while (/\s/.test(text[i] || "")) i += 1;
+  return /^"[^"]+"\s*:/.test(text.slice(i, i + 120));
+}
+
+function escapeLooseStringQuotes(value) {
+  let out = "";
+  for (let i = 0; i < value.length; i += 1) {
+    const char = value[i];
+    out += char === "\"" && isUnescapedQuote(value, i) ? "\\\"" : char;
+  }
+  return out;
+}
+
+function decodeLooseJsonString(value) {
+  const escaped = escapeLooseStringQuotes(String(value || "")).replace(/\r?\n/g, "\\n");
+  try {
+    return JSON.parse(`"${escaped}"`);
+  } catch {
+    return String(value || "")
+      .replace(/\\n/g, "\n")
+      .replace(/\\"/g, "\"")
+      .replace(/\\\\/g, "\\");
+  }
+}
+
+function readLooseStringProperty(text, key) {
+  const raw = String(text || "");
+  const re = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*"`, "g");
+  const match = re.exec(raw);
+  if (!match) return null;
+  const start = match.index + match[0].length;
+  for (let i = start; i < raw.length; i += 1) {
+    if (raw[i] === "\"" && isUnescapedQuote(raw, i) && isLooseStringTerminator(raw, i)) {
+      return decodeLooseJsonString(raw.slice(start, i));
+    }
+  }
+  return null;
+}
+
+function emptyArrayPropertyOrMissing(text, key) {
+  const raw = String(text || "");
+  const property = new RegExp(`"${escapeRegExp(key)}"\\s*:`);
+  if (!property.test(raw)) return true;
+  const empty = new RegExp(`"${escapeRegExp(key)}"\\s*:\\s*\\[\\s*\\]`);
+  return empty.test(raw);
+}
+
+function recoverMalformedReviewResult(candidate, fallback = {}, parseError = null) {
+  const error = parseError?.message ? `malformed worklab_result JSON: ${parseError.message}` : "malformed worklab_result JSON";
+  if (!hasWorklabSchemaMarker(candidate)) return { ok: false, error };
+  const schema = readLooseStringProperty(candidate, "schema");
+  const stage = readLooseStringProperty(candidate, "stage");
+  const decision = readLooseStringProperty(candidate, "decision");
+  if (schema !== "worklab.v2" || stage !== "review" || !["approve", "reject"].includes(decision)) {
+    return { ok: false, error };
+  }
+  if (
+    !emptyArrayPropertyOrMissing(candidate, "blocking_issues")
+    || !emptyArrayPropertyOrMissing(candidate, "pending_actions")
+    || !emptyArrayPropertyOrMissing(candidate, "subtasks")
+  ) {
+    return { ok: false, error };
+  }
+  return normalizeWorklabResult({
+    schema,
+    stage,
+    decision,
+    summary: readLooseStringProperty(candidate, "summary") || (decision === "approve" ? "Approved" : "Rejected"),
+    details: readLooseStringProperty(candidate, "details") || "",
+    final_text: readLooseStringProperty(candidate, "final_text") || "",
+    artifacts: {},
+    blocking_issues: [],
+    pending_actions: [],
+    subtasks: [],
+  }, fallback);
 }
 
 function extractJsonObjectStrings(text) {
@@ -205,17 +303,23 @@ export function parseWorklabResultsFromText(text, fallback = {}) {
 function parseWorklabResultCandidates(text, fallback = {}) {
   const results = [];
   const errors = [];
+  let worklabCandidate = hasWorklabSchemaMarker(text);
   for (const candidate of collectTextJsonCandidates(text)) {
     try {
       const value = JSON.parse(candidate);
       const normalized = normalizeWorklabResult(value, fallback);
       if (normalized.ok) results.push(normalized.result);
       else if (value?.schema === "worklab.v2") errors.push(normalized.error);
-    } catch {
-      // Ignore non-JSON braces in ordinary prose and keep looking.
+    } catch (err) {
+      if (hasWorklabSchemaMarker(candidate)) {
+        worklabCandidate = true;
+        const recovered = recoverMalformedReviewResult(candidate, fallback, err);
+        if (recovered.ok) results.push(recovered.result);
+        else errors.push(recovered.error);
+      }
     }
   }
-  return { results, errors };
+  return { results, errors, worklabCandidate };
 }
 
 function collectWorklabCandidates(value, out, seen = new Set(), depth = 0) {
