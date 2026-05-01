@@ -21,8 +21,13 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
+import {
+  compareRuntimeTasks,
+  runtimeTaskGroupKey,
+} from "../../../core/task-runtime.js";
 
 const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
+const DEFAULT_DONE_LIMIT = 8;
 
 export function formatCommanderCost(value) {
   if (value == null) return null;
@@ -61,7 +66,7 @@ function DailyCostChip() {
   );
 }
 
-const GROUPS = [
+const STAGE_GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
   { key: "execute",         label: "Execute",     color: "var(--status-todo)",     icon: "○" },
   { key: "review",          label: "Review",      color: "var(--status-review)",   icon: "◉" },
@@ -72,7 +77,17 @@ const GROUPS = [
   { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "●" },
 ];
 
-const GROUP_ORDER = Object.fromEntries(GROUPS.map((group, index) => [group.key, index]));
+const RUNTIME_GROUPS = [
+  { key: "running", label: "Running", color: "var(--status-progress)", icon: "●" },
+  { key: "attention", label: "Needs attention", color: "var(--status-error)", icon: "▲" },
+  { key: "ready", label: "Ready", color: "var(--accent)", icon: "○" },
+  { key: "waiting", label: "Waiting", color: "var(--status-progress)", icon: "◐" },
+  { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "◐" },
+  { key: "completed", label: "Completed recently", color: "var(--status-done)", icon: "●" },
+];
+
+const STAGE_GROUP_ORDER = Object.fromEntries(STAGE_GROUPS.map((group, index) => [group.key, index]));
+const RUNTIME_GROUP_KEYS = RUNTIME_GROUPS.map((group) => group.key);
 const IN_PROGRESS_STAGES = new Set(["execute", "review", "awaiting_children", "awaiting_user", "blocked"]);
 
 function taskHasRunningRun(task) {
@@ -102,7 +117,7 @@ export function compareCommanderGroups(a = {}, b = {}) {
   const aBucket = Math.min(...(a.tasks || []).map(commanderTaskSortBucket));
   const bBucket = Math.min(...(b.tasks || []).map(commanderTaskSortBucket));
   if (aBucket !== bBucket) return aBucket - bBucket;
-  return (GROUP_ORDER[a.status] ?? 99) - (GROUP_ORDER[b.status] ?? 99);
+  return (STAGE_GROUP_ORDER[a.status] ?? 99) - (STAGE_GROUP_ORDER[b.status] ?? 99);
 }
 
 export function groupKeyFor(task) {
@@ -132,19 +147,29 @@ export function taskMatchesCommanderQuery(task, query) {
   );
 }
 
-const TABS = [
+const RUNTIME_TABS = [
   { value: "all", label: "All" },
-  { value: "plan", label: "Plan" },
-  { value: "execute", label: "Execute" },
-  { value: "review", label: "Review" },
-  { value: "awaiting_children", label: "Waiting" },
-  { value: "awaiting_user", label: "Needs input" },
-  { value: "blocked", label: "Blocked" },
+  { value: "running", label: "Running" },
+  { value: "attention", label: "Attention" },
+  { value: "ready", label: "Ready" },
+  { value: "waiting", label: "Waiting" },
   { value: "automated", label: "Automated" },
-  { value: "done", label: "Done" },
+  { value: "completed", label: "Completed" },
 ];
 
-const BULK_STAGE_OPTIONS = GROUPS
+const STAGE_FILTER_OPTIONS = [
+  { value: "all", label: "All stages" },
+  ...STAGE_GROUPS
+    .filter((group) => STAGE_GROUP_KEYS.includes(group.key))
+    .map((group) => ({ value: group.key, label: group.label })),
+];
+
+const TASK_SCOPE_OPTIONS = [
+  { value: "runtime", label: "Runtime now" },
+  { value: "all", label: "All tasks" },
+];
+
+const BULK_STAGE_OPTIONS = STAGE_GROUPS
   .filter((group) => STAGE_GROUP_KEYS.includes(group.key))
   .map((group) => ({ value: group.key, label: group.label }));
 
@@ -168,6 +193,16 @@ function agentBulkOptions(agents) {
       };
     }),
   ];
+}
+
+function normalizeRuntimeGroup(value) {
+  if (value === "done") return "completed";
+  if (RUNTIME_GROUP_KEYS.includes(value)) return value;
+  return "all";
+}
+
+function taskScopeFromQuery(query = {}) {
+  return query.scope === "all" ? "all" : "runtime";
 }
 
 function BulkTaskBar({
@@ -285,11 +320,14 @@ function BulkTaskBar({
   );
 }
 
-export function Commander() {
+export function Commander({ query: routeQuery = {} }) {
   const [tasks, setTasks] = useState(null);
+  const [runtimeSummary, setRuntimeSummary] = useState(null);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [taskScope, setTaskScope] = useState(() => taskScopeFromQuery(routeQuery));
+  const [groupFilter, setGroupFilter] = useState(() => normalizeRuntimeGroup(routeQuery.group || "all"));
+  const [stageFilter, setStageFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
@@ -302,21 +340,33 @@ export function Commander() {
   const reloadAbortRef = useRef(null);
   const projectsReloadAbortRef = useRef(null);
 
+  useEffect(() => {
+    setTaskScope(taskScopeFromQuery(routeQuery));
+    setGroupFilter(normalizeRuntimeGroup(routeQuery.group || "all"));
+  }, [routeQuery.group, routeQuery.scope]);
+
   const reload = useCallback(() => {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
     setError(null);
-    return api.listTasks(null, { signal: controller.signal })
+    const requestQuery = taskScope === "runtime"
+      ? { scope: "runtime", done_limit: String(DEFAULT_DONE_LIMIT) }
+      : null;
+    return api.listTasks(requestQuery, { signal: controller.signal })
       .then((r) => {
-        if (!controller.signal.aborted) setTasks(r.tasks || []);
+        if (!controller.signal.aborted) {
+          setTasks(r.tasks || []);
+          setRuntimeSummary(r.summary || null);
+        }
       })
       .catch((e) => {
         if (e?.name === "AbortError") return;
         setTasks([]);
+        setRuntimeSummary(null);
         setError(e.message || "Failed to load tasks");
       });
-  }, []);
+  }, [taskScope]);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadProjects = useCallback(() => {
     projectsReloadAbortRef.current?.abort?.();
@@ -357,36 +407,43 @@ export function Commander() {
   }, [tasks]);
 
   const withGroup = useMemo(() => {
-    return (tasks || []).map((t) => ({ task: t, group: groupKeyFor(t) }));
+    return (tasks || []).map((t) => ({ task: t, group: runtimeTaskGroupKey(t) }));
   }, [tasks]);
 
   const counts = useMemo(() => {
     const c = { all: withGroup.length };
     for (const { group } of withGroup) c[group] = (c[group] || 0) + 1;
+    const hasClientFilter = !!query.trim() || projectFilter !== "all" || stageFilter !== "all";
+    if (taskScope === "runtime" && runtimeSummary?.groups && !hasClientFilter) {
+      c.all = runtimeSummary.total || 0;
+      for (const group of RUNTIME_GROUPS) {
+        c[group.key] = runtimeSummary.groups[group.key] || 0;
+      }
+    }
     return c;
-  }, [withGroup]);
+  }, [projectFilter, query, runtimeSummary, stageFilter, taskScope, withGroup]);
 
   const filtered = useMemo(() => {
     return withGroup.filter(({ task, group }) => {
-      if (statusFilter !== "all" && group !== statusFilter) return false;
+      if (groupFilter !== "all" && group !== groupFilter) return false;
+      if (stageFilter !== "all" && (task.stage || "plan") !== stageFilter) return false;
       if (projectFilter === "__none__" && task.project_id) return false;
       if (projectFilter !== "all" && projectFilter !== "__none__" && task.project_id !== projectFilter) return false;
       return taskMatchesCommanderQuery(task, query);
     });
-  }, [withGroup, statusFilter, projectFilter, query]);
+  }, [groupFilter, projectFilter, query, stageFilter, withGroup]);
 
   const grouped = useMemo(() => {
-    return GROUPS
+    return RUNTIME_GROUPS
       .map((g) => ({
         status: g.key,
         meta: { label: g.label, color: g.color, icon: g.icon },
         tasks: filtered
           .filter((entry) => entry.group === g.key)
           .map((entry) => entry.task)
-          .sort(compareCommanderTasks),
+          .sort(compareRuntimeTasks),
       }))
-      .filter((g) => g.tasks.length > 0)
-      .sort(compareCommanderGroups);
+      .filter((g) => g.tasks.length > 0);
   }, [filtered]);
   const orderedTasks = useMemo(() => grouped.flatMap((group) => group.tasks), [grouped]);
   const checkedTaskIds = useMemo(() => [...checkedIds], [checkedIds]);
@@ -440,7 +497,7 @@ export function Commander() {
     },
   });
 
-  const tabsWithCounts = TABS.map((t) => ({ ...t, count: counts[t.value] || 0 }));
+  const tabsWithCounts = RUNTIME_TABS.map((t) => ({ ...t, count: counts[t.value] || 0 }));
 
   const projectOptions = useMemo(() => [
     { value: "all", label: "All projects" },
@@ -452,9 +509,26 @@ export function Commander() {
     })),
   ], [projects]);
 
-  const hasFilter = statusFilter !== "all" || projectFilter !== "all" || !!query.trim();
+  const hasFilter = groupFilter !== "all" || stageFilter !== "all" || projectFilter !== "all" || !!query.trim();
 
   const taskCountLabel = tasks ? `${counts.all || 0} tasks` : null;
+  const hiddenDoneCount = taskScope === "runtime" && !query.trim() && projectFilter === "all" && stageFilter === "all"
+    ? Number(runtimeSummary?.hidden_done_count || 0)
+    : 0;
+
+  function updateScope(nextScope) {
+    if (nextScope === "all") navigateHash("#/tasks?scope=all");
+    else navigateHash("#/tasks");
+  }
+
+  function updateGroupFilter(nextGroup) {
+    const normalized = normalizeRuntimeGroup(nextGroup);
+    if (normalized === "completed") {
+      navigateHash("#/tasks?scope=all&group=done");
+      return;
+    }
+    setGroupFilter(normalized);
+  }
 
   async function applyBulk(operation, patch) {
     if (checkedTaskIds.length === 0) return;
@@ -507,11 +581,27 @@ export function Commander() {
             />
             <div class="filter-divider" />
             <Tabs
-              ariaLabel="Filter by stage"
-              value={statusFilter}
-              onChange={setStatusFilter}
+              ariaLabel="Filter by runtime state"
+              value={groupFilter}
+              onChange={updateGroupFilter}
               tabs={tabsWithCounts}
               class="tabs-pills"
+            />
+            <Select
+              class="commander-scope-filter"
+              variant="native"
+              value={taskScope}
+              onChange={updateScope}
+              options={TASK_SCOPE_OPTIONS}
+              ariaLabel="Task list scope"
+            />
+            <Select
+              class="commander-stage-filter"
+              variant="native"
+              value={stageFilter}
+              onChange={setStageFilter}
+              options={STAGE_FILTER_OPTIONS}
+              ariaLabel="Filter by exact stage"
             />
             <Select
               class="commander-project-filter"
@@ -524,6 +614,17 @@ export function Commander() {
             />
             <div class="commander-filter-actions">
               <DailyCostChip />
+              {hiddenDoneCount > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="commander-hidden-completed"
+                  iconLeft={<Icon name="eye" size={12} />}
+                  onClick={() => navigateHash("#/tasks?scope=all&group=done")}
+                >
+                  {hiddenDoneCount} completed hidden
+                </Button>
+              )}
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
               <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                 New task
@@ -553,8 +654,8 @@ export function Commander() {
           hasFilter ? (
             <EmptyStateFiltered
               title="No tasks match your filter"
-              body="Try a different stage or clear your search."
-              onClearFilters={() => { setStatusFilter("all"); setProjectFilter("all"); setQuery(""); }}
+              body="Try a different runtime state, exact stage, project, or search."
+              onClearFilters={() => { setGroupFilter("all"); setStageFilter("all"); setProjectFilter("all"); setQuery(""); }}
             />
           ) : (
             <EmptyState

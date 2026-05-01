@@ -65,7 +65,7 @@ export function App() {
     if (rest[0] === "new") body = <TaskEdit mode="create" />;
     else if (rest[1] === "edit") body = <TaskEdit mode="edit" id={rest[0]} />;
     else if (rest[0]) body = <TaskDetail key={rest[0]} id={rest[0]} runParam={query.run || null} />;
-    else body = <Commander />;
+    else body = <Commander query={query} />;
   } else if (route === "projects") {
     body = <Projects selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "agents") {

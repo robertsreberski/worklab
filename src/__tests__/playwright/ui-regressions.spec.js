@@ -505,7 +505,7 @@ test.afterAll(async () => {
   if (workspaceDir) rmSync(workspaceDir, { recursive: true, force: true });
 });
 
-test("commander lists tasks grouped by status", async ({ page }) => {
+test("commander lists tasks grouped by runtime state", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
   const groups = page.locator(".commander-group");
@@ -542,7 +542,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    for (const label of ["Review", "Execute", "Done"]) {
+    for (const label of ["Running", "Needs attention", "Ready", "Completed"]) {
       await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
     }
     for (const row of stateRows) {

@@ -2863,8 +2863,16 @@ html.assistant-resizing * {
 }
 .commander-filter .tabs::-webkit-scrollbar { display: none; }
 .commander-project-filter {
-  flex: 0 0 176px;
-  width: 176px;
+  flex: 0 0 160px;
+  width: 160px;
+}
+.commander-scope-filter {
+  flex: 0 0 136px;
+  width: 136px;
+}
+.commander-stage-filter {
+  flex: 0 0 132px;
+  width: 132px;
 }
 .commander-filter .filter-divider { width: 1px; height: 16px; background: var(--border); }
 .commander-filter-actions {
@@ -2879,6 +2887,9 @@ html.assistant-resizing * {
 .commander-filter-count {
   color: var(--text-muted);
   font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.commander-hidden-completed {
   white-space: nowrap;
 }
 .commander-cost-chip {
@@ -3024,7 +3035,11 @@ html.assistant-resizing * {
   border-left: 2px solid var(--accent);
   padding-left: calc(var(--sp-6) - 2px);
 }
-.commander-row.running { min-height: 56px; }
+.commander-row.running {
+  min-height: 52px;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
 .commander-cell-checkbox { display: flex; justify-content: center; position: relative; }
 .commander-cell-checkbox .checkbox {
   padding: 0;
@@ -3123,8 +3138,8 @@ html.assistant-resizing * {
   align-items: stretch;
   min-width: 0;
   gap: 2px;
-  margin-top: 6px;
-  padding: 6px 10px;
+  margin-top: 2px;
+  padding: 3px 8px;
   border: 1px solid color-mix(in srgb, var(--status-progress) 22%, var(--border));
   border-left: 2px solid var(--status-progress);
   border-radius: var(--radius-xs);
@@ -3134,6 +3149,7 @@ html.assistant-resizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--text-sm);
+  line-height: 1.25;
   color: var(--text-muted);
   font-family: var(--font-mono);
 }
@@ -3142,7 +3158,7 @@ html.assistant-resizing * {
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  line-height: 1.35;
+  line-height: 1.25;
 }
 .commander-live-line .tool-token,
 .commander-live-line-row .tool-token {
@@ -8702,17 +8718,19 @@ html.assistant-resizing * {
   .commander-group-header { padding: var(--sp-2) var(--sp-4); }
   .commander-filter {
     padding: var(--sp-2) var(--sp-3);
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
     align-items: stretch;
   }
   .commander-filter .search-field {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
     width: 100%;
     max-width: none;
   }
   .commander-filter .filter-divider { display: none; }
   .commander-filter .tabs {
+    grid-column: 1 / -1;
     width: 100%;
     max-width: 100%;
     overflow-x: auto;
@@ -8723,9 +8741,10 @@ html.assistant-resizing * {
             mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
   }
   .commander-filter .tabs::-webkit-scrollbar { display: none; }
-  .commander-project-filter {
-    flex: 1 1 180px;
-    width: auto;
+  .commander-project-filter,
+  .commander-scope-filter,
+  .commander-stage-filter {
+    width: 100%;
     min-width: 0;
   }
   .commander-filter .tab {
@@ -10272,7 +10291,7 @@ html.assistant-resizing * {
   }
   .commander-filter {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: var(--sp-3);
   }
   .commander-filter .search-field {

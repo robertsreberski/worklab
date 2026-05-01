@@ -134,6 +134,8 @@ export function CommanderRow({
   const stuck = task.running_run_id && task.is_locked === false;
   const needsOwner = !runnerName && displayStage !== "done";
   const recoveryLabel = taskRecoveryLabel(task);
+  const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
+  const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
   const autoRun = task.run_policy === "auto_plan_execute";
   const schedule = task.automation_summary || {};
   const hasSchedule = Number(schedule.count || 0) > 0;
@@ -164,7 +166,19 @@ export function CommanderRow({
         <Icon name="alert-triangle" size={10} /> Error
       </span>
     );
-  } else if (needsOwner) {
+  } else if (blockingIssues.length > 0) {
+    metaChip = (
+      <span class="chip chip-error" title={blockingIssues.join("\n")}>
+        <Icon name="alert-triangle" size={10} /> {blockingIssues.length} blocking
+      </span>
+    );
+  } else if (pendingActions.length > 0) {
+    metaChip = (
+      <span class="chip chip-warn" title={pendingActions.join("\n")}>
+        <Icon name="check-circle" size={10} /> {pendingActions.length} action{pendingActions.length === 1 ? "" : "s"}
+      </span>
+    );
+  } else if (needsOwner && blockedCount === 0) {
     metaChip = <span class="chip chip-warn">Needs owner</span>;
   }
 
