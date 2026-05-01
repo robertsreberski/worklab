@@ -109,6 +109,28 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.map((event) => event._event_seq)).toEqual([2, 3]);
   });
 
+  it("can return run metadata without hydrating event payloads", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'a', ?, 'complete')")
+      .run(runId, taskId, now);
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+      .run("log-none", runId, JSON.stringify([
+        { type: "text", _event_seq: 1, text: "large payload" },
+        { type: "final", _event_seq: 2, text: "done" },
+      ]), now);
+
+    const res = await agent.get(`/api/runs/${runId}?events=none`).expect(200);
+
+    expect(res.body.run.id).toBe(runId);
+    expect(res.body.log.events).toEqual([]);
+    expect(res.body.log.event_count).toBe(2);
+    expect(res.body.log.events_truncated).toBe(true);
+  });
+
   it("returns a run raw log when the path is inside the data dir", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-raw-log-"));
     try {

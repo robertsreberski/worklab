@@ -50,10 +50,33 @@ function runEventLimit(value) {
   return Math.min(parsed, 500);
 }
 
+function runEventMode(value) {
+  if (value === "tail") return "tail";
+  if (value === "none") return "none";
+  return "full";
+}
+
 function shapeRunLog(logRow, query = {}) {
   if (!logRow) return null;
-  const events = JSON.parse(logRow.events || "[]");
-  if (query.events !== "tail") return { ...logRow, events };
+  const mode = runEventMode(query.events);
+  if (mode === "none") {
+    const eventCount = Number(logRow.event_count || 0);
+    return {
+      ...logRow,
+      events: [],
+      event_count: eventCount,
+      events_truncated: eventCount > 0,
+    };
+  }
+  const events = parseEvents(logRow.events);
+  if (mode !== "tail") {
+    return {
+      ...logRow,
+      events,
+      event_count: Number(logRow.event_count ?? events.length),
+      events_truncated: false,
+    };
+  }
   const limit = runEventLimit(query.limit);
   const tail = events.slice(-limit);
   return {
@@ -69,9 +92,10 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
     const row = getRunById(db, req.params.id);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
     const liveInputState = watcher?.getRunLiveInputState?.(row.id) || null;
-    const logRow = getAgentLogByRunId(db, req.params.id);
-    const run = normalizeRun(row, liveInputState, parseEvents(logRow?.events));
+    const eventMode = runEventMode(req.query?.events);
+    const logRow = getAgentLogByRunId(db, req.params.id, { includeEvents: eventMode !== "none" });
     const log = shapeRunLog(logRow, req.query || {});
+    const run = normalizeRun(row, liveInputState, Array.isArray(log?.events) ? log.events : null);
     res.json({ run, log });
   });
 
