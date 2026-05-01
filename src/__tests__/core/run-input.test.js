@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { buildNextTaskRunPreview, buildTaskRunInput } from "../../core/run-input.js";
+import { createContextCache } from "../../core/context-cache.js";
 import { appendJournalEntry, writeMemory } from "../../core/journal.js";
 
 function withRunInputDb(fn) {
@@ -372,6 +373,82 @@ describe("run input assembly", () => {
         slug: project.slug,
         workdir: "/tmp/project-atlas",
       });
+    });
+  });
+
+  it("injects repository instructions from the project workdir", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const workdir = join(config.dataDir, "repo-with-agents");
+      mkdirSync(workdir, { recursive: true });
+      writeFileSync(join(workdir, "AGENTS.md"), [
+        "# Repository Guidelines",
+        "",
+        "Respect the project AGENTS.md context before editing.",
+        "Keep commits granular and intentional.",
+      ].join("\n"));
+      const project = seedProject(db, { workdir });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-repo-instructions",
+        mode: "execute",
+      });
+
+      const repoInstructionsStart = input.systemPrompt.indexOf("## Repository instructions");
+      const projectStart = input.systemPrompt.indexOf("## Project");
+      expect(repoInstructionsStart).toBeGreaterThan(0);
+      expect(repoInstructionsStart).toBeLessThan(projectStart);
+      expect(input.systemPrompt).toContain(`Source: \`${join(workdir, "AGENTS.md")}\``);
+      expect(input.systemPrompt).toContain("Respect the project AGENTS.md context before editing.");
+      expect(input.systemPrompt).toContain("Keep commits granular and intentional.");
+      expect(input.systemPrompt).toContain("## Repository workflow");
+      expect(input.systemPrompt).toContain("create granular commits before returning the final result");
+      expect(input.promptDiagnostics.repositoryInstructions).toMatchObject({
+        path: join(workdir, "AGENTS.md"),
+      });
+    });
+  });
+
+  it("refreshes cached prompts when repository instructions change", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const workdir = join(config.dataDir, "repo-cache");
+      mkdirSync(workdir, { recursive: true });
+      const agentsPath = join(workdir, "AGENTS.md");
+      writeFileSync(agentsPath, "Initial repository instruction.");
+      const project = seedProject(db, { workdir });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+      const contextCache = createContextCache();
+
+      const first = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-repo-cache-1",
+        mode: "execute",
+        contextCache,
+      });
+      writeFileSync(agentsPath, "Updated repository instruction.");
+      const second = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-repo-cache-2",
+        mode: "execute",
+        contextCache,
+      });
+
+      expect(first.systemPrompt).toContain("Initial repository instruction.");
+      expect(second.systemPrompt).toContain("Updated repository instruction.");
+      expect(second.systemPrompt).not.toContain("Initial repository instruction.");
+      expect(second.promptDiagnostics.contextCacheHit).toBe(false);
     });
   });
 

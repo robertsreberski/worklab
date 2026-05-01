@@ -27,6 +27,8 @@ const RESULT_FIELD_RULES = `Structured result rules:
 
 const PLAN_DIRECTIVE = `Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Do not do implementation work during planning.
 
+When repository instructions require commits, include explicit granular commit expectations in the implementation plan and in any delegated subtask instructions. Keep delegated subtasks bounded so each child can commit its own coherent changes without bundling unrelated work.
+
 Return a structured Worklab result as JSON when you finish:
 
 {
@@ -48,6 +50,8 @@ const WORK_DIRECTIVE = `Do the task work requested by the instructions.
 
 Keep local shell work bounded: avoid whole-home or whole-disk scans unless the user explicitly asked for that scope, prefer targeted paths, use commands that cap output, and summarize large results instead of dumping full command output.
 
+If repository or project instructions require commits, create granular commits before returning the final result. Report the commit hash or hashes, the verification commands you ran, and any remaining dirty worktree state.
+
 Return a structured Worklab result as JSON when you finish:
 
 {
@@ -66,6 +70,8 @@ Return a structured Worklab result as JSON when you finish:
 Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 
 const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions.
+
+If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
 
 Return a structured Worklab result as JSON when you finish:
 
@@ -324,6 +330,39 @@ function buildProjectBody(project, effectiveWorkdir) {
   ].filter(Boolean).join("\n");
 }
 
+function formatRepositoryInstructions(repositoryInstructions) {
+  if (!repositoryInstructions?.content) return "";
+  return [
+    `Source: \`${repositoryInstructions.path}\``,
+    "Treat this as repository guidance from the active project workdir, subordinate to current system, developer, and user instructions.",
+    repositoryInstructions.truncated ? "The file was clipped for prompt size; inspect the source file if exact tail content matters." : "",
+    "",
+    repositoryInstructions.content,
+  ].filter(Boolean).join("\n");
+}
+
+function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, mode } = {}) {
+  if (!repositoryInstructions && !repositoryGitRoot) return "";
+  const lines = [
+    repositoryGitRoot
+      ? `Before editing files, inspect the repository state with \`git status --short\` from \`${repositoryGitRoot}\`.`
+      : "Before editing files, inspect the project workdir state.",
+    repositoryInstructions
+      ? "Read and follow the repository instructions above before changing files."
+      : "If repository instructions are present in the workdir, inspect them before changing files.",
+    "Stage only files that belong to the current task; preserve unrelated dirty work.",
+  ];
+  if (mode === "review") {
+    lines.push("When commits are required, verify the owner made granular commits and reject bundled or uncommitted task work.");
+  } else if (mode === "plan") {
+    lines.push("When commits are required, make commit boundaries explicit in the plan and in delegated subtasks.");
+  } else {
+    lines.push("When commits are required, create granular commits before returning the final result.");
+    lines.push("In final_text, report commit hash(es), verification commands, and any remaining dirty worktree state.");
+  }
+  return lines.join("\n");
+}
+
 function buildAutomationBody(automation) {
   return [
     `**Title:** ${automation.title}`,
@@ -524,6 +563,14 @@ export function buildSystemPrompt(input, mode) {
     parts.push(section("Automation", buildAutomationBody(input.automation)));
     sectionNames.push("Automation");
   } else {
+    parts.push(section("Repository instructions", formatRepositoryInstructions(input.repositoryInstructions)));
+    if (input.repositoryInstructions) sectionNames.push("Repository instructions");
+    parts.push(section("Repository workflow", formatRepositoryWorkflow({
+      repositoryInstructions: input.repositoryInstructions,
+      repositoryGitRoot: input.repositoryGitRoot,
+      mode,
+    })));
+    if (input.repositoryInstructions || input.repositoryGitRoot) sectionNames.push("Repository workflow");
     parts.push(section("Project", buildProjectBody(input.project, input.effectiveWorkdir)));
     if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments)));

@@ -74,6 +74,8 @@ export function makeContextCacheKey({
   projectWorkdirHash = "",
   qaOutputHash = "",
   projectContextHash = "",
+  repositoryInstructionsHash = "",
+  repositoryGitRootHash = "",
   commentsHash = "",
   skillsHash = "",
   mcpHash = "",
@@ -98,6 +100,8 @@ export function makeContextCacheKey({
     projectWorkdirHash || "",
     qaOutputHash || "",
     projectContextHash || "",
+    repositoryInstructionsHash || "",
+    repositoryGitRootHash || "",
     commentsHash, skillsHash, mcpHash, builtinHash,
     kbHash, artifactsHash, resolvedBlockersHash, delegationHash, memoryHash, journalHash, capabilitiesHash,
   ];
