@@ -27,8 +27,8 @@ export const ROUTE_GROUPS = [
     label: "Work",
     routes: [
       { id: "tasks", label: "Tasks", icon: "layout-list" },
-      { id: "projects", label: "Projects", icon: "folder" },
       { id: "activity", label: "Activity", icon: "clock" },
+      { id: "projects", label: "Projects", icon: "folder" },
     ],
   },
   {
@@ -53,8 +53,8 @@ const AppChromeContext = createContext(null);
 
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
-  { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
+  { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "agents", label: "Agents", icon: "user", href: "#/agents" },
 ];
 const MORE_ROUTE_IDS = ["skills", "knowledge", "providers", "settings"];
