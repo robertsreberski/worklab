@@ -467,6 +467,8 @@ describe("buildReviewSystemPrompt", () => {
     });
     const directive = `Review the owner's work against the task instructions.
 
+If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
+
 Return a structured Worklab result as JSON when you finish:
 
 {

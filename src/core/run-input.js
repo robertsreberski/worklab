@@ -1,4 +1,5 @@
-import { join } from "node:path";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { loadSkills } from "./skills.js";
 import { enrichCommentRows } from "./comments.js";
 import { getAvailableMcpServers } from "./mcp-config.js";
@@ -47,6 +48,54 @@ function safeParseJson(value, fallback = null) {
   if (value === null || value === undefined) return fallback;
   if (typeof value !== "string") return value;
   try { return JSON.parse(value); } catch { return fallback; }
+}
+
+const REPOSITORY_INSTRUCTION_FILES = ["AGENTS.md"];
+const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 24_000;
+
+export function loadRepositoryInstructions(workdir) {
+  if (!workdir) return null;
+  for (const filename of REPOSITORY_INSTRUCTION_FILES) {
+    const path = join(workdir, filename);
+    try {
+      if (!existsSync(path)) continue;
+      const stat = statSync(path);
+      if (!stat.isFile()) continue;
+      const raw = readFileSync(path, "utf8");
+      const content = raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS
+        ? `${raw.slice(0, REPOSITORY_INSTRUCTIONS_MAX_CHARS)}\n...[truncated]`
+        : raw;
+      return {
+        filename,
+        path,
+        content,
+        hash: shortHash(raw),
+        size: Buffer.byteLength(raw, "utf8"),
+        truncated: raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS,
+      };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export function findRepositoryGitRoot(workdir) {
+  if (!workdir) return null;
+  let current = resolve(workdir);
+  while (current) {
+    const gitPath = join(current, ".git");
+    try {
+      const stat = statSync(gitPath);
+      if (stat.isDirectory() || stat.isFile()) return current;
+    } catch {
+      // Continue walking to the parent.
+    }
+    const parent = dirname(current);
+    if (!parent || parent === current) break;
+    current = parent;
+  }
+  return null;
 }
 
 export function modeForTaskStage(stage) {
@@ -182,6 +231,8 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
   const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
+  const repositoryInstructions = loadRepositoryInstructions(projectRunContext.effectiveWorkdir);
+  const repositoryGitRoot = findRepositoryGitRoot(projectRunContext.effectiveWorkdir);
   const qaOutputDir = resolveRunArtifactDir({
     workdir: projectRunContext.effectiveWorkdir,
     runId,
@@ -232,6 +283,8 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     agent,
     project: projectRunContext.project,
     effectiveWorkdir: projectRunContext.effectiveWorkdir,
+    repositoryInstructions,
+    repositoryGitRoot,
     qaOutputDir,
     projectContextHash: projectRunContext.projectContextHash,
     commentRows,
@@ -373,6 +426,12 @@ function diagnosticsForPrompt(prompt, setup) {
       contextHash: setup.projectContextHash,
       workdir: setup.effectiveWorkdir,
     } : null,
+    repositoryInstructions: setup.repositoryInstructions ? {
+      path: setup.repositoryInstructions.path,
+      hash: setup.repositoryInstructions.hash,
+      truncated: !!setup.repositoryInstructions.truncated,
+    } : null,
+    repositoryGitRoot: setup.repositoryGitRoot || null,
     toolCount: {
       skills: Array.isArray(skills) ? skills.length : 0,
       builtin: Array.isArray(allowedTools) ? allowedTools.filter((tool) => !disallowedTools.includes(tool)).length : 0,
@@ -451,6 +510,8 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     projectWorkdirHash: shortHash(setup.effectiveWorkdir || ""),
     qaOutputHash: shortHash(setup.qaOutputDir || ""),
     projectContextHash: setup.projectContextHash || "",
+    repositoryInstructionsHash: setup.repositoryInstructions?.hash || "",
+    repositoryGitRootHash: shortHash(setup.repositoryGitRoot || ""),
     commentsHash: shortHash((setup.commentRows || []).map((c) => `${c.id}:${c.created_at}`).join("|")),
     skillsHash: shortHash(skillsSignature.join("|")),
     mcpHash: shortHash(mcpSignature.join("|")),
@@ -482,6 +543,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, journalTail,
+      repositoryInstructions: setup.repositoryInstructions,
+      repositoryGitRoot: setup.repositoryGitRoot,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
@@ -519,6 +582,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
       qaOutputDir: setup.qaOutputDir,
+      repositoryInstructions: setup.repositoryInstructions,
+      repositoryGitRoot: setup.repositoryGitRoot,
       delegation,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
