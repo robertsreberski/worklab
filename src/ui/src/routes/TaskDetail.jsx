@@ -31,7 +31,9 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
+import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
+import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import {
   DEFAULT_RUN_POLICY,
@@ -363,6 +365,19 @@ export function TaskDetail({ id, runParam = null }) {
       : visibleActivity,
     [runningRun, visibleActivity],
   );
+
+  function renderCommentAuthor(item) {
+    const agentName = item.authorType === "agent" ? item.authorId || item.author?.id : null;
+    if (agentName) {
+      return (
+        <span class={`activity-author-badge ${item.authorType || "human"}`}>
+          <AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} />
+        </span>
+      );
+    }
+    return <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>;
+  }
+
   const targetedRunExpanded = Boolean(
     runParam && (runningRun?.id === runParam || expandedRunIds.has(runParam)),
   );
@@ -1150,6 +1165,7 @@ export function TaskDetail({ id, runParam = null }) {
                             highlighted={highlightedRunId === run.id}
                             onToggle={toggleRun}
                             subscribe={(run.process_status || run.status) === "running"}
+                            agents={agents}
                           />
                         </div>
                       </div>
@@ -1161,7 +1177,7 @@ export function TaskDetail({ id, runParam = null }) {
                       <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
                       <div class="activity-feed-content activity-item">
                         <div class="activity-item-head">
-                          <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>
+                          {renderCommentAuthor(item)}
                           <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
                           {canDeleteComment && (
                             <IconButton
@@ -1176,7 +1192,7 @@ export function TaskDetail({ id, runParam = null }) {
                           )}
                         </div>
                         {item.body && (
-                          <div class="activity-item-body"><StructuredContent content={item.body} maxHeight={200} /></div>
+                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} /></div>
                         )}
                       </div>
                     </div>

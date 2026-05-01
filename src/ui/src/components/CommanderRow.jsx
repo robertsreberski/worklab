@@ -6,6 +6,7 @@
 
 import { useMemo } from "preact/hooks";
 import { mergeRunEvents } from "../lib/useRunStream.js";
+import { AgentLink } from "./AgentLink.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
 import { statusMeta } from "./primitives/StatusPill.jsx";
@@ -258,30 +259,49 @@ export function CommanderRow({
       <div class="commander-cell-assignees">
         {task.planner_agent && (
           <>
-            <AgentAvatar
+            <AgentLink
               name={task.planner_agent}
               label={plannerLabel}
               role="planner"
+              agents={agents}
+              showAvatar
+              showLabel={false}
               size={20}
               title={`Planner: ${plannerLabel}`}
             />
             <Icon name="arrow-right" size={10} class="commander-cell-arrow" />
           </>
         )}
-        <AgentAvatar
-          name={runnerName}
-          label={runnerLabel}
-          role="owner"
-          size={20}
-          title={`${runnerRole}: ${runnerLabel}`}
-        />
+        {runnerName ? (
+          <AgentLink
+            name={runnerName}
+            label={runnerLabel}
+            role="owner"
+            agents={agents}
+            showAvatar
+            showLabel={false}
+            size={20}
+            title={`${runnerRole}: ${runnerLabel}`}
+          />
+        ) : (
+          <AgentAvatar
+            name={runnerName}
+            label={runnerLabel}
+            role="owner"
+            size={20}
+            title={`${runnerRole}: ${runnerLabel}`}
+          />
+        )}
         {task.reviewer_agent && (
           <>
             <Icon name="arrow-right" size={10} class="commander-cell-arrow" />
-            <AgentAvatar
+            <AgentLink
               name={task.reviewer_agent}
               label={reviewerLabel}
               role="reviewer"
+              agents={agents}
+              showAvatar
+              showLabel={false}
               size={20}
               title={`Reviewer: ${reviewerLabel}`}
             />

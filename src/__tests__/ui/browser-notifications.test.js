@@ -74,10 +74,10 @@ describe("browser notifications", () => {
   });
 
   it("builds task-only run notification content", () => {
-    expect(buildRunNotification(taskStarted)).toEqual({
+    expect(buildRunNotification({ ...taskStarted, agentDisplayName: "Code Specialist" })).toEqual({
       kind: "started",
       title: "Run started: T-7 · Implement notifications",
-      body: "Execute · coder",
+      body: "Execute · Code Specialist",
     });
     expect(buildRunNotification({ ...taskStarted, taskId: null })).toBeNull();
     expect(buildRunNotification({ ...taskStarted, type: "run_ended", processStatus: "cancelled" })).toBeNull();

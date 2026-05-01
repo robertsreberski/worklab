@@ -15,6 +15,7 @@ import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
+import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { Page } from "../components/layout/index.js";
 import {
@@ -132,6 +133,7 @@ export function Settings() {
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [mcpStatus, setMcpStatus] = useState(null);
   const [mcpRows, setMcpRows] = useState([]);
   const [mcpBaselineRows, setMcpBaselineRows] = useState([]);
@@ -202,6 +204,9 @@ export function Settings() {
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
+    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => {
+      if (err?.name !== "AbortError") setAgents([]);
+    });
     loadSlackStatus().catch(() => setSlackStatus(null));
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
     return () => controller.abort();
@@ -671,7 +676,11 @@ export function Settings() {
               </SettingPanel>
               <SettingPanel icon="database" title="Memory" meta="Uses the same durable identity as Slack.">
                 <div class="settings-note-grid">
-                  <FieldNote label="Memory name" value={settings.slack_agent_name || "mickey"} mono />
+                  <FieldNote
+                    label="Memory name"
+                    value={<AgentLink name={settings.slack_agent_name || "mickey"} agents={agents} />}
+                    mono
+                  />
                   <FieldNote label="Journal tail" value={`${settings.journal_tail_lines ?? 80} lines`} />
                 </div>
               </SettingPanel>

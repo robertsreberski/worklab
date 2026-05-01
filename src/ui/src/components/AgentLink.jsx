@@ -1,0 +1,66 @@
+import { AgentAvatar } from "./AgentAvatar.jsx";
+import { agentByName, agentHref, agentLabel, splitAgentReferences } from "../lib/agentLinks.js";
+import { navigateHash } from "../lib/navigation.js";
+
+function followAgentLink(event, href) {
+  event?.stopPropagation?.();
+  if (
+    event?.defaultPrevented ||
+    event?.metaKey ||
+    event?.ctrlKey ||
+    event?.shiftKey ||
+    event?.altKey ||
+    event?.button === 1
+  ) return;
+  event?.preventDefault?.();
+  navigateHash(href);
+}
+
+export function AgentLink({
+  name,
+  label,
+  agents = [],
+  showAvatar = false,
+  showLabel = true,
+  size = 20,
+  compact = false,
+  role,
+  title,
+  class: className = "",
+}) {
+  if (!name) return null;
+  const agent = agentByName(agents, name);
+  const href = agentHref(name);
+  const display = label || agentLabel(agent, name);
+  const classes = [
+    "agent-link",
+    showAvatar ? "with-avatar" : "",
+    showLabel ? "" : "icon-only",
+    className,
+  ].filter(Boolean).join(" ");
+  return (
+    <a
+      class={classes}
+      href={href}
+      title={title || display}
+      aria-label={showLabel ? undefined : display}
+      onClick={(event) => followAgentLink(event, href)}
+    >
+      {showAvatar && <AgentAvatar name={name} label={display} size={size} compact={compact} role={role} />}
+      {showLabel && <span>{display}</span>}
+    </a>
+  );
+}
+
+export function AgentReferenceText({ text, agents = [] }) {
+  const parts = splitAgentReferences(text, agents);
+  return (
+    <>
+      {parts.map((part, index) => (
+        typeof part === "string"
+          ? part
+          : <AgentLink key={`${part.name}-${index}`} name={part.name} label={part.label} agents={agents} />
+      ))}
+    </>
+  );
+}

@@ -3,6 +3,7 @@ import { useMemo } from "preact/hooks";
 import { EventTimeline } from "../../components/EventTimeline.jsx";
 import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
+import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
@@ -26,7 +27,7 @@ function RunMetric({ label, value }) {
   );
 }
 
-function RunWarningsList({ warnings }) {
+function RunWarningsList({ warnings, agents = [] }) {
   if (!Array.isArray(warnings) || !warnings.length) return null;
   return (
     <ul class="run-warnings-list">
@@ -34,7 +35,7 @@ function RunWarningsList({ warnings }) {
         <li key={idx} class={`run-warning-item run-warning-${(w.kind || "runtime").replace(/[^a-z0-9_-]/gi, "_")}`}>
           <span class="run-warning-kind">{w.kind || "runtime"}</span>
           {w.source && <span class="run-warning-source">{w.source}</span>}
-          <span class="run-warning-message">{w.message || ""}</span>
+          <span class="run-warning-message"><AgentReferenceText text={w.message || ""} agents={agents} /></span>
         </li>
       ))}
     </ul>
@@ -108,7 +109,7 @@ function RunContinuationLinks({ run }) {
   );
 }
 
-function RunFailureDetails({ run }) {
+function RunFailureDetails({ run, agents = [] }) {
   const processStatus = run?.process_status || run?.status;
   const isFailed = processStatus === "failed" || processStatus === "abandoned" || run?.status === "error";
   if (!isFailed) return null;
@@ -155,14 +156,14 @@ function RunFailureDetails({ run }) {
           <dd>
             {cancelInitiator && <code>{cancelInitiator}</code>}
             {cancelInitiator && cancelReason ? ": " : null}
-            {cancelReason}
+            <AgentReferenceText text={cancelReason} agents={agents} />
           </dd>
         </div>
       )}
       {lastText && (
         <div class="run-failure-row">
           <dt>Last assistant text</dt>
-          <dd class="run-failure-snippet">{lastText}</dd>
+          <dd class="run-failure-snippet"><AgentReferenceText text={lastText} agents={agents} /></dd>
         </div>
       )}
       {lastTool && (
@@ -189,7 +190,7 @@ function RunFailureDetails({ run }) {
   );
 }
 
-export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
+export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agents = [] }) {
   const live = Boolean(subscribe);
   const runStream = useRunStream(expanded || subscribe ? run?.id : null, {
     subscribe,
@@ -224,7 +225,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
                       {resultPreview.decision}
                     </span>
                   )}
-                  {resultPreview.summary && <span class="run-result-summary">{resultPreview.summary}</span>}
+                  {resultPreview.summary && <span class="run-result-summary"><AgentReferenceText text={resultPreview.summary} agents={agents} /></span>}
                   {!resultPreview.summary && <span class="run-result-summary">Result recorded</span>}
                   {run.automation_trigger_type && (
                     <span class="chip chip-trigger">
@@ -243,7 +244,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
                     </span>
                   )}
                 </div>
-                {resultPreview.details && <div class="run-result-details">{resultPreview.details}</div>}
+                {resultPreview.details && <div class="run-result-details"><AgentReferenceText text={resultPreview.details} agents={agents} /></div>}
               </div>
             ) : (
               <div class="run-summary-status">
@@ -284,9 +285,9 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe }) {
         </div>
       )}
       <RunCancellationNote run={run} />
-      <RunWarningsList warnings={warnings} />
+      <RunWarningsList warnings={warnings} agents={agents} />
       <RunContinuationLinks run={run} />
-      <RunFailureDetails run={run} />
+      <RunFailureDetails run={run} agents={agents} />
       <RunDiagnosticsDisclosure run={run} />
       <RunHistoryNotice
         eventCount={runStream.eventCount}

@@ -1,9 +1,10 @@
 // src/ui/src/components/CommentList.jsx
 import { CommentAuthor } from "./CommentAuthor.jsx";
 import { StructuredContent } from "./StructuredContent.jsx";
+import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
 import { normalizeCommentText, parseVerdictComment, shouldHideComment } from "../lib/commentFormatting.js";
 
-export function CommentList({ comments }) {
+export function CommentList({ comments, agents = [] }) {
   const visibleComments = (comments || []).filter((c) => !shouldHideComment(c));
   if (!visibleComments.length) return <div class="meta">No comments yet.</div>;
   return (
@@ -14,7 +15,7 @@ export function CommentList({ comments }) {
         return (
           <div key={c.id} class="comment">
             <div class="author comment-head">
-              <CommentAuthor authorType={c.author_type} authorId={c.author_id} />
+              <CommentAuthor authorType={c.author_type} authorId={c.author_id} agents={agents} />
               {verdict && (
                 <span class={`verdict-badge ${verdict.toLowerCase()}`}>{verdict}</span>
               )}
@@ -22,7 +23,7 @@ export function CommentList({ comments }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            {displayBody && <StructuredContent content={displayBody} className="comment-body doc-content" />}
+            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" />}
           </div>
         );
       })}

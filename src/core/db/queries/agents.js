@@ -22,7 +22,7 @@ export function listEnabledAgentNames(db) {
 
 export function getAgentBudget(db, name) {
   return db
-    .prepare("SELECT daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?")
+    .prepare("SELECT name, display_name, daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?")
     .get(name);
 }
 

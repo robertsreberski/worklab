@@ -5,6 +5,7 @@ import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
+import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -77,7 +78,6 @@ function statusLeadingSlot(option) {
 function activityMetaParts(item) {
   return [
     item.mode,
-    item.agent_name,
     item.automation_trigger_type,
     item.model ? modelDisplayName(item.model) : null,
   ].filter(Boolean);
@@ -333,10 +333,14 @@ export function Activity() {
               {items.map((item) => {
                 const metaParts = activityMetaParts(item);
                 const metricParts = activityMetricParts(item);
+                const agentOption = agents.find((agent) => agent.name === item.agent_name);
+                const agentLabel = agentOption?.display_name || item.agent_name;
                 return (
                   <article class="activity-row" data-status={item.status} key={item.id}>
                     <span class="activity-row-rail" aria-hidden="true" />
-                    <AgentAvatar name={item.agent_name} label={item.agent_name} size={26} />
+                    {item.agent_name
+                      ? <AgentLink name={item.agent_name} label={agentLabel} agents={agents} showAvatar showLabel={false} size={26} />
+                      : <AgentAvatar name={item.agent_name} label={item.agent_name} size={26} />}
                     <div class="activity-row-main">
                       <div class="activity-row-titleline">
                         <div class="activity-title">
@@ -350,6 +354,7 @@ export function Activity() {
                         <StatusPill status={item.status} size="sm" />
                       </div>
                       <div class="activity-meta">
+                        {item.agent_name && <span><AgentLink name={item.agent_name} label={agentLabel} agents={agents} /></span>}
                         {metaParts.map((part) => <span key={part}>{part}</span>)}
                       </div>
                       {metricParts.length > 0 && (

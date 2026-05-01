@@ -1,4 +1,4 @@
-import { AgentAvatar } from "../../components/AgentAvatar.jsx";
+import { AgentLink } from "../../components/AgentLink.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { normalizeCommentText, shouldHideComment } from "../../lib/commentFormatting.js";
 
@@ -18,14 +18,14 @@ export function ActivityRailDot({ item, agentLabel }) {
   if (item.type === "run" && runAgent) {
     return (
       <span class={`activity-feed-dot avatar run ${tone || ""}`}>
-        <AgentAvatar name={runAgent} label={agentLabel || runAgent} size={20} compact />
+        <AgentLink name={runAgent} label={agentLabel || runAgent} showAvatar showLabel={false} size={20} compact />
       </span>
     );
   }
   if (commentAgent) {
     return (
       <span class="activity-feed-dot avatar comment-dot agent">
-        <AgentAvatar name={commentAgent} label={commentAuthorLabel(item)} size={20} compact />
+        <AgentLink name={commentAgent} label={commentAuthorLabel(item)} showAvatar showLabel={false} size={20} compact />
       </span>
     );
   }
