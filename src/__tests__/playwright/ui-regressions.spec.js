@@ -2224,22 +2224,50 @@ test("mobile assistant pane opens full width", async ({ page }) => {
 
 test("assistant thread remains scrollable with long history", async ({ page }) => {
   const now = Date.now();
-  await page.route("**/api/assistant", async (route) => {
+  const seededMessages = Array.from({ length: 28 }, (_, index) => ({
+    id: `assistant-scroll-${index}`,
+    role: index % 2 === 0 ? "user" : "assistant",
+    body: `Scrollable assistant message ${index + 1}. This seeded text makes the assistant thread taller than the viewport so the dock must keep the message list as the scroll container.`,
+    status: "complete",
+    created_at: now + index,
+    updated_at: now + index,
+  }));
+  await page.route("**/api/assistant**", async (route) => {
     if (route.request().method() !== "GET") return route.fallback();
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/assistant/messages") {
+      const before = url.searchParams.get("before");
+      const beforeIndex = before
+        ? seededMessages.findIndex((message) => message.id === before)
+        : seededMessages.length;
+      const end = beforeIndex < 0 ? seededMessages.length : beforeIndex;
+      const start = Math.max(0, end - 5);
+      const messages = seededMessages.slice(start, end);
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          thread: { id: "personal", title: "Long assistant thread", created_at: now, updated_at: now },
+          messages,
+          history: {
+            has_more: start > 0,
+            before: before || null,
+            next_before: messages[0]?.id || before || null,
+            page_size: 5,
+          },
+        }),
+      });
+      return;
+    }
+    if (url.pathname !== "/api/assistant") return route.fallback();
     await route.fulfill({
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
         thread: { id: "personal", title: "Long assistant thread", created_at: now, updated_at: now },
         active_run: null,
-        messages: Array.from({ length: 28 }, (_, index) => ({
-          id: `assistant-scroll-${index}`,
-          role: index % 2 === 0 ? "user" : "assistant",
-          body: `Scrollable assistant message ${index + 1}. This seeded text makes the assistant thread taller than the viewport so the dock must keep the message list as the scroll container.`,
-          status: "complete",
-          created_at: now + index,
-          updated_at: now + index,
-        })),
+        messages: [],
+        history: { has_more: true, before: null, page_size: 5 },
       }),
     });
   });
@@ -2249,12 +2277,18 @@ test("assistant thread remains scrollable with long history", async ({ page }) =
     { width: 820, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
-    await page.goto(`${baseUrl}/#/tasks`);
+    await page.goto(`${baseUrl}/?assistant-scroll=${viewport.width}#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
     const launcher = page.locator(".assistant-launcher");
     if (await launcher.isVisible()) await launcher.click();
     await expect(page.locator(".assistant-dock.open")).toBeVisible();
+    await expect(page.locator(".assistant-empty")).toBeVisible();
+    for (const expectedCount of [5, 10, 15, 20, 25, 28]) {
+      await page.getByRole("button", { name: "Load previous conversation" }).click();
+      await expect.poll(async () => page.locator(".assistant-message").count()).toBe(expectedCount);
+    }
+    await expect(page.getByRole("button", { name: "Load previous conversation" })).toHaveCount(0);
     await expect(page.locator(".assistant-message").last()).toBeVisible();
 
     const metrics = await page.evaluate(() => {

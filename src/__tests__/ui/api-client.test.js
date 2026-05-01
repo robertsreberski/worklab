@@ -62,6 +62,40 @@ describe("ui API client", () => {
     });
   });
 
+  it("fetches assistant blank state through a named helper", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ thread: { id: "personal" }, messages: [], history: { has_more: true } }),
+    }));
+
+    const result = await api.getAssistant({ view: "blank" });
+
+    expect(result.history.has_more).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith("/api/assistant?view=blank", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+  });
+
+  it("fetches paged assistant messages through a named helper", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: [{ id: "msg-1" }], history: { has_more: false } }),
+    }));
+
+    const result = await api.getAssistantMessages({ limit: "5", before: "msg-6" });
+
+    expect(result.messages[0].id).toBe("msg-1");
+    expect(global.fetch).toHaveBeenCalledWith("/api/assistant/messages?limit=5&before=msg-6", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+  });
+
   it("lists projects with query parameters", async () => {
     global.fetch = vi.fn(async () => ({
       ok: true,

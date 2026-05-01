@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
 import { writeSettings } from "../../core/settings.js";
+import { DEFAULT_ASSISTANT_THREAD_ID } from "../../core/index.js";
 
 function makeConfig(dataDir) {
   return {
@@ -25,6 +26,55 @@ function assistantJson(overrides = {}) {
     action_items: ["Review the new task"],
     ...overrides,
   });
+}
+
+function seedAssistantMessages(db, count, { start = Date.now() } = {}) {
+  db.prepare(`
+    INSERT OR IGNORE INTO assistant_threads (id, title, created_at, updated_at)
+    VALUES (?, 'Personal assistant', ?, ?)
+  `).run(DEFAULT_ASSISTANT_THREAD_ID, start, start);
+  const insert = db.prepare(`
+    INSERT INTO assistant_messages (id, thread_id, role, body, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'complete', ?, ?)
+  `);
+  return Array.from({ length: count }, (_, index) => {
+    const messageNumber = index + 1;
+    const id = `assistant-test-message-${messageNumber}`;
+    const createdAt = start + messageNumber;
+    insert.run(
+      id,
+      DEFAULT_ASSISTANT_THREAD_ID,
+      messageNumber % 2 === 0 ? "assistant" : "user",
+      `Message ${messageNumber}`,
+      createdAt,
+      createdAt,
+    );
+    return id;
+  });
+}
+
+function seedActiveAssistantRun(db, { start = Date.now() } = {}) {
+  db.prepare(`
+    INSERT OR IGNORE INTO assistant_threads (id, title, created_at, updated_at)
+    VALUES (?, 'Personal assistant', ?, ?)
+  `).run(DEFAULT_ASSISTANT_THREAD_ID, start, start);
+  const userId = "assistant-active-user";
+  const assistantId = "assistant-active-reply";
+  const runId = "assistant-active-run";
+  db.prepare(`
+    INSERT INTO assistant_messages (id, thread_id, role, body, status, created_at, updated_at)
+    VALUES (?, ?, 'user', 'Current request', 'complete', ?, ?)
+  `).run(userId, DEFAULT_ASSISTANT_THREAD_ID, start + 1, start + 1);
+  db.prepare(`
+    INSERT INTO assistant_messages (id, thread_id, role, body, status, run_id, created_at, updated_at)
+    VALUES (?, ?, 'assistant', '', 'running', ?, ?, ?)
+  `).run(assistantId, DEFAULT_ASSISTANT_THREAD_ID, runId, start + 2, start + 2);
+  db.prepare(`
+    INSERT INTO assistant_runs
+      (id, thread_id, user_message_id, assistant_message_id, status, started_at)
+    VALUES (?, ?, ?, ?, 'running', ?)
+  `).run(runId, DEFAULT_ASSISTANT_THREAD_ID, userId, assistantId, start + 1);
+  return { userId, assistantId, runId };
 }
 
 describe("assistant routes", () => {
@@ -72,6 +122,46 @@ describe("assistant routes", () => {
     expect(res.body.thread.id).toBe("personal");
     expect(res.body.messages).toEqual([]);
     expect(res.body.active_run).toBeNull();
+  });
+
+  it("returns a blank assistant thread view with history metadata", async () => {
+    const { agent, db } = setup();
+    seedAssistantMessages(db, 7);
+
+    const res = await agent.get("/api/assistant?view=blank").expect(200);
+
+    expect(res.body.thread.id).toBe("personal");
+    expect(res.body.messages).toEqual([]);
+    expect(res.body.active_run).toBeNull();
+    expect(res.body.history).toMatchObject({ has_more: true, before: null, page_size: 5 });
+  });
+
+  it("paginates assistant history by five previous messages", async () => {
+    const { agent, db } = setup();
+    const ids = seedAssistantMessages(db, 7);
+
+    const first = await agent.get("/api/assistant/messages?limit=5").expect(200);
+    expect(first.body.messages.map((message) => message.id)).toEqual(ids.slice(2, 7));
+    expect(first.body.history).toMatchObject({ has_more: true, next_before: ids[2], page_size: 5 });
+
+    const second = await agent.get(`/api/assistant/messages?limit=5&before=${ids[2]}`).expect(200);
+    expect(second.body.messages.map((message) => message.id)).toEqual(ids.slice(0, 2));
+    expect(second.body.history).toMatchObject({ has_more: false, next_before: ids[0], page_size: 5 });
+  });
+
+  it("keeps the current active assistant exchange visible in blank view", async () => {
+    const { agent, db } = setup();
+    const olderIds = seedAssistantMessages(db, 4, { start: Date.now() });
+    const active = seedActiveAssistantRun(db, { start: Date.now() + 100 });
+
+    const res = await agent.get("/api/assistant?view=blank").expect(200);
+    expect(res.body.messages.map((message) => message.id)).toEqual([active.userId, active.assistantId]);
+    expect(res.body.active_run.id).toBe(active.runId);
+    expect(res.body.history).toMatchObject({ has_more: true, before: active.userId, page_size: 5 });
+
+    const previous = await agent.get(`/api/assistant/messages?limit=5&before=${active.userId}`).expect(200);
+    expect(previous.body.messages.map((message) => message.id)).toEqual(olderIds);
+    expect(previous.body.history.has_more).toBe(false);
   });
 
   it("runs the assistant with Worklab tools and persists chat, events, journal, and memory", async () => {
