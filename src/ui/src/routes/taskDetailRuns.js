@@ -15,3 +15,33 @@ export function selectHighlightedRunId(runs = [], highlightedRunId = null, { pre
   if (preserveMissingActive && highlightedRunId) return highlightedRunId;
   return null;
 }
+
+export function optimisticTaskDetailRunStarted(data, { runId, startedAt = Date.now() } = {}) {
+  if (!data?.task || !runId) return data;
+  const task = data.task;
+  const runningRun = {
+    id: runId,
+    task_id: task.id || null,
+    task_key: task.task_key || null,
+    status: "running",
+    process_status: "running",
+    stage: task.stage || "execute",
+    mode: task.stage || "execute",
+    started_at: startedAt,
+    agent_name: task.owner_agent || null,
+  };
+  return {
+    ...data,
+    task: {
+      ...task,
+      running_run_id: runId,
+      running_run_started_at: startedAt,
+      running_run: runningRun,
+    },
+    comments: [...(data.comments || [])],
+    runs: [
+      runningRun,
+      ...(data.runs || []).filter((run) => run?.id !== runId),
+    ],
+  };
+}

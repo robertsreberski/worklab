@@ -1089,6 +1089,185 @@ test("running task detail hydrates live run once with a compact tail", async ({ 
   expect(runRequests).toEqual(["/api/runs/run-live-existing?events=tail&limit=24"]);
 });
 
+test("task detail shows an optimistic running state while start-run reload is pending", async ({ page }) => {
+  const mockedTaskId = "mock-start-task";
+  const now = Date.now();
+  const idleDetail = {
+    task: {
+      id: mockedTaskId,
+      task_key: "T-MOCK",
+      title: "Mock start task",
+      description: "Mocked detail for start transition",
+      stage: "execute",
+      owner_agent: "regression-agent",
+      reviewer_agent: "reviewer-agent",
+      planner_agent: null,
+      run_policy: "manual",
+      running_run_id: null,
+      running_run_started_at: null,
+      running_run: null,
+      plan_body: "",
+      tags: [],
+      dependency_ids: [],
+      blocked_by: [],
+      blocks: [],
+      children: [],
+      automations: [],
+      automation_summary: { count: 0, enabled_count: 0, paused_count: 0, next_fire_at: null, last_trigger: null },
+      artifacts: [],
+      artifact_summary: {},
+      created_at: now,
+      updated_at: now,
+    },
+    comments: [],
+    runs: [],
+  };
+  const startedAt = Date.now();
+  const runningRun = {
+    id: "run-optimistic-start",
+    task_id: idleDetail.task.id,
+    task_key: idleDetail.task.task_key,
+    mode: "execute",
+    stage: "execute",
+    status: "running",
+    process_status: "running",
+    started_at: startedAt,
+    agent_name: "regression-agent",
+    live_input: { supported: false, active: false, reason: "unsupported_provider" },
+  };
+  const authoritativeDetail = {
+    ...idleDetail,
+    task: {
+      ...idleDetail.task,
+      running_run_id: runningRun.id,
+      running_run_started_at: startedAt,
+      running_run: runningRun,
+    },
+    runs: [runningRun],
+  };
+  let releaseDetailReload;
+  let detailReloadRequested = false;
+  let delayDetailReload = false;
+  const detailReloadGate = new Promise((resolveGate) => { releaseDetailReload = resolveGate; });
+
+  await page.route(`**/api/tasks/${mockedTaskId}/automations`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ automations: [] }),
+    });
+  });
+  await page.route(`**/api/tasks/${mockedTaskId}/run`, async (route) => {
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ runId: runningRun.id }),
+    });
+  });
+  await page.route(`**/api/tasks/${mockedTaskId}`, async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    if (!delayDetailReload) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(idleDetail),
+      });
+      return;
+    }
+    detailReloadRequested = true;
+    await detailReloadGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(authoritativeDetail),
+    });
+  });
+  await page.route(`**/api/runs/${runningRun.id}?**`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        run: runningRun,
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    });
+  });
+  await page.route(`**/api/runs/${runningRun.id}/stream`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      body: ": connected\n\n",
+    });
+  });
+
+  await page.goto(`${baseUrl}/#/tasks/${mockedTaskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".task-hero-title", { hasText: "Mock start task" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Run work" })).toBeVisible();
+  delayDetailReload = true;
+
+  await page.evaluate(() => {
+    const button = [...document.querySelectorAll("button")]
+      .find((node) => (node.textContent || "").trim() === "Run work");
+    if (!button) throw new Error("Run work button not found");
+    button.click();
+  });
+  await expect.poll(() => detailReloadRequested).toBe(true);
+  await expect(page.getByText("Loading task…")).toHaveCount(0);
+  await expect(page.locator(".task-hero-status-row .status-menu-trigger")).toContainText("Running");
+  await expect(page.locator(".task-live-panel")).toBeVisible();
+
+  releaseDetailReload();
+  await expect(page.locator(".task-live-panel")).toBeVisible();
+});
+
+test("multi-tab task detail shares live streams and keeps task list navigation responsive", async ({ page, context }) => {
+  const activeStreams = new Map();
+  const maxActiveByPath = new Map();
+  function streamPath(request) {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/events/stream") return url.pathname;
+    if (url.pathname === "/api/runs/run-live-existing/stream") return url.pathname;
+    return null;
+  }
+  function updateMax() {
+    const counts = new Map();
+    for (const path of activeStreams.values()) counts.set(path, (counts.get(path) || 0) + 1);
+    for (const [path, count] of counts.entries()) {
+      maxActiveByPath.set(path, Math.max(maxActiveByPath.get(path) || 0, count));
+    }
+  }
+  context.on("request", (request) => {
+    const path = streamPath(request);
+    if (!path) return;
+    activeStreams.set(request, path);
+    updateMax();
+  });
+  const clearRequest = (request) => {
+    if (!activeStreams.delete(request)) return;
+    updateMax();
+  };
+  context.on("requestfailed", clearRequest);
+  context.on("requestfinished", clearRequest);
+
+  const pages = [page];
+  for (let i = 0; i < 4; i += 1) {
+    const current = i === 0 ? page : await context.newPage();
+    if (i > 0) pages.push(current);
+    await current.goto(`${baseUrl}/#/tasks/${runningTaskId}`, { waitUntil: "domcontentloaded" });
+    await expect(current.locator(".task-live-panel")).toBeVisible();
+  }
+
+  const listPage = await context.newPage();
+  pages.push(listPage);
+  await listPage.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded", timeout: 8_000 });
+  await expect(listPage.getByText("Loading tasks…")).toHaveCount(0, { timeout: 5_000 });
+
+  expect(maxActiveByPath.get("/api/events/stream") || 0).toBeLessThanOrEqual(1);
+  expect(maxActiveByPath.get("/api/runs/run-live-existing/stream") || 0).toBeLessThanOrEqual(1);
+
+  for (const extraPage of pages.slice(1)) await extraPage.close();
+});
+
 test("task detail deep-linked run opens highlighted history", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}?run=run-complete-existing`);
   const run = page.locator(".run-card.highlighted").first();
