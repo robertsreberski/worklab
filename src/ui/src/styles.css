@@ -2629,6 +2629,7 @@ html.assistant-resizing * {
 }
 .assistant-empty {
   min-height: 160px;
+  padding: var(--sp-6);
   display: flex;
   flex-direction: column;
   align-items: center;
