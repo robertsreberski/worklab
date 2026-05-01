@@ -15,9 +15,20 @@ export function registerAssistantRoutes(app, { db, broker, logger, config, runAg
     return Math.min(parsed, 500);
   }
 
-  app.get("/api/assistant", (_req, res) => {
+  app.get("/api/assistant", (req, res) => {
     try {
-      res.json(assistant.getDefaultThread());
+      res.json(assistant.getDefaultThread({ view: req.query.view === "blank" ? "blank" : "full" }));
+    } catch (err) {
+      errorResponse(res, err);
+    }
+  });
+
+  app.get("/api/assistant/messages", (req, res) => {
+    try {
+      res.json(assistant.getThreadMessages({
+        limit: req.query.limit,
+        before: req.query.before || null,
+      }));
     } catch (err) {
       errorResponse(res, err);
     }

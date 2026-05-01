@@ -30,6 +30,9 @@ import {
 } from "./assistant/logging.js";
 
 export const DEFAULT_ASSISTANT_THREAD_ID = "personal";
+export const ASSISTANT_HISTORY_PAGE_SIZE = 5;
+const ASSISTANT_THREAD_LIMIT = 100;
+const ASSISTANT_HISTORY_MAX_PAGE_SIZE = 50;
 
 function rowToMessage(row, run = null) {
   if (!row) return null;
@@ -98,6 +101,12 @@ function ensureDefaultThread(db) {
   return threadRow(db);
 }
 
+function assistantHistoryLimit(value) {
+  const parsed = Number(value || ASSISTANT_HISTORY_PAGE_SIZE);
+  if (!Number.isInteger(parsed) || parsed < 1) return ASSISTANT_HISTORY_PAGE_SIZE;
+  return Math.min(parsed, ASSISTANT_HISTORY_MAX_PAGE_SIZE);
+}
+
 export class WorklabAssistantService {
   constructor({ db, config, broker, logger, runAgent = generateResponse } = {}) {
     this.db = db;
@@ -130,22 +139,111 @@ export class WorklabAssistantService {
     return rowToRun(row, includeEvents ? this.getRunEvents(runId, { limit }) : undefined);
   }
 
-  getDefaultThread() {
-    const thread = ensureDefaultThread(this.db);
-    const rows = this.db.prepare(`
-      SELECT * FROM assistant_messages
-      WHERE thread_id = ?
-      ORDER BY created_at ASC, rowid ASC
-      LIMIT 100
-    `).all(thread.id);
-    const messages = rows.map((row) => rowToMessage(row, row.run_id ? this.getRun(row.run_id, { includeEvents: false }) : null));
-    const activeRow = this.db.prepare(`
+  messageFromRow(row) {
+    return rowToMessage(row, row?.run_id ? this.getRun(row.run_id, { includeEvents: false }) : null);
+  }
+
+  activeRunRow(threadId) {
+    return this.db.prepare(`
       SELECT * FROM assistant_runs
       WHERE thread_id = ? AND status = 'running'
       ORDER BY started_at DESC
       LIMIT 1
-    `).get(thread.id);
-    return { thread, messages, active_run: this.getRun(activeRow?.id, { includeEvents: false }) };
+    `).get(threadId);
+  }
+
+  activeMessages(threadId, activeRow) {
+    const ids = [activeRow?.user_message_id, activeRow?.assistant_message_id].filter(Boolean);
+    if (!ids.length) return [];
+    const rows = this.db.prepare(`
+      SELECT * FROM assistant_messages
+      WHERE thread_id = ? AND id IN (${ids.map(() => "?").join(",")})
+      ORDER BY created_at ASC, rowid ASC
+    `).all(threadId, ...ids);
+    return rows.map((row) => this.messageFromRow(row));
+  }
+
+  messageCursor(threadId, messageId) {
+    if (!messageId) return null;
+    const row = this.db.prepare(`
+      SELECT created_at, rowid AS cursor_rowid
+      FROM assistant_messages
+      WHERE thread_id = ? AND id = ?
+    `).get(threadId, messageId);
+    if (!row) {
+      throw Object.assign(new Error("assistant message cursor not found"), { status: 400, code: "validation" });
+    }
+    return row;
+  }
+
+  hasMessagesBefore(threadId, beforeId = null) {
+    if (!beforeId) {
+      return !!this.db.prepare("SELECT 1 FROM assistant_messages WHERE thread_id = ? LIMIT 1").get(threadId);
+    }
+    const cursor = this.messageCursor(threadId, beforeId);
+    return !!this.db.prepare(`
+      SELECT 1 FROM assistant_messages
+      WHERE thread_id = ?
+        AND (created_at < ? OR (created_at = ? AND rowid < ?))
+      LIMIT 1
+    `).get(threadId, cursor.created_at, cursor.created_at, cursor.cursor_rowid);
+  }
+
+  getDefaultThread({ view = "full" } = {}) {
+    const thread = ensureDefaultThread(this.db);
+    const activeRow = this.activeRunRow(thread.id);
+    const activeRun = this.getRun(activeRow?.id, { includeEvents: false });
+    if (view === "blank") {
+      const messages = this.activeMessages(thread.id, activeRow);
+      const before = messages[0]?.id || null;
+      return {
+        thread,
+        messages,
+        active_run: activeRun,
+        history: {
+          has_more: this.hasMessagesBefore(thread.id, before),
+          before,
+          page_size: ASSISTANT_HISTORY_PAGE_SIZE,
+        },
+      };
+    }
+
+    const rows = this.db.prepare(`
+      SELECT * FROM assistant_messages
+      WHERE thread_id = ?
+      ORDER BY created_at ASC, rowid ASC
+      LIMIT ?
+    `).all(thread.id, ASSISTANT_THREAD_LIMIT);
+    const messages = rows.map((row) => this.messageFromRow(row));
+    return { thread, messages, active_run: activeRun };
+  }
+
+  getThreadMessages({ limit, before = null } = {}) {
+    const thread = ensureDefaultThread(this.db);
+    const pageLimit = assistantHistoryLimit(limit);
+    const cursor = before ? this.messageCursor(thread.id, before) : null;
+    const params = cursor
+      ? [thread.id, cursor.created_at, cursor.created_at, cursor.cursor_rowid, pageLimit + 1]
+      : [thread.id, pageLimit + 1];
+    const pageRows = this.db.prepare(`
+      SELECT * FROM assistant_messages
+      WHERE thread_id = ?
+        ${cursor ? "AND (created_at < ? OR (created_at = ? AND rowid < ?))" : ""}
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT ?
+    `).all(...params);
+    const hasMore = pageRows.length > pageLimit;
+    const messages = pageRows.slice(0, pageLimit).reverse().map((row) => this.messageFromRow(row));
+    return {
+      thread,
+      messages,
+      history: {
+        has_more: hasMore,
+        before: before || null,
+        next_before: messages[0]?.id || before || null,
+        page_size: pageLimit,
+      },
+    };
   }
 
   recentMessages(threadId, excludeIds = []) {

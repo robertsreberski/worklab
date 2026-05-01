@@ -2640,6 +2640,15 @@ html.assistant-resizing * {
   text-align: center;
   font-size: var(--text-sm);
 }
+.assistant-history-action {
+  display: flex;
+  justify-content: center;
+  margin-bottom: calc(0px - var(--sp-2));
+}
+.assistant-history-action .button {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
 .assistant-message {
   display: flex;
   flex: 0 0 auto;

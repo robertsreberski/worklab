@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
 import { Icon } from "./Icon.jsx";
@@ -9,12 +9,24 @@ import { StatusPill } from "./primitives/StatusPill.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 
+const HISTORY_PAGE_SIZE = 5;
+
 function messageKey(message) {
   return message?.id || `${message?.role}-${message?.created_at}`;
 }
 
 function runStatus(run) {
   return run?.status || "complete";
+}
+
+function uniqueMessages(messages) {
+  const seen = new Set();
+  return messages.filter(Boolean).filter((message) => {
+    if (!message?.id) return true;
+    if (seen.has(message.id)) return false;
+    seen.add(message.id);
+    return true;
+  });
 }
 
 function useAssistantRunStream(runId, { subscribe = true, hydrate = true, initialEventLimit = 100 } = {}) {
@@ -152,9 +164,14 @@ export function AssistantDock({
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [hasOlderHistory, setHasOlderHistory] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState(null);
   const [error, setError] = useState("");
   const scrollRef = useRef(null);
   const resizeCleanupRef = useRef(null);
+  const preserveScrollRef = useRef(null);
+  const skipNextAutoScrollRef = useRef(false);
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
   const canSend = draft.trim().length > 0 && !sending && !activeRunId;
@@ -163,10 +180,12 @@ export function AssistantDock({
     setLoading(true);
     setError("");
     try {
-      const data = await api.getAssistant();
+      const data = await api.getAssistant({ view: "blank" });
       setThread(data.thread || null);
-      setMessages(data.messages || []);
+      setMessages(uniqueMessages(data.messages || []));
       setActiveRun(data.active_run || null);
+      setHasOlderHistory(!!data.history?.has_more);
+      setHistoryCursor(data.history?.before || data.messages?.[0]?.id || null);
     } catch (err) {
       setError(err?.message || "Assistant is unavailable.");
     } finally {
@@ -180,12 +199,52 @@ export function AssistantDock({
 
   useEffect(() => () => resizeCleanupRef.current?.(), []);
 
+  useLayoutEffect(() => {
+    const snapshot = preserveScrollRef.current;
+    if (!snapshot) return;
+    const node = scrollRef.current;
+    if (node) {
+      node.scrollTop = node.scrollHeight - snapshot.scrollHeight + snapshot.scrollTop;
+    }
+    preserveScrollRef.current = null;
+  }, [messages.length]);
+
   useEffect(() => {
     if (!open) return;
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
     const node = scrollRef.current;
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [open, messages.length, activeRunId]);
+
+  async function loadPreviousConversation() {
+    if (!hasOlderHistory || historyLoading) return;
+    const node = scrollRef.current;
+    if (messages.length && node) {
+      preserveScrollRef.current = { scrollTop: node.scrollTop, scrollHeight: node.scrollHeight };
+      skipNextAutoScrollRef.current = true;
+    }
+    setHistoryLoading(true);
+    setError("");
+    try {
+      const query = { limit: String(HISTORY_PAGE_SIZE) };
+      if (historyCursor) query.before = historyCursor;
+      const data = await api.getAssistantMessages(query);
+      const previousMessages = data.messages || [];
+      setMessages((current) => uniqueMessages([...previousMessages, ...current]));
+      setHistoryCursor(data.history?.next_before || previousMessages[0]?.id || historyCursor);
+      setHasOlderHistory(!!data.history?.has_more);
+    } catch (err) {
+      preserveScrollRef.current = null;
+      skipNextAutoScrollRef.current = false;
+      setError(err?.message || "Previous conversation was not loaded.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -197,8 +256,9 @@ export function AssistantDock({
       const data = await api.sendAssistantMessage(body);
       setDraft("");
       setThread(data.thread || thread);
-      setMessages((current) => [...current, data.user_message, data.assistant_message].filter(Boolean));
+      setMessages((current) => uniqueMessages([...current, data.user_message, data.assistant_message]));
       setActiveRun(data.run || null);
+      if (!messages.length) setHistoryCursor(data.user_message?.id || data.assistant_message?.id || historyCursor);
     } catch (err) {
       setError(err?.message || "Message was not sent.");
     } finally {
@@ -215,8 +275,20 @@ export function AssistantDock({
   async function cancelActiveRun() {
     if (!activeRunId) return;
     try {
-      await api.cancelAssistantRun(activeRunId);
-      await loadAssistant();
+      const data = await api.cancelAssistantRun(activeRunId);
+      const run = data.run || null;
+      if (run) {
+        setMessages((current) => current.map((message) => {
+          if (message.run?.id !== run.id) return message;
+          return {
+            ...message,
+            body: run.status === "cancelled" && !message.body ? "Assistant run cancelled" : message.body,
+            status: run.status === "cancelled" ? "cancelled" : message.status,
+            run,
+          };
+        }));
+        setActiveRun(run.status === "running" ? run : null);
+      }
     } catch (err) {
       setError(err?.message || "Could not cancel the assistant run.");
     }
@@ -316,6 +388,20 @@ export function AssistantDock({
         </div>
       </header>
       <div class="assistant-thread wl-scrollbar" ref={scrollRef}>
+        {!loading && hasOlderHistory && (
+          <div class="assistant-history-action">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              loading={historyLoading}
+              onClick={loadPreviousConversation}
+              iconLeft={<Icon name="chevron-up" size={13} />}
+            >
+              Load previous conversation
+            </Button>
+          </div>
+        )}
         {loading && !messages.length ? (
           <div class="assistant-empty">Loading assistant...</div>
         ) : messages.length ? (
