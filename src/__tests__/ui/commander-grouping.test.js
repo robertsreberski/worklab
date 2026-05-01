@@ -111,15 +111,15 @@ describe("commander task grouping", () => {
     }, "control plane")).toBe(true);
   });
 
-  it("uses distinct intuitive runtime group symbols", () => {
+  it("uses distinct readable runtime group icons", () => {
     const icons = Object.fromEntries(RUNTIME_GROUPS.map((group) => [group.key, group.icon]));
 
-    expect(icons.running).toBe("●");
-    expect(icons.attention).toBe("▲");
-    expect(icons.ready).toBe("◇");
-    expect(icons.waiting).toBe("□");
-    expect(icons.automated).toBe("◷");
-    expect(icons.completed).toBe("✓");
+    expect(icons.running).toBe("zap");
+    expect(icons.attention).toBe("alert-triangle");
+    expect(icons.ready).toBe("play");
+    expect(icons.waiting).toBe("clock");
+    expect(icons.automated).toBe("calendar");
+    expect(icons.completed).toBe("check-circle");
     expect(new Set(Object.values(icons)).size).toBe(Object.values(icons).length);
   });
 

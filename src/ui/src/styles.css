@@ -3006,7 +3006,15 @@ html.assistant-resizing * {
   color: var(--text-muted);
   text-transform: uppercase;
 }
-.commander-group-header .group-icon { font-size: 10px; line-height: 1; }
+.commander-group-header .group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  line-height: 1;
+}
 .commander-group-header .group-count { color: var(--text-subtle); font-weight: 500; margin-left: auto; }
 .commander-list {
   flex: 1;
