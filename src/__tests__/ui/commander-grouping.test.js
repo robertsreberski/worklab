@@ -118,7 +118,7 @@ describe("commander task grouping", () => {
     expect(icons.attention).toBe("▲");
     expect(icons.ready).toBe("◇");
     expect(icons.waiting).toBe("□");
-    expect(icons.automated).toBe("◆");
+    expect(icons.automated).toBe("◷");
     expect(icons.completed).toBe("✓");
     expect(new Set(Object.values(icons)).size).toBe(Object.values(icons).length);
   });

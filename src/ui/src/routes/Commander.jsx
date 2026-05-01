@@ -78,7 +78,7 @@ export const STAGE_GROUPS = [
   { key: "awaiting_children", label: "Waiting",   color: "var(--status-progress)", icon: "□" },
   { key: "awaiting_user",   label: "Needs input", color: "var(--status-error)",    icon: "▲" },
   { key: "blocked",         label: "Blocked",     color: "var(--status-error)",    icon: "■" },
-  { key: "automated",       label: "Automated",   color: "var(--status-progress)", icon: "◆" },
+  { key: "automated",       label: "Automated",   color: "var(--status-progress)", icon: "◷" },
   { key: "done",            label: "Done",        color: "var(--status-done)",     icon: "✓" },
 ];
 
@@ -87,7 +87,7 @@ export const RUNTIME_GROUPS = [
   { key: "attention", label: "Needs attention", color: "var(--status-error)", icon: "▲" },
   { key: "ready", label: "Ready", color: "var(--accent)", icon: "◇" },
   { key: "waiting", label: "Waiting", color: "var(--status-progress)", icon: "□" },
-  { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "◆" },
+  { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "◷" },
   { key: "completed", label: "Completed", color: "var(--status-done)", icon: "✓" },
 ];
 
