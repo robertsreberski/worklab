@@ -3,13 +3,20 @@ import { DECISIONS, STAGES } from "./decisions.js";
 
 const artifactSchema = z.record(z.string(), z.any()).default({});
 
+const stringListSchema = z.preprocess((value) => {
+  if (value == null || value === "") return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return [value];
+  return value;
+}, z.array(z.string()).transform((items) => items.map((item) => item.trim()).filter(Boolean))).default([]);
+
 export const subtaskSchema = z.object({
   title: z.string().trim().min(1),
   instructions: z.string().default(""),
   suggested_agent: z.string().trim().min(1).optional().nullable(),
   required: z.boolean().default(true),
   depends_on: z.array(z.string()).default([]),
-  acceptance_criteria: z.array(z.string()).default([]),
+  acceptance_criteria: stringListSchema,
   expected_artifact: z.string().optional().nullable(),
 }).passthrough();
 
@@ -126,14 +133,20 @@ export function validateWorklabResultSemantics(result) {
 
 export function parseWorklabResultFromText(text, fallback = {}) {
   const raw = String(text || "").trim();
-  if (!raw) return { ok: false, error: "empty final text", result: null };
+  if (!raw) return { ok: false, error: "empty final text", result: null, worklabCandidate: false };
   try {
-    return normalizeWorklabResult(JSON.parse(raw), fallback);
+    const value = JSON.parse(raw);
+    const normalized = normalizeWorklabResult(value, fallback);
+    if (normalized.ok || value?.schema === "worklab.v2") {
+      return { ...normalized, worklabCandidate: value?.schema === "worklab.v2" };
+    }
   } catch {
-    const candidates = parseWorklabResultsFromText(raw, fallback);
-    if (candidates.length > 0) return { ok: true, error: null, result: candidates[candidates.length - 1] };
-    return { ok: false, error: "final text is not JSON", result: null };
+    // Continue with fenced or concatenated JSON payloads.
   }
+  const { results, errors } = parseWorklabResultCandidates(raw, fallback);
+  if (results.length > 0) return { ok: true, error: null, result: results[results.length - 1], worklabCandidate: true };
+  if (errors.length > 0) return { ok: false, error: errors[errors.length - 1], result: null, worklabCandidate: true };
+  return { ok: false, error: "final text is not JSON", result: null, worklabCandidate: false };
 }
 
 function extractJsonObjectStrings(text) {
@@ -186,16 +199,23 @@ function collectTextJsonCandidates(text) {
 }
 
 export function parseWorklabResultsFromText(text, fallback = {}) {
+  return parseWorklabResultCandidates(text, fallback).results;
+}
+
+function parseWorklabResultCandidates(text, fallback = {}) {
   const results = [];
+  const errors = [];
   for (const candidate of collectTextJsonCandidates(text)) {
     try {
-      const normalized = normalizeWorklabResult(JSON.parse(candidate), fallback);
+      const value = JSON.parse(candidate);
+      const normalized = normalizeWorklabResult(value, fallback);
       if (normalized.ok) results.push(normalized.result);
+      else if (value?.schema === "worklab.v2") errors.push(normalized.error);
     } catch {
       // Ignore non-JSON braces in ordinary prose and keep looking.
     }
   }
-  return results;
+  return { results, errors };
 }
 
 function collectWorklabCandidates(value, out, seen = new Set(), depth = 0) {
