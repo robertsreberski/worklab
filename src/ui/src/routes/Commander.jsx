@@ -608,18 +608,6 @@ export function Commander({ query: routeQuery = {} }) {
             />
             <div class="commander-filter-actions">
               <DailyCostChip />
-              {canToggleCompleted && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  class="commander-hidden-completed"
-                  iconLeft={<Icon name="eye" size={12} />}
-                  onClick={toggleCompleted}
-                >
-                  {showCompleted ? "Hide completed" : "Show completed"}
-                  {!showCompleted && showCompletedCount && hiddenDoneCount > 0 && <span class="commander-hidden-completed-count">{hiddenDoneCount}</span>}
-                </Button>
-              )}
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
               <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                 New task
@@ -645,7 +633,7 @@ export function Commander({ query: routeQuery = {} }) {
           <ErrorState message={error} onRetry={reload} />
         ) : tasks === null ? (
           <LoadingState caption="Loading tasks…" />
-        ) : grouped.length === 0 ? (
+        ) : grouped.length === 0 && !canToggleCompleted ? (
           hasFilter ? (
             <EmptyStateFiltered
               title="No tasks match your filter"
@@ -701,6 +689,20 @@ export function Commander({ query: routeQuery = {} }) {
                 ))}
               </div>
             ))}
+            {canToggleCompleted && (
+              <div class="commander-list-footer">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  class="commander-hidden-completed"
+                  iconLeft={<Icon name="eye" size={12} />}
+                  onClick={toggleCompleted}
+                >
+                  {showCompleted ? "Hide completed" : "Show completed"}
+                  {!showCompleted && showCompletedCount && hiddenDoneCount > 0 && <span class="commander-hidden-completed-count">{hiddenDoneCount}</span>}
+                </Button>
+              </div>
+            )}
           </div>
         )}
         <Button
