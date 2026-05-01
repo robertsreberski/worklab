@@ -29,10 +29,12 @@ export function liveRunComposerState(run, isStreaming = false) {
   };
 }
 
-export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel }) {
-  const { events: streamedEvents, run: streamedRun, loading } = useRunStream(run?.id, { subscribe: isStreaming });
-  const effectiveRun = streamedRun || run;
-  const visibleEvents = events.length ? events : streamedEvents;
+export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel, streamState = null }) {
+  const fallbackStream = useRunStream(streamState ? null : run?.id, { subscribe: isStreaming });
+  const effectiveStream = streamState || fallbackStream;
+  const effectiveRun = effectiveStream.run || run;
+  const visibleEvents = events.length ? events : effectiveStream.events;
+  const loading = effectiveStream.loading;
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");

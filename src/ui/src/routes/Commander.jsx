@@ -22,6 +22,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
+import { writeTaskDetailSummaryCache } from "./TaskDetail.jsx";
 import {
   compareRuntimeTasks,
   runtimeTaskGroupKey,
@@ -401,6 +402,8 @@ export function Commander({ query: routeQuery = {} }) {
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
   const projectsReloadAbortRef = useRef(null);
+  const runProgressQueueRef = useRef(new Map());
+  const runProgressFrameRef = useRef(null);
 
   useEffect(() => {
     setShowCompleted(showCompletedFromQuery(routeQuery));
@@ -432,6 +435,7 @@ export function Commander({ query: routeQuery = {} }) {
         if (!controller.signal.aborted) {
           const nextTasks = r.tasks || [];
           const nextSummary = r.summary || null;
+          for (const task of nextTasks) writeTaskDetailSummaryCache(task);
           writeCommanderTaskListCache(taskListCacheKey, { tasks: nextTasks, summary: nextSummary });
           setTasks(nextTasks);
           setRuntimeSummary(nextSummary);
@@ -451,6 +455,27 @@ export function Commander({ query: routeQuery = {} }) {
       });
   }, [groupFilter, showCompleted, stageFilter, taskListCacheKey]);
   const reloadSoon = useThrottledCallback(reload, 100);
+  const flushRunProgress = useCallback(() => {
+    runProgressFrameRef.current = null;
+    const queued = runProgressQueueRef.current;
+    runProgressQueueRef.current = new Map();
+    if (queued.size === 0) return;
+    setRunProgressEventsByRunId((current) => {
+      const next = new Map(current);
+      for (const [runId, events] of queued.entries()) {
+        next.set(runId, mergeRunEvents(next.get(runId) || [], events, { limit: RUN_PROGRESS_PREVIEW_LIMIT }));
+      }
+      return next;
+    });
+  }, []);
+  const queueRunProgress = useCallback((evt) => {
+    const existing = runProgressQueueRef.current.get(evt.runId) || [];
+    runProgressQueueRef.current.set(evt.runId, [...existing, evt.lastEvent]);
+    if (runProgressFrameRef.current) return;
+    runProgressFrameRef.current = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame(flushRunProgress)
+      : setTimeout(flushRunProgress, 16);
+  }, [flushRunProgress]);
   const reloadProjects = useCallback(() => {
     projectsReloadAbortRef.current?.abort?.();
     const controller = new AbortController();
@@ -471,14 +496,14 @@ export function Commander({ query: routeQuery = {} }) {
   useEffect(() => () => {
     reloadAbortRef.current?.abort?.();
     projectsReloadAbortRef.current?.abort?.();
+    if (runProgressFrameRef.current) {
+      if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(runProgressFrameRef.current);
+      else clearTimeout(runProgressFrameRef.current);
+    }
   }, []);
   useSSE("global", (evt) => {
     if (evt.type === "run_progress" && evt.runId && evt.lastEvent) {
-      setRunProgressEventsByRunId((current) => {
-        const next = new Map(current);
-        next.set(evt.runId, mergeRunEvents(next.get(evt.runId) || [], [evt.lastEvent], { limit: RUN_PROGRESS_PREVIEW_LIMIT }));
-        return next;
-      });
+      queueRunProgress(evt);
       return;
     }
     if (evt.type === "run_ended" && evt.runId) {

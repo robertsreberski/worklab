@@ -1052,12 +1052,13 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
   await expect(page.locator(".task-live-header .status-pill")).toHaveCount(1);
   await expect(page.locator(".task-live-header .status-pill")).toContainText("Running");
   await expect(page.locator(".task-live-panel .tool-call", { hasText: "shell" })).toBeVisible();
-  await expect(page.locator(".task-live-panel .tool-call-progress")).toBeVisible();
-  const toolCallAnimation = await page.locator(".task-live-panel .tool-call-progress").evaluate((node) => {
+  const toolCallProgress = page.locator(".task-live-panel .tool-call-progress").first();
+  await expect(toolCallProgress).toBeVisible();
+  const toolCallAnimation = await toolCallProgress.evaluate((node) => {
     return getComputedStyle(node).animationName;
   });
   expect(toolCallAnimation).toBe("wl-shimmer");
-  const toolCallSpinnerAnimation = await page.locator(".task-live-panel .tool-call-spinner").evaluate((node) => {
+  const toolCallSpinnerAnimation = await page.locator(".task-live-panel .tool-call-spinner").first().evaluate((node) => {
     return getComputedStyle(node).animationName;
   });
   expect(toolCallSpinnerAnimation).toBe("wl-rotate");
@@ -1069,6 +1070,23 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
     return parseFloat(getComputedStyle(node).paddingBottom);
   });
   expect(bottomPadding).toBeGreaterThan(0);
+});
+
+test("running task detail hydrates live run once with a compact tail", async ({ page }) => {
+  const runRequests = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (url.pathname === "/api/runs/run-live-existing") {
+      runRequests.push(`${url.pathname}${url.search}`);
+    }
+  });
+
+  await page.goto(`${baseUrl}/#/tasks/${runningTaskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByText("Loading task…")).toHaveCount(0);
+  await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
+  await page.waitForTimeout(250);
+
+  expect(runRequests).toEqual(["/api/runs/run-live-existing?events=tail&limit=24"]);
 });
 
 test("task detail deep-linked run opens highlighted history", async ({ page }) => {

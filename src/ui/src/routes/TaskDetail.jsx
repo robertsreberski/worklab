@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
+import { useRunStream } from "../lib/useRunStream.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
@@ -84,8 +85,93 @@ function DependencyLink({ dependency }) {
   );
 }
 
+const TASK_DETAIL_CACHE_LIMIT = 16;
+const taskDetailCache = new Map();
+
+function taskDetailCacheKeys(task) {
+  return [
+    task?.id,
+    task?.task_key,
+  ].filter(Boolean).map(String);
+}
+
+function cloneTaskDetailData(data) {
+  if (!data?.task) return null;
+  return {
+    ...data,
+    task: { ...data.task },
+    comments: [...(data.comments || [])],
+    runs: [...(data.runs || [])],
+  };
+}
+
+function defaultAutomationSummary() {
+  return {
+    count: 0,
+    enabled_count: 0,
+    paused_count: 0,
+    next_fire_at: null,
+    last_trigger: null,
+  };
+}
+
+export function taskDetailDataFromTaskSummary(task) {
+  if (!task) return null;
+  const runningRun = task.running_run || (task.running_run_id ? {
+    id: task.running_run_id,
+    status: "running",
+    process_status: "running",
+    started_at: task.running_run_started_at || null,
+    agent_name: task.owner_agent || null,
+  } : null);
+  return {
+    task: {
+      ...task,
+      tags: Array.isArray(task.tags) ? task.tags : [],
+      dependency_ids: Array.isArray(task.dependency_ids) ? task.dependency_ids : [],
+      blocked_by: Array.isArray(task.blocked_by) ? task.blocked_by : [],
+      blocks: Array.isArray(task.blocks) ? task.blocks : [],
+      children: Array.isArray(task.children) ? task.children : [],
+      automations: Array.isArray(task.automations) ? task.automations : [],
+      automation_summary: task.automation_summary || defaultAutomationSummary(),
+      artifacts: Array.isArray(task.artifacts) ? task.artifacts : [],
+      artifact_summary: task.artifact_summary || {},
+      plan_body: task.plan_body || "",
+      stage: task.stage || "plan",
+    },
+    comments: [],
+    runs: runningRun ? [runningRun] : [],
+  };
+}
+
+export function writeTaskDetailCache(data) {
+  const snapshot = cloneTaskDetailData(data);
+  if (!snapshot?.task) return;
+  for (const key of taskDetailCacheKeys(snapshot.task)) {
+    if (taskDetailCache.has(key)) taskDetailCache.delete(key);
+    taskDetailCache.set(key, snapshot);
+  }
+  while (taskDetailCache.size > TASK_DETAIL_CACHE_LIMIT) {
+    taskDetailCache.delete(taskDetailCache.keys().next().value);
+  }
+}
+
+export function writeTaskDetailSummaryCache(task) {
+  const data = taskDetailDataFromTaskSummary(task);
+  if (data) writeTaskDetailCache(data);
+}
+
+export function readTaskDetailCache(id) {
+  const snapshot = taskDetailCache.get(String(id || ""));
+  return cloneTaskDetailData(snapshot);
+}
+
+export function clearTaskDetailCache() {
+  taskDetailCache.clear();
+}
+
 export function TaskDetail({ id, runParam = null }) {
-  const [data, setData] = useState(null);
+  const [data, setData] = useState(() => readTaskDetailCache(id));
   const [agents, setAgents] = useState([]);
   const [newComment, setNewComment] = useState("");
   const [commentRerun, setCommentRerun] = useState(true);
@@ -119,8 +205,16 @@ export function TaskDetail({ id, runParam = null }) {
     const controller = new AbortController();
     reloadAbortRef.current = controller;
     return api.getTask(id, { signal: controller.signal })
-      .then((nextData) => { if (!controller.signal.aborted) setData(nextData); })
-      .catch((err) => { if (err?.name !== "AbortError") setData({ notFound: true }); });
+      .then((nextData) => {
+        if (controller.signal.aborted) return;
+        writeTaskDetailCache(nextData);
+        setData(nextData);
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        const cached = readTaskDetailCache(id);
+        setData(cached || { notFound: true });
+      });
   }, [id]);
   const reloadAutomations = useCallback(() => {
     automationsAbortRef.current?.abort?.();
@@ -149,6 +243,8 @@ export function TaskDetail({ id, runParam = null }) {
     automationsAbortRef.current?.abort?.();
   }, []);
   useEffect(() => {
+    const cached = readTaskDetailCache(id);
+    if (cached) setData(cached);
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
     setRunError(null);
@@ -226,6 +322,11 @@ export function TaskDetail({ id, runParam = null }) {
   // NOT render the banner (prevents false positives).
   const showStuckBanner =
     task?.running_run_id && task?.is_locked === false;
+  const runningRunStream = useRunStream(runningRun?.id || null, {
+    subscribe: Boolean(runningRun),
+    initialEventLimit: 24,
+    maxEvents: 80,
+  });
 
   const activity = useMemo(
     () => buildActivity({ comments, runs }),
@@ -719,7 +820,7 @@ export function TaskDetail({ id, runParam = null }) {
               )}
             </div>
           )}
-          <RunArtifactsSection task={task} runningRun={runningRun} />
+          <RunArtifactsSection task={task} runningRun={runningRun} streamState={runningRunStream} />
         </Card>
 
         <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
@@ -948,6 +1049,7 @@ export function TaskDetail({ id, runParam = null }) {
                     run={runningRun}
                     isStreaming
                     agentLabel={agentDisplayName(agents, runningRun.agent_name, runningRun.agent_name)}
+                    streamState={runningRunStream}
                   />
                 </div>
               ) : null}
