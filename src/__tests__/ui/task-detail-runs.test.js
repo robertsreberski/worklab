@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selectActiveRunId, selectHighlightedRunId } from "../../ui/src/routes/taskDetailRuns.js";
+import {
+  optimisticTaskDetailRunStarted,
+  selectActiveRunId,
+  selectHighlightedRunId,
+} from "../../ui/src/routes/taskDetailRuns.js";
 
 describe("task detail run selection", () => {
   it("preserves an active run that belongs to the current task", () => {
@@ -38,5 +42,36 @@ describe("task detail run highlighting", () => {
     expect(
       selectHighlightedRunId([{ id: "run-old" }], "run-new", { preserveMissingActive: true }),
     ).toBe("run-new");
+  });
+});
+
+describe("task detail optimistic run state", () => {
+  it("adds a minimal running run and preserves existing task detail data", () => {
+    const startedAt = 1_714_000_000_000;
+    const detail = optimisticTaskDetailRunStarted({
+      task: {
+        id: "task-1",
+        task_key: "T-1",
+        title: "Demo",
+        owner_agent: "builder",
+        stage: "execute",
+      },
+      comments: [{ id: "comment-1", body: "keep" }],
+      runs: [{ id: "run-old", status: "complete", process_status: "complete" }],
+    }, {
+      runId: "run-new",
+      startedAt,
+    });
+
+    expect(detail.task.running_run_id).toBe("run-new");
+    expect(detail.task.running_run).toMatchObject({
+      id: "run-new",
+      status: "running",
+      process_status: "running",
+      agent_name: "builder",
+      started_at: startedAt,
+    });
+    expect(detail.comments).toEqual([{ id: "comment-1", body: "keep" }]);
+    expect(detail.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
 });

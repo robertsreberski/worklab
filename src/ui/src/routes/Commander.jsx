@@ -7,6 +7,7 @@ import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
+import { onPageVisible, pageIsVisible } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -404,6 +405,8 @@ export function Commander({ query: routeQuery = {} }) {
   const projectsReloadAbortRef = useRef(null);
   const runProgressQueueRef = useRef(new Map());
   const runProgressFrameRef = useRef(null);
+  const hiddenTaskReloadRef = useRef(false);
+  const hiddenProjectsReloadRef = useRef(false);
 
   useEffect(() => {
     setShowCompleted(showCompletedFromQuery(routeQuery));
@@ -485,6 +488,17 @@ export function Commander({ query: routeQuery = {} }) {
       .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
   }, []);
   const reloadProjectsSoon = useThrottledCallback(reloadProjects, 100);
+  const flushHiddenReloads = useCallback(() => {
+    if (!pageIsVisible()) return;
+    if (hiddenTaskReloadRef.current) {
+      hiddenTaskReloadRef.current = false;
+      reloadSoon();
+    }
+    if (hiddenProjectsReloadRef.current) {
+      hiddenProjectsReloadRef.current = false;
+      reloadProjectsSoon();
+    }
+  }, [reloadProjectsSoon, reloadSoon]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
@@ -501,8 +515,11 @@ export function Commander({ query: routeQuery = {} }) {
       else clearTimeout(runProgressFrameRef.current);
     }
   }, []);
+  useEffect(() => onPageVisible(flushHiddenReloads), [flushHiddenReloads]);
   useSSE("global", (evt) => {
+    const visible = pageIsVisible();
     if (evt.type === "run_progress" && evt.runId && evt.lastEvent) {
+      if (!visible) return;
       queueRunProgress(evt);
       return;
     }
@@ -514,9 +531,13 @@ export function Commander({ query: routeQuery = {} }) {
         return next;
       });
     }
-    if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) reloadSoon();
+    if (["task_created", "task_updated", "task_deleted", "run_started", "run_ended"].includes(evt.type)) {
+      if (visible) reloadSoon();
+      else hiddenTaskReloadRef.current = true;
+    }
     if (evt.type?.startsWith("project_")) {
-      reloadProjectsSoon();
+      if (visible) reloadProjectsSoon();
+      else hiddenProjectsReloadRef.current = true;
     }
   });
 

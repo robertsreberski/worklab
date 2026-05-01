@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/ho
 import { api } from "../lib/api.js";
 import { assistantViewContextFromLocation } from "../lib/assistantViewContext.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
+import { subscribeSharedEventSource } from "../lib/sharedEventSource.js";
 import { Icon } from "./Icon.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { IconButton } from "./primitives/IconButton.jsx";
@@ -64,25 +65,20 @@ function useAssistantRunStream(runId, { subscribe = true, hydrate = true, initia
 
     if (!subscribe) return () => { cancelled = true; controller.abort(); };
 
-    const es = new EventSource(`/api/assistant/runs/${runId}/stream`);
-    es.onmessage = (event) => {
-      try {
-        const payload = JSON.parse(event.data);
-        if (payload.type === "done") {
-          if (payload.run) setRun(payload.run);
-          setDonePayload(payload);
-          setDone(true);
-          es.close();
-          return;
-        }
-        setEvents((prev) => mergeRunEvents(prev, [payload]));
-      } catch {}
-    };
-    es.onerror = () => { es.close(); };
+    const unsubscribe = subscribeSharedEventSource(`assistant:${runId}`, `/api/assistant/runs/${runId}/stream`, (payload) => {
+      if (payload.type === "done") {
+        if (payload.run) setRun(payload.run);
+        setDonePayload(payload);
+        setDone(true);
+        unsubscribe();
+        return;
+      }
+      setEvents((prev) => mergeRunEvents(prev, [payload]));
+    });
     return () => {
       cancelled = true;
       controller.abort();
-      es.close();
+      unsubscribe();
     };
   }, [runId, subscribe, hydrate, initialEventLimit]);
 

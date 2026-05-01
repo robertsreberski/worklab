@@ -1,5 +1,6 @@
 // src/ui/src/lib/useRunStream.js
 import { useEffect, useRef, useState } from "preact/hooks";
+import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
 
 const runStreams = new Map();
 const DEFAULT_INITIAL_EVENT_LIMIT = 24;
@@ -51,7 +52,7 @@ function ensureRunStream(runId) {
   entry = {
     eventCallbacks: new Set(),
     stateCallbacks: new Set(),
-    source: null,
+    streamUnsubscribe: null,
     done: false,
     loading: false,
     run: null,
@@ -81,8 +82,8 @@ function clearRunNotify(entry) {
 }
 
 function closeRunStream(runId, entry) {
-  entry?.source?.close?.();
-  if (entry) entry.source = null;
+  entry?.streamUnsubscribe?.();
+  if (entry) entry.streamUnsubscribe = null;
   if (!entry || (entry.eventCallbacks.size === 0 && entry.stateCallbacks.size === 0)) {
     entry?.hydrateController?.abort?.();
     clearRunRefresh(entry);
@@ -181,15 +182,8 @@ function hydrateRunState(runId, entry, {
 }
 
 function openRunStream(runId, entry) {
-  if (entry.source || entry.done || typeof EventSource === "undefined") return;
-  const source = new EventSource(runStreamUrl(runId));
-  source.onmessage = (e) => {
-    let payload;
-    try {
-      payload = JSON.parse(e.data);
-    } catch {
-      return;
-    }
+  if (entry.streamUnsubscribe || entry.done || typeof EventSource === "undefined") return;
+  entry.streamUnsubscribe = subscribeSharedEventSource(`run:${runId}`, runStreamUrl(runId), (payload) => {
     for (const callback of [...entry.eventCallbacks]) callback(payload);
     if (payload?.type === "done") {
       entry.done = true;
@@ -200,11 +194,7 @@ function openRunStream(runId, entry) {
     }
     entry.events = limitRunEvents(mergeRunEvents(entry.events, [payload]), entry.maxEvents || DEFAULT_MAX_EVENTS);
     notifyRunState(entry);
-  };
-  source.onerror = () => {
-    closeRunStream(runId, entry);
-  };
-  entry.source = source;
+  });
 }
 
 export function subscribeRunStream(runId, onEvent) {
@@ -255,6 +245,7 @@ export function closeRunStreamsForTests() {
     closeRunStream(runId, entry);
   }
   runStreams.clear();
+  closeSharedEventSourcesForTests();
 }
 
 export function useRunStream(runId, {

@@ -9,10 +9,11 @@ import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { onPageVisible, pageIsVisible } from "../lib/pageVisibility.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { agentDisplayName, taskDisplayKey, taskRecoveryLabel, taskRouteId } from "../lib/display.js";
-import { selectHighlightedRunId } from "./taskDetailRuns.js";
+import { optimisticTaskDetailRunStarted, selectHighlightedRunId } from "./taskDetailRuns.js";
 
 import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
@@ -178,6 +179,7 @@ export function TaskDetail({ id, runParam = null }) {
   const [highlightedRunId, setHighlightedRunId] = useState(runParam);
   const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
   const [runError, setRunError] = useState(null);
+  const [runStarting, setRunStarting] = useState(false);
   const [statusModal, setStatusModal] = useState(null); // pending transition
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [commentDeleteTarget, setCommentDeleteTarget] = useState(null);
@@ -199,6 +201,8 @@ export function TaskDetail({ id, runParam = null }) {
   const commentDeletingRef = useRef(false);
   const reloadAbortRef = useRef(null);
   const automationsAbortRef = useRef(null);
+  const hiddenDetailReloadRef = useRef(false);
+  const hiddenAutomationsReloadRef = useRef(false);
 
   const reload = useCallback(() => {
     reloadAbortRef.current?.abort?.();
@@ -228,6 +232,17 @@ export function TaskDetail({ id, runParam = null }) {
   }, [id]);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadAutomationsSoon = useThrottledCallback(reloadAutomations, 100);
+  const flushHiddenReloads = useCallback(() => {
+    if (!pageIsVisible()) return;
+    if (hiddenDetailReloadRef.current) {
+      hiddenDetailReloadRef.current = false;
+      reloadSoon();
+    }
+    if (hiddenAutomationsReloadRef.current) {
+      hiddenAutomationsReloadRef.current = false;
+      reloadAutomationsSoon();
+    }
+  }, [reloadAutomationsSoon, reloadSoon]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => { reloadAutomations(); }, [reloadAutomations]);
@@ -242,12 +257,14 @@ export function TaskDetail({ id, runParam = null }) {
     reloadAbortRef.current?.abort?.();
     automationsAbortRef.current?.abort?.();
   }, []);
+  useEffect(() => onPageVisible(flushHiddenReloads), [flushHiddenReloads]);
   useEffect(() => {
     const cached = readTaskDetailCache(id);
     if (cached) setData(cached);
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
     setRunError(null);
+    setRunStarting(false);
     setPlanEditing(false);
     setPlanDraft("");
     setTaskAutomations(null);
@@ -268,6 +285,7 @@ export function TaskDetail({ id, runParam = null }) {
   }, [data?.task?.id, data?.task?.plan_body, planEditing]);
 
   useSSE("global", (evt) => {
+    const visible = pageIsVisible();
     const currentTask = data?.task;
     const matchesCurrentTask = (value) => Boolean(value)
       && (value === id || value === currentTask?.id || value === currentTask?.task_key);
@@ -276,8 +294,14 @@ export function TaskDetail({ id, runParam = null }) {
       && (evt.type === "run_started" || evt.type === "run_ended");
     const automationChanged = (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))
       && String(evt.type || "").startsWith("automation_");
-    if (taskChanged || runChanged || automationChanged) reloadSoon();
-    if (automationChanged || runChanged) reloadAutomationsSoon();
+    if (taskChanged || runChanged || automationChanged) {
+      if (visible) reloadSoon();
+      else hiddenDetailReloadRef.current = true;
+    }
+    if (automationChanged || runChanged) {
+      if (visible) reloadAutomationsSoon();
+      else hiddenAutomationsReloadRef.current = true;
+    }
     if (evt.type === "run_started" && (matchesCurrentTask(evt.taskId) || matchesCurrentTask(evt.taskKey))) {
       setHighlightedRunId(evt.runId);
       setRunError(null);
@@ -468,15 +492,24 @@ export function TaskDetail({ id, runParam = null }) {
 
   async function runNow() {
     setRunError(null);
+    setRunStarting(true);
     try {
       const r = await api.runTask(operationTaskId);
+      const startedAt = Date.now();
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
+      setData((current) => {
+        const nextData = optimisticTaskDetailRunStarted(current, { runId: r.runId, startedAt });
+        if (nextData) writeTaskDetailCache(nextData);
+        return nextData || current;
+      });
       reload();
       pushToast("Run started", { variant: "success" });
     } catch (err) {
       setRunError(err.message);
       pushToast(`Run failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setRunStarting(false);
     }
   }
 
@@ -496,15 +529,24 @@ export function TaskDetail({ id, runParam = null }) {
   }
 
   async function retryStuck() {
+    setRunStarting(true);
     try {
       await api.patchTask(operationTaskId, { stage: "execute" });
       const r = await api.runTask(operationTaskId);
+      const startedAt = Date.now();
       setHighlightedRunId(r.runId);
       setExpandedRunIds((s) => new Set([...s, r.runId]));
+      setData((current) => {
+        const nextData = optimisticTaskDetailRunStarted(current, { runId: r.runId, startedAt });
+        if (nextData) writeTaskDetailCache(nextData);
+        return nextData || current;
+      });
       reload();
       pushToast("Run retried", { variant: "success" });
     } catch (err) {
       pushToast(`Retry failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setRunStarting(false);
     }
   }
 
@@ -598,9 +640,11 @@ export function TaskDetail({ id, runParam = null }) {
       missing: "Assign a reviewer to run review",
     },
   }[stage];
-  const canRun = selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
+  const canRun = !runStarting && selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
   const canPreviewRunInput = task && runnableStages.includes(stage) && !runningRun;
-  const runDisabledReason = !selectedAgent
+  const runDisabledReason = runStarting
+    ? "Run is starting"
+    : !selectedAgent
     ? (runCopy?.missing || "No run action in this stage")
     : unresolvedBlockedBy.length > 0
       ? `Blocked by ${unresolvedBlockedBy.map((entry) => entry.title).join(", ")}`
@@ -616,8 +660,8 @@ export function TaskDetail({ id, runParam = null }) {
     }
     if (showStuckBanner) {
       return (
-        <Button variant="primary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={retryStuck}>
-          Retry
+        <Button variant="primary" iconLeft={<Icon name="refresh-cw" size={13} />} onClick={retryStuck} disabled={runStarting}>
+          {runStarting ? "Starting..." : "Retry"}
         </Button>
       );
     }
@@ -631,7 +675,7 @@ export function TaskDetail({ id, runParam = null }) {
             disabled={!canRun}
             title={runDisabledReason || runCopy?.title}
           >
-            {runCopy.label}
+            {runStarting ? "Starting..." : runCopy.label}
           </Button>
           <Button variant="secondary" onClick={() => applyStatusTransition({ from: "review", to: "done" })}>
             Approve
@@ -651,7 +695,7 @@ export function TaskDetail({ id, runParam = null }) {
           disabled={!canRun}
           title={runDisabledReason || runCopy?.title}
         >
-          {runCopy?.label || "Run"}
+          {runStarting ? "Starting..." : runCopy?.label || "Run"}
         </Button>
       );
     }
