@@ -102,10 +102,6 @@ export function TaskDetail({ id, runParam = null }) {
   const [planDraft, setPlanDraft] = useState("");
   const [planEditing, setPlanEditing] = useState(false);
   const [planSaving, setPlanSaving] = useState(false);
-  const [subtaskTitle, setSubtaskTitle] = useState("");
-  const [subtaskOwner, setSubtaskOwner] = useState("");
-  const [subtaskRequired, setSubtaskRequired] = useState(true);
-  const [subtaskSaving, setSubtaskSaving] = useState(false);
   const [taskAutomations, setTaskAutomations] = useState(null);
   const [automationsLoading, setAutomationsLoading] = useState(false);
   const [runPreviewOpen, setRunPreviewOpen] = useState(false);
@@ -342,28 +338,6 @@ export function TaskDetail({ id, runParam = null }) {
   function cancelPlanEdit() {
     setPlanDraft(task?.plan_body || "");
     setPlanEditing(false);
-  }
-
-  async function createManualSubtask(event) {
-    event?.preventDefault?.();
-    const title = subtaskTitle.trim();
-    if (!title || subtaskSaving) return;
-    setSubtaskSaving(true);
-    try {
-      await api.createSubtask(operationTaskId, {
-        title,
-        owner_agent: subtaskOwner || null,
-        required: subtaskRequired,
-      });
-      setSubtaskTitle("");
-      setSubtaskRequired(true);
-      reload();
-      pushToast("Subtask added", { variant: "success" });
-    } catch (err) {
-      pushToast(`Subtask failed: ${err.message}`, { variant: "error" });
-    } finally {
-      setSubtaskSaving(false);
-    }
   }
 
   async function destroy() {
@@ -936,15 +910,6 @@ export function TaskDetail({ id, runParam = null }) {
 
               <TaskSubtasksCard
                 task={task}
-                agents={agents}
-                title={subtaskTitle}
-                owner={subtaskOwner}
-                required={subtaskRequired}
-                saving={subtaskSaving}
-                onTitle={setSubtaskTitle}
-                onOwner={(value) => setSubtaskOwner(value || "")}
-                onRequired={setSubtaskRequired}
-                onCreate={createManualSubtask}
               />
 
               <TaskAutomationsCard

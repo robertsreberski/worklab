@@ -7,7 +7,6 @@ import { MarkdownContent } from "../../components/Markdown.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import { Checkbox } from "../../components/primitives/Checkbox.jsx";
 import { Chip } from "../../components/primitives/Chip.jsx";
-import { Input } from "../../components/primitives/Input.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
@@ -194,89 +193,51 @@ export function TaskPlanCard({
   );
 }
 
-export function TaskSubtasksCard({
-  task,
-  agents,
-  title,
-  owner,
-  required,
-  saving,
-  onTitle,
-  onOwner,
-  onRequired,
-  onCreate,
-}) {
+export function shouldRenderTaskSubtasksCard(task) {
+  return Array.isArray(task?.children) && task.children.length > 0;
+}
+
+export function TaskSubtasksCard({ task }) {
   const children = Array.isArray(task?.children) ? task.children : [];
+  if (!shouldRenderTaskSubtasksCard(task)) return null;
+
   return (
     <Card title={`Child tasks (${children.length})`} class="task-subtasks-card">
-      {children.length > 0 ? (
-        <ul class="task-subtasks-list">
-          {children.map((child) => {
-            const lastRun = child.last_run || child.latest_run || null;
-            const runSummary = lastRun?.summary || lastRun?.details || "";
-            return (
-              <li key={child.id}>
-                <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
-                  <span class="task-subtask-main min-w-0">
-                    <span class="task-subtask-title truncate">
-                      <span class="pane-row-mono">{taskDisplayKey(child)}</span>
-                      <span>{child.title}</span>
-                    </span>
-                    {runSummary && <span class="task-subtask-summary truncate">{runSummary}</span>}
+      <ul class="task-subtasks-list">
+        {children.map((child) => {
+          const lastRun = child.last_run || child.latest_run || null;
+          const runSummary = lastRun?.summary || lastRun?.details || "";
+          return (
+            <li key={child.id}>
+              <a href={`#/tasks/${taskRouteId(child)}`} class="task-subtask-link">
+                <span class="task-subtask-main min-w-0">
+                  <span class="task-subtask-title truncate">
+                    <span class="pane-row-mono">{taskDisplayKey(child)}</span>
+                    <span>{child.title}</span>
                   </span>
-                  <span class="task-subtask-meta">
-                    {child.owner_agent && (
-                      <Chip variant="muted" size="sm">
-                        {child.owner_agent}
-                      </Chip>
-                    )}
-                    <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
-                      {child.required === false ? "optional" : "required"}
+                  {runSummary && <span class="task-subtask-summary truncate">{runSummary}</span>}
+                </span>
+                <span class="task-subtask-meta">
+                  {child.owner_agent && (
+                    <Chip variant="muted" size="sm">
+                      {child.owner_agent}
                     </Chip>
-                    {lastRun?.decision && (
-                      <Chip variant={lastRun.failure_kind ? "warn" : "tag"} size="sm">
-                        {lastRun.failure_kind || lastRun.decision}
-                      </Chip>
-                    )}
-                    <StatusPill status={child.stage || "plan"} size="sm" />
-                  </span>
-                </a>
-              </li>
-            );
-          })}
-        </ul>
-      ) : (
-        <div class="task-subtasks-empty">No child tasks yet.</div>
-      )}
-      <form class="task-subtasks-add" onSubmit={onCreate}>
-        <Input
-          class="task-subtasks-title"
-          placeholder="Subtask title"
-          value={title}
-          onInput={(event) => onTitle(event.currentTarget.value)}
-          disabled={saving}
-        />
-        <AgentPicker
-          class="task-subtasks-owner"
-          value={owner || ""}
-          onChange={onOwner}
-          agents={agents}
-          placeholder="Owner"
-          role="Owner"
-          ariaLabel="Subtask owner"
-          allowClear
-        />
-        <Checkbox
-          class="task-subtasks-required"
-          checked={required}
-          onChange={onRequired}
-          label="Required"
-          disabled={saving}
-        />
-        <Button type="submit" variant="primary" disabled={saving || !title.trim()}>
-          {saving ? "Adding…" : "Add"}
-        </Button>
-      </form>
+                  )}
+                  <Chip variant={child.required === false ? "muted" : "tag"} size="sm">
+                    {child.required === false ? "optional" : "required"}
+                  </Chip>
+                  {lastRun?.decision && (
+                    <Chip variant={lastRun.failure_kind ? "warn" : "tag"} size="sm">
+                      {lastRun.failure_kind || lastRun.decision}
+                    </Chip>
+                  )}
+                  <StatusPill status={child.stage || "plan"} size="sm" />
+                </span>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
     </Card>
   );
 }
