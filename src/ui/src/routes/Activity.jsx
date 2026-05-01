@@ -18,6 +18,7 @@ import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
 const COUNT_FORMATTER = new Intl.NumberFormat();
+const DAY_FORMATTER = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "running", label: "Running" },
@@ -27,6 +28,11 @@ const STATUS_OPTIONS = [
 ];
 
 function fmtTime(ts) { return ts ? new Date(ts).toLocaleString() : "-"; }
+function fmtDay(value) {
+  if (!value) return "-";
+  const parsed = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed) ? DAY_FORMATTER.format(new Date(parsed)) : value;
+}
 function fmtDuration(value) {
   if (value == null) return "";
   const ms = Number(value);
@@ -89,6 +95,24 @@ function activityMetricParts(item) {
   }
   if (item.cost_usd != null) parts.push({ key: "cost", icon: "database", label: fmtCost(item.cost_usd) });
   return parts;
+}
+
+function costChartDays(rows) {
+  const days = Array.isArray(rows) ? rows : [];
+  const maxCost = Math.max(0, ...days.map((day) => Number(day.total_cost_usd || 0)));
+  return days.map((day) => {
+    const total = Number(day.total_cost_usd || 0);
+    const count = Number(day.costed_run_count || 0);
+    const pctOfMax = maxCost > 0 ? Math.round((total / maxCost) * 100) : 0;
+    return {
+      date: day.date,
+      label: fmtDay(day.date),
+      total,
+      count,
+      costLabel: fmtCost(total),
+      height: total > 0 ? Math.max(8, pctOfMax) : 0,
+    };
+  });
 }
 
 export function Activity() {
@@ -158,7 +182,7 @@ export function Activity() {
       settled,
       totalCost: fmtCost(summary?.total_cost_usd ?? 0),
       averageCost: summary?.average_cost_usd != null ? fmtCost(summary.average_cost_usd) : "-",
-      costCoverage: pct(costedRuns, runs),
+      costDays: costChartDays(summary?.cost_by_day),
       runningPct: pct(running, runs),
       errorPct: pct(errors, runs),
       settledPct: pct(settled, runs),
@@ -183,16 +207,28 @@ export function Activity() {
         <section class="activity-stats" aria-label="Activity statistics">
           <article class="activity-stat-card activity-stat-card-primary activity-stat-cost">
             <div class="activity-stat-head">
-              <span class="activity-stat-label">Spend</span>
-              <span class="activity-stat-icon"><Icon name="database" size={15} /></span>
+              <span class="activity-stat-label">Cost history</span>
+              <span class="activity-stat-icon"><Icon name="calendar" size={15} /></span>
             </div>
             <strong class="activity-stat-value">{stats.totalCost}</strong>
             <div class="activity-stat-subline">
               <span>{stats.averageCost}/run avg</span>
               <span>{fmtCount(stats.costedRuns)} costed</span>
             </div>
-            <div class="activity-stat-meter" aria-label={`${stats.costCoverage}% of runs have cost data`}>
-              <span style={{ width: `${stats.costCoverage}%` }} />
+            <div
+              class="activity-cost-chart"
+              aria-label={`${dateRange.from || dateRange.to ? "Selected range" : "Recent days"} cost by day`}
+            >
+              {stats.costDays.length > 0 ? stats.costDays.map((day) => (
+                <span class="activity-cost-day" title={`${day.label}: ${day.costLabel} across ${fmtCount(day.count)} run${day.count === 1 ? "" : "s"}`} key={day.date}>
+                  <span class="activity-cost-bar" aria-hidden="true">
+                    <span style={{ height: `${day.height}%` }} />
+                  </span>
+                  <span class="activity-cost-day-label">{day.label}</span>
+                </span>
+              )) : (
+                <span class="activity-cost-empty">No cost data</span>
+              )}
             </div>
           </article>
 
@@ -217,24 +253,6 @@ export function Activity() {
             </div>
           </article>
 
-          <article class="activity-stat-card activity-stat-mini">
-            <span class="activity-stat-icon"><Icon name="layout-list" size={14} /></span>
-            <span class="activity-stat-label">Runs</span>
-            <strong class="activity-stat-value">{fmtCount(stats.runs)}</strong>
-            <span class="activity-stat-subline">{fmtCount(stats.costedRuns)} with cost</span>
-          </article>
-          <article class="activity-stat-card activity-stat-mini activity-stat-running">
-            <span class="activity-stat-icon"><Icon name="zap" size={14} /></span>
-            <span class="activity-stat-label">Running</span>
-            <strong class="activity-stat-value">{fmtCount(stats.running)}</strong>
-            <span class="activity-stat-subline">{stats.runningPct}% live</span>
-          </article>
-          <article class="activity-stat-card activity-stat-mini activity-stat-error">
-            <span class="activity-stat-icon"><Icon name="alert-triangle" size={14} /></span>
-            <span class="activity-stat-label">Errors</span>
-            <strong class="activity-stat-value">{fmtCount(stats.errors)}</strong>
-            <span class="activity-stat-subline">{stats.errorPct}% attention</span>
-          </article>
         </section>
 
         <Card

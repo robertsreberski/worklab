@@ -8,6 +8,7 @@ const EMPTY_SUMMARY = {
   average_cost_usd: null,
   running_count: 0,
   error_count: 0,
+  cost_by_day: [],
 };
 
 function insertRun(db, patch = {}) {
@@ -123,6 +124,30 @@ describe("activity", () => {
     expect(res.body.items[0].cost_usd).toBeCloseTo(0.0123);
     expect(res.body.summary.costed_run_count).toBe(1);
     expect(res.body.summary.total_cost_usd).toBeCloseTo(0.0123);
+  });
+
+  it("returns day-by-day cost buckets for filtered activity", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "daily costs" });
+    const firstDay = Date.parse("2026-04-29T00:00:00.000Z");
+    const secondDay = firstDay + 24 * 60 * 60 * 1000;
+    const thirdDay = secondDay + 24 * 60 * 60 * 1000;
+    insertRun(db, { id: "day-one", taskId: task.id, agent: "alpha", startedAt: firstDay + 1_000, costUsd: 0.01 });
+    insertRun(db, { id: "day-two-run", taskId: task.id, agent: "alpha", startedAt: secondDay + 1_000, costUsd: 0.02 });
+    insertRun(db, { id: "day-two-log", taskId: task.id, agent: "alpha", startedAt: secondDay + 2_000 });
+    insertLog(db, { id: "day-two-log-row", runId: "day-two-log", costUsd: 0.03, createdAt: secondDay + 2_000 });
+    insertRun(db, { id: "other-agent", taskId: task.id, agent: "beta", startedAt: thirdDay + 1_000, costUsd: 0.99 });
+
+    const res = await agent.get("/api/activity?agent=alpha&from=2026-04-29&to=2026-05-01").expect(200);
+
+    expect(res.body.summary.cost_by_day.map((row) => ({ date: row.date, costed_run_count: row.costed_run_count }))).toEqual([
+      { date: "2026-04-29", costed_run_count: 1 },
+      { date: "2026-04-30", costed_run_count: 2 },
+      { date: "2026-05-01", costed_run_count: 0 },
+    ]);
+    expect(res.body.summary.cost_by_day[0].total_cost_usd).toBeCloseTo(0.01);
+    expect(res.body.summary.cost_by_day[1].total_cost_usd).toBeCloseTo(0.05);
+    expect(res.body.summary.cost_by_day[2].total_cost_usd).toBe(0);
   });
 
   it("includes the whole day for date-only to filters", async () => {

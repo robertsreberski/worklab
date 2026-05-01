@@ -50,3 +50,21 @@ export function summarizeActivity(db, { filters, params }) {
   `;
   return db.prepare(sql).get(...params);
 }
+
+export function summarizeActivityCostByDay(db, { filters, params }) {
+  const costExpression = "COALESCE(r.cost_usd, l.cost_usd)";
+  const conditions = [...filters, `${costExpression} IS NOT NULL`];
+  const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+  const sql = `
+    SELECT
+      strftime('%Y-%m-%d', r.started_at / 1000, 'unixepoch') AS date,
+      COALESCE(SUM(${costExpression}), 0) AS total_cost_usd,
+      COUNT(${costExpression}) AS costed_run_count
+    FROM task_runs r
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    ${where}
+    GROUP BY date
+    ORDER BY date ASC
+  `;
+  return db.prepare(sql).all(...params);
+}
