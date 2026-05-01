@@ -62,6 +62,35 @@ describe("ui API client", () => {
     });
   });
 
+  it("sends assistant view context when provided", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 202,
+      json: async () => ({ run: { id: "run-1" } }),
+    }));
+
+    await api.sendAssistantMessage("What is happening here?", {
+      view: "task_detail",
+      resource_type: "task",
+      resource_id: "task-1",
+      selected_run_id: "run-1",
+    });
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/assistant/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        body: "What is happening here?",
+        view_context: {
+          view: "task_detail",
+          resource_type: "task",
+          resource_id: "task-1",
+          selected_run_id: "run-1",
+        },
+      }),
+    });
+  });
+
   it("fetches assistant blank state through a named helper", async () => {
     global.fetch = vi.fn(async () => ({
       ok: true,

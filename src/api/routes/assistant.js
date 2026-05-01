@@ -36,7 +36,10 @@ export function registerAssistantRoutes(app, { db, broker, logger, config, runAg
 
   app.post("/api/assistant/messages", (req, res) => {
     try {
-      const result = assistant.startMessage({ body: req.body?.body });
+      const result = assistant.startMessage({
+        body: req.body?.body,
+        viewContext: req.body?.view_context || null,
+      });
       res.status(202).json(result);
     } catch (err) {
       errorResponse(res, err);

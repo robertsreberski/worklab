@@ -69,7 +69,11 @@ export const api = {
   // assistant
   getAssistant: (query, options) => request("GET", `/assistant${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getAssistantMessages: (query, options) => request("GET", `/assistant/messages${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
-  sendAssistantMessage: (body) => request("POST", "/assistant/messages", { body }),
+  sendAssistantMessage: (body, viewContext = null) => request(
+    "POST",
+    "/assistant/messages",
+    viewContext ? { body, view_context: viewContext } : { body },
+  ),
   getAssistantRun: (id, query, options) => request("GET", `/assistant/runs/${id}${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   cancelAssistantRun: (id) => request("POST", `/assistant/runs/${id}/cancel`),
   // agents

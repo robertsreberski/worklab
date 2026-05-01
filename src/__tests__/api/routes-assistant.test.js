@@ -203,6 +203,57 @@ describe("assistant routes", () => {
     expect(readFileSync(memoryPath, "utf8")).toContain("in-app assistant");
   });
 
+  it("includes trusted current task view context in the assistant prompt", async () => {
+    let capturedPrompt = "";
+    const runAgent = vi.fn(async (systemPrompt) => {
+      capturedPrompt = systemPrompt;
+      return {
+        text: assistantJson({ reply_text: "Done.", summary: "Inspected the current task." }),
+        events: [],
+        usage: {},
+        durationMs: 1,
+        numTurns: 1,
+      };
+    });
+    const { agent, assistant, db } = setup({ runAgent });
+    const now = 1700000000000;
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, title, instructions, stage, created_at, updated_at)
+      VALUES
+        ('task-1', 'WL-9', 'Investigate failed run', 'Find the root cause before changing code.', 'execute', ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary, error_text)
+      VALUES
+        ('run-selected', 'task-1', 'execute', 'execute', 'mickey', ?, ?, 'error', 'failed', 'changes_requested', 'Tests failed in the API route.', 'Expected prompt context was missing.')
+    `).run(now + 1, now + 2);
+
+    await agent.post("/api/assistant/messages").send({
+      body: "What happened here?",
+      view_context: {
+        route: "tasks",
+        view: "task_detail",
+        path: "tasks/task-1",
+        hash: "#/tasks/task-1?run=run-selected",
+        resource_type: "task",
+        resource_id: "task-1",
+        selected_run_id: "run-selected",
+        query: { run: "run-selected" },
+      },
+    }).expect(202);
+    await assistant.waitIdle();
+
+    expect(runAgent).toHaveBeenCalled();
+    expect(capturedPrompt).toContain("## Current view");
+    expect(capturedPrompt).toContain("Task: WL-9 - Investigate failed run");
+    expect(capturedPrompt).toContain("Selected run: run-selected");
+    expect(capturedPrompt).toContain("selected run-selected");
+    expect(capturedPrompt).toContain("worklab_task_get");
+    expect(capturedPrompt).toContain("worklab_run_get");
+  });
+
   it("rejects concurrent messages in the same thread", async () => {
     let resolveRun;
     const runAgent = vi.fn((_systemPrompt, options) => new Promise((resolve) => {

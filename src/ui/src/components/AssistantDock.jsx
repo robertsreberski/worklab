@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import { assistantViewContextFromLocation } from "../lib/assistantViewContext.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
 import { Icon } from "./Icon.jsx";
 import { Button } from "./primitives/Button.jsx";
@@ -253,7 +254,7 @@ export function AssistantDock({
     setSending(true);
     setError("");
     try {
-      const data = await api.sendAssistantMessage(body);
+      const data = await api.sendAssistantMessage(body, assistantViewContextFromLocation(window.location));
       setDraft("");
       setThread(data.thread || thread);
       setMessages((current) => uniqueMessages([...current, data.user_message, data.assistant_message]));
