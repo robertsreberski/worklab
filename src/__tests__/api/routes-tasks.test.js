@@ -53,6 +53,61 @@ describe("GET /api/tasks", () => {
     expect(res.body.tasks[0].blocked_by).toBeUndefined();
     await agent.get("/api/tasks?view=nope").expect(400);
   });
+
+  it("supports a runtime scope that hides older completed tasks", async () => {
+    const { agent, db } = makeTestServer();
+    seedAgent(db, "owner");
+    const now = Date.now();
+    const create = async (title, patch = {}) => {
+      const { body: { task } } = await agent.post("/api/tasks").send({ title, ...patch }).expect(201);
+      return task;
+    };
+    const runningDone = await create("running done");
+    const ready = await create("ready", { stage: "execute", owner_agent: "owner" });
+    const attention = await create("attention");
+    const waiting = await create("waiting", { stage: "awaiting_children", owner_agent: "owner" });
+    const automated = await create("automated", { owner_agent: "owner" });
+    const doneOld = await create("done old", { owner_agent: "owner" });
+    const doneNew = await create("done new", { owner_agent: "owner" });
+
+    for (const [task, completedAt] of [[runningDone, now - 4000], [automated, now - 3000], [doneOld, now - 2000], [doneNew, now - 1000]]) {
+      await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" }).expect(200);
+      db.prepare("UPDATE tasks SET completed_at = ?, updated_at = ? WHERE id = ?").run(completedAt, completedAt, task.id);
+    }
+    await agent.post(`/api/tasks/${automated.id}/automations`).send({
+      trigger: { type: "daily", hour: 9, minute: 0 },
+      enabled: true,
+    }).expect(201);
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status)
+      VALUES ('run-runtime-active', ?, 'execute', 'owner', ?, 'running')
+    `).run(runningDone.id, now);
+
+    const runtime = await agent.get("/api/tasks?scope=runtime&done_limit=1").expect(200);
+    const ids = runtime.body.tasks.map((task) => task.id);
+
+    expect(ids).toContain(runningDone.id);
+    expect(ids).toContain(ready.id);
+    expect(ids).toContain(attention.id);
+    expect(ids).toContain(waiting.id);
+    expect(ids).toContain(automated.id);
+    expect(ids).toContain(doneNew.id);
+    expect(ids).not.toContain(doneOld.id);
+    expect(runtime.body.summary.groups).toMatchObject({
+      running: 1,
+      attention: 1,
+      ready: 1,
+      waiting: 1,
+      automated: 1,
+      completed: 2,
+    });
+    expect(runtime.body.summary.hidden_done_count).toBe(1);
+    expect(runtime.body.summary.visible_done_count).toBe(1);
+
+    const full = await agent.get("/api/tasks").expect(200);
+    expect(full.body.summary).toBeUndefined();
+    expect(full.body.tasks.map((task) => task.id)).toContain(doneOld.id);
+  });
 });
 
 describe("GET /api/runs/cost-summary", () => {

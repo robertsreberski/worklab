@@ -12,6 +12,7 @@ import {
   STAGES,
   taskStage,
 } from "../../core/index.js";
+import { runtimeTaskVisibility } from "../../core/task-runtime.js";
 import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools/index.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
@@ -123,9 +124,19 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!["full", "summary"].includes(view)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid view" } });
     }
+    const scope = String(req.query.scope || "all");
+    if (!["all", "runtime"].includes(scope)) {
+      return res.status(400).json({ error: { code: "validation", message: "invalid scope" } });
+    }
     const rows = listFilteredTasks(db, { filters: where, params });
     const baseTasks = rows.map(rowToTask);
-    const tasks = view === "summary" ? baseTasks : enrichTaskList(db, baseTasks, config);
+    const tasks = scope === "runtime" || view !== "summary" ? enrichTaskList(db, baseTasks, config) : baseTasks;
+    if (scope === "runtime") {
+      const requestedDoneLimit = Number(req.query.done_limit ?? 8);
+      const doneLimit = Math.max(0, Math.min(Number.isFinite(requestedDoneLimit) ? requestedDoneLimit : 8, 200));
+      const runtime = runtimeTaskVisibility(tasks, { doneLimit });
+      return res.json({ tasks: runtime.tasks, summary: runtime.summary });
+    }
     res.json({ tasks });
   });
 
