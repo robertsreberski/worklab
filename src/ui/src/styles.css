@@ -3,9 +3,9 @@
 /* ============================================================
  * Worklab UI — styles.css
  *
- * UI design docs were removed as obsolete. Keep this file and the JSX/tests
- * as the current source of truth until a generated design reference exists.
- * Values should come from tokens only; avoid raw hex outside :root.
+ * Keep this file aligned with docs/ui-design-system.md, the live
+ * #/design-system catalog, and the UI design-system tests. Values should come
+ * from tokens only; avoid raw hex outside :root.
  *
  * Sections
  *   1.  Tokens (§2.1–§2.5)

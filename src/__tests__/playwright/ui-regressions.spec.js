@@ -1851,8 +1851,8 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
   }
 });
 
-// Responsive breakpoints from ui-design-system.md §7.5. Spec mandates no
-// horizontal overflow on any route at any of these four widths.
+// Responsive breakpoints from docs/ui-design-system.md. Shared UI should not
+// introduce horizontal overflow on any route at these widths.
 const RESPONSIVE_VIEWPORTS = [
   { w: 360,  h: 800,  label: "mobile-360" },
   { w: 390,  h: 844,  label: "mobile-390" },
