@@ -527,7 +527,8 @@ test("commander toggles completed tasks inline", async ({ page }) => {
   await expect(page.locator(".commander-row").first()).toBeVisible();
   await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toHaveCount(0);
 
-  const showCompleted = page.locator(".commander-hidden-completed", { hasText: "Show completed" });
+  await expect(page.locator(".commander-topbar .commander-hidden-completed")).toHaveCount(0);
+  const showCompleted = page.locator(".commander-list-footer .commander-hidden-completed", { hasText: "Show completed" });
   await expect(showCompleted).toBeVisible();
   await showCompleted.click();
 
@@ -535,7 +536,7 @@ test("commander toggles completed tasks inline", async ({ page }) => {
   await expect(page.locator(".commander-group-header", { hasText: "Completed" })).toBeVisible();
   await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toBeVisible();
 
-  const hideCompleted = page.locator(".commander-hidden-completed", { hasText: "Hide completed" });
+  const hideCompleted = page.locator(".commander-list-footer .commander-hidden-completed", { hasText: "Hide completed" });
   await expect(hideCompleted).toBeVisible();
   await hideCompleted.click();
 
