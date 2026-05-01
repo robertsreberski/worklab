@@ -2839,8 +2839,8 @@ html.assistant-resizing * {
   position: sticky;
   top: 0;
   z-index: 5;
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(12px);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  backdrop-filter: blur(10px);
 }
 .commander-filter {
   position: relative;
@@ -2848,9 +2848,9 @@ html.assistant-resizing * {
   align-items: center;
   gap: var(--sp-3);
   min-width: 0;
-  padding: var(--sp-3) var(--sp-6);
-  border-bottom: 1px solid var(--border);
-  background: transparent;
+  padding: 10px var(--sp-6);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  background: color-mix(in srgb, var(--surface) 18%, transparent);
 }
 .commander-filter .search-field {
   flex: 0 0 min(220px, 34vw);
@@ -2865,10 +2865,6 @@ html.assistant-resizing * {
 .commander-project-filter {
   flex: 0 0 160px;
   width: 160px;
-}
-.commander-scope-filter {
-  flex: 0 0 136px;
-  width: 136px;
 }
 .commander-stage-filter {
   flex: 0 0 132px;
@@ -2890,7 +2886,14 @@ html.assistant-resizing * {
   white-space: nowrap;
 }
 .commander-hidden-completed {
+  color: var(--text-muted);
   white-space: nowrap;
+}
+.commander-hidden-completed-count {
+  margin-left: 2px;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
 }
 .commander-cost-chip {
   color: var(--text-muted);
@@ -2980,11 +2983,9 @@ html.assistant-resizing * {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: var(--sp-2) var(--sp-6);
-  background:
-    repeating-linear-gradient(90deg, transparent 0 9px, color-mix(in srgb, var(--paper-line) 90%, transparent) 9px 10px),
-    var(--surface-sunken);
-  border-bottom: 1px solid var(--border);
+  padding: 10px var(--sp-6) 6px;
+  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -3011,10 +3012,9 @@ html.assistant-resizing * {
   align-items: center;
   column-gap: var(--sp-3);
   row-gap: 4px;
-  padding: 10px var(--sp-6);
-  border-bottom: 1px solid var(--border);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--surface) 52%, transparent), transparent);
+  padding: 9px var(--sp-6);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 56%, transparent);
+  background: transparent;
   cursor: pointer;
   min-height: 44px;
   transition: min-height var(--dur-std) var(--ease-snap), background var(--dur-snap) var(--ease-snap), border-color var(--dur-snap) var(--ease-snap);
@@ -3025,13 +3025,12 @@ html.assistant-resizing * {
 .commander-row:hover,
 .commander-row:active {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 5%, transparent), transparent 64%),
-    color-mix(in srgb, var(--surface-elevated) 58%, transparent);
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface-elevated) 24%, transparent);
 }
 .commander-row.selected {
   background:
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--accent) 8%, transparent) 0 1px, transparent 1px 12px),
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 14%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--surface-elevated) 18%, transparent) 58%, transparent);
   border-left: 2px solid var(--accent);
   padding-left: calc(var(--sp-6) - 2px);
 }
@@ -3139,11 +3138,11 @@ html.assistant-resizing * {
   min-width: 0;
   gap: 2px;
   margin-top: 2px;
-  padding: 3px 8px;
-  border: 1px solid color-mix(in srgb, var(--status-progress) 22%, var(--border));
-  border-left: 2px solid var(--status-progress);
-  border-radius: var(--radius-xs);
-  background: color-mix(in srgb, var(--status-progress) 8%, var(--surface-sunken));
+  padding: 2px 0 2px 8px;
+  border: 0;
+  border-left: 1px solid color-mix(in srgb, var(--status-progress) 44%, transparent);
+  border-radius: 0;
+  background: transparent;
   animation: wl-tick-in var(--dur-tick) linear;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -8742,7 +8741,6 @@ html.assistant-resizing * {
   }
   .commander-filter .tabs::-webkit-scrollbar { display: none; }
   .commander-project-filter,
-  .commander-scope-filter,
   .commander-stage-filter {
     width: 100%;
     min-width: 0;
@@ -8753,7 +8751,23 @@ html.assistant-resizing * {
     padding: 0 var(--sp-3);
   }
   .commander-filter-actions {
+    display: flex;
+    align-items: center;
+    justify-content: stretch;
+    gap: var(--sp-2);
+    min-width: 0;
+  }
+  .commander-filter-actions .commander-cost-chip,
+  .commander-filter-actions .commander-new-task-inline,
+  .commander-filter-actions .commander-filter-count {
     display: none;
+  }
+  .commander-filter-actions .commander-hidden-completed {
+    width: 100%;
+    min-width: 0;
+    padding-inline: var(--sp-2);
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .commander-list {
     padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
@@ -9122,7 +9136,7 @@ html.assistant-resizing * {
     border-left-width: 2px;
     border-top-left-radius: 0;
     border-bottom-left-radius: 0;
-    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 12%, transparent), color-mix(in srgb, var(--surface-elevated) 34%, transparent) 58%, transparent);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--surface-elevated) 18%, transparent) 58%, transparent);
   }
   .commander-cell-checkbox .checkbox-box {
     width: 15px;
