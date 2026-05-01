@@ -6523,6 +6523,14 @@ html.assistant-resizing * {
   gap: var(--sp-3);
   min-width: 0;
 }
+.settings-list-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
 .settings-empty-note {
   padding: var(--sp-4);
   color: var(--text-muted);
@@ -6571,6 +6579,24 @@ html.assistant-resizing * {
   justify-content: space-between;
   gap: var(--sp-3);
   min-width: 0;
+}
+.settings-health-note {
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.settings-health-note.ok {
+  color: var(--status-done);
+  border-color: color-mix(in srgb, var(--status-done) 30%, var(--border));
+}
+.settings-health-note.error {
+  color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error) 34%, var(--border));
+  background: var(--status-error-bg-10);
 }
 .settings-inline-status.ok { color: var(--status-done); }
 .settings-inline-status.error { color: var(--status-error); }
@@ -6651,6 +6677,14 @@ html.assistant-resizing * {
   .settings-row-actions {
     justify-content: flex-start;
     width: 100%;
+  }
+  .settings-list-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .settings-list-actions .button.sm {
+    width: auto;
+    flex: 0 0 auto;
   }
   .settings-page .number-stepper {
     height: 36px;

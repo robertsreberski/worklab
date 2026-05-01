@@ -94,7 +94,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   registerRunRoutes(app, { db, broker, dataDir, watcher });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });
   if (dataDir) registerSkillRoutes(app, { dataDir, db });
-  if (dataDir) registerMcpRoutes(app, { dataDir, repoRoot });
+  if (dataDir) registerMcpRoutes(app, { dataDir, repoRoot, workspace: config?.workspace });
   if (dataDir) registerKbRoutes(app, { dataDir, broker, db });
   if (dataDir) registerProviderRoutes(app, { db, dataDir, broker });
   if (dataDir) registerModelRoutes(app, { db, dataDir });

@@ -87,27 +87,31 @@ export function mcpRowsFromServers(servers = {}) {
   });
 }
 
+export function mcpServerFromRow(row = {}) {
+  const name = String(row.name || "").trim();
+  if (!name) throw new Error("MCP server name is required");
+  if (row.transport === "http" || row.transport === "sse") {
+    if (!String(row.url || "").trim()) throw new Error(`MCP server ${name} requires a URL`);
+    const config = { type: row.transport, url: String(row.url).trim() };
+    const headers = parseJsonObject(row.headersText, `${name} headers`);
+    if (headers) config.headers = headers;
+    return { name, config };
+  }
+  if (!String(row.command || "").trim()) throw new Error(`MCP server ${name} requires an absolute command path`);
+  const args = String(row.argsText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const env = parseJsonObject(row.envText, `${name} env`);
+  const config = { command: String(row.command).trim() };
+  if (args.length) config.args = args;
+  if (env) config.env = env;
+  return { name, config };
+}
+
 export function mcpServersFromRows(rows = []) {
   const servers = {};
   for (const row of rows) {
-    const name = String(row.name || "").trim();
-    if (!name) throw new Error("MCP server name is required");
+    const { name, config } = mcpServerFromRow(row);
     if (servers[name]) throw new Error(`Duplicate MCP server name: ${name}`);
-    if (row.transport === "http" || row.transport === "sse") {
-      if (!String(row.url || "").trim()) throw new Error(`MCP server ${name} requires a URL`);
-      const next = { type: row.transport, url: String(row.url).trim() };
-      const headers = parseJsonObject(row.headersText, `${name} headers`);
-      if (headers) next.headers = headers;
-      servers[name] = next;
-    } else {
-      if (!String(row.command || "").trim()) throw new Error(`MCP server ${name} requires an absolute command path`);
-      const args = String(row.argsText || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      const env = parseJsonObject(row.envText, `${name} env`);
-      const next = { command: String(row.command).trim() };
-      if (args.length) next.args = args;
-      if (env) next.env = env;
-      servers[name] = next;
-    }
+    servers[name] = config;
   }
   return servers;
 }

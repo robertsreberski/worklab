@@ -92,6 +92,7 @@ export const api = {
   // mcp
   getMcpConfig: () => request("GET", "/mcp"),
   getMcpStatus: () => request("GET", "/mcp/status"),
+  checkMcpHealth: (data) => request("POST", "/mcp/health", data),
   putMcpConfig: (data) => request("PUT", "/mcp", data),
   // kb
   listKb: (query, options) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`, null, options),

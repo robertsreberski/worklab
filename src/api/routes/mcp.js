@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getMcpServerStatuses, loadMcpConfig } from "../../core/index.js";
+import { getMcpServerHealth, getMcpServerStatuses, loadMcpConfig } from "../../core/index.js";
 
-export function registerMcpRoutes(app, { dataDir, repoRoot = process.cwd() }) {
+export function registerMcpRoutes(app, { dataDir, repoRoot = process.cwd(), workspace = process.cwd() }) {
   const mcpPath = () => join(dataDir, "config", "mcp.json");
 
   app.get("/api/mcp", (_req, res) => {
@@ -19,6 +19,29 @@ export function registerMcpRoutes(app, { dataDir, repoRoot = process.cwd() }) {
   app.get("/api/mcp/status", (_req, res) => {
     const status = getMcpServerStatuses(dataDir, { repoRoot });
     res.json(status);
+  });
+
+  app.post("/api/mcp/health", async (req, res, next) => {
+    const body = req.body || {};
+    const hasDraftServers = Object.prototype.hasOwnProperty.call(body, "mcpServers");
+    if (hasDraftServers && (!body.mcpServers || typeof body.mcpServers !== "object" || Array.isArray(body.mcpServers))) {
+      return res.status(400).json({ error: { code: "validation", message: "mcpServers object required" } });
+    }
+    if (body.names != null && !Array.isArray(body.names)) {
+      return res.status(400).json({ error: { code: "validation", message: "names must be an array" } });
+    }
+    try {
+      const health = await getMcpServerHealth(dataDir, {
+        repoRoot,
+        cwd: workspace,
+        includeBuiltins: body.includeBuiltins !== false,
+        mcpServers: hasDraftServers ? body.mcpServers : undefined,
+        names: body.names,
+      });
+      return res.json(health);
+    } catch (err) {
+      return next(err);
+    }
   });
 
   app.put("/api/mcp", (req, res) => {
