@@ -437,6 +437,7 @@ export function AssistantDock({
           type="submit"
           variant="primary"
           size="md"
+          class="assistant-composer-submit"
           loading={sending}
           disabled={!canSend}
           iconLeft={<Icon name="send" size={14} />}

@@ -2245,6 +2245,76 @@ test("mobile assistant pane opens full width", async ({ page }) => {
   expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
+test("assistant composer keeps send button aligned and visible on narrow viewports", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("worklab.assistantDockOpen", "open");
+  });
+
+  for (const viewport of [
+    { width: 1440, height: 900, label: "desktop" },
+    { width: 820, height: 900, label: "tablet" },
+    { width: 390, height: 844, label: "mobile" },
+    { width: 320, height: 700, label: "narrow" },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/?assistant-composer=${viewport.label}#/tasks`);
+    await expect(page.locator(".assistant-dock.open")).toBeVisible();
+    await expect(page.locator(".assistant-composer")).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const composer = document.querySelector(".assistant-composer");
+      const textarea = composer?.querySelector(".textarea");
+      const button = composer?.querySelector(".assistant-composer-submit");
+      const icon = button?.querySelector("svg");
+      const composerRect = composer?.getBoundingClientRect();
+      const textareaRect = textarea?.getBoundingClientRect();
+      const buttonRect = button?.getBoundingClientRect();
+      const iconRect = icon?.getBoundingClientRect();
+      const buttonStyles = button ? getComputedStyle(button) : null;
+      const iconStyles = icon ? getComputedStyle(icon) : null;
+      return {
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        composerOverflow: composer ? Math.ceil(composer.scrollWidth - composer.clientWidth) : null,
+        composerWidth: composerRect ? Math.round(composerRect.width) : 0,
+        textareaWidth: textareaRect ? Math.round(textareaRect.width) : 0,
+        textareaHeight: textareaRect ? Math.round(textareaRect.height) : 0,
+        buttonWidth: buttonRect ? Math.round(buttonRect.width) : 0,
+        buttonHeight: buttonRect ? Math.round(buttonRect.height) : 0,
+        buttonMinWidth: buttonStyles?.minWidth || "",
+        buttonMinHeight: buttonStyles?.minHeight || "",
+        buttonPaddingLeft: buttonStyles ? Math.round(parseFloat(buttonStyles.paddingLeft)) : -1,
+        buttonPaddingRight: buttonStyles ? Math.round(parseFloat(buttonStyles.paddingRight)) : -1,
+        iconWidth: iconRect ? Math.round(iconRect.width) : 0,
+        iconHeight: iconRect ? Math.round(iconRect.height) : 0,
+        iconDisplay: iconStyles?.display || "",
+        inline: textareaRect && buttonRect
+          ? Math.round(textareaRect.right) <= Math.round(buttonRect.left)
+          : false,
+        bottomAligned: textareaRect && buttonRect
+          ? Math.abs(Math.round(textareaRect.bottom) - Math.round(buttonRect.bottom)) <= 2
+          : false,
+      };
+    });
+
+    expect(metrics.pageOverflow, `${viewport.label} page overflow`).toBeLessThanOrEqual(0);
+    expect(metrics.composerOverflow, `${viewport.label} composer overflow`).toBeLessThanOrEqual(1);
+    expect(metrics.composerWidth, `${viewport.label} composer width`).toBeGreaterThan(0);
+    expect(metrics.textareaWidth, `${viewport.label} textarea width`).toBeGreaterThanOrEqual(200);
+    expect(metrics.textareaHeight, `${viewport.label} textarea height`).toBeGreaterThanOrEqual(44);
+    expect(metrics.buttonWidth, `${viewport.label} button width`).toBe(44);
+    expect(metrics.buttonHeight, `${viewport.label} button height`).toBe(44);
+    expect(metrics.buttonMinWidth, `${viewport.label} button min-width`).toBe("44px");
+    expect(metrics.buttonMinHeight, `${viewport.label} button min-height`).toBe("44px");
+    expect(metrics.buttonPaddingLeft, `${viewport.label} button left padding`).toBe(0);
+    expect(metrics.buttonPaddingRight, `${viewport.label} button right padding`).toBe(0);
+    expect(metrics.iconWidth, `${viewport.label} icon width`).toBeGreaterThan(0);
+    expect(metrics.iconHeight, `${viewport.label} icon height`).toBeGreaterThan(0);
+    expect(metrics.iconDisplay, `${viewport.label} icon display`).toBe("block");
+    expect(metrics.inline, `${viewport.label} composer inline layout`).toBe(true);
+    expect(metrics.bottomAligned, `${viewport.label} composer bottom alignment`).toBe(true);
+  }
+});
+
 test("assistant thread remains scrollable with long history", async ({ page }) => {
   const now = Date.now();
   const seededMessages = Array.from({ length: 28 }, (_, index) => ({

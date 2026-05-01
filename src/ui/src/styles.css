@@ -2771,22 +2771,36 @@ html.assistant-resizing * {
 }
 .assistant-composer {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: end;
   gap: var(--sp-2);
+  min-width: 0;
   padding: var(--sp-4);
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
 }
 .assistant-composer .textarea {
+  width: 100%;
+  min-width: 0;
   min-height: 44px;
   max-height: 180px;
   resize: none;
 }
-.assistant-composer .button {
+.assistant-composer .assistant-composer-submit.button {
   align-self: end;
+  justify-self: end;
+  flex: 0 0 44px;
   width: 44px;
   min-width: 44px;
+  height: 44px;
+  min-height: 44px;
   padding: 0;
+}
+.assistant-composer .assistant-composer-submit.button > svg {
+  display: block;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
 }
 .assistant-error {
   grid-column: 1 / -1;
@@ -10394,7 +10408,9 @@ html.assistant-resizing * {
     max-width: 100%;
   }
   .assistant-composer {
-    padding: var(--sp-3) var(--sp-4) max(var(--sp-3), env(safe-area-inset-bottom));
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), env(safe-area-inset-bottom));
   }
   .assistant-launcher {
     bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
