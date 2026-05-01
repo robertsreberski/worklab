@@ -1,15 +1,24 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   RUNTIME_GROUPS,
+  clearCommanderTaskListCache,
   commanderTaskSortBucket,
+  commanderTaskListCacheKey,
+  commanderTaskListRequestQuery,
   compareCommanderGroups,
   compareCommanderTasks,
   formatCommanderCost,
   groupKeyFor,
+  readCommanderTaskListCache,
   taskMatchesCommanderQuery,
+  writeCommanderTaskListCache,
 } from "../../ui/src/routes/Commander.jsx";
 
 describe("commander task grouping", () => {
+  beforeEach(() => {
+    clearCommanderTaskListCache();
+  });
+
   it("formats task-list cost summary values to two decimals", () => {
     expect(formatCommanderCost(35.8315)).toBe("$35.83");
     expect(formatCommanderCost(0)).toBe("$0.00");
@@ -112,5 +121,52 @@ describe("commander task grouping", () => {
     expect(icons.automated).toBe("◆");
     expect(icons.completed).toBe("✓");
     expect(new Set(Object.values(icons)).size).toBe(Object.values(icons).length);
+  });
+
+  it("keys the task-list cache by the loaded task breadth", () => {
+    expect(commanderTaskListRequestQuery({
+      showCompleted: false,
+      groupFilter: "all",
+      stageFilter: "all",
+    })).toEqual({ scope: "runtime", done_limit: "0" });
+    expect(commanderTaskListCacheKey({
+      showCompleted: false,
+      groupFilter: "all",
+      stageFilter: "all",
+    })).toBe("runtime:0");
+
+    expect(commanderTaskListRequestQuery({
+      showCompleted: true,
+      groupFilter: "all",
+      stageFilter: "all",
+    })).toEqual({ scope: "runtime", done_limit: "200" });
+    expect(commanderTaskListCacheKey({
+      showCompleted: false,
+      groupFilter: "completed",
+      stageFilter: "all",
+    })).toBe("runtime:200");
+    expect(commanderTaskListCacheKey({
+      showCompleted: false,
+      groupFilter: "all",
+      stageFilter: "done",
+    })).toBe("runtime:200");
+  });
+
+  it("stores task-list cache snapshots without sharing the task array", () => {
+    const key = commanderTaskListCacheKey({ showCompleted: false });
+    writeCommanderTaskListCache(key, {
+      tasks: [{ id: "task-1", title: "Cached task" }],
+      summary: { hidden_done_count: 2 },
+    });
+
+    const firstRead = readCommanderTaskListCache(key);
+    expect(firstRead).toEqual({
+      tasks: [{ id: "task-1", title: "Cached task" }],
+      summary: { hidden_done_count: 2 },
+    });
+
+    firstRead.tasks.push({ id: "task-2", title: "Mutation attempt" });
+    expect(readCommanderTaskListCache(key).tasks).toHaveLength(1);
+    expect(readCommanderTaskListCache("runtime:200")).toBeNull();
   });
 });

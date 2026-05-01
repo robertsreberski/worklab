@@ -558,6 +558,26 @@ test("commander toggles completed tasks inline", async ({ page }) => {
   await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toHaveCount(0);
 });
 
+test("commander returns from task detail without getting stuck on loading", async ({ page }) => {
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+
+  await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
+  const row = page.locator(".commander-row", { hasText: "UI regression task" }).first();
+  await expect(row).toBeVisible();
+
+  await row.click();
+  await expect(page).toHaveURL(/#\/tasks\/[^/?#]+$/);
+  await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
+
+  await page.evaluate(() => window.history.back());
+  await expect(page).toHaveURL(/#\/tasks$/);
+  await expect(page.getByText("Loading tasks…")).toHaveCount(0);
+  await expect(page.locator(".commander-row", { hasText: "UI regression task" }).first()).toBeVisible();
+
+  expect(pageErrors).toEqual([]);
+});
+
 test("desktop task list keeps every task state legible without clipped controls", async ({ page }) => {
   const viewports = [
     { width: 1440, height: 900, label: "desktop-1440" },
