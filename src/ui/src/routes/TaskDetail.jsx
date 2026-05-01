@@ -350,8 +350,8 @@ export function TaskDetail({ id, runParam = null }) {
     task?.running_run_id && task?.is_locked === false;
   const runningRunStream = useRunStream(runningRun?.id || null, {
     subscribe: Boolean(runningRun),
-    initialEventLimit: 24,
-    maxEvents: 80,
+    initialEventLimit: 20,
+    maxEvents: 20,
   });
 
   const activity = useMemo(

@@ -1139,7 +1139,8 @@ test("running task detail can load full history after compact live hydration", a
   await page.goto(`${baseUrl}/#/tasks/${runningTaskId}`, { waitUntil: "domcontentloaded" });
   await expect(page.getByText("Loading task…")).toHaveCount(0);
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
-  await expect(page.locator(".task-live-panel", { hasText: "Showing latest 24 of 29 events" })).toBeVisible();
+  await expect(page.locator(".task-live-panel", { hasText: "Showing latest logs" })).toBeVisible();
+  await expect(page.locator(".task-live-panel", { hasText: /Showing latest \d+ of \d+ events/ })).toHaveCount(0);
   await expect(page.locator(".task-live-panel", { hasText: "Oldest preserved event" })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Load full history" }).click();
@@ -1147,7 +1148,7 @@ test("running task detail can load full history after compact live hydration", a
   await expect(page.getByRole("button", { name: "Load full history" })).toHaveCount(0);
 
   expect(runRequests).toEqual([
-    "/api/runs/run-live-existing?events=tail&limit=24",
+    "/api/runs/run-live-existing?events=tail&limit=20",
     "/api/runs/run-live-existing",
   ]);
 });

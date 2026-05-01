@@ -79,13 +79,51 @@ describe("shared run stream subscriptions", () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/runs/run-1?events=tail&limit=24",
+      "/api/runs/run-1?events=tail&limit=20",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
 
     unsubscribeFirst();
     unsubscribeSecond();
+  });
+
+  it("keeps live updates capped to the latest 20 events before full history loads", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-tail", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-tail", (snapshot) => snapshots.push(snapshot), { subscribe: true });
+
+    await vi.waitFor(() => {
+      expect(snapshots.at(-1)).toMatchObject({ loading: false });
+    });
+
+    // Stream events can arrive before compact hydration resolves; hydration must not reset the observed tail.
+    for (let index = 1; index <= 25; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({ type: "text", text: `event ${index}`, _event_seq: index }),
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const latest = snapshots.at(-1);
+    expect(latest.events.map((event) => event._event_seq)).toEqual([
+      6, 7, 8, 9, 10,
+      11, 12, 13, 14, 15,
+      16, 17, 18, 19, 20,
+      21, 22, 23, 24, 25,
+    ]);
+    expect(latest.eventCount).toBe(25);
+    expect(latest.eventsTruncated).toBe(true);
+    expect(latest.fullHistoryLoaded).toBe(false);
+
+    unsubscribe();
   });
 
   it("can upgrade a compact live hydration to full history without trimming future events", async () => {

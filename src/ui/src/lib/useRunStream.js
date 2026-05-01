@@ -3,8 +3,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
 
 const runStreams = new Map();
-const DEFAULT_INITIAL_EVENT_LIMIT = 24;
-const DEFAULT_MAX_EVENTS = 80;
+const DEFAULT_LIVE_EVENT_LIMIT = 20;
+const DEFAULT_INITIAL_EVENT_LIMIT = DEFAULT_LIVE_EVENT_LIMIT;
+const DEFAULT_MAX_EVENTS = DEFAULT_LIVE_EVENT_LIMIT;
 
 function eventKey(event) {
   if (!event) return null;
@@ -157,8 +158,10 @@ function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {})
     );
   }
   if (data?.log) {
-    entry.eventCount = Number(data.log.event_count ?? entry.events.length);
-    entry.eventsTruncated = Boolean(data.log.events_truncated);
+    const hydratedCount = Number(data.log.event_count ?? entry.events.length);
+    entry.eventCount = Math.max(Number(entry.eventCount || 0), hydratedCount, entry.events.length);
+    entry.eventsTruncated = Boolean(data.log.events_truncated)
+      || (entry.maxEvents !== null && entry.events.length < entry.eventCount);
   } else {
     entry.eventCount = Math.max(Number(entry.eventCount || 0), entry.events.length);
     entry.eventsTruncated = entry.maxEvents !== null && entry.events.length < entry.eventCount;
@@ -228,11 +231,17 @@ function openRunStream(runId, entry) {
       closeRunStream(runId, entry);
       return;
     }
-    entry.events = limitRunEvents(mergeRunEvents(entry.events, [payload]), entry.maxEvents);
+    const previousCount = Number(entry.eventCount || entry.events.length || 0);
+    const mergedEvents = mergeRunEvents(entry.events, [payload]);
     const seq = Number(payload?._event_seq);
+    const inferredCount = mergedEvents.length > entry.events.length
+      ? previousCount + (mergedEvents.length - entry.events.length)
+      : previousCount;
+    entry.events = limitRunEvents(mergedEvents, entry.maxEvents);
     entry.eventCount = Math.max(
-      Number(entry.eventCount || 0),
+      previousCount,
       Number.isFinite(seq) ? seq : 0,
+      inferredCount,
       entry.events.length,
     );
     entry.eventsTruncated = !entry.fullHistoryLoaded && entry.events.length < entry.eventCount;
