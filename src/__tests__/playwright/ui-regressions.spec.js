@@ -25,6 +25,7 @@ let desktopBlockerTaskId;
 let desktopBlockedTaskId;
 let desktopRunningTaskId;
 let desktopErroredTaskId;
+let parentWithChildTaskId;
 let providerId;
 let skillName;
 let projectSlug;
@@ -281,6 +282,19 @@ test.beforeAll(async () => {
   desktopErroredTaskId = await createTask("Desktop errored task", {
     owner_agent: "regression-agent",
     stage: "execute",
+  });
+  parentWithChildTaskId = await createTask("Parent with child task", {
+    owner_agent: "regression-agent",
+    stage: "execute",
+  });
+  await requestJson(`/api/tasks/${parentWithChildTaskId}/subtasks`, {
+    method: "POST",
+    body: {
+      title: "Nested child task",
+      owner_agent: "regression-agent",
+      required: false,
+    },
+    ok: [201],
   });
   await requestJson(`/api/tasks/${taskId}/automations`, {
     method: "POST",
@@ -553,7 +567,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     { title: "Desktop ready task", text: "Execute" },
     { title: "Desktop needs owner task", text: "Needs owner" },
     { title: "Desktop review task", text: "Review" },
-    { title: "Desktop blocked task", text: "Blocked by 1" },
+    { title: "Desktop blocked task", text: "Waiting on 1" },
     { title: "Desktop running task", text: "Running" },
     { title: "Desktop running task", text: "Desktop running event" },
     { title: "Desktop errored task", text: "Error" },
@@ -564,7 +578,7 @@ test("desktop task list keeps every task state legible without clipped controls"
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    for (const label of ["Running", "Needs attention", "Ready"]) {
+    for (const label of ["Running", "Needs attention", "Ready", "Waiting"]) {
       await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
     }
     await expect(page.locator(".commander-group-header", { hasText: "Completed" })).toHaveCount(0);
@@ -1116,9 +1130,10 @@ test("task detail mounts the automations card with scheduled markers", async ({ 
   await expect(page.locator(".task-automation-row", { hasText: "Daily" })).toBeVisible();
 });
 
-test("task detail inline checkboxes align with their labels", async ({ page }) => {
+test("task detail hides empty subtask controls and keeps automation checkboxes aligned", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
-  await expect(page.locator(".task-subtasks-add .checkbox", { hasText: "Required" })).toBeVisible();
+  await expect(page.locator(".task-subtasks-card")).toHaveCount(0);
+  await expect(page.locator(".task-subtasks-add")).toHaveCount(0);
   await page.locator(".task-automations-card").getByRole("button", { name: "Add" }).click();
   await expect(page.locator(".task-automation-form .checkbox", { hasText: "Enabled" })).toBeVisible();
 
@@ -1132,13 +1147,19 @@ test("task detail inline checkboxes align with their labels", async ({ page }) =
       return Math.abs((boxRect.top + boxRect.height / 2) - (labelRect.top + labelRect.height / 2));
     }
     return {
-      required: centerDelta(".task-subtasks-add .checkbox"),
       enabled: centerDelta(".task-automation-form .checkbox"),
     };
   });
 
-  expect(deltas.required).toBeLessThanOrEqual(2);
   expect(deltas.enabled).toBeLessThanOrEqual(2);
+});
+
+test("task detail shows existing child tasks without manual add controls", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/${parentWithChildTaskId}`);
+  await expect(page.locator(".task-subtasks-card")).toBeVisible();
+  await expect(page.locator(".task-subtask-link", { hasText: "Nested child task" })).toBeVisible();
+  await expect(page.locator(".task-subtasks-add")).toHaveCount(0);
+  await expect(page.locator(".task-subtasks-empty")).toHaveCount(0);
 });
 
 test("multi-line selection controls center against their copy", async ({ page }) => {
