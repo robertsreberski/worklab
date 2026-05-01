@@ -183,8 +183,8 @@ export function CommanderRow({
   }
 
   const depsChip = blockedCount > 0 ? (
-    <span class="blocked-chip">
-      <Icon name="lock" size={10} /> Blocked by {blockedCount}
+    <span class="blocked-chip" title="Waiting for dependent tasks to finish">
+      <Icon name="clock" size={10} /> Waiting on {blockedCount}
     </span>
   ) : null;
 

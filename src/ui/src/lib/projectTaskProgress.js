@@ -28,7 +28,6 @@ export function projectTaskAttentionItems(task = {}) {
   const stage = task.stage || "plan";
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
-  const unresolvedCount = Number(task.unresolved_dependency_count || 0);
   const runError = hasRunError(task);
 
   if (task.running_run_id && task.is_locked === false) {
@@ -53,9 +52,6 @@ export function projectTaskAttentionItems(task = {}) {
   }
   if (pendingActions.length > 0) {
     items.push({ key: "pending_actions", label: `${pendingActions.length} action${pendingActions.length === 1 ? "" : "s"}`, tone: "warn", title: pendingActions.join("\n") });
-  }
-  if (unresolvedCount > 0) {
-    items.push({ key: "dependencies", label: `Blocked by ${unresolvedCount}`, tone: "warn" });
   }
   if (task.last_failure_kind && !runError) {
     items.push({ key: "failure_kind", label: `Failure: ${task.last_failure_kind}`, tone: "warn" });
