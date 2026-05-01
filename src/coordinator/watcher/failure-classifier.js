@@ -46,6 +46,8 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
   const piErrorCode = diagnostics.pi_error_code || null;
   const intro = reason === "usage_limit"
     ? `Previous run \`${runId}\` hit the model context limit.`
+    : reason === "schema_correction"
+      ? `Previous run \`${runId}\` returned malformed Worklab result JSON.`
     : providerInfo?.subkind === "terminated"
       ? `Previous run \`${runId}\` was interrupted by a provider connection drop${turnCount ? ` after ${turnCount} turn(s)` : ""}${piErrorCode ? ` (${piErrorCode})` : ""}.`
       : `Previous run \`${runId}\` ended with a retryable provider error${providerInfo?.subkind ? ` (${providerInfo.subkind})` : ""}.`;

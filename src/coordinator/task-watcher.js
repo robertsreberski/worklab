@@ -461,9 +461,29 @@ export function createTaskWatcher({
     return raw + jitter;
   }
 
+  function warningKindSet(value) {
+    const warnings = Array.isArray(value) ? value : [];
+    return new Set(warnings.map((warning) => warning?.kind || warning?.warning_kind || warning?.warningKind).filter(Boolean));
+  }
+
+  function schemaCorrectionFailure({ failureKind, res, run }) {
+    if (failureKind !== "invalid_result") return false;
+    if (res?.resultError) return true;
+    const kinds = warningKindSet([
+      ...safeParseJson(run?.warnings_json, []),
+      ...(Array.isArray(res?.warnings) ? res.warnings : []),
+    ]);
+    return kinds.has("worklab_result_validation")
+      || kinds.has("review_result_parse")
+      || kinds.has("unstructured_result_fallback");
+  }
+
   function recoveryReason({ failureKind, res, run, settings }) {
     if (failureKind === "usage_limit") {
       return { reason: "usage_limit", providerInfo: null };
+    }
+    if (schemaCorrectionFailure({ failureKind, res, run })) {
+      return { reason: "schema_correction", providerInfo: null };
     }
     if (failureKind !== "provider_unavailable") return null;
     if (settings.agent_provider_recovery_enabled === false) return null;
@@ -552,21 +572,36 @@ export function createTaskWatcher({
 
     const continuationStage = ["plan", "execute", "review"].includes(nextStageValue) ? nextStageValue : stage;
     const attempt = lineage.depth + 1;
-    const delayMs = recovery.reason === "usage_limit" ? 0 : providerRecoveryDelay(settings, attempt);
+    const delayMs = recovery.reason === "usage_limit" || recovery.reason === "schema_correction"
+      ? 0
+      : providerRecoveryDelay(settings, attempt);
     const resumeSnapshot = recovery.reason === "provider_retryable"
       ? loadResumeSnapshot(runId)
       : null;
     const summary = compactRecoveryRunSummary({
       runId,
       res,
-      reason: recovery.reason === "usage_limit" ? "usage_limit" : "provider_retryable",
+      reason: recovery.reason === "usage_limit" || recovery.reason === "schema_correction"
+        ? recovery.reason
+        : "provider_retryable",
       providerInfo: recovery.providerInfo,
     });
     const heading = recovery.reason === "usage_limit"
       ? "Automatic continuation after context-window overflow."
+      : recovery.reason === "schema_correction"
+        ? "Automatic schema-correction continuation after malformed Worklab result."
       : mode === "review"
         ? `Automatic review continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`
         : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
+    const retryGuidance = recovery.reason === "schema_correction"
+      ? [
+          "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
+          "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
+          "Do not include markdown fences or prose before or after the JSON.",
+        ]
+      : [
+          "Continue from the current workspace state. Do not repeat completed work. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
+        ];
     postSystemComment(taskId, [
       heading,
       delayMs > 0 ? `Retrying in ${Math.round(delayMs / 1000)} seconds.` : "",
@@ -574,7 +609,7 @@ export function createTaskWatcher({
       "",
       summary,
       "",
-      "Continue from the current workspace state. Do not repeat completed work. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
+      ...retryGuidance,
     ].filter(Boolean).join("\n").trim());
     applySideEffects(taskId, [
       { type: "clear_error_text" },
