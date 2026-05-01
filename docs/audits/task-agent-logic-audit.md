@@ -640,8 +640,10 @@ Task detail must show:
 - pending human actions
 - final synthesis
 
-Commander must group by workflow stage, not by inferred mixtures of task
-status, active worker, dependencies, and last run.
+Commander must keep workflow stage visible as the row-level source of truth.
+The default Tasks view may group by runtime relevance, but that grouping must
+stay a display lens over explicit signals such as active workers, dependencies,
+last run state, and schedules rather than mutating or obscuring `task.stage`.
 
 Every nonterminal task must answer:
 
