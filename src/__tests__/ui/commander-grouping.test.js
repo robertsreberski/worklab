@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  RUNTIME_GROUPS,
   commanderTaskSortBucket,
   compareCommanderGroups,
   compareCommanderTasks,
@@ -99,5 +100,17 @@ describe("commander task grouping", () => {
       title: "Build",
       project: { name: "Control Plane", slug: "control-plane" },
     }, "control plane")).toBe(true);
+  });
+
+  it("uses distinct intuitive runtime group symbols", () => {
+    const icons = Object.fromEntries(RUNTIME_GROUPS.map((group) => [group.key, group.icon]));
+
+    expect(icons.running).toBe("●");
+    expect(icons.attention).toBe("▲");
+    expect(icons.ready).toBe("◇");
+    expect(icons.waiting).toBe("□");
+    expect(icons.automated).toBe("◆");
+    expect(icons.completed).toBe("✓");
+    expect(new Set(Object.values(icons)).size).toBe(Object.values(icons).length);
   });
 });

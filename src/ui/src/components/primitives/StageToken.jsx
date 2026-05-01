@@ -6,7 +6,7 @@ export const TASK_STAGE_META = {
   running: { label: "Running", tone: "var(--status-progress)", icon: "zap" },
   review: { label: "Review", tone: "var(--status-review)", icon: "diamond" },
   awaiting_user: { label: "Needs input", tone: "var(--status-error)", icon: "alert-triangle" },
-  awaiting_children: { label: "Waiting", tone: "var(--status-progress)", icon: "clock" },
+  awaiting_children: { label: "Waiting", tone: "var(--status-progress)", icon: "square" },
   blocked: { label: "Blocked", tone: "var(--status-error)", icon: "square" },
   done: { label: "Done", tone: "var(--status-done)", icon: "check-circle" },
 };
