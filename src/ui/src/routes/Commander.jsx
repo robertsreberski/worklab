@@ -85,12 +85,12 @@ export const STAGE_GROUPS = [
 ];
 
 export const RUNTIME_GROUPS = [
-  { key: "running", label: "Running", color: "var(--status-progress)", icon: "●" },
-  { key: "attention", label: "Needs attention", color: "var(--status-error)", icon: "▲" },
-  { key: "ready", label: "Ready", color: "var(--accent)", icon: "◇" },
-  { key: "waiting", label: "Waiting", color: "var(--status-progress)", icon: "□" },
-  { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "◷" },
-  { key: "completed", label: "Completed", color: "var(--status-done)", icon: "✓" },
+  { key: "running", label: "Running", color: "var(--status-progress)", icon: "zap" },
+  { key: "attention", label: "Needs attention", color: "var(--status-error)", icon: "alert-triangle" },
+  { key: "ready", label: "Ready", color: "var(--accent)", icon: "play" },
+  { key: "waiting", label: "Waiting", color: "var(--status-progress)", icon: "clock" },
+  { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "calendar" },
+  { key: "completed", label: "Completed", color: "var(--status-done)", icon: "check-circle" },
 ];
 
 const STAGE_GROUP_ORDER = Object.fromEntries(STAGE_GROUPS.map((group, index) => [group.key, index]));
@@ -804,7 +804,9 @@ export function Commander({ query: routeQuery = {} }) {
             {grouped.map((group) => (
               <div key={group.status} class="commander-group">
                 <div class="commander-group-header">
-                  <span class="group-icon" style={{ color: group.meta.color }}>{group.meta.icon}</span>
+                  <span class="group-icon" style={{ color: group.meta.color }} aria-hidden="true">
+                    <Icon name={group.meta.icon} size={14} strokeWidth={2} />
+                  </span>
                   {group.meta.label}
                   <span class="group-count">{group.tasks.length}</span>
                 </div>
