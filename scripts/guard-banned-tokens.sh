@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # guard-banned-tokens.sh
-# Enforces docs/ui-design-system.md banned tokens inside src/ui.
+# Enforces the token constraints documented in docs/ui-design-system.md inside src/ui.
 # Fails with exit 1 on any violation. Intended for CI and local pre-commit.
 set -euo pipefail
 

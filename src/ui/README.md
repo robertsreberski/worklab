@@ -27,10 +27,11 @@ src/ui/
 
 ## Design system
 
-`docs/ui-design-system.md` and `scripts/guard-banned-tokens.sh` enforce
-spacing/typography tokens. Stick to the variables defined in `styles.css`
-and the primitives under `components/primitives/` rather than introducing
-new variants.
+`docs/ui-design-system.md`, `#/design-system`, and
+`scripts/guard-banned-tokens.sh` define the shared UI contract. Stick to the
+variables defined in `styles.css`, the primitives under
+`components/primitives/`, and the layouts under `components/layout/` rather
+than introducing new variants.
 
 ## Modularization scope
 
