@@ -253,6 +253,68 @@ describe("run input assembly", () => {
     });
   });
 
+  it("injects completed blocker latest execute output and artifacts into run context", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { id: "task-dependent", task_key: "T-2", stage: "execute", owner_agent: "owner" });
+      const blocker = seedTask(db, { id: "task-blocker", task_key: "T-1", title: "Blocker task", stage: "done", owner_agent: "owner" });
+      db.prepare("INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (?, ?, ?)")
+        .run(task.id, blocker.id, 1000);
+      const artifact = [{
+        path: "src/blocker.js",
+        display_path: "src/blocker.js",
+        kind: "update",
+        status: "completed",
+        added_lines: 4,
+        removed_lines: 1,
+        has_line_delta: true,
+        run_ids: ["run-blocker-exec"],
+        first_run_id: "run-blocker-exec",
+        last_run_id: "run-blocker-exec",
+        first_seen_at: 2000,
+        last_seen_at: 2000,
+      }];
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary,
+           artifacts_json, artifact_summary_json, artifact_paths_json)
+        VALUES ('run-blocker-exec', ?, 'execute', 'execute', 'owner', 1000, 2000, 'complete', 'succeeded', 'advance', ?, ?, ?, ?)
+      `).run(
+        blocker.id,
+        "Execute summary.",
+        JSON.stringify(artifact),
+        JSON.stringify({ files: 1, added_lines: 4, removed_lines: 1, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+        JSON.stringify(["src/blocker.js"]),
+      );
+      db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES ('log-blocker-exec', 'run-blocker-exec', ?, 'complete', 2000)")
+        .run(JSON.stringify([{ type: "final", text: "Implemented blocker output.", numTurns: 2, durationMs: 1200 }]));
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary)
+        VALUES ('run-blocker-review', ?, 'review', 'review', 'owner', 3000, 4000, 'complete', 'succeeded', 'approve', 'Approved blocker.')
+      `).run(blocker.id);
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-dependent",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Resolved blocker context");
+      expect(input.systemPrompt).toContain("### T-1: Blocker task");
+      expect(input.systemPrompt).toContain("Latest execute run: `run-blocker-exec`");
+      expect(input.systemPrompt).toContain("Implemented blocker output.");
+      expect(input.systemPrompt).toContain("Artifacts: 1 file, +4 -1 across 1 run.");
+      expect(input.systemPrompt).toContain("`src/blocker.js`");
+      expect(input.systemPrompt).toContain("`run-blocker-exec` (T-1 blocker execute by owner, complete)");
+      expect(input.systemPrompt).not.toContain("Approved blocker.");
+      expect(input.promptDiagnostics.resolvedBlockers).toBe(1);
+    });
+  });
+
   it("uses the same assembled payload for plan previews and worker input", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "planner", "Plan as owner.");

@@ -243,18 +243,56 @@ describe("GET /api/tasks/:id", () => {
   });
 
   it("includes blockers and reverse links in task detail", async () => {
-    const { agent } = makeTestServer();
+    const { agent, db } = makeTestServer();
     const { body: { task: blocker } } = await agent.post("/api/tasks").send({ title: "Blocker" }).expect(201);
     const { body: { task: blocked } } = await agent.post("/api/tasks").send({
       title: "Blocked task",
       blocked_by_ids: [blocker.id],
     }).expect(201);
+    db.prepare("UPDATE tasks SET stage = 'done' WHERE id = ?").run(blocker.id);
+    const artifact = [{
+      path: "src/blocker.js",
+      display_path: "src/blocker.js",
+      kind: "update",
+      status: "completed",
+      added_lines: 2,
+      removed_lines: 1,
+      has_line_delta: true,
+      run_ids: ["run-blocker-exec"],
+      first_run_id: "run-blocker-exec",
+      last_run_id: "run-blocker-exec",
+      first_seen_at: 2000,
+      last_seen_at: 2000,
+    }];
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary,
+         artifact_paths_json, artifacts_json, artifact_summary_json)
+      VALUES ('run-blocker-exec', ?, 'execute', 'execute', 'alpha', 1000, 2000, 'complete', 'succeeded', 'advance', 'Execute done', ?, ?, ?)
+    `).run(
+      blocker.id,
+      JSON.stringify(["src/blocker.js"]),
+      JSON.stringify(artifact),
+      JSON.stringify({ files: 1, added_lines: 2, removed_lines: 1, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+    );
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, summary)
+      VALUES ('run-blocker-review', ?, 'review', 'review', 'beta', 3000, 4000, 'complete', 'succeeded', 'approve', 'Review approved')
+    `).run(blocker.id);
 
     const blockerDetail = await agent.get(`/api/tasks/${blocker.id}`).expect(200);
     const blockedDetail = await agent.get(`/api/tasks/${blocked.id}`).expect(200);
 
     expect(blockedDetail.body.task.dependency_ids).toEqual([blocker.id]);
     expect(blockedDetail.body.task.blocked_by[0]).toMatchObject({ id: blocker.id, title: "Blocker" });
+    expect(blockedDetail.body.task.blocked_by[0].latest_execute_run).toMatchObject({
+      id: "run-blocker-exec",
+      agent_name: "alpha",
+      summary: "Execute done",
+    });
+    expect(blockedDetail.body.task.blocked_by[0].latest_execute_run.summary).not.toBe("Review approved");
+    expect(blockedDetail.body.task.blocked_by[0].artifact_summary).toMatchObject({ files: 1, added_lines: 2, removed_lines: 1 });
     expect(blockerDetail.body.task.blocks[0]).toMatchObject({ id: blocked.id, title: "Blocked task" });
   });
 

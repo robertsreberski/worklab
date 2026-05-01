@@ -50,6 +50,39 @@ import {
   TaskWorkflowMeta,
 } from "./task-detail/WorkflowCards.jsx";
 
+function dependencyContextLabel(dependency) {
+  const latest = dependency?.latest_execute_run;
+  const artifacts = dependency?.artifact_summary || {};
+  const parts = [];
+  if (latest?.summary) {
+    parts.push(latest.summary);
+  } else if (latest?.id) {
+    parts.push(`Latest execute ${latest.status || latest.process_status || "recorded"}`);
+  } else if ((dependency?.stage || "plan") === "done") {
+    parts.push("No execute run recorded");
+  }
+  const files = Number(artifacts.files || 0);
+  if (files > 0) {
+    const added = Number(artifacts.added_lines || 0);
+    const removed = Number(artifacts.removed_lines || 0);
+    const delta = added || removed ? `, +${added} -${removed}` : "";
+    parts.push(`${files} file${files === 1 ? "" : "s"}${delta}`);
+  }
+  return parts.join(" - ");
+}
+
+function DependencyLink({ dependency }) {
+  const context = dependencyContextLabel(dependency);
+  return (
+    <a key={dependency.id} class="blocked-link dependency-link" href={`#/tasks/${taskRouteId(dependency)}`}>
+      <span class="dependency-link-copy">
+        <span class="truncate">{dependency.title}</span>
+        {context && <span class="dependency-link-meta">{context}</span>}
+      </span>
+      <StatusPill status={dependency.stage || "plan"} size="sm" />
+    </a>
+  );
+}
 
 export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(null);
@@ -697,10 +730,7 @@ export function TaskDetail({ id, runParam = null }) {
                 <div class="dependency-group">
                   <div class="all-caps">Blocked by</div>
                   {(task.blocked_by || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                      <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.stage || "plan"} size="sm" />
-                    </a>
+                    <DependencyLink key={dependency.id} dependency={dependency} />
                   ))}
                 </div>
               )}
@@ -708,10 +738,7 @@ export function TaskDetail({ id, runParam = null }) {
                 <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
                   <div class="all-caps">Blocks</div>
                   {(task.blocks || []).map((dependency) => (
-                    <a key={dependency.id} class="blocked-link" href={`#/tasks/${taskRouteId(dependency)}`}>
-                      <span class="truncate">{dependency.title}</span>
-                      <StatusPill status={dependency.stage || "plan"} size="sm" />
-                    </a>
+                    <DependencyLink key={dependency.id} dependency={dependency} />
                   ))}
                 </div>
               )}

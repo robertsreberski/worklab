@@ -228,6 +228,55 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("## Available agents");
     expect(p).toContain("`researcher` (Researcher)");
   });
+
+  it("renders resolved blocker context from latest execute runs", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      resolvedBlockers: [
+        {
+          id: "blocker-1",
+          task_key: "T-7",
+          title: "Prepare fixture",
+          stage: "done",
+          latest_execute_run: {
+            id: "run-blocker",
+            agentName: "builder",
+            status: "complete",
+            process_status: "succeeded",
+            decision: "advance",
+            finalText: "Fixture is ready.",
+          },
+          artifact_summary: { files: 1, added_lines: 3, removed_lines: 0, run_count: 1 },
+          artifacts: [{ path: "fixtures/data.json", display_path: "fixtures/data.json" }],
+        },
+        {
+          id: "blocker-2",
+          task_key: "T-8",
+          title: "Manual signoff",
+          stage: "done",
+          latest_execute_run: null,
+          artifact_summary: { files: 0 },
+          artifacts: [],
+        },
+      ],
+    });
+
+    expect(p).toContain("## Resolved blocker context");
+    expect(p).toContain("### T-7: Prepare fixture");
+    expect(p).toContain("Latest execute run: `run-blocker` by builder");
+    expect(p).toContain("Fixture is ready.");
+    expect(p).toContain("Artifacts: 1 file, +3 -0 across 1 run.");
+    expect(p).toContain("Changed paths: `fixtures/data.json`.");
+    expect(p).toContain("### T-8: Manual signoff");
+    expect(p).toContain("Latest execute run: none recorded.");
+    expect(p).toContain("`run-blocker` (T-7 blocker execute by builder, complete)");
+  });
 });
 
 describe("buildPlanSystemPrompt", () => {

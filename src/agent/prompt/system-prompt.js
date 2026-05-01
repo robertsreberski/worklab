@@ -205,24 +205,101 @@ function formatPriorRuns(priorRuns) {
     .join("\n\n");
 }
 
-function formatAvailableRunLogs(priorRuns) {
+function resolvedBlockerRunEntries(resolvedBlockers) {
+  return (resolvedBlockers || [])
+    .map((blocker) => {
+      const run = blocker?.latest_execute_run;
+      if (!run?.id) return null;
+      const ref = blocker.task_key || blocker.id;
+      const agentName = run.agentName || run.agent_name || "unknown";
+      return {
+        id: run.id,
+        label: `${ref} blocker execute by ${agentName}`,
+        status: run.status || run.process_status || "unknown",
+      };
+    })
+    .filter(Boolean);
+}
+
+function formatArtifactSummary(summary = {}) {
+  const files = Number(summary.files || 0);
+  if (!files) return "";
+  const added = Number(summary.added_lines || 0);
+  const removed = Number(summary.removed_lines || 0);
+  const runs = Number(summary.run_count || 0);
+  const lineLabel = added || removed ? `, +${added} -${removed}` : "";
+  const runLabel = runs ? ` across ${runs} run${runs === 1 ? "" : "s"}` : "";
+  return `${files} file${files === 1 ? "" : "s"}${lineLabel}${runLabel}`;
+}
+
+function formatResolvedBlockers(resolvedBlockers) {
+  const blockers = resolvedBlockers || [];
+  if (!blockers.length) return "";
+  return blockers.map((blocker) => {
+    const ref = blocker.task_key || blocker.id;
+    const latest = blocker.latest_execute_run;
+    const artifactSummary = formatArtifactSummary(blocker.artifact_summary);
+    const artifacts = (blocker.artifacts || []).slice(0, 8);
+    const artifactPaths = artifacts
+      .map((artifact) => artifact.display_path || artifact.path)
+      .filter(Boolean);
+    const lines = [
+      `### ${ref}: ${blocker.title}`,
+      `Stage: ${blocker.stage || "done"}.`,
+    ];
+    if (latest) {
+      const agentName = latest.agentName || latest.agent_name || "unknown";
+      const status = [latest.status, latest.process_status].filter(Boolean).join("/") || "unknown";
+      lines.push(`Latest execute run: \`${latest.id}\` by ${agentName} (${status}${latest.decision ? `, decision ${latest.decision}` : ""}).`);
+      const output = formatContextText(latest.finalText || latest.summary || latest.details || "", 900);
+      if (output) lines.push("", "**Output:**", output);
+    } else {
+      lines.push("Latest execute run: none recorded.");
+    }
+    if (artifactSummary) lines.push(`Artifacts: ${artifactSummary}.`);
+    if (artifactPaths.length) {
+      lines.push(`Changed paths: ${artifactPaths.map((path) => `\`${path}\``).join(", ")}${(blocker.artifacts || []).length > artifactPaths.length ? ", ..." : ""}.`);
+    }
+    return lines.join("\n");
+  }).join("\n\n");
+}
+
+function formatAvailableRunLogs(priorRuns, resolvedBlockers = []) {
   const runs = (priorRuns || []).filter((run) => run?.id);
-  if (!runs.length) return "";
-  const entries = runs.map((run) => `- \`${run.id}\` (${run.mode} by ${run.agentName}, ${run.status})`).join("\n");
+  const blockerRuns = resolvedBlockerRunEntries(resolvedBlockers);
+  if (!runs.length && !blockerRuns.length) return "";
+  const entries = [
+    ...runs.map((run) => `- \`${run.id}\` (${run.mode} by ${run.agentName}, ${run.status})`),
+    ...blockerRuns.map((run) => `- \`${run.id}\` (${run.label}, ${run.status})`),
+  ].join("\n");
   return [
-    "Prior run history above is an abbreviated preview.",
+    blockerRuns.length
+      ? "Prior run history and resolved blocker context above are abbreviated previews."
+      : "Prior run history above is an abbreviated preview.",
     "When you need exact tool calls, raw model events, or full prior output, call `run_log_read` with a `run_id`.",
     "",
     entries,
   ].join("\n");
 }
 
-function formatReviewRunLogs(execution) {
-  if (!execution?.runId) return "";
-  return [
-    "The work output above is an abbreviated preview of the owner run.",
-    `For the full raw owner-run log, call \`run_log_read\` with \`run_id: "${execution.runId}"\`.`,
-  ].join("\n");
+function formatReviewRunLogs(execution, resolvedBlockers = []) {
+  const blockerRuns = resolvedBlockerRunEntries(resolvedBlockers);
+  if (!execution?.runId && !blockerRuns.length) return "";
+  const lines = [];
+  if (execution?.runId) {
+    lines.push(
+      "The work output above is an abbreviated preview of the owner run.",
+      `For the full raw owner-run log, call \`run_log_read\` with \`run_id: "${execution.runId}"\`.`,
+    );
+  }
+  if (blockerRuns.length) {
+    lines.push(
+      "",
+      "Resolved blocker context above is abbreviated. Use `run_log_read` for exact blocker logs:",
+      blockerRuns.map((run) => `- \`${run.id}\` (${run.label}, ${run.status})`).join("\n"),
+    );
+  }
+  return lines.filter(Boolean).join("\n");
 }
 
 function buildTaskBody(task, comments) {
@@ -445,6 +522,8 @@ export function buildSystemPrompt(input, mode) {
     if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments)));
     sectionNames.push("Task");
+    parts.push(section("Resolved blocker context", formatResolvedBlockers(input.resolvedBlockers)));
+    if (input.resolvedBlockers?.length) sectionNames.push("Resolved blocker context");
     if (mode === "plan" || mode === "execute") {
       parts.push(section("Child tasks", formatChildTasks(input.delegation)));
       if (input.delegation?.childTasks?.length) sectionNames.push("Child tasks");
@@ -458,12 +537,12 @@ export function buildSystemPrompt(input, mode) {
   if (mode === "review") {
     parts.push(formatWorkOutput(input.execution || {}));
     parts.push(section("Task artifacts", input.taskArtifactsMarkdown || ""));
-    parts.push(section("Available run logs", formatReviewRunLogs(input.execution)));
+    parts.push(section("Available run logs", formatReviewRunLogs(input.execution, input.resolvedBlockers)));
     sectionNames.push("Work output", "Task artifacts", "Available run logs");
   } else if (mode === "plan" || mode === "execute") {
     parts.push(section("Prior run history", formatPriorRuns(input.priorRuns)));
     parts.push(section("Task artifacts", input.taskArtifactsMarkdown || ""));
-    parts.push(section("Available run logs", formatAvailableRunLogs(input.priorRuns)));
+    parts.push(section("Available run logs", formatAvailableRunLogs(input.priorRuns, input.resolvedBlockers)));
     sectionNames.push("Prior run history", "Task artifacts", "Available run logs");
   }
 

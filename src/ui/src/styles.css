@@ -6626,6 +6626,23 @@ html.assistant-resizing * {
 .automation-list-row:hover {
   color: var(--text);
 }
+.dependency-link {
+  align-items: flex-start;
+}
+.dependency-link-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.dependency-link-meta {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .automation-list {
   display: flex;
   flex-direction: column;
