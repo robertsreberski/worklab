@@ -508,6 +508,7 @@ test.afterAll(async () => {
 test("commander lists tasks grouped by runtime state", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
+  await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toHaveCount(0);
   const groups = page.locator(".commander-group");
   const groupCount = await groups.count();
   expect(groupCount).toBeGreaterThan(0);
@@ -521,6 +522,27 @@ test("commander lists tasks grouped by runtime state", async ({ page }) => {
   expect(commanderFont).toContain("Manrope");
 });
 
+test("commander toggles completed tasks inline", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+  await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toHaveCount(0);
+
+  const showCompleted = page.locator(".commander-hidden-completed", { hasText: "Show completed" });
+  await expect(showCompleted).toBeVisible();
+  await showCompleted.click();
+
+  await expect(page).toHaveURL(/show_completed=1/);
+  await expect(page.locator(".commander-group-header", { hasText: "Completed" })).toBeVisible();
+  await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toBeVisible();
+
+  const hideCompleted = page.locator(".commander-hidden-completed", { hasText: "Hide completed" });
+  await expect(hideCompleted).toBeVisible();
+  await hideCompleted.click();
+
+  await expect(page).not.toHaveURL(/show_completed=1/);
+  await expect(page.locator(".commander-row", { hasText: "Desktop done task" })).toHaveCount(0);
+});
+
 test("desktop task list keeps every task state legible without clipped controls", async ({ page }) => {
   const viewports = [
     { width: 1440, height: 900, label: "desktop-1440" },
@@ -530,7 +552,6 @@ test("desktop task list keeps every task state legible without clipped controls"
     { title: "Desktop ready task", text: "Execute" },
     { title: "Desktop needs owner task", text: "Needs owner" },
     { title: "Desktop review task", text: "Review" },
-    { title: "Desktop done task", text: "Done" },
     { title: "Desktop blocked task", text: "Blocked by 1" },
     { title: "Desktop running task", text: "Running" },
     { title: "Desktop running task", text: "Desktop running event" },
@@ -542,9 +563,10 @@ test("desktop task list keeps every task state legible without clipped controls"
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    for (const label of ["Running", "Needs attention", "Ready", "Completed"]) {
+    for (const label of ["Running", "Needs attention", "Ready"]) {
       await expect(page.locator(".commander-group-header", { hasText: label })).toBeVisible();
     }
+    await expect(page.locator(".commander-group-header", { hasText: "Completed" })).toHaveCount(0);
     for (const row of stateRows) {
       await expect(page.locator(".commander-row", { hasText: row.title })).toContainText(row.text);
     }

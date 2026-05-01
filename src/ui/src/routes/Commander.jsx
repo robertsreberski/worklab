@@ -27,7 +27,8 @@ import {
 } from "../../../core/task-runtime.js";
 
 const STAGE_GROUP_KEYS = ["plan", "execute", "review", "awaiting_children", "awaiting_user", "blocked", "done"];
-const DEFAULT_DONE_LIMIT = 8;
+const HIDDEN_DONE_LIMIT = 0;
+const SHOWN_DONE_LIMIT = 200;
 
 export function formatCommanderCost(value) {
   if (value == null) return null;
@@ -83,7 +84,7 @@ const RUNTIME_GROUPS = [
   { key: "ready", label: "Ready", color: "var(--accent)", icon: "○" },
   { key: "waiting", label: "Waiting", color: "var(--status-progress)", icon: "◐" },
   { key: "automated", label: "Automated", color: "var(--status-progress)", icon: "◐" },
-  { key: "completed", label: "Completed recently", color: "var(--status-done)", icon: "●" },
+  { key: "completed", label: "Completed", color: "var(--status-done)", icon: "●" },
 ];
 
 const STAGE_GROUP_ORDER = Object.fromEntries(STAGE_GROUPS.map((group, index) => [group.key, index]));
@@ -154,7 +155,6 @@ const RUNTIME_TABS = [
   { value: "ready", label: "Ready" },
   { value: "waiting", label: "Waiting" },
   { value: "automated", label: "Automated" },
-  { value: "completed", label: "Completed" },
 ];
 
 const STAGE_FILTER_OPTIONS = [
@@ -162,11 +162,6 @@ const STAGE_FILTER_OPTIONS = [
   ...STAGE_GROUPS
     .filter((group) => STAGE_GROUP_KEYS.includes(group.key))
     .map((group) => ({ value: group.key, label: group.label })),
-];
-
-const TASK_SCOPE_OPTIONS = [
-  { value: "runtime", label: "Runtime now" },
-  { value: "all", label: "All tasks" },
 ];
 
 const BULK_STAGE_OPTIONS = STAGE_GROUPS
@@ -201,8 +196,12 @@ function normalizeRuntimeGroup(value) {
   return "all";
 }
 
-function taskScopeFromQuery(query = {}) {
-  return query.scope === "all" ? "all" : "runtime";
+function showCompletedFromQuery(query = {}) {
+  return query.show_completed === "1"
+    || query.show_completed === "true"
+    || query.scope === "all"
+    || query.group === "done"
+    || query.group === "completed";
 }
 
 function BulkTaskBar({
@@ -325,8 +324,10 @@ export function Commander({ query: routeQuery = {} }) {
   const [runtimeSummary, setRuntimeSummary] = useState(null);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [taskScope, setTaskScope] = useState(() => taskScopeFromQuery(routeQuery));
-  const [groupFilter, setGroupFilter] = useState(() => normalizeRuntimeGroup(routeQuery.group || "all"));
+  const [showCompleted, setShowCompleted] = useState(() => showCompletedFromQuery(routeQuery));
+  const [groupFilter, setGroupFilter] = useState(() => normalizeRuntimeGroup(
+    routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
+  ));
   const [stageFilter, setStageFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -341,18 +342,22 @@ export function Commander({ query: routeQuery = {} }) {
   const projectsReloadAbortRef = useRef(null);
 
   useEffect(() => {
-    setTaskScope(taskScopeFromQuery(routeQuery));
-    setGroupFilter(normalizeRuntimeGroup(routeQuery.group || "all"));
-  }, [routeQuery.group, routeQuery.scope]);
+    setShowCompleted(showCompletedFromQuery(routeQuery));
+    setGroupFilter(normalizeRuntimeGroup(
+      routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
+    ));
+  }, [routeQuery.group, routeQuery.scope, routeQuery.show_completed]);
 
   const reload = useCallback(() => {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
     setError(null);
-    const requestQuery = taskScope === "runtime"
-      ? { scope: "runtime", done_limit: String(DEFAULT_DONE_LIMIT) }
-      : null;
+    const includeCompleted = showCompleted || stageFilter === "done" || groupFilter === "completed";
+    const requestQuery = {
+      scope: "runtime",
+      done_limit: String(includeCompleted ? SHOWN_DONE_LIMIT : HIDDEN_DONE_LIMIT),
+    };
     return api.listTasks(requestQuery, { signal: controller.signal })
       .then((r) => {
         if (!controller.signal.aborted) {
@@ -366,7 +371,7 @@ export function Commander({ query: routeQuery = {} }) {
         setRuntimeSummary(null);
         setError(e.message || "Failed to load tasks");
       });
-  }, [taskScope]);
+  }, [groupFilter, showCompleted, stageFilter]);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadProjects = useCallback(() => {
     projectsReloadAbortRef.current?.abort?.();
@@ -414,14 +419,13 @@ export function Commander({ query: routeQuery = {} }) {
     const c = { all: withGroup.length };
     for (const { group } of withGroup) c[group] = (c[group] || 0) + 1;
     const hasClientFilter = !!query.trim() || projectFilter !== "all" || stageFilter !== "all";
-    if (taskScope === "runtime" && runtimeSummary?.groups && !hasClientFilter) {
-      c.all = runtimeSummary.total || 0;
+    if (runtimeSummary?.groups && !hasClientFilter) {
       for (const group of RUNTIME_GROUPS) {
         c[group.key] = runtimeSummary.groups[group.key] || 0;
       }
     }
     return c;
-  }, [projectFilter, query, runtimeSummary, stageFilter, taskScope, withGroup]);
+  }, [projectFilter, query, runtimeSummary, stageFilter, withGroup]);
 
   const filtered = useMemo(() => {
     return withGroup.filter(({ task, group }) => {
@@ -511,23 +515,21 @@ export function Commander({ query: routeQuery = {} }) {
 
   const hasFilter = groupFilter !== "all" || stageFilter !== "all" || projectFilter !== "all" || !!query.trim();
 
-  const taskCountLabel = tasks ? `${counts.all || 0} tasks` : null;
-  const hiddenDoneCount = taskScope === "runtime" && !query.trim() && projectFilter === "all" && stageFilter === "all"
-    ? Number(runtimeSummary?.hidden_done_count || 0)
-    : 0;
-
-  function updateScope(nextScope) {
-    if (nextScope === "all") navigateHash("#/tasks?scope=all");
-    else navigateHash("#/tasks");
-  }
+  const taskCountLabel = tasks ? `${filtered.length || 0} shown` : null;
+  const hiddenDoneCount = !showCompleted ? Number(runtimeSummary?.hidden_done_count || 0) : 0;
+  const showCompletedCount = !query.trim() && projectFilter === "all" && stageFilter === "all";
+  const completedTotal = Number(runtimeSummary?.groups?.completed || 0);
+  const canToggleCompleted = groupFilter === "all" && (showCompleted
+    ? completedTotal > 0 || stageFilter === "done"
+    : hiddenDoneCount > 0);
 
   function updateGroupFilter(nextGroup) {
     const normalized = normalizeRuntimeGroup(nextGroup);
-    if (normalized === "completed") {
-      navigateHash("#/tasks?scope=all&group=done");
-      return;
-    }
     setGroupFilter(normalized);
+  }
+
+  function toggleCompleted() {
+    navigateHash(showCompleted ? "#/tasks" : "#/tasks?show_completed=1");
   }
 
   async function applyBulk(operation, patch) {
@@ -588,14 +590,6 @@ export function Commander({ query: routeQuery = {} }) {
               class="tabs-pills"
             />
             <Select
-              class="commander-scope-filter"
-              variant="native"
-              value={taskScope}
-              onChange={updateScope}
-              options={TASK_SCOPE_OPTIONS}
-              ariaLabel="Task list scope"
-            />
-            <Select
               class="commander-stage-filter"
               variant="native"
               value={stageFilter}
@@ -614,15 +608,16 @@ export function Commander({ query: routeQuery = {} }) {
             />
             <div class="commander-filter-actions">
               <DailyCostChip />
-              {hiddenDoneCount > 0 && (
+              {canToggleCompleted && (
                 <Button
                   size="sm"
                   variant="ghost"
                   class="commander-hidden-completed"
                   iconLeft={<Icon name="eye" size={12} />}
-                  onClick={() => navigateHash("#/tasks?scope=all&group=done")}
+                  onClick={toggleCompleted}
                 >
-                  {hiddenDoneCount} completed hidden
+                  {showCompleted ? "Hide completed" : "Show completed"}
+                  {!showCompleted && showCompletedCount && hiddenDoneCount > 0 && <span class="commander-hidden-completed-count">{hiddenDoneCount}</span>}
                 </Button>
               )}
               {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
