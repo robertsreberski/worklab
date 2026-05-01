@@ -196,6 +196,59 @@ describe("task-watcher v2 workflow", () => {
     expect(db.prepare("SELECT completed_at FROM tasks WHERE id = ?").get(taskId).completed_at).toBeTruthy();
   });
 
+  it("auto-recovers retryable provider failures during review against the same execute run", async () => {
+    const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_provider_recovery_base_delay_ms", JSON.stringify(0));
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", workspace: "/workspace" });
+    const { runId: executeRunId } = await watcher.handleRunRequested(taskId);
+
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "owner output", worklabResult: advanceResult });
+    await waitFor(() => db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage === "review");
+
+    const { runId: failedReviewRunId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(failedReviewRunId);
+    resolvers[1]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "terminated",
+    });
+    await waitFor(() => spawn.mock.calls.length >= 3);
+
+    expect(calls[2].args).toEqual(expect.arrayContaining(["--mode", "review", "--agent", "checker"]));
+    expect(calls[2].env.WORKLAB_PRIOR_RUN_ID).toBe(executeRunId);
+    expect(calls[2].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: failedReviewRunId,
+      continuation_reason: "provider_retryable",
+      retryable_provider_error: true,
+      provider_error_subkind: "terminated",
+    });
+    const retryRun = db.prepare("SELECT parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id != ? AND id != ? ORDER BY started_at DESC LIMIT 1")
+      .get(executeRunId, failedReviewRunId);
+    expect(retryRun).toMatchObject({ parent_run_id: executeRunId, mode: "review", stage: "review" });
+    expect(JSON.parse(retryRun.diagnostics_json)).toMatchObject({ continuation_of_run_id: failedReviewRunId });
+
+    const failedDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(failedReviewRunId).diagnostics_json);
+    expect(failedDiagnostics).toMatchObject({
+      continuation_run_id: expect.any(String),
+      provider_error_subkind: "terminated",
+    });
+    const task = db.prepare("SELECT stage, stage_reason, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task).toMatchObject({
+      stage: "review",
+      stage_reason: "continuing after provider_retryable",
+      error_text: null,
+      last_failure_kind: "provider_unavailable",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic review continuation%'").get(taskId);
+    expect(comment.body).toContain(`Retrying the review against execute run \`${executeRunId}\`.`);
+  });
+
   it("review rejection routes back to execute and clears stale errors", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

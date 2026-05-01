@@ -514,6 +514,116 @@ describe("GET /api/tasks/:id", () => {
     expect(continuationRun.continuation.depth).toBe(1);
     expect(continuationRun.continuation.root_run_id).toBe("run-failed");
   });
+
+  it("uses diagnostic continuation links for review retry runs", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "review retry" });
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, parent_run_id, mode, stage, agent_name, started_at, ended_at,
+         status, process_status, failure_kind, diagnostics_json)
+      VALUES (?, ?, ?, ?, ?, 'alpha', ?, ?, ?, ?, ?, ?)
+    `);
+    insertRun.run("execute-run", task.id, null, "execute", "execute", 1000, 1500, "complete", "succeeded", null, null);
+    insertRun.run(
+      "review-failed",
+      task.id,
+      "execute-run",
+      "review",
+      "review",
+      2000,
+      2500,
+      "error",
+      "failed",
+      "provider_unavailable",
+      JSON.stringify({ retryable_provider_error: true, provider_error_subkind: "terminated" }),
+    );
+    insertRun.run(
+      "review-retry",
+      task.id,
+      "execute-run",
+      "review",
+      "review",
+      3000,
+      null,
+      "running",
+      "running",
+      null,
+      JSON.stringify({ continuation_of_run_id: "review-failed", continuation_depth: 1, continuation_limit: 3 }),
+    );
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    const executeRun = res.body.runs.find((r) => r.id === "execute-run");
+    const failedReview = res.body.runs.find((r) => r.id === "review-failed");
+    const reviewRetry = res.body.runs.find((r) => r.id === "review-retry");
+    expect(executeRun.continuation_child_id).toBeNull();
+    expect(failedReview.continuation_child_id).toBe("review-retry");
+    expect(failedReview.continuation.depth).toBe(0);
+    expect(reviewRetry.parent_run_id).toBe("execute-run");
+    expect(reviewRetry.continuation.depth).toBe(1);
+    expect(reviewRetry.continuation.root_run_id).toBe("review-failed");
+  });
+
+  it("embeds compact recovery metadata in task summaries", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "recovering" });
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at,
+         status, process_status, failure_kind, diagnostics_json)
+      VALUES (?, ?, 'review', 'review', 'checker', ?, ?, ?, ?, ?, ?)
+    `).run(
+      "run-failed",
+      task.id,
+      1000,
+      1500,
+      "error",
+      "failed",
+      "provider_unavailable",
+      JSON.stringify({
+        retryable_provider_error: true,
+        provider_error_subkind: "terminated",
+        continuation_run_id: "run-retry",
+        continuation_depth: 0,
+        continuation_limit: 3,
+        context_risk: "normal",
+      }),
+    );
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at,
+         status, process_status, diagnostics_json)
+      VALUES (?, ?, 'review', 'review', 'checker', ?, 'running', 'running', ?)
+    `).run(
+      "run-retry",
+      task.id,
+      2000,
+      JSON.stringify({
+        continuation_of_run_id: "run-failed",
+        continuation_depth: 1,
+        continuation_limit: 3,
+        retryable_provider_error: true,
+        provider_error_subkind: "terminated",
+      }),
+    );
+
+    const list = await agent.get("/api/tasks").expect(200);
+    const listedTask = list.body.tasks.find((row) => row.id === task.id);
+    expect(listedTask.last_run.recovery).toMatchObject({
+      retryable: true,
+      subkind: "terminated",
+      active_run_id: "run-retry",
+      continuation_of_run_id: "run-failed",
+      depth: 1,
+      limit: 3,
+      context_risk: "normal",
+      stage: "review",
+    });
+
+    const detail = await agent.get(`/api/tasks/${task.id}`).expect(200);
+    expect(detail.body.task.last_run.recovery).toMatchObject(listedTask.last_run.recovery);
+  });
 });
 
 describe("PATCH /api/tasks/:id", () => {

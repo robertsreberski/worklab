@@ -193,6 +193,14 @@ export function createTaskWatcher({
     `).get(taskId)?.id || null;
   }
 
+  function reviewSubjectRunIdFor(run, taskId) {
+    if (run?.parent_run_id) {
+      const parent = db.prepare("SELECT id, mode FROM task_runs WHERE id = ?").get(run.parent_run_id);
+      if (parent?.mode === "execute") return parent.id;
+    }
+    return latestPriorExecuteRunId(taskId);
+  }
+
   function spawnRun(options) {
     return spawnTaskRun({
       db,
@@ -397,16 +405,46 @@ export function createTaskWatcher({
     );
   }
 
+  function continuationParentRun(run) {
+    const diagnostics = safeParseJson(run?.diagnostics_json, {});
+    const diagnosticParentId = diagnostics.continuation_of_run_id || null;
+    if (diagnosticParentId) {
+      return db.prepare("SELECT id, parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id = ?").get(diagnosticParentId) || null;
+    }
+    if (!run?.parent_run_id) return null;
+    const parent = db.prepare("SELECT id, parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id = ?").get(run.parent_run_id);
+    if (!parent) return null;
+    const runMode = run.mode || null;
+    const parentMode = parent.mode || null;
+    const runStage = run.stage || runMode;
+    const parentStage = parent.stage || parentMode;
+    if (runMode && parentMode && runMode !== parentMode) return null;
+    if (runStage && parentStage && runStage !== parentStage) return null;
+    return parent;
+  }
+
+  function hasRecoveryContinuation(runId) {
+    return Boolean(db.prepare(`
+      SELECT id
+      FROM task_runs
+      WHERE parent_run_id = ?
+         OR (CASE
+           WHEN diagnostics_json IS NOT NULL AND json_valid(diagnostics_json)
+           THEN json_extract(diagnostics_json, '$.continuation_of_run_id')
+           ELSE NULL
+         END) = ?
+      LIMIT 1
+    `).get(runId, runId));
+  }
+
   function continuationLineage(run) {
     const seen = new Set();
     const lineage = [run.id];
-    let parentId = run.parent_run_id;
-    while (parentId && !seen.has(parentId) && lineage.length < 50) {
-      seen.add(parentId);
-      const parent = db.prepare("SELECT id, parent_run_id FROM task_runs WHERE id = ?").get(parentId);
-      if (!parent) break;
+    let parent = continuationParentRun(run);
+    while (parent && !seen.has(parent.id) && lineage.length < 50) {
+      seen.add(parent.id);
       lineage.push(parent.id);
-      parentId = parent.parent_run_id;
+      parent = continuationParentRun(parent);
     }
     return {
       rootRunId: lineage[lineage.length - 1] || run.id,
@@ -453,9 +491,8 @@ export function createTaskWatcher({
 
   function maybeStartRecoveryContinuation({ taskId, runId, res, task, run, stage, failureKind, processStatus, nextStageValue }) {
     if (processStatus !== "failed") return null;
-    if (!["plan", "execute"].includes(stage)) return null;
-    const existing = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ? LIMIT 1").get(runId);
-    if (existing) return null;
+    if (!["plan", "execute", "review"].includes(stage)) return null;
+    if (hasRecoveryContinuation(runId)) return null;
     const settings = readSettings(db);
     const recovery = recoveryReason({ failureKind, res, run, settings });
     if (!recovery) return null;
@@ -493,13 +530,27 @@ export function createTaskWatcher({
 
     const agentName = run.agent_name || agentForTaskStage(task, stage);
     if (!agentName) return null;
+    const mode = run.mode || modeForStage(stage);
+    const reviewSubjectRunId = mode === "review" ? reviewSubjectRunIdFor(run, taskId) : null;
+    if (mode === "review" && !reviewSubjectRunId) {
+      postSystemComment(taskId, "Automatic continuation skipped: no execute run is available for review.");
+      patchRunDiagnostics(runId, {
+        continuation_skipped: true,
+        continuation_skip_reason: "missing_review_subject",
+        continuation_reason: recovery.reason,
+        continuation_depth: lineage.depth,
+        continuation_limit: continuationLimit,
+        continuation_root_run_id: lineage.rootRunId,
+      });
+      return null;
+    }
     const budget = checkBudget({ db, agentName, taskId });
     if (!budget.ok) {
       postSystemComment(taskId, `Automatic continuation skipped: ${budget.message}`);
       return null;
     }
 
-    const continuationStage = ["plan", "execute"].includes(nextStageValue) ? nextStageValue : stage;
+    const continuationStage = ["plan", "execute", "review"].includes(nextStageValue) ? nextStageValue : stage;
     const attempt = lineage.depth + 1;
     const delayMs = recovery.reason === "usage_limit" ? 0 : providerRecoveryDelay(settings, attempt);
     const resumeSnapshot = recovery.reason === "provider_retryable"
@@ -513,10 +564,13 @@ export function createTaskWatcher({
     });
     const heading = recovery.reason === "usage_limit"
       ? "Automatic continuation after context-window overflow."
-      : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
+      : mode === "review"
+        ? `Automatic review continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`
+        : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
     postSystemComment(taskId, [
       heading,
       delayMs > 0 ? `Retrying in ${Math.round(delayMs / 1000)} seconds.` : "",
+      mode === "review" && reviewSubjectRunId ? `Retrying the review against execute run \`${reviewSubjectRunId}\`.` : "",
       "",
       summary,
       "",
@@ -549,10 +603,10 @@ export function createTaskWatcher({
       }
       const continuation = spawnRun({
         task: { ...task, stage: continuationStage },
-        stage,
-        mode: run.mode || modeForStage(stage),
+        stage: continuationStage,
+        mode,
         agentName,
-        parentRunId: runId,
+        parentRunId: mode === "review" ? reviewSubjectRunId : runId,
         diagnosticsSeed: {
           continuation_of_run_id: runId,
           continuation_root_run_id: lineage.rootRunId,

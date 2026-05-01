@@ -1,4 +1,4 @@
-import { hasRunError } from "./display.js";
+import { hasRunError, taskRecoveryLabel } from "./display.js";
 
 export const PROJECT_TASK_GROUPS = [
   { key: "todo", label: "Todo" },
@@ -33,6 +33,10 @@ export function projectTaskAttentionItems(task = {}) {
 
   if (task.running_run_id && task.is_locked === false) {
     items.push({ key: "stuck", label: "Stuck", tone: "error", title: "Run is active but not locked by the coordinator" });
+  }
+  const recoveryLabel = taskRecoveryLabel(task);
+  if (recoveryLabel) {
+    items.push({ key: "auto_retry", label: recoveryLabel, tone: "warn" });
   }
   if (runError) {
     const kind = task.last_run?.failure_kind || task.last_failure_kind;

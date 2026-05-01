@@ -131,3 +131,16 @@ export function hasRunError(task) {
   }
   return false;
 }
+
+export function taskRecoveryState(task) {
+  const recovery = task?.last_run?.recovery || null;
+  if (!recovery?.active_run_id) return null;
+  return recovery;
+}
+
+export function taskRecoveryLabel(task) {
+  const recovery = taskRecoveryState(task);
+  if (!recovery) return null;
+  const stage = recovery.stage || task?.stage || task?.last_run?.stage;
+  return stage === "review" ? "Retrying review" : "Auto-retrying";
+}

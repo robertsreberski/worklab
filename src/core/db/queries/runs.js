@@ -126,7 +126,7 @@ export function getLatestExecuteRunSummary(db, taskId) {
 // Currently-running run for a task (for §9.3 derived running_run_id).
 export function getRunningTaskRun(db, taskId) {
   return db.prepare(`
-    SELECT id, status, process_status, started_at FROM task_runs
+    SELECT id, status, process_status, started_at, parent_run_id, mode, stage, diagnostics_json FROM task_runs
     WHERE task_id = ? AND status = 'running'
     ORDER BY started_at DESC LIMIT 1
   `).get(taskId);
@@ -135,7 +135,8 @@ export function getRunningTaskRun(db, taskId) {
 // Latest non-running (last finished or errored) run for a task.
 export function getLastNonRunningTaskRun(db, taskId) {
   return db.prepare(`
-    SELECT id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
+    SELECT id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary,
+           parent_run_id, diagnostics_json
     FROM task_runs
     WHERE task_id = ? AND status <> 'running'
     ORDER BY started_at DESC LIMIT 1
@@ -150,6 +151,7 @@ export function listRunningRunsWithEventsForTasks(db, taskIds) {
   return db.prepare(`
     SELECT
       r.id, r.task_id, r.status, r.process_status, r.started_at,
+      r.parent_run_id, r.mode, r.stage, r.diagnostics_json,
       json_array_length(l.events) AS event_count,
       CASE
         WHEN l.events IS NOT NULL AND json_valid(l.events) AND json_array_length(l.events) > 0
@@ -168,7 +170,8 @@ export function listLastNonRunningRunsForTasks(db, taskIds) {
   if (!taskIds.length) return [];
   const placeholders = taskIds.map(() => "?").join(", ");
   return db.prepare(`
-    SELECT id, task_id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary
+    SELECT id, task_id, status, process_status, failure_kind, ended_at, stage, mode, decision, summary,
+           parent_run_id, diagnostics_json
     FROM task_runs
     WHERE task_id IN (${placeholders}) AND status <> 'running'
     ORDER BY task_id, started_at DESC, rowid DESC
