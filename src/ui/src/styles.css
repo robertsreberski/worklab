@@ -1116,6 +1116,7 @@ select,
 /* §3.11 StatusPill */
 .status-pill {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: var(--sp-1);
   height: 22px;
