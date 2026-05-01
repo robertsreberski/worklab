@@ -617,6 +617,10 @@ test("desktop task list keeps every task state legible without clipped controls"
     const rowLayoutMetrics = await page.evaluate(() => {
       const reviewRow = [...document.querySelectorAll(".commander-row")]
         .find((row) => row.textContent?.includes("Desktop review task"));
+      const runningRow = [...document.querySelectorAll(".commander-row")]
+        .find((row) => row.textContent?.includes("Desktop running task"));
+      const blockedRow = [...document.querySelectorAll(".commander-row")]
+        .find((row) => row.textContent?.includes("Desktop blocked task"));
       const cells = [...document.querySelectorAll(".commander-row .commander-cell-state")];
       const assignees = reviewRow?.querySelector(".commander-cell-assignees");
       const arrows = [...(assignees?.querySelectorAll(".commander-cell-arrow") || [])];
@@ -625,6 +629,9 @@ test("desktop task list keeps every task state legible without clipped controls"
       const avatarBounds = avatars.map((avatar) => avatar.getBoundingClientRect());
       const stage = reviewRow?.querySelector(".commander-cell-pill .stage-token")?.getBoundingClientRect();
       const title = reviewRow?.querySelector(".commander-cell-title")?.getBoundingClientRect();
+      const runningDeps = runningRow?.querySelector(".commander-cell-deps");
+      const runningAge = runningRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
+      const blockedAge = blockedRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
       return {
         visibleStateCells: cells.filter((cell) => getComputedStyle(cell).display !== "none").length,
         assigneeDisplay: assignees ? getComputedStyle(assignees).display : "",
@@ -635,6 +642,9 @@ test("desktop task list keeps every task state legible without clipped controls"
         avatarRight: avatarBounds.length ? Math.round(Math.max(...avatarBounds.map((rect) => rect.right))) : 0,
         stageLeft: stage ? Math.round(stage.left) : 0,
         titleRight: title ? Math.round(title.right) : 0,
+        runningDepsDisplay: runningDeps ? getComputedStyle(runningDeps).display : "",
+        runningAgeRight: runningAge ? Math.round(runningAge.right) : 0,
+        blockedAgeRight: blockedAge ? Math.round(blockedAge.right) : 0,
       };
     });
     expect(rowLayoutMetrics.visibleStateCells).toBe(0);
@@ -644,6 +654,8 @@ test("desktop task list keeps every task state legible without clipped controls"
     expect(rowLayoutMetrics.assigneeWidth).toBeGreaterThanOrEqual(84);
     expect(rowLayoutMetrics.avatarLeft).toBeGreaterThanOrEqual(rowLayoutMetrics.titleRight);
     expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.stageLeft);
+    expect(rowLayoutMetrics.runningDepsDisplay).toBe("flex");
+    expect(Math.abs(rowLayoutMetrics.runningAgeRight - rowLayoutMetrics.blockedAgeRight)).toBeLessThanOrEqual(2);
 
     await expectNoHorizontalOverflow(page, `${viewport.label} task list states`);
     await expectNoCriticalHorizontalClipping(
