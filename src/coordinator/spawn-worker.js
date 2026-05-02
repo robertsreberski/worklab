@@ -653,7 +653,7 @@ export function spawnWorker({
       const endedAt = Date.now();
       let processStatus = "succeeded";
       if (timedOut) processStatus = "failed";
-      else if (cancelRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
+      else if (cancelRequested || drainRequested || isCancellationExit(code, signal)) processStatus = "cancelled";
       else if (signal === "SIGKILL" && !code) processStatus = "abandoned";
       else if (code !== 0 || resultError) processStatus = "failed";
       const status = PROCESS_TO_LEGACY_STATUS[processStatus] || "running";
@@ -664,7 +664,10 @@ export function spawnWorker({
             errorText: errorMessage || resultError || "",
             stderrTail: stderrTail.toString(),
             timedOut,
-            cancelRequested,
+            // R5: drainRequested folds into the cancel branch so a clean
+            // worker-side drain (exit 0, `drained` event) is still classified
+            // as `cancelled_shutdown` rather than `succeeded`.
+            cancelRequested: cancelRequested || drainRequested,
             cancelInitiator,
             signal,
             resultParseError: !!resultError,
@@ -762,9 +765,14 @@ export function spawnWorker({
       // transcript_tail snapshot so the next coordinator boot can pick the
       // run back up via a `coordinator_resume` continuation. The snapshot
       // captures the recent assistant turns + tool calls; the run's
-      // task/agent identity is keyed off the existing task_runs row.
+      // task/agent identity is keyed off the existing task_runs row. We
+      // unwrap `sdk_event` envelopes because buildTranscriptTailSnapshot
+      // walks the inner provider-shaped events.
       if (drainRequested && rawEvents.length > 0) {
-        const baseSnapshot = buildTranscriptTailSnapshot(rawEvents);
+        const innerEvents = rawEvents.map((event) => (
+          event?.type === "sdk_event" && event.event ? event.event : event
+        ));
+        const baseSnapshot = buildTranscriptTailSnapshot(innerEvents);
         if (baseSnapshot) {
           const taggedSnapshot = {
             ...baseSnapshot,

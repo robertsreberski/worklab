@@ -38,6 +38,7 @@ const PROJECT_SECTIONS = [
 const PROJECT_EDIT_SECTIONS = [
   { id: "project-edit-details", num: "01", label: "Details", meta: "Metadata" },
   { id: "project-edit-context", num: "02", label: "Context", meta: "Markdown" },
+  { id: "project-edit-allowed-agents", num: "03", label: "Allowed agents", meta: "Delegation" },
 ];
 
 function EntityChromeBridge({ chrome }) {
@@ -63,6 +64,8 @@ function projectDraftFrom(project = {}) {
     context: project.context || "",
     workdir: project.workdir || "",
     tags: project.tags || [],
+    allowed_agents: Array.isArray(project.allowed_agents) ? project.allowed_agents : [],
+    delegation_allow_unlisted: !!project.delegation_allow_unlisted,
     archived: !!project.archived,
   };
 }
@@ -299,6 +302,8 @@ function ProjectEditor({ selectedId, onSaved }) {
         context: draft.context,
         workdir: draft.workdir.trim() || null,
         tags: draft.tags || [],
+        allowed_agents: draft.allowed_agents || [],
+        delegation_allow_unlisted: !!draft.delegation_allow_unlisted,
         archived: !!draft.archived,
       };
       const res = isNew
@@ -346,6 +351,13 @@ function ProjectEditor({ selectedId, onSaved }) {
             { label: "Slug", value: isNew ? "Generated on create" : draft.slug },
             { label: "Workdir", value: draft.workdir || "Default workspace", mono: false },
             { label: "Tags", value: `${(draft.tags || []).length}`, mono: false },
+            {
+              label: "Allowed agents",
+              value: (draft.allowed_agents || []).length
+                ? `${(draft.allowed_agents || []).length} pattern${(draft.allowed_agents || []).length === 1 ? "" : "s"}${draft.delegation_allow_unlisted ? " (warn only)" : ""}`
+                : "Any agent",
+              mono: false,
+            },
             { label: "Archived", value: draft.archived ? "Yes" : "No", mono: false },
           ]} />
         </Card>
@@ -422,6 +434,34 @@ function ProjectEditor({ selectedId, onSaved }) {
             <FormSection kicker="Run context" title="Context inserted into assigned task runs">
               <Textarea rows={18} monospace autoGrow value={draft.context} onInput={(event) => update({ context: event.currentTarget.value })} />
             </FormSection>
+
+            <SectionMarker id="project-edit-allowed-agents" num="03" kicker="Delegation" meta="Allowlist" />
+            <FormSection
+              kicker="Delegation"
+              title="Allowed agents"
+              description="Restrict which agents the planner can delegate to. Leave empty to allow any agent. Patterns may use a trailing wildcard, e.g. benchmark-* matches benchmark-coder, benchmark-qa, etc."
+            >
+              <FormGrid columns={1}>
+                <FormField
+                  label="Allowed agents"
+                  hint={(draft.allowed_agents || []).length ? null : "Leave empty to allow every agent (back-compat default)."}
+                >
+                  <TagInput
+                    value={draft.allowed_agents || []}
+                    onChange={(allowedAgents) => update({ allowed_agents: allowedAgents })}
+                    placeholder="Add pattern (e.g. benchmark-*)..."
+                  />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={draft.delegation_allow_unlisted}
+                    onChange={(allow) => update({ delegation_allow_unlisted: allow })}
+                    label="Allow unlisted agents (warn only)"
+                    description="When on, delegating to an agent outside the allowlist surfaces a warning instead of failing the run."
+                  />
+                </FormField>
+              </FormGrid>
+            </FormSection>
           </main>
         </div>
       </div>
@@ -459,6 +499,13 @@ function ProjectDetail({ selectedId, onChanged }) {
             { label: "Workdir", value: project.workdir || "Default workspace", mono: false },
             { label: "Tasks", value: String(project.stats?.task_count || 0), mono: false },
             { label: "Tags", value: project.tags?.length ? project.tags.join(", ") : "None", mono: false },
+            {
+              label: "Allowed agents",
+              value: project.allowed_agents?.length
+                ? `${project.allowed_agents.join(", ")}${project.delegation_allow_unlisted ? " (warn only)" : ""}`
+                : "Any agent",
+              mono: false,
+            },
             { label: "Updated", value: formatProjectAge(project.updated_at), mono: false },
             { label: "Archived", value: project.archived ? "Yes" : "No", mono: false },
           ]} />
