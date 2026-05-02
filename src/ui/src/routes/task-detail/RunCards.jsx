@@ -336,7 +336,12 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
   const effectiveStream = streamState || fallbackStream;
   const events = effectiveStream.events || [];
   const loading = effectiveStream.loading;
-  const liveArtifacts = useMemo(() => extractRunArtifacts(events), [events]);
+  const liveArtifacts = useMemo(() => {
+    if (Array.isArray(effectiveStream.liveArtifacts) && effectiveStream.liveArtifacts.length) {
+      return effectiveStream.liveArtifacts;
+    }
+    return extractRunArtifacts(events);
+  }, [effectiveStream.liveArtifacts, events]);
   const artifacts = useMemo(() => {
     const taskArtifacts = Array.isArray(task?.artifacts) ? task.artifacts : [];
     if (!liveArtifacts.length) return taskArtifacts;
