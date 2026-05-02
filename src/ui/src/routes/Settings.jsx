@@ -20,9 +20,9 @@ import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { Page } from "../components/layout/index.js";
 import {
-  browserNotificationSettings,
-  disableBrowserNotifications,
-  requestAndEnableBrowserNotifications,
+  disableNotifications,
+  notificationSettings,
+  requestAndEnableNotifications,
 } from "../lib/browserNotifications.js";
 import {
   AdvancedSettings,
@@ -142,7 +142,7 @@ export function Settings() {
   const [mcpHealthBusy, setMcpHealthBusy] = useState({});
   const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
-  const [notificationSettingsState, setNotificationSettingsState] = useState(() => browserNotificationSettings());
+  const [notificationSettingsState, setNotificationSettingsState] = useState(() => notificationSettings());
   const [notificationBusy, setNotificationBusy] = useState(false);
 
   const loadSettings = useCallback(async (options = {}) => {
@@ -386,20 +386,20 @@ export function Settings() {
     setNotificationBusy(true);
     try {
       if (enabled) {
-        const next = await requestAndEnableBrowserNotifications();
+        const next = await requestAndEnableNotifications({ api });
         setNotificationSettingsState(next);
         if (next.enabled) {
-          pushToast("Browser notifications enabled.", { variant: "success" });
+          pushToast("Notifications enabled.", { variant: "success" });
         } else {
-          pushToast("Browser notifications are blocked.", { variant: "error" });
+          pushToast("Notifications are blocked.", { variant: "error" });
         }
       } else {
-        const next = disableBrowserNotifications();
+        const next = await disableNotifications({ api });
         setNotificationSettingsState(next);
-        pushToast("Browser notifications disabled.", { variant: "info" });
+        pushToast("Notifications disabled.", { variant: "info" });
       }
     } catch (err) {
-      setNotificationSettingsState(browserNotificationSettings());
+      setNotificationSettingsState(notificationSettings());
       pushToast(`Notifications failed: ${err.message}`, { variant: "error" });
     } finally {
       setNotificationBusy(false);
@@ -435,6 +435,7 @@ export function Settings() {
     </Button>
   );
   const notificationMeta = notificationStatus(notificationSettingsState);
+  const notificationModeLabel = notificationSettingsState?.mode === "pwa" ? "Mobile PWA notifications" : "Browser notifications";
   const serviceMeta = serviceStatusMeta(runtime);
   const searchMeta = searchIndexMeta(indexStatus);
   const mcpSummary = mcpAvailabilitySummary(mcpStatus, mcpRows);
@@ -506,7 +507,7 @@ export function Settings() {
           <SettingsOverviewCard
             icon="message-circle"
             title="Notifications"
-            value={`Browser ${notificationMeta.label.toLowerCase()}`}
+            value={`${notificationSettingsState?.mode === "pwa" ? "PWA" : "Browser"} ${notificationMeta.label.toLowerCase()}`}
             detail={`Slack ${slackMeta.label.toLowerCase()}`}
             status={notificationMeta.status === "error" || slackMeta.status === "error" ? "error" : slackMeta.status}
             statusLabel={slackMeta.label}
@@ -638,17 +639,17 @@ export function Settings() {
 
           <SettingsSection
             id="settings-notifications"
-            kicker="Browser"
+            kicker={notificationSettingsState?.mode === "pwa" ? "Mobile PWA" : "Browser"}
             title="Notifications"
-            description="Browser-local notification preference for this Worklab origin."
+            description="Notification preference for this Worklab origin."
             aside={<StatusPill status={notificationMeta.status} label={notificationMeta.label} />}
           >
-            <SettingPanel icon="message-circle" title="Browser notifications" meta={notificationDescription(notificationSettingsState)} status={notificationMeta.status} statusLabel={notificationMeta.label}>
+            <SettingPanel icon="message-circle" title={notificationModeLabel} meta={notificationDescription(notificationSettingsState)} status={notificationMeta.status} statusLabel={notificationMeta.label}>
               <Switch
                 checked={!!notificationSettingsState.enabled}
                 disabled={notificationBusy || !notificationSettingsState.supported}
                 onChange={updateBrowserNotifications}
-                label="Browser notifications"
+                label={notificationModeLabel}
                 description={notificationDescription(notificationSettingsState)}
               />
             </SettingPanel>

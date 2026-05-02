@@ -1,6 +1,12 @@
-import { formatMode, formatDuration } from "./runFormatting.js";
+import {
+  buildRunNotification,
+  runNotificationRoute,
+} from "../../../core/run-notifications.js";
+
+export { buildRunNotification, runNotificationRoute };
 
 export const BROWSER_NOTIFICATIONS_KEY = "worklab.browserNotifications.enabled";
+export const PWA_NOTIFICATIONS_KEY = "worklab.pwaNotifications.enabled";
 const DEDUPE_KEY_PREFIX = "worklab.browserNotifications.sent.";
 const DEDUPE_TTL_MS = 5000;
 
@@ -41,6 +47,49 @@ export function setBrowserNotificationsEnabled(enabled, env = getGlobal()) {
   return enabled;
 }
 
+export function getPwaNotificationsEnabled(env = getGlobal()) {
+  return safeStorage(env)?.getItem(PWA_NOTIFICATIONS_KEY) === "true";
+}
+
+export function setPwaNotificationsEnabled(enabled, env = getGlobal()) {
+  const storage = safeStorage(env);
+  if (!storage) return false;
+  storage.setItem(PWA_NOTIFICATIONS_KEY, enabled ? "true" : "false");
+  return enabled;
+}
+
+function isStandalonePwa(env = getGlobal()) {
+  try {
+    if (env.matchMedia?.("(display-mode: standalone)")?.matches) return true;
+  } catch {
+    // Fall through to iOS legacy signal.
+  }
+  return env.navigator?.standalone === true;
+}
+
+function isMobileClient(env = getGlobal()) {
+  const ua = String(env.navigator?.userAgent || "");
+  if (/iPhone|iPad|iPod|Android/i.test(ua)) return true;
+  const touchPoints = Number(env.navigator?.maxTouchPoints || 0);
+  const width = Number(env.innerWidth || env.screen?.width || 0);
+  return touchPoints > 1 && (!width || width <= 1024);
+}
+
+export function pwaNotificationsSupported(env = getGlobal()) {
+  return Boolean(
+    browserNotificationsSupported(env)
+    && env.isSecureContext !== false
+    && isMobileClient(env)
+    && isStandalonePwa(env)
+    && env.navigator?.serviceWorker
+    && typeof env.PushManager === "function",
+  );
+}
+
+export function notificationDeliveryMode(env = getGlobal()) {
+  return pwaNotificationsSupported(env) ? "pwa" : "browser";
+}
+
 export function browserNotificationSettings(env = getGlobal()) {
   const supported = browserNotificationsSupported(env);
   const permission = browserNotificationPermission(env);
@@ -49,6 +98,22 @@ export function browserNotificationSettings(env = getGlobal()) {
     permission,
     enabled: supported && permission === "granted" && getBrowserNotificationsEnabled(env),
   };
+}
+
+export function pwaNotificationSettings(env = getGlobal()) {
+  const supported = pwaNotificationsSupported(env);
+  const permission = browserNotificationPermission(env);
+  return {
+    mode: "pwa",
+    supported,
+    permission,
+    enabled: supported && permission === "granted" && getPwaNotificationsEnabled(env),
+  };
+}
+
+export function notificationSettings(env = getGlobal()) {
+  if (notificationDeliveryMode(env) === "pwa") return pwaNotificationSettings(env);
+  return { mode: "browser", ...browserNotificationSettings(env) };
 }
 
 export async function requestAndEnableBrowserNotifications(env = getGlobal()) {
@@ -67,54 +132,70 @@ export function disableBrowserNotifications(env = getGlobal()) {
   return browserNotificationSettings(env);
 }
 
-function taskLabel(event = {}) {
-  return [event.taskKey, event.taskTitle || event.taskId].filter(Boolean).join(" · ");
+function base64UrlToUint8Array(value) {
+  const padding = "=".repeat((4 - (value.length % 4)) % 4);
+  const base64 = `${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(base64);
+  return Uint8Array.from([...raw].map((char) => char.charCodeAt(0)));
 }
 
-function runKind(event = {}) {
-  if (!event?.taskId) return null;
-  if (event.type === "run_started") return "started";
-  if (event.type !== "run_ended") return null;
-  const status = event.processStatus || event.status;
-  if (["failed", "error", "abandoned"].includes(status)) return "errored";
-  if (["succeeded", "complete"].includes(status)) return "completed";
-  return null;
+async function pwaRegistration(env = getGlobal()) {
+  const sw = env.navigator?.serviceWorker;
+  if (!sw) throw new Error("service workers are unavailable");
+  await sw.register?.("/sw.js");
+  return sw.ready || null;
 }
 
-export function runNotificationRoute(event = {}) {
-  if (!event.taskId) return null;
-  const taskRouteId = encodeURIComponent(event.taskKey || event.taskId);
-  const runParam = event.runId ? `?run=${encodeURIComponent(event.runId)}` : "";
-  return `#/tasks/${taskRouteId}${runParam}`;
+function subscriptionJson(subscription) {
+  if (subscription?.toJSON) return subscription.toJSON();
+  return subscription;
 }
 
-export function buildRunNotification(event = {}) {
-  const kind = runKind(event);
-  if (!kind) return null;
-  const label = taskLabel(event) || "Task run";
-  const phase = formatMode(event.stage || event.mode);
-  const agent = (event.agentDisplayName || event.agentName) ? String(event.agentDisplayName || event.agentName) : "";
-  const base = [phase, agent].filter(Boolean).join(" · ");
-  if (kind === "started") {
-    return {
-      kind,
-      title: `Run started: ${label}`,
-      body: base || "Agent run started.",
-    };
+export async function requestAndEnablePwaNotifications({ env = getGlobal(), api } = {}) {
+  const apiImpl = api || {};
+  if (!pwaNotificationsSupported(env)) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaNotificationSettings(env);
   }
-  if (kind === "completed") {
-    const duration = event.startedAt && event.endedAt ? formatDuration(event.endedAt - event.startedAt) : null;
-    return {
-      kind,
-      title: `Run completed: ${label}`,
-      body: [base, duration].filter(Boolean).join(" · ") || "Agent run completed.",
-    };
+  const notification = notificationApi(env);
+  const permission = await notification.requestPermission();
+  if (permission !== "granted") {
+    setPwaNotificationsEnabled(false, env);
+    return pwaNotificationSettings(env);
   }
-  return {
-    kind,
-    title: `Run errored: ${label}`,
-    body: event.errorText || event.failureKind || base || "Agent run failed.",
-  };
+  const status = await apiImpl.getNotificationStatus?.();
+  const publicKey = status?.notifications?.pwa?.publicKey;
+  if (!publicKey) throw new Error("push server key is unavailable");
+  const registration = await pwaRegistration(env);
+  const subscription = await registration.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: base64UrlToUint8Array(publicKey),
+  });
+  await apiImpl.subscribePushNotifications?.({ subscription: subscriptionJson(subscription), clientKind: "pwa" });
+  setPwaNotificationsEnabled(true, env);
+  return pwaNotificationSettings(env);
+}
+
+export async function disablePwaNotifications({ env = getGlobal(), api } = {}) {
+  const apiImpl = api || {};
+  const registration = await pwaRegistration(env).catch(() => null);
+  const subscription = await registration?.pushManager?.getSubscription?.();
+  if (subscription?.endpoint) {
+    await apiImpl.unsubscribePushNotifications?.(subscription.endpoint);
+    await subscription.unsubscribe?.();
+  }
+  setPwaNotificationsEnabled(false, env);
+  return pwaNotificationSettings(env);
+}
+
+export async function requestAndEnableNotifications({ env = getGlobal(), api } = {}) {
+  if (notificationDeliveryMode(env) === "pwa") return requestAndEnablePwaNotifications({ env, api });
+  return { mode: "browser", ...(await requestAndEnableBrowserNotifications(env)) };
+}
+
+export async function disableNotifications({ env = getGlobal(), api } = {}) {
+  if (notificationDeliveryMode(env) === "pwa") return disablePwaNotifications({ env, api });
+  return { mode: "browser", ...disableBrowserNotifications(env) };
 }
 
 export function claimNotificationEvent(key, env = getGlobal(), { now = Date.now(), ttlMs = DEDUPE_TTL_MS } = {}) {
@@ -129,6 +210,7 @@ export function claimNotificationEvent(key, env = getGlobal(), { now = Date.now(
 
 export function shouldShowRunNotification(event, env = getGlobal()) {
   if (!buildRunNotification(event)) return false;
+  if (notificationDeliveryMode(env) === "pwa") return false;
   const settings = browserNotificationSettings(env);
   if (!settings.enabled) return false;
   if (env.document?.visibilityState !== "hidden") return false;

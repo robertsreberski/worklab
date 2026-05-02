@@ -66,6 +66,10 @@ export const api = {
   getRuntimeSettings: () => request("GET", "/settings/runtime"),
   patchRuntimeSettings: (patch) => request("PATCH", "/settings/runtime", patch),
   restartRuntime: () => request("POST", "/settings/runtime/restart"),
+  getNotificationStatus: () => request("GET", "/notifications/status"),
+  subscribePushNotifications: (data) => request("POST", "/notifications/subscriptions", data),
+  unsubscribePushNotifications: (endpoint) => request("DELETE", "/notifications/subscriptions", { endpoint }),
+  testPushNotifications: () => request("POST", "/notifications/test"),
   getSlackStatus: () => request("GET", "/slack/status"),
   // assistant
   getAssistant: (query, options) => request("GET", `/assistant${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
