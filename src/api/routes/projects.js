@@ -70,6 +70,7 @@ function projectTaskSummary(row) {
     reviewer_agent: row.reviewer_agent || null,
     parent_task_id: row.parent_task_id || null,
     pending_actions: safeJson(row.pending_actions_json, []),
+    pending_questions: safeJson(row.pending_questions_json, []),
     blocking_issues: safeJson(row.blocking_issues_json, []),
     failure_count: row.failure_count ?? 0,
     rejection_streak: row.rejection_streak ?? 0,

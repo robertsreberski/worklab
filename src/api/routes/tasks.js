@@ -72,6 +72,79 @@ import {
   selectRunsWithLog,
 } from "./tasks/serialization.js";
 
+function safeArrayJson(value) {
+  try {
+    const parsed = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeQuestionAnswers(questions, rawAnswers) {
+  if (!rawAnswers || typeof rawAnswers !== "object" || Array.isArray(rawAnswers)) {
+    throw routeError(400, "validation", "answers object is required");
+  }
+
+  const normalized = {};
+  for (const question of questions) {
+    const id = String(question.id || "").trim();
+    if (!id) throw routeError(400, "validation", "pending question is missing an id");
+    const raw = rawAnswers[id];
+    const objectValue = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    const selectedValue = "selected" in objectValue ? objectValue.selected : raw;
+    const text = typeof objectValue.text === "string" ? objectValue.text.trim() : "";
+    const selectedRaw = Array.isArray(selectedValue)
+      ? selectedValue
+      : (typeof selectedValue === "string" ? [selectedValue] : []);
+    const selectedInputs = selectedRaw.map((entry) => String(entry || "").trim()).filter(Boolean);
+    if (!question.multi_select && selectedInputs.length > 1) {
+      throw routeError(400, "validation", `question ${id} accepts only one answer`);
+    }
+    const options = Array.isArray(question.options) ? question.options : [];
+    const labelToId = new Map();
+    const validIds = new Set();
+    for (const option of options) {
+      const optionId = String(option.id || "").trim();
+      const label = String(option.label || "").trim();
+      if (optionId) validIds.add(optionId);
+      if (label && optionId) labelToId.set(label, optionId);
+    }
+    const selected = selectedInputs.map((entry) => {
+      if (validIds.has(entry)) return entry;
+      if (labelToId.has(entry)) return labelToId.get(entry);
+      throw routeError(400, "validation", `invalid answer for question ${id}`);
+    });
+    if (!question.allow_free_text && text) {
+      throw routeError(400, "validation", `free-text answer is not allowed for question ${id}`);
+    }
+    if (selected.length === 0 && (!question.allow_free_text || !text)) {
+      throw routeError(400, "validation", `answer is required for question ${id}`);
+    }
+    normalized[id] = { selected, text };
+  }
+  return normalized;
+}
+
+function formatQuestionOption(question, optionId) {
+  const option = (question.options || []).find((entry) => entry.id === optionId);
+  if (!option) return optionId;
+  return option.description ? `${option.label} - ${option.description}` : option.label;
+}
+
+function formatQuestionAnswerComment(questions, answers) {
+  const lines = ["Answered planning questions:"];
+  questions.forEach((question, index) => {
+    const answer = answers[question.id] || { selected: [], text: "" };
+    const selected = (answer.selected || []).map((optionId) => formatQuestionOption(question, optionId));
+    const parts = [];
+    if (selected.length) parts.push(selected.join(", "));
+    if (answer.text) parts.push(answer.text);
+    lines.push("", `${index + 1}. ${question.question}`, `Answer: ${parts.join("; ")}`);
+  });
+  return lines.join("\n");
+}
+
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
   app.get("/api/runs/cost-summary", (req, res) => {
@@ -417,6 +490,51 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
     }
     res.status(201).json(payload);
+  });
+
+  app.post("/api/tasks/:id/pending-questions/answer", async (req, res) => {
+    try {
+      const existing = taskOr404(db, req.params.id);
+      const questions = safeArrayJson(existing.pending_questions_json);
+      if (taskStage(existing) !== "awaiting_user" || questions.length === 0) {
+        throw routeError(400, "invalid_state", "task has no pending planning questions");
+      }
+      const answers = normalizeQuestionAnswers(questions, req.body?.answers);
+      const currentStage = taskStage(existing);
+      const targetStage = latestRetryStage(db, existing.id, "plan");
+      const transition = nextStage(currentStage, {
+        type: "human_move",
+        target: targetStage,
+        reason: "answered planning questions",
+      });
+      const errorSideEffect = transition.sideEffects.find((se) => se.type === "error");
+      if (errorSideEffect) {
+        throw routeError(400, "invalid_transition", errorSideEffect.message);
+      }
+
+      const id = newCommentId();
+      const now = Date.now();
+      const body = formatQuestionAnswerComment(questions, answers);
+      db.transaction(() => {
+        insertAuthoredComment(db, {
+          id,
+          taskId: existing.id,
+          authorType: "human",
+          authorId: null,
+          body,
+          createdAt: now,
+        });
+        touchTaskUpdatedAt(db, existing.id, now);
+      })();
+      applyRouteSideEffects(db, broker, logger, existing.id, transition.sideEffects, currentStage, transition.stage);
+
+      const row = enrichCommentRows(db, [getCommentById(db, id)])[0];
+      const payload = { comment: row, answers };
+      payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
+      res.status(200).json(payload);
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
   });
 
   app.delete("/api/tasks/:id/comments/:commentId", (req, res) => {

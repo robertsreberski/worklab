@@ -159,7 +159,7 @@ export function buildTaskRunMessages({ mode, task }) {
         "",
         `Task: "${task.title}"`,
         "",
-        "Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks.",
+        "Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Ask only the critical human questions needed before a useful plan can be written.",
       ].join("\n"),
     }];
   }

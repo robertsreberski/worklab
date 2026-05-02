@@ -154,6 +154,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "tasks", "subtask_order", "subtask_order INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "required", "required INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "tasks", "pending_actions_json", "pending_actions_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "tasks", "pending_questions_json", "pending_questions_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "tasks", "blocking_issues_json", "blocking_issues_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "tasks", "plan_body", "plan_body TEXT NOT NULL DEFAULT ''");
   addColumnIfMissing(db, "tasks", "plan_updated_at", "plan_updated_at INTEGER");
@@ -324,6 +325,7 @@ function rebuildTaskWorkflowTables(db) {
         subtask_order INTEGER NOT NULL DEFAULT 0,
         required INTEGER NOT NULL DEFAULT 1,
         pending_actions_json TEXT NOT NULL DEFAULT '[]',
+        pending_questions_json TEXT NOT NULL DEFAULT '[]',
         blocking_issues_json TEXT NOT NULL DEFAULT '[]',
         plan_body TEXT NOT NULL DEFAULT '',
         plan_updated_at INTEGER,
@@ -340,7 +342,7 @@ function rebuildTaskWorkflowTables(db) {
       INSERT INTO tasks__new (
         id, task_key, project_id, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent, owner_agent, planner_agent,
         client_request_id, title, instructions, stage, stage_reason, run_policy, join_policy, subtask_order, required,
-        pending_actions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
+        pending_actions_json, pending_questions_json, blocking_issues_json, plan_body, plan_updated_at, plan_updated_by,
         plan_source_run_id, reviewer_agent, tags,
         error_text, failure_count, created_at, updated_at, completed_at
       )
@@ -364,6 +366,7 @@ function rebuildTaskWorkflowTables(db) {
         subtask_order,
         required,
         pending_actions_json,
+        ${taskColumn("pending_questions_json", "'[]'")},
         blocking_issues_json,
         ${taskColumn("plan_body", "''")},
         ${taskColumn("plan_updated_at")},
@@ -434,6 +437,7 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
+  addColumnIfMissing(db, "tasks", "pending_questions_json", "pending_questions_json TEXT NOT NULL DEFAULT '[]'");
   // v22: retry_count → failure_count rename. The column was always a generic
   // failure counter, not a retry counter; rename so callers stop assuming
   // retry semantics. Existing DBs upgrade in place via RENAME COLUMN.

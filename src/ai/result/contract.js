@@ -20,6 +20,27 @@ export const subtaskSchema = z.object({
   expected_artifact: z.string().optional().nullable(),
 }).passthrough();
 
+const questionOptionSchema = z.preprocess((value) => {
+  if (typeof value === "string") {
+    const label = value.trim();
+    return { id: label, label, description: "" };
+  }
+  return value;
+}, z.object({
+  id: z.string().trim().min(1),
+  label: z.string().trim().min(1),
+  description: z.string().optional().default(""),
+}));
+
+export const pendingQuestionSchema = z.object({
+  id: z.string().trim().min(1),
+  header: z.string().trim().min(1),
+  question: z.string().trim().min(1),
+  options: z.array(questionOptionSchema).min(2).max(4),
+  multi_select: z.boolean().optional().default(false),
+  allow_free_text: z.boolean().optional().default(false),
+});
+
 export const worklabResultSchema = z.object({
   schema: z.literal("worklab.v2"),
   stage: z.enum(STAGES).optional(),
@@ -30,6 +51,7 @@ export const worklabResultSchema = z.object({
   artifacts: artifactSchema,
   blocking_issues: z.array(z.string()).default([]),
   pending_actions: z.array(z.string()).default([]),
+  questions: z.array(pendingQuestionSchema).max(3).default([]),
   subtasks: z.array(subtaskSchema).default([]),
 }).passthrough();
 
@@ -46,6 +68,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     "artifacts",
     "blocking_issues",
     "pending_actions",
+    "questions",
     "subtasks",
   ],
   properties: {
@@ -58,6 +81,44 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     artifacts: { type: "object", additionalProperties: false, properties: {}, required: [] },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
+    questions: {
+      type: "array",
+      maxItems: 3,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "id",
+          "header",
+          "question",
+          "options",
+          "multi_select",
+          "allow_free_text",
+        ],
+        properties: {
+          id: { type: "string" },
+          header: { type: "string" },
+          question: { type: "string" },
+          options: {
+            type: "array",
+            minItems: 2,
+            maxItems: 4,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["id", "label", "description"],
+              properties: {
+                id: { type: "string" },
+                label: { type: "string" },
+                description: { type: "string" },
+              },
+            },
+          },
+          multi_select: { type: "boolean" },
+          allow_free_text: { type: "boolean" },
+        },
+      },
+    },
     subtasks: {
       type: "array",
       items: {
@@ -91,6 +152,7 @@ export function normalizeWorklabResult(value, fallback = {}) {
     artifacts: {},
     blocking_issues: [],
     pending_actions: [],
+    questions: [],
     subtasks: [],
     final_text: "",
     ...fallback,
@@ -113,13 +175,20 @@ export function validateWorklabResultSemantics(result) {
   }
   const decision = value.decision;
   const pendingActions = Array.isArray(value.pending_actions) ? value.pending_actions.filter(Boolean) : [];
+  const questions = Array.isArray(value.questions) ? value.questions.filter(Boolean) : [];
   const subtasks = Array.isArray(value.subtasks) ? value.subtasks.filter(Boolean) : [];
 
   if (decision !== "pause" && pendingActions.length > 0) {
     return { ok: false, error: `pending_actions can only be used with decision "pause" (got "${decision}")` };
   }
-  if (decision === "pause" && pendingActions.length === 0) {
-    return { ok: false, error: "pause requires at least one pending_action" };
+  if (decision !== "pause" && questions.length > 0) {
+    return { ok: false, error: `questions can only be used with decision "pause" (got "${decision}")` };
+  }
+  if (questions.length > 0 && value.stage !== "plan") {
+    return { ok: false, error: "questions can only be used by plan-stage pauses" };
+  }
+  if (decision === "pause" && pendingActions.length === 0 && questions.length === 0) {
+    return { ok: false, error: "pause requires at least one pending_action or question" };
   }
   if (decision !== "delegate" && subtasks.length > 0) {
     return { ok: false, error: `subtasks can only be used with decision "delegate" (got "${decision}")` };
@@ -243,6 +312,7 @@ function recoverMalformedReviewResult(candidate, fallback = {}, parseError = nul
     artifacts: {},
     blocking_issues: [],
     pending_actions: [],
+    questions: [],
     subtasks: [],
   }, fallback);
 }
@@ -438,6 +508,7 @@ export function synthesizeWorklabResult({ stage = "execute", decision = "advance
     artifacts: {},
     blocking_issues: [],
     pending_actions: [],
+    questions: [],
     subtasks: [],
   };
 }

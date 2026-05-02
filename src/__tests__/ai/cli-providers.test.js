@@ -225,6 +225,7 @@ exit 0
       artifacts: {},
       blocking_issues: [],
       pending_actions: [],
+      questions: [],
       subtasks: [],
     };
     writeFileSync(fakeClaude, `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ type: "result", result: structured })}'\nexit 0\n`);
@@ -258,6 +259,7 @@ exit 0
       artifacts: {},
       blocking_issues: [],
       pending_actions: [],
+      questions: [],
       subtasks: [],
     };
     const event = {
@@ -372,6 +374,7 @@ SAMPLE_SKILL_BODY: verify this skill reaches the CLI system prompt.
       artifacts: {},
       blocking_issues: [],
       pending_actions: [],
+      questions: [],
       subtasks: [],
     };
     writeFileSync(fakeClaude, `#!/bin/sh
@@ -906,6 +909,7 @@ exit 0
       artifacts: {},
       blocking_issues: [],
       pending_actions: [],
+      questions: [],
       subtasks: [],
     };
     const events = [

@@ -295,6 +295,48 @@ describe("worklab_result contract", () => {
     expect(validateWorklabResultSemantics({ ...base, decision: "delegate", subtasks: [{ title: "child" }] }).ok).toBe(true);
   });
 
+  it("validates planning questions only for plan-stage pauses", () => {
+    const base = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "pause",
+      summary: "Need direction",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+      questions: [{
+        id: "scope",
+        header: "Scope",
+        question: "Which scope should the planner optimize for?",
+        options: [
+          { id: "minimal", label: "Minimal", description: "Smallest useful change." },
+          { id: "complete", label: "Complete", description: "End-to-end feature." },
+        ],
+      }],
+    };
+
+    expect(normalizeWorklabResult(base).ok).toBe(true);
+    expect(validateWorklabResultSemantics(base).ok).toBe(true);
+    expect(validateWorklabResultSemantics({ ...base, stage: "execute" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("plan"),
+    });
+    expect(validateWorklabResultSemantics({ ...base, decision: "advance" })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("pause"),
+    });
+    expect(validateWorklabResultSemantics({ ...base, questions: [] })).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("pending_action"),
+    });
+    expect(normalizeWorklabResult({
+      ...base,
+      questions: [base.questions[0], base.questions[0], base.questions[0], base.questions[0]],
+    }).ok).toBe(false);
+  });
+
   it("exports a strict JSON schema for Codex structured output", () => {
     for (const objectSchema of collectObjectSchemas(WORKLAB_RESULT_JSON_SCHEMA)) {
       expect(objectSchema.additionalProperties).toBe(false);
@@ -304,6 +346,7 @@ describe("worklab_result contract", () => {
       type: "string",
       enum: ["worklab.v2"],
     });
+    expect(WORKLAB_RESULT_JSON_SCHEMA.properties.questions.type).toBe("array");
   });
 
   it("keeps strict artifact and subtask shapes in the exported JSON schema", () => {

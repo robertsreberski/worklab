@@ -62,6 +62,7 @@ export function rowToTask(row) {
     plan_source_run_id: row.plan_source_run_id || null,
     required: row.required !== 0,
     pending_actions: JSON.parse(row.pending_actions_json || "[]"),
+    pending_questions: JSON.parse(row.pending_questions_json || "[]"),
     blocking_issues: JSON.parse(row.blocking_issues_json || "[]"),
   };
 }

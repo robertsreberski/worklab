@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   subtask_order INTEGER NOT NULL DEFAULT 0,
   required INTEGER NOT NULL DEFAULT 1,
   pending_actions_json TEXT NOT NULL DEFAULT '[]',
+  pending_questions_json TEXT NOT NULL DEFAULT '[]',
   blocking_issues_json TEXT NOT NULL DEFAULT '[]',
   plan_body TEXT NOT NULL DEFAULT '',
   plan_updated_at INTEGER,

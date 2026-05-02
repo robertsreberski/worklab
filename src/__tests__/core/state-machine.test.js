@@ -109,6 +109,24 @@ describe("workflow stage reducer", () => {
     }).stage).toBe("blocked");
   });
 
+  it("plan pause can ask structured questions without pending actions", () => {
+    const questions = [{
+      id: "scope",
+      header: "Scope",
+      question: "Which scope should we plan for?",
+      options: [{ id: "small", label: "Small" }, { id: "full", label: "Full" }],
+    }];
+    const paused = nextStage("plan", {
+      type: "run_succeeded",
+      stage: "plan",
+      result: { decision: "pause", summary: "Need scope", pending_actions: [], questions },
+    });
+
+    expect(paused.stage).toBe("awaiting_user");
+    expect(paused.sideEffects).toContainEqual({ type: "set_pending_questions", questions });
+    expect(paused.sideEffects).toContainEqual({ type: "clear_pending_actions" });
+  });
+
   it("required children completion resumes execute; blocked child blocks parent", () => {
     const resumed = nextStage("awaiting_children", { type: "children_completed" });
     expect(resumed.stage).toBe("execute");
@@ -180,6 +198,31 @@ describe("workflow stage reducer", () => {
     expect(pauseEmpty.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("pending_action") });
   });
 
+  it("rejects structured questions outside plan-stage pauses", () => {
+    const questions = [{
+      id: "scope",
+      header: "Scope",
+      question: "Which scope should we plan for?",
+      options: [{ id: "small", label: "Small" }, { id: "full", label: "Full" }],
+    }];
+
+    const executePause = nextStage("execute", {
+      type: "run_succeeded",
+      stage: "execute",
+      result: { decision: "pause", pending_actions: [], questions },
+    });
+    expect(executePause.stage).toBe("execute");
+    expect(executePause.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("plan") });
+
+    const planAdvance = nextStage("plan", {
+      type: "run_succeeded",
+      stage: "plan",
+      result: { decision: "advance", questions },
+    });
+    expect(planAdvance.stage).toBe("plan");
+    expect(planAdvance.sideEffects).toContainEqual({ type: "error", message: expect.stringContaining("pause") });
+  });
+
   it("run_cancelled keeps the stage but does not write error_text or bump failure count", () => {
     const r = nextStage("execute", {
       type: "run_cancelled",
@@ -249,6 +292,7 @@ describe("workflow stage reducer", () => {
   it("human_move out of awaiting_user clears pending_actions; out of blocked clears blocking_issues", () => {
     const fromPaused = nextStage("awaiting_user", { type: "human_move", target: "execute" });
     expect(fromPaused.sideEffects).toContainEqual({ type: "clear_pending_actions" });
+    expect(fromPaused.sideEffects).toContainEqual({ type: "clear_pending_questions" });
     expect(fromPaused.sideEffects).toContainEqual({ type: "reset_failure_count" });
 
     const fromBlocked = nextStage("blocked", { type: "human_move", target: "execute" });
