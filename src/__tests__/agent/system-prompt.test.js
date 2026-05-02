@@ -471,6 +471,8 @@ describe("buildReviewSystemPrompt", () => {
 
 If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
 
+Tool budget: when verifying UI work with the Playwright MCP, prefer \`mcp__playwright__browser_snapshot\` (a compact accessibility tree of the rendered DOM) over \`mcp__playwright__browser_take_screenshot\`. Only fall back to a screenshot when the rejection rests on something the DOM cannot tell you — pixel-level layout, colour, font rendering, or graphical artifacts. Screenshots return base64 payloads that quickly exhaust the context window.
+
 Return a structured Worklab result as JSON when you finish:
 
 {
