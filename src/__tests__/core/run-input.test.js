@@ -366,6 +366,8 @@ describe("run input assembly", () => {
       expect(input.systemPrompt).toContain("**Workdir:** `/tmp/project-atlas`");
       expect(input.systemPrompt).toContain("Tool working directory: `/tmp/project-atlas`");
       expect(input.systemPrompt).toContain("rather than `/tmp`");
+      expect(input.systemPrompt).toContain("Worklab project workdirs may be plain directories, not Git repositories.");
+      expect(input.systemPrompt).toContain("Check that Git is available before using Git-only workflows.");
       expect(input.systemPrompt).toContain("Temporary QA artifact directory: `/tmp/project-atlas/.worklab-tmp/artifacts/run-project`");
       expect(input.systemPrompt).toContain("WORKLAB_QA_OUTPUT_DIR");
       expect(input.promptDiagnostics.project).toMatchObject({
@@ -407,6 +409,7 @@ describe("run input assembly", () => {
       expect(input.systemPrompt).toContain("Respect the project AGENTS.md context before editing.");
       expect(input.systemPrompt).toContain("Keep commits granular and intentional.");
       expect(input.systemPrompt).toContain("## Repository workflow");
+      expect(input.systemPrompt).toContain("If this workdir is not a Git repository, report changed paths and verification instead of forcing Git commits.");
       expect(input.systemPrompt).toContain("create granular commits before returning the final result");
       expect(input.promptDiagnostics.repositoryInstructions).toMatchObject({
         path: join(workdir, "AGENTS.md"),
