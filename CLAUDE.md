@@ -69,6 +69,21 @@ Before finalizing substantial changes: `npm test`, `npm run build:ui`, `git diff
 
 Stick to the tokens defined in `styles.css` and the primitives in `components/primitives/` rather than inventing new variants.
 
+## Runtime audit (May 2026) — what landed on `runtime-audit-implementation`
+
+Branch `runtime-audit-implementation` carries the bulk of the recommendations from `docs/audits/automattic-benchmark-reset-runtime-audit.md`. Things to know when working on / against it:
+
+- `src/agent/tool-bloat.js` caps any single tool_result aggregate at `agent_tool_payload_max_bytes` (default 256 KB) and persists the originals under `<runArtifactDir>/tool-output/`. The runtime warning kind for truncations is `tool_payload_truncated`; `task_runs.diagnostics_json` carries `tool_results_truncated` (count).
+- `src/ai/result/lenient-parse.js` (`parseWorklabResultLenient`) is the fallback parser the worker invokes before declaring `invalid_result`. When it recovers, `diagnostics.result_recovered_via = "lenient"`.
+- `cancelled_shutdown` is a distinct failure kind from `cancelled_stale` (R5). It does not count against failure budgets. The shutdown watchdog is configurable via `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s).
+- `task_runs.parent_relationship` (`stage_progression | recovery_continuation | manual_retry`) disambiguates the overloaded `parent_run_id`.
+- `tasks.lifetime_*_count` columns are monotonic and survive `reset_failure_count`. `getTaskHealth(db, id)` returns them; the task detail endpoint exposes them as `task.health`.
+- Recovery continuations come in three flavours: `provider_retryable` (default), `schema_correction` (capped at 2), and `finalisation` (single shot when the parent ran `journal_summary` and then dropped — R2).
+- `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so pi-sdk reuses the parent's session_id (R12; other providers are a follow-up).
+- `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note` (R10).
+
+`TODO(audit-followup)` markers tag the deferred recommendations: R6 plan-driven `parent_review_policy`, R9 `projects.allowed_agents` allowlist, A3 per-agent run budgets, and R5 drained-resume protocol.
+
 ## v2 Workflow Constraints (from CONTRIBUTING.md)
 
 - Prefer a clean v2 workflow over compatibility with obsolete task states.
