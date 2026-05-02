@@ -49,6 +49,7 @@ import {
   AgentRailRow,
   TaskAutomationsCard,
   TaskContextList,
+  TaskParentReference,
   TaskPendingQuestionsCard,
   TaskPlanCard,
   TaskSubtasksCard,
@@ -1010,6 +1011,7 @@ export function TaskDetail({ id, runParam = null }) {
           subBar={detailSubBar}
           glyph="T"
         />
+        <TaskParentReference task={task} />
         <div class="task-detail editor-body">
           <div class="task-detail-main editor-main">
             <section class="task-brief-section" aria-labelledby="task-brief">

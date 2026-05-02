@@ -26,6 +26,7 @@ let desktopBlockedTaskId;
 let desktopRunningTaskId;
 let desktopErroredTaskId;
 let parentWithChildTaskId;
+let childTaskId;
 let providerId;
 let skillName;
 let projectSlug;
@@ -287,7 +288,7 @@ test.beforeAll(async () => {
     owner_agent: "regression-agent",
     stage: "execute",
   });
-  await requestJson(`/api/tasks/${parentWithChildTaskId}/subtasks`, {
+  const childResult = await requestJson(`/api/tasks/${parentWithChildTaskId}/subtasks`, {
     method: "POST",
     body: {
       title: "Nested child task",
@@ -296,6 +297,7 @@ test.beforeAll(async () => {
     },
     ok: [201],
   });
+  childTaskId = childResult.task.id;
   const futureDailyAutomation = new Date(Date.now() + 60 * 60_000);
   await requestJson(`/api/tasks/${taskId}/automations`, {
     method: "POST",
@@ -1453,6 +1455,56 @@ test("task detail shows existing child tasks without manual add controls", async
   await expect(page.locator(".task-subtask-link", { hasText: "Nested child task" })).toBeVisible();
   await expect(page.locator(".task-subtasks-add")).toHaveCount(0);
   await expect(page.locator(".task-subtasks-empty")).toHaveCount(0);
+});
+
+test("child task detail pins parent reference below the header", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto(`${baseUrl}/#/tasks/${childTaskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".task-hero-title", { hasText: "Nested child task" })).toBeVisible();
+  await expect(page.locator(".task-parent-reference", { hasText: "Parent" })).toBeVisible();
+  await expect(page.locator(".task-parent-reference", { hasText: "Parent with child task" })).toBeVisible();
+  await expect(page.locator(".task-workflow-parent")).toHaveCount(0);
+
+  const metrics = await page.locator(".task-detail-shell").evaluate((node) => {
+    const head = node.querySelector(".detail-head");
+    const parent = node.querySelector(".task-parent-reference");
+    const brief = node.querySelector("#task-brief");
+    const label = parent?.querySelector(".task-parent-reference-label");
+    const key = parent?.querySelector(".task-parent-reference-key");
+    const title = parent?.querySelector(".task-parent-reference-title");
+    const status = parent?.querySelector(".status-pill");
+    const item = (el) => {
+      if (!el) return null;
+      const style = getComputedStyle(el);
+      const rect = el.getBoundingClientRect();
+      return {
+        flexShrink: style.flexShrink,
+        whiteSpace: style.whiteSpace,
+        height: Math.round(rect.height),
+        scrollHeight: Math.round(el.scrollHeight),
+      };
+    };
+    return {
+      missing: !head || !parent || !brief || !label || !key || !title || !status,
+      parentAfterHeader: head && parent ? Math.round(parent.getBoundingClientRect().top - head.getBoundingClientRect().bottom) : -999,
+      briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
+      pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      label: item(label),
+      key: item(key),
+      title: item(title),
+      status: item(status),
+    };
+  });
+
+  expect(metrics.missing).toBe(false);
+  expect(metrics.parentAfterHeader).toBeGreaterThanOrEqual(0);
+  expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
+  expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
+  expect(metrics.label).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
+  expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
+  expect(metrics.status).toMatchObject({ flexShrink: "0" });
+  expect(metrics.title.whiteSpace).toBe("nowrap");
+  expect(metrics.title.scrollHeight).toBeLessThanOrEqual(metrics.title.height + 1);
 });
 
 test("multi-line selection controls center against their copy", async ({ page }) => {

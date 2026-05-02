@@ -37,7 +37,6 @@ function automationDraftFrom(automation) {
 }
 
 export function TaskContextList({ task }) {
-  const showParent = task?.parent && task.parent.id && task.parent.id !== task.id;
   const items = [
     task.project ? {
       label: "Project",
@@ -45,16 +44,6 @@ export function TaskContextList({ task }) {
         <a href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link">
           <Icon name="folder" size={12} />
           <span>{task.project.name || task.project.slug}</span>
-        </a>
-      ),
-      mono: false,
-    } : null,
-    showParent ? {
-      label: "Parent",
-      value: (
-        <a href={`#/tasks/${taskRouteId(task.parent)}`} class="task-meta-project-link">
-          <Icon name="corner-up-left" size={12} />
-          <span>{taskDisplayKey(task.parent)} - {task.parent.title}</span>
         </a>
       ),
       mono: false,
@@ -88,29 +77,38 @@ export function TaskContextList({ task }) {
   );
 }
 
+export function TaskParentReference({ task }) {
+  const parent = task?.parent;
+  if (!parent || !parent.id || parent.id === task.id) return null;
+  const parentKey = taskDisplayKey(parent);
+  return (
+    <a
+      href={`#/tasks/${taskRouteId(parent)}`}
+      class="task-parent-reference"
+      title={`Parent: ${parentKey} - ${parent.title}`}
+    >
+      <Icon name="corner-up-left" size={12} class="task-parent-reference-icon" />
+      <span class="task-parent-reference-label">Parent</span>
+      <span class="task-parent-reference-key pane-row-mono">{parentKey}</span>
+      <span class="task-parent-reference-title">{parent.title}</span>
+      <StatusPill status={parent.stage || "plan"} size="sm" />
+    </a>
+  );
+}
+
 export function TaskWorkflowMeta({ task }) {
   if (!task) return null;
-  const showParent = task.parent && task.parent.id && task.parent.id !== task.id;
   const stageReason = task.stage_reason;
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
   const pendingQuestions = Array.isArray(task.pending_questions) ? task.pending_questions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
   const showPendingActions = task.stage === "awaiting_user" && pendingActions.length > 0 && pendingQuestions.length === 0;
   const showStageReason = stageReason && task.stage !== "execute" && task.stage !== "done";
-  if (!showParent && !showStageReason && !showPendingActions && blockingIssues.length === 0) {
+  if (!showStageReason && !showPendingActions && blockingIssues.length === 0) {
     return null;
   }
   return (
     <section class="task-workflow-meta">
-      {showParent && (
-        <a class="task-workflow-parent" href={`#/tasks/${taskRouteId(task.parent)}`}>
-          <Icon name="corner-up-left" size={12} />
-          <span class="task-workflow-parent-label">Parent</span>
-          <span class="pane-row-mono">{taskDisplayKey(task.parent)}</span>
-          <span class="truncate">{task.parent.title}</span>
-          <StatusPill status={task.parent.stage || "plan"} size="sm" />
-        </a>
-      )}
       {showStageReason && (
         <div class="task-workflow-stage-reason">
           <Icon name="info" size={12} />
