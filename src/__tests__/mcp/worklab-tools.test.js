@@ -106,6 +106,32 @@ describe("worklab-tools handlers", () => {
     });
   });
 
+  it("todo_write preserves newlines in multi-line content", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running')
+      `).run();
+    });
+
+    const handlers = createToolHandlers(c);
+    const written = await handlers.todo_write({
+      todos: [
+        {
+          content: "Update X.\nNote: keep Y aligned with   Z",
+          status: "in_progress",
+          active_form: "Updating X\nthen Y",
+        },
+      ],
+    });
+
+    expect(written.todo_state.todos[0].content).toBe("Update X.\nNote: keep Y aligned with Z");
+    expect(written.todo_state.todos[0].active_form).toBe("Updating X\nthen Y");
+  });
+
   it("todo_write rejects ambiguous active work", async () => {
     const c = ctx();
     seedDb(c.dataDir, (db) => {
@@ -117,12 +143,40 @@ describe("worklab-tools handlers", () => {
       `).run();
     });
 
-    await expect(createToolHandlers(c).todo_write({
+    const result = await createToolHandlers(c).todo_write({
       todos: [
         { content: "One", status: "in_progress" },
         { content: "Two", status: "in_progress" },
       ],
-    })).rejects.toThrow(/one in_progress/);
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("invalid_input");
+    expect(result.error.message).toMatch(/one in_progress/);
+  });
+
+  it("todo_write returns invalid_input for zod schema violations without persisting", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running')
+      `).run();
+    });
+
+    const result = await createToolHandlers(c).todo_write({
+      todos: [{ content: "", status: "pending" }],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.error.code).toBe("invalid_input");
+
+    seedDb(c.dataDir, (db) => {
+      const row = db.prepare("SELECT todo_state_json FROM task_runs WHERE id = 'r1'").get();
+      const stored = JSON.parse(row.todo_state_json);
+      expect(stored.todos).toEqual([]);
+      expect(stored.update_count).toBe(0);
+    });
   });
 
   it("run_log_read returns raw JSONL when tail mode is requested", async () => {

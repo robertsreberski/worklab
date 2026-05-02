@@ -26,7 +26,7 @@ import {
   collectWorkspaceDeltaArtifacts,
   createWorkspaceSnapshot,
 } from "../core/artifact-collection.js";
-import { setRunRawOutputPath, setRunTranscriptTail } from "../core/db/queries/runs.js";
+import { getRunTodoStateRow, setRunRawOutputPath, setRunTranscriptTail } from "../core/db/queries/runs.js";
 import { buildTranscriptTailSnapshot } from "../agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
@@ -729,8 +729,7 @@ export function spawnWorker({
       const resultRecoveredViaLenient = allWarnings.some((w) => w.kind === "result_recovered_via_lenient");
       const todoSummary = (() => {
         try {
-          const row = db.prepare("SELECT todo_state_json FROM task_runs WHERE id = ?").get(runId);
-          return runTodoStateSummary(row?.todo_state_json);
+          return runTodoStateSummary(getRunTodoStateRow(db, runId)?.todo_state_json);
         } catch {
           return runTodoStateSummary(null);
         }

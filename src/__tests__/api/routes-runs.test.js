@@ -27,6 +27,26 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.length).toBe(1);
   });
 
+  it("returns the empty-default todo state for a run that never wrote one", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'a', ?, 'complete')")
+      .run(runId, taskId, now);
+
+    const res = await agent.get(`/api/runs/${runId}?events=none`).expect(200);
+
+    expect(res.body.run.todo_state).toEqual({
+      todos: [],
+      updated_at: null,
+      update_count: 0,
+      total: 0,
+      completed: 0,
+    });
+  });
+
   it("returns a normalized todo state for a run", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();

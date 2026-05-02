@@ -80,7 +80,10 @@ describe("spawnWorker", () => {
     expect(events.length).toBe(3);
     expect(events.map((event) => event._event_seq)).toEqual([1, 2, 3]);
     const run = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
-    expect(JSON.parse(run.diagnostics_json)).toMatchObject({ effective_workdir: "/workspace" });
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      effective_workdir: "/workspace",
+      run_todo: { used: false, update_count: 0, total: 0, completed: 0, open: 0 },
+    });
   });
 
   it("persists artifact metadata from completed file edit events", async () => {

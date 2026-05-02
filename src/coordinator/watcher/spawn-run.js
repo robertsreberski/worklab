@@ -3,10 +3,13 @@ import { mkdirSync } from "node:fs";
 import { parseModelReference } from "../../core/ai.js";
 import { getAgentByName } from "../../core/db/queries/agents.js";
 import {
+  getRunTodoStateRow,
   setRunDiagnostics,
   setRunExecenvPath,
+  setRunTodoState,
   setRunWorkerPid,
 } from "../../core/db/queries/runs.js";
+import { inheritRunTodoState, serializeRunTodoState } from "../../core/run-todos.js";
 import { prepareExecenv } from "../../core/execenv.js";
 import { newRunId } from "../../core/ids.js";
 import { resolveTaskProjectRunContext } from "../../core/projects.js";
@@ -104,6 +107,23 @@ export function spawnTaskRun({
   );
   if (diagnosticsSeed && typeof diagnosticsSeed === "object") {
     setRunDiagnostics(db, runId, JSON.stringify(diagnosticsSeed));
+  }
+
+  // R-followup: a recovery_continuation inherits the parent run's checklist so
+  // the agent can resume after a drained shutdown or provider retry without
+  // losing execution context. update_count resets — it tracks writes by *this*
+  // run. Stage progression and manual_retry start with the empty default.
+  if (parentRelationship === "recovery_continuation") {
+    const sourceRunId = diagnosticsSeed?.continuation_of_run_id || parentRunId;
+    if (sourceRunId) {
+      try {
+        const parentTodoRow = getRunTodoStateRow(db, sourceRunId);
+        const inherited = inheritRunTodoState(parentTodoRow?.todo_state_json);
+        if (inherited) setRunTodoState(db, runId, serializeRunTodoState(inherited));
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId, sourceRunId }, "todo inheritance failed");
+      }
+    }
   }
 
   let execenvPath = null;
