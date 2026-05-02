@@ -169,6 +169,21 @@ describe("openDb + runMigrations", () => {
         updated_at INTEGER NOT NULL,
         completed_at INTEGER
       );
+      CREATE TABLE task_runs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT,
+        parent_run_id TEXT,
+        mode TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'execute',
+        agent_name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'running',
+        process_status TEXT NOT NULL DEFAULT 'running',
+        decision TEXT,
+        failure_kind TEXT,
+        started_at INTEGER NOT NULL,
+        ended_at INTEGER,
+        diagnostics_json TEXT
+      );
       CREATE TABLE schedules (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -191,6 +206,15 @@ describe("openDb + runMigrations", () => {
       "INSERT INTO tasks (id, title, description, instructions, status, executor_agent, priority, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).run("t1", "keep me", "drop me", "stay", "todo", "legacy-owner", 2, now, now);
     db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, status, process_status, failure_kind, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("r-failed", "t1", "execute", "legacy-owner", "error", "failed", "spawn", now - 300, now - 250);
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, status, process_status, decision, started_at, ended_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("r-rejected", "t1", "review", "legacy-reviewer", "complete", "succeeded", "reject", now - 200, now - 150);
+    db.prepare(
+      "INSERT INTO task_runs (id, task_id, mode, agent_name, status, process_status, started_at, ended_at, diagnostics_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    ).run("r-cont", "t1", "execute", "legacy-owner", "complete", "succeeded", now - 100, now - 50, JSON.stringify({ continuation_of_run_id: "r-failed" }));
+    db.prepare(
       "INSERT INTO schedules (id, title, description, instructions, executor_agent, priority, cadence_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     ).run("s1", "sched", "drop sched desc", "stay", "legacy-owner", 1, "{}", now, now);
     runMigrations(db);
@@ -203,9 +227,22 @@ describe("openDb + runMigrations", () => {
     expect(taskCols).not.toContain("source_schedule_id");
     expect(taskCols).not.toContain("retry_count");
     expect(taskCols).toContain("failure_count");
+    expect(taskCols).toEqual(expect.arrayContaining([
+      "parent_review_policy",
+      "rejection_streak",
+      "lifetime_failure_count",
+      "lifetime_rejection_count",
+      "lifetime_recovery_continuation_count",
+      "last_failure_kind",
+    ]));
     expect(tables).not.toContain("schedules");
     expect(tables).not.toContain("schedule_spawns");
-    const taskRow = db.prepare("SELECT id, task_key, title, instructions, stage, owner_agent, root_task_id, run_policy FROM tasks WHERE id='t1'").get();
+    const taskRow = db.prepare(`
+      SELECT id, task_key, title, instructions, stage, owner_agent, root_task_id, run_policy,
+             parent_review_policy, lifetime_failure_count, lifetime_rejection_count,
+             lifetime_recovery_continuation_count
+      FROM tasks WHERE id='t1'
+    `).get();
     expect(taskRow).toMatchObject({
       id: "t1",
       task_key: "T-1",
@@ -215,6 +252,10 @@ describe("openDb + runMigrations", () => {
       owner_agent: "legacy-owner",
       root_task_id: "t1",
       run_policy: "manual",
+      parent_review_policy: "default",
+      lifetime_failure_count: 1,
+      lifetime_rejection_count: 1,
+      lifetime_recovery_continuation_count: 1,
     });
     expect(taskCols).toEqual(expect.arrayContaining(["task_key", "stage", "owner_agent", "planner_agent", "parent_task_id", "pending_actions_json", "pending_questions_json", "client_request_id", "plan_body", "run_policy"]));
   });
