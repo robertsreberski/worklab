@@ -5,6 +5,19 @@
 // child's acceptance criteria + expected artifact onto its instructions.
 //
 // The watcher's main loop owns the actual task creation + edge insertion.
+//
+// TODO(audit-followup): R6 — plan-driven parent_review_policy. When the
+// planner delegates and the children include a `*-qa-*` agent, the audit
+// recommends auto-applying `skip_when_qa_child` so the parent's review pass
+// becomes redundant. Adding this requires:
+//   - tasks.parent_review_policy column (default | skip_when_qa_child |
+//     always_skip).
+//   - worklab.v2 envelope plumb-through for the planner-requested policy.
+//   - state-machine consult of the policy on children_completed.
+//   - auto-approve of QA-child meta-reviews when executor === reviewer and
+//     the executor's decision was advance/approve.
+// Deferred because it touches the state-machine dispatch + warrants its own
+// fixture-driven end-to-end coverage.
 
 export function looksLikePlanBody(text) {
   const body = String(text || "").trim();
