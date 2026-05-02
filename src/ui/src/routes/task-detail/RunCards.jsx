@@ -13,6 +13,7 @@ import {
   artifactDeltaLabel,
   buildRunArtifactTree,
   extractRunArtifacts,
+  groupRunArtifacts,
   runArtifactSummary,
 } from "../../lib/runArtifacts.js";
 import { formatActivityTime, formatDate } from "./format.js";
@@ -320,7 +321,14 @@ function taskArtifactsTitle(task, runningRun) {
 function RunArtifactMeta({ node }) {
   if (node.type !== "file") return null;
   if (node.unavailable_reason) {
+    if (node.artifact_type === "qa_output") return <span class="run-artifact-meta muted">qa</span>;
     return <span class="run-artifact-meta muted">{node.unavailable_reason}</span>;
+  }
+  if (node.event_count > 1) {
+    return <span class="run-artifact-meta muted">{node.event_count} edits</span>;
+  }
+  if (node.artifact_type === "git_commit") {
+    return <span class="run-artifact-meta muted">commit</span>;
   }
   const delta = artifactDeltaLabel(node);
   if (delta) return <span class="run-artifact-meta delta">{delta}</span>;
@@ -350,6 +358,7 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
       { id: runningRun?.id || "running", started_at: runningRun?.started_at, artifacts: liveArtifacts },
     ]);
   }, [task?.artifacts, liveArtifacts, runningRun?.id, runningRun?.started_at]);
+  const groups = useMemo(() => groupRunArtifacts(artifacts), [artifacts]);
   const tree = useMemo(() => buildRunArtifactTree(artifacts), [artifacts]);
   const summary = useMemo(() => runArtifactSummary(artifacts), [artifacts]);
   const summaryLabel = summary.files > 0
@@ -361,8 +370,8 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
   const emptyText = loading
     ? "Loading artifacts..."
     : isStreaming
-      ? "No file edits recorded yet."
-      : "No file edits recorded.";
+      ? "No artifacts recorded yet."
+      : "No artifacts recorded.";
 
   if (!task) return null;
   return (
@@ -377,13 +386,32 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
         )}
       </div>
       <div class="run-artifacts-context" title={task.id}>{taskArtifactsTitle(task, runningRun)}</div>
-      <FileTree
-        files={tree}
-        ariaLabel="Task artifacts"
-        emptyText={emptyText}
-        renderMeta={(node) => <RunArtifactMeta node={node} />}
-        getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
-      />
+      {groups.length ? (
+        <div class="run-artifact-groups">
+          {groups.map((group) => (
+            <section class="run-artifact-group" key={group.id}>
+              <div class="run-artifact-group-title">
+                <span>{group.label}</span>
+                <span>{group.summary.files}</span>
+              </div>
+              <FileTree
+                files={group.tree}
+                ariaLabel={`${group.label} artifacts`}
+                renderMeta={(node) => <RunArtifactMeta node={node} />}
+                getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+              />
+            </section>
+          ))}
+        </div>
+      ) : (
+        <FileTree
+          files={tree}
+          ariaLabel="Task artifacts"
+          emptyText={emptyText}
+          renderMeta={(node) => <RunArtifactMeta node={node} />}
+          getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+        />
+      )}
     </div>
   );
 }

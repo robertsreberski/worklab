@@ -3,6 +3,7 @@ import {
   artifactDeltaLabel,
   buildRunArtifactTree,
   extractRunArtifacts,
+  groupRunArtifacts,
   runArtifactSummary,
 } from "../../ui/src/lib/runArtifacts.js";
 
@@ -208,5 +209,23 @@ describe("run artifact extraction", () => {
     });
     expect(runArtifactSummary(artifacts).unavailable_count).toBe(1);
     expect(artifactDeltaLabel(artifacts[0])).toBe("1000->1000");
+  });
+
+  it("groups code, QA, generated, scratch, and git artifacts for display", () => {
+    const groups = groupRunArtifacts([
+      { path: "src/app.js", display_path: "src/app.js", artifact_type: "code_change" },
+      { path: ".worklab-tmp/script.py", display_path: ".worklab-tmp/script.py", artifact_type: "scratch" },
+      { path: "console.log", display_path: "console.log", artifact_type: "qa_output" },
+      { path: "report.txt", display_path: "report.txt", artifact_type: "generated_output" },
+      { path: "git/commits/abc123", display_path: "git/commits/abc123", artifact_type: "git_commit" },
+    ]);
+
+    expect(groups.map((group) => [group.id, group.label, group.artifacts.length])).toEqual([
+      ["code_change", "Code changes", 1],
+      ["qa_output", "QA evidence", 1],
+      ["generated_output", "Generated outputs", 1],
+      ["git_commit", "Git provenance", 1],
+      ["scratch", "Scratch and diagnostics", 1],
+    ]);
   });
 });

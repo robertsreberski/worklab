@@ -704,6 +704,31 @@ export function buildRunArtifactTree(artifacts = []) {
   return sortTree(root.children);
 }
 
+const ARTIFACT_GROUPS = [
+  ["code_change", "Code changes"],
+  ["qa_output", "QA evidence"],
+  ["generated_output", "Generated outputs"],
+  ["git_commit", "Git provenance"],
+  ["scratch", "Scratch and diagnostics"],
+];
+
+export function groupRunArtifacts(artifacts = []) {
+  const normalized = normalizeStoredArtifacts(artifacts);
+  const byGroup = new Map(ARTIFACT_GROUPS.map(([id, label]) => [id, { id, label, artifacts: [] }]));
+  const fallback = byGroup.get("generated_output");
+  for (const artifact of normalized) {
+    const group = byGroup.get(artifact.artifact_type) || fallback;
+    group.artifacts.push(artifact);
+  }
+  return [...byGroup.values()]
+    .filter((group) => group.artifacts.length > 0)
+    .map((group) => ({
+      ...group,
+      tree: buildRunArtifactTree(group.artifacts),
+      summary: runArtifactSummary(group.artifacts),
+    }));
+}
+
 export function formatTaskArtifactsForPrompt(taskArtifacts, { limit = DEFAULT_CONTEXT_LIMIT } = {}) {
   const artifacts = normalizeStoredArtifacts(taskArtifacts?.artifacts || taskArtifacts || []);
   if (!artifacts.length) return "";
