@@ -210,6 +210,8 @@ describe("task-watcher v2 workflow", () => {
     await waitFor(() => db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage === "review");
 
     const { runId: failedReviewRunId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET provider_session_id = ? WHERE id = ?").run("execute-session", executeRunId);
+    db.prepare("UPDATE task_runs SET provider_session_id = ? WHERE id = ?").run("failed-review-session", failedReviewRunId);
     db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(failedReviewRunId);
     resolvers[1]({
       exitCode: 1,
@@ -222,6 +224,7 @@ describe("task-watcher v2 workflow", () => {
 
     expect(calls[2].args).toEqual(expect.arrayContaining(["--mode", "review", "--agent", "checker"]));
     expect(calls[2].env.WORKLAB_PRIOR_RUN_ID).toBe(executeRunId);
+    expect(calls[2].env.WORKLAB_PROVIDER_SESSION_ID).toBe("failed-review-session");
     expect(calls[2].diagnosticsSeed).toMatchObject({
       continuation_of_run_id: failedReviewRunId,
       continuation_reason: "provider_retryable",

@@ -117,15 +117,22 @@ export function spawnTaskRun({
     }
   }
 
-  // R12: when this run is a recovery continuation, look up the parent run's
-  // provider_session_id and propagate it so the provider can resume the same
-  // session (provider permitting). spawn-run is the only place that has both
-  // a DB handle and the parent_run_id at the right moment.
+  // R12: when this run is a recovery continuation, resume the failed run's
+  // provider_session_id. Review continuations still use parent_run_id for the
+  // execute run being reviewed, so diagnostics.continuation_of_run_id is the
+  // authoritative session source for that path.
   const reusableSessionId = (() => {
     if (parentRelationship !== "recovery_continuation" || !parentRunId) return null;
     try {
-      const parent = db.prepare("SELECT provider_session_id FROM task_runs WHERE id = ?").get(parentRunId);
-      return parent?.provider_session_id || null;
+      const sessionSourceIds = [
+        diagnosticsSeed?.continuation_of_run_id,
+        parentRunId,
+      ].filter(Boolean);
+      for (const sourceRunId of sessionSourceIds) {
+        const parent = db.prepare("SELECT provider_session_id FROM task_runs WHERE id = ?").get(sourceRunId);
+        if (parent?.provider_session_id) return parent.provider_session_id;
+      }
+      return null;
     } catch {
       return null;
     }
