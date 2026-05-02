@@ -117,10 +117,8 @@ export function compareRuntimeTasks(a = {}, b = {}) {
   const aAttention = runtimeTaskAttentionItems(a).length > 0;
   const bAttention = runtimeTaskAttentionItems(b).length > 0;
   if (aAttention !== bAttention) return aAttention ? -1 : 1;
-  const aDone = a.stage === "done";
-  const bDone = b.stage === "done";
-  const aTime = Number((aDone ? a.completed_at : null) || a.updated_at || 0);
-  const bTime = Number((bDone ? b.completed_at : null) || b.updated_at || 0);
+  const aTime = Number(a.updated_at || 0);
+  const bTime = Number(b.updated_at || 0);
   if (aTime !== bTime) return bTime - aTime;
   return String(a.title || "").localeCompare(String(b.title || ""));
 }

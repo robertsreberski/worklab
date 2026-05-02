@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRuntimeTaskSummary,
+  compareRuntimeTasks,
   runtimeTaskAttentionItems,
   runtimeTaskGroupKey,
   runtimeTaskVisibility,
@@ -79,5 +80,42 @@ describe("runtime task grouping", () => {
     expect(runtimeTaskVisibility(tasks).tasks.map((task) => task.id)).toEqual(["running", "ready"]);
     expect(runtimeTaskVisibility(tasks).summary.hidden_done_count).toBe(2);
     expect(buildRuntimeTaskSummary(tasks).hidden_done_count).toBe(0);
+  });
+
+  it("sorts completed and automated tasks by updated_at instead of completed_at", () => {
+    const completedTasks = [
+      { id: "recently-completed", title: "Recently completed", stage: "done", completed_at: 9000, updated_at: 1000 },
+      { id: "recently-updated", title: "Recently updated", stage: "done", completed_at: 1000, updated_at: 9000 },
+    ];
+    const automatedTasks = [
+      {
+        id: "automated-completed-later",
+        title: "Automated completed later",
+        stage: "done",
+        completed_at: 9000,
+        updated_at: 1000,
+        automation_summary: { enabled_count: 1 },
+      },
+      {
+        id: "automated-updated-later",
+        title: "Automated updated later",
+        stage: "done",
+        completed_at: 1000,
+        updated_at: 9000,
+        automation_summary: { enabled_count: 1 },
+      },
+    ];
+
+    expect([...completedTasks].sort(compareRuntimeTasks).map((task) => task.id)).toEqual([
+      "recently-updated",
+      "recently-completed",
+    ]);
+    expect([...automatedTasks].sort(compareRuntimeTasks).map((task) => task.id)).toEqual([
+      "automated-updated-later",
+      "automated-completed-later",
+    ]);
+    expect(runtimeTaskVisibility(completedTasks, { doneLimit: 1 }).tasks.map((task) => task.id)).toEqual([
+      "recently-updated",
+    ]);
   });
 });
