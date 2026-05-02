@@ -38,6 +38,8 @@ describe("run lifecycle events", () => {
       processStatus: "failed",
       failureKind: "spawn",
       errorText: "worker exited",
+      startedAt: now - 1000,
+      endedAt: now,
     });
   });
 

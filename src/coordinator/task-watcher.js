@@ -217,6 +217,7 @@ export function createTaskWatcher({
       active,
       activeByRunId,
       onWorkerExit,
+      events,
       ...options,
     });
   }

@@ -46,6 +46,7 @@ export function spawnTaskRun({
   agentName,
   parentRunId = null,
   diagnosticsSeed = null,
+  events,
 }) {
   const { providerKind } = assertAgentRunnable(db, agentName);
   const settings = readSettings(db);
@@ -140,7 +141,9 @@ export function spawnTaskRun({
   setRunWorkerPid(db, runId, handle.pid);
   active.set(task.id, { runId, handle });
   activeByRunId.set(runId, { taskId: task.id, handle, providerKind });
-  broker.broadcast("global", buildRunLifecycleEvent(db, "run_started", runId, { taskId: task.id }));
+  const startedEvent = buildRunLifecycleEvent(db, "run_started", runId, { taskId: task.id });
+  broker.broadcast("global", startedEvent);
+  events?.emit?.("run:started", startedEvent);
 
   handle.done
     .then((result) => onWorkerExit(task.id, runId, result))
