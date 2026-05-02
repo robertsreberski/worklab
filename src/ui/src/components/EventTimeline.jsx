@@ -78,6 +78,50 @@ function providerResultErrorMessage(ev) {
   return detail ? `${label}: ${detail}` : label;
 }
 
+function hasOwn(value, key) {
+  return value && Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function structuredOutputValue(ev) {
+  if (!hasOwn(ev, "structured_output")) return undefined;
+  return ev.structured_output;
+}
+
+function structuredWorklabResult(value) {
+  const candidate = value?.worklab_result || value;
+  return candidate?.schema === "worklab.v2" ? candidate : null;
+}
+
+function normalizeStructuredOutputEvent(ev, source = "StructuredOutput") {
+  const value = ev.value ?? ev.structured_output ?? ev.result;
+  const worklabResult = ev.worklab_result || structuredWorklabResult(value);
+  return {
+    type: "structured_output",
+    ...(ev.tool_use_id ? { tool_use_id: ev.tool_use_id } : {}),
+    source: ev.source || source,
+    value,
+    ...(worklabResult ? { worklab_result: worklabResult } : {}),
+  };
+}
+
+function structuredOutputKey(value) {
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function eventTarget(ev) {
+  return ev?.type === "sdk_event" && ev.event ? ev.event : ev;
+}
+
+function followedByMatchingStructuredOutput(events, index) {
+  const target = eventTarget(events[index]);
+  const value = structuredOutputValue(target);
+  if (target?.type !== "result" || value === undefined) return false;
+  const nextTarget = eventTarget(events[index + 1]);
+  if (nextTarget?.type !== "structured_output") return false;
+  const nextValue = nextTarget.value ?? nextTarget.structured_output ?? nextTarget.result;
+  return structuredOutputKey(value) === structuredOutputKey(nextValue);
+}
+
 const HIDDEN_CLI_EVENT_TYPES = new Set([
   "hook_started",
   "hook_response",
@@ -120,13 +164,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
   if (ev.type === "structured_output") {
-    return {
-      type: "structured_output",
-      tool_use_id: ev.tool_use_id || null,
-      source: ev.source || "StructuredOutput",
-      value: ev.value ?? ev.structured_output ?? ev.result,
-      ...(ev.worklab_result ? { worklab_result: ev.worklab_result } : {}),
-    };
+    return normalizeStructuredOutputEvent(ev);
   }
   const codexItem = normalizeCodexItemEvent(ev);
   if (codexItem) return codexItem;
@@ -155,6 +193,14 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   if (ev.type === "result") {
     const resultError = providerResultErrorMessage(ev);
     if (resultError) return { type: "error", message: resultError };
+    const outputValue = structuredOutputValue(ev);
+    if (outputValue !== undefined) {
+      return normalizeStructuredOutputEvent({
+        source: "claude_sdk_output_format",
+        value: outputValue,
+        worklab_result: structuredWorklabResult(outputValue),
+      });
+    }
     const usage = ev.usage || {};
     const parts = [
       usage.input_tokens != null ? `in ${usage.input_tokens}` : null,
@@ -178,7 +224,8 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
 export function normalizeWorklabEvents(events = []) {
   const visibleTexts = new Set();
   let visibleTextTail = "";
-  return events.map((event) => {
+  return events.map((event, index) => {
+    if (followedByMatchingStructuredOutput(events, index)) return null;
     const rawFinalText = String(event?.text || "").trim();
     const normalizedFinalText = normalizeCommentText(rawFinalText);
     const compactFinal = event?.type === "final" && (

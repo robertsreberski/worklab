@@ -397,6 +397,79 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("normalizes Claude SDK result structured_output events as structured output", () => {
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "delegate",
+      summary: "Delegating audit tracks",
+      final_text: "Plan ready.",
+      subtasks: [{ title: "Audit server", instructions: "Read-only audit" }],
+    };
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "result",
+          subtype: "success",
+          result: "Plan ready.",
+          structured_output: worklabResult,
+          usage: { input_tokens: 10, output_tokens: 5 },
+          duration_ms: 100,
+          num_turns: 2,
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "structured_output",
+        source: "claude_sdk_output_format",
+        value: worklabResult,
+        worklab_result: worklabResult,
+      },
+    ]);
+  });
+
+  it("does not duplicate Claude structured output when a normalized event follows the SDK result", () => {
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "delegate",
+      summary: "Delegating audit tracks",
+      final_text: "Plan ready.",
+    };
+    const events = normalizeWorklabEvents([
+      {
+        type: "sdk_event",
+        event: {
+          type: "result",
+          subtype: "success",
+          result: "Plan ready.",
+          structured_output: worklabResult,
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "structured_output",
+          source: "claude_sdk_output_format",
+          value: worklabResult,
+          worklab_result: worklabResult,
+        },
+      },
+    ]);
+
+    expect(events).toEqual([
+      {
+        type: "structured_output",
+        source: "claude_sdk_output_format",
+        value: worklabResult,
+        worklab_result: worklabResult,
+      },
+    ]);
+  });
+
   it("keeps live user messages visible as guidance rows", () => {
     const events = normalizeWorklabEvents([
       { type: "live_user_message", body: "Please focus on the API route.", created_at: 123 },

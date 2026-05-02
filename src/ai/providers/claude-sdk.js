@@ -100,6 +100,15 @@ function extractStructuredOutput(event) {
   return undefined;
 }
 
+function structuredOutputEvent(value, parsedWorklabResult) {
+  return {
+    type: "structured_output",
+    source: "claude_sdk_output_format",
+    value,
+    ...(parsedWorklabResult?.ok ? { worklab_result: parsedWorklabResult.result } : {}),
+  };
+}
+
 function finalTextFromStructuredOutput(worklabResult, text, structuredResult) {
   const delivered = stripWorklabResultJson(text);
   if (delivered) return delivered;
@@ -563,6 +572,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
           worklabResult = structuredWorklab.result;
           structuredResultSource = "structured_output";
         }
+        emitEvent(structuredOutputEvent(eventStructuredOutput, structuredWorklab));
       }
       if (event.type === "assistant") {
         const delta = extractText(event);
