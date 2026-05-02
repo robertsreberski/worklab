@@ -232,6 +232,16 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       settings,
       onEvent,
     });
+    const onTruncate = (info) => {
+      try {
+        onEvent({
+          type: "runtime_warning",
+          warning_kind: "tool_payload_truncated",
+          source: "tool_bloat_guard",
+          ...info,
+        });
+      } catch { /* best-effort */ }
+    };
     const builtIns = capabilities.tool_use === false
       ? []
       : getPiBuiltinTools(options.allowedTools, {
@@ -240,6 +250,9 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         cwd: options.cwd,
         onEvent,
         toolLimits: compaction.policy,
+        runArtifactDir: options.runArtifactDir || null,
+        toolPayloadMaxBytes: options.toolPayloadMaxBytes,
+        onTruncate,
       });
 
     const structuredTool = createStructuredOutputTool(options.outputSchema, (value) => {
@@ -249,7 +262,13 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     if (structuredTool) reservedNames.add(structuredTool.name);
     const mcpInit = capabilities.tool_use === false
       ? { clients: [], tools: [], warnings: [] }
-      : await initPiMcpTools(options.mcpServers || {}, reservedNames, { limits: compaction.policy, cwd: options.cwd });
+      : await initPiMcpTools(options.mcpServers || {}, reservedNames, {
+        limits: compaction.policy,
+        cwd: options.cwd,
+        runArtifactDir: options.runArtifactDir || null,
+        toolPayloadMaxBytes: options.toolPayloadMaxBytes,
+        onTruncate,
+      });
     mcpClients = mcpInit.clients;
     for (const warning of mcpInit.warnings || []) onEvent(warning);
 
