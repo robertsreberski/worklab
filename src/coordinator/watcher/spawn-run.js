@@ -147,6 +147,12 @@ export function spawnTaskRun({
   };
   if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
 
+  // R7: review-mode idle threshold is independent of execute. The QA reviewer
+  // legitimately sits on a single browser_snapshot for >130 s when the page
+  // takes time to settle, so the global idle warning fires too aggressively.
+  const effectiveIdleWarningMs = mode === "review"
+    ? Math.max(runIdleWarningMs, Number(settings.agent_review_idle_threshold_ms ?? 240_000))
+    : runIdleWarningMs;
   const handle = spawn({
     binary: workerBinary,
     args,
@@ -159,7 +165,7 @@ export function spawnTaskRun({
     dataDir,
     cancelGraceMs: settings.cancel_grace_ms,
     runTimeoutMs: settings.worker_timeout_ms || runTimeoutMs,
-    runIdleWarningMs,
+    runIdleWarningMs: effectiveIdleWarningMs,
     logInlineLimit,
     diagnosticsSeed,
   });

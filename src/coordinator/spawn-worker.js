@@ -292,10 +292,30 @@ export function spawnWorker({
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if (finalized) return;
+      // R7: include last_tool_name so the operator can tell whether the worker
+      // is genuinely stuck or just waiting on a long-running tool call (e.g.,
+      // playwright snapshot). The reviewer's QA flow legitimately sits at
+      // browser_snapshot for 90+ s sometimes.
+      const lastTool = (() => {
+        for (let i = rawEvents.length - 1; i >= 0; i -= 1) {
+          const ev = rawEvents[i];
+          const target = ev?.type === "sdk_event" && ev.event ? ev.event : ev;
+          const blocks = Array.isArray(target?.message?.content) ? target.message.content
+            : Array.isArray(target?.content) ? target.content : [];
+          for (let j = blocks.length - 1; j >= 0; j -= 1) {
+            const block = blocks[j];
+            if (block?.type === "tool_use") return block.name || null;
+          }
+        }
+        return null;
+      })();
       emitEvent({
         type: "runtime_warning",
         warning_kind: "idle",
-        message: `No worker events for ${runIdleWarningMs}ms.`,
+        message: lastTool
+          ? `No worker events for ${runIdleWarningMs}ms (last tool: ${lastTool}).`
+          : `No worker events for ${runIdleWarningMs}ms.`,
+        last_tool_name: lastTool,
         ts: Date.now(),
       });
     }, runIdleWarningMs);
