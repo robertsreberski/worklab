@@ -2,23 +2,11 @@
 // decision=delegate with subtasks. Pure functions: heuristics for whether
 // a stage's final text looks like a plan body, an in-memory cycle check
 // across the freshly-delegated batch, a builder that appends the child's
-// acceptance criteria + expected artifact onto its instructions, and the
-// R9 per-project agent allowlist enforcement.
+// acceptance criteria + expected artifact onto its instructions, the R6
+// parent_review_policy resolution helpers, and the R9 per-project agent
+// allowlist enforcement.
 //
 // The watcher's main loop owns the actual task creation + edge insertion.
-//
-// TODO(audit-followup): R6 — plan-driven parent_review_policy. When the
-// planner delegates and the children include a `*-qa-*` agent, the audit
-// recommends auto-applying `skip_when_qa_child` so the parent's review pass
-// becomes redundant. Adding this requires:
-//   - tasks.parent_review_policy column (default | skip_when_qa_child |
-//     always_skip).
-//   - worklab.v2 envelope plumb-through for the planner-requested policy.
-//   - state-machine consult of the policy on children_completed.
-//   - auto-approve of QA-child meta-reviews when executor === reviewer and
-//     the executor's decision was advance/approve.
-// Deferred because it touches the state-machine dispatch + warrants its own
-// fixture-driven end-to-end coverage.
 //
 // TODO(audit-followup): A3 — per-agent run-budget warnings. evaluateBudget(agent,
 // runStats) returns {soft_warn, hard_pause, reason?}; soft → emit warning +
@@ -26,7 +14,44 @@
 // in data-template/agents/<agent>/budget.json with soft/hard thresholds for
 // cost_usd, duration_ms, num_turns. Runs evaluated on every tool_result event.
 
+import { PARENT_REVIEW_POLICIES } from "../../core/state-machine.js";
 import { agentNameAllowedByPatterns } from "../../core/projects.js";
+
+const QA_AGENT_PATTERN = /qa|review/i;
+
+// R6: a child counts as a QA/review-style agent when its name (or, lacking
+// an agent assignment, its title/instructions) matches the QA pattern. This
+// is intentionally permissive — `benchmark-qa-reviewer`, `mobile-qa`, and
+// `code-reviewer` should all trip the skip-parent-review heuristic.
+export function isQaChildAgent(agentName) {
+  return QA_AGENT_PATTERN.test(String(agentName || ""));
+}
+
+// True when at least one of the freshly-delegated subtasks targets a QA
+// agent. Falls back to scanning the subtask title when `suggested_agent`
+// is missing — a planner that names "QA the result" without picking the
+// agent still telegraphs intent.
+export function delegationHasQaChild(subtasks) {
+  if (!Array.isArray(subtasks)) return false;
+  return subtasks.some((subtask) => {
+    if (!subtask) return false;
+    const agent = String(subtask.suggested_agent || "").trim();
+    if (agent && isQaChildAgent(agent)) return true;
+    const title = String(subtask.title || "").trim();
+    return title.length > 0 && QA_AGENT_PATTERN.test(title);
+  });
+}
+
+// Resolve the parent_review_policy for a freshly-delegated round. The
+// planner's explicit choice wins (when it's a recognised value); otherwise
+// the watcher derives `skip_when_qa_child` for any delegation that includes
+// a QA-style child, or `default` when no QA child is present.
+export function resolveParentReviewPolicy({ requested, subtasks } = {}) {
+  const requestedValue = typeof requested === "string" ? requested.trim() : "";
+  if (PARENT_REVIEW_POLICIES.includes(requestedValue)) return requestedValue;
+  if (delegationHasQaChild(subtasks)) return "skip_when_qa_child";
+  return "default";
+}
 
 // R9: enforce the per-project agent allowlist. The watcher resolves the
 // project's allowlist + delegation_allow_unlisted flag before calling this;
