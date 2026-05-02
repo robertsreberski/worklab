@@ -1,9 +1,9 @@
-import { buildRunPushPayload } from "../../core/run-notifications.js";
 import {
+  buildRunPushPayload,
   disablePushSubscription,
   listActivePushSubscriptions,
-} from "../../core/push-notifications.js";
-import { sendWebPushNotification } from "../../core/web-push.js";
+  sendWebPushNotification,
+} from "../../core/index.js";
 
 function permanentPushFailure(error) {
   const status = Number(error?.statusCode || error?.status);

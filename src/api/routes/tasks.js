@@ -9,10 +9,10 @@ import {
   nextTaskKey,
   resolveProjectId,
   resolveTaskRow,
+  runtimeTaskVisibility,
   STAGES,
   taskStage,
 } from "../../core/index.js";
-import { runtimeTaskVisibility } from "../../core/task-runtime.js";
 import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools/index.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);

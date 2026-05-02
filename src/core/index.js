@@ -203,6 +203,56 @@ export { resolveRunArtifactDir } from "./run-artifact-paths.js";
 
 export { readRunLog } from "./run-logs.js";
 
+export {
+  captureGitArtifactState,
+  collectGitArtifacts,
+  collectQaOutputArtifacts,
+  collectWorkspaceDeltaArtifacts,
+  createWorkspaceSnapshot,
+  safeRunArtifactPath,
+} from "./artifact-collection.js";
+
+export {
+  RUNTIME_TASK_GROUPS,
+  RUNTIME_TASK_GROUP_KEYS,
+  buildRuntimeTaskSummary,
+  compareRuntimeTasks,
+  runtimeTaskAttentionItems,
+  runtimeTaskGroupKey,
+  runtimeTaskUnresolvedDependencyCount,
+  runtimeTaskVisibility,
+  taskHasEnabledAutomation,
+  taskHasRunError,
+  taskHasRunningRun,
+  taskRecoveryLabel,
+  taskRecoveryState,
+} from "./task-runtime.js";
+
+// ---------- Notifications (push + web-push) ----------
+export {
+  buildRunNotification,
+  buildRunPushPayload,
+  runNotificationKind,
+  runNotificationRoute,
+} from "./run-notifications.js";
+
+export {
+  deletePushSubscription,
+  disablePushSubscription,
+  listActivePushSubscriptions,
+  normalizePushSubscription,
+  pruneDisabledPushSubscriptions,
+  pushSubscriptionFromRow,
+  upsertPushSubscription,
+} from "./push-notifications.js";
+
+export {
+  getVapidKeys,
+  sendWebPushNotification,
+  vapidKeyPath,
+  vapidPublicKey,
+} from "./web-push.js";
+
 // ---------- Live input + comments ----------
 export {
   LIVE_INPUT_MAX_BODY_LENGTH,

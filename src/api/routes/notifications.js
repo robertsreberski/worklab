@@ -2,9 +2,10 @@ import {
   deletePushSubscription,
   disablePushSubscription,
   listActivePushSubscriptions,
+  sendWebPushNotification,
   upsertPushSubscription,
-} from "../../core/push-notifications.js";
-import { sendWebPushNotification, vapidPublicKey } from "../../core/web-push.js";
+  vapidPublicKey,
+} from "../../core/index.js";
 
 const TEST_PAYLOAD = {
   title: "Worklab test notification",
