@@ -24,7 +24,7 @@ import {
   statsForCompletedChange,
 } from "../../ai/file-change-stats.js";
 import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
-import { MAX_TOOL_RESULT_BYTES, wrapToolsWithBloatGuard } from "../tool-bloat.js";
+import { MAX_TOOL_RESULT_BYTES, summarisePayload, wrapToolsWithBloatGuard } from "../tool-bloat.js";
 
 function textResult(text, details = {}) {
   return {
@@ -396,14 +396,37 @@ async function connectMcpClient(name, cfg, { cwd } = {}) {
   return { name, client, transport };
 }
 
-export function coerceMcpContent(out, { textLimit = MCP_TEXT_RESULT_LIMIT, imageInlineMaxBytes = MCP_IMAGE_INLINE_MAX_BYTES } = {}) {
+export function coerceMcpContent(out, {
+  textLimit = MCP_TEXT_RESULT_LIMIT,
+  imageInlineMaxBytes = MCP_IMAGE_INLINE_MAX_BYTES,
+  runArtifactDir = null,
+  toolName = "mcp",
+  toolUseId = null,
+  onTruncate = null,
+} = {}) {
   if (Array.isArray(out?.content) && out.content.length) {
     return out.content.map((part) => {
       if (part.type === "text") return { type: "text", text: truncateMcpText(part.text || "", textLimit).text };
       if (part.type === "image") {
         const bytes = base64Bytes(part.data);
         if (bytes > imageInlineMaxBytes) {
-          return {
+          const summary = summarisePayload(toolName, [{
+            type: "image",
+            data: part.data,
+            mimeType: part.mimeType || part.mime_type || "image/png",
+          }], runArtifactDir, { maxBytes: imageInlineMaxBytes, toolUseId });
+          if (summary.truncated && typeof onTruncate === "function") {
+            try {
+              onTruncate({
+                tool: toolName,
+                tool_use_id: toolUseId,
+                original_bytes: summary.originalBytes,
+                max_bytes: imageInlineMaxBytes,
+                saved_paths: summary.savedPaths,
+              });
+            } catch { /* best-effort */ }
+          }
+          return summary.rewrittenBlocks[0] || {
             type: "text",
             text: `[omitted MCP image result: ${bytes} bytes exceeds ${imageInlineMaxBytes} byte context budget]`,
           };
@@ -496,7 +519,7 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
         label: sourceTool.title || sourceTool.name,
         description: sourceTool.description || `${serverName}:${sourceTool.name}`,
         parameters: sourceTool.inputSchema || sourceTool.input_schema || objectSchema({}),
-        async execute(_toolCallId, params, signal) {
+        async execute(toolCallId, params, signal) {
           if (signal?.aborted) throw new Error("tool execution aborted");
           const textLimit = limits.mcpTextLimitChars || MCP_TEXT_RESULT_LIMIT;
           const imageInlineMaxBytes = limits.imageInlineMaxBytes ?? MCP_IMAGE_INLINE_MAX_BYTES;
@@ -507,13 +530,29 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
             signal,
             `${serverName}:${sourceTool.name}`,
           );
+          const imageTruncations = [];
           return {
-            content: coerceMcpContent(out, { textLimit, imageInlineMaxBytes }),
+            content: coerceMcpContent(out, {
+              textLimit,
+              imageInlineMaxBytes,
+              runArtifactDir,
+              toolName: name,
+              toolUseId: toolCallId,
+              onTruncate: (event) => {
+                imageTruncations.push(event);
+                onTruncate?.(event);
+              },
+            }),
             details: {
               server: serverName,
               tool: sourceTool.name,
               result_truncated: mcpContentWasTruncated(out, { textLimit, imageInlineMaxBytes }),
               raw: compactRawMcpResult(out),
+              ...(imageTruncations.length ? {
+                tool_payload_truncated: true,
+                tool_payload_original_bytes: imageTruncations.reduce((sum, event) => sum + (Number(event.original_bytes) || 0), 0),
+                tool_payload_saved_paths: imageTruncations.flatMap((event) => event.saved_paths || []),
+              } : {}),
             },
           };
         },
