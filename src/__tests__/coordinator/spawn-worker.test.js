@@ -783,4 +783,37 @@ describe("spawnWorker", () => {
     expect(JSON.parse(run.warnings_json)).toContainEqual(expect.objectContaining({ kind: "budget_exceeded" }));
     expect(JSON.parse(run.diagnostics_json)).toMatchObject({ failure_kind: "budget_exceeded", cancel_initiator: "budget" });
   });
+
+  it("uses saved settings for default agent turn budget thresholds", async () => {
+    const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_soft_turns", JSON.stringify(3));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_hard_turns", JSON.stringify(4));
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "tool_result", tool_use_id: "t1", content: "1" }] } } },
+        { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "tool_result", tool_use_id: "t2", content: "2" }] } } },
+        { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "tool_result", tool_use_id: "t3", content: "3" }] } } },
+        { type: "sdk_event", event: { type: "assistant", message: { content: [{ type: "tool_result", tool_use_id: "t4", content: "4" }] } } },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+    });
+
+    const result = await handle.done;
+    expect(result.processStatus).toBe("cancelled");
+    expect(result.failureKind).toBe("budget_exceeded");
+    expect(result.cancelInitiator).toBe("budget");
+    expect(result.warnings).toContainEqual(expect.objectContaining({
+      kind: "budget_exceeded",
+      message: expect.stringContaining("turns 4"),
+    }));
+  });
 });

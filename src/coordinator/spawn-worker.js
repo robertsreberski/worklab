@@ -17,6 +17,7 @@ import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from 
 import { evaluateBudget, loadAgentBudget } from "../core/agent-budgets.js";
 import { insertSystemComment } from "../core/db/queries/comments.js";
 import { newCommentId } from "../core/ids.js";
+import { readSettings } from "../core/settings.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import { runTodoStateSummary } from "../core/run-todos.js";
 import {
@@ -42,6 +43,14 @@ import {
 
 function isCancellationExit(code, signal) {
   return code === 130 || signal === "SIGTERM" || signal === "SIGINT";
+}
+
+function readSettingsSafe(db) {
+  try {
+    return db ? readSettings(db) : null;
+  } catch {
+    return null;
+  }
 }
 
 
@@ -138,7 +147,7 @@ export function spawnWorker({
   // spawn uses the loader so operators can override per agent without code.
   const budgetThresholds = (agentBudget && typeof agentBudget === "object")
     ? agentBudget
-    : loadAgentBudget({ agent: agentName, dataDir }).thresholds;
+    : loadAgentBudget({ agent: agentName, dataDir, settings: readSettingsSafe(db) }).thresholds;
   const budgetState = {
     toolResultsSeen: 0,
     streamedCostUsd: 0,
