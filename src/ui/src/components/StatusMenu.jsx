@@ -25,6 +25,8 @@ export function allowedTransitions(status) {
 
 export function StatusMenu({
   status,
+  displayStage = status,
+  pulse = false,
   onChoose,
   class: className = "",
 }) {
@@ -108,7 +110,7 @@ export function StatusMenu({
         role="combobox"
         onKeyDown={onTriggerKeyDown}
       >
-        <StageToken stage={status} variant="menu" as="span" />
+        <StageToken stage={displayStage} variant="menu" pulse={pulse} as="span" />
       </button>
       {open && choices.length > 0 && (
         <div

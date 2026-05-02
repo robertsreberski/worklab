@@ -9463,8 +9463,8 @@ html.assistant-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.stage-token[data-stage="running"] .stage-token-glyph {
-  animation: pulse-dot 1.6s ease-in-out infinite;
+.stage-token-pulse .stage-token-glyph {
+  animation: wl-pulse var(--dur-pulse) var(--ease-std) infinite;
 }
 .stage-token-menu,
 .stage-token-grid {
@@ -9473,8 +9473,8 @@ html.assistant-resizing * {
   font: inherit;
 }
 .stage-token-menu {
-  height: 28px;
-  padding: 0 8px 0 10px;
+  height: 22px;
+  padding: 0 var(--sp-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
