@@ -145,6 +145,8 @@ describe("settings UI duration conversions", () => {
     expect(notificationDescription({ mode: "browser", supported: true, permission: "granted", enabled: true })).toBe("Task run starts, completions, and errors in background tabs.");
     expect(notificationStatus({ mode: "pwa", supported: true, permission: "default", enabled: false })).toEqual({ status: "disabled", label: "PWA off" });
     expect(notificationDescription({ mode: "pwa", supported: true, permission: "default", enabled: false })).toBe("Mobile PWA push for task runs, even when Worklab is closed.");
+    expect(notificationStatus({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toEqual({ status: "error", label: "Permission blocked" });
+    expect(notificationDescription({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toBe("Worklab notification permission is blocked for this site.");
     expect(notificationDescription({ mode: "pwa", supported: false })).toBe("Install Worklab to the mobile Home Screen and open it over a secure origin.");
   });
 
