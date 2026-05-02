@@ -5,10 +5,10 @@ import {
   normalizeLiveInputBody,
   resolveRunArtifactDir,
   runArtifactSummary,
+  safeRunArtifactPath,
   supportsLiveInputProvider,
   tailRunEventsByVisibleItems,
 } from "../../core/index.js";
-import { safeRunArtifactPath } from "../../core/artifact-collection.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
 import { insertHumanComment } from "../../core/db/queries/comments.js";
