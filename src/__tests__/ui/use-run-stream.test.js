@@ -121,6 +121,26 @@ describe("shared run stream subscriptions", () => {
     });
   });
 
+  it("rolls back optimistic state when todo_write returns ok:false", () => {
+    const previous = { todos: [{ content: "Existing", status: "completed" }], updated_at: 100, update_count: 5 };
+    const result = todoStateFromToolEvents(previous, [
+      {
+        type: "tool_use",
+        tool_use_id: "todo-rejected",
+        name: "mcp__worklab__todo_write",
+        input: { todos: [{ content: "Will fail", status: "in_progress" }, { content: "Conflict", status: "in_progress" }] },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "todo-rejected",
+        content: JSON.stringify({ ok: false, error: { code: "invalid_input", message: "one in_progress" } }),
+        is_error: false,
+      },
+    ]);
+    expect(result.todos).toEqual([{ content: "Existing", status: "completed" }]);
+    expect(result.update_count).toBe(5);
+  });
+
   it("keeps live updates capped to the latest 10 visible items before full history loads", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => ({

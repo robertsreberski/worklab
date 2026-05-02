@@ -192,6 +192,7 @@ export {
   RUN_TODO_MAX_ITEMS,
   RUN_TODO_STATUSES,
   createRunTodoState,
+  inheritRunTodoState,
   normalizeRunTodoItems,
   normalizeRunTodoState,
   runTodoStateSummary,

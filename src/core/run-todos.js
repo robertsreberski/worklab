@@ -29,7 +29,8 @@ function textField(value, field, maxLength, { required = true, truncate = false 
     return "";
   }
   if (typeof value !== "string") throw new Error(`${field} must be a string`);
-  const trimmed = value.trim().replace(/\s+/g, " ");
+  // Collapse runs of horizontal whitespace; preserve newlines so multi-line content keeps structure.
+  const trimmed = value.replace(/[^\S\n]+/g, " ").trim();
   if (!trimmed) {
     if (required) throw new Error(`${field} is required`);
     return "";
@@ -115,6 +116,16 @@ export function createRunTodoState(todosInput, { previousState = null, now = Dat
     todos,
     updated_at: now,
     update_count: previous.update_count + 1,
+  };
+}
+
+export function inheritRunTodoState(parentStateInput) {
+  const parent = normalizeRunTodoState(parentStateInput);
+  if (parent.todos.length === 0) return null;
+  return {
+    todos: parent.todos,
+    updated_at: parent.updated_at,
+    update_count: 0,
   };
 }
 

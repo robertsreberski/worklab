@@ -1,7 +1,7 @@
 // Run-local todo tools. These are progress scratchpads owned by the current
 // agent run, distinct from durable Worklab tasks/subtasks.
 
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { withDb } from "./shared.js";
 import {
   RUN_TODO_MAX_ACTIVE_FORM_LENGTH,
@@ -72,6 +72,13 @@ function assertCurrentRun(row, { runId, taskId, agent }) {
   }
 }
 
+function invalidInputEnvelope(err) {
+  const message = err instanceof ZodError
+    ? err.issues.map((issue) => `${issue.path.join(".") || "input"}: ${issue.message}`).join("; ")
+    : err?.message || String(err);
+  return { ok: false, error: { code: "invalid_input", message } };
+}
+
 export function buildHandlers(context) {
   const { dataDir, runId, taskId, agent } = context;
   return {
@@ -86,12 +93,22 @@ export function buildHandlers(context) {
     },
 
     async todo_write(input) {
-      const { todos } = todoWriteSchema.parse(input);
+      let todos;
+      try {
+        ({ todos } = todoWriteSchema.parse(input));
+      } catch (err) {
+        return invalidInputEnvelope(err);
+      }
       if (!runId) throw new Error("run_id is required for todo_write");
       return await withDb(dataDir, (db) => {
         const row = getRunTodoStateRow(db, runId);
         assertCurrentRun(row, { runId, taskId, agent });
-        const todoState = createRunTodoState(todos, { previousState: row.todo_state_json });
+        let todoState;
+        try {
+          todoState = createRunTodoState(todos, { previousState: row.todo_state_json });
+        } catch (err) {
+          return invalidInputEnvelope(err);
+        }
         setRunTodoState(db, runId, serializeRunTodoState(todoState));
         return {
           ok: true,

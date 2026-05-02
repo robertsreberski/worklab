@@ -123,30 +123,46 @@ function parsedToolResultContent(block) {
 }
 
 export function todoStateFromToolEvents(previousState, events = []) {
-  const todoWriteUseIds = new Set();
-  let latest = null;
+  // First pass: index every todo_write tool_use and any matching tool_result so we
+  // can resolve rejected writes ({ok: false}) by ignoring their optimistic state
+  // instead of leaving it stranded in the UI.
+  const writes = [];
+  const byId = new Map();
   for (const event of events || []) {
     for (const block of toolUseBlocksFromEvent(event)) {
       if (!isTodoWriteToolName(block?.name)) continue;
       const id = block.tool_use_id || block.id || block.toolCallId || block.tool_call_id;
-      if (id) todoWriteUseIds.add(id);
-      if (Array.isArray(block?.input?.todos)) {
-        try {
-          latest = runTodoStateSummary(createRunTodoState(block.input.todos, {
-            previousState: latest || previousState,
-            now: Number(event?.ts) || Date.now(),
-          }));
-        } catch {
-          // Invalid writes are reported by the MCP result; keep the prior state.
-        }
-      }
+      const todos = Array.isArray(block?.input?.todos) ? block.input.todos : null;
+      const ts = Number(event?.ts) || Date.now();
+      const entry = { id: id || null, todos, ts, result: null };
+      if (id) byId.set(id, entry);
+      writes.push(entry);
     }
     for (const block of toolResultBlocksFromEvent(event)) {
-      if (block?.is_error === true) continue;
       const id = block.tool_use_id || block.id || block.toolCallId || block.tool_call_id;
+      if (!id || !byId.has(id)) continue;
       const parsed = parsedToolResultContent(block);
-      if (id && !todoWriteUseIds.has(id) && !parsed?.todo_state) continue;
-      if (parsed?.ok === true && parsed.todo_state) latest = runTodoStateSummary(parsed.todo_state);
+      byId.get(id).result = { isError: block?.is_error === true, parsed };
+    }
+  }
+
+  let latest = null;
+  for (const entry of writes) {
+    const result = entry.result;
+    if (result?.parsed?.ok === true && result.parsed.todo_state) {
+      latest = runTodoStateSummary(result.parsed.todo_state);
+      continue;
+    }
+    if (result && (result.isError || result.parsed?.ok === false)) continue;
+    if (entry.todos) {
+      try {
+        latest = runTodoStateSummary(createRunTodoState(entry.todos, {
+          previousState: latest || previousState,
+          now: entry.ts,
+        }));
+      } catch {
+        // Invalid optimistic input; the server's tool_result will correct on arrival.
+      }
     }
   }
   return latest || (previousState ? runTodoStateSummary(previousState) : null);
