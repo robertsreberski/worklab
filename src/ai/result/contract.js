@@ -49,6 +49,12 @@ export const pendingQuestionSchema = z.object({
 // else `default`).
 export const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
 
+const parentReviewPolicySchema = z.preprocess((value) => {
+  if (value == null || value === "") return undefined;
+  if (typeof value === "string") return value.trim();
+  return value;
+}, z.string().min(1).optional());
+
 export const worklabResultSchema = z.object({
   schema: z.literal("worklab.v2"),
   stage: z.enum(STAGES).optional(),
@@ -61,7 +67,7 @@ export const worklabResultSchema = z.object({
   pending_actions: z.array(z.string()).default([]),
   questions: z.array(pendingQuestionSchema).max(3).default([]),
   subtasks: z.array(subtaskSchema).default([]),
-  parent_review_policy: z.enum(PARENT_REVIEW_POLICY_VALUES).optional(),
+  parent_review_policy: parentReviewPolicySchema,
 }).passthrough();
 
 export const WORKLAB_RESULT_JSON_SCHEMA = {
@@ -79,6 +85,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     "pending_actions",
     "questions",
     "subtasks",
+    "parent_review_policy",
   ],
   properties: {
     schema: { type: "string", enum: ["worklab.v2"] },
@@ -152,6 +159,10 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
           expected_artifact: { type: ["string", "null"] },
         },
       },
+    },
+    parent_review_policy: {
+      type: ["string", "null"],
+      description: `Optional parent review policy request. Recognized values: ${PARENT_REVIEW_POLICY_VALUES.join(", ")}. Unknown values are accepted and resolved by the watcher fallback.`,
     },
   },
 };
