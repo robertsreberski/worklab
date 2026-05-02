@@ -26,6 +26,8 @@ export const DEFAULT_SETTINGS = {
   assistant_effort: "high",
   assistant_run_timeout_ms: 300000,
   assistant_max_turns: 32,
+  agent_budget_soft_turns: 150,
+  agent_budget_hard_turns: 300,
   agent_compaction_enabled: true,
   agent_compaction_trigger_ratio: 0.85,
   agent_compaction_keep_recent_tokens: 24000,
@@ -155,6 +157,9 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     case "assistant_max_turns":
       return integerInRange(key, value, { min: 1, max: 200 });
+    case "agent_budget_soft_turns":
+    case "agent_budget_hard_turns":
+      return integerInRange(key, value, { min: 1, max: 10000 });
     case "agent_compaction_enabled":
     case "agent_provider_recovery_enabled":
     case "delegation_enabled":
@@ -202,16 +207,20 @@ export function validateSetting(key, value) {
   }
 }
 
-export function validateSettingsPatch(patch = {}) {
+export function validateSettingsPatch(patch = {}, baseSettings = DEFAULT_SETTINGS) {
   const unknown = Object.keys(patch).filter((key) => !(key in DEFAULT_SETTINGS));
   if (unknown.length) throw new Error(`unknown keys: ${unknown.join(",")}`);
   const out = {};
   for (const [key, value] of Object.entries(patch)) out[key] = validateSetting(key, value);
+  const merged = { ...DEFAULT_SETTINGS, ...(baseSettings || {}), ...out };
+  if (Number(merged.agent_budget_soft_turns) > Number(merged.agent_budget_hard_turns)) {
+    throw new Error("agent_budget_soft_turns must be less than or equal to agent_budget_hard_turns");
+  }
   return out;
 }
 
 export function writeSettings(db, patch = {}) {
-  const validated = validateSettingsPatch(patch);
+  const validated = validateSettingsPatch(patch, readSettings(db));
   const tx = db.transaction((entries) => {
     for (const [key, value] of entries) upsertSetting(db, key, JSON.stringify(value));
   });

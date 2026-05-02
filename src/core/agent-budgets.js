@@ -86,6 +86,27 @@ export function normalizeBudgetThresholds(raw) {
   return Object.freeze(out);
 }
 
+function settingsBackedDefaultBudget(raw, settings) {
+  const normalized = normalizeBudgetThresholds(raw);
+  const softTurns = Number(settings?.agent_budget_soft_turns);
+  const hardTurns = Number(settings?.agent_budget_hard_turns);
+  const next = {
+    soft: {
+      ...normalized.soft,
+      num_turns: Number.isInteger(softTurns) && softTurns > 0
+        ? softTurns
+        : normalized.soft.num_turns,
+    },
+    hard: {
+      ...normalized.hard,
+      num_turns: Number.isInteger(hardTurns) && hardTurns > 0
+        ? hardTurns
+        : normalized.hard.num_turns,
+    },
+  };
+  return normalizeBudgetThresholds(next);
+}
+
 // Resolve the on-disk paths we will probe to find a budget file for `agent`.
 // Exposed for tests (and the audit log) so we can assert ordering without
 // reaching into private state. Order: dataDir override → per-agent template →
@@ -109,15 +130,21 @@ export function resolveBudgetSearchPaths({ agent, dataDir, repoRoot } = {}) {
 // thresholds object (never null), so callers can use evaluateBudget without
 // further null-checks. The `source` field in the return value is the path
 // that resolved (or "default" for the baked-in fallback).
-export function loadAgentBudget({ agent, dataDir, repoRoot } = {}) {
+export function loadAgentBudget({ agent, dataDir, repoRoot, settings } = {}) {
   const paths = resolveBudgetSearchPaths({ agent, dataDir, repoRoot });
-  for (const path of paths) {
+  for (const [index, path] of paths.entries()) {
     const raw = readJsonFileSafe(path);
     if (raw) {
-      return { thresholds: normalizeBudgetThresholds(raw), source: path };
+      const isDefaultBudget = index === paths.length - 1;
+      return {
+        thresholds: isDefaultBudget
+          ? settingsBackedDefaultBudget(raw, settings)
+          : normalizeBudgetThresholds(raw),
+        source: path,
+      };
     }
   }
-  return { thresholds: normalizeBudgetThresholds(null), source: "default" };
+  return { thresholds: settingsBackedDefaultBudget(null, settings), source: "default" };
 }
 
 function exceedsAny(stats, tier) {

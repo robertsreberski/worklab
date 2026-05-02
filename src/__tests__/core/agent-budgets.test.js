@@ -130,6 +130,22 @@ describe("loadAgentBudget", () => {
     expect(result.source).toMatch(/_defaults[\\/]budget\.json$/);
   });
 
+  it("uses settings-backed turn thresholds for the default budget", () => {
+    const dataDir = makeTmpDataDir();
+    const result = loadAgentBudget({
+      agent: "no-such-agent",
+      dataDir,
+      settings: {
+        agent_budget_soft_turns: 400,
+        agent_budget_hard_turns: 800,
+      },
+    });
+    expect(result.thresholds.soft.cost_usd).toBe(DEFAULT_AGENT_BUDGET.soft.cost_usd);
+    expect(result.thresholds.hard.duration_ms).toBe(DEFAULT_AGENT_BUDGET.hard.duration_ms);
+    expect(result.thresholds.soft.num_turns).toBe(400);
+    expect(result.thresholds.hard.num_turns).toBe(800);
+  });
+
   it("reads a per-agent override from the data dir", () => {
     const dataDir = makeTmpDataDir();
     const dir = join(dataDir, "agents", "tight-agent");
@@ -155,6 +171,26 @@ describe("loadAgentBudget", () => {
     const result = loadAgentBudget({ agent: "runtime-engineer", dataDir });
     expect(result.thresholds.soft.cost_usd).toBe(99);
     expect(result.source).toContain(join(dataDir, "agents", "runtime-engineer", "budget.json"));
+  });
+
+  it("does not apply settings-backed turn thresholds to per-agent overrides", () => {
+    const dataDir = makeTmpDataDir();
+    const dir = join(dataDir, "agents", "tight-agent");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "budget.json"), JSON.stringify({
+      soft: { cost_usd: 1, duration_ms: 60_000, num_turns: 5 },
+      hard: { cost_usd: 2, duration_ms: 120_000, num_turns: 10 },
+    }));
+    const result = loadAgentBudget({
+      agent: "tight-agent",
+      dataDir,
+      settings: {
+        agent_budget_soft_turns: 400,
+        agent_budget_hard_turns: 800,
+      },
+    });
+    expect(result.thresholds.soft.num_turns).toBe(5);
+    expect(result.thresholds.hard.num_turns).toBe(10);
   });
 });
 

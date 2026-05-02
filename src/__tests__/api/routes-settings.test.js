@@ -40,6 +40,8 @@ describe("settings", () => {
     expect(res.body.settings.assistant_effort).toBe("high");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(300000);
     expect(res.body.settings.assistant_max_turns).toBe(32);
+    expect(res.body.settings.agent_budget_soft_turns).toBe(150);
+    expect(res.body.settings.agent_budget_hard_turns).toBe(300);
     expect(res.body.settings.agent_compaction_trigger_ratio).toBe(0.85);
     expect(res.body.settings.agent_compaction_min_savings_tokens).toBe(20000);
     expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(0);
@@ -85,6 +87,8 @@ describe("settings", () => {
       assistant_effort: "medium",
       assistant_run_timeout_ms: 45000,
       assistant_max_turns: 48,
+      agent_budget_soft_turns: 400,
+      agent_budget_hard_turns: 800,
       agent_provider_recovery_enabled: false,
       agent_provider_recovery_base_delay_ms: 1000,
       delegation_enabled: false,
@@ -104,6 +108,8 @@ describe("settings", () => {
     expect(res.body.settings.assistant_effort).toBe("medium");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(45000);
     expect(res.body.settings.assistant_max_turns).toBe(48);
+    expect(res.body.settings.agent_budget_soft_turns).toBe(400);
+    expect(res.body.settings.agent_budget_hard_turns).toBe(800);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(false);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
     expect(res.body.settings.delegation_enabled).toBe(false);
@@ -125,6 +131,19 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({ delegation_max_children_per_round: 0 }).expect(400);
     await agent.patch("/api/settings").send({ delegation_max_parallel_children: 0 }).expect(400);
     await agent.patch("/api/settings").send({ delegation_auto_run_children: 1 }).expect(400);
+  });
+
+  it("PATCH rejects invalid agent turn budget settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ agent_budget_soft_turns: 0 }).expect(400);
+    await agent.patch("/api/settings").send({ agent_budget_hard_turns: 10001 }).expect(400);
+    await agent.patch("/api/settings").send({
+      agent_budget_soft_turns: 900,
+      agent_budget_hard_turns: 500,
+    }).expect(400);
+
+    await agent.patch("/api/settings").send({ agent_budget_hard_turns: 600 }).expect(200);
+    await agent.patch("/api/settings").send({ agent_budget_soft_turns: 700 }).expect(400);
   });
 
   it("PATCH rejects tier aliases for embedding models", async () => {
