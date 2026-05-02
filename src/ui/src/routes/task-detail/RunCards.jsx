@@ -43,6 +43,30 @@ function RunWarningsList({ warnings, agents = [] }) {
   );
 }
 
+// A3: a small inline indicator surfaced in the run-card summary when a
+// per-agent budget warning fires. budget_exceeded is fatal (the run was
+// cancelled by the aggregator) so it gets the louder error styling; the
+// soft warning gets the standard warning chip. We pick the strongest tier
+// present so the same chip survives a soft → hard escalation in one run.
+function RunBudgetBadge({ warnings }) {
+  if (!Array.isArray(warnings) || !warnings.length) return null;
+  const hard = warnings.find((w) => w?.kind === "budget_exceeded");
+  const soft = warnings.find((w) => w?.kind === "budget_soft");
+  const active = hard || soft;
+  if (!active) return null;
+  const isHard = !!hard;
+  const tone = isHard ? "run-warning-budget-hard" : "run-warning-budget-soft";
+  const label = isHard ? "Budget cancel" : "Budget soft";
+  return (
+    <span
+      class={`run-warning-badge ${tone}`}
+      title={active.message || ""}
+    >
+      {label}
+    </span>
+  );
+}
+
 function RunCancellationNote({ run }) {
   if (!run?.cancel_initiator) return null;
   const reason = run.cancel_reason ? `: ${run.cancel_reason}` : "";
@@ -239,6 +263,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                       ⚠ {warnings.length}
                     </span>
                   )}
+                  <RunBudgetBadge warnings={warnings} />
                   {run.cancel_initiator && (
                     <span class="run-warning-badge run-cancel-chip" title={run.cancel_reason || run.cancel_initiator}>
                       {run.cancel_initiator}
@@ -260,6 +285,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                 {warnings.length > 0 && (
                   <span class="run-warning-badge run-warning-count">⚠ {warnings.length}</span>
                 )}
+                <RunBudgetBadge warnings={warnings} />
                 {run.cancel_initiator && (
                   <span class="run-warning-badge run-cancel-chip">{run.cancel_initiator}</span>
                 )}

@@ -17,7 +17,7 @@ import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
 import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
-import { getTaskById } from "../core/db/queries/tasks.js";
+import { getTaskById, setTaskParentReviewPolicy } from "../core/db/queries/tasks.js";
 import {
   getRunById,
   getRunCoreFields,
@@ -843,7 +843,7 @@ export function createTaskWatcher({
     };
   }
 
-  function createDelegatedSubtasks(parentTask, runId, subtasks) {
+  function createDelegatedSubtasks(parentTask, runId, subtasks, options = {}) {
     if (!Array.isArray(subtasks) || subtasks.length === 0) return [];
 
     const created = [];
@@ -851,6 +851,15 @@ export function createTaskWatcher({
     const rootTaskId = parentTask.root_task_id || parentTask.id;
     const now = Date.now();
     const warnings = [];
+
+    // R6: resolve and persist parent_review_policy as part of the same tx
+    // so a successful delegation always leaves the parent with a coherent
+    // policy recorded. The watcher's later execute → review transition
+    // reads this column.
+    const resolvedReviewPolicy = resolveParentReviewPolicy({
+      requested: options.requestedReviewPolicy,
+      subtasks,
+    });
 
     const tx = db.transaction(() => {
       // Supersede prior delegation: drop old subtask edges so
@@ -921,6 +930,7 @@ export function createTaskWatcher({
           insertDependency(db, child.id, depId, now);
         }
       }
+      setTaskParentReviewPolicy(db, parentTask.id, resolvedReviewPolicy, now);
     });
     tx();
 
@@ -929,7 +939,10 @@ export function createTaskWatcher({
     }
     if (created.length > 0) {
       const lines = created.map((child) => `- ${child.taskKey}: ${child.title} (${child.agentName || "unassigned"}${child.required ? ", required" : ", optional"})`);
-      postSystemComment(parentTask.id, `Delegated ${created.length} subtask${created.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
+      const policyNote = resolvedReviewPolicy && resolvedReviewPolicy !== "default"
+        ? `\nparent_review_policy: ${resolvedReviewPolicy}`
+        : "";
+      postSystemComment(parentTask.id, `Delegated ${created.length} subtask${created.length === 1 ? "" : "s"}:\n${lines.join("\n")}${policyNote}`);
     }
 
     for (const child of created) broker.broadcast("global", { type: "task_created", id: child.id });
@@ -1060,11 +1073,38 @@ export function createTaskWatcher({
       events: res.events,
     });
 
+    // R6: parent_review_policy + auto-approve on executor === reviewer.
+    // Only relevant on the execute → review boundary; review-stage
+    // transitions don't consult these (they're already inside the review
+    // stage or moving to done/blocked via approve/reject). For execute we
+    // detect whether any delegated child agent matches the QA pattern and
+    // whether the agent that just ran is also the configured reviewer
+    // (with self-review allowed) so the state machine can short-circuit
+    // the redundant review pass.
+    const reviewerAgent = stage === "review" ? null : (task.reviewer_agent || null);
+    let parentReviewPolicy = null;
+    let hasQaChild = false;
+    let autoApproveSelfReview = false;
+    if (stage === "execute" && reviewerAgent) {
+      parentReviewPolicy = task.parent_review_policy || "default";
+      const childAgents = listSubtaskChildAgents(db, taskId);
+      hasQaChild = childAgents.some((agent) => isQaChildAgent(agent));
+      if (agentName && reviewerAgent === agentName) {
+        const reviewerFlag = getAgentSelfReviewFlag(db, reviewerAgent);
+        if (reviewerFlag?.allow_self_review) {
+          autoApproveSelfReview = true;
+        }
+      }
+    }
     const next = nextStage(taskStage(task), {
       type: "run_succeeded",
       stage,
       result,
-      reviewerAgent: stage === "review" ? null : (task.reviewer_agent || null),
+      reviewerAgent,
+      executorAgent: stage === "execute" ? agentName : null,
+      parentReviewPolicy,
+      hasQaChild,
+      autoApproveSelfReview,
       rejectionCount: task.rejection_streak || 0,
       maxRejections: maxRejectionLimit(),
     });
@@ -1089,7 +1129,12 @@ export function createTaskWatcher({
 
     const delegated = next.sideEffects.find((sideEffect) => sideEffect.type === "create_subtasks");
     if (delegated) {
-      const children = createDelegatedSubtasks({ ...task, stage: next.stage }, runId, delegated.subtasks);
+      const children = createDelegatedSubtasks(
+        { ...task, stage: next.stage },
+        runId,
+        delegated.subtasks,
+        { requestedReviewPolicy: result?.parent_review_policy },
+      );
       maybeRunDelegatedChildren(taskId, children);
     }
 
