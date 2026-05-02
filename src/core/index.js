@@ -297,10 +297,14 @@ export {
 
 // ---------- Projects ----------
 export {
+  agentNameAllowedByPatterns,
+  agentNameMatchesPattern,
   compactProject,
+  loadProjectAgentAllowlist,
   loadRunSnapshot,
   normalizeProjectSlug,
   normalizeProjectWorkdir,
+  parseProjectAllowedAgents,
   parseProjectTags,
   projectContextHash,
   projectFromRow,
