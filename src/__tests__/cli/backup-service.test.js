@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { backup } from "../../cli/backup.js";
-import { launchdPlist, systemdUnit } from "../../cli/install-service.js";
+import { launchdPlist, serviceParams, systemdUnit } from "../../cli/install-service.js";
 
 describe("backup command", () => {
   const dirs = [];
@@ -70,5 +70,21 @@ describe("service file generators", () => {
     expect(systemdUnit(params)).toContain("Restart=always");
     expect(systemdUnit(params)).toContain("WORKLAB_DATA_DIR=/data");
     expect(systemdUnit(params)).toContain("WORKLAB_PORT=9000");
+  });
+
+  it("includes drain timeout in generated service environments", () => {
+    const params = serviceParams({
+      repoRoot: "/repo",
+      dataDir: "/data",
+      host: "127.0.0.1",
+      port: 9000,
+      workspace: "/workspace",
+      logLevel: "info",
+      drainTimeoutMs: 30000,
+    });
+
+    expect(params.env.WORKLAB_DRAIN_TIMEOUT_MS).toBe("30000");
+    expect(launchdPlist(params)).toContain("<key>WORKLAB_DRAIN_TIMEOUT_MS</key><string>30000</string>");
+    expect(systemdUnit(params)).toContain("WORKLAB_DRAIN_TIMEOUT_MS=30000");
   });
 });

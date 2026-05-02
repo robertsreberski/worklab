@@ -21,6 +21,7 @@ describe("loadConfig", () => {
     expect(c.runTimeoutMs).toBe(30 * 60 * 1000);
     expect(c.runIdleWarningMs).toBe(120 * 1000);
     expect(c.logInlineLimit).toBe(12_000);
+    expect(c.drainTimeoutMs).toBe(60_000);
   });
 
   it("honors WORKLAB_PORT", () => {
@@ -42,10 +43,12 @@ describe("loadConfig", () => {
     process.env.WORKLAB_RUN_TIMEOUT_MS = "1000";
     process.env.WORKLAB_RUN_IDLE_WARNING_MS = "2000";
     process.env.WORKLAB_LOG_INLINE_LIMIT = "3000";
+    process.env.WORKLAB_DRAIN_TIMEOUT_MS = "4000";
     const c = loadConfig();
     expect(c.runTimeoutMs).toBe(1000);
     expect(c.runIdleWarningMs).toBe(2000);
     expect(c.logInlineLimit).toBe(3000);
+    expect(c.drainTimeoutMs).toBe(4000);
   });
 
   it("resolves workspace default to ~/worklab-workspace", () => {
