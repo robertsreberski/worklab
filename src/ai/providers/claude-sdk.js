@@ -215,13 +215,6 @@ function claudeToolResponseBlocks(toolResponse) {
   }
 }
 
-function withUpdatedToolOutput(toolResponse, rewrittenBlocks) {
-  if (toolResponse && typeof toolResponse === "object" && !Array.isArray(toolResponse)) {
-    return { ...toolResponse, content: rewrittenBlocks };
-  }
-  return { content: rewrittenBlocks };
-}
-
 function toolPayloadLimit(options) {
   const explicit = Number(options.toolPayloadMaxBytes);
   if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
@@ -387,7 +380,7 @@ function createClaudeRuntimeHooks({
           continue: true,
           hookSpecificOutput: {
             hookEventName: "PostToolUse",
-            updatedMCPToolOutput: withUpdatedToolOutput(input?.tool_response, summary.rewrittenBlocks),
+            updatedMCPToolOutput: summary.rewrittenBlocks,
           },
         };
       }],
