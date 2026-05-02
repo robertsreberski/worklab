@@ -6,6 +6,7 @@ import {
   resolveRunArtifactDir,
   runArtifactSummary,
   supportsLiveInputProvider,
+  tailRunEventsByVisibleItems,
 } from "../../core/index.js";
 import { safeRunArtifactPath } from "../../core/artifact-collection.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
@@ -80,7 +81,7 @@ function shapeRunLog(logRow, query = {}) {
     };
   }
   const limit = runEventLimit(query.limit);
-  const tail = events.slice(-limit);
+  const tail = tailRunEventsByVisibleItems(events, limit);
   return {
     ...logRow,
     events: tail,

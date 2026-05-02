@@ -179,7 +179,10 @@ export {
   selectCurrentRunComments,
 } from "./run-input.js";
 
-export { buildRunLifecycleEvent } from "./run-events.js";
+export {
+  buildRunLifecycleEvent,
+  tailRunEventsByVisibleItems,
+} from "./run-events.js";
 
 export {
   aggregateRunArtifacts,

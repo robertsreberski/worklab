@@ -109,6 +109,37 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.map((event) => event._event_seq)).toEqual([2, 3]);
   });
 
+  it("keeps paired tool calls atomic when returning a compact event tail", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status) VALUES (?, ?, 'execute', 'a', ?, 'complete')")
+      .run(runId, taskId, now);
+    const events = [
+      { type: "text", text: "old event", _event_seq: 1 },
+      { type: "tool_use", tool_use_id: "tool-1", name: "shell", input: { cmd: "npm test" }, _event_seq: 2 },
+      ...Array.from({ length: 19 }, (_, index) => ({
+        type: "text",
+        text: `event ${index + 3}`,
+        _event_seq: index + 3,
+      })),
+      { type: "tool_result", tool_use_id: "tool-1", output: "ok", is_error: false, _event_seq: 22 },
+    ];
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+      .run("log-atomic-tail", runId, JSON.stringify(events), now);
+
+    const res = await agent.get(`/api/runs/${runId}?events=tail&limit=20`).expect(200);
+
+    expect(res.body.log.event_count).toBe(22);
+    expect(res.body.log.events_truncated).toBe(true);
+    expect(res.body.log.events).toHaveLength(21);
+    expect(res.body.log.events.map((event) => event._event_seq)).toEqual(Array.from({ length: 21 }, (_, index) => index + 2));
+    expect(res.body.log.events[0]).toMatchObject({ type: "tool_use", tool_use_id: "tool-1" });
+    expect(res.body.log.events.at(-1)).toMatchObject({ type: "tool_result", tool_use_id: "tool-1" });
+  });
+
   it("can return run metadata without hydrating event payloads", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();
