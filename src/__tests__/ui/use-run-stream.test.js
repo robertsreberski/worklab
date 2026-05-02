@@ -126,6 +126,72 @@ describe("shared run stream subscriptions", () => {
     unsubscribe();
   });
 
+  it("keeps live file artifacts after their source events leave the compact tail", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-artifacts", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-artifacts", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      maxEvents: 20,
+    });
+
+    await vi.waitFor(() => {
+      expect(snapshots.at(-1)).toMatchObject({ loading: false });
+    });
+
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_result",
+        content: {
+          status: "completed",
+          changes: [{
+            path: "src/first.js",
+            kind: "update",
+            line_stats: { before_lines: 1, after_lines: 2, added_lines: 1, removed_lines: 0 },
+          }],
+        },
+        _event_seq: 1,
+      }),
+    });
+    for (let index = 2; index <= 25; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({ type: "text", text: `event ${index}`, _event_seq: index }),
+      });
+    }
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_result",
+        content: {
+          status: "completed",
+          changes: [{
+            path: "src/latest.js",
+            kind: "add",
+            line_stats: { before_lines: 0, after_lines: 3, added_lines: 3, removed_lines: 0 },
+          }],
+        },
+        _event_seq: 26,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const latest = snapshots.at(-1);
+    expect(latest.events.map((event) => event._event_seq)).toEqual([
+      7, 8, 9, 10,
+      11, 12, 13, 14, 15,
+      16, 17, 18, 19, 20,
+      21, 22, 23, 24, 25, 26,
+    ]);
+    expect(latest.liveArtifacts.map((artifact) => artifact.path)).toEqual(["src/first.js", "src/latest.js"]);
+
+    unsubscribe();
+  });
+
   it("can upgrade a compact live hydration to full history without trimming future events", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async (url) => {

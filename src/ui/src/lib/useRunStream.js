@@ -1,5 +1,6 @@
 // src/ui/src/lib/useRunStream.js
 import { useEffect, useRef, useState } from "preact/hooks";
+import { aggregateRunArtifacts, extractRunArtifacts } from "./runArtifacts.js";
 import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
 
 const runStreams = new Map();
@@ -59,6 +60,7 @@ function ensureRunStream(runId) {
     loading: false,
     run: null,
     events: [],
+    liveArtifacts: [],
     eventCount: 0,
     eventsTruncated: false,
     fullHistoryLoaded: false,
@@ -100,6 +102,7 @@ function closeRunStream(runId, entry) {
 function runStateSnapshot(entry) {
   return {
     events: [...(entry?.events || [])],
+    liveArtifacts: [...(entry?.liveArtifacts || [])],
     run: entry?.run || null,
     eventCount: Number(entry?.eventCount || entry?.events?.length || 0),
     eventsTruncated: Boolean(entry?.eventsTruncated),
@@ -151,6 +154,15 @@ function expandEntryMaxEvents(entry, maxEvents) {
 
 function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {}) {
   if (data?.run) entry.run = data.run;
+  const storedArtifacts = Array.isArray(data?.run?.artifacts) ? data.run.artifacts : [];
+  const eventArtifacts = extractRunArtifacts(data?.log?.events || []);
+  if (storedArtifacts.length || eventArtifacts.length) {
+    entry.liveArtifacts = aggregateRunArtifacts([
+      { id: entry.run?.id, started_at: entry.run?.started_at, artifacts: entry.liveArtifacts || [] },
+      { id: entry.run?.id, started_at: entry.run?.started_at, artifacts: storedArtifacts },
+      { id: entry.run?.id, started_at: entry.run?.started_at, artifacts: eventArtifacts },
+    ]);
+  }
   if (data?.log?.events?.length) {
     entry.events = limitRunEvents(
       mergeRunEvents(entry.events, data.log.events),
@@ -233,6 +245,13 @@ function openRunStream(runId, entry) {
     }
     const previousCount = Number(entry.eventCount || entry.events.length || 0);
     const mergedEvents = mergeRunEvents(entry.events, [payload]);
+    const eventArtifacts = extractRunArtifacts([payload]);
+    if (eventArtifacts.length) {
+      entry.liveArtifacts = aggregateRunArtifacts([
+        { id: entry.run?.id || runId, started_at: entry.run?.started_at, artifacts: entry.liveArtifacts || [] },
+        { id: entry.run?.id || runId, started_at: entry.run?.started_at, artifacts: eventArtifacts },
+      ]);
+    }
     const seq = Number(payload?._event_seq);
     const inferredCount = mergedEvents.length > entry.events.length
       ? previousCount + (mergedEvents.length - entry.events.length)
@@ -320,6 +339,7 @@ export function useRunStream(runId, {
   const [eventCount, setEventCount] = useState(0);
   const [eventsTruncated, setEventsTruncated] = useState(false);
   const [fullHistoryLoaded, setFullHistoryLoaded] = useState(false);
+  const [liveArtifacts, setLiveArtifacts] = useState([]);
   const [done, setDone] = useState(false);
   const [loading, setLoading] = useState(false);
   const unsubscribeRef = useRef(null);
@@ -331,6 +351,7 @@ export function useRunStream(runId, {
       setEventCount(0);
       setEventsTruncated(false);
       setFullHistoryLoaded(false);
+      setLiveArtifacts([]);
       setDone(false);
       setLoading(false);
       return;
@@ -340,6 +361,7 @@ export function useRunStream(runId, {
     setEventCount(0);
     setEventsTruncated(false);
     setFullHistoryLoaded(false);
+    setLiveArtifacts([]);
     setDone(false);
     setLoading(true);
     unsubscribeRef.current = subscribeRunState(runId, (snapshot) => {
@@ -348,6 +370,7 @@ export function useRunStream(runId, {
       setEventCount(snapshot.eventCount);
       setEventsTruncated(snapshot.eventsTruncated);
       setFullHistoryLoaded(snapshot.fullHistoryLoaded);
+      setLiveArtifacts(snapshot.liveArtifacts || []);
       setDone(snapshot.done);
       setLoading(snapshot.loading);
     }, { subscribe, initialEventLimit, maxEvents });
@@ -359,5 +382,5 @@ export function useRunStream(runId, {
 
   const loadFullHistory = () => loadFullRunHistory(runId, { subscribe });
 
-  return { events, run, eventCount, eventsTruncated, fullHistoryLoaded, done, loading, loadFullHistory };
+  return { events, run, eventCount, eventsTruncated, fullHistoryLoaded, liveArtifacts, done, loading, loadFullHistory };
 }
