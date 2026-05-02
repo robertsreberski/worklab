@@ -20,6 +20,7 @@ import { createConsolidationManager } from "./coordinator/consolidation-cron.js"
 import { createAutomationManager } from "./coordinator/automation-manager.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 import { createWorklabSlackService } from "./integrations/slack/service.js";
+import { createWorklabPushNotificationService } from "./integrations/push/service.js";
 
 const DEFAULT_EVENT_LOOP_WARN_MS = 150;
 const DEFAULT_EVENT_LOOP_SAMPLE_MS = 15_000;
@@ -157,6 +158,12 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   automationManagerHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
   const eventLoopMonitor = startEventLoopMonitor(logger);
+  const pushNotifications = createWorklabPushNotificationService({
+    db,
+    dataDir: config.dataDir,
+    events,
+    logger,
+  }).start();
   slackHolder.current = createWorklabSlackService({ db, config, logger, events });
   await slackHolder.current.start();
 
@@ -202,6 +209,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
     try { eventLoopMonitor.shutdown(); } catch (err) { logger.warn({ err }, "event loop monitor shutdown error"); }
+    try { pushNotifications.stop(); } catch (err) { logger.warn({ err }, "push notifications shutdown error"); }
     try { await slackHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "slack shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }

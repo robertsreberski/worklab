@@ -110,7 +110,7 @@ export function buildRunLifecycleEvent(db, type, runId, fallback = {}) {
     ? db.prepare(`
         SELECT
           r.id, r.task_id, r.mode, r.stage, r.agent_name, r.status,
-          r.process_status, r.failure_kind, r.error_text,
+          r.process_status, r.failure_kind, r.error_text, r.started_at, r.ended_at,
           t.task_key, t.title AS task_title,
           a.display_name AS agent_display_name
         FROM task_runs r
@@ -135,5 +135,7 @@ export function buildRunLifecycleEvent(db, type, runId, fallback = {}) {
     processStatus: normalizedProcessStatus(row || { status, processStatus: fallback.processStatus }),
     failureKind: row?.failure_kind || fallback.failureKind || null,
     errorText: row?.error_text || fallback.errorText || null,
+    startedAt: row?.started_at || fallback.startedAt || null,
+    endedAt: row?.ended_at || fallback.endedAt || null,
   };
 }

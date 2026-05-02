@@ -18,6 +18,7 @@ import { registerAutomationRoutes } from "./routes/automations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
+import { registerNotificationRoutes } from "./routes/notifications.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 
 const DEFAULT_SLOW_API_MS = 250;
@@ -64,7 +65,7 @@ function apiTimingMiddleware(logger) {
   };
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack, assistant: assistantOptions }) {
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack, assistant: assistantOptions, notifications }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -101,6 +102,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
   registerAutomationRoutes(app, { db, broker, automationManager });
   registerSlackRoutes(app, { db, config, slack });
+  registerNotificationRoutes(app, { db, dataDir, notifications });
   const assistant = registerAssistantRoutes(app, { db, broker, logger, config, ...(assistantOptions || {}) });
   if (config) registerAdminMcpRoutes(app, { config, logger });
 

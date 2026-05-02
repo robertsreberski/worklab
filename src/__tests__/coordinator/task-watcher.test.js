@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -137,7 +138,11 @@ describe("task-watcher", () => {
       resolvers.push(resolveDone);
       return { pid: 12345, done, cancel: vi.fn() };
     });
-    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+    const events = new EventEmitter();
+    const lifecycleEvents = [];
+    events.on("run:started", (event) => lifecycleEvents.push(event));
+    events.on("run:ended", (event) => lifecycleEvents.push(event));
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake", events });
     await watcher.handleRunRequested(taskId);
     expect(spawn).toHaveBeenCalledTimes(1);
     const startEvent = broker.broadcasts.find((event) => event.p?.type === "run_started")?.p;
@@ -150,6 +155,7 @@ describe("task-watcher", () => {
       status: "running",
       processStatus: "running",
     });
+    expect(lifecycleEvents[0]).toMatchObject({ type: "run_started", runId: startEvent.runId, taskId });
     const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
     db.prepare("UPDATE task_runs SET status = 'complete', process_status = 'succeeded', ended_at = ? WHERE id = ?")
@@ -167,6 +173,7 @@ describe("task-watcher", () => {
       status: "complete",
       processStatus: "succeeded",
     });
+    expect(lifecycleEvents[1]).toMatchObject({ type: "run_ended", runId: startEvent.runId, taskId });
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {
