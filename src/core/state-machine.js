@@ -130,6 +130,7 @@ export function nextStage(currentStage, event) {
             { type: "clear_error_text" },
             ...RESET_USER_ARRAYS,
             { type: "set_rejection_count", count: rejectionCount },
+            { type: "increment_lifetime_rejection_count" },
             { type: "set_last_failure_kind", kind: "review_rejected" },
             { type: "set_stage_reason", reason: "review requested changes" },
             { type: "post_review_comment", notes: result.details || result.summary || "" },
@@ -248,6 +249,7 @@ export function nextStage(currentStage, event) {
         { type: "set_error_text", message },
         { type: "set_stage_reason", reason: failureKind },
         { type: "set_failure_count", count: failureCount },
+        { type: "increment_lifetime_failure_count" },
         { type: "set_last_failure_kind", kind: failureKind },
       ];
       if (failureCount >= maxFailures) {

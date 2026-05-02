@@ -110,6 +110,9 @@ exports[`nextStage matrix snapshot > freezes failure / cancel / abandon at thres
           "type": "set_failure_count",
         },
         {
+          "type": "increment_lifetime_failure_count",
+        },
+        {
           "kind": "spawn",
           "type": "set_last_failure_kind",
         },
@@ -137,6 +140,9 @@ exports[`nextStage matrix snapshot > freezes failure / cancel / abandon at thres
         {
           "count": 3,
           "type": "set_failure_count",
+        },
+        {
+          "type": "increment_lifetime_failure_count",
         },
         {
           "kind": "spawn",
@@ -1968,6 +1974,9 @@ exports[`nextStage matrix snapshot > freezes review-stage decisions 1`] = `
         {
           "count": 1,
           "type": "set_rejection_count",
+        },
+        {
+          "type": "increment_lifetime_rejection_count",
         },
         {
           "kind": "review_rejected",

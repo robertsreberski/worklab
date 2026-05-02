@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 24;
+export const SCHEMA_VERSION = 25;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -76,6 +76,9 @@ CREATE TABLE IF NOT EXISTS tasks (
   error_text TEXT,
   failure_count INTEGER NOT NULL DEFAULT 0,
   rejection_streak INTEGER NOT NULL DEFAULT 0,
+  lifetime_failure_count INTEGER NOT NULL DEFAULT 0,
+  lifetime_rejection_count INTEGER NOT NULL DEFAULT 0,
+  lifetime_recovery_continuation_count INTEGER NOT NULL DEFAULT 0,
   last_failure_kind TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
@@ -121,6 +124,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
   task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
   parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
+  parent_relationship TEXT,
   mode TEXT NOT NULL,
   stage TEXT NOT NULL DEFAULT 'execute',
   agent_name TEXT NOT NULL,

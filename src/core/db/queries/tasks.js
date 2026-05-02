@@ -213,6 +213,45 @@ export function touchTaskUpdatedAt(db, taskId, updatedAt) {
   db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(updatedAt, taskId);
 }
 
+// R4: lifetime counters that survive `reset_failure_count`. Each helper is a
+// monotonic +1 — callers fire on the same events that adjust the streak
+// counters today.
+export function incrementLifetimeFailureCount(db, taskId, updatedAt) {
+  db.prepare(`
+    UPDATE tasks
+    SET lifetime_failure_count = lifetime_failure_count + 1, updated_at = ?
+    WHERE id = ?
+  `).run(updatedAt, taskId);
+}
+
+export function incrementLifetimeRejectionCount(db, taskId, updatedAt) {
+  db.prepare(`
+    UPDATE tasks
+    SET lifetime_rejection_count = lifetime_rejection_count + 1, updated_at = ?
+    WHERE id = ?
+  `).run(updatedAt, taskId);
+}
+
+export function incrementLifetimeRecoveryContinuationCount(db, taskId, updatedAt) {
+  db.prepare(`
+    UPDATE tasks
+    SET lifetime_recovery_continuation_count = lifetime_recovery_continuation_count + 1, updated_at = ?
+    WHERE id = ?
+  `).run(updatedAt, taskId);
+}
+
+// Lightweight read for the API/UI: returns the three lifetime counters and
+// the most recent failure_kind so the task detail can render a "needed N
+// retries" badge without reaching into task_runs.
+export function getTaskHealth(db, taskId) {
+  return db.prepare(`
+    SELECT lifetime_failure_count, lifetime_rejection_count,
+           lifetime_recovery_continuation_count, last_failure_kind
+    FROM tasks
+    WHERE id = ?
+  `).get(taskId);
+}
+
 // Stale-run reconcile path: a worker is gone but `tasks.stage` may still be
 // running. Don't clobber 'done'; otherwise force back to retryStage.
 export function applyStaleRunReconcileToTask(db, { taskId, retryStage, errorTextFallback, updatedAt }) {

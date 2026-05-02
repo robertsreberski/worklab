@@ -436,6 +436,14 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "daily_budget_usd", "daily_budget_usd REAL");
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
+  // R4: cumulative lifetime counters that survive `reset_failure_count`. The
+  // existing `failure_count` / `rejection_streak` columns reset on success, so
+  // a task that needed three retries before approval shows 0 in both columns
+  // afterward — making it impossible to distinguish a clean run from a flaky
+  // one when reading the task table after the fact.
+  addColumnIfMissing(db, "tasks", "lifetime_failure_count", "lifetime_failure_count INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "lifetime_rejection_count", "lifetime_rejection_count INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "lifetime_recovery_continuation_count", "lifetime_recovery_continuation_count INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
   addColumnIfMissing(db, "tasks", "pending_questions_json", "pending_questions_json TEXT NOT NULL DEFAULT '[]'");
   // v22: retry_count → failure_count rename. The column was always a generic
@@ -446,6 +454,12 @@ export function runMigrations(db) {
   }
   addColumnIfMissing(db, "task_runs", "cancel_initiator", "cancel_initiator TEXT");
   addColumnIfMissing(db, "task_runs", "cancel_reason", "cancel_reason TEXT");
+  // R11: parent_relationship distinguishes structural lineage from recovery
+  // lineage. `parent_run_id` is overloaded today: a review's parent is the
+  // execute it reviewed (stage progression), while a continuation's parent
+  // is the failed run it's resuming. Without this column, audits had to
+  // reconstruct the relationship from diagnostics_json keys.
+  addColumnIfMissing(db, "task_runs", "parent_relationship", "parent_relationship TEXT");
   addColumnIfMissing(db, "task_runs", "warnings_json", "warnings_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "diagnostics_json", "diagnostics_json TEXT");
   addColumnIfMissing(db, "task_runs", "provider_session_id", "provider_session_id TEXT");
@@ -514,6 +528,54 @@ export function runMigrations(db) {
   normalizeWorkflowState(db);
   backfillTaskKeys(db);
   clearResolvedTaskFailureKinds(db);
+  // R4 backfill: derive lifetime_* counters from existing task_runs history.
+  // Idempotent — only writes when the lifetime column is still 0 so re-running
+  // migrations after the operator has logged real activity doesn't clobber
+  // counters. Cancellation-family failures (cancelled_*) don't count.
+  if (tableExists(db, "task_runs") && hasColumn(db, "tasks", "lifetime_failure_count")) {
+    db.exec(`
+      UPDATE tasks SET lifetime_failure_count = (
+        SELECT COUNT(*) FROM task_runs
+        WHERE task_runs.task_id = tasks.id
+          AND task_runs.process_status = 'failed'
+          AND (task_runs.failure_kind IS NULL OR task_runs.failure_kind NOT LIKE 'cancelled_%')
+      ) WHERE lifetime_failure_count = 0;
+      UPDATE tasks SET lifetime_rejection_count = (
+        SELECT COUNT(*) FROM task_runs
+        WHERE task_runs.task_id = tasks.id
+          AND task_runs.mode = 'review'
+          AND task_runs.decision = 'reject'
+      ) WHERE lifetime_rejection_count = 0;
+      UPDATE tasks SET lifetime_recovery_continuation_count = (
+        SELECT COUNT(*) FROM task_runs
+        WHERE task_runs.task_id = tasks.id
+          AND task_runs.diagnostics_json IS NOT NULL
+          AND json_valid(task_runs.diagnostics_json)
+          AND json_extract(task_runs.diagnostics_json, '$.continuation_of_run_id') IS NOT NULL
+      ) WHERE lifetime_recovery_continuation_count = 0;
+    `);
+  }
+  // R11 backfill: classify existing task_runs by their parent_relationship.
+  // recovery_continuation when diagnostics_json carries continuation_of_run_id;
+  // stage_progression when parent_run_id points at a different mode/stage;
+  // null otherwise (root runs and the few we can't classify deterministically).
+  if (tableExists(db, "task_runs") && hasColumn(db, "task_runs", "parent_relationship")) {
+    db.exec(`
+      UPDATE task_runs SET parent_relationship = 'recovery_continuation'
+      WHERE parent_relationship IS NULL
+        AND diagnostics_json IS NOT NULL
+        AND json_valid(diagnostics_json)
+        AND json_extract(diagnostics_json, '$.continuation_of_run_id') IS NOT NULL;
+      UPDATE task_runs SET parent_relationship = 'stage_progression'
+      WHERE parent_relationship IS NULL
+        AND parent_run_id IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM task_runs p
+          WHERE p.id = task_runs.parent_run_id
+            AND p.mode <> task_runs.mode
+        );
+    `);
+  }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
