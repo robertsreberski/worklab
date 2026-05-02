@@ -435,7 +435,7 @@ export function Settings() {
     </Button>
   );
   const notificationMeta = notificationStatus(notificationSettingsState);
-  const notificationModeLabel = notificationSettingsState?.mode === "pwa" ? "Mobile PWA notifications" : "Browser notifications";
+  const notificationModeDetail = notificationSettingsState?.mode === "pwa" ? "Mobile PWA push" : "Browser notifications";
   const serviceMeta = serviceStatusMeta(runtime);
   const searchMeta = searchIndexMeta(indexStatus);
   const mcpSummary = mcpAvailabilitySummary(mcpStatus, mcpRows);
@@ -644,12 +644,12 @@ export function Settings() {
             description="Notification preference for this Worklab origin."
             aside={<StatusPill status={notificationMeta.status} label={notificationMeta.label} />}
           >
-            <SettingPanel icon="message-circle" title={notificationModeLabel} meta={notificationDescription(notificationSettingsState)} status={notificationMeta.status} statusLabel={notificationMeta.label}>
+            <SettingPanel icon="message-circle" title="Notifications" meta={notificationModeDetail} status={notificationMeta.status} statusLabel={notificationMeta.label}>
               <Switch
                 checked={!!notificationSettingsState.enabled}
                 disabled={notificationBusy || !notificationSettingsState.supported}
                 onChange={updateBrowserNotifications}
-                label={notificationModeLabel}
+                label="Notifications"
                 description={notificationDescription(notificationSettingsState)}
               />
             </SettingPanel>

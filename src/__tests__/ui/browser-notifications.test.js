@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BROWSER_NOTIFICATIONS_KEY,
+  buildRunNotification,
   browserNotificationSettings,
   disableNotifications,
-  buildRunNotification,
   disableBrowserNotifications,
+  getBrowserNotificationsEnabled,
   maybeShowRunNotification,
   notificationDeliveryMode,
   notificationSettings,
@@ -47,7 +48,7 @@ function notificationEnv({ permission = "default", visibilityState = "visible" }
   };
 }
 
-function pwaEnv({ permission = "default" } = {}) {
+function pwaEnv({ permission = "default", standalone = true } = {}) {
   const env = notificationEnv({ permission, visibilityState: "hidden" });
   const subscription = {
     endpoint: "https://push.example/sub",
@@ -66,7 +67,7 @@ function pwaEnv({ permission = "default" } = {}) {
   env.isSecureContext = true;
   env.PushManager = function PushManager() {};
   env.navigator = {
-    standalone: true,
+    standalone,
     maxTouchPoints: 5,
     userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
     serviceWorker: {
@@ -74,7 +75,7 @@ function pwaEnv({ permission = "default" } = {}) {
       ready: Promise.resolve(registration),
     },
   };
-  env.matchMedia = vi.fn((query) => ({ matches: query.includes("display-mode: standalone") }));
+  env.matchMedia = vi.fn((query) => ({ matches: standalone && query.includes("display-mode: standalone") }));
   return { env, registration, subscription };
 }
 
@@ -110,6 +111,7 @@ describe("browser notifications", () => {
 
   it("selects PWA delivery for mobile standalone clients", () => {
     const { env } = pwaEnv();
+    setBrowserNotificationsEnabled(true, env);
     expect(notificationDeliveryMode(env)).toBe("pwa");
     expect(notificationSettings(env)).toMatchObject({
       mode: "pwa",
@@ -117,7 +119,19 @@ describe("browser notifications", () => {
       permission: "default",
       enabled: false,
     });
+    env.Notification.permission = "granted";
+    expect(notificationSettings(env)).toMatchObject({ enabled: true });
     expect(notificationDeliveryMode(notificationEnv())).toBe("browser");
+  });
+
+  it("keeps mobile installable contexts in PWA settings mode", () => {
+    const { env } = pwaEnv({ standalone: false });
+    expect(notificationDeliveryMode(env)).toBe("pwa");
+    expect(notificationSettings(env)).toMatchObject({
+      mode: "pwa",
+      supported: false,
+      enabled: false,
+    });
   });
 
   it("subscribes and unsubscribes PWA push notifications", async () => {
@@ -129,11 +143,15 @@ describe("browser notifications", () => {
     };
 
     await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true });
+    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).toBe("true");
+    expect(getBrowserNotificationsEnabled(env)).toBe(true);
     expect(env.navigator.serviceWorker.register).toHaveBeenCalledWith("/sw.js");
     expect(registration.pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     expect(api.subscribePushNotifications).toHaveBeenCalledWith({ subscription: subscription.toJSON(), clientKind: "pwa" });
 
     await expect(disableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: false });
+    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).toBe("false");
+    expect(getBrowserNotificationsEnabled(env)).toBe(false);
     expect(subscription.unsubscribe).toHaveBeenCalled();
     expect(api.unsubscribePushNotifications).toHaveBeenCalledWith(subscription.endpoint);
   });

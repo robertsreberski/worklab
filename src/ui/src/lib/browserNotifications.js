@@ -6,7 +6,6 @@ import {
 export { buildRunNotification, runNotificationRoute };
 
 export const BROWSER_NOTIFICATIONS_KEY = "worklab.browserNotifications.enabled";
-export const PWA_NOTIFICATIONS_KEY = "worklab.pwaNotifications.enabled";
 const DEDUPE_KEY_PREFIX = "worklab.browserNotifications.sent.";
 const DEDUPE_TTL_MS = 5000;
 
@@ -48,14 +47,11 @@ export function setBrowserNotificationsEnabled(enabled, env = getGlobal()) {
 }
 
 export function getPwaNotificationsEnabled(env = getGlobal()) {
-  return safeStorage(env)?.getItem(PWA_NOTIFICATIONS_KEY) === "true";
+  return getBrowserNotificationsEnabled(env);
 }
 
 export function setPwaNotificationsEnabled(enabled, env = getGlobal()) {
-  const storage = safeStorage(env);
-  if (!storage) return false;
-  storage.setItem(PWA_NOTIFICATIONS_KEY, enabled ? "true" : "false");
-  return enabled;
+  return setBrowserNotificationsEnabled(enabled, env);
 }
 
 function isStandalonePwa(env = getGlobal()) {
@@ -87,7 +83,16 @@ export function pwaNotificationsSupported(env = getGlobal()) {
 }
 
 export function notificationDeliveryMode(env = getGlobal()) {
-  return pwaNotificationsSupported(env) ? "pwa" : "browser";
+  if (
+    browserNotificationsSupported(env)
+    && env.isSecureContext !== false
+    && isMobileClient(env)
+    && env.navigator?.serviceWorker
+    && typeof env.PushManager === "function"
+  ) {
+    return "pwa";
+  }
+  return "browser";
 }
 
 export function browserNotificationSettings(env = getGlobal()) {
