@@ -50,6 +50,8 @@ export function compactRecoveryRunSummary({ runId, res, reason, providerInfo }) 
       ? `Previous run \`${runId}\` returned malformed Worklab result JSON.`
     : reason === "finalisation"
       ? `Previous run \`${runId}\` completed the work (last tool: ${diagnostics?.error_details?.last_tool_name || "journal_summary"}) but dropped before emitting the worklab.v2 envelope.`
+    : reason === "coordinator_resume"
+      ? `Previous run \`${runId}\` was drained when the coordinator restarted; resuming from the captured transcript snapshot.`
     : providerInfo?.subkind === "terminated"
       ? `Previous run \`${runId}\` was interrupted by a provider connection drop${turnCount ? ` after ${turnCount} turn(s)` : ""}${piErrorCode ? ` (${piErrorCode})` : ""}.`
       : `Previous run \`${runId}\` ended with a retryable provider error${providerInfo?.subkind ? ` (${providerInfo.subkind})` : ""}.`;

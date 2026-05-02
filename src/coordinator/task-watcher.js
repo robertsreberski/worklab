@@ -37,6 +37,7 @@ import {
 import {
   deleteSubtaskEdgesForParent,
   insertSubtaskEdge,
+  listSubtaskChildAgents,
 } from "../core/db/queries/task-edges.js";
 import {
   agentCommentBody,
@@ -60,7 +61,9 @@ import {
   appendDelegationDoneCriteria,
   detectSubtaskCycles,
   enforceProjectAgentAllowlist,
+  isQaChildAgent,
   looksLikePlanBody,
+  resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
 import { loadProjectAgentAllowlist } from "../core/projects.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
@@ -72,7 +75,7 @@ import {
 } from "./watcher/run-handler.js";
 import { checkBudget, recordPerRunBudgetOverage } from "./watcher/budget.js";
 import { spawnTaskRun } from "./watcher/spawn-run.js";
-import { reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
+import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watcher/stale-runs.js";
 
 const AUTO_RUN_POLICY = "auto_plan_execute";
 
@@ -142,6 +145,21 @@ export function createTaskWatcher({
   }
 
   reconcileStaleRunningRuns(db, logger);
+
+  // R5: drained-resume reconcile. Scheduling defers to a microtask so the
+  // watcher closures (spawnRun, postSystemComment, …) are bound before we
+  // try to reuse them. Lives in `coordinatorResumeBootstrapPromise` so
+  // tests can await the boot path deterministically.
+  let coordinatorResumeBootstrapPromise = null;
+  function scheduleCoordinatorResumeBootstrap() {
+    coordinatorResumeBootstrapPromise = Promise.resolve().then(() => {
+      try {
+        scheduleCoordinatorResumeContinuations();
+      } catch (err) {
+        logger?.warn?.({ err: err.message }, "drained-resume bootstrap failed");
+      }
+    });
+  }
 
   // Apply a list of side-effects to the DB inside a single transaction, plus
   // associated task-comments. spawn_worker / spawn_reviewer / create_subtasks
@@ -1218,6 +1236,121 @@ export function createTaskWatcher({
     await Promise.allSettled(promises);
   }
 
+  // R5: drained-resume continuation. Called once at boot (via
+  // scheduleCoordinatorResumeBootstrap) for every task_run row the previous
+  // coordinator left tagged `resume_kind: "drained"`. Schedules a fresh run
+  // continuation against the same task/agent/stage with `continuation_reason:
+  // "coordinator_resume"` and threads the saved transcript_tail into the new
+  // worker's diagnosticsSeed so it can pick up where it left off.
+  function scheduleCoordinatorResumeContinuations() {
+    const candidates = findDrainedResumeCandidates(db);
+    if (candidates.length === 0) return [];
+    const scheduled = [];
+    for (const candidate of candidates) {
+      try {
+        const result = scheduleSingleCoordinatorResume(candidate);
+        if (result) scheduled.push(result);
+      } catch (err) {
+        logger?.warn?.(
+          { err: err.message, runId: candidate.runId, taskId: candidate.taskId },
+          "drained-resume scheduling failed",
+        );
+      }
+    }
+    if (scheduled.length > 0) {
+      logger?.info?.(
+        { count: scheduled.length },
+        "scheduled coordinator_resume continuations from drained snapshots",
+      );
+    }
+    return scheduled;
+  }
+
+  function scheduleSingleCoordinatorResume({ runId, taskId, stage, mode, agentName, snapshot }) {
+    const task = getTaskById(db, taskId);
+    if (!task) return null;
+    const continuationStage = ["plan", "execute", "review"].includes(stage) ? stage : taskStage(task);
+    const continuationMode = mode || modeForStage(continuationStage);
+    const resolvedAgent = agentName || agentForTaskStage(task, continuationStage);
+    if (!resolvedAgent) {
+      patchRunDiagnostics(runId, {
+        continuation_skipped: true,
+        continuation_skip_reason: "missing_agent",
+        continuation_reason: "coordinator_resume",
+      });
+      return null;
+    }
+    if (active.has(taskId)) {
+      // Something else (auto-run, manual retry) already kicked the task; let
+      // that path own the run.
+      patchRunDiagnostics(runId, {
+        continuation_skipped: true,
+        continuation_skip_reason: "task_already_running",
+        continuation_reason: "coordinator_resume",
+      });
+      return null;
+    }
+    const run = getRunById(db, runId);
+    if (!run) return null;
+    const lineage = continuationLineage(run);
+    const reviewSubjectRunId = continuationMode === "review" ? reviewSubjectRunIdFor(run, taskId) : null;
+    if (continuationMode === "review" && !reviewSubjectRunId) {
+      patchRunDiagnostics(runId, {
+        continuation_skipped: true,
+        continuation_skip_reason: "missing_review_subject",
+        continuation_reason: "coordinator_resume",
+      });
+      return null;
+    }
+    postSystemComment(taskId, [
+      "Automatic continuation after coordinator restart: resuming from drained worker snapshot.",
+      "",
+      "The previous worker was asked to drain on shutdown and persisted a transcript-tail snapshot. The continuation prompt below summarises the recent turns so you can resume rather than restart the work.",
+      "",
+      "Continue from the captured workspace state. Do not redo completed steps. If the workdir is dirty or unclear, inspect it (`git status`, journal tail) before resuming.",
+    ].join("\n").trim());
+    applySideEffects(taskId, [
+      { type: "clear_error_text" },
+      { type: "set_stage_reason", reason: "continuing after coordinator_resume" },
+      { type: "increment_lifetime_recovery_continuation_count" },
+    ], taskStage(task), continuationStage, { running: true });
+
+    const attempt = lineage.depth + 1;
+    patchRunDiagnostics(runId, {
+      continuation_scheduled: true,
+      continuation_delay_ms: 0,
+      continuation_depth: lineage.depth,
+      continuation_reason: "coordinator_resume",
+      continuation_root_run_id: lineage.rootRunId,
+    });
+    const continuation = spawnRun({
+      task: { ...task, stage: continuationStage },
+      stage: continuationStage,
+      mode: continuationMode,
+      agentName: resolvedAgent,
+      parentRunId: continuationMode === "review" ? reviewSubjectRunId : runId,
+      diagnosticsSeed: {
+        continuation_of_run_id: runId,
+        continuation_root_run_id: lineage.rootRunId,
+        continuation_reason: "coordinator_resume",
+        continuation_depth: attempt,
+        recovery_attempt: attempt,
+        resume_snapshot: snapshot && typeof snapshot === "object" ? snapshot : undefined,
+      },
+    });
+    patchRunDiagnostics(runId, {
+      continuation_run_id: continuation.runId,
+      continuation_depth: lineage.depth,
+      continuation_reason: "coordinator_resume",
+      continuation_root_run_id: lineage.rootRunId,
+    });
+    return { parentRunId: runId, continuationRunId: continuation.runId };
+  }
+
+  // Defer until the closures above are bound. Without this we'd reference
+  // spawnRun / postSystemComment before they're hoisted into scope.
+  scheduleCoordinatorResumeBootstrap();
+
   return {
     handleRunRequested,
     cancel,
@@ -1228,5 +1361,7 @@ export function createTaskWatcher({
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,
     maybeAutoStartDependents,
+    scheduleCoordinatorResumeContinuations,
+    get coordinatorResumeBootstrap() { return coordinatorResumeBootstrapPromise; },
   };
 }
