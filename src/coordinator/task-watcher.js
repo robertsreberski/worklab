@@ -90,6 +90,7 @@ export function createTaskWatcher({
   logInlineLimit = 12_000,
   maxFailures = null,
   events,
+  drainTimeoutMs = 60_000,
 }) {
   const active = new Map();
   const activeByRunId = new Map();
@@ -1182,17 +1183,37 @@ export function createTaskWatcher({
     return entry.handle.sendLiveMessage(message);
   }
 
-  async function shutdown() {
+  async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
     for (const timer of recoveryTimers) clearTimeout(timer);
     recoveryTimers.clear();
     pendingStarts.clear();
+    // R5: graceful drain — ask each active worker to wrap up cleanly before
+    // we send SIGTERM. The drain channel rides the existing stdin pipe with
+    // a `worklab_drain` message. The worker emits a `drained` event, persists
+    // a transcript-tail snapshot tagged `resume_kind: "drained"`, and exits
+    // cleanly within `drainTimeoutMs`. If a worker doesn't drain in time the
+    // handle internally falls back to a hard cancel so shutdown still
+    // completes promptly.
+    const effectiveDrainMs = Number.isFinite(Number(overrideDrainMs))
+      ? Number(overrideDrainMs)
+      : drainTimeoutMs;
     const promises = [];
     for (const entry of active.values()) {
-      entry.handle.cancel({
-        initiator: "coordinator_shutdown",
-        reason: "coordinator stopping",
-      });
-      promises.push(entry.handle.done);
+      const handle = entry.handle;
+      if (typeof handle.drain === "function") {
+        try {
+          handle.drain({ timeoutMs: effectiveDrainMs, reason: "coordinator_shutdown" });
+        } catch (err) {
+          logger?.warn?.({ err: err.message, runId: entry.runId }, "drain dispatch failed; falling back to cancel");
+          handle.cancel({ initiator: "coordinator_shutdown", reason: "coordinator stopping" });
+        }
+      } else {
+        handle.cancel({
+          initiator: "coordinator_shutdown",
+          reason: "coordinator stopping",
+        });
+      }
+      promises.push(handle.done);
     }
     await Promise.allSettled(promises);
   }
