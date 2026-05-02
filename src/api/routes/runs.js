@@ -3,13 +3,15 @@ import {
   artifactsForRunRow,
   newCommentId,
   normalizeLiveInputBody,
+  resolveRunArtifactDir,
   runArtifactSummary,
   supportsLiveInputProvider,
 } from "../../core/index.js";
+import { safeRunArtifactPath } from "../../core/artifact-collection.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
 import { insertHumanComment } from "../../core/db/queries/comments.js";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 function parseEvents(value) {
@@ -172,6 +174,30 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
       return res.status(404).json({ error: { code: "not_found", message: "raw log file not found" } });
     }
     res.type("text/plain").send(readFileSync(rawPath, "utf8"));
+  });
+
+  app.get("/api/runs/:id/artifact-file", (req, res, next) => {
+    const row = getRunById(db, req.params.id);
+    if (!row) return res.status(404).json({ error: { code: "not_found", message: "run not found" } });
+    if (!row.workdir) {
+      return res.status(404).json({ error: { code: "not_found", message: "run artifact directory not available" } });
+    }
+    const requested = Array.isArray(req.query.path) ? req.query.path[0] : req.query.path;
+    const artifactDir = resolveRunArtifactDir({ workdir: row.workdir, runId: row.id });
+    const artifactPath = safeRunArtifactPath(artifactDir, requested);
+    if (!artifactPath) {
+      return res.status(403).json({ error: { code: "forbidden", message: "artifact path is outside the run artifact directory" } });
+    }
+    try {
+      if (!existsSync(artifactPath) || !statSync(artifactPath).isFile()) {
+        return res.status(404).json({ error: { code: "not_found", message: "artifact file not found" } });
+      }
+    } catch {
+      return res.status(404).json({ error: { code: "not_found", message: "artifact file not found" } });
+    }
+    return res.sendFile(artifactPath, (err) => {
+      if (err && !res.headersSent) next(err);
+    });
   });
 
   app.get("/api/runs/:id/stream", (req, res) => {
