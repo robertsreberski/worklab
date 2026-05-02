@@ -332,7 +332,7 @@ export function TaskDetail({ id, runParam = null }) {
   const hasTaskSchedules = Number(automationSummary.count || 0) > 0;
   const hasEnabledSchedule = Number(automationSummary.enabled_count || 0) > 0;
   const runningRun = runs.find((r) => (r.process_status || r.status) === "running") || null;
-  const displayedStage = runningRun ? "running" : stage;
+  const statusMenuState = runningRun ? "running" : stage;
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = !runningRun && (lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned");
@@ -784,7 +784,7 @@ export function TaskDetail({ id, runParam = null }) {
   );
   const detailMeta = task && (
     <span class="task-hero-status-row">
-      <StatusMenu status={displayedStage} onChoose={onStatusChoose} />
+      <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
       {task.project && (
         <a class="chip chip-muted task-project-chip" href={`#/projects/${projectRouteId(task.project)}`} title={`Project: ${task.project.name || task.project.slug}`}>
           <Icon name="folder" size={10} /> {task.project.name || task.project.slug}

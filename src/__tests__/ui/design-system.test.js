@@ -72,6 +72,13 @@ describe("design system stylesheet", () => {
     expect(statusPillRule).toMatch(/flex-shrink:\s*0\b/);
   });
 
+  it("uses the shared pulse animation for active stage-token dots", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const pulseRule = css.match(/\.stage-token-pulse\s+\.stage-token-glyph\s*\{[^}]*\}/)?.[0] || "";
+    expect(pulseRule).toMatch(/animation:\s*wl-pulse\b/);
+    expect(css).not.toMatch(/\bpulse-dot\b/);
+  });
+
   it("does not reference undefined static custom properties", () => {
     const css = readFileSync(stylesPath, "utf8");
     const declared = new Set([...css.matchAll(/(--[a-zA-Z0-9_-]+)\s*:/g)].map((match) => match[1]));

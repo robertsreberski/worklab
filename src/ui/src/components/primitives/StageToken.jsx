@@ -26,6 +26,7 @@ export function StageToken({
   variant = "pill",
   active = false,
   disabled = false,
+  pulse = false,
   label,
   onClick,
   as,
@@ -46,7 +47,7 @@ export function StageToken({
     </>
   );
   const compatClass = variant === "grid" ? "status-grid-btn" : "status-pill";
-  const cls = `stage-token stage-token-${variant} ${compatClass} ${active ? "active" : ""} ${className}`.trim();
+  const cls = `stage-token stage-token-${variant} ${compatClass} ${active ? "active" : ""} ${pulse ? "stage-token-pulse" : ""} ${className}`.trim();
   const style = { "--stage-tone": meta.tone };
   const isButton = as ? as === "button" : (variant === "grid" || variant === "menu" || onClick);
 
