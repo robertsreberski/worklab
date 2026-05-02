@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 25;
+export const SCHEMA_VERSION = 26;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   plan_updated_by TEXT,
   plan_source_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
   reviewer_agent TEXT REFERENCES agents(name) ON DELETE SET NULL,
+  parent_review_policy TEXT NOT NULL DEFAULT 'default',
   tags TEXT NOT NULL DEFAULT '[]',
   error_text TEXT,
   failure_count INTEGER NOT NULL DEFAULT 0,
