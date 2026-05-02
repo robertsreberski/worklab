@@ -32,11 +32,15 @@ export function liveRunComposerState(run, isStreaming = false) {
 
 function normalizeTodoForPanel(todo) {
   if (!todo?.content || !todo?.status) return null;
+  const content = String(todo.content);
+  const status = String(todo.status);
+  const activeForm = todo.active_form ? String(todo.active_form) : "";
   const normalized = {
-    content: String(todo.content),
-    status: String(todo.status),
+    content,
+    status,
+    label: status === "in_progress" && activeForm ? activeForm : content,
   };
-  if (todo.active_form) normalized.active_form = String(todo.active_form);
+  if (activeForm) normalized.active_form = activeForm;
   return normalized;
 }
 
@@ -46,11 +50,13 @@ export function liveRunTodoPanelState(run) {
     : [];
   const current = todos.find((todo) => todo.status === "in_progress") || null;
   const pending = todos.filter((todo) => todo.status === "pending");
-  const completedCount = todos.filter((todo) => todo.status === "completed").length;
+  const completed = todos.filter((todo) => todo.status === "completed");
+  const completedCount = completed.length;
   return {
     visible: todos.length > 0,
     current,
     pending,
+    completed,
     completedCount,
     total: todos.length,
     updatedAt: run?.todo_state?.updated_at || null,
@@ -68,8 +74,7 @@ function TodoRow({ todo, tone = "" }) {
     <li class={`task-live-todo-row ${tone ? `task-live-todo-row-${tone}` : ""}`}>
       <span class="task-live-todo-icon"><TodoStatusIcon status={todo.status} /></span>
       <span class="task-live-todo-copy">
-        <span class="task-live-todo-content">{todo.content}</span>
-        {todo.active_form && <span class="task-live-todo-active">{todo.active_form}</span>}
+        <span class="task-live-todo-content">{todo.label || todo.content}</span>
       </span>
     </li>
   );
@@ -99,12 +104,9 @@ export function RunTodoPanel({ run }) {
             <span class="task-live-todo-copy">{extraPending} more pending</span>
           </li>
         )}
-        {todoPanel.completedCount > 0 && (
-          <li class="task-live-todo-row task-live-todo-row-completed">
-            <span class="task-live-todo-icon"><Icon name="check" size={14} /></span>
-            <span class="task-live-todo-copy">{todoPanel.completedCount} completed</span>
-          </li>
-        )}
+        {todoPanel.completed.map((todo, index) => (
+          <TodoRow todo={todo} tone="completed" key={`${todo.content}-${index}`} />
+        ))}
       </ul>
     </section>
   );

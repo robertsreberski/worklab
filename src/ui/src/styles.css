@@ -4332,10 +4332,12 @@ html.assistant-resizing * {
 .task-live-todo-row-active {
   color: var(--text);
 }
-.task-live-todo-row-completed,
 .task-live-todo-row-muted {
   color: var(--text-subtle);
   font-size: var(--text-xs);
+}
+.task-live-todo-row-completed {
+  color: var(--text-subtle);
 }
 .task-live-todo-icon {
   display: inline-flex;
@@ -4350,7 +4352,10 @@ html.assistant-resizing * {
   color: var(--status-progress);
 }
 .task-live-todo-row-completed .task-live-todo-icon {
-  color: var(--status-done);
+  color: var(--text-subtle);
+}
+.task-live-todo-row-completed .task-live-todo-content {
+  font-weight: 500;
 }
 .task-live-todo-copy {
   display: grid;

@@ -48,7 +48,7 @@ describe("live run composer visibility", () => {
 });
 
 describe("live run todo panel state", () => {
-  it("orders active and pending work ahead of completed work", () => {
+  it("returns one display label per todo and orders completed work last", () => {
     expect(liveRunTodoPanelState({
       todo_state: {
         todos: [
@@ -62,10 +62,13 @@ describe("live run todo panel state", () => {
       },
     })).toEqual({
       visible: true,
-      current: { content: "Wire MCP tool", status: "in_progress", active_form: "Implementing handlers" },
+      current: { content: "Wire MCP tool", status: "in_progress", active_form: "Implementing handlers", label: "Implementing handlers" },
       pending: [
-        { content: "Write tests", status: "pending" },
-        { content: "Polish UI", status: "pending" },
+        { content: "Write tests", status: "pending", label: "Write tests" },
+        { content: "Polish UI", status: "pending", label: "Polish UI" },
+      ],
+      completed: [
+        { content: "Inspect repo", status: "completed", label: "Inspect repo" },
       ],
       completedCount: 1,
       total: 4,
@@ -78,6 +81,7 @@ describe("live run todo panel state", () => {
       visible: false,
       current: null,
       pending: [],
+      completed: [],
       completedCount: 0,
       total: 0,
       updatedAt: null,
