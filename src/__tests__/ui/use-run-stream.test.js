@@ -80,7 +80,7 @@ describe("shared run stream subscriptions", () => {
 
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/runs/run-1?events=tail&limit=20",
+      "/api/runs/run-1?events=tail&limit=10",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(FakeEventSource.instances).toHaveLength(1);
@@ -89,7 +89,7 @@ describe("shared run stream subscriptions", () => {
     unsubscribeSecond();
   });
 
-  it("keeps live updates capped to the latest 20 events before full history loads", async () => {
+  it("keeps live updates capped to the latest 10 visible items before full history loads", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
@@ -115,8 +115,6 @@ describe("shared run stream subscriptions", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const latest = snapshots.at(-1);
     expect(latest.events.map((event) => event._event_seq)).toEqual([
-      6, 7, 8, 9, 10,
-      11, 12, 13, 14, 15,
       16, 17, 18, 19, 20,
       21, 22, 23, 24, 25,
     ]);
@@ -139,7 +137,7 @@ describe("shared run stream subscriptions", () => {
 
     const unsubscribe = subscribeRunState("run-atomic-tail", (snapshot) => snapshots.push(snapshot), {
       subscribe: true,
-      maxEvents: 20,
+      maxEvents: 10,
     });
 
     await vi.waitFor(() => {
@@ -175,8 +173,10 @@ describe("shared run stream subscriptions", () => {
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     const latest = snapshots.at(-1);
-    expect(latest.events).toHaveLength(21);
-    expect(latest.events.map((event) => event._event_seq)).toEqual(Array.from({ length: 21 }, (_, index) => index + 2));
+    expect(latest.events).toHaveLength(11);
+    expect(latest.events.map((event) => event._event_seq)).toEqual([
+      2, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22,
+    ]);
     expect(latest.events[0]).toMatchObject({ type: "tool_use", tool_use_id: "tool-1" });
     expect(latest.events.at(-1)).toMatchObject({ type: "tool_result", tool_use_id: "tool-1" });
     expect(latest.eventCount).toBe(22);
@@ -198,7 +198,7 @@ describe("shared run stream subscriptions", () => {
 
     const unsubscribe = subscribeRunState("run-artifacts", (snapshot) => snapshots.push(snapshot), {
       subscribe: true,
-      maxEvents: 20,
+      maxEvents: 10,
     });
 
     await vi.waitFor(() => {
@@ -242,10 +242,7 @@ describe("shared run stream subscriptions", () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     const latest = snapshots.at(-1);
     expect(latest.events.map((event) => event._event_seq)).toEqual([
-      7, 8, 9, 10,
-      11, 12, 13, 14, 15,
-      16, 17, 18, 19, 20,
-      21, 22, 23, 24, 25, 26,
+      17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
     ]);
     expect(latest.liveArtifacts.map((artifact) => artifact.path)).toEqual(["src/first.js", "src/latest.js"]);
 

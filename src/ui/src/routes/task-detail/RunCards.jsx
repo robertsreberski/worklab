@@ -195,8 +195,8 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
   const live = Boolean(subscribe);
   const runStream = useRunStream(expanded || subscribe ? run?.id : null, {
     subscribe,
-    initialEventLimit: live ? 20 : 200,
-    maxEvents: live ? 20 : 200,
+    initialEventLimit: live ? 10 : 200,
+    maxEvents: live ? 10 : 200,
   });
   const { events, loading } = runStream;
   const metrics = runMetricItems(run);
