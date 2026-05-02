@@ -208,7 +208,7 @@ export function resolveTaskProjectRunContext({ db, config = {}, task, runSnapsho
 export function loadRunSnapshot(db, runId) {
   if (!runId) return null;
   const row = db.prepare(
-    "SELECT project_id, workdir, project_context_hash FROM task_runs WHERE id = ?",
+    "SELECT project_id, workdir, project_context_hash, diagnostics_json FROM task_runs WHERE id = ?",
   ).get(runId);
   return row || null;
 }

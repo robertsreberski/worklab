@@ -24,6 +24,7 @@ import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
 import { formatWorklabResultText } from "../ai/result/contract.js";
+import { renderResumeSnapshot } from "../agent/transcript.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
@@ -230,6 +231,8 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
+  const runDiagnostics = safeParseJson(runSnapshot?.diagnostics_json, {});
+  const resumeContext = renderResumeSnapshot(runDiagnostics?.resume_snapshot);
   const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
   const repositoryInstructions = loadRepositoryInstructions(projectRunContext.effectiveWorkdir);
   const repositoryGitRoot = findRepositoryGitRoot(projectRunContext.effectiveWorkdir);
@@ -286,6 +289,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     repositoryInstructions,
     repositoryGitRoot,
     qaOutputDir,
+    resumeContext,
     projectContextHash: projectRunContext.projectContextHash,
     commentRows,
     skills,
@@ -439,6 +443,7 @@ function diagnosticsForPrompt(prompt, setup) {
     },
     artifacts: setup.taskArtifacts?.summary || null,
     resolvedBlockers: Array.isArray(setup.resolvedBlockers) ? setup.resolvedBlockers.length : 0,
+    resumeContext: !!setup.resumeContext,
   };
 }
 
@@ -512,6 +517,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     projectContextHash: setup.projectContextHash || "",
     repositoryInstructionsHash: setup.repositoryInstructions?.hash || "",
     repositoryGitRootHash: shortHash(setup.repositoryGitRoot || ""),
+    resumeContextHash: shortHash(setup.resumeContext || ""),
     commentsHash: shortHash((setup.commentRows || []).map((c) => `${c.id}:${c.created_at}`).join("|")),
     skillsHash: shortHash(skillsSignature.join("|")),
     mcpHash: shortHash(mcpSignature.join("|")),
@@ -546,6 +552,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
+      resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers, delegation,
@@ -576,6 +583,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
       resolvedBlockers,
+      resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
       allowedTools, disallowedTools, mcpServers,

@@ -254,6 +254,45 @@ describe("run input assembly", () => {
     });
   });
 
+  it("injects resume snapshots from current run diagnostics into prompts", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      const resumeSnapshot = {
+        schema: "worklab.transcript-tail.v1",
+        captured_at: 1234,
+        turn_count: 2,
+        turns: [{
+          assistant_text: "I already inspected the Claude provider and found the missing resume option.",
+          thinking: null,
+          tool_uses: [{ id: "toolu_1", name: "Read", input_summary: "{\"file_path\":\"src/ai/providers/claude-sdk.js\"}" }],
+          tool_results: [{ tool_use_id: "toolu_1", is_error: false, content: "Claude SDK file content." }],
+        }],
+      };
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status, diagnostics_json)
+        VALUES ('run-resume', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running', ?)
+      `).run(task.id, JSON.stringify({ resume_snapshot: resumeSnapshot }));
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-resume",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Resume context");
+      expect(input.systemPrompt).toContain("<resume_context>");
+      expect(input.systemPrompt).toContain("A previous attempt at this task ran 2 turn(s)");
+      expect(input.systemPrompt).toContain("missing resume option");
+      expect(input.systemPrompt).toContain("Tool call: Read");
+      expect(input.promptDiagnostics.resumeContext).toBe(true);
+    });
+  });
+
   it("injects completed blocker latest execute output and artifacts into run context", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "owner", "Execute as owner.");
