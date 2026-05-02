@@ -3,6 +3,52 @@ import { getAgentLogEvents } from "./db/queries/agent-logs.js";
 
 const DEFAULT_CONTEXT_LIMIT = 25;
 const STORED_HUNK_LIMIT = 32;
+const CODE_PATH_EXTENSIONS = new Set([
+  ".c",
+  ".cc",
+  ".cpp",
+  ".cs",
+  ".css",
+  ".go",
+  ".h",
+  ".hpp",
+  ".html",
+  ".java",
+  ".js",
+  ".jsx",
+  ".json",
+  ".mjs",
+  ".php",
+  ".py",
+  ".rb",
+  ".rs",
+  ".scss",
+  ".sh",
+  ".sql",
+  ".ts",
+  ".tsx",
+  ".vue",
+  ".xml",
+  ".yaml",
+  ".yml",
+]);
+const CODE_PATH_BASENAMES = new Set([
+  "Dockerfile",
+  "Makefile",
+  "README",
+  "README.md",
+  "package.json",
+  "tsconfig.json",
+  "vite.config.js",
+  "vitest.config.js",
+]);
+const ARTIFACT_TYPE_RANK = {
+  generated_output: 1,
+  scratch: 2,
+  qa_output: 3,
+  git_commit: 4,
+  code_change: 5,
+};
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -102,6 +148,63 @@ function lineNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function numberOrNull(value) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function basename(path) {
+  return String(path || "").split("/").filter(Boolean).pop() || "";
+}
+
+function extension(path) {
+  const name = basename(path);
+  const index = name.lastIndexOf(".");
+  return index > 0 ? name.slice(index) : "";
+}
+
+export function artifactTypeForPath(path, { source = "file_edit" } = {}) {
+  const normalized = normalizeArtifactPath(path);
+  if (source === "qa_output_dir") return "qa_output";
+  if (source === "git") return "git_commit";
+  if (normalized.includes("/.worklab-tmp/") || normalized.startsWith(".worklab-tmp/")) return "scratch";
+  const name = basename(normalized);
+  if (CODE_PATH_BASENAMES.has(name) || CODE_PATH_EXTENSIONS.has(extension(normalized))) return "code_change";
+  return "generated_output";
+}
+
+function mergeArtifactType(current, next) {
+  const currentType = current || "generated_output";
+  const nextType = next || "generated_output";
+  return (ARTIFACT_TYPE_RANK[nextType] || 0) >= (ARTIFACT_TYPE_RANK[currentType] || 0)
+    ? nextType
+    : currentType;
+}
+
+function mergeSources(existing, incoming) {
+  return [...new Set([
+    ...asArray(existing.sources),
+    existing.source,
+    incoming,
+  ].filter(Boolean))];
+}
+
+function mergeEventSeq(existing, incoming) {
+  const current = numberOrNull(existing);
+  const next = numberOrNull(incoming);
+  if (current == null) return next;
+  if (next == null) return current;
+  return Math.min(current, next);
+}
+
+function mergeLastEventSeq(existing, incoming) {
+  const current = numberOrNull(existing);
+  const next = numberOrNull(incoming);
+  if (current == null) return next;
+  if (next == null) return current;
+  return Math.max(current, next);
+}
+
 function normalizeHunks(value) {
   if (!Array.isArray(value)) return [];
   const result = [];
@@ -173,10 +276,28 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const status = isError ? "failed" : (payloadStatus || "completed");
   const stats = change?.line_stats || {};
   const kind = fileEditKindLabel(change?.kind);
+  const incomingSource = change?.source || meta.source || "file_edit";
+  const incomingType = change?.artifact_type || meta.artifact_type || artifactTypeForPath(rawPath, { source: incomingSource });
+  const incomingTemporary = change?.temporary ?? meta.temporary ?? (incomingType === "scratch");
+  const incomingEventSeq = numberOrNull(change?.event_seq ?? meta.event_seq);
+  const incomingFirstEventSeq = numberOrNull(change?.first_event_seq ?? meta.first_event_seq ?? incomingEventSeq);
+  const incomingLastEventSeq = numberOrNull(change?.last_event_seq ?? meta.last_event_seq ?? incomingEventSeq);
+  const incomingEventCount = numberOrNull(change?.event_count ?? meta.event_count)
+    ?? (incomingEventSeq == null ? 0 : 1);
   const existing = map.get(rawPath) || {
     path: rawPath,
     kind,
     status: "in_progress",
+    artifact_type: incomingType,
+    source: incomingSource,
+    sources: incomingSource ? [incomingSource] : [],
+    temporary: Boolean(incomingTemporary),
+    size_bytes: numberOrNull(change?.size_bytes ?? meta.size_bytes),
+    href: change?.href || meta.href || null,
+    artifact_relative_path: change?.artifact_relative_path || meta.artifact_relative_path || null,
+    event_count: 0,
+    first_event_seq: null,
+    last_event_seq: null,
     added_lines: 0,
     removed_lines: 0,
     has_line_delta: false,
@@ -208,6 +329,16 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     ...mergeRunMetadata(existing, meta),
     kind: kind || existing.kind,
     status: mergeStatus(existing.status, status),
+    artifact_type: mergeArtifactType(existing.artifact_type, incomingType),
+    source: existing.source === incomingSource ? existing.source : "multiple",
+    sources: mergeSources(existing, incomingSource),
+    temporary: Boolean(existing.temporary || incomingTemporary),
+    size_bytes: numberOrNull(change?.size_bytes ?? meta.size_bytes) ?? existing.size_bytes ?? null,
+    href: change?.href || meta.href || existing.href || null,
+    artifact_relative_path: change?.artifact_relative_path || meta.artifact_relative_path || existing.artifact_relative_path || null,
+    event_count: (Number(existing.event_count) || 0) + incomingEventCount,
+    first_event_seq: mergeEventSeq(existing.first_event_seq, incomingFirstEventSeq),
+    last_event_seq: mergeLastEventSeq(existing.last_event_seq, incomingLastEventSeq),
     added_lines: existing.added_lines + (added || 0),
     removed_lines: existing.removed_lines + (removed || 0),
     has_line_delta: existing.has_line_delta || added != null || removed != null,
@@ -305,6 +436,16 @@ export function normalizeStoredArtifacts(value) {
       display_path: item.display_path || item.displayPath || rawPath,
       kind: item.kind || "change",
       status: item.status || "completed",
+      artifact_type: item.artifact_type || artifactTypeForPath(rawPath, { source: item.source || "stored" }),
+      source: item.source || "stored",
+      sources: asArray(item.sources),
+      temporary: Boolean(item.temporary),
+      size_bytes: numberOrNull(item.size_bytes),
+      href: item.href || null,
+      artifact_relative_path: item.artifact_relative_path || null,
+      event_count: Number(item.event_count) || 0,
+      first_event_seq: numberOrNull(item.first_event_seq),
+      last_event_seq: numberOrNull(item.last_event_seq),
       added_lines: Number(item.added_lines) || 0,
       removed_lines: Number(item.removed_lines) || 0,
       has_line_delta: Boolean(item.has_line_delta),
@@ -331,6 +472,16 @@ export function artifactsFromPaths(paths = [], run = null) {
       path: rawPath,
       kind: "change",
       status: "completed",
+      artifact_type: artifactTypeForPath(rawPath, { source: "legacy_path" }),
+      source: "legacy_path",
+      sources: ["legacy_path"],
+      temporary: false,
+      size_bytes: null,
+      href: null,
+      artifact_relative_path: null,
+      event_count: 0,
+      first_event_seq: null,
+      last_event_seq: null,
       added_lines: 0,
       removed_lines: 0,
       has_line_delta: false,
@@ -386,10 +537,23 @@ export function aggregateRunArtifacts(runs = []) {
           unavailable_reason: artifact.unavailable_reason,
           hunks: artifact.hunks,
         },
+        artifact_type: artifact.artifact_type,
+        source: artifact.source,
+        sources: artifact.sources,
+        temporary: artifact.temporary,
+        size_bytes: artifact.size_bytes,
+        href: artifact.href,
+        artifact_relative_path: artifact.artifact_relative_path,
+        event_count: artifact.event_count,
+        first_event_seq: artifact.first_event_seq,
+        last_event_seq: artifact.last_event_seq,
       }, artifact.status || "completed", isFailedStatus(artifact.status), {
         run_id: artifact.last_run_id || run?.id,
         started_at: artifact.first_seen_at || run?.started_at,
         ended_at: artifact.last_seen_at || run?.ended_at,
+        event_count: artifact.event_count,
+        first_event_seq: artifact.first_event_seq,
+        last_event_seq: artifact.last_event_seq,
       });
       const merged = byPath.get(normalizeArtifactPath(artifact.path));
       if (merged) {
