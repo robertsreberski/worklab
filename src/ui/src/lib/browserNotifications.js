@@ -71,24 +71,36 @@ function isMobileClient(env = getGlobal()) {
   return touchPoints > 1 && (!width || width <= 1024);
 }
 
+export function notificationDiagnostics(env = getGlobal()) {
+  return {
+    notificationApi: browserNotificationsSupported(env),
+    secure: env.isSecureContext !== false,
+    mobile: isMobileClient(env),
+    standalone: isStandalonePwa(env),
+    serviceWorker: !!env.navigator?.serviceWorker,
+    pushManager: typeof env.PushManager === "function",
+  };
+}
+
 export function pwaNotificationsSupported(env = getGlobal()) {
+  const diagnostics = notificationDiagnostics(env);
   return Boolean(
-    browserNotificationsSupported(env)
-    && env.isSecureContext !== false
-    && isMobileClient(env)
-    && isStandalonePwa(env)
-    && env.navigator?.serviceWorker
-    && typeof env.PushManager === "function",
+    diagnostics.notificationApi
+    && diagnostics.secure
+    && diagnostics.mobile
+    && diagnostics.standalone
+    && diagnostics.serviceWorker
+    && diagnostics.pushManager,
   );
 }
 
 export function notificationDeliveryMode(env = getGlobal()) {
+  const diagnostics = notificationDiagnostics(env);
   if (
-    browserNotificationsSupported(env)
-    && env.isSecureContext !== false
-    && isMobileClient(env)
-    && env.navigator?.serviceWorker
-    && typeof env.PushManager === "function"
+    diagnostics.secure
+    && diagnostics.mobile
+    && diagnostics.serviceWorker
+    && diagnostics.pushManager
   ) {
     return "pwa";
   }
@@ -112,6 +124,7 @@ export function pwaNotificationSettings(env = getGlobal()) {
     mode: "pwa",
     supported,
     permission,
+    diagnostics: notificationDiagnostics(env),
     enabled: supported && permission === "granted" && getPwaNotificationsEnabled(env),
   };
 }
@@ -125,11 +138,16 @@ export async function requestAndEnableBrowserNotifications(env = getGlobal()) {
   const api = notificationApi(env);
   if (!api?.requestPermission) {
     setBrowserNotificationsEnabled(false, env);
-    return browserNotificationSettings(env);
+    return { mode: "browser", ...browserNotificationSettings(env), reason: "unsupported" };
   }
   const permission = await api.requestPermission();
   setBrowserNotificationsEnabled(permission === "granted", env);
-  return browserNotificationSettings(env);
+  const reason = permission === "granted"
+    ? "registered"
+    : permission === "denied"
+      ? "permission_denied"
+      : "permission_dismissed";
+  return { mode: "browser", ...browserNotificationSettings(env), reason };
 }
 
 export function disableBrowserNotifications(env = getGlobal()) {
@@ -147,8 +165,9 @@ function base64UrlToUint8Array(value) {
 async function pwaRegistration(env = getGlobal()) {
   const sw = env.navigator?.serviceWorker;
   if (!sw) throw new Error("service workers are unavailable");
-  await sw.register?.("/sw.js");
-  return sw.ready || null;
+  const registered = await sw.register?.("/sw.js");
+  const ready = await sw.ready;
+  return ready || registered || null;
 }
 
 function subscriptionJson(subscription) {
@@ -156,29 +175,77 @@ function subscriptionJson(subscription) {
   return subscription;
 }
 
+function notificationErrorMessage(error) {
+  return error?.message || String(error || "unknown error");
+}
+
+function pwaEnableResult(env, reason, extra = {}) {
+  return { ...pwaNotificationSettings(env), reason, ...extra };
+}
+
 export async function requestAndEnablePwaNotifications({ env = getGlobal(), api } = {}) {
   const apiImpl = api || {};
   if (!pwaNotificationsSupported(env)) {
     setPwaNotificationsEnabled(false, env);
-    return pwaNotificationSettings(env);
+    return pwaEnableResult(env, "unsupported");
+  }
+  const currentPermission = browserNotificationPermission(env);
+  if (currentPermission === "denied") {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "permission_denied");
+  }
+  let registration;
+  try {
+    registration = await pwaRegistration(env);
+  } catch (error) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "subscription_failed", { error: notificationErrorMessage(error) });
+  }
+  if (!registration?.pushManager) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "subscription_failed", { error: "push manager is unavailable" });
   }
   const notification = notificationApi(env);
-  const permission = await notification.requestPermission();
+  const permission = currentPermission === "granted" ? "granted" : await notification.requestPermission();
   if (permission !== "granted") {
     setPwaNotificationsEnabled(false, env);
-    return pwaNotificationSettings(env);
+    return pwaEnableResult(env, permission === "denied" ? "permission_denied" : "permission_dismissed");
   }
-  const status = await apiImpl.getNotificationStatus?.();
+  let status;
+  try {
+    status = await apiImpl.getNotificationStatus?.();
+  } catch (error) {
+    status = { error };
+  }
   const publicKey = status?.notifications?.pwa?.publicKey;
-  if (!publicKey) throw new Error("push server key is unavailable");
-  const registration = await pwaRegistration(env);
-  const subscription = await registration.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: base64UrlToUint8Array(publicKey),
-  });
-  await apiImpl.subscribePushNotifications?.({ subscription: subscriptionJson(subscription), clientKind: "pwa" });
+  if (!publicKey) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "missing_public_key", {
+      error: status?.error ? notificationErrorMessage(status.error) : undefined,
+      serverStatus: status,
+    });
+  }
+  let subscription;
+  try {
+    subscription = await registration.pushManager.getSubscription?.();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToUint8Array(publicKey),
+      });
+    }
+  } catch (error) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "subscription_failed", { error: notificationErrorMessage(error), serverStatus: status });
+  }
+  try {
+    await apiImpl.subscribePushNotifications?.({ subscription: subscriptionJson(subscription), clientKind: "pwa" });
+  } catch (error) {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, "subscription_failed", { error: notificationErrorMessage(error), serverStatus: status });
+  }
   setPwaNotificationsEnabled(true, env);
-  return pwaNotificationSettings(env);
+  return pwaEnableResult(env, "registered", { serverStatus: status });
 }
 
 export async function disablePwaNotifications({ env = getGlobal(), api } = {}) {
@@ -195,7 +262,7 @@ export async function disablePwaNotifications({ env = getGlobal(), api } = {}) {
 
 export async function requestAndEnableNotifications({ env = getGlobal(), api } = {}) {
   if (notificationDeliveryMode(env) === "pwa") return requestAndEnablePwaNotifications({ env, api });
-  return { mode: "browser", ...(await requestAndEnableBrowserNotifications(env)) };
+  return requestAndEnableBrowserNotifications(env);
 }
 
 export async function disableNotifications({ env = getGlobal(), api } = {}) {
