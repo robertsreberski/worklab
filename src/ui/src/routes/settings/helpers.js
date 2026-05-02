@@ -177,8 +177,13 @@ export function settingsPayload(settings = {}) {
 }
 
 export function notificationStatus(settings) {
-  if (!settings?.supported) return { status: "disabled", label: "Unsupported" };
-  if (settings.permission === "denied" && settings.mode === "pwa") return { status: "error", label: "Needs iOS Settings" };
+  if (!settings?.supported) {
+    if (settings?.mode === "pwa" && settings.blockingReason === "install_required") {
+      return { status: "disabled", label: "Install required" };
+    }
+    return { status: "disabled", label: "Unsupported" };
+  }
+  if (settings.permission === "denied" && settings.mode === "pwa") return { status: "error", label: "Needs settings" };
   if (settings.permission === "denied") return { status: "error", label: "Blocked" };
   if (settings.enabled) return { status: "enabled", label: settings.mode === "pwa" ? "PWA on" : "On" };
   if (settings.mode === "pwa") return { status: "disabled", label: "PWA off" };
@@ -186,11 +191,18 @@ export function notificationStatus(settings) {
 }
 
 export function notificationDescription(settings) {
-  if (!settings?.supported && settings?.mode === "pwa") return "Install Worklab to the mobile Home Screen and open it over a secure origin.";
+  if (!settings?.supported && settings?.mode === "pwa") {
+    if (settings.blockingReason === "install_required") return "Install Worklab to the Home Screen and open it from the app icon.";
+    if (settings.blockingReason === "insecure_context") return "Open Worklab over HTTPS or localhost before enabling push notifications.";
+    if (settings.blockingReason === "service_worker_unavailable") return "This browser does not expose service workers for this Worklab app.";
+    if (settings.blockingReason === "push_api_unavailable") return "This browser does not expose Web Push for this Worklab app.";
+    if (settings.blockingReason === "notification_api_unavailable") return "This browser does not support notifications.";
+    return "This browser does not support Web Push for this Worklab app.";
+  }
   if (!settings?.supported) return "This browser does not support notifications.";
-  if (settings.permission === "denied" && settings.mode === "pwa") return "Enable Worklab in iOS Settings > Notifications, then turn this on again.";
+  if (settings.permission === "denied" && settings.mode === "pwa") return "Enable notifications for Worklab in system settings, then turn this on again.";
   if (settings.permission === "denied") return "Browser permission is blocked for this site.";
-  if (settings.mode === "pwa") return "Mobile PWA push for task runs, even when Worklab is closed.";
+  if (settings.mode === "pwa") return "Push notifications for task runs, even when Worklab is closed.";
   return "Task run starts, completions, and errors in background tabs.";
 }
 
@@ -199,7 +211,7 @@ export function notificationEnableToast(settings = {}) {
   if (settings.mode === "pwa") {
     if (settings.reason === "permission_denied") {
       return {
-        message: "iOS is not showing the permission prompt. Enable Worklab in iOS Settings > Notifications, then turn this on again.",
+        message: "Notifications are blocked for Worklab. Enable them in system settings, then turn this on again.",
         variant: "error",
       };
     }
@@ -227,6 +239,12 @@ export function notificationEnableToast(settings = {}) {
         variant: "error",
       };
     }
+    if (settings.reason) {
+      return {
+        message: notificationDescription({ ...settings, supported: false, blockingReason: settings.reason }),
+        variant: "error",
+      };
+    }
   }
   if (settings.reason === "permission_denied") return { message: "Browser permission is blocked for this site.", variant: "error" };
   if (settings.reason === "permission_dismissed") return { message: "Notification permission was not granted.", variant: "info" };
@@ -239,7 +257,9 @@ function yesNo(value) {
 
 export function notificationDiagnosticText(settings = {}, serverStatus = null) {
   const mode = settings.mode === "pwa" ? "PWA" : "Browser";
-  const parts = [`Mode ${mode}`, `permission ${settings.permission || "unknown"}`];
+  const parts = [`Mode ${mode}`];
+  if (settings.blockingReason) parts.push(settings.blockingReason.replace(/_/g, " "));
+  parts.push(`permission ${settings.permission || "unknown"}`);
   if (settings.mode === "pwa") {
     const diagnostics = settings.diagnostics || {};
     const subscriptions = serverStatus?.notifications?.pwa?.activeSubscriptions;

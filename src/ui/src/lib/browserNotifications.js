@@ -6,6 +6,7 @@ import {
 export { buildRunNotification, runNotificationRoute };
 
 export const BROWSER_NOTIFICATIONS_KEY = "worklab.browserNotifications.enabled";
+export const PWA_NOTIFICATIONS_KEY = "worklab.pwaNotifications.enabled";
 const DEDUPE_KEY_PREFIX = "worklab.browserNotifications.sent.";
 const DEDUPE_TTL_MS = 5000;
 
@@ -47,11 +48,14 @@ export function setBrowserNotificationsEnabled(enabled, env = getGlobal()) {
 }
 
 export function getPwaNotificationsEnabled(env = getGlobal()) {
-  return getBrowserNotificationsEnabled(env);
+  return safeStorage(env)?.getItem(PWA_NOTIFICATIONS_KEY) === "true";
 }
 
 export function setPwaNotificationsEnabled(enabled, env = getGlobal()) {
-  return setBrowserNotificationsEnabled(enabled, env);
+  const storage = safeStorage(env);
+  if (!storage) return false;
+  storage.setItem(PWA_NOTIFICATIONS_KEY, enabled ? "true" : "false");
+  return enabled;
 }
 
 function isStandalonePwa(env = getGlobal()) {
@@ -72,38 +76,36 @@ function isMobileClient(env = getGlobal()) {
 }
 
 export function notificationDiagnostics(env = getGlobal()) {
+  const mobile = isMobileClient(env);
+  const standalone = isStandalonePwa(env);
   return {
     notificationApi: browserNotificationsSupported(env),
     secure: env.isSecureContext !== false,
-    mobile: isMobileClient(env),
-    standalone: isStandalonePwa(env),
+    mobile,
+    standalone,
     serviceWorker: !!env.navigator?.serviceWorker,
     pushManager: typeof env.PushManager === "function",
   };
 }
 
+function pwaBlockingReason(diagnostics) {
+  if (!diagnostics.notificationApi) return "notification_api_unavailable";
+  if (!diagnostics.secure) return "insecure_context";
+  if (diagnostics.mobile && !diagnostics.standalone) return "install_required";
+  if (!diagnostics.serviceWorker) return "service_worker_unavailable";
+  if (!diagnostics.pushManager) return "push_api_unavailable";
+  return null;
+}
+
 export function pwaNotificationsSupported(env = getGlobal()) {
   const diagnostics = notificationDiagnostics(env);
-  return Boolean(
-    diagnostics.notificationApi
-    && diagnostics.secure
-    && diagnostics.mobile
-    && diagnostics.standalone
-    && diagnostics.serviceWorker
-    && diagnostics.pushManager,
-  );
+  return pwaBlockingReason(diagnostics) === null;
 }
 
 export function notificationDeliveryMode(env = getGlobal()) {
   const diagnostics = notificationDiagnostics(env);
-  if (
-    diagnostics.secure
-    && diagnostics.mobile
-    && diagnostics.serviceWorker
-    && diagnostics.pushManager
-  ) {
-    return "pwa";
-  }
+  if (diagnostics.mobile) return "pwa";
+  if (diagnostics.secure && diagnostics.serviceWorker && diagnostics.pushManager) return "pwa";
   return "browser";
 }
 
@@ -118,13 +120,16 @@ export function browserNotificationSettings(env = getGlobal()) {
 }
 
 export function pwaNotificationSettings(env = getGlobal()) {
+  const diagnostics = notificationDiagnostics(env);
+  const blockingReason = pwaBlockingReason(diagnostics);
   const supported = pwaNotificationsSupported(env);
   const permission = browserNotificationPermission(env);
   return {
     mode: "pwa",
     supported,
     permission,
-    diagnostics: notificationDiagnostics(env),
+    blockingReason,
+    diagnostics,
     enabled: supported && permission === "granted" && getPwaNotificationsEnabled(env),
   };
 }
@@ -170,6 +175,16 @@ async function pwaRegistration(env = getGlobal()) {
   return ready || registered || null;
 }
 
+export async function ensureNotificationServiceWorker(env = getGlobal()) {
+  const diagnostics = notificationDiagnostics(env);
+  if (!diagnostics.secure || !diagnostics.serviceWorker) return null;
+  try {
+    return await pwaRegistration(env);
+  } catch {
+    return null;
+  }
+}
+
 function subscriptionJson(subscription) {
   if (subscription?.toJSON) return subscription.toJSON();
   return subscription;
@@ -185,14 +200,21 @@ function pwaEnableResult(env, reason, extra = {}) {
 
 export async function requestAndEnablePwaNotifications({ env = getGlobal(), api } = {}) {
   const apiImpl = api || {};
-  if (!pwaNotificationsSupported(env)) {
+  const support = pwaNotificationSettings(env);
+  if (!support.supported) {
     setPwaNotificationsEnabled(false, env);
-    return pwaEnableResult(env, "unsupported");
+    return pwaEnableResult(env, support.blockingReason || "unsupported");
   }
   const currentPermission = browserNotificationPermission(env);
   if (currentPermission === "denied") {
     setPwaNotificationsEnabled(false, env);
     return pwaEnableResult(env, "permission_denied");
+  }
+  const notification = notificationApi(env);
+  const permission = currentPermission === "granted" ? "granted" : await notification.requestPermission();
+  if (permission !== "granted") {
+    setPwaNotificationsEnabled(false, env);
+    return pwaEnableResult(env, permission === "denied" ? "permission_denied" : "permission_dismissed");
   }
   let registration;
   try {
@@ -204,12 +226,6 @@ export async function requestAndEnablePwaNotifications({ env = getGlobal(), api 
   if (!registration?.pushManager) {
     setPwaNotificationsEnabled(false, env);
     return pwaEnableResult(env, "subscription_failed", { error: "push manager is unavailable" });
-  }
-  const notification = notificationApi(env);
-  const permission = currentPermission === "granted" ? "granted" : await notification.requestPermission();
-  if (permission !== "granted") {
-    setPwaNotificationsEnabled(false, env);
-    return pwaEnableResult(env, permission === "denied" ? "permission_denied" : "permission_dismissed");
   }
   let status;
   try {
