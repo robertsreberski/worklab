@@ -178,7 +178,7 @@ export function settingsPayload(settings = {}) {
 
 export function notificationStatus(settings) {
   if (!settings?.supported) return { status: "disabled", label: "Unsupported" };
-  if (settings.permission === "denied" && settings.mode === "pwa") return { status: "error", label: "Permission blocked" };
+  if (settings.permission === "denied" && settings.mode === "pwa") return { status: "error", label: "Needs iOS Settings" };
   if (settings.permission === "denied") return { status: "error", label: "Blocked" };
   if (settings.enabled) return { status: "enabled", label: settings.mode === "pwa" ? "PWA on" : "On" };
   if (settings.mode === "pwa") return { status: "disabled", label: "PWA off" };
@@ -188,10 +188,70 @@ export function notificationStatus(settings) {
 export function notificationDescription(settings) {
   if (!settings?.supported && settings?.mode === "pwa") return "Install Worklab to the mobile Home Screen and open it over a secure origin.";
   if (!settings?.supported) return "This browser does not support notifications.";
-  if (settings.permission === "denied" && settings.mode === "pwa") return "Worklab notification permission is blocked for this site.";
+  if (settings.permission === "denied" && settings.mode === "pwa") return "Enable Worklab in iOS Settings > Notifications, then turn this on again.";
   if (settings.permission === "denied") return "Browser permission is blocked for this site.";
   if (settings.mode === "pwa") return "Mobile PWA push for task runs, even when Worklab is closed.";
   return "Task run starts, completions, and errors in background tabs.";
+}
+
+export function notificationEnableToast(settings = {}) {
+  if (settings.enabled) return { message: "Notifications enabled.", variant: "success" };
+  if (settings.mode === "pwa") {
+    if (settings.reason === "permission_denied") {
+      return {
+        message: "iOS is not showing the permission prompt. Enable Worklab in iOS Settings > Notifications, then turn this on again.",
+        variant: "error",
+      };
+    }
+    if (settings.reason === "permission_dismissed") {
+      return {
+        message: "Notification permission was not granted. Turn Notifications on again to retry the prompt.",
+        variant: "info",
+      };
+    }
+    if (settings.reason === "missing_public_key") {
+      return {
+        message: "Push notifications are not configured on this Worklab server.",
+        variant: "error",
+      };
+    }
+    if (settings.reason === "subscription_failed") {
+      return {
+        message: `Device registration failed${settings.error ? `: ${settings.error}` : "."}`,
+        variant: "error",
+      };
+    }
+    if (settings.reason === "unsupported") {
+      return {
+        message: notificationDescription(settings),
+        variant: "error",
+      };
+    }
+  }
+  if (settings.reason === "permission_denied") return { message: "Browser permission is blocked for this site.", variant: "error" };
+  if (settings.reason === "permission_dismissed") return { message: "Notification permission was not granted.", variant: "info" };
+  return { message: "Notifications were not enabled.", variant: "info" };
+}
+
+function yesNo(value) {
+  return value ? "yes" : "no";
+}
+
+export function notificationDiagnosticText(settings = {}, serverStatus = null) {
+  const mode = settings.mode === "pwa" ? "PWA" : "Browser";
+  const parts = [`Mode ${mode}`, `permission ${settings.permission || "unknown"}`];
+  if (settings.mode === "pwa") {
+    const diagnostics = settings.diagnostics || {};
+    const subscriptions = serverStatus?.notifications?.pwa?.activeSubscriptions;
+    parts.push(
+      `standalone ${yesNo(diagnostics.standalone)}`,
+      `secure ${yesNo(diagnostics.secure)}`,
+      `service worker ${yesNo(diagnostics.serviceWorker)}`,
+      `Push API ${yesNo(diagnostics.pushManager)}`,
+      `server subscriptions ${Number.isFinite(Number(subscriptions)) ? Number(subscriptions) : "-"}`,
+    );
+  }
+  return parts.join(" / ");
 }
 
 export function slackUserMatchesBot(settings = {}, status = {}) {

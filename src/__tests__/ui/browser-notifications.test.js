@@ -25,7 +25,7 @@ function memoryStorage() {
   };
 }
 
-function notificationEnv({ permission = "default", visibilityState = "visible" } = {}) {
+function notificationEnv({ permission = "default", visibilityState = "visible", notificationApi = true } = {}) {
   const notifications = [];
   class FakeNotification {
     static permission = permission;
@@ -40,7 +40,7 @@ function notificationEnv({ permission = "default", visibilityState = "visible" }
     }
   }
   return {
-    Notification: FakeNotification,
+    Notification: notificationApi ? FakeNotification : undefined,
     localStorage: memoryStorage(),
     document: { visibilityState },
     notifications,
@@ -48,8 +48,9 @@ function notificationEnv({ permission = "default", visibilityState = "visible" }
   };
 }
 
-function pwaEnv({ permission = "default", standalone = true } = {}) {
-  const env = notificationEnv({ permission, visibilityState: "hidden" });
+function pwaEnv({ permission = "default", standalone = true, existingSubscription = null, notificationApi = true } = {}) {
+  const env = notificationEnv({ permission, visibilityState: "hidden", notificationApi });
+  let currentSubscription = existingSubscription;
   const subscription = {
     endpoint: "https://push.example/sub",
     keys: { p256dh: "key", auth: "auth" },
@@ -60,8 +61,11 @@ function pwaEnv({ permission = "default", standalone = true } = {}) {
   };
   const registration = {
     pushManager: {
-      subscribe: vi.fn(async () => subscription),
-      getSubscription: vi.fn(async () => subscription),
+      subscribe: vi.fn(async () => {
+        currentSubscription = subscription;
+        return subscription;
+      }),
+      getSubscription: vi.fn(async () => currentSubscription),
     },
   };
   env.isSecureContext = true;
@@ -134,6 +138,23 @@ describe("browser notifications", () => {
     });
   });
 
+  it("keeps mobile push-capable clients in PWA mode even when notification permission is unavailable", () => {
+    const { env } = pwaEnv({ notificationApi: false });
+    expect(notificationDeliveryMode(env)).toBe("pwa");
+    expect(notificationSettings(env)).toMatchObject({
+      mode: "pwa",
+      supported: false,
+      permission: "unsupported",
+      diagnostics: expect.objectContaining({
+        notificationApi: false,
+        secure: true,
+        standalone: true,
+        serviceWorker: true,
+        pushManager: true,
+      }),
+    });
+  });
+
   it("subscribes and unsubscribes PWA push notifications", async () => {
     const { env, registration, subscription } = pwaEnv();
     const api = {
@@ -142,10 +163,11 @@ describe("browser notifications", () => {
       unsubscribePushNotifications: vi.fn(async () => ({ deleted: true })),
     };
 
-    await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true });
+    await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true, reason: "registered" });
     expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).toBe("true");
     expect(getBrowserNotificationsEnabled(env)).toBe(true);
     expect(env.navigator.serviceWorker.register).toHaveBeenCalledWith("/sw.js");
+    expect(registration.pushManager.getSubscription).toHaveBeenCalledTimes(1);
     expect(registration.pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     expect(api.subscribePushNotifications).toHaveBeenCalledWith({ subscription: subscription.toJSON(), clientKind: "pwa" });
 
@@ -154,6 +176,79 @@ describe("browser notifications", () => {
     expect(getBrowserNotificationsEnabled(env)).toBe(false);
     expect(subscription.unsubscribe).toHaveBeenCalled();
     expect(api.unsubscribePushNotifications).toHaveBeenCalledWith(subscription.endpoint);
+  });
+
+  it("reuses an existing PWA push subscription when permission is already granted", async () => {
+    const existingSubscription = {
+      endpoint: "https://push.example/existing",
+      keys: { p256dh: "existing-key", auth: "existing-auth" },
+      toJSON() {
+        return { endpoint: this.endpoint, keys: this.keys };
+      },
+    };
+    const { env, registration } = pwaEnv({ permission: "granted", existingSubscription });
+    const api = {
+      getNotificationStatus: vi.fn(async () => ({ notifications: { pwa: { publicKey: "BEl0dA" } } })),
+      subscribePushNotifications: vi.fn(async () => ({ ok: true })),
+    };
+
+    await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true, reason: "registered" });
+
+    expect(env.Notification.requestPermission).not.toHaveBeenCalled();
+    expect(registration.pushManager.getSubscription).toHaveBeenCalledTimes(1);
+    expect(registration.pushManager.subscribe).not.toHaveBeenCalled();
+    expect(api.subscribePushNotifications).toHaveBeenCalledWith({ subscription: existingSubscription.toJSON(), clientKind: "pwa" });
+  });
+
+  it("returns actionable PWA enable reasons before registration", async () => {
+    const denied = pwaEnv({ permission: "denied" });
+    await expect(requestAndEnableNotifications({ env: denied.env, api: {} })).resolves.toMatchObject({
+      mode: "pwa",
+      enabled: false,
+      reason: "permission_denied",
+    });
+    expect(denied.env.Notification.requestPermission).not.toHaveBeenCalled();
+    expect(denied.env.navigator.serviceWorker.register).not.toHaveBeenCalled();
+
+    const dismissed = pwaEnv();
+    dismissed.env.Notification.requestPermission.mockImplementationOnce(async () => {
+      dismissed.env.Notification.permission = "default";
+      return "default";
+    });
+    await expect(requestAndEnableNotifications({ env: dismissed.env, api: {} })).resolves.toMatchObject({
+      mode: "pwa",
+      enabled: false,
+      reason: "permission_dismissed",
+    });
+    expect(dismissed.env.navigator.serviceWorker.register).toHaveBeenCalledWith("/sw.js");
+
+    const missingKey = pwaEnv({ permission: "granted" });
+    await expect(requestAndEnableNotifications({
+      env: missingKey.env,
+      api: { getNotificationStatus: vi.fn(async () => ({ notifications: { pwa: { publicKey: "" } } })) },
+    })).resolves.toMatchObject({
+      mode: "pwa",
+      enabled: false,
+      reason: "missing_public_key",
+    });
+  });
+
+  it("returns subscription failure details without storing the local preference", async () => {
+    const { env, registration } = pwaEnv({ permission: "granted" });
+    registration.pushManager.subscribe.mockRejectedValueOnce(new Error("subscribe failed"));
+    const api = {
+      getNotificationStatus: vi.fn(async () => ({ notifications: { pwa: { publicKey: "BEl0dA" } } })),
+      subscribePushNotifications: vi.fn(async () => ({ ok: true })),
+    };
+
+    await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({
+      mode: "pwa",
+      enabled: false,
+      reason: "subscription_failed",
+      error: "subscribe failed",
+    });
+    expect(api.subscribePushNotifications).not.toHaveBeenCalled();
+    expect(getBrowserNotificationsEnabled(env)).toBe(false);
   });
 
   it("builds task-only run notification content", () => {

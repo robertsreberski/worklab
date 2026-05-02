@@ -5,6 +5,8 @@ import {
   minutesToMs,
   minutesValue,
   notificationDescription,
+  notificationDiagnosticText,
+  notificationEnableToast,
   notificationStatus,
   runtimePayload,
   searchIndexMeta,
@@ -145,9 +147,46 @@ describe("settings UI duration conversions", () => {
     expect(notificationDescription({ mode: "browser", supported: true, permission: "granted", enabled: true })).toBe("Task run starts, completions, and errors in background tabs.");
     expect(notificationStatus({ mode: "pwa", supported: true, permission: "default", enabled: false })).toEqual({ status: "disabled", label: "PWA off" });
     expect(notificationDescription({ mode: "pwa", supported: true, permission: "default", enabled: false })).toBe("Mobile PWA push for task runs, even when Worklab is closed.");
-    expect(notificationStatus({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toEqual({ status: "error", label: "Permission blocked" });
-    expect(notificationDescription({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toBe("Worklab notification permission is blocked for this site.");
+    expect(notificationStatus({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toEqual({ status: "error", label: "Needs iOS Settings" });
+    expect(notificationDescription({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toBe("Enable Worklab in iOS Settings > Notifications, then turn this on again.");
     expect(notificationDescription({ mode: "pwa", supported: false })).toBe("Install Worklab to the mobile Home Screen and open it over a secure origin.");
+  });
+
+  it("maps PWA notification enable results to actionable toast copy", () => {
+    expect(notificationEnableToast({ mode: "pwa", enabled: true, reason: "registered" })).toEqual({ message: "Notifications enabled.", variant: "success" });
+    expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "permission_denied" })).toEqual({
+      message: "iOS is not showing the permission prompt. Enable Worklab in iOS Settings > Notifications, then turn this on again.",
+      variant: "error",
+    });
+    expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "permission_dismissed" })).toEqual({
+      message: "Notification permission was not granted. Turn Notifications on again to retry the prompt.",
+      variant: "info",
+    });
+    expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "missing_public_key" })).toEqual({
+      message: "Push notifications are not configured on this Worklab server.",
+      variant: "error",
+    });
+    expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "subscription_failed", error: "subscribe failed" })).toEqual({
+      message: "Device registration failed: subscribe failed",
+      variant: "error",
+    });
+  });
+
+  it("summarizes notification diagnostics for Settings", () => {
+    expect(notificationDiagnosticText({
+      mode: "pwa",
+      permission: "default",
+      diagnostics: {
+        secure: true,
+        standalone: true,
+        serviceWorker: true,
+        pushManager: true,
+      },
+    }, { notifications: { pwa: { activeSubscriptions: 0 } } })).toBe("Mode PWA / permission default / standalone yes / secure yes / service worker yes / Push API yes / server subscriptions 0");
+    expect(notificationDiagnosticText({
+      mode: "browser",
+      permission: "granted",
+    })).toBe("Mode Browser / permission granted");
   });
 
   it("summarizes MCP availability without counting draft rows as unavailable", () => {

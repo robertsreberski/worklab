@@ -43,6 +43,8 @@ import {
   minutesValue,
   modelSelectOptions,
   notificationDescription,
+  notificationDiagnosticText,
+  notificationEnableToast,
   notificationStatus,
   numberOrEmpty,
   runtimePayload,
@@ -143,6 +145,7 @@ export function Settings() {
   const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => notificationSettings());
+  const [notificationServerStatus, setNotificationServerStatus] = useState(null);
   const [notificationBusy, setNotificationBusy] = useState(false);
 
   const loadSettings = useCallback(async (options = {}) => {
@@ -194,6 +197,12 @@ export function Settings() {
     setSlackStatus(response.slack || null);
   }, []);
 
+  const loadNotificationStatus = useCallback(async () => {
+    const response = await api.getNotificationStatus();
+    setNotificationServerStatus(response || null);
+    return response;
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     loadSettings({ signal: controller.signal }).catch((err) => {
@@ -209,9 +218,10 @@ export function Settings() {
       if (err?.name !== "AbortError") setAgents([]);
     });
     loadSlackStatus().catch(() => setSlackStatus(null));
+    loadNotificationStatus().catch(() => setNotificationServerStatus(null));
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
     return () => controller.abort();
-  }, [loadMcp, loadRuntime, loadSettings, loadSlackStatus]);
+  }, [loadMcp, loadNotificationStatus, loadRuntime, loadSettings, loadSlackStatus]);
 
   const settingsDirty = useMemo(() => baseline ? !jsonEqual(settings, baseline) : false, [settings, baseline]);
   const runtimeDirty = useMemo(() => runtimeBaseline ? !jsonEqual(runtimeDraft, runtimeBaseline) : false, [runtimeDraft, runtimeBaseline]);
@@ -223,6 +233,7 @@ export function Settings() {
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
     loadSlackStatus().catch(() => setSlackStatus(null));
+    loadNotificationStatus().catch(() => setNotificationServerStatus(null));
     if (!isDirty) {
       loadSettings().catch((err) => setLoadError(err.message || "Settings failed"));
       loadRuntime();
@@ -388,15 +399,15 @@ export function Settings() {
       if (enabled) {
         const next = await requestAndEnableNotifications({ api });
         setNotificationSettingsState(next);
-        if (next.enabled) {
-          pushToast("Notifications enabled.", { variant: "success" });
-        } else {
-          pushToast("Notifications are blocked.", { variant: "error" });
-        }
+        if (next.serverStatus) setNotificationServerStatus(next.serverStatus);
+        const toast = notificationEnableToast(next);
+        pushToast(toast.message, { variant: toast.variant });
+        await loadNotificationStatus().catch(() => {});
       } else {
         const next = await disableNotifications({ api });
         setNotificationSettingsState(next);
         pushToast("Notifications disabled.", { variant: "info" });
+        await loadNotificationStatus().catch(() => {});
       }
     } catch (err) {
       setNotificationSettingsState(notificationSettings());
@@ -652,6 +663,9 @@ export function Settings() {
                 label="Notifications"
                 description={notificationDescription(notificationSettingsState)}
               />
+              <span class="settings-inline-status">
+                {notificationDiagnosticText(notificationSettingsState, notificationServerStatus)}
+              </span>
             </SettingPanel>
           </SettingsSection>
 
