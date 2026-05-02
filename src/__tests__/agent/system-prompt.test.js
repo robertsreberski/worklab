@@ -149,6 +149,7 @@ describe("buildExecuteSystemPrompt", () => {
   it("ends with the structured result directive", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
+    expect(p).toContain("keep a short run-local checklist with `todo_write`");
     expect(p).toContain("Preserve durable deliverables in the Worklab Knowledge Base");
     expect(p).toContain("the `kb_` prefix means Knowledge Base, not kilobytes");
     expect(p).toContain("save the complete deliverable with `kb_create` or `kb_update`");

@@ -4,6 +4,8 @@ import { stripWorklabResultJson } from "../../ai/result/contract.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
+const TODO_CADENCE = `For multi-step work, keep a short run-local checklist with \`todo_write\`. Update it when the active step changes or a meaningful step completes. Use at most one \`in_progress\` item. This checklist is execution state for the current run, not a substitute for Worklab tasks, subtasks, pending_actions, or the final \`worklab_result\`.`;
+
 const DELIVERABLE_PERSISTENCE = `Preserve durable deliverables in the Worklab Knowledge Base:
 - In Worklab tool names, the \`kb_\` prefix means Knowledge Base, not kilobytes.
 - If the run produces a substantial user-facing deliverable such as a research report, guide, runbook, decision record, implementation notes, or reusable analysis, save the complete deliverable with \`kb_create\` or \`kb_update\` before your final result when Worklab Knowledge Base tools are available.
@@ -619,7 +621,8 @@ export function buildSystemPrompt(input, mode) {
 
   if (mode !== "review") {
     parts.push(CADENCE);
-    sectionNames.push("CADENCE");
+    parts.push(TODO_CADENCE);
+    sectionNames.push("CADENCE", "TODO_CADENCE");
   }
   if (mode === "execute" || mode === "automation") {
     parts.push(DELIVERABLE_PERSISTENCE);

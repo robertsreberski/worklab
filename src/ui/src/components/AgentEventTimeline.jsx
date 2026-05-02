@@ -140,13 +140,26 @@ function flattenEvents(events) {
   return coalesced;
 }
 
+function normalizedToolName(name) {
+  return String(name || "").split("__").filter(Boolean).at(-1) || "";
+}
+
+function isRunTodoToolName(name) {
+  const normalized = normalizedToolName(name);
+  return normalized === "todo_read" || normalized === "todo_write";
+}
+
 function groupEvents(events) {
   const flat = flattenEvents(events);
   const toolUsesByToolUseId = new Map();
   const resultsByToolUseId = new Map();
   const structuredByToolUseId = new Map();
+  const todoToolUseIds = new Set();
   for (const event of flat) {
-    if (event?.type === "tool_use" && event.tool_use_id) toolUsesByToolUseId.set(event.tool_use_id, event);
+    if (event?.type === "tool_use" && event.tool_use_id) {
+      toolUsesByToolUseId.set(event.tool_use_id, event);
+      if (isRunTodoToolName(event.name)) todoToolUseIds.add(event.tool_use_id);
+    }
     if (event?.type === "tool_result" && event.tool_use_id) resultsByToolUseId.set(event.tool_use_id, event);
     if (event?.type === "structured_output" && event.tool_use_id) structuredByToolUseId.set(event.tool_use_id, event);
   }
@@ -187,6 +200,7 @@ function groupEvents(events) {
     flush();
 
     if (event?.type === "tool_use" && event.tool_use_id) {
+      if (todoToolUseIds.has(event.tool_use_id)) continue;
       if (collapsedSourceToolUseIds.has(event.tool_use_id)) continue;
       const paired = resultsByToolUseId.get(event.tool_use_id) || null;
       const structuredOutput = structuredByToolUseId.get(event.tool_use_id) || null;
@@ -198,6 +212,7 @@ function groupEvents(events) {
       continue;
     }
     if (event?.type === "tool_result" && collapsedSourceToolUseIds.has(event.tool_use_id)) continue;
+    if (event?.type === "tool_result" && todoToolUseIds.has(event.tool_use_id) && !event.is_error) continue;
     if (event?.type === "tool_result" && consumedResultIds.has(event.tool_use_id)) continue;
     if (event?.type === "structured_output" && consumedStructuredIds.has(event.tool_use_id)) continue;
     items.push(event);

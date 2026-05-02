@@ -27,6 +27,39 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.length).toBe(1);
   });
 
+  it("returns a normalized todo state for a run", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, agent_name, started_at, status, todo_state_json)
+      VALUES (?, ?, 'execute', 'a', ?, 'running', ?)
+    `).run(runId, taskId, now, JSON.stringify({
+      todos: [
+        { content: "Inspect repo", status: "completed" },
+        { content: "Wire live UI", status: "in_progress", active_form: "Adding panel" },
+      ],
+      updated_at: now,
+      update_count: 2,
+    }));
+
+    const res = await agent.get(`/api/runs/${runId}?events=none`).expect(200);
+
+    expect(res.body.run.todo_state).toEqual({
+      todos: [
+        { content: "Inspect repo", status: "completed" },
+        { content: "Wire live UI", status: "in_progress", active_form: "Adding panel" },
+      ],
+      updated_at: now,
+      update_count: 2,
+      total: 2,
+      completed: 1,
+    });
+  });
+
   it("returns artifact metadata for a run", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();

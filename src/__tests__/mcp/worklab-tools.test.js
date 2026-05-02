@@ -64,6 +64,67 @@ describe("worklab-tools handlers", () => {
     expect(r.content).toBe("# memory\nstuff");
   });
 
+  it("todo_write replaces the current run checklist and todo_read returns it", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running')
+      `).run();
+    });
+    const handlers = createToolHandlers(c);
+
+    const written = await handlers.todo_write({
+      todos: [
+        { content: "Inspect the run pipeline", status: "completed" },
+        { content: "Add the MCP tool", status: "in_progress", active_form: "Wiring handlers" },
+        { content: "Expose live UI", status: "pending" },
+      ],
+    });
+    const read = await handlers.todo_read({});
+
+    expect(written.ok).toBe(true);
+    expect(written.todo_state).toMatchObject({
+      total: 3,
+      completed: 1,
+      update_count: 1,
+      todos: [
+        { content: "Inspect the run pipeline", status: "completed" },
+        { content: "Add the MCP tool", status: "in_progress", active_form: "Wiring handlers" },
+        { content: "Expose live UI", status: "pending" },
+      ],
+    });
+    expect(read.todo_state).toEqual(written.todo_state);
+
+    seedDb(c.dataDir, (db) => {
+      const row = db.prepare("SELECT todo_state_json FROM task_runs WHERE id = 'r1'").get();
+      const stored = JSON.parse(row.todo_state_json);
+      expect(stored.todos).toHaveLength(3);
+      expect(stored.update_count).toBe(1);
+    });
+  });
+
+  it("todo_write rejects ambiguous active work", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running')
+      `).run();
+    });
+
+    await expect(createToolHandlers(c).todo_write({
+      todos: [
+        { content: "One", status: "in_progress" },
+        { content: "Two", status: "in_progress" },
+      ],
+    })).rejects.toThrow(/one in_progress/);
+  });
+
   it("run_log_read returns raw JSONL when tail mode is requested", async () => {
     const c = ctx();
     const rawDir = join(c.dataDir, "logs", "runs");

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { aggregateRunArtifacts, extractRunArtifacts } from "./runArtifacts.js";
 import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
 import { tailRunEventsByVisibleItems } from "../../../core/run-events.js";
+import { createRunTodoState, runTodoStateSummary } from "../../../core/run-todos.js";
 import { useAppResume } from "./pageVisibility.js";
 
 const runStreams = new Map();
@@ -64,6 +65,91 @@ function toolResultIdsFromEvent(event) {
     }
   }
   return [...new Set(ids)];
+}
+
+function toolUseBlocksFromEvent(event) {
+  const target = eventPayload(event);
+  const blocks = [];
+  if (TOOL_USE_EVENT_TYPES.has(target?.type)) blocks.push(target);
+  for (const block of eventContentBlocks(event)) {
+    if (TOOL_USE_EVENT_TYPES.has(block?.type)) blocks.push(block);
+  }
+  return blocks;
+}
+
+function toolResultBlocksFromEvent(event) {
+  const target = eventPayload(event);
+  const blocks = [];
+  if (TOOL_RESULT_EVENT_TYPES.has(target?.type)) blocks.push(target);
+  for (const block of eventContentBlocks(event)) {
+    if (TOOL_RESULT_EVENT_TYPES.has(block?.type)) blocks.push(block);
+  }
+  return blocks;
+}
+
+function normalizedToolName(name) {
+  return String(name || "").split("__").filter(Boolean).at(-1) || "";
+}
+
+function isTodoWriteToolName(name) {
+  return normalizedToolName(name) === "todo_write";
+}
+
+function parseJsonValue(value) {
+  if (!value) return null;
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string") return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+}
+
+function parsedToolResultContent(block) {
+  const candidates = [block?.content, block?.output, block?.result, block?.value];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) {
+      for (const item of candidate) {
+        const parsed = parseJsonValue(item?.text || item?.content);
+        if (parsed) return parsed;
+      }
+      continue;
+    }
+    const parsed = parseJsonValue(candidate);
+    if (parsed) return parsed;
+  }
+  return null;
+}
+
+export function todoStateFromToolEvents(previousState, events = []) {
+  const todoWriteUseIds = new Set();
+  let latest = null;
+  for (const event of events || []) {
+    for (const block of toolUseBlocksFromEvent(event)) {
+      if (!isTodoWriteToolName(block?.name)) continue;
+      const id = block.tool_use_id || block.id || block.toolCallId || block.tool_call_id;
+      if (id) todoWriteUseIds.add(id);
+      if (Array.isArray(block?.input?.todos)) {
+        try {
+          latest = runTodoStateSummary(createRunTodoState(block.input.todos, {
+            previousState: latest || previousState,
+            now: Number(event?.ts) || Date.now(),
+          }));
+        } catch {
+          // Invalid writes are reported by the MCP result; keep the prior state.
+        }
+      }
+    }
+    for (const block of toolResultBlocksFromEvent(event)) {
+      if (block?.is_error === true) continue;
+      const id = block.tool_use_id || block.id || block.toolCallId || block.tool_call_id;
+      const parsed = parsedToolResultContent(block);
+      if (id && !todoWriteUseIds.has(id) && !parsed?.todo_state) continue;
+      if (parsed?.ok === true && parsed.todo_state) latest = runTodoStateSummary(parsed.todo_state);
+    }
+  }
+  return latest || (previousState ? runTodoStateSummary(previousState) : null);
 }
 
 function rememberToolUses(entry, events = []) {
@@ -316,7 +402,15 @@ function openRunStream(runId, entry) {
     }
     const previousCount = Number(entry.eventCount || entry.events.length || 0);
     rememberToolUses(entry, [payload]);
-    const mergedEvents = mergeRunEvents(entry.events, [...companionToolUseEvents(entry, payload), payload]);
+    const companionEvents = companionToolUseEvents(entry, payload);
+    const todoState = todoStateFromToolEvents(entry.run?.todo_state, [...companionEvents, payload]);
+    if (todoState) {
+      entry.run = {
+        ...(entry.run || { id: runId }),
+        todo_state: todoState,
+      };
+    }
+    const mergedEvents = mergeRunEvents(entry.events, [...companionEvents, payload]);
     const eventArtifacts = extractRunArtifacts([payload]);
     if (eventArtifacts.length) {
       entry.liveArtifacts = aggregateRunArtifacts([

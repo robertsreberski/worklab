@@ -188,6 +188,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "PaneLayout", group: "component", coverage: "visible" },
   { name: "PaneRow", group: "component", coverage: "visible" },
   { name: "RunHistoryNotice", group: "component", coverage: "visible" },
+  { name: "RunTodoPanel", group: "component", coverage: "visible" },
   { name: "StatusMenu", group: "component", coverage: "visible" },
   { name: "StructuredContent", group: "component", coverage: "visible" },
   { name: "StructuredValue", group: "component", coverage: "visible" },

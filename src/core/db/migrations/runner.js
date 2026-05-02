@@ -175,6 +175,7 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "artifact_paths_json", "artifact_paths_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing(db, "task_runs", "todo_state_json", "todo_state_json TEXT NOT NULL DEFAULT '{\"todos\":[],\"updated_at\":null,\"update_count\":0}'");
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
@@ -485,6 +486,7 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing(db, "task_runs", "todo_state_json", "todo_state_json TEXT NOT NULL DEFAULT '{\"todos\":[],\"updated_at\":null,\"update_count\":0}'");
   // R9: per-project agent allowlist. Empty array means "any agent" (back-compat
   // default). The companion `delegation_allow_unlisted` flag downgrades a
   // delegation outside the allowlist from a hard fail to a warning.

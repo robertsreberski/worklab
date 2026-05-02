@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { liveRunComposerState } from "../../ui/src/components/LiveRunPanel.jsx";
+import { liveRunComposerState, liveRunTodoPanelState } from "../../ui/src/components/LiveRunPanel.jsx";
 
 describe("live run composer visibility", () => {
   it("shows for streaming Codex runs even before live input metadata is hydrated", () => {
@@ -43,6 +43,44 @@ describe("live run composer visibility", () => {
       visible: true,
       canEdit: true,
       canSend: false,
+    });
+  });
+});
+
+describe("live run todo panel state", () => {
+  it("orders active and pending work ahead of completed work", () => {
+    expect(liveRunTodoPanelState({
+      todo_state: {
+        todos: [
+          { content: "Inspect repo", status: "completed" },
+          { content: "Write tests", status: "pending" },
+          { content: "Wire MCP tool", status: "in_progress", active_form: "Implementing handlers" },
+          { content: "Polish UI", status: "pending" },
+        ],
+        updated_at: 123,
+        update_count: 2,
+      },
+    })).toEqual({
+      visible: true,
+      current: { content: "Wire MCP tool", status: "in_progress", active_form: "Implementing handlers" },
+      pending: [
+        { content: "Write tests", status: "pending" },
+        { content: "Polish UI", status: "pending" },
+      ],
+      completedCount: 1,
+      total: 4,
+      updatedAt: 123,
+    });
+  });
+
+  it("hides when the run has no todo items", () => {
+    expect(liveRunTodoPanelState({ todo_state: { todos: [] } })).toEqual({
+      visible: false,
+      current: null,
+      pending: [],
+      completedCount: 0,
+      total: 0,
+      updatedAt: null,
     });
   });
 });

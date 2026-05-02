@@ -38,6 +38,22 @@ describe("openDb + runMigrations", () => {
     expect(db.prepare("SELECT run_policy FROM tasks WHERE id = ?").get(taskId).run_policy).toBe("auto_plan_execute");
   });
 
+  it("creates the run todo state column with an empty checklist default", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const columns = db.prepare("PRAGMA table_info(task_runs)").all().map((row) => row.name);
+    expect(columns).toContain("todo_state_json");
+
+    const now = Date.now();
+    const taskId = newTaskId();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run(taskId, "todo state", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at) VALUES (?, ?, ?, ?, ?)")
+      .run("run-with-empty-todos", taskId, "execute", "agent", now);
+    expect(JSON.parse(db.prepare("SELECT todo_state_json FROM task_runs WHERE id = ?").get("run-with-empty-todos").todo_state_json))
+      .toEqual({ todos: [], updated_at: null, update_count: 0 });
+  });
+
   it("clears stale task failure kind when the latest run succeeded", () => {
     const db = openDb(":memory:");
     runMigrations(db);

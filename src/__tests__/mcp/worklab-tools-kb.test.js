@@ -256,8 +256,8 @@ describe("worklab-tools KB handlers", () => {
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("Knowledge Base, not kilobytes");
   });
 
-  it("toolDefinitions has 15 total entries (4 existing + agent create + 5 KB + 3 search + 2 subtask graph)", () => {
-    expect(toolDefinitions.length).toBe(15);
+  it("toolDefinitions has 17 total entries (4 existing + 2 todo + agent create + 5 KB + 3 search + 2 subtask graph)", () => {
+    expect(toolDefinitions.length).toBe(17);
     // Snapshot-style guard against drift after the per-domain split.
     const names = toolDefinitions.map((tool) => tool.name);
     expect(new Set(names).size).toBe(toolDefinitions.length);
