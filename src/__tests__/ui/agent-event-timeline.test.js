@@ -108,18 +108,29 @@ describe("agent event timeline normalization", () => {
     expect(items[0].toolResult.output).toBe("ok");
   });
 
-  it("keeps successful run todo tool calls out of the timeline", () => {
+  it("renders run todo tool calls as paired timeline tool calls", () => {
     const items = groupAgentTimelineEvents([
       { type: "text", text: "Starting" },
       { type: "tool_use", tool_use_id: "todo-1", name: "mcp__worklab__todo_write", input: { todos: [] } },
       { type: "tool_result", tool_use_id: "todo-1", output: "{\"ok\":true}", is_error: false },
+      { type: "tool_use", tool_use_id: "todo-2", name: "mcp__worklab__todo_read", input: {} },
+      { type: "tool_result", tool_use_id: "todo-2", output: "{\"todo_state\":{\"todos\":[]}}", is_error: false },
       { type: "text", text: "Continuing" },
     ]);
 
-    expect(items).toEqual([
-      { type: "text", text: "Starting" },
-      { type: "text", text: "Continuing" },
-    ]);
+    expect(items).toHaveLength(4);
+    expect(items[0]).toEqual({ type: "text", text: "Starting" });
+    expect(items[1]).toMatchObject({
+      _toolCall: true,
+      toolUse: { tool_use_id: "todo-1", name: "mcp__worklab__todo_write" },
+      toolResult: { tool_use_id: "todo-1", output: "{\"ok\":true}", is_error: false },
+    });
+    expect(items[2]).toMatchObject({
+      _toolCall: true,
+      toolUse: { tool_use_id: "todo-2", name: "mcp__worklab__todo_read" },
+      toolResult: { tool_use_id: "todo-2", output: "{\"todo_state\":{\"todos\":[]}}", is_error: false },
+    });
+    expect(items[3]).toEqual({ type: "text", text: "Continuing" });
   });
 
   it("attaches structured output to the matching tool call", () => {
