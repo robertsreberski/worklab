@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { aggregateRunArtifacts, extractRunArtifacts } from "./runArtifacts.js";
 import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
+import { useAppResume } from "./pageVisibility.js";
 
 const runStreams = new Map();
 const DEFAULT_LIVE_EVENT_LIMIT = 20;
@@ -69,6 +70,7 @@ function ensureRunStream(runId) {
     hydratePromise: null,
     hydrateController: null,
     hydrateKey: null,
+    forceHydrate: false,
     refreshTimer: null,
     notifyTimer: null,
   };
@@ -195,12 +197,13 @@ function hydrateRunState(runId, entry, {
 } = {}) {
   const nextKey = hydrationKey(initialEventLimit);
   expandEntryMaxEvents(entry, maxEvents);
-  if (entry.hydratePromise && entry.hydrateKey === nextKey) return entry.hydratePromise;
-  if (entry.hydrateKey === nextKey && entry.run) return Promise.resolve(runStateSnapshot(entry));
+  if (!entry.forceHydrate && entry.hydratePromise && entry.hydrateKey === nextKey) return entry.hydratePromise;
+  if (!entry.forceHydrate && entry.hydrateKey === nextKey && entry.run) return Promise.resolve(runStateSnapshot(entry));
   entry.hydrateController?.abort?.();
   const controller = new AbortController();
   entry.hydrateController = controller;
   entry.hydrateKey = nextKey;
+  entry.forceHydrate = false;
   entry.loading = true;
   notifyRunState(entry);
   const promise = fetch(runUrl(runId, initialEventLimit), { signal: controller.signal })
@@ -318,6 +321,27 @@ export function loadFullRunHistory(runId, { subscribe = true } = {}) {
   });
 }
 
+export function refreshRunState(runId, {
+  subscribe = true,
+  initialEventLimit,
+  maxEvents,
+} = {}) {
+  if (!runId) return Promise.resolve(null);
+  const entry = ensureRunStream(runId);
+  const nextInitialEventLimit = initialEventLimit !== undefined
+    ? initialEventLimit
+    : (entry.fullHistoryLoaded ? null : DEFAULT_INITIAL_EVENT_LIMIT);
+  const nextMaxEvents = maxEvents !== undefined
+    ? maxEvents
+    : entry.maxEvents;
+  entry.forceHydrate = true;
+  return hydrateRunState(runId, entry, {
+    initialEventLimit: nextInitialEventLimit,
+    maxEvents: nextMaxEvents,
+    subscribe,
+  });
+}
+
 export function closeRunStreamsForTests() {
   for (const [runId, entry] of runStreams.entries()) {
     entry.hydrateController?.abort?.();
@@ -379,6 +403,15 @@ export function useRunStream(runId, {
       unsubscribeRef.current = null;
     };
   }, [runId, subscribe, initialEventLimit, maxEvents]);
+
+  useAppResume(() => {
+    if (!runId) return;
+    refreshRunState(runId, {
+      subscribe,
+      initialEventLimit: fullHistoryLoaded ? null : initialEventLimit,
+      maxEvents: fullHistoryLoaded ? null : maxEvents,
+    });
+  });
 
   const loadFullHistory = () => loadFullRunHistory(runId, { subscribe });
 
