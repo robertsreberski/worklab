@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS = {
   agent_mcp_text_limit_chars: 12000,
   agent_search_result_limit: 100,
   agent_image_inline_max_bytes: 250000,
+  agent_tool_payload_max_bytes: 262144,
   agent_mcp_call_timeout_ms: 120000,
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
@@ -179,6 +180,8 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 10, max: 1000 });
     case "agent_image_inline_max_bytes":
       return integerInRange(key, value, { min: 0, max: 10 * 1024 * 1024 });
+    case "agent_tool_payload_max_bytes":
+      return integerInRange(key, value, { min: 0, max: 16 * 1024 * 1024 });
     case "agent_mcp_call_timeout_ms":
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
     case "agent_recovery_continuation_limit":

@@ -242,6 +242,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         });
       } catch { /* best-effort */ }
     };
+    const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
+    const toolPayloadMaxBytes = compaction.policy?.toolPayloadMaxBytes;
     const builtIns = capabilities.tool_use === false
       ? []
       : getPiBuiltinTools(options.allowedTools, {
@@ -250,8 +252,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         cwd: options.cwd,
         onEvent,
         toolLimits: compaction.policy,
-        runArtifactDir: options.runArtifactDir || null,
-        toolPayloadMaxBytes: options.toolPayloadMaxBytes,
+        runArtifactDir,
+        toolPayloadMaxBytes,
         onTruncate,
       });
 
@@ -265,8 +267,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       : await initPiMcpTools(options.mcpServers || {}, reservedNames, {
         limits: compaction.policy,
         cwd: options.cwd,
-        runArtifactDir: options.runArtifactDir || null,
-        toolPayloadMaxBytes: options.toolPayloadMaxBytes,
+        runArtifactDir,
+        toolPayloadMaxBytes,
         onTruncate,
       });
     mcpClients = mcpInit.clients;

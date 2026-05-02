@@ -525,6 +525,7 @@ export function spawnWorker({
             failureKind,
           })
         : null;
+      const toolPayloadTruncatedCount = allWarnings.filter((w) => w.kind === "tool_payload_truncated").length;
       const diagnostics = {
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
@@ -542,6 +543,7 @@ export function spawnWorker({
           changed: gitArtifacts.length > 0,
         },
         warning_count: allWarnings.length,
+        ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,
         ...(signal ? { exit_signal: signal } : {}),
