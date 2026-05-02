@@ -16,6 +16,8 @@ import {
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
+import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
+import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -29,6 +31,13 @@ function extractText(event) {
     if (block.type === "text") out += block.text;
   }
   return out;
+}
+
+function assistantToolNames(event) {
+  if (event.type !== "assistant" || !Array.isArray(event.message?.content)) return [];
+  return event.message.content
+    .filter((block) => block?.type === "tool_use" && block.name)
+    .map((block) => block.name);
 }
 
 function extractResultText(event) {
@@ -76,16 +85,76 @@ function makeRuntimeWarning(message) {
   };
 }
 
-function finalTextFromOutput(worklabResult, text) {
-  const delivered = stripWorklabResultJson(text);
-  return delivered || formatWorklabResultText(worklabResult) || text;
-}
-
 function structuredSourceFromEvent(event) {
+  if (event?.type === "result" && Object.prototype.hasOwnProperty.call(event, "structured_output")) return "structured_output";
   if (event?.type === "result" && event.result != null) return "result";
   if (event?.type === "result" && event.final_output != null) return "final_output";
   if (event?.type === "assistant") return "message";
   return "event";
+}
+
+function extractStructuredOutput(event) {
+  if (event?.type === "result" && Object.prototype.hasOwnProperty.call(event, "structured_output")) {
+    return event.structured_output;
+  }
+  return undefined;
+}
+
+function finalTextFromStructuredOutput(worklabResult, text, structuredResult) {
+  const delivered = stripWorklabResultJson(text);
+  if (delivered) return delivered;
+  const formatted = formatWorklabResultText(worklabResult);
+  if (formatted) return formatted;
+  if (structuredResult !== undefined) {
+    try { return JSON.stringify(structuredResult); } catch { return String(structuredResult); }
+  }
+  return text;
+}
+
+function pickSessionId(...values) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function sessionIdFromEvent(event) {
+  return pickSessionId(event?.session_id, event?.sessionId);
+}
+
+function lastTextSnippet(texts, limit = 200) {
+  for (let i = texts.length - 1; i >= 0; i -= 1) {
+    const text = texts[i];
+    if (typeof text === "string" && text.trim()) {
+      const trimmed = text.trim();
+      return trimmed.length > limit ? trimmed.slice(-limit) : trimmed;
+    }
+  }
+  return null;
+}
+
+function buildClaudeErrorDetails({
+  event = null,
+  subtype = null,
+  providerSessionId = null,
+  assistantTexts = [],
+  lastToolName = null,
+  toolResultsSeen = 0,
+  numTurns = 0,
+}) {
+  const resolvedSubtype = subtype || event?.subtype || event?.type || null;
+  const turnCount = Number(event?.num_turns ?? numTurns) || 0;
+  const excerpt = lastTextSnippet(assistantTexts);
+  return {
+    claude_error_subtype: resolvedSubtype,
+    last_text_excerpt: excerpt,
+    last_tool_name: lastToolName || null,
+    had_partial_progress: !!(excerpt || lastToolName || toolResultsSeen > 0),
+    tool_results_seen: toolResultsSeen,
+    turn_count: turnCount,
+    max_turns_hit: resolvedSubtype === "error_max_turns",
+    provider_session_id: providerSessionId || null,
+  };
 }
 
 const CLAUDE_FILE_EDIT_MATCHER = "Edit|Write|NotebookEdit";
@@ -104,6 +173,61 @@ function mergeHookMatchers(existing = {}, additions = {}) {
 
 function objectInput(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function parseMcpToolName(toolName) {
+  const name = String(toolName || "");
+  if (!name.startsWith("mcp__")) return null;
+  const rest = name.slice(5);
+  const sep = rest.indexOf("__");
+  if (sep <= 0) return null;
+  return {
+    serverName: rest.slice(0, sep),
+    toolName: rest.slice(sep + 2),
+  };
+}
+
+function normalizeClaudeMcpInput(input, qaOutputDir) {
+  const parsed = parseMcpToolName(input?.tool_name);
+  if (!parsed) return null;
+  const current = objectInput(input?.tool_input);
+  const normalized = normalizeMcpToolParams(parsed.serverName, parsed.toolName, current, { qaOutputDir });
+  if (normalized === current) return null;
+  try {
+    if (JSON.stringify(normalized) === JSON.stringify(current)) return null;
+  } catch {
+    // Non-serializable input is unexpected, but returning an SDK override is
+    // still safe when the normalizer produced a different object.
+  }
+  return normalized;
+}
+
+function claudeToolResponseBlocks(toolResponse) {
+  if (toolResponse && typeof toolResponse === "object" && Array.isArray(toolResponse.content)) {
+    return toolResponse.content;
+  }
+  if (typeof toolResponse === "string") return [{ type: "text", text: toolResponse }];
+  if (toolResponse == null) return [];
+  try {
+    return [{ type: "text", text: JSON.stringify(toolResponse) }];
+  } catch {
+    return [{ type: "text", text: String(toolResponse) }];
+  }
+}
+
+function withUpdatedToolOutput(toolResponse, rewrittenBlocks) {
+  if (toolResponse && typeof toolResponse === "object" && !Array.isArray(toolResponse)) {
+    return { ...toolResponse, content: rewrittenBlocks };
+  }
+  return { content: rewrittenBlocks };
+}
+
+function toolPayloadLimit(options) {
+  const explicit = Number(options.toolPayloadMaxBytes);
+  if (Number.isFinite(explicit) && explicit > 0) return Math.floor(explicit);
+  const configured = Number(options.settings?.agent_tool_payload_max_bytes);
+  if (Number.isFinite(configured) && configured > 0) return Math.floor(configured);
+  return MAX_TOOL_RESULT_BYTES;
 }
 
 function claudeEditPath(toolName, toolInput) {
@@ -211,6 +335,73 @@ function createClaudeFileEditHooks({ cwd, emitEvent }) {
   };
 }
 
+function createClaudeRuntimeHooks({
+  cwd,
+  emitEvent,
+  runArtifactDir,
+  qaOutputDir,
+  toolPayloadMaxBytes,
+  onToolUse,
+  onToolResult,
+}) {
+  return mergeHookMatchers(createClaudeFileEditHooks({ cwd, emitEvent }), {
+    PreToolUse: [{
+      matcher: "*",
+      hooks: [async (input) => {
+        onToolUse?.(input?.tool_name);
+        const updatedInput = normalizeClaudeMcpInput(input, qaOutputDir);
+        if (!updatedInput) return {};
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            updatedInput,
+          },
+        };
+      }],
+    }],
+    PostToolUse: [{
+      matcher: "*",
+      hooks: [async (input, toolUseID) => {
+        const toolName = input?.tool_name || "tool";
+        onToolUse?.(toolName);
+        onToolResult?.(toolName);
+        const blocks = claudeToolResponseBlocks(input?.tool_response);
+        if (!blocks.length) return {};
+        const summary = summarisePayload(toolName, blocks, runArtifactDir, {
+          maxBytes: toolPayloadMaxBytes,
+          toolUseId: toolUseID || input?.tool_use_id || input?.toolUseID || null,
+        });
+        if (!summary.truncated) return {};
+        emitEvent({
+          type: "runtime_warning",
+          warning_kind: "tool_payload_truncated",
+          source: "tool_bloat_guard",
+          tool: toolName,
+          tool_use_id: toolUseID || input?.tool_use_id || input?.toolUseID || null,
+          original_bytes: summary.originalBytes,
+          max_bytes: toolPayloadMaxBytes,
+          saved_paths: summary.savedPaths,
+        });
+        return {
+          continue: true,
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            updatedMCPToolOutput: withUpdatedToolOutput(input?.tool_response, summary.rewrittenBlocks),
+          },
+        };
+      }],
+    }],
+    PostToolUseFailure: [{
+      matcher: "*",
+      hooks: [async (input) => {
+        onToolUse?.(input?.tool_name);
+        return {};
+      }],
+    }],
+  });
+}
+
 function promptStringFromMessages(messages) {
   return Array.isArray(messages)
     ? messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : JSON.stringify(m.content)).join("\n")
@@ -258,6 +449,17 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const promptString = promptStringFromMessages(messages);
   const runtimeWarnings = [];
   const capturedEvents = [];
+  const assistantTextFragments = [];
+  const reusableProviderSessionId = pickSessionId(options.sessionId, process.env.WORKLAB_PROVIDER_SESSION_ID);
+  const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
+  const qaOutputDir = options.qaOutputDir
+    || process.env.PLAYWRIGHT_MCP_OUTPUT_DIR
+    || process.env.WORKLAB_QA_OUTPUT_DIR
+    || runArtifactDir;
+  const toolPayloadMaxBytes = toolPayloadLimit(options);
+  let providerSessionId = reusableProviderSessionId;
+  let lastToolName = null;
+  let toolResultsSeen = 0;
 
   function emitEvent(event) {
     if (!event) return;
@@ -265,23 +467,50 @@ export async function generateClaudeResponse(systemPrompt, options) {
     onEvent(event);
   }
 
+  function noteToolUse(toolName) {
+    if (toolName) lastToolName = toolName;
+  }
+
+  function noteToolResult(toolName) {
+    if (toolName) lastToolName = toolName;
+    toolResultsSeen += 1;
+  }
+
   const queryOptions = {
     systemPrompt,
     model: model.model,
     cwd,
     permissionMode,
+    ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
     allowedTools,
     disallowedTools,
     mcpServers,
-    hooks: mergeHookMatchers(hooks, createClaudeFileEditHooks({ cwd, emitEvent })),
+    hooks: mergeHookMatchers(hooks, createClaudeRuntimeHooks({
+      cwd,
+      emitEvent,
+      runArtifactDir,
+      qaOutputDir,
+      toolPayloadMaxBytes,
+      onToolUse: noteToolUse,
+      onToolResult: noteToolResult,
+    })),
     ...thinkingOpts,
   };
+  if (options.outputSchema) {
+    queryOptions.outputFormat = {
+      type: "json_schema",
+      schema: options.outputSchema,
+    };
+  }
+  if (reusableProviderSessionId) {
+    queryOptions.resume = reusableProviderSessionId;
+  }
   if (Number.isFinite(Number(maxTurns)) && Number(maxTurns) > 0) {
     queryOptions.maxTurns = Number(maxTurns);
   }
 
   const prompt = options.liveInput
-    ? livePromptMessages({ initialPrompt: promptString, liveInput: options.liveInput, sessionId: randomUUID() })
+    ? livePromptMessages({ initialPrompt: promptString, liveInput: options.liveInput, sessionId: reusableProviderSessionId || randomUUID() })
     : promptString;
   const stream = query({ prompt, options: queryOptions });
 
@@ -297,9 +526,11 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let postSuccessErrorSeen = false;
   let worklabResult = null;
   let structuredResultSource = null;
+  let structuredResult = undefined;
+  let errorDetails = null;
 
   const rawFinalText = () => resultText || text;
-  const finalText = () => finalTextFromOutput(worklabResult, rawFinalText());
+  const finalText = () => finalTextFromStructuredOutput(worklabResult, rawFinalText(), structuredResult);
 
   function hasUsableFinalOutput() {
     return Boolean(worklabResult) || String(finalText() || "").trim().length > 0;
@@ -322,13 +553,30 @@ export async function generateClaudeResponse(systemPrompt, options) {
 
   try {
     for await (const event of stream) {
+      const nextSessionId = sessionIdFromEvent(event);
+      if (nextSessionId) providerSessionId = nextSessionId;
       emitEvent(event);
+      if (event?.type === "tool_progress" && event.tool_name) noteToolUse(event.tool_name);
       const structured = extractWorklabResult(event);
       if (structured.ok) {
         worklabResult = structured.result;
         structuredResultSource = structuredSourceFromEvent(event);
       }
-      if (event.type === "assistant") text += extractText(event);
+      const eventStructuredOutput = extractStructuredOutput(event);
+      if (eventStructuredOutput !== undefined) {
+        structuredResult = eventStructuredOutput;
+        const structuredWorklab = extractWorklabResult(eventStructuredOutput);
+        if (structuredWorklab.ok) {
+          worklabResult = structuredWorklab.result;
+          structuredResultSource = "structured_output";
+        }
+      }
+      if (event.type === "assistant") {
+        const delta = extractText(event);
+        if (delta) assistantTextFragments.push(delta);
+        text += delta;
+        for (const toolName of assistantToolNames(event)) noteToolUse(toolName);
+      }
       else if (event.type === "error") {
         const message = event.error?.message || event.error || "sdk stream error";
         if (successfulResultSeen && hasUsableFinalOutput()) {
@@ -336,6 +584,15 @@ export async function generateClaudeResponse(systemPrompt, options) {
         } else {
           errorMessage = message;
           failureKind = "provider_unavailable";
+          errorDetails = buildClaudeErrorDetails({
+            event,
+            subtype: "error",
+            providerSessionId,
+            assistantTexts: assistantTextFragments,
+            lastToolName,
+            toolResultsSeen,
+            numTurns,
+          });
         }
         break;
       } else if (event.type === "result") {
@@ -344,13 +601,25 @@ export async function generateClaudeResponse(systemPrompt, options) {
           if (successfulResultSeen && hasUsableFinalOutput()) {
             preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${resultError.message}`);
           } else {
+            usage = event.usage || usage;
+            durationMs = event.duration_ms || durationMs;
+            numTurns = event.num_turns || numTurns;
             errorMessage = resultError.message;
             failureKind = resultError.failureKind;
+            errorDetails = buildClaudeErrorDetails({
+              event,
+              subtype: event.subtype || "result_error",
+              providerSessionId,
+              assistantTexts: assistantTextFragments,
+              lastToolName,
+              toolResultsSeen,
+              numTurns,
+            });
           }
         } else {
-          usage = event.usage || {};
-          durationMs = event.duration_ms || 0;
-          numTurns = event.num_turns || 0;
+          usage = event.usage || usage;
+          durationMs = event.duration_ms || durationMs;
+          numTurns = event.num_turns || numTurns;
           resultText = extractResultText(event) || resultText;
           successfulResultSeen = true;
           if (options.liveInput) break;
@@ -366,6 +635,14 @@ export async function generateClaudeResponse(systemPrompt, options) {
       } else {
         errorMessage = message;
         failureKind = "provider_unavailable";
+        errorDetails = buildClaudeErrorDetails({
+          subtype: "exception",
+          providerSessionId,
+          assistantTexts: assistantTextFragments,
+          lastToolName,
+          toolResultsSeen,
+          numTurns,
+        });
       }
     }
   } finally {
@@ -406,7 +683,9 @@ export async function generateClaudeResponse(systemPrompt, options) {
     sdk: "claude",
     cancelled,
     error: errorMessage,
+    errorDetails,
     failureKind,
+    providerSessionId,
     runtimeWarnings,
   };
 }

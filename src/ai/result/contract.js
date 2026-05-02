@@ -442,6 +442,7 @@ function collectWorklabCandidates(value, out, seen = new Set(), depth = 0) {
 
   const likelyKeys = [
     "result",
+    "structured_output",
     "final_output",
     "output",
     "text",

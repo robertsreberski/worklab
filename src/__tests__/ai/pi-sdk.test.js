@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { generatePiResponse } from "../../ai/providers/pi-sdk.js";
 import { resolveModel } from "../../core/ai.js";
@@ -36,6 +36,10 @@ function abortedStream(message = "terminated", { code = null, requestId = null, 
 }
 
 describe("generatePiResponse cancellation handling", () => {
+  afterEach(() => {
+    delete process.env.WORKLAB_PROVIDER_SESSION_ID;
+  });
+
   it("treats provider/runtime aborts as provider errors when Worklab did not abort", async () => {
     const result = await generatePiResponse("sys", {
       model: resolveModel("codex:gpt-5.5"),
@@ -108,6 +112,23 @@ describe("generatePiResponse cancellation handling", () => {
       code: "UND_ERR_SOCKET",
       request_id: "req_abc123",
     });
+  });
+
+  it("returns the reusable provider session id used by the Pi agent", async () => {
+    process.env.WORKLAB_PROVIDER_SESSION_ID = "pi-session-prev";
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: abortedStream("terminated"),
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.providerSessionId).toBe("pi-session-prev");
+    expect(result.diagnostics.provider_session_id).toBe("pi-session-prev");
   });
 });
 
