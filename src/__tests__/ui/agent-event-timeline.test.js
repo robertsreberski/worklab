@@ -134,6 +134,49 @@ describe("agent event timeline normalization", () => {
     expect(items[0].toolResult.is_error).toBe(false);
   });
 
+  it("collapses linked Edit and file_edit events into one visible file edit", () => {
+    const changes = [{
+      path: "/workspace/worklab/src/ui/src/routes/TaskDetail.jsx",
+      kind: "update",
+      line_stats: { added_lines: 10, removed_lines: 2 },
+    }];
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "edit-1", name: "Edit", input: { file_path: "src/ui/src/routes/TaskDetail.jsx" } },
+      { type: "tool_use", tool_use_id: "file_edit:edit-1", name: "file_edit", input: { changes, status: "in_progress" } },
+      { type: "tool_result", tool_use_id: "file_edit:edit-1", content: { changes, status: "completed" }, is_error: false },
+      { type: "tool_result", tool_use_id: "edit-1", output: "Successfully edited /workspace/worklab/src/ui/src/routes/TaskDetail.jsx" },
+    ]);
+
+    expect(items).toHaveLength(1);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse).toMatchObject({
+      tool_use_id: "file_edit:edit-1",
+      name: "file_edit",
+      display_name: "Edit",
+      source_tool_use_id: "edit-1",
+    });
+    expect(items[0].toolResult).toMatchObject({
+      tool_use_id: "file_edit:edit-1",
+      is_error: false,
+    });
+    expect(fileEditSummary(items[0].toolResult.content)).toBe("update TaskDetail.jsx (+10 -2)");
+  });
+
+  it("keeps unmatched Edit results visible when no file edit summary exists", () => {
+    const items = groupAgentTimelineEvents([
+      { type: "tool_use", tool_use_id: "edit-1", name: "Edit", input: { file_path: "src/app.js" } },
+      { type: "tool_use", tool_use_id: "file_edit:edit-1", name: "file_edit", input: { changes: [], status: "in_progress" } },
+      { type: "tool_result", tool_use_id: "edit-1", output: "Error: old_string not found" },
+    ]);
+
+    expect(items).toHaveLength(2);
+    expect(items[0]._toolCall).toBe(true);
+    expect(items[0].toolUse.name).toBe("Edit");
+    expect(items[0].toolResult.output).toBe("Error: old_string not found");
+    expect(items[1]._toolCall).toBe(true);
+    expect(items[1].toolUse.name).toBe("file_edit");
+  });
+
   it("pairs direct Codex command app-server events after Worklab normalization", () => {
     const items = groupAgentTimelineEvents(normalizeWorklabEvents([
       { type: "item.started", item: { type: "command_execution", id: "cmd1", command: "pwd", status: "inProgress" } },

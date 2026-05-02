@@ -4,6 +4,7 @@ import { ToolCallBlock } from "./ToolCallBlock.jsx";
 import { StructuredContent } from "./StructuredContent.jsx";
 import { StructuredValue } from "./StructuredValue.jsx";
 import { structuredPreview } from "../lib/structuredValue.js";
+import { hasFileEditChangeDetails, isMutationToolName, sourceToolIdForFileEditId } from "../lib/toolEventLinking.js";
 
 const PHASE_NAMES = Object.freeze({
   triage: "Triage",
@@ -65,15 +66,20 @@ function normaliseBlock(block) {
       tool_use_id: block.tool_use_id || block.id,
       name: block.name,
       input: block.input,
+      display_name: block.display_name || block.displayName,
+      source_tool_use_id: block.source_tool_use_id || block.sourceToolUseId,
     };
   }
   if (block.type === "thinking") return { type: "thinking", text: block.text || block.thinking || "" };
   if (block.type === "text") return { type: "text", text: block.text || "" };
   if (block.type === "tool_result") {
+    const output = block.output ?? block.content ?? block.result ?? "";
     return {
       type: "tool_result",
       tool_use_id: block.tool_use_id,
-      output: block.output ?? block.content ?? block.result ?? "",
+      output,
+      content: block.content,
+      result: block.result,
       is_error: Boolean(block.is_error || block.error),
       raw_result: block.raw_result,
     };
@@ -136,11 +142,30 @@ function flattenEvents(events) {
 
 function groupEvents(events) {
   const flat = flattenEvents(events);
+  const toolUsesByToolUseId = new Map();
   const resultsByToolUseId = new Map();
   const structuredByToolUseId = new Map();
   for (const event of flat) {
+    if (event?.type === "tool_use" && event.tool_use_id) toolUsesByToolUseId.set(event.tool_use_id, event);
     if (event?.type === "tool_result" && event.tool_use_id) resultsByToolUseId.set(event.tool_use_id, event);
     if (event?.type === "structured_output" && event.tool_use_id) structuredByToolUseId.set(event.tool_use_id, event);
+  }
+  const collapsedSourceToolUseIds = new Set();
+  const fileEditMetadataByToolUseId = new Map();
+  for (const event of flat) {
+    if (event?.type !== "tool_use" || event.name !== "file_edit" || !event.tool_use_id) continue;
+    const sourceToolUseId = sourceToolIdForFileEditId(event.tool_use_id);
+    if (!sourceToolUseId) continue;
+    const sourceToolUse = toolUsesByToolUseId.get(sourceToolUseId);
+    if (!isMutationToolName(sourceToolUse?.name)) continue;
+    const paired = resultsByToolUseId.get(event.tool_use_id) || null;
+    if (!hasFileEditChangeDetails(event, paired)) continue;
+    collapsedSourceToolUseIds.add(sourceToolUseId);
+    fileEditMetadataByToolUseId.set(event.tool_use_id, {
+      display_name: sourceToolUse.name,
+      source_tool_use_id: sourceToolUseId,
+      source_tool_input: sourceToolUse.input,
+    });
   }
   const consumedResultIds = new Set();
   const consumedStructuredIds = new Set();
@@ -162,13 +187,17 @@ function groupEvents(events) {
     flush();
 
     if (event?.type === "tool_use" && event.tool_use_id) {
+      if (collapsedSourceToolUseIds.has(event.tool_use_id)) continue;
       const paired = resultsByToolUseId.get(event.tool_use_id) || null;
       const structuredOutput = structuredByToolUseId.get(event.tool_use_id) || null;
       if (paired) consumedResultIds.add(event.tool_use_id);
       if (structuredOutput) consumedStructuredIds.add(event.tool_use_id);
-      items.push({ _toolCall: true, toolUse: event, toolResult: paired, structuredOutput });
+      const fileEditMetadata = fileEditMetadataByToolUseId.get(event.tool_use_id);
+      const toolUse = fileEditMetadata ? { ...event, ...fileEditMetadata } : event;
+      items.push({ _toolCall: true, toolUse, toolResult: paired, structuredOutput });
       continue;
     }
+    if (event?.type === "tool_result" && collapsedSourceToolUseIds.has(event.tool_use_id)) continue;
     if (event?.type === "tool_result" && consumedResultIds.has(event.tool_use_id)) continue;
     if (event?.type === "structured_output" && consumedStructuredIds.has(event.tool_use_id)) continue;
     items.push(event);
