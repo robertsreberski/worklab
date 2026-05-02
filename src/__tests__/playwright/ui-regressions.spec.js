@@ -1160,7 +1160,7 @@ test("running task detail can load full history after compact live hydration", a
   await expect(page.getByRole("button", { name: "Load full history" })).toHaveCount(0);
 
   expect(runRequests).toEqual([
-    "/api/runs/run-live-existing?events=tail&limit=20",
+    "/api/runs/run-live-existing?events=tail&limit=10",
     "/api/runs/run-live-existing",
   ]);
 });

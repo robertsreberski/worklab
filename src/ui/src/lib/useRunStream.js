@@ -6,9 +6,11 @@ import { tailRunEventsByVisibleItems } from "../../../core/run-events.js";
 import { useAppResume } from "./pageVisibility.js";
 
 const runStreams = new Map();
-const DEFAULT_LIVE_EVENT_LIMIT = 20;
+const DEFAULT_LIVE_EVENT_LIMIT = 10;
 const DEFAULT_INITIAL_EVENT_LIMIT = DEFAULT_LIVE_EVENT_LIMIT;
 const DEFAULT_MAX_EVENTS = DEFAULT_LIVE_EVENT_LIMIT;
+const TOOL_USE_EVENT_TYPES = new Set(["tool_use", "toolCall"]);
+const TOOL_RESULT_EVENT_TYPES = new Set(["tool_result", "toolResult", "tool_output", "structured_output"]);
 
 function eventKey(event) {
   if (!event) return null;
@@ -19,6 +21,71 @@ function eventKey(event) {
   } catch {
     return null;
   }
+}
+
+function eventPayload(event) {
+  if (event?.type === "sdk_event" && event.event) return event.event;
+  if (event?.type === "cli_event" && event.raw) return event.raw;
+  return event;
+}
+
+function eventContentBlocks(event) {
+  const target = eventPayload(event);
+  if (Array.isArray(target?.message?.content)) return target.message.content;
+  if (Array.isArray(target?.content)) return target.content;
+  return [];
+}
+
+function toolUseIdsFromEvent(event) {
+  const target = eventPayload(event);
+  const ids = [];
+  const add = (id) => { if (id) ids.push(id); };
+  if (TOOL_USE_EVENT_TYPES.has(target?.type)) {
+    add(target.tool_use_id || target.id || target.toolCallId || target.tool_call_id);
+  }
+  for (const block of eventContentBlocks(event)) {
+    if (TOOL_USE_EVENT_TYPES.has(block?.type)) {
+      add(block.tool_use_id || block.id || block.toolCallId || block.tool_call_id);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function toolResultIdsFromEvent(event) {
+  const target = eventPayload(event);
+  const ids = [];
+  const add = (id) => { if (id) ids.push(id); };
+  if (TOOL_RESULT_EVENT_TYPES.has(target?.type)) {
+    add(target.tool_use_id || target.id || target.toolCallId || target.tool_call_id);
+  }
+  for (const block of eventContentBlocks(event)) {
+    if (TOOL_RESULT_EVENT_TYPES.has(block?.type)) {
+      add(block.tool_use_id || block.id || block.toolCallId || block.tool_call_id);
+    }
+  }
+  return [...new Set(ids)];
+}
+
+function rememberToolUses(entry, events = []) {
+  if (!entry?.toolUsesById) return;
+  for (const event of events || []) {
+    for (const id of toolUseIdsFromEvent(event)) {
+      entry.toolUsesById.set(id, event);
+    }
+  }
+}
+
+function companionToolUseEvents(entry, event) {
+  if (!entry?.toolUsesById) return [];
+  return toolResultIdsFromEvent(event)
+    .map((id) => entry.toolUsesById.get(id))
+    .filter(Boolean);
+}
+
+function containsEvent(events, target) {
+  const targetKey = eventKey(target);
+  if (!targetKey) return false;
+  return (events || []).some((event) => eventKey(event) === targetKey);
 }
 
 function limitRunEvents(events, limit) {
@@ -65,6 +132,7 @@ function ensureRunStream(runId) {
     eventsTruncated: false,
     fullHistoryLoaded: false,
     maxEvents: DEFAULT_MAX_EVENTS,
+    toolUsesById: new Map(),
     streamRefCount: 0,
     hydratePromise: null,
     hydrateController: null,
@@ -165,6 +233,7 @@ function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {})
     ]);
   }
   if (data?.log?.events?.length) {
+    rememberToolUses(entry, data.log.events);
     entry.events = limitRunEvents(
       mergeRunEvents(entry.events, data.log.events),
       maxEvents,
@@ -246,7 +315,8 @@ function openRunStream(runId, entry) {
       return;
     }
     const previousCount = Number(entry.eventCount || entry.events.length || 0);
-    const mergedEvents = mergeRunEvents(entry.events, [payload]);
+    rememberToolUses(entry, [payload]);
+    const mergedEvents = mergeRunEvents(entry.events, [...companionToolUseEvents(entry, payload), payload]);
     const eventArtifacts = extractRunArtifacts([payload]);
     if (eventArtifacts.length) {
       entry.liveArtifacts = aggregateRunArtifacts([
@@ -255,9 +325,7 @@ function openRunStream(runId, entry) {
       ]);
     }
     const seq = Number(payload?._event_seq);
-    const inferredCount = mergedEvents.length > entry.events.length
-      ? previousCount + (mergedEvents.length - entry.events.length)
-      : previousCount;
+    const inferredCount = containsEvent(entry.events, payload) ? previousCount : previousCount + 1;
     entry.events = limitRunEvents(mergedEvents, entry.maxEvents);
     entry.eventCount = Math.max(
       previousCount,
