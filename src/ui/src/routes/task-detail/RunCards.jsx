@@ -43,26 +43,36 @@ function RunWarningsList({ warnings, agents = [] }) {
   );
 }
 
-// A3: a small inline indicator surfaced in the run-card summary when a
-// per-agent budget warning fires. budget_exceeded is fatal (the run was
-// cancelled by the aggregator) so it gets the louder error styling; the
-// soft warning gets the standard warning chip. We pick the strongest tier
-// present so the same chip survives a soft → hard escalation in one run.
-function RunBudgetBadge({ warnings }) {
+export function runBudgetBadgeState(run, warnings = run?.warnings) {
   if (!Array.isArray(warnings) || !warnings.length) return null;
-  const hard = warnings.find((w) => w?.kind === "budget_exceeded");
+  const exceeded = warnings.find((w) => w?.kind === "budget_exceeded");
   const soft = warnings.find((w) => w?.kind === "budget_soft");
-  const active = hard || soft;
+  const active = exceeded || soft;
   if (!active) return null;
-  const isHard = !!hard;
-  const tone = isHard ? "run-warning-budget-hard" : "run-warning-budget-soft";
-  const label = isHard ? "Budget cancel" : "Budget soft";
+  const isCancel = !!exceeded && (
+    run?.failure_kind === "budget_exceeded"
+    || run?.cancel_initiator === "budget"
+    || run?.diagnostics?.failure_kind === "budget_exceeded"
+    || run?.diagnostics?.cancel_initiator === "budget"
+    || active?.diagnostics?.tier === "hard"
+    || /^Run cancelled:/i.test(active?.message || "")
+  );
+  return {
+    tone: isCancel ? "run-warning-budget-hard" : "run-warning-budget-soft",
+    label: isCancel ? "Budget cancel" : exceeded ? "Budget over" : "Budget soft",
+    title: active.message || "",
+  };
+}
+
+function RunBudgetBadge({ run, warnings }) {
+  const badge = runBudgetBadgeState(run, warnings);
+  if (!badge) return null;
   return (
     <span
-      class={`run-warning-badge ${tone}`}
-      title={active.message || ""}
+      class={`run-warning-badge ${badge.tone}`}
+      title={badge.title}
     >
-      {label}
+      {badge.label}
     </span>
   );
 }
@@ -263,7 +273,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                       ⚠ {warnings.length}
                     </span>
                   )}
-                  <RunBudgetBadge warnings={warnings} />
+                  <RunBudgetBadge run={run} warnings={warnings} />
                   {run.cancel_initiator && (
                     <span class="run-warning-badge run-cancel-chip" title={run.cancel_reason || run.cancel_initiator}>
                       {run.cancel_initiator}
@@ -285,7 +295,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                 {warnings.length > 0 && (
                   <span class="run-warning-badge run-warning-count">⚠ {warnings.length}</span>
                 )}
-                <RunBudgetBadge warnings={warnings} />
+                <RunBudgetBadge run={run} warnings={warnings} />
                 {run.cancel_initiator && (
                   <span class="run-warning-badge run-cancel-chip">{run.cancel_initiator}</span>
                 )}
