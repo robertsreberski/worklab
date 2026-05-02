@@ -36,12 +36,30 @@ export function listProjectsWithTaskCounts(db, { filters, params, limit }) {
   return db.prepare(sql).all(...params, limit);
 }
 
-export function insertProject(db, { id, slug, name, description, context, workdir, tagsJson, archived, createdAt, updatedAt }) {
+export function insertProject(db, {
+  id,
+  slug,
+  name,
+  description,
+  context,
+  workdir,
+  tagsJson,
+  allowedAgentsJson = "[]",
+  delegationAllowUnlisted = 0,
+  archived,
+  createdAt,
+  updatedAt,
+}) {
   db.prepare(`
     INSERT INTO projects
-      (id, slug, name, description, context_markdown, workdir, tags_json, archived, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, slug, name, description, context, workdir, tagsJson, archived, createdAt, updatedAt);
+      (id, slug, name, description, context_markdown, workdir, tags_json,
+       allowed_agents_json, delegation_allow_unlisted, archived, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id, slug, name, description, context, workdir, tagsJson,
+    allowedAgentsJson, delegationAllowUnlisted ? 1 : 0,
+    archived, createdAt, updatedAt,
+  );
 }
 
 // Dynamic-field UPDATE. The route shapes the SET clauses + bound values from

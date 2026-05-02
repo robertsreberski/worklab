@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import {
   newProjectId,
   normalizeProjectWorkdir,
+  parseProjectAllowedAgents,
   parseProjectTags,
   projectFromRow,
   projectRouteError,
@@ -106,6 +107,16 @@ function projectStats(db, projectId) {
   };
 }
 
+// R9: validate the operator-supplied allowed_agents list. The values are
+// glob patterns that the watcher matches against agent names; we just
+// dedupe + trim here. Empty array means "any agent".
+function normalizeAllowedAgentsInput(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return [];
+  const parsed = parseProjectAllowedAgents(value);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
 function normalizeProjectCreate(db, body = {}) {
   const name = typeof body.name === "string" ? body.name.trim() : "";
   if (!name) throw projectRouteError(400, "validation", "name is required");
@@ -116,6 +127,8 @@ function normalizeProjectCreate(db, body = {}) {
     context: typeof body.context === "string" ? body.context : "",
     workdir: normalizeProjectWorkdir(body.workdir, null),
     tags: parseProjectTags(body.tags),
+    allowedAgents: normalizeAllowedAgentsInput(body.allowed_agents) ?? [],
+    delegationAllowUnlisted: body.delegation_allow_unlisted === true ? 1 : 0,
     archived: body.archived === true ? 1 : 0,
   };
 }
@@ -158,6 +171,16 @@ function normalizeProjectPatch(db, existing, body = {}) {
     fields.push("tags_json = ?");
     values.push(JSON.stringify(parseProjectTags(body.tags)));
   }
+  if ("allowed_agents" in body) {
+    // R9: per-project agent allowlist. Empty array == "any agent" — that
+    // matches the back-compat default and is safer than rejecting empty.
+    fields.push("allowed_agents_json = ?");
+    values.push(JSON.stringify(normalizeAllowedAgentsInput(body.allowed_agents) ?? []));
+  }
+  if ("delegation_allow_unlisted" in body) {
+    fields.push("delegation_allow_unlisted = ?");
+    values.push(body.delegation_allow_unlisted === true ? 1 : 0);
+  }
   if ("archived" in body) {
     fields.push("archived = ?");
     values.push(body.archived === true ? 1 : 0);
@@ -194,6 +217,8 @@ export function registerProjectRoutes(app, { db, broker }) {
         context: project.context,
         workdir: project.workdir,
         tagsJson: JSON.stringify(project.tags),
+        allowedAgentsJson: JSON.stringify(project.allowedAgents || []),
+        delegationAllowUnlisted: project.delegationAllowUnlisted ? 1 : 0,
         archived: project.archived,
         createdAt: now,
         updatedAt: now,
