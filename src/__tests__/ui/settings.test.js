@@ -146,16 +146,18 @@ describe("settings UI duration conversions", () => {
     expect(notificationStatus({ mode: "browser", supported: true, permission: "granted", enabled: true })).toEqual({ status: "enabled", label: "On" });
     expect(notificationDescription({ mode: "browser", supported: true, permission: "granted", enabled: true })).toBe("Task run starts, completions, and errors in background tabs.");
     expect(notificationStatus({ mode: "pwa", supported: true, permission: "default", enabled: false })).toEqual({ status: "disabled", label: "PWA off" });
-    expect(notificationDescription({ mode: "pwa", supported: true, permission: "default", enabled: false })).toBe("Mobile PWA push for task runs, even when Worklab is closed.");
-    expect(notificationStatus({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toEqual({ status: "error", label: "Needs iOS Settings" });
-    expect(notificationDescription({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toBe("Enable Worklab in iOS Settings > Notifications, then turn this on again.");
-    expect(notificationDescription({ mode: "pwa", supported: false })).toBe("Install Worklab to the mobile Home Screen and open it over a secure origin.");
+    expect(notificationDescription({ mode: "pwa", supported: true, permission: "default", enabled: false })).toBe("Push notifications for task runs, even when Worklab is closed.");
+    expect(notificationStatus({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toEqual({ status: "error", label: "Needs settings" });
+    expect(notificationDescription({ mode: "pwa", supported: true, permission: "denied", enabled: false })).toBe("Enable notifications for Worklab in system settings, then turn this on again.");
+    expect(notificationStatus({ mode: "pwa", supported: false, blockingReason: "install_required" })).toEqual({ status: "disabled", label: "Install required" });
+    expect(notificationDescription({ mode: "pwa", supported: false, blockingReason: "install_required" })).toBe("Install Worklab to the Home Screen and open it from the app icon.");
+    expect(notificationDescription({ mode: "pwa", supported: false, blockingReason: "push_api_unavailable" })).toBe("This browser does not expose Web Push for this Worklab app.");
   });
 
   it("maps PWA notification enable results to actionable toast copy", () => {
     expect(notificationEnableToast({ mode: "pwa", enabled: true, reason: "registered" })).toEqual({ message: "Notifications enabled.", variant: "success" });
     expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "permission_denied" })).toEqual({
-      message: "iOS is not showing the permission prompt. Enable Worklab in iOS Settings > Notifications, then turn this on again.",
+      message: "Notifications are blocked for Worklab. Enable them in system settings, then turn this on again.",
       variant: "error",
     });
     expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "permission_dismissed" })).toEqual({
@@ -170,12 +172,17 @@ describe("settings UI duration conversions", () => {
       message: "Device registration failed: subscribe failed",
       variant: "error",
     });
+    expect(notificationEnableToast({ mode: "pwa", enabled: false, reason: "install_required" })).toEqual({
+      message: "Install Worklab to the Home Screen and open it from the app icon.",
+      variant: "error",
+    });
   });
 
   it("summarizes notification diagnostics for Settings", () => {
     expect(notificationDiagnosticText({
       mode: "pwa",
       permission: "default",
+      blockingReason: null,
       diagnostics: {
         secure: true,
         standalone: true,
@@ -183,6 +190,17 @@ describe("settings UI duration conversions", () => {
         pushManager: true,
       },
     }, { notifications: { pwa: { activeSubscriptions: 0 } } })).toBe("Mode PWA / permission default / standalone yes / secure yes / service worker yes / Push API yes / server subscriptions 0");
+    expect(notificationDiagnosticText({
+      mode: "pwa",
+      permission: "denied",
+      blockingReason: "install_required",
+      diagnostics: {
+        secure: true,
+        standalone: false,
+        serviceWorker: true,
+        pushManager: false,
+      },
+    })).toBe("Mode PWA / install required / permission denied / standalone no / secure yes / service worker yes / Push API no / server subscriptions -");
     expect(notificationDiagnosticText({
       mode: "browser",
       permission: "granted",

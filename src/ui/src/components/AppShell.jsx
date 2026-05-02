@@ -13,7 +13,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
-import { maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
+import { ensureNotificationServiceWorker, maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
 import {
   ASSISTANT_WIDTH_MIN,
   ASSISTANT_WIDTH_STORAGE_KEY,
@@ -361,6 +361,9 @@ export function AppShell({
     "N": () => { navigateHash("#/tasks/new"); },
     "Escape": () => { if (helpOpen) setHelpOpen(false); },
   });
+  useEffect(() => {
+    ensureNotificationServiceWorker().catch(() => {});
+  }, []);
   useSSE("global", (event) => {
     maybeShowRunNotification(event, {
       onClick: (runEvent) => {

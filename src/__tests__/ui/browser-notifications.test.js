@@ -1,10 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   BROWSER_NOTIFICATIONS_KEY,
+  PWA_NOTIFICATIONS_KEY,
   buildRunNotification,
   browserNotificationSettings,
   disableNotifications,
   disableBrowserNotifications,
+  getPwaNotificationsEnabled,
   getBrowserNotificationsEnabled,
   maybeShowRunNotification,
   notificationDeliveryMode,
@@ -48,8 +50,16 @@ function notificationEnv({ permission = "default", visibilityState = "visible", 
   };
 }
 
-function pwaEnv({ permission = "default", standalone = true, existingSubscription = null, notificationApi = true } = {}) {
+function pwaEnv({
+  permission = "default",
+  standalone = true,
+  existingSubscription = null,
+  notificationApi = true,
+  pushManager = true,
+  mobile = true,
+} = {}) {
   const env = notificationEnv({ permission, visibilityState: "hidden", notificationApi });
+  const calls = [];
   let currentSubscription = existingSubscription;
   const subscription = {
     endpoint: "https://push.example/sub",
@@ -62,25 +72,42 @@ function pwaEnv({ permission = "default", standalone = true, existingSubscriptio
   const registration = {
     pushManager: {
       subscribe: vi.fn(async () => {
+        calls.push("subscribe");
         currentSubscription = subscription;
         return subscription;
       }),
-      getSubscription: vi.fn(async () => currentSubscription),
+      getSubscription: vi.fn(async () => {
+        calls.push("getSubscription");
+        return currentSubscription;
+      }),
     },
   };
+  if (!pushManager) delete registration.pushManager;
   env.isSecureContext = true;
-  env.PushManager = function PushManager() {};
+  if (pushManager) env.PushManager = function PushManager() {};
   env.navigator = {
     standalone,
-    maxTouchPoints: 5,
-    userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)",
+    maxTouchPoints: mobile ? 5 : 0,
+    userAgent: mobile
+      ? "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)"
+      : "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36",
     serviceWorker: {
-      register: vi.fn(async () => registration),
+      register: vi.fn(async () => {
+        calls.push("register");
+        return registration;
+      }),
       ready: Promise.resolve(registration),
     },
   };
   env.matchMedia = vi.fn((query) => ({ matches: standalone && query.includes("display-mode: standalone") }));
-  return { env, registration, subscription };
+  if (env.Notification?.requestPermission) {
+    env.Notification.requestPermission.mockImplementation(async () => {
+      calls.push("requestPermission");
+      env.Notification.permission = "granted";
+      return "granted";
+    });
+  }
+  return { env, registration, subscription, calls };
 }
 
 const taskStarted = {
@@ -115,7 +142,7 @@ describe("browser notifications", () => {
 
   it("selects PWA delivery for mobile standalone clients", () => {
     const { env } = pwaEnv();
-    setBrowserNotificationsEnabled(true, env);
+    env.localStorage.setItem(PWA_NOTIFICATIONS_KEY, "true");
     expect(notificationDeliveryMode(env)).toBe("pwa");
     expect(notificationSettings(env)).toMatchObject({
       mode: "pwa",
@@ -128,13 +155,25 @@ describe("browser notifications", () => {
     expect(notificationDeliveryMode(notificationEnv())).toBe("browser");
   });
 
-  it("keeps mobile installable contexts in PWA settings mode", () => {
-    const { env } = pwaEnv({ standalone: false });
+  it("keeps iOS browser contexts in PWA install-required mode instead of browser denied", () => {
+    const { env } = pwaEnv({ standalone: false, permission: "denied", pushManager: false });
     expect(notificationDeliveryMode(env)).toBe("pwa");
     expect(notificationSettings(env)).toMatchObject({
       mode: "pwa",
       supported: false,
+      permission: "denied",
+      blockingReason: "install_required",
       enabled: false,
+    });
+  });
+
+  it("uses service-worker push on desktop push-capable clients without requiring standalone display", () => {
+    const { env } = pwaEnv({ mobile: false, standalone: false });
+    expect(notificationDeliveryMode(env)).toBe("pwa");
+    expect(notificationSettings(env)).toMatchObject({
+      mode: "pwa",
+      supported: true,
+      blockingReason: null,
     });
   });
 
@@ -164,15 +203,18 @@ describe("browser notifications", () => {
     };
 
     await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true, reason: "registered" });
-    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).toBe("true");
-    expect(getBrowserNotificationsEnabled(env)).toBe(true);
+    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).not.toBe("true");
+    expect(getBrowserNotificationsEnabled(env)).toBe(false);
+    expect(env.localStorage.getItem(PWA_NOTIFICATIONS_KEY)).toBe("true");
+    expect(getPwaNotificationsEnabled(env)).toBe(true);
     expect(env.navigator.serviceWorker.register).toHaveBeenCalledWith("/sw.js");
     expect(registration.pushManager.getSubscription).toHaveBeenCalledTimes(1);
     expect(registration.pushManager.subscribe).toHaveBeenCalledWith(expect.objectContaining({ userVisibleOnly: true }));
     expect(api.subscribePushNotifications).toHaveBeenCalledWith({ subscription: subscription.toJSON(), clientKind: "pwa" });
 
     await expect(disableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: false });
-    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).toBe("false");
+    expect(env.localStorage.getItem(BROWSER_NOTIFICATIONS_KEY)).not.toBe("true");
+    expect(env.localStorage.getItem(PWA_NOTIFICATIONS_KEY)).toBe("false");
     expect(getBrowserNotificationsEnabled(env)).toBe(false);
     expect(subscription.unsubscribe).toHaveBeenCalled();
     expect(api.unsubscribePushNotifications).toHaveBeenCalledWith(subscription.endpoint);
@@ -200,6 +242,19 @@ describe("browser notifications", () => {
     expect(api.subscribePushNotifications).toHaveBeenCalledWith({ subscription: existingSubscription.toJSON(), clientKind: "pwa" });
   });
 
+  it("requests PWA notification permission before asynchronous registration work", async () => {
+    const { env, calls } = pwaEnv();
+    const api = {
+      getNotificationStatus: vi.fn(async () => ({ notifications: { pwa: { publicKey: "BEl0dA" } } })),
+      subscribePushNotifications: vi.fn(async () => ({ ok: true })),
+    };
+
+    await expect(requestAndEnableNotifications({ env, api })).resolves.toMatchObject({ mode: "pwa", enabled: true });
+
+    expect(calls[0]).toBe("requestPermission");
+    expect(calls.indexOf("requestPermission")).toBeLessThan(calls.indexOf("register"));
+  });
+
   it("returns actionable PWA enable reasons before registration", async () => {
     const denied = pwaEnv({ permission: "denied" });
     await expect(requestAndEnableNotifications({ env: denied.env, api: {} })).resolves.toMatchObject({
@@ -220,7 +275,7 @@ describe("browser notifications", () => {
       enabled: false,
       reason: "permission_dismissed",
     });
-    expect(dismissed.env.navigator.serviceWorker.register).toHaveBeenCalledWith("/sw.js");
+    expect(dismissed.env.navigator.serviceWorker.register).not.toHaveBeenCalled();
 
     const missingKey = pwaEnv({ permission: "granted" });
     await expect(requestAndEnableNotifications({

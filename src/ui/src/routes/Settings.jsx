@@ -233,6 +233,7 @@ export function Settings() {
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
     loadSlackStatus().catch(() => setSlackStatus(null));
+    setNotificationSettingsState(notificationSettings());
     loadNotificationStatus().catch(() => setNotificationServerStatus(null));
     if (!isDirty) {
       loadSettings().catch((err) => setLoadError(err.message || "Settings failed"));
@@ -446,7 +447,7 @@ export function Settings() {
     </Button>
   );
   const notificationMeta = notificationStatus(notificationSettingsState);
-  const notificationModeDetail = notificationSettingsState?.mode === "pwa" ? "Mobile PWA push" : "Browser notifications";
+  const notificationModeDetail = notificationSettingsState?.mode === "pwa" ? "Web Push notifications" : "Browser notifications";
   const serviceMeta = serviceStatusMeta(runtime);
   const searchMeta = searchIndexMeta(indexStatus);
   const mcpSummary = mcpAvailabilitySummary(mcpStatus, mcpRows);
@@ -650,7 +651,7 @@ export function Settings() {
 
           <SettingsSection
             id="settings-notifications"
-            kicker={notificationSettingsState?.mode === "pwa" ? "Mobile PWA" : "Browser"}
+            kicker={notificationSettingsState?.mode === "pwa" ? "Web Push" : "Browser"}
             title="Notifications"
             description="Notification preference for this Worklab origin."
             aside={<StatusPill status={notificationMeta.status} label={notificationMeta.label} />}
