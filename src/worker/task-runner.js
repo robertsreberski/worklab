@@ -9,6 +9,7 @@ import {
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
 } from "../ai/result/contract.js";
+import { parseWorklabResultLenient } from "../ai/result/lenient-parse.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
@@ -21,6 +22,13 @@ function validateRuntimeResult(result) {
 function resultFromTextOrFallback(text, fallback) {
   const parsed = parseWorklabResultFromText(text, fallback);
   if (parsed.ok) return validateRuntimeResult(parsed.result);
+  if (String(text || "").trim()) {
+    const lenient = parseWorklabResultLenient(text, fallback);
+    if (lenient) {
+      const validated = validateRuntimeResult(lenient);
+      if (!validated.fatal) return { ...validated, recoveredVia: "lenient" };
+    }
+  }
   if (!String(text || "").trim()) {
     return { result: null, error: "missing final output", fatal: true };
   }
@@ -97,6 +105,7 @@ export async function runTask(ctx) {
       parsedResultError: parsedResult.error || null,
       parsedResultFatal: !!parsedResult.fatal,
       parsedResultWarningKind: parsedResult.fatal ? "worklab_result_validation" : "unstructured_result_fallback",
+      parsedResultRecoveredVia: parsedResult.recoveredVia || null,
     };
   } catch (err) {
     return { kind: "task", error: err.message || String(err) };

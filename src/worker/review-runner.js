@@ -13,6 +13,7 @@ import {
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
 } from "../ai/result/contract.js";
+import { parseWorklabResultLenient } from "../ai/result/lenient-parse.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
@@ -31,6 +32,22 @@ function reviewResultFromText(text) {
       verdict: parsed.result.decision === "approve" ? "APPROVE" : parsed.result.decision === "reject" ? "REJECT" : null,
       notes: parsed.result.details || parsed.result.summary || "",
     };
+  }
+
+  if (String(text || "").trim()) {
+    const lenient = parseWorklabResultLenient(text, { stage: "review" });
+    if (lenient && (lenient.decision === "approve" || lenient.decision === "reject")) {
+      const validated = validateRuntimeResult(lenient);
+      if (!validated.fatal) {
+        return {
+          ...validated,
+          verdict: lenient.decision === "approve" ? "APPROVE" : "REJECT",
+          notes: lenient.details || lenient.summary || "",
+          recoveredVia: "lenient",
+          error: parsed.error,
+        };
+      }
+    }
   }
 
   const { verdict, notes } = parseVerdict(text);
@@ -131,6 +148,7 @@ export async function runReview(ctx) {
       parsedResultFatal: !!parsedReview.fatal,
       parsedResultWarningKind: parsedReview.fatal ? "worklab_result_validation" : "review_result_parse",
       parsedResultFatalMessage: parsedReview.error || "Reviewer did not return a valid worklab_result or verdict",
+      parsedResultRecoveredVia: parsedReview.recoveredVia || null,
     };
   } catch (err) {
     return { kind: "review", error: err.message || String(err) };
