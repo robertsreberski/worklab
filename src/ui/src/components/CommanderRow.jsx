@@ -15,6 +15,7 @@ import { LivePulse } from "./primitives/LivePulse.jsx";
 import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
 import { agentDisplayName, hasRunError, taskDisplayKey, taskRecoveryLabel } from "../lib/display.js";
+import { hasFileEditChangesPayload, isMutationToolName, sourceToolIdForFileEditId, toolResultPayload } from "../lib/toolEventLinking.js";
 
 function formatAge(value) {
   if (!value) return "";
@@ -70,36 +71,96 @@ function mergePreviewText(current, next) {
   return `${left}${right}`;
 }
 
+function previewEventBlocks(event) {
+  if (!event) return [];
+  if (event.type === "sdk_event") return previewEventBlocks(event.event);
+  const content = event.message?.content || event.content;
+  if ((event.type === "assistant" || event.type === "message" || event.type === "user") && Array.isArray(content)) {
+    return content;
+  }
+  return [event];
+}
+
+function toolUseIdFromBlock(block) {
+  if (block?.type !== "tool_use") return null;
+  return block.tool_use_id || block.id || null;
+}
+
+function toolResultIdFromBlock(block) {
+  if (block?.type !== "tool_result") return null;
+  return block.tool_use_id || null;
+}
+
+function fileEditPayloadFromBlock(block) {
+  if (block?.type === "tool_use" && block.name === "file_edit") return block.input;
+  if (block?.type === "tool_result") return toolResultPayload(block);
+  return null;
+}
+
 export function commanderLivePreviewEvents(events = [], { limit = 2 } = {}) {
   const preview = [];
+  const sourceToolsById = new Map();
+  const collapsedSourceToolIds = new Set();
+  const pushPreview = (event, meta = {}) => preview.push({ event, ...meta });
+  const lastPreview = () => preview[preview.length - 1]?.event || null;
+
   for (const rawEvent of events || []) {
-    const event = normalizeToolTokenEvent(rawEvent);
-    if (!event) continue;
-    if (isThinkingPreviewEvent(event)) {
-      const text = previewThinkingText(event);
-      if (!text.trim()) continue;
-      const last = preview[preview.length - 1];
-      if (isThinkingPreviewEvent(last)) {
-        last.text = mergePreviewText(previewThinkingText(last), text);
-      } else {
-        preview.push({ ...event, type: "thinking", text });
+    for (const rawBlock of previewEventBlocks(rawEvent)) {
+      const rawToolResultId = toolResultIdFromBlock(rawBlock);
+      if (rawToolResultId && collapsedSourceToolIds.has(rawToolResultId)) continue;
+
+      let event = normalizeToolTokenEvent(rawBlock);
+      if (!event) continue;
+
+      const rawToolUseId = toolUseIdFromBlock(rawBlock);
+      if (rawToolUseId && isMutationToolName(event.name)) {
+        sourceToolsById.set(rawToolUseId, { name: event.name });
       }
-      continue;
-    }
-    if (isTextPreviewEvent(event)) {
-      const text = previewText(event);
-      if (!text.trim()) continue;
-      const last = preview[preview.length - 1];
-      if (isTextPreviewEvent(last)) {
-        last.text = mergePreviewText(previewText(last), text);
-      } else {
-        preview.push({ ...event, type: "text", text });
+
+      if (event.name === "file_edit") {
+        const fileEditId = rawToolUseId || rawToolResultId || event.tool_use_id || event.id;
+        if (fileEditId && rawToolResultId) {
+          for (let index = preview.length - 1; index >= 0; index -= 1) {
+            if (preview[index].toolUseId === fileEditId) preview.splice(index, 1);
+          }
+        }
+        const sourceToolId = sourceToolIdForFileEditId(fileEditId);
+        const sourceTool = sourceToolId ? sourceToolsById.get(sourceToolId) : null;
+        if (sourceTool && hasFileEditChangesPayload(fileEditPayloadFromBlock(rawBlock))) {
+          collapsedSourceToolIds.add(sourceToolId);
+          for (let index = preview.length - 1; index >= 0; index -= 1) {
+            if (preview[index].toolUseId === sourceToolId) preview.splice(index, 1);
+          }
+          event = { ...event, display_name: sourceTool.name };
+        }
       }
-      continue;
+
+      if (isThinkingPreviewEvent(event)) {
+        const text = previewThinkingText(event);
+        if (!text.trim()) continue;
+        const last = lastPreview();
+        if (isThinkingPreviewEvent(last)) {
+          last.text = mergePreviewText(previewThinkingText(last), text);
+        } else {
+          pushPreview({ ...event, type: "thinking", text }, { toolUseId: rawToolUseId || event.tool_use_id || event.id || null });
+        }
+        continue;
+      }
+      if (isTextPreviewEvent(event)) {
+        const text = previewText(event);
+        if (!text.trim()) continue;
+        const last = lastPreview();
+        if (isTextPreviewEvent(last)) {
+          last.text = mergePreviewText(previewText(last), text);
+        } else {
+          pushPreview({ ...event, type: "text", text }, { toolUseId: rawToolUseId || event.tool_use_id || event.id || null });
+        }
+        continue;
+      }
+      pushPreview(event, { toolUseId: rawToolUseId || event.tool_use_id || event.id || null });
     }
-    preview.push(event);
   }
-  return preview.slice(-limit);
+  return preview.slice(-limit).map((item) => item.event);
 }
 
 export function commanderRunningPreviewEvents(task, runProgressEvents = []) {

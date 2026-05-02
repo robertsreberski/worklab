@@ -3,6 +3,7 @@
 import { Icon } from "../Icon.jsx";
 import { normalizeCodexItemType } from "../../../../ai/streaming/codex-events.js";
 import { fileEditChangeLabel } from "../../lib/fileEditDisplay.js";
+import { fileEditDisplayName } from "../../lib/toolEventLinking.js";
 
 const STATUS_GLYPH = {
   running: "◐",
@@ -194,12 +195,13 @@ export function ToolToken({ event, compact = false }) {
     );
   }
   const name = event.name || event.tool || "tool";
+  const displayName = event.name === "file_edit" ? fileEditDisplayName(event) || name : name;
   const arg = event.arg || event.input_preview || event.argument || "";
   const detail = event.detail || "";
-  const fullLabel = `${name}${arg ? `(${arg})` : ""}${detail ? ` · ${detail}` : ""}`;
+  const fullLabel = `${displayName}${arg ? `(${arg})` : ""}${detail ? ` · ${detail}` : ""}`;
   return (
     <span class={cls} title={fullLabel}>
-      <span class="tool-token-name">{name}</span>
+      <span class="tool-token-name">{displayName}</span>
       {(arg || detail) && (
         <span class="tool-token-arg">
           {arg}

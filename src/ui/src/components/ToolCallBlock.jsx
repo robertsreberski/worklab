@@ -8,6 +8,7 @@ import { StructuredValue } from "./StructuredValue.jsx";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { fileEditChangeLabel, fileEditKindLabel, fileEditLineDelta, shortFilePath } from "../lib/fileEditDisplay.js";
 import { rawJsonText } from "../lib/structuredValue.js";
+import { fileEditDisplayName } from "../lib/toolEventLinking.js";
 
 function inputAsText(input) {
   if (input == null) return "";
@@ -182,11 +183,12 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
   const fileSummary = isFileEdit ? fileEditSummary(rawOutput ?? toolUse?.input) : "";
   const glyphName = showStructuredResult ? "check-circle" : isFileEdit ? "file-text" : "terminal";
   const structuredSummary = String(structuredValue?.summary || structuredValue?.final_text || "").trim();
+  const displayName = isFileEdit ? fileEditDisplayName(toolUse) || "file_edit" : toolUse?.name;
   const label = showStructuredResult
     ? `Worklab result${structuredSummary ? ` · ${structuredSummary}` : ""}`
     : isFileEdit && fileSummary
-      ? `file_edit · ${fileSummary}`
-      : toolUse?.name || "unknown";
+      ? `${displayName} · ${fileSummary}`
+      : displayName || "unknown";
 
   let statusIcon;
   let stateLabel;

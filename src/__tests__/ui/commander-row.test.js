@@ -103,4 +103,67 @@ describe("commander row live preview", () => {
       { type: "tool_use", name: "read", input: { file: "b.js" }, _event_seq: 3, arg: "{\"file\":\"b.js\"}" },
     ]);
   });
+
+  it("collapses linked Edit and file_edit events in compact previews", () => {
+    const preview = commanderLivePreviewEvents([
+      {
+        type: "assistant",
+        message: {
+          content: [{ type: "tool_use", id: "edit-1", name: "Edit", input: { file_path: "src/app.js" } }],
+        },
+      },
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "file_edit:edit-1",
+            name: "file_edit",
+            input: {
+              status: "in_progress",
+              changes: [{ path: "src/app.js", kind: "update" }],
+            },
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "file_edit:edit-1",
+            content: {
+              status: "completed",
+              changes: [{
+                path: "src/app.js",
+                kind: "update",
+                line_stats: { added_lines: 3, removed_lines: 1 },
+              }],
+            },
+            is_error: false,
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "edit-1",
+            content: "Successfully edited /workspace/src/app.js",
+          }],
+        },
+      },
+    ]);
+
+    expect(preview).toEqual([
+      {
+        type: "tool_use",
+        name: "file_edit",
+        display_name: "Edit",
+        arg: "update app.js (+3 -1)",
+        status: "done",
+      },
+    ]);
+  });
 });
