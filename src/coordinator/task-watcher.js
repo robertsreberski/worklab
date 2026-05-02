@@ -59,8 +59,10 @@ import {
 import {
   appendDelegationDoneCriteria,
   detectSubtaskCycles,
+  enforceProjectAgentAllowlist,
   looksLikePlanBody,
 } from "./watcher/delegation-handler.js";
+import { loadProjectAgentAllowlist } from "../core/projects.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
   buildFallbackResult,
@@ -379,6 +381,20 @@ export function createTaskWatcher({
       `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
        VALUES (?, ?, 'system', ?, ?)`,
     ).run(newCommentId(), taskId, body, Date.now());
+  }
+
+  // R9: append a warning to the run's warnings_json. Used to surface non-
+  // fatal events (e.g. delegation outside the project allowlist permitted
+  // by the override flag) without changing run status.
+  function appendRunWarning(runId, warning) {
+    const row = db
+      .prepare("SELECT warnings_json FROM task_runs WHERE id = ?")
+      .get(runId);
+    if (!row) return;
+    const warnings = safeParseJson(row.warnings_json, []);
+    warnings.push(warning);
+    db.prepare("UPDATE task_runs SET warnings_json = ? WHERE id = ?")
+      .run(JSON.stringify(warnings), runId);
   }
 
   function loadResumeSnapshot(runId) {
@@ -780,7 +796,32 @@ export function createTaskWatcher({
       }
     }
 
-    return { ok: true, settings, subtasks: items };
+    // R9: per-project agent allowlist enforcement. Loaded only when the
+    // task is bound to a project — tasks without a project_id fall through
+    // to "no project scope" (back-compat). An empty allowlist also falls
+    // through inside enforceProjectAgentAllowlist.
+    const projectAllowlist = parentTask.project_id
+      ? loadProjectAgentAllowlist(db, parentTask.project_id)
+      : null;
+    const allowlistResult = enforceProjectAgentAllowlist({
+      subtasks: items,
+      parentOwnerAgent: parentTask.owner_agent,
+      projectAllowlist,
+    });
+    if (!allowlistResult.ok) {
+      return {
+        ok: false,
+        error: allowlistResult.error,
+        failureKind: allowlistResult.failureKind,
+      };
+    }
+
+    return {
+      ok: true,
+      settings,
+      subtasks: items,
+      warnings: Array.isArray(allowlistResult.warnings) ? allowlistResult.warnings : [],
+    };
   }
 
   function createDelegatedSubtasks(parentTask, runId, subtasks) {
@@ -964,15 +1005,31 @@ export function createTaskWatcher({
     if (result.decision === "delegate") {
       const validation = validateDelegationRequest(task, result.subtasks);
       if (!validation.ok) {
+        // R9: surface delegation_agent_not_allowed as its own failure_kind
+        // instead of folding it into invalid_result, so the audit trail
+        // distinguishes a planner naming an out-of-fleet agent from a
+        // schema/policy mismatch.
+        const failureKind = validation.failureKind || "invalid_result";
+        const errorPrefix = failureKind === "delegation_agent_not_allowed"
+          ? "delegation rejected"
+          : "invalid delegation";
         handleFailedExit(taskId, runId, {
           ...res,
-          error: `invalid delegation: ${validation.error}`,
+          error: `${errorPrefix}: ${validation.error}`,
           processStatus: "failed",
-          failureKind: "invalid_result",
+          failureKind,
         }, task, run);
         return;
       }
       result.subtasks = validation.subtasks;
+      // R9: when delegation_allow_unlisted is on the project, surface a
+      // soft warning + system comment but proceed with the round.
+      if (Array.isArray(validation.warnings)) {
+        for (const warning of validation.warnings) {
+          appendRunWarning(runId, warning);
+          postSystemComment(taskId, warning.message);
+        }
+      }
     }
 
     updateRunResult(runId, result);

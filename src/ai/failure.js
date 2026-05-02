@@ -15,6 +15,9 @@ export const FAILURE_KINDS = [
   "cancelled_shutdown",
   "cancelled_signal",
   "abandoned",
+  // R9: planner delegated to an agent outside the project's allowed_agents
+  // allowlist and the project did not enable delegation.allow_unlisted.
+  "delegation_agent_not_allowed",
 ];
 
 const USAGE_LIMIT_RE = /(rate limit|usage limit|max tokens|max turns|context length|too many tokens)/i;
@@ -98,6 +101,10 @@ export function classifyFailure({
     if (cancelInitiator === "stale_reconcile") return "cancelled_stale";
     if (cancelInitiator === "worker_signal") return "cancelled_signal";
     if (cancelInitiator === "user" || cancelInitiator === "api_cancel") return "cancelled_user";
+    // A3: an in-flight run cancelled by the per-agent budget aggregator.
+    // Reuses the existing budget_exceeded kind (already in FAILURE_KINDS)
+    // so dashboards / reports don't have to learn a new label.
+    if (cancelInitiator === "budget") return "budget_exceeded";
     return "cancelled";
   }
   if (exitCode === 130 || signal === "SIGTERM" || signal === "SIGINT") return "cancelled_signal";
