@@ -196,6 +196,8 @@ export function spawnWorker({
       { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 },
       { limit: RAW_RESULT_STORAGE_LIMIT },
     );
+    const eventCostUsd = costUsdFromPayload(rawEvent);
+    if (eventCostUsd !== null) budgetState.streamedCostUsd = eventCostUsd;
     rawEvents.push(rawEvent);
     const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
@@ -915,4 +917,13 @@ function numberOrNull(value) {
   if (value === null || value === undefined) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
+}
+
+function costUsdFromPayload(value) {
+  return numberOrNull(
+    value?.cost_usd
+      ?? value?.costUsd
+      ?? value?.usage?.cost_usd
+      ?? value?.usage?.costUsd,
+  );
 }
