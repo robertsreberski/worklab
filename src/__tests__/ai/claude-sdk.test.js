@@ -204,13 +204,14 @@ describe("generateClaudeResponse", () => {
         session_id: "claude-session-structured",
       },
     ]));
+    const events = [];
 
     const r = await generateClaudeResponse("sys", {
       messages: [{ role: "user", content: "hi" }],
       model: { sdk: "claude", model: "claude-sonnet-4-6" },
       effort: "medium",
       outputSchema: schema,
-      onEvent: () => {},
+      onEvent: (event) => events.push(event),
     });
 
     expect(mockQuery.mock.calls[0][0].options.outputFormat).toEqual({
@@ -221,6 +222,12 @@ describe("generateClaudeResponse", () => {
     expect(r.structuredResultSource).toBe("structured_output");
     expect(r.text).toBe("Implemented successfully.");
     expect(r.providerSessionId).toBe("claude-session-structured");
+    expect(events).toContainEqual({
+      type: "structured_output",
+      source: "claude_sdk_output_format",
+      value: structured,
+      worklab_result: structured,
+    });
   });
 
   it("uses a prior provider session to resume Claude and returns the current session id", async () => {
