@@ -214,6 +214,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let piErrorPayload = null;
   let toolResultsSeen = 0;
   let lastToolName = null;
+  const providerSessionId = options.sessionId
+    || process.env.WORKLAB_PROVIDER_SESSION_ID
+    || options.runId
+    || process.env.WORKLAB_RUN_ID
+    || randomUUID();
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
 
@@ -290,11 +295,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       streamFn: options.streamFn,
       transformContext: compaction.transformContext,
       afterToolCall: compaction.afterToolCall,
-      sessionId: options.sessionId
-        || process.env.WORKLAB_PROVIDER_SESSION_ID
-        || options.runId
-        || process.env.WORKLAB_RUN_ID
-        || randomUUID(),
+      sessionId: providerSessionId,
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
       toolExecution: "sequential",
@@ -399,8 +400,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           cancelled: true,
           error: null,
           failureKind: null,
+          providerSessionId,
           runtimeWarnings,
           diagnostics: {
+            provider_session_id: providerSessionId,
             pi_stop_reason: "aborted",
             max_turns_hit: false,
             max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
@@ -489,8 +492,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       tool_results_seen: toolResultsSeen,
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
       max_turns_hit: maxTurnsHit,
+      provider_session_id: providerSessionId,
     } : null;
     const diagnostics = {
+      provider_session_id: providerSessionId,
       pi_stop_reason: stopReason,
       max_turns_hit: maxTurnsHit,
       max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
@@ -524,6 +529,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       error: errorMessage,
       errorDetails,
       failureKind: failureKindForPiError(errorMessage, diagnostics, { maxTurnsHit }),
+      providerSessionId,
       runtimeWarnings,
       diagnostics,
       ...(worklabResult ? { worklabResult, structuredResultSource: structuredResult ? "StructuredOutput" : "message" } : {}),
@@ -546,6 +552,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       tool_results_seen: toolResultsSeen,
       turn_count: turnCount,
       max_turns_hit: maxTurnsHit,
+      provider_session_id: providerSessionId,
     } : null;
     return {
       text: assistantTexts.join("") || null,
@@ -562,8 +569,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       failureKind: externalAbort ? null : failureKindForPiError(errorMessage, {
         ...(compaction?.diagnostics?.() || {}),
       }, { maxTurnsHit }),
+      providerSessionId,
       runtimeWarnings,
       diagnostics: {
+        provider_session_id: providerSessionId,
         pi_stop_reason: externalAbort ? "aborted" : "error",
         max_turns_hit: maxTurnsHit,
         max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,

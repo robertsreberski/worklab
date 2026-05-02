@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -55,12 +55,14 @@ function hookMatches(matcher, toolName) {
 async function runSdkHooks(options, eventName, input, toolUseID) {
   const groups = options?.hooks?.[eventName] || [];
   const signal = new AbortController().signal;
+  const outputs = [];
   for (const group of groups) {
     if (!hookMatches(group.matcher, input.tool_name)) continue;
     for (const hook of group.hooks || []) {
-      await hook(input, toolUseID, { signal });
+      outputs.push(await hook(input, toolUseID, { signal }));
     }
   }
+  return outputs;
 }
 
 function hookInput(eventName, dir, toolName, toolInput, extra = {}) {
@@ -87,7 +89,11 @@ function mockQueryWithHookedStream(run, events = [{ type: "result", usage: {}, d
 }
 
 describe("generateClaudeResponse", () => {
-  beforeEach(() => mockQuery.mockReset());
+  beforeEach(() => {
+    mockQuery.mockReset();
+    delete process.env.WORKLAB_PROVIDER_SESSION_ID;
+    delete process.env.WORKLAB_QA_OUTPUT_DIR;
+  });
 
   it("streams events to onEvent, collects final text", async () => {
     mockQuery.mockReturnValue(mockStream([
@@ -167,6 +173,109 @@ describe("generateClaudeResponse", () => {
     expect(r.text).not.toContain('"schema"');
   });
 
+  it("passes structured output schemas through Claude outputFormat and reads structured_output", async () => {
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done.",
+      details: "Implemented.",
+      final_text: "Implemented successfully.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      parent_review_policy: "default",
+    };
+    const schema = {
+      type: "object",
+      properties: { schema: { type: "string", const: "worklab.v2" } },
+      required: ["schema"],
+    };
+    mockQuery.mockReturnValue(mockStream([
+      {
+        type: "result",
+        subtype: "success",
+        structured_output: structured,
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 1,
+        session_id: "claude-session-structured",
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      outputSchema: schema,
+      onEvent: () => {},
+    });
+
+    expect(mockQuery.mock.calls[0][0].options.outputFormat).toEqual({
+      type: "json_schema",
+      schema,
+    });
+    expect(r.worklabResult).toMatchObject(structured);
+    expect(r.structuredResultSource).toBe("structured_output");
+    expect(r.text).toBe("Implemented successfully.");
+    expect(r.providerSessionId).toBe("claude-session-structured");
+  });
+
+  it("uses a prior provider session to resume Claude and returns the current session id", async () => {
+    process.env.WORKLAB_PROVIDER_SESSION_ID = "claude-session-prev";
+    mockQuery.mockReturnValue(mockStream([
+      {
+        type: "result",
+        subtype: "success",
+        result: "resumed",
+        usage: {},
+        duration_ms: 1,
+        num_turns: 1,
+        session_id: "claude-session-prev",
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "continue" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+
+    expect(mockQuery.mock.calls[0][0].options.resume).toBe("claude-session-prev");
+    expect(r.providerSessionId).toBe("claude-session-prev");
+  });
+
+  it("captures fresh Claude session ids from stream events", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      {
+        type: "assistant",
+        session_id: "claude-session-new",
+        message: { content: [{ type: "text", text: "hello" }] },
+      },
+      {
+        type: "result",
+        subtype: "success",
+        usage: {},
+        duration_ms: 1,
+        num_turns: 1,
+        session_id: "claude-session-new",
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "start" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      onEvent: () => {},
+    });
+
+    expect(mockQuery.mock.calls[0][0].options).not.toHaveProperty("resume");
+    expect(r.providerSessionId).toBe("claude-session-new");
+  });
+
   it("does not pass maxTurns by default", async () => {
     mockQuery.mockReturnValue(mockStream([{ type: "result", usage: {}, duration_ms: 0, num_turns: 0 }]));
     await generateClaudeResponse("sys", {
@@ -181,7 +290,11 @@ describe("generateClaudeResponse", () => {
 
   it("treats max-turn result subtypes as provider errors", async () => {
     mockQuery.mockReturnValue(mockStream([
-      { type: "assistant", message: { content: [{ type: "text", text: "Working..." }] } },
+      {
+        type: "assistant",
+        session_id: "claude-session-max-turns",
+        message: { content: [{ type: "text", text: "Working..." }] },
+      },
       {
         type: "result",
         subtype: "error_max_turns",
@@ -189,6 +302,7 @@ describe("generateClaudeResponse", () => {
         usage: { input_tokens: 10, output_tokens: 5 },
         duration_ms: 100,
         num_turns: 30,
+        session_id: "claude-session-max-turns",
       },
     ]));
     const r = await generateClaudeResponse("sys", {
@@ -200,6 +314,16 @@ describe("generateClaudeResponse", () => {
     expect(r.error).toBe("Claude stopped before final output: max turns reached");
     expect(r.failureKind).toBe("usage_limit");
     expect(r.text).toBe("Working...");
+    expect(r.providerSessionId).toBe("claude-session-max-turns");
+    expect(r.errorDetails).toMatchObject({
+      claude_error_subtype: "error_max_turns",
+      max_turns_hit: true,
+      had_partial_progress: true,
+      tool_results_seen: 0,
+      turn_count: 30,
+      provider_session_id: "claude-session-max-turns",
+    });
+    expect(r.errorDetails.last_text_excerpt).toBe("Working...");
   });
 
   it("treats errored result events as provider errors", async () => {
@@ -478,6 +602,79 @@ describe("generateClaudeResponse", () => {
           changes: [{ path: filePath, kind: "update" }],
         },
       });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes Playwright MCP artifact filenames into the run artifact directory", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-mcp-file-"));
+    const runDir = join(dir, "artifacts");
+    process.env.WORKLAB_QA_OUTPUT_DIR = runDir;
+    mockQueryWithHookedStream(async (options) => {
+      const outputs = await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "mcp__playwright__browser_take_screenshot", {
+        filename: "screens/home.png",
+      }), "toolu_shot");
+      expect(outputs).toContainEqual({
+        continue: true,
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          updatedInput: {
+            filename: join(runDir, "screens", "home.png"),
+          },
+        },
+      });
+    });
+
+    try {
+      await generateClaudeResponse("sys", {
+        messages: [{ role: "user", content: "take screenshot" }],
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        effort: "medium",
+        cwd: dir,
+        onEvent: () => {},
+      });
+
+      expect(existsSync(join(runDir, "screens"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("truncates oversized Claude MCP tool outputs and persists the full payload", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-claude-mcp-bloat-"));
+    const runDir = join(dir, "artifacts");
+    const events = [];
+    mockQueryWithHookedStream(async (options) => {
+      const outputs = await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "mcp__playwright__browser_take_screenshot", {}, {
+        tool_response: {
+          content: [{ type: "text", text: "x".repeat(2048) }],
+        },
+      }), "toolu_payload");
+      const output = outputs.find((entry) => entry?.hookSpecificOutput?.hookEventName === "PostToolUse");
+      expect(output.hookSpecificOutput.updatedMCPToolOutput.content[0].text).toContain("truncated tool_result");
+      expect(output.hookSpecificOutput.updatedMCPToolOutput.content[0].text).toContain("saved_to=");
+      expect(existsSync(join(runDir, "tool-output"))).toBe(true);
+    });
+
+    try {
+      await generateClaudeResponse("sys", {
+        messages: [{ role: "user", content: "take screenshot" }],
+        model: { sdk: "claude", model: "claude-sonnet-4-6" },
+        effort: "medium",
+        cwd: dir,
+        runArtifactDir: runDir,
+        toolPayloadMaxBytes: 64,
+        onEvent: (event) => events.push(event),
+      });
+
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "runtime_warning",
+        warning_kind: "tool_payload_truncated",
+        source: "tool_bloat_guard",
+        tool: "mcp__playwright__browser_take_screenshot",
+        tool_use_id: "toolu_payload",
+      }));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
