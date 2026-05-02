@@ -475,6 +475,11 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
+  // R9: per-project agent allowlist. Empty array means "any agent" (back-compat
+  // default). The companion `delegation_allow_unlisted` flag downgrades a
+  // delegation outside the allowlist from a hard fail to a warning.
+  addColumnIfMissing(db, "projects", "allowed_agents_json", "allowed_agents_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "projects", "delegation_allow_unlisted", "delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");

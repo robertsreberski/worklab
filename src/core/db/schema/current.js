@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 26;
+export const SCHEMA_VERSION = 27;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS projects (
   context_markdown TEXT NOT NULL DEFAULT '',
   workdir TEXT,
   tags_json TEXT NOT NULL DEFAULT '[]',
+  allowed_agents_json TEXT NOT NULL DEFAULT '[]',
+  delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
