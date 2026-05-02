@@ -94,4 +94,20 @@ describe("task runner result parsing", () => {
       details: "Plain final answer.",
     });
   });
+
+  it("returns provider session ids from generated task results", async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: "Plain final answer.",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "codex:gpt-5.5",
+      effort: "medium",
+      providerSessionId: "provider-session-1",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.providerSessionId).toBe("provider-session-1");
+  });
 });

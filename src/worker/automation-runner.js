@@ -66,9 +66,15 @@ export async function runAutomation(ctx) {
       abortSignal: ac.signal,
       onEvent: sdkEvents.emit,
     });
-    if (result.cancelled) return { kind: "automation", cancelled: true };
+    if (result.cancelled) return { kind: "automation", cancelled: true, providerSessionId: result.providerSessionId || null };
     if (result.error) {
-      return { kind: "automation", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
+      return {
+        kind: "automation",
+        error: result.error,
+        failureKind: result.failureKind,
+        errorDetails: result.errorDetails || null,
+        providerSessionId: result.providerSessionId || null,
+      };
     }
     return {
       kind: "automation",
@@ -78,6 +84,7 @@ export async function runAutomation(ctx) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      providerSessionId: result.providerSessionId || null,
       runtimeWarnings: result.runtimeWarnings,
     };
   } catch (err) {

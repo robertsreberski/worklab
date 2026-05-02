@@ -4,6 +4,7 @@ import {
   resolveModel,
 } from "../core/index.js";
 import {
+  WORKLAB_RESULT_JSON_SCHEMA,
   normalizeWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
@@ -79,13 +80,21 @@ export async function runTask(ctx) {
       disallowedTools,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
+      outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
+      runArtifactDir: input.qaOutputDir,
       abortSignal: ac.signal,
       liveInput,
       onEvent: sdkEvents.emit,
     });
-    if (result.cancelled) return { kind: "task", cancelled: true };
+    if (result.cancelled) return { kind: "task", cancelled: true, providerSessionId: result.providerSessionId || null };
     if (result.error) {
-      return { kind: "task", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
+      return {
+        kind: "task",
+        error: result.error,
+        failureKind: result.failureKind,
+        errorDetails: result.errorDetails || null,
+        providerSessionId: result.providerSessionId || null,
+      };
     }
     const parsedResult = resultFromResponseOrFallback(result, {
       stage: task.stage || mode,
@@ -100,6 +109,7 @@ export async function runTask(ctx) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      providerSessionId: result.providerSessionId || null,
       runtimeWarnings: result.runtimeWarnings,
       worklabResult: parsedResult.result,
       parsedResultError: parsedResult.error || null,
