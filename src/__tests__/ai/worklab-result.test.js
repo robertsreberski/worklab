@@ -99,6 +99,20 @@ describe("worklab_result contract", () => {
     expect(normalizeWorklabResult({ schema: "worklab.v2", decision: "maybe", summary: "x" }).ok).toBe(false);
   });
 
+  it("keeps unknown parent review policies for watcher fallback", () => {
+    const parsed = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "delegate",
+      summary: "split",
+      parent_review_policy: "future_policy",
+      subtasks: [{ title: "child", instructions: "do it" }],
+    });
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.parent_review_policy).toBe("future_policy");
+  });
+
   it("parses direct JSON and fenced JSON", () => {
     const direct = parseWorklabResultFromText(JSON.stringify({ schema: "worklab.v2", decision: "advance", summary: "ok" }));
     expect(direct.ok).toBe(true);
@@ -342,6 +356,9 @@ describe("worklab_result contract", () => {
       expect(objectSchema.additionalProperties).toBe(false);
     }
     expect(WORKLAB_RESULT_JSON_SCHEMA.required).toEqual(Object.keys(WORKLAB_RESULT_JSON_SCHEMA.properties));
+    expect(WORKLAB_RESULT_JSON_SCHEMA.properties.parent_review_policy).toMatchObject({
+      type: ["string", "null"],
+    });
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.schema).toEqual({
       type: "string",
       enum: ["worklab.v2"],
