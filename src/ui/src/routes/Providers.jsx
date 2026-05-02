@@ -26,6 +26,7 @@ import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama" },
@@ -204,6 +205,19 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     () => (baseline ? JSON.stringify(provider) !== JSON.stringify(baseline) : true),
     [baseline, provider],
   );
+  useAppResume(() => {
+    if (isNew) return;
+    loadModels(providerId).catch(() => setModels([]));
+    testProviderConnection(providerId);
+    if (isDirty) return;
+    api.getProvider(providerId)
+      .then((response) => {
+        const next = { ...response.provider, api_key: "" };
+        setProvider(next);
+        setBaseline(next);
+      })
+      .catch(() => setProvider({ notFound: true }));
+  });
 
   const formSave = useFormSave(async () => {
     const payload = {
@@ -589,6 +603,7 @@ export function Providers({ selectedId = null }) {
   useSSE("global", (event) => {
     if (event.type?.startsWith("provider_")) reloadSoon();
   });
+  useAppResume(reloadSoon);
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();

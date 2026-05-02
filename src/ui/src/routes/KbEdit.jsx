@@ -25,6 +25,7 @@ import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 const KB_EDIT_SECTIONS = [
   { id: "kb-edit-details", num: "01", label: "Details", meta: "Metadata" },
@@ -89,6 +90,19 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     }
   });
   const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
+  useAppResume(() => {
+    if (isNew) return;
+    if (!isDirty) {
+      api.getKb(slug)
+        .then((r) => {
+          const next = normalizeKbFormEntry(r.entry);
+          setEntry(next);
+          setBaseline(next);
+        })
+        .catch(() => setEntry({ notFound: true }));
+    }
+    api.kbUsage(slug).then((r) => setUsage(r)).catch(() => {});
+  });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save({ navigateOnSuccess: false }) });
   const cancel = () => guard.requestNavigation(isNew ? "#/knowledge" : `#/knowledge/${slug}`);
 

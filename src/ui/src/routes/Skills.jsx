@@ -15,6 +15,7 @@ import { skillDisplayName } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { pushToast } from "../lib/toast.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 function isZipFile(file) {
   return /\.zip$/i.test(file?.name || "") || /zip/i.test(file?.type || "");
@@ -69,6 +70,7 @@ export function Skills({ selectedName = null }) {
   }, [reload]);
 
   useEffect(() => { reload(); }, [reload]);
+  useAppResume(reload);
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();

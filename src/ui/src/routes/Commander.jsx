@@ -7,7 +7,7 @@ import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
-import { onPageVisible, pageIsVisible } from "../lib/pageVisibility.js";
+import { pageIsVisible, useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -488,16 +488,12 @@ export function Commander({ query: routeQuery = {} }) {
       .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
   }, []);
   const reloadProjectsSoon = useThrottledCallback(reloadProjects, 100);
-  const flushHiddenReloads = useCallback(() => {
+  const refreshOnResume = useCallback(() => {
     if (!pageIsVisible()) return;
-    if (hiddenTaskReloadRef.current) {
-      hiddenTaskReloadRef.current = false;
-      reloadSoon();
-    }
-    if (hiddenProjectsReloadRef.current) {
-      hiddenProjectsReloadRef.current = false;
-      reloadProjectsSoon();
-    }
+    hiddenTaskReloadRef.current = false;
+    hiddenProjectsReloadRef.current = false;
+    reloadSoon();
+    reloadProjectsSoon();
   }, [reloadProjectsSoon, reloadSoon]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -515,7 +511,7 @@ export function Commander({ query: routeQuery = {} }) {
       else clearTimeout(runProgressFrameRef.current);
     }
   }, []);
-  useEffect(() => onPageVisible(flushHiddenReloads), [flushHiddenReloads]);
+  useAppResume(refreshOnResume);
   useSSE("global", (evt) => {
     const visible = pageIsVisible();
     if (evt.type === "run_progress" && evt.runId && evt.lastEvent) {

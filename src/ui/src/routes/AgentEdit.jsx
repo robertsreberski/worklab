@@ -30,6 +30,7 @@ import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
@@ -343,17 +344,21 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     }
   }, [isNew, name]);
 
-  useEffect(() => {
+  const loadCapabilityOptions = useCallback(() => {
     api.listSkills().then(r => setSkills(r.skills)).catch(() => setSkills([]));
     api.getMcpStatus().then(r => setMcpServers(r.servers || [])).catch(() => setMcpServers([]));
     api.listAvailableModels().then(r => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
+  }, []);
+
+  useEffect(() => {
+    loadCapabilityOptions();
     if (!isNew) {
       api.getAgent(name).then(r => { setAgent(r.agent); setBaseline(r.agent); }).catch(() => setAgent({ notFound: true }));
     } else {
       setAgent(emptyAgent);
       setBaseline(emptyAgent);
     }
-  }, [name, isNew]);
+  }, [loadCapabilityOptions, name, isNew]);
 
   useEffect(() => { loadMemory(); }, [loadMemory]);
 
@@ -396,6 +401,17 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     }
   });
   const isDirty = useMemo(() => baseline ? JSON.stringify(agent) !== JSON.stringify(baseline) : true, [agent, baseline]);
+  useAppResume(() => {
+    loadCapabilityOptions();
+    loadMemory();
+    if (isNew || isDirty) return;
+    api.getAgent(name)
+      .then((r) => {
+        setAgent(r.agent);
+        setBaseline(r.agent);
+      })
+      .catch(() => setAgent({ notFound: true }));
+  });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
   const cancel = useCallback(() => {
     guard.requestNavigation("#/agents");

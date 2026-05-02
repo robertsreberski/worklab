@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
@@ -167,6 +168,7 @@ export function Activity() {
   useSSE("global", (evt) => {
     if (evt.type === "run_started" || evt.type === "run_ended" || evt.type === "agent_consolidated") loadSoon();
   });
+  useAppResume(loadSoon);
 
   const stats = useMemo(() => {
     const runs = Number(summary?.run_count || 0);
