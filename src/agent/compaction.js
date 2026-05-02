@@ -14,6 +14,7 @@ const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 20000;
 const DEFAULT_MCP_TEXT_LIMIT_CHARS = 12000;
 const DEFAULT_SEARCH_RESULT_LIMIT = 100;
 const DEFAULT_IMAGE_INLINE_MAX_BYTES = 250000;
+const DEFAULT_TOOL_PAYLOAD_MAX_BYTES = 262144;
 const DEFAULT_MCP_CALL_TIMEOUT_MS = 120000;
 
 function clampNumber(value, fallback, min, max) {
@@ -120,6 +121,7 @@ export function resolveAgentCompactionPolicy(settings = {}, model = {}) {
     mcpTextLimitChars: clampInteger(settings.agent_mcp_text_limit_chars, DEFAULT_MCP_TEXT_LIMIT_CHARS, 1000, 200000),
     searchResultLimit: clampInteger(settings.agent_search_result_limit, DEFAULT_SEARCH_RESULT_LIMIT, 10, 1000),
     imageInlineMaxBytes: clampInteger(settings.agent_image_inline_max_bytes, DEFAULT_IMAGE_INLINE_MAX_BYTES, 0, 10 * 1024 * 1024),
+    toolPayloadMaxBytes: clampInteger(settings.agent_tool_payload_max_bytes, DEFAULT_TOOL_PAYLOAD_MAX_BYTES, 0, 16 * 1024 * 1024),
     mcpCallTimeoutMs: clampInteger(settings.agent_mcp_call_timeout_ms, DEFAULT_MCP_CALL_TIMEOUT_MS, 1000, Number.MAX_SAFE_INTEGER),
   };
 }
