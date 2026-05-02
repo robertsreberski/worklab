@@ -710,4 +710,74 @@ describe("spawnWorker", () => {
     expect(run.execenv_path).toBe("/tmp/execenv-42");
     expect(run.cost_usd).toBeCloseTo(0.0001);
   });
+
+  it("emits a soft budget warning from final usage cost", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "final", text: "ok", usage: { input_tokens: 1, output_tokens: 1, cost_usd: 0.05 } },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+      agentBudget: {
+        soft: { cost_usd: 0.01, duration_ms: 999_999, num_turns: 999 },
+        hard: { cost_usd: 1, duration_ms: 999_999, num_turns: 999 },
+      },
+    });
+
+    const result = await handle.done;
+    expect(result.processStatus).toBe("succeeded");
+    expect(result.warnings).toContainEqual(expect.objectContaining({ kind: "budget_soft" }));
+    const run = db.prepare("SELECT process_status, failure_kind, warnings_json, cost_usd FROM task_runs WHERE id = ?").get(runId);
+    expect(run.process_status).toBe("succeeded");
+    expect(run.failure_kind).toBeNull();
+    expect(run.cost_usd).toBeCloseTo(0.05);
+    expect(JSON.parse(run.warnings_json)).toContainEqual(expect.objectContaining({ kind: "budget_soft" }));
+  });
+
+  it("cancels a cleanly exiting run when final usage cost crosses the hard budget", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "final", text: "ok", usage: { input_tokens: 1, output_tokens: 1, cost_usd: 2 } },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+      runIdleWarningMs: 0,
+      agentBudget: {
+        soft: { cost_usd: 0.5, duration_ms: 999_999, num_turns: 999 },
+        hard: { cost_usd: 1, duration_ms: 999_999, num_turns: 999 },
+      },
+    });
+
+    const result = await handle.done;
+    expect(result.processStatus).toBe("cancelled");
+    expect(result.failureKind).toBe("budget_exceeded");
+    expect(result.cancelInitiator).toBe("budget");
+    expect(result.warnings).toContainEqual(expect.objectContaining({ kind: "budget_exceeded" }));
+    const run = db.prepare("SELECT process_status, failure_kind, cancel_initiator, warnings_json, diagnostics_json, cost_usd FROM task_runs WHERE id = ?").get(runId);
+    expect(run).toMatchObject({
+      process_status: "cancelled",
+      failure_kind: "budget_exceeded",
+      cancel_initiator: "budget",
+    });
+    expect(run.cost_usd).toBeCloseTo(2);
+    expect(JSON.parse(run.warnings_json)).toContainEqual(expect.objectContaining({ kind: "budget_exceeded" }));
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({ failure_kind: "budget_exceeded", cancel_initiator: "budget" });
+  });
 });
