@@ -1,7 +1,7 @@
 # Worklab Runtime Audit — `automattic-benchmark-reset` Project
 
 > **Status:** draft, 2026-05-02
-> **Implementation status:** see `automattic-benchmark-reset-implementation-plan.md` § Status by recommendation. R1, R2, R3, R4, R7, R8, R10, R11, R12, A1, A2, A4 landed on branch `runtime-audit-implementation`. R5 is partial (failure-kind split + configurable drain timeout; drained-resume protocol deferred). R6, R9, A3 deferred with `TODO(audit-followup)` markers.
+> **Implementation status:** see `automattic-benchmark-reset-implementation-plan.md` § Status by recommendation. All R1–R12 and A1–A4 recommendations landed on branch `runtime-audit-implementation`. R5 was finished in two halves: the `cancelled_shutdown` failure-kind split + configurable drain timeout shipped with the rest of Phase 4, and the graceful drained-resume protocol — `worklab_drain` IPC, transcript-tail snapshot tagged `resume_kind: "drained"`, boot-time `coordinator_resume` continuation — landed in commits `6108812`, `82c936a`, and `f709985`.
 > **Author:** Claude (Opus 4.7) running an end-to-end audit of every run in the project
 > **Scope:** every task and every run on project `CRoBAXtjQxo0` (`automattic-benchmark-reset`), May 1–2 2026
 > **Source data:** `~/.worklab/worklab.db` snapshot taken on 2026-05-02 at audit time
@@ -57,6 +57,11 @@ implementation pass. Configuration keys without docs elsewhere live here.
 
 - `finalisation` (R2) — single-shot continuation when the agent finished
   the work but dropped before emitting the worklab.v2 envelope.
+- `coordinator_resume` (R5) — fresh continuation scheduled at the next
+  coordinator boot when the previous coordinator drained the worker
+  cleanly on shutdown. The continuation receives the parent run's
+  transcript-tail snapshot via `diagnosticsSeed.resume_snapshot` so the
+  agent can pick up rather than restart.
 
 ### New API request shape
 

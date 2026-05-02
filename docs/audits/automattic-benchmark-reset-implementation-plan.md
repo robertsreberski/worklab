@@ -415,7 +415,8 @@ These are explicitly *out of scope* for this branch even though the audit mentio
 | 2 | R3a | `226ae72` | `parseWorklabResultLenient` + worker fallback + `result_recovered_via_lenient` runtime warning surfaced as `diagnostics.result_recovered_via`. |
 | 2 | R3b + A1 | `e7998a9` | `schema_correction` continuations capped at 2. REVIEW_DIRECTIVE JSON-only output contract. |
 | 3 | R2 + R8 | `be25e09` | `terminated_after_completion` subkind detected from `error_details.last_tool_name === "journal_summary"`; `finalisation` recovery reason with single-attempt cap and "do NOT redo the work" prompt. R8 implicit in `continuationLineage` walking `continuation_of_run_id` only. |
-| 4 | R5 | `1a0eb78` | `cancelled_shutdown` failure kind split from `cancelled_stale`. Configurable `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s). Drained-resume protocol deferred. |
+| 4 | R5 (classify) | `1a0eb78` | `cancelled_shutdown` failure kind split from `cancelled_stale`. Configurable `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s). Drained-resume protocol deferred to follow-up commits below. |
+| 4 | R5 (drain) | `6108812`, `82c936a`, `f709985` (CLI flag + tests landed under parallel R9 UI commit due to staging race) | Graceful drain protocol over the existing IPC pipe: coordinator sends `worklab_drain` on shutdown, worker aborts the AbortController, emits a `drained` event, and exits 0. spawn-worker persists a transcript-tail snapshot tagged `resume_kind: "drained"` via `setRunTranscriptTail` and tags diagnostics with `drained: bool` + optional `drain_timeout: true`. New `findDrainedResumeCandidates` boot-scan in `stale-runs.js` plus `scheduleCoordinatorResumeContinuations` in `task-watcher.js` reschedules a fresh run with `continuation_reason: "coordinator_resume"` and the saved snapshot threaded through `diagnosticsSeed.resume_snapshot`. CLI `--drain-timeout-ms` flag plumbed via `WORKLAB_DRAIN_TIMEOUT_MS`. Coverage: `src/__tests__/coordinator/shutdown-drain.test.js`, `shutdown-drain-timeout.test.js`, `coordinator-resume.test.js`, `src/__tests__/cli/restart-flag.test.js`. |
 | 5 | R4 + R11 + R12 | `49265f6` | SCHEMA_VERSION 25. Lifetime counters + backfill. `parent_relationship` column + backfill. pi-sdk session_id reuse via `WORKLAB_PROVIDER_SESSION_ID`. `getTaskHealth` exposed as `task.health` on the task detail endpoint. |
 | 6 | R7 | `0766282` | `agent_review_idle_threshold_ms` (default 240 s) for review-mode runs. `last_tool_name` in idle-warning payload. R6 deferred via `TODO(audit-followup)`. |
 | 7 | R10 | `3a707b2` | `reason_kind` enum on `/api/tasks/:id/cancel` (wrong_direction / agent_stuck / context_bloat / scope_change / other). `reason_note` free-text. R9 deferred via `TODO(audit-followup)`. |
@@ -432,7 +433,7 @@ These are explicitly *out of scope* for this branch even though the audit mentio
 | R2 | Done | `be25e09` |
 | R3 | Done | `226ae72`, `e7998a9` |
 | R4 | Done | `49265f6` |
-| R5 | Partial — drained-resume protocol deferred | `1a0eb78` |
+| R5 | Done | `1a0eb78`, `6108812`, `82c936a`, `f709985` |
 | R6 | Done | `2178902`, `e1cc9f6`, `3010e41`, `65a7fee`, `7cff89a` |
 | R7 | Done | `0766282` |
 | R8 | Done (implicit) | `be25e09` |

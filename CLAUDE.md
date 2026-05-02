@@ -75,14 +75,14 @@ Branch `runtime-audit-implementation` carries the bulk of the recommendations fr
 
 - `src/agent/tool-bloat.js` caps any single tool_result aggregate at `agent_tool_payload_max_bytes` (default 256 KB) and persists the originals under `<runArtifactDir>/tool-output/`. The runtime warning kind for truncations is `tool_payload_truncated`; `task_runs.diagnostics_json` carries `tool_results_truncated` (count).
 - `src/ai/result/lenient-parse.js` (`parseWorklabResultLenient`) is the fallback parser the worker invokes before declaring `invalid_result`. When it recovers, `diagnostics.result_recovered_via = "lenient"`.
-- `cancelled_shutdown` is a distinct failure kind from `cancelled_stale` (R5). It does not count against failure budgets. The shutdown watchdog is configurable via `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s).
+- `cancelled_shutdown` is a distinct failure kind from `cancelled_stale` (R5). It does not count against failure budgets. The shutdown watchdog is configurable via `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) or the equivalent `worklab start/stop/restart --drain-timeout-ms` CLI flag. On shutdown the coordinator sends a `worklab_drain` message over the worker IPC pipe; the worker aborts its AbortController, emits a `drained` event, and exits cleanly. spawn-worker persists a transcript-tail snapshot tagged `resume_kind: "drained"` so the next coordinator boot can schedule a fresh continuation with `continuation_reason: "coordinator_resume"` instead of re-running the work.
 - `task_runs.parent_relationship` (`stage_progression | recovery_continuation | manual_retry`) disambiguates the overloaded `parent_run_id`.
 - `tasks.lifetime_*_count` columns are monotonic and survive `reset_failure_count`. `getTaskHealth(db, id)` returns them; the task detail endpoint exposes them as `task.health`.
-- Recovery continuations come in three flavours: `provider_retryable` (default), `schema_correction` (capped at 2), and `finalisation` (single shot when the parent ran `journal_summary` and then dropped — R2).
+- Recovery continuations come in four flavours: `provider_retryable` (default), `schema_correction` (capped at 2), `finalisation` (single shot when the parent ran `journal_summary` and then dropped — R2), and `coordinator_resume` (R5; scheduled at boot for runs the previous coordinator drained cleanly on shutdown — receives the parent's transcript-tail snapshot through `diagnosticsSeed.resume_snapshot`).
 - `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so pi-sdk reuses the parent's session_id (R12; other providers are a follow-up).
 - `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note` (R10).
 
-`TODO(audit-followup)` markers tag the deferred recommendations: R6 plan-driven `parent_review_policy`, R9 `projects.allowed_agents` allowlist, A3 per-agent run budgets, and R5 drained-resume protocol.
+All R# / A# recommendations from the audit have landed (see `docs/audits/automattic-benchmark-reset-implementation-plan.md` § Status by recommendation for the per-commit map). A few `TODO(audit-followup)` markers remain for the audit's open questions and for parts that were deliberately left out of scope (e.g. session_id reuse on providers other than pi-sdk).
 
 ## v2 Workflow Constraints (from CONTRIBUTING.md)
 
