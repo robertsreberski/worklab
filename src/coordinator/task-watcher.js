@@ -517,7 +517,14 @@ export function createTaskWatcher({
     const settings = readSettings(db);
     const recovery = recoveryReason({ failureKind, res, run, settings });
     if (!recovery) return null;
-    const continuationLimit = Number(settings.agent_recovery_continuation_limit ?? 3);
+    const baseContinuationLimit = Number(settings.agent_recovery_continuation_limit ?? 3);
+    // Schema-correction is bounded tighter than provider-recovery: if the
+    // agent can't emit valid worklab.v2 JSON twice in a row, escalate to the
+    // operator instead of burning the full provider-recovery budget on what
+    // is almost certainly a stuck reviewer.
+    const continuationLimit = recovery.reason === "schema_correction"
+      ? Math.min(2, baseContinuationLimit)
+      : baseContinuationLimit;
     if (continuationLimit <= 0) return null;
     const lineage = continuationLineage(run);
     if (lineage.depth >= continuationLimit) {

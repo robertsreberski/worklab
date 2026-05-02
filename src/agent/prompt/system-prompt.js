@@ -100,7 +100,9 @@ Return a structured Worklab result as JSON when you finish:
 }
 
 Escape double quotes inside review notes or final_text so the response remains valid JSON.
-Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.`;
+Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.
+
+JSON-only output contract: the very last thing you emit must be a single \`worklab.v2\` JSON object — nothing before it, nothing after it, no markdown fences. Put your prose review in \`details\` and your one-line user-facing comment in \`final_text\`. Do not wrap the JSON in \`\`\`json fences, do not introduce it with phrases like "here is my review", and do not append a verdict line outside the JSON. The harness re-runs you with stricter prompting if it can't parse the result, but only twice — make the first attempt clean.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 
