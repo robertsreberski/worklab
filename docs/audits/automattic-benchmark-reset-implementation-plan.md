@@ -420,6 +420,7 @@ These are explicitly *out of scope* for this branch even though the audit mentio
 | 6 | R7 | `0766282` | `agent_review_idle_threshold_ms` (default 240 s) for review-mode runs. `last_tool_name` in idle-warning payload. R6 deferred via `TODO(audit-followup)`. |
 | 7 | R10 | `3a707b2` | `reason_kind` enum on `/api/tasks/:id/cancel` (wrong_direction / agent_stuck / context_bloat / scope_change / other). `reason_note` free-text. R9 deferred via `TODO(audit-followup)`. |
 | 8 | A4 | `74e4882` | `data-template/projects/_defaults.json` with audit-derived defaults. A3 (per-agent budgets) deferred via `TODO(audit-followup)`. |
+| 8 | A3 | `75a045e`, `6108812` (integration), `89e14a3` (`classifyFailure` mapping) | `src/core/agent-budgets.js` (`evaluateBudget` + `loadAgentBudget` + `DEFAULT_AGENT_BUDGET`). `data-template/agents/_defaults/budget.json` ships the audit's numbers (5/20 USD, 20/60 min, 150/300 turns). Budget aggregator runs on every `tool_result` in spawn-worker; soft → `runtime_warning` + system comment, hard → cancel with `cancel_initiator="budget"` so `classifyFailure` maps to existing `budget_exceeded` kind. Coverage in `src/__tests__/core/agent-budgets.test.js` (16 unit tests for soft/hard threshold logic and the loader fallback chain) and `src/__tests__/coordinator/watcher/budget-cancel.test.js` (3 integration tests covering the runaway-run cancel, soft-only, and no-warning paths). UI surface: `RunBudgetBadge` on the run-card summary + `run-warning-budget-soft|hard` tones in `src/ui/src/styles.css`. cost_usd is currently driven by streamed usage only (zero during streaming for most providers); duration + num_turns proxy carries the load — follow-up: extend to per-event cost when providers stream usage incrementally. Merge collisions with R5/R6/R9 distributed individual hunks across `6108812`, `89e14a3`, and `65a7fee`; the cohesive A3 surface still spans `agent-budgets.js` + `spawn-worker.js` + `delegation-handler.js` + UI. |
 
 ### Status by recommendation
 
@@ -439,5 +440,5 @@ These are explicitly *out of scope* for this branch even though the audit mentio
 | R12 | Done (pi-sdk only — other providers follow-up) | `49265f6` |
 | A1 | Done | `e7998a9` |
 | A2 | Done | `92a89af` |
-| A3 | Deferred — `TODO(audit-followup)` in `delegation-handler.js` | — |
+| A3 | Done (UI surface + integration) | `75a045e`, `6108812`, `89e14a3` |
 | A4 | Done | `74e4882` |
