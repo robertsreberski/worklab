@@ -14,7 +14,14 @@ const PROCESS_TO_LEGACY_STATUS = {
 };
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../ai/failure.js";
-import { artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import {
+  captureGitArtifactState,
+  collectGitArtifacts,
+  collectQaOutputArtifacts,
+  collectWorkspaceDeltaArtifacts,
+  createWorkspaceSnapshot,
+} from "../core/artifact-collection.js";
 import { setRunRawOutputPath } from "../core/db/queries/runs.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
@@ -54,6 +61,13 @@ export function spawnWorker({
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
 }) {
+  const startedAt = Date.now();
+  const workspaceArtifactSnapshot = env.WORKLAB_WORKSPACE
+    ? createWorkspaceSnapshot({ workdir: env.WORKLAB_WORKSPACE })
+    : null;
+  const gitArtifactBefore = env.WORKLAB_WORKSPACE
+    ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
+    : null;
   const child = spawn("node", [binary, ...args], {
     env: { ...process.env, ...env },
     stdio: ["pipe", "pipe", "pipe"],
@@ -84,7 +98,6 @@ export function spawnWorker({
   let timeoutTimer = null;
   let idleTimer = null;
   let timedOut = false;
-  const startedAt = Date.now();
   const logId = newAgentLogId();
   let rawLogPath = null;
   const toolUseNames = new Map();
@@ -469,11 +482,32 @@ export function spawnWorker({
       const providerSessionId = finalPayload?.provider_session_id
         || finalPayload?.providerSessionId
         || null;
-      const artifacts = extractRunArtifacts(rawEvents, {
+      const fileEditArtifacts = extractRunArtifacts(rawEvents, {
         includePending: false,
         includeFailed: false,
         run: { id: runId, started_at: startedAt, ended_at: endedAt },
       });
+      const workspaceArtifactResult = collectWorkspaceDeltaArtifacts(workspaceArtifactSnapshot, {
+        workdir: env.WORKLAB_WORKSPACE,
+        runId,
+        endedAt,
+      });
+      const qaArtifactResult = collectQaOutputArtifacts({
+        workdir: env.WORKLAB_WORKSPACE,
+        qaOutputDir: env.WORKLAB_QA_OUTPUT_DIR,
+        runId,
+        endedAt,
+      });
+      const gitArtifactAfter = env.WORKLAB_WORKSPACE
+        ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
+        : null;
+      const gitArtifacts = collectGitArtifacts(gitArtifactBefore, gitArtifactAfter, { runId, endedAt });
+      const artifacts = aggregateRunArtifacts([
+        { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: fileEditArtifacts },
+        { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: workspaceArtifactResult.artifacts },
+        { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: qaArtifactResult.artifacts },
+        { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: gitArtifacts },
+      ]);
       const artifactSummary = runArtifactSummary(artifacts);
       const paths = artifactPaths(artifacts);
       const execenvPath = env.WORKLAB_EXECENV_PATH || null;
@@ -500,6 +534,13 @@ export function spawnWorker({
         provider_session_id: providerSessionId,
         execenv_path: execenvPath,
         effective_workdir: env.WORKLAB_WORKSPACE || null,
+        workspace_artifacts: workspaceArtifactResult.diagnostics,
+        qa_artifacts: qaArtifactResult.diagnostics,
+        git_artifacts: {
+          before: gitArtifactBefore,
+          after: gitArtifactAfter,
+          changed: gitArtifacts.length > 0,
+        },
         warning_count: allWarnings.length,
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,

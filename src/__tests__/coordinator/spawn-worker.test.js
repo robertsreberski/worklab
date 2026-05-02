@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
-import { dirname, resolve } from "node:path";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { spawnWorker } from "../../coordinator/spawn-worker.js";
 import { makeTestDb } from "../helpers/test-db.js";
@@ -153,6 +153,67 @@ describe("spawnWorker", () => {
       last_run_id: runId,
     });
     expect(JSON.parse(run.artifact_summary_json)).toMatchObject({ files: 1, run_count: 1 });
+  });
+
+  it("persists workspace deltas and QA output files as run artifacts", async () => {
+    const workdir = mkdtempSync(resolve(tmpdir(), "worklab-worker-artifacts-"));
+    try {
+      mkdirSync(join(workdir, "src"), { recursive: true });
+      writeFileSync(join(workdir, "src", "existing.js"), "export const before = true;\n");
+      const db = makeTestDb();
+      const broker = stubBroker();
+      const { taskId, runId } = seedTaskAndRun(db);
+      const qaOutputDir = join(workdir, ".worklab-tmp", "artifacts", runId);
+      mkdirSync(qaOutputDir, { recursive: true });
+      const script = {
+        events: [{ type: "started", runId }],
+        exitCode: 0,
+        exitAfterMs: 160,
+      };
+
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: {
+          FAKE_WORKER_SCRIPT: JSON.stringify(script),
+          WORKLAB_RUN_ID: runId,
+          WORKLAB_WORKSPACE: workdir,
+          WORKLAB_QA_OUTPUT_DIR: qaOutputDir,
+        },
+        runId, taskId, broker, db,
+        runIdleWarningMs: 0,
+      });
+
+      await new Promise((resolveTimer) => setTimeout(resolveTimer, 40));
+      writeFileSync(join(workdir, "src", "existing.js"), "export const after = true;\n");
+      writeFileSync(join(workdir, "src", "created.js"), "export const created = true;\n");
+      writeFileSync(join(qaOutputDir, "console.log"), "console output\n");
+
+      const result = await handle.done;
+
+      expect(result.artifactSummary).toMatchObject({ files: 3, run_count: 1 });
+      const run = db.prepare(`
+        SELECT artifacts_json, artifact_summary_json, diagnostics_json
+        FROM task_runs WHERE id = ?
+      `).get(runId);
+      const artifacts = JSON.parse(run.artifacts_json);
+      expect(artifacts.map((artifact) => artifact.artifact_type).sort()).toEqual([
+        "code_change",
+        "code_change",
+        "qa_output",
+      ]);
+      expect(artifacts.find((artifact) => artifact.artifact_type === "qa_output")).toMatchObject({
+        source: "qa_output_dir",
+        artifact_relative_path: "console.log",
+      });
+      expect(JSON.parse(run.artifact_summary_json)).toMatchObject({ files: 3, run_count: 1 });
+      expect(JSON.parse(run.diagnostics_json).workspace_artifacts).toMatchObject({
+        scanned: true,
+        after_files: expect.any(Number),
+      });
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
   });
 
   it("persists running events before the worker exits", async () => {
