@@ -24,6 +24,7 @@ import {
   statsForCompletedChange,
 } from "../../ai/file-change-stats.js";
 import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
+import { MAX_TOOL_RESULT_BYTES, wrapToolsWithBloatGuard } from "../tool-bloat.js";
 
 function textResult(text, details = {}) {
   return {
@@ -282,7 +283,16 @@ export function createStructuredOutputTool(outputSchema, onStructuredOutput) {
   };
 }
 
-export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd, onEvent, toolLimits } = {}) {
+export function getPiBuiltinTools(allowedTools, {
+  skillNames = [],
+  dataDir,
+  cwd,
+  onEvent,
+  toolLimits,
+  runArtifactDir = null,
+  onTruncate = null,
+  toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
+} = {}) {
   const textLimitSchema = integerSchema();
   const bashLimitSchema = integerSchema();
   const bashTimeoutSchema = {
@@ -350,7 +360,11 @@ export function getPiBuiltinTools(allowedTools, { skillNames = [], dataDir, cwd,
   const tools = names.map((name) => all[name]).filter(Boolean);
   const skillTool = readSkillTool(skillNames, dataDir);
   if (skillTool) tools.push(skillTool);
-  return tools;
+  return wrapToolsWithBloatGuard(tools, {
+    runDir: runArtifactDir,
+    maxBytes: toolPayloadMaxBytes,
+    onTruncate,
+  });
 }
 
 export function resolveMcpStdioCwd(cfg = {}, cwd = null) {
@@ -432,7 +446,13 @@ function withTimeout(promise, timeoutMs, signal, label) {
   return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
 }
 
-export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { limits = {}, cwd = null } = {}) {
+export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
+  limits = {},
+  cwd = null,
+  runArtifactDir = null,
+  onTruncate = null,
+  toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
+} = {}) {
   const clients = [];
   const tools = [];
   const entries = Object.entries(mcpConfig || {});
@@ -500,7 +520,15 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), { lim
       });
     }
   }
-  return { clients, tools, warnings };
+  return {
+    clients,
+    tools: wrapToolsWithBloatGuard(tools, {
+      runDir: runArtifactDir,
+      maxBytes: toolPayloadMaxBytes,
+      onTruncate,
+    }),
+    warnings,
+  };
 }
 
 export async function closePiMcpClients(clients) {
