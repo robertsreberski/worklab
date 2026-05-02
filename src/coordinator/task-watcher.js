@@ -656,6 +656,7 @@ export function createTaskWatcher({
     applySideEffects(taskId, [
       { type: "clear_error_text" },
       { type: "set_stage_reason", reason: `continuing after ${recovery.reason}` },
+      { type: "increment_lifetime_recovery_continuation_count" },
     ], nextStageValue, continuationStage, { running: true });
 
     patchRunDiagnostics(runId, {

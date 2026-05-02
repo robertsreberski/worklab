@@ -79,6 +79,18 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
         fields.push("rejection_streak = ?");
         values.push(0);
         break;
+      // R4: lifetime counters survive `reset_failure_count`. Each is a +1 on
+      // the corresponding event so the task table records every incident even
+      // after the streak counters reset on success.
+      case "increment_lifetime_failure_count":
+        fields.push("lifetime_failure_count = lifetime_failure_count + 1");
+        break;
+      case "increment_lifetime_rejection_count":
+        fields.push("lifetime_rejection_count = lifetime_rejection_count + 1");
+        break;
+      case "increment_lifetime_recovery_continuation_count":
+        fields.push("lifetime_recovery_continuation_count = lifetime_recovery_continuation_count + 1");
+        break;
       case "set_last_failure_kind":
         fields.push("last_failure_kind = ?");
         values.push(sideEffect.kind || null);

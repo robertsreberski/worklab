@@ -21,6 +21,7 @@ import {
   getMaxSubtaskOrder,
   getTaskById,
   getTaskByClientRequestId,
+  getTaskHealth,
   insertManualSubtask,
   insertTask,
   listFilteredTasks,
@@ -366,6 +367,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
     // the watcher isn't wired so the UI can't falsely flag a stuck task.
     task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
+    // R4: lifetime counters that survive `reset_failure_count`. The UI badge
+    // can render "needed N retries" without scanning task_runs.
+    task.health = getTaskHealth(db, row.id) || null;
     res.json({ task, comments, runs });
   });
 

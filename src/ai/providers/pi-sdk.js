@@ -290,7 +290,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       streamFn: options.streamFn,
       transformContext: compaction.transformContext,
       afterToolCall: compaction.afterToolCall,
-      sessionId: options.sessionId || options.runId || process.env.WORKLAB_RUN_ID || randomUUID(),
+      sessionId: options.sessionId
+        || process.env.WORKLAB_PROVIDER_SESSION_ID
+        || options.runId
+        || process.env.WORKLAB_RUN_ID
+        || randomUUID(),
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
       toolExecution: "sequential",

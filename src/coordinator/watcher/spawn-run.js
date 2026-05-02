@@ -71,16 +71,28 @@ export function spawnTaskRun({
     }
   }
   const now = Date.now();
+  // R11: classify the run's relationship to its parent at insert time.
+  // diagnosticsSeed.continuation_of_run_id (set by maybeStartRecoveryContinuation)
+  // means recovery; a stage-progression run has parent_run_id but no
+  // continuation marker; manual_retry is reserved for the API path that
+  // re-spawns a stage from the UI.
+  const parentRelationship = (() => {
+    if (diagnosticsSeed?.continuation_of_run_id) return "recovery_continuation";
+    if (diagnosticsSeed?.manual_retry) return "manual_retry";
+    if (parentRunId) return "stage_progression";
+    return null;
+  })();
   db.prepare(
     `INSERT INTO task_runs
-      (id, task_id, project_id, parent_run_id, mode, stage, agent_name, provider_kind,
+      (id, task_id, project_id, parent_run_id, parent_relationship, mode, stage, agent_name, provider_kind,
        started_at, status, process_status, retry_stage, workdir, project_context_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?)`,
   ).run(
     runId,
     task.id,
     projectRunContext.project?.id || null,
     parentRunId,
+    parentRelationship,
     mode,
     stage,
     agentName,
@@ -105,6 +117,19 @@ export function spawnTaskRun({
     }
   }
 
+  // R12: when this run is a recovery continuation, look up the parent run's
+  // provider_session_id and propagate it so the provider can resume the same
+  // session (provider permitting). spawn-run is the only place that has both
+  // a DB handle and the parent_run_id at the right moment.
+  const reusableSessionId = (() => {
+    if (parentRelationship !== "recovery_continuation" || !parentRunId) return null;
+    try {
+      const parent = db.prepare("SELECT provider_session_id FROM task_runs WHERE id = ?").get(parentRunId);
+      return parent?.provider_session_id || null;
+    } catch {
+      return null;
+    }
+  })();
   const args = ["--task", task.id, "--mode", mode, "--agent", agentName];
   const env = {
     WORKLAB_RUN_ID: runId,
@@ -118,6 +143,7 @@ export function spawnTaskRun({
       WORKLAB_PROJECT_NAME: projectRunContext.project.name,
     } : {}),
     ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
+    ...(reusableSessionId ? { WORKLAB_PROVIDER_SESSION_ID: reusableSessionId } : {}),
   };
   if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
 
