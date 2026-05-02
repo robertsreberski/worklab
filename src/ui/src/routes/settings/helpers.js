@@ -152,6 +152,8 @@ export function settingsPayload(settings = {}) {
     assistant_effort: settings.assistant_effort || "high",
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),
+    agent_budget_soft_turns: Number(settings.agent_budget_soft_turns ?? 150),
+    agent_budget_hard_turns: Number(settings.agent_budget_hard_turns ?? 300),
     delegation_enabled: settings.delegation_enabled !== false,
     delegation_max_depth: Number(settings.delegation_max_depth ?? 1),
     delegation_max_children_per_round: Number(settings.delegation_max_children_per_round ?? 5),
