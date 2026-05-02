@@ -127,6 +127,65 @@ describe("shared run stream subscriptions", () => {
     unsubscribe();
   });
 
+  it("keeps paired tool calls atomic when the live tail crosses a raw event boundary", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-atomic-tail", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-atomic-tail", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      maxEvents: 20,
+    });
+
+    await vi.waitFor(() => {
+      expect(snapshots.at(-1)).toMatchObject({ loading: false });
+    });
+
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({ type: "text", text: "old event", _event_seq: 1 }),
+    });
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_use",
+        tool_use_id: "tool-1",
+        name: "shell",
+        input: { cmd: "npm test" },
+        _event_seq: 2,
+      }),
+    });
+    for (let index = 3; index <= 21; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({ type: "text", text: `event ${index}`, _event_seq: index }),
+      });
+    }
+    FakeEventSource.instances[0].onmessage({
+      data: JSON.stringify({
+        type: "tool_result",
+        tool_use_id: "tool-1",
+        output: "ok",
+        is_error: false,
+        _event_seq: 22,
+      }),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const latest = snapshots.at(-1);
+    expect(latest.events).toHaveLength(21);
+    expect(latest.events.map((event) => event._event_seq)).toEqual(Array.from({ length: 21 }, (_, index) => index + 2));
+    expect(latest.events[0]).toMatchObject({ type: "tool_use", tool_use_id: "tool-1" });
+    expect(latest.events.at(-1)).toMatchObject({ type: "tool_result", tool_use_id: "tool-1" });
+    expect(latest.eventCount).toBe(22);
+    expect(latest.eventsTruncated).toBe(true);
+    expect(latest.fullHistoryLoaded).toBe(false);
+
+    unsubscribe();
+  });
+
   it("keeps live file artifacts after their source events leave the compact tail", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => ({

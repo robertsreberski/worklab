@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { aggregateRunArtifacts, extractRunArtifacts } from "./runArtifacts.js";
 import { closeSharedEventSourcesForTests, subscribeSharedEventSource } from "./sharedEventSource.js";
+import { tailRunEventsByVisibleItems } from "../../../core/run-events.js";
 import { useAppResume } from "./pageVisibility.js";
 
 const runStreams = new Map();
@@ -21,10 +22,7 @@ function eventKey(event) {
 }
 
 function limitRunEvents(events, limit) {
-  if (limit === null) return events;
-  const parsed = Number(limit);
-  if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
-  return events.slice(-parsed);
+  return tailRunEventsByVisibleItems(events, limit);
 }
 
 export function mergeRunEvents(current = [], incoming = [], { limit = null } = {}) {
@@ -40,10 +38,11 @@ export function mergeRunEvents(current = [], incoming = [], { limit = null } = {
     if (key) positions.set(key, merged.length);
     merged.push(event);
   }
-  return merged.sort((a, b) => {
+  merged.sort((a, b) => {
     if (a?._event_seq == null || b?._event_seq == null) return 0;
     return Number(a._event_seq) - Number(b._event_seq);
-  }).slice(limit ? -limit : undefined);
+  });
+  return limitRunEvents(merged, limit);
 }
 
 function runStreamUrl(runId) {
