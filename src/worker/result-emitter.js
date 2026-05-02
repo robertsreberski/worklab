@@ -38,6 +38,10 @@ function emitRuntimeWarnings(emit, response) {
   }
 }
 
+function providerSessionPayload(result) {
+  return result?.providerSessionId ? { provider_session_id: result.providerSessionId } : {};
+}
+
 export function emitFinalResult(ctx, result) {
   const { emit } = ctx;
 
@@ -69,6 +73,7 @@ export function emitFinalResult(ctx, result) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      ...providerSessionPayload(result),
     });
     return 0;
   }
@@ -82,6 +87,7 @@ export function emitFinalResult(ctx, result) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      ...providerSessionPayload(result),
     });
     return 0;
   }
@@ -115,6 +121,7 @@ export function emitFinalResult(ctx, result) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      ...providerSessionPayload(result),
     });
     return 0;
   }
@@ -151,6 +158,7 @@ export function emitFinalResult(ctx, result) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      ...providerSessionPayload(result),
     });
     // Always emit verdict (null is valid); process exit reflects runtime
     // success only — coordinator handles invalid semantic output.

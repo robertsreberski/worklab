@@ -43,9 +43,15 @@ export async function runConsolidate(ctx) {
       abortSignal: ac.signal,
       onEvent: sdkEvents.emit,
     });
-    if (result.cancelled) return { kind: "consolidate", cancelled: true };
+    if (result.cancelled) return { kind: "consolidate", cancelled: true, providerSessionId: result.providerSessionId || null };
     if (result.error) {
-      return { kind: "consolidate", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
+      return {
+        kind: "consolidate",
+        error: result.error,
+        failureKind: result.failureKind,
+        errorDetails: result.errorDetails || null,
+        providerSessionId: result.providerSessionId || null,
+      };
     }
     const path = writeMemory({ dataDir: config.dataDir, agent: agentName, content: result.text });
     return {
@@ -56,6 +62,7 @@ export async function runConsolidate(ctx) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      providerSessionId: result.providerSessionId || null,
       runtimeWarnings: result.runtimeWarnings,
       memoryWritten: { agent: agentName, path },
     };

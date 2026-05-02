@@ -8,6 +8,7 @@ import {
 } from "../core/index.js";
 import { parseVerdict } from "../core/review.js";
 import {
+  WORKLAB_RESULT_JSON_SCHEMA,
   normalizeWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
@@ -123,13 +124,21 @@ export async function runReview(ctx) {
       disallowedTools,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
+      outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
+      runArtifactDir: input.qaOutputDir,
       abortSignal: ac.signal,
       liveInput,
       onEvent: sdkEvents.emit,
     });
-    if (result.cancelled) return { kind: "review", cancelled: true };
+    if (result.cancelled) return { kind: "review", cancelled: true, providerSessionId: result.providerSessionId || null };
     if (result.error) {
-      return { kind: "review", error: result.error, failureKind: result.failureKind, errorDetails: result.errorDetails || null };
+      return {
+        kind: "review",
+        error: result.error,
+        failureKind: result.failureKind,
+        errorDetails: result.errorDetails || null,
+        providerSessionId: result.providerSessionId || null,
+      };
     }
     const parsedReview = reviewResultFromResponse(result);
     return {
@@ -140,6 +149,7 @@ export async function runReview(ctx) {
       numTurns: result.numTurns,
       model: result.model,
       effort: result.effort,
+      providerSessionId: result.providerSessionId || null,
       runtimeWarnings: result.runtimeWarnings,
       worklabResult: parsedReview.result,
       verdict: parsedReview.verdict,
