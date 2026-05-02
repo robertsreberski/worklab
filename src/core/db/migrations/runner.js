@@ -181,6 +181,16 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "transcript_tail_json", "transcript_tail_json TEXT");
 }
 
+function ensureCurrentTaskRuntimeColumns(db) {
+  if (!tableExists(db, "tasks")) return;
+  addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "lifetime_failure_count", "lifetime_failure_count INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "lifetime_rejection_count", "lifetime_rejection_count INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "lifetime_recovery_continuation_count", "lifetime_recovery_continuation_count INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
+  addColumnIfMissing(db, "tasks", "parent_review_policy", "parent_review_policy TEXT NOT NULL DEFAULT 'default'");
+}
+
 function normalizeWorkflowState(db) {
   if (tableExists(db, "tasks")) {
     const columns = db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name);
@@ -531,6 +541,9 @@ export function runMigrations(db) {
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
   rebuildTaskWorkflowTables(db);
+  // Legacy workflow rebuild uses a hard-coded table definition, so re-add
+  // current runtime columns before any post-rebuild backfills touch them.
+  ensureCurrentTaskRuntimeColumns(db);
   db.exec("DROP TABLE IF EXISTS schedule_spawns");
   db.exec("DROP TABLE IF EXISTS schedules");
   db.exec(SCHEMA_SQL);
@@ -588,10 +601,7 @@ export function runMigrations(db) {
     `);
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
-  // Re-add R6 column after rebuildTaskWorkflowTables: the rebuild's hardcoded
-  // column list dropped any column not present at the time the rebuild
-  // shipped. Idempotent — only adds when missing.
-  addColumnIfMissing(db, "tasks", "parent_review_policy", "parent_review_policy TEXT NOT NULL DEFAULT 'default'");
+  ensureCurrentTaskRuntimeColumns(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));
