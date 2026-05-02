@@ -8290,6 +8290,19 @@ html.assistant-resizing * {
   color: var(--status-error);
   background: var(--status-error-bg-10);
 }
+/* A3: per-agent run-budget indicators on the run card summary. The hard
+   variant reuses the error tone because the run was cancelled by the
+   aggregator; the soft variant stays in the progress / warning palette. */
+.run-warning-budget-soft {
+  border-color: var(--status-progress-border);
+  color: var(--status-progress);
+  background: var(--status-progress-bg-10);
+}
+.run-warning-budget-hard {
+  border-color: var(--status-error-border);
+  color: var(--status-error);
+  background: var(--status-error-bg-10);
+}
 .run-cancel-note {
   padding: var(--sp-2) var(--sp-3);
   background: var(--surface);
