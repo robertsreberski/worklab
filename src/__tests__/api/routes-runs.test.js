@@ -153,6 +153,33 @@ describe("GET /api/runs/:id", () => {
       rmSync(dataDir, { recursive: true, force: true });
     }
   });
+
+  it("returns only files from the run artifact directory", async () => {
+    const workdir = mkdtempSync(join(tmpdir(), "worklab-run-artifact-file-"));
+    try {
+      const { agent, db } = makeTestServer();
+      const taskId = newTaskId();
+      const runId = newRunId();
+      const now = Date.now();
+      const artifactDir = join(workdir, ".worklab-tmp", "artifacts", runId);
+      mkdirSync(artifactDir, { recursive: true });
+      writeFileSync(join(artifactDir, "console.log"), "console output\n");
+      writeFileSync(join(workdir, "secret.txt"), "nope\n");
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, agent_name, started_at, status, process_status, workdir)
+        VALUES (?, ?, 'execute', 'a', ?, 'complete', 'succeeded', ?)
+      `).run(runId, taskId, now, workdir);
+
+      const res = await agent.get(`/api/runs/${runId}/artifact-file?path=console.log`).expect(200);
+      expect(res.text).toBe("console output\n");
+
+      await agent.get(`/api/runs/${runId}/artifact-file?path=../secret.txt`).expect(403);
+    } finally {
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("POST /api/runs/:id/messages", () => {
