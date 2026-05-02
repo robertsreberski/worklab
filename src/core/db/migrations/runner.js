@@ -445,6 +445,12 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "tasks", "lifetime_rejection_count", "lifetime_rejection_count INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "lifetime_recovery_continuation_count", "lifetime_recovery_continuation_count INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
+  // R6: plan-driven parent_review_policy. Allowed values are 'default'
+  // (spawn parent.review when execute completes), 'skip_when_qa_child' (skip
+  // parent.review when the parent's children include a QA/review-style agent),
+  // and 'always_skip' (skip unconditionally — the planner has decided the
+  // parent itself never needs an extra review pass).
+  addColumnIfMissing(db, "tasks", "parent_review_policy", "parent_review_policy TEXT NOT NULL DEFAULT 'default'");
   addColumnIfMissing(db, "tasks", "pending_questions_json", "pending_questions_json TEXT NOT NULL DEFAULT '[]'");
   // v22: retry_count → failure_count rename. The column was always a generic
   // failure counter, not a retry counter; rename so callers stop assuming
@@ -577,6 +583,10 @@ export function runMigrations(db) {
     `);
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
+  // Re-add R6 column after rebuildTaskWorkflowTables: the rebuild's hardcoded
+  // column list dropped any column not present at the time the rebuild
+  // shipped. Idempotent — only adds when missing.
+  addColumnIfMissing(db, "tasks", "parent_review_policy", "parent_review_policy TEXT NOT NULL DEFAULT 'default'");
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));
