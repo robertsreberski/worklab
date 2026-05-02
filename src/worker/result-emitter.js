@@ -94,6 +94,14 @@ export function emitFinalResult(ctx, result) {
         message: result.parsedResultError,
       });
     }
+    if (result.parsedResultRecoveredVia === "lenient") {
+      emit({
+        type: "runtime_warning",
+        warning_kind: "result_recovered_via_lenient",
+        source: "worker",
+        message: "worklab_result recovered via lenient parser after strict parse failed",
+      });
+    }
     if (result.parsedResultFatal || !result.worklabResult) {
       emit({ type: "worklab_result_error", message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result" });
       return 1;
@@ -117,6 +125,14 @@ export function emitFinalResult(ctx, result) {
         type: "runtime_warning",
         warning_kind: result.parsedResultWarningKind,
         message: result.parsedResultError,
+      });
+    }
+    if (result.parsedResultRecoveredVia === "lenient") {
+      emit({
+        type: "runtime_warning",
+        warning_kind: "result_recovered_via_lenient",
+        source: "worker",
+        message: "worklab_result recovered via lenient parser after strict parse failed",
       });
     }
     if (result.parsedResultFatal || !result.worklabResult) {

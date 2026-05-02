@@ -526,6 +526,7 @@ export function spawnWorker({
           })
         : null;
       const toolPayloadTruncatedCount = allWarnings.filter((w) => w.kind === "tool_payload_truncated").length;
+      const resultRecoveredViaLenient = allWarnings.some((w) => w.kind === "result_recovered_via_lenient");
       const diagnostics = {
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
@@ -544,6 +545,7 @@ export function spawnWorker({
         },
         warning_count: allWarnings.length,
         ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),
+        ...(resultRecoveredViaLenient ? { result_recovered_via: "lenient" } : {}),
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,
         ...(signal ? { exit_signal: signal } : {}),
