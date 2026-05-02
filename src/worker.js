@@ -19,7 +19,33 @@ function emit(obj) {
 
 const liveInput = createLiveInputQueue();
 
-function startControlReader() {
+// R5: graceful drain protocol. The coordinator sends `{type:"worklab_drain"}`
+// on shutdown so the worker can finish the in-flight tool call instead of
+// being SIGKILL'd mid-edit. We expose the request via the abort controller so
+// in-flight provider streams unwind cleanly, and emit a `drained` event on
+// stdout so the coordinator can persist a resume snapshot tagged
+// `resume_kind: "drained"`.
+function createControlReaderState({ ac, emit }) {
+  let drainRequested = false;
+  return {
+    isDraining() { return drainRequested; },
+    handleDrain(message) {
+      if (drainRequested) return;
+      drainRequested = true;
+      const reason = typeof message?.reason === "string" ? message.reason : "coordinator_shutdown";
+      const deadlineAt = Number.isFinite(Number(message?.deadline_at)) ? Number(message.deadline_at) : null;
+      emit({
+        type: "drained",
+        reason,
+        ...(deadlineAt ? { deadline_at: deadlineAt } : {}),
+        ts: Date.now(),
+      });
+      try { ac.abort(); } catch { /* already aborted */ }
+    },
+  };
+}
+
+function startControlReader({ controlState }) {
   const rl = createInterface({ input: process.stdin, crlfDelay: Infinity });
   rl.on("line", (line) => {
     if (!line.trim()) return;
@@ -28,6 +54,10 @@ function startControlReader() {
       message = JSON.parse(line);
     } catch {
       emit({ type: "runtime_warning", warning_kind: "live_input_parse", message: "Ignored malformed live input message." });
+      return;
+    }
+    if (message?.type === "worklab_drain") {
+      controlState.handleDrain(message);
       return;
     }
     if (message?.type !== "live_user_message") return;
@@ -47,7 +77,6 @@ function startControlReader() {
 }
 
 async function main() {
-  startControlReader();
 
   const { values } = parseArgs({
     options: {
@@ -78,6 +107,9 @@ async function main() {
   process.on("SIGTERM", () => { ac.abort(); });
   process.on("SIGINT", () => { ac.abort(); });
 
+  const controlState = createControlReaderState({ ac, emit });
+  startControlReader({ controlState });
+
   const ctx = {
     db,
     config,
@@ -101,6 +133,17 @@ async function main() {
     result = await runTask(ctx);
   } else if (mode === "review") {
     result = await runReview(ctx);
+  }
+
+  // R5: when drain was requested, mark the final stdout event as a coordinator
+  // shutdown so the coordinator can tag the resume snapshot accordingly. We
+  // exit cleanly with code 0; the spawn-worker side keys off `drainRequested`
+  // (set when it issued the drain) to classify the run as `cancelled_shutdown`.
+  if (controlState.isDraining()) {
+    if (!result || result.cancelled || result.error) {
+      emit({ type: "cancelled", initiator: "coordinator_shutdown", drained: true });
+      process.exit(0);
+    }
   }
 
   const exitCode = emitFinalResult(ctx, result);

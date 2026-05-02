@@ -14,6 +14,9 @@ const PROCESS_TO_LEGACY_STATUS = {
 };
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../ai/failure.js";
+import { evaluateBudget, loadAgentBudget } from "../core/agent-budgets.js";
+import { insertSystemComment } from "../core/db/queries/comments.js";
+import { newCommentId } from "../core/ids.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import {
   captureGitArtifactState,
@@ -22,7 +25,8 @@ import {
   collectWorkspaceDeltaArtifacts,
   createWorkspaceSnapshot,
 } from "../core/artifact-collection.js";
-import { setRunRawOutputPath } from "../core/db/queries/runs.js";
+import { setRunRawOutputPath, setRunTranscriptTail } from "../core/db/queries/runs.js";
+import { buildTranscriptTailSnapshot } from "../agent/transcript.js";
 import {
   CONTEXT_BLOAT_TOP_EVENTS,
   RAW_RESULT_STORAGE_LIMIT,
@@ -60,6 +64,8 @@ export function spawnWorker({
   exitCloseGraceMs = 1000,
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
+  agentName = null,
+  agentBudget = null,
 }) {
   const startedAt = Date.now();
   const workspaceArtifactSnapshot = env.WORKLAB_WORKSPACE
@@ -94,6 +100,14 @@ export function spawnWorker({
   let finalized = false;
   let exitFallbackTimer = null;
   let exitWatchdogFired = false;
+  // R5: drained-resume protocol. drainRequested means the coordinator asked
+  // the worker to wrap up cleanly; drainAcknowledged means the worker emitted
+  // a `drained` stdout event before exiting. drainTimedOut means the
+  // coordinator's drain watchdog fired and we fell back to a hard cancel.
+  let drainRequested = false;
+  let drainAcknowledged = false;
+  let drainTimedOut = false;
+  let drainTimer = null;
   let persistTimer = null;
   let timeoutTimer = null;
   let idleTimer = null;
@@ -108,6 +122,28 @@ export function spawnWorker({
     largestEvents: [],
     largestToolEvents: [],
     broadScanEvents: [],
+  };
+  // A3 — per-agent run-budget aggregator. Loads soft + hard thresholds once
+  // at spawn time (from <dataDir>/agents/<agent>/budget.json or the bundled
+  // defaults under data-template/agents/_defaults/budget.json) and tracks
+  // the live runStats we can derive while the worker streams. cost_usd is
+  // not reliably available until the worker emits its `final` event, so
+  // during streaming we gate primarily on duration_ms and on a num_turns
+  // proxy: the count of tool_result blocks the worker has emitted. The
+  // aggregator runs alongside recordContextPayload so the budget and
+  // context-bloat checks share the single content-block walk per event.
+  //
+  // Tests pass `agentBudget` directly to skip the disk lookup; production
+  // spawn uses the loader so operators can override per agent without code.
+  const budgetThresholds = (agentBudget && typeof agentBudget === "object")
+    ? agentBudget
+    : loadAgentBudget({ agent: agentName, dataDir }).thresholds;
+  const budgetState = {
+    toolResultsSeen: 0,
+    streamedCostUsd: 0,
+    softWarningEmitted: false,
+    hardCancelTriggered: false,
+    lastEvaluation: null,
   };
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
@@ -185,6 +221,15 @@ export function spawnWorker({
     });
     resetIdleTimer();
     if (contextWarning) emitEvent(contextWarning);
+    // A3: evaluate the per-agent run budget after the event has been
+    // recorded. The check is cheap (numeric comparisons against a frozen
+    // thresholds object) and idempotent — soft/hard warnings are gated on
+    // their own one-shot flags so we never spam the timeline. Hard-tier
+    // crossings call terminateChild() inside evaluateBudgetForEvent.
+    if (rawEvent.type !== "runtime_warning") {
+      const budgetWarning = evaluateBudgetForEvent();
+      if (budgetWarning) emitEvent(budgetWarning);
+    }
     return { rawEvent, event };
   }
 
@@ -236,6 +281,11 @@ export function spawnWorker({
         const payloadChars = jsonCharLength(block.content ?? block.output ?? block.result ?? "")
           + jsonCharLength(block.raw_result || {});
         contextBloat.totalToolPayloadChars += payloadChars;
+        // A3: each tool_result counts as one "turn" for the budget check.
+        // Real turns include thinking + tool_use + tool_result; we use the
+        // result count as a proxy because it's the only signal that survives
+        // the SDK → spawn-worker boundary intact across providers.
+        budgetState.toolResultsSeen += 1;
         largestBlock = {
           seq: rawEvent._event_seq,
           role: "tool_result",
@@ -263,6 +313,87 @@ export function spawnWorker({
         event_chars: eventChars,
         total_tool_payload_chars: contextBloat.totalToolPayloadChars,
         largest_tool_event: top,
+      },
+      ts: Date.now(),
+    };
+  }
+
+  function postBudgetSystemComment(taskIdForComment, body) {
+    if (!taskIdForComment || !body) return;
+    try {
+      insertSystemComment(db, {
+        id: newCommentId(),
+        taskId: taskIdForComment,
+        body,
+        createdAt: Date.now(),
+      });
+    } catch (err) {
+      logger?.warn?.({ err: err.message, runId, taskId: taskIdForComment }, "budget system comment insert failed");
+    }
+  }
+
+  // A3: invoked after every event so the budget check sees the latest
+  // tool_result count + clock. Returns a runtime_warning event when a
+  // threshold is newly crossed, or null when nothing changed. The watcher's
+  // emitEvent loop folds the returned event back through itself so the
+  // warning appears in the run timeline alongside the event that tripped it.
+  // Hard-tier crossings additionally trigger a cancel with
+  // initiator="budget", which classifyFailure maps to budget_exceeded via
+  // the explicit hint we set here.
+  function evaluateBudgetForEvent() {
+    if (budgetState.hardCancelTriggered) return null;
+    const stats = {
+      cost_usd: budgetState.streamedCostUsd,
+      duration_ms: Date.now() - startedAt,
+      num_turns: budgetState.toolResultsSeen,
+    };
+    const evaluation = evaluateBudget(budgetThresholds, stats);
+    budgetState.lastEvaluation = evaluation;
+    if (!evaluation.soft_warn && !evaluation.hard_pause) return null;
+
+    if (evaluation.hard_pause) {
+      budgetState.hardCancelTriggered = true;
+      budgetState.softWarningEmitted = true;
+      const message = `Run cancelled: ${evaluation.reason}.`;
+      if (taskId) postBudgetSystemComment(taskId, message);
+      // cancelInitiator="budget" + an explicit failureKind hint guarantees
+      // classifyFailure maps this to budget_exceeded regardless of how the
+      // worker exits (clean SIGTERM, exit 130, etc).
+      cancelRequested = true;
+      cancelInitiator = cancelInitiator || "budget";
+      cancelReason = cancelReason || evaluation.reason;
+      errorMessage = errorMessage || message;
+      explicitFailureKind = "budget_exceeded";
+      terminateChild();
+      return {
+        type: "runtime_warning",
+        warning_kind: "budget_exceeded",
+        source: "budget",
+        message,
+        diagnostics: {
+          tier: "hard",
+          stats,
+          reasons: evaluation.hard_reasons || [],
+          thresholds: budgetThresholds.hard,
+        },
+        ts: Date.now(),
+      };
+    }
+
+    if (budgetState.softWarningEmitted) return null;
+    budgetState.softWarningEmitted = true;
+    const message = `Soft budget threshold crossed: ${evaluation.reason}.`;
+    if (taskId) postBudgetSystemComment(taskId, message);
+    return {
+      type: "runtime_warning",
+      warning_kind: "budget_soft",
+      source: "budget",
+      message,
+      diagnostics: {
+        tier: "soft",
+        stats,
+        reasons: evaluation.soft_reasons || [],
+        thresholds: budgetThresholds.soft,
       },
       ts: Date.now(),
     };
@@ -376,6 +507,10 @@ export function spawnWorker({
       cancelInitiator = cancelInitiator || rawEvent.initiator || rawEvent.cancel_initiator || null;
       cancelReason = cancelReason || rawEvent.reason || rawEvent.cancel_reason || null;
       workerCancelSignal = workerCancelSignal || rawEvent.signal || null;
+      if (rawEvent.drained === true) drainAcknowledged = true;
+    }
+    if (rawEvent.type === "drained") {
+      drainAcknowledged = true;
     }
     if (rawEvent.type === "worklab_result_error") {
       resultError = rawEvent.message || "invalid worklab_result";
@@ -406,6 +541,41 @@ export function spawnWorker({
     cancelInitiator = options.initiator || cancelInitiator || "user";
     cancelReason = options.reason ?? cancelReason ?? null;
     terminateChild();
+  }
+
+  // R5: graceful drain. Send a `worklab_drain` control message to the worker
+  // and wait up to `timeoutMs` for it to exit on its own. If the deadline
+  // expires we fall through to the regular cancel path (which terminates the
+  // child) so the coordinator can still exit; the row is then classified as
+  // `cancelled_shutdown` with a `drain_timeout: true` diagnostic.
+  function drain({ timeoutMs = 60_000, reason = "coordinator_shutdown" } = {}) {
+    if (drainRequested || cancelRequested || finalized) return Promise.resolve();
+    drainRequested = true;
+    cancelInitiator = cancelInitiator || "coordinator_shutdown";
+    cancelReason = cancelReason ?? reason ?? null;
+    const deadlineAt = Date.now() + Math.max(0, Number(timeoutMs) || 0);
+    const message = {
+      type: "worklab_drain",
+      reason: reason || "coordinator_shutdown",
+      deadline_at: deadlineAt,
+    };
+    return writeControlMessage(message)
+      .catch((err) => {
+        logger?.warn?.({ err: err.message, runId }, "drain message could not be delivered");
+      })
+      .finally(() => {
+        if (finalized) return;
+        if (drainTimer) clearTimeout(drainTimer);
+        drainTimer = setTimeout(() => {
+          drainTimer = null;
+          if (finalized) return;
+          drainTimedOut = true;
+          // The drain window expired without a clean exit. Fall back to the
+          // normal cancel path so the coordinator can finish shutting down.
+          cancel({ initiator: "coordinator_shutdown", reason: "drain timeout" });
+        }, Math.max(0, Number(timeoutMs) || 0));
+        drainTimer.unref?.();
+      });
   }
 
   function writeControlMessage(payload) {
@@ -474,6 +644,10 @@ export function spawnWorker({
       if (idleTimer) {
         clearTimeout(idleTimer);
         idleTimer = null;
+      }
+      if (drainTimer) {
+        clearTimeout(drainTimer);
+        drainTimer = null;
       }
       const durationMs = Date.now() - startedAt;
       const endedAt = Date.now();
@@ -578,7 +752,33 @@ export function spawnWorker({
           ...(providerFailureInfo.requestId ? { provider_request_id: providerFailureInfo.requestId } : {}),
         } : {}),
         ...(errorDetails ? { error_details: errorDetails } : {}),
+        ...(drainRequested ? {
+          drained: drainAcknowledged,
+          ...(drainTimedOut ? { drain_timeout: true } : {}),
+        } : {}),
       };
+
+      // R5: when the coordinator asked the worker to drain, persist a tagged
+      // transcript_tail snapshot so the next coordinator boot can pick the
+      // run back up via a `coordinator_resume` continuation. The snapshot
+      // captures the recent assistant turns + tool calls; the run's
+      // task/agent identity is keyed off the existing task_runs row.
+      if (drainRequested && rawEvents.length > 0) {
+        const baseSnapshot = buildTranscriptTailSnapshot(rawEvents);
+        if (baseSnapshot) {
+          const taggedSnapshot = {
+            ...baseSnapshot,
+            resume_kind: "drained",
+            drain_acknowledged: drainAcknowledged,
+            ...(drainTimedOut ? { drain_timeout: true } : {}),
+          };
+          try {
+            setRunTranscriptTail(db, runId, JSON.stringify(taggedSnapshot));
+          } catch (err) {
+            logger?.warn?.({ err: err.message, runId }, "failed to persist drained transcript snapshot");
+          }
+        }
+      }
 
       db.prepare(
         `UPDATE task_runs
@@ -693,9 +893,13 @@ export function spawnWorker({
     pid: child.pid,
     done,
     cancel,
+    drain,
     sendLiveMessage,
     get warnings() { return [...warnings]; },
     get exitWatchdogFired() { return exitWatchdogFired; },
+    get drainRequested() { return drainRequested; },
+    get drainAcknowledged() { return drainAcknowledged; },
+    get drainTimedOut() { return drainTimedOut; },
   };
 }
 

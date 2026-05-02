@@ -190,6 +190,18 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
   let shuttingDown = false;
   const closeHttp = promisify(http.close.bind(http));
 
+  // R5: workers may be mid-tool-call when SIGTERM lands. Give them up to
+  // `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) to wrap up so the next
+  // coordinator boot doesn't see them as orphaned. The watchdog still kicks
+  // in if a worker is genuinely stuck. The watcher passes the same value
+  // into the per-worker drain RPC so the worker-side wrap-up window matches
+  // the coordinator-side hang-detection window.
+  const drainTimeoutMs = (() => {
+    const raw = Number(process.env.WORKLAB_DRAIN_TIMEOUT_MS);
+    if (Number.isFinite(raw) && raw > 0) return Math.min(raw, 600_000);
+    return 60_000;
+  })();
+
   async function shutdown() {
     if (shuttingDown) {
       logger.warn("shutdown already in progress; forcing exit");
@@ -198,22 +210,18 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     shuttingDown = true;
     logger.info("shutdown");
 
-    // R5: workers may be mid-tool-call when SIGTERM lands. Give them up to
-    // `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) to wrap up so the next
-    // coordinator boot doesn't see them as orphaned. The watchdog still kicks
-    // in if a worker is genuinely stuck.
-    const drainTimeoutMs = (() => {
-      const raw = Number(process.env.WORKLAB_DRAIN_TIMEOUT_MS);
-      if (Number.isFinite(raw) && raw > 0) return Math.min(raw, 600_000);
-      return 60_000;
-    })();
+    // The watchdog gives the in-process drain a hard ceiling. We give it a
+    // little extra slack over `drainTimeoutMs` so the per-worker drain has
+    // time to settle (handle cleanup, DB UPDATE, transcript snapshot) before
+    // the watchdog forces the process down.
+    const watchdogMs = Math.min(600_000, drainTimeoutMs + 10_000);
     const watchdog = setTimeout(() => {
-      logger.warn({ drainTimeoutMs }, "shutdown watchdog fired; forcing exit");
+      logger.warn({ drainTimeoutMs, watchdogMs }, "shutdown watchdog fired; forcing exit");
       process.exit(1);
-    }, drainTimeoutMs);
+    }, watchdogMs);
     watchdog.unref();
 
-    try { await watcherHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
+    try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
     try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
