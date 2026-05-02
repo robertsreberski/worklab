@@ -504,6 +504,25 @@ export function createTaskWatcher({
           failureKind,
         });
     if (!providerInfo.retryable) return null;
+    // R2 — terminated_after_completion: the audit observed Codex runs that
+    // completed real work (final journal_summary call, clean worktree after a
+    // commit) and *then* dropped the provider connection before emitting the
+    // worklab.v2 envelope. The default provider_retry path discards the work
+    // and re-runs from scratch. Detect this pattern from the captured
+    // error_details and switch to a one-shot finalisation continuation that
+    // just inspects the workdir and emits the JSON envelope.
+    const errorDetails = diagnostics.error_details || {};
+    const lastToolName = errorDetails.last_tool_name || diagnostics.last_tool_name || null;
+    const hadPartialProgress = !!(errorDetails.had_partial_progress || diagnostics.had_partial_progress);
+    if (hadPartialProgress && lastToolName === "journal_summary") {
+      return {
+        reason: "finalisation",
+        providerInfo: {
+          ...providerInfo,
+          subkind: "terminated_after_completion",
+        },
+      };
+    }
     return {
       reason: diagnostics.context_risk === "high" ? "provider_retryable_context_risk" : "provider_retryable",
       providerInfo,
@@ -521,10 +540,13 @@ export function createTaskWatcher({
     // Schema-correction is bounded tighter than provider-recovery: if the
     // agent can't emit valid worklab.v2 JSON twice in a row, escalate to the
     // operator instead of burning the full provider-recovery budget on what
-    // is almost certainly a stuck reviewer.
+    // is almost certainly a stuck reviewer. Finalisation is single-shot: the
+    // work is already done, all the agent has to do is re-emit the envelope.
     const continuationLimit = recovery.reason === "schema_correction"
       ? Math.min(2, baseContinuationLimit)
-      : baseContinuationLimit;
+      : recovery.reason === "finalisation"
+        ? Math.min(1, baseContinuationLimit)
+        : baseContinuationLimit;
     if (continuationLimit <= 0) return null;
     const lineage = continuationLineage(run);
     if (lineage.depth >= continuationLimit) {
@@ -580,16 +602,20 @@ export function createTaskWatcher({
 
     const continuationStage = ["plan", "execute", "review"].includes(nextStageValue) ? nextStageValue : stage;
     const attempt = lineage.depth + 1;
-    const delayMs = recovery.reason === "usage_limit" || recovery.reason === "schema_correction"
+    const delayMs = recovery.reason === "usage_limit"
+      || recovery.reason === "schema_correction"
+      || recovery.reason === "finalisation"
       ? 0
       : providerRecoveryDelay(settings, attempt);
-    const resumeSnapshot = recovery.reason === "provider_retryable"
+    const resumeSnapshot = recovery.reason === "provider_retryable" || recovery.reason === "finalisation"
       ? loadResumeSnapshot(runId)
       : null;
     const summary = compactRecoveryRunSummary({
       runId,
       res,
-      reason: recovery.reason === "usage_limit" || recovery.reason === "schema_correction"
+      reason: recovery.reason === "usage_limit"
+        || recovery.reason === "schema_correction"
+        || recovery.reason === "finalisation"
         ? recovery.reason
         : "provider_retryable",
       providerInfo: recovery.providerInfo,
@@ -598,6 +624,8 @@ export function createTaskWatcher({
       ? "Automatic continuation after context-window overflow."
       : recovery.reason === "schema_correction"
         ? "Automatic schema-correction continuation after malformed Worklab result."
+      : recovery.reason === "finalisation"
+        ? "Automatic finalisation continuation: prior run completed work but dropped before emitting the worklab.v2 envelope."
       : mode === "review"
         ? `Automatic review continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`
         : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
@@ -606,6 +634,12 @@ export function createTaskWatcher({
           "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
           "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
           "Do not include markdown fences or prose before or after the JSON.",
+        ]
+      : recovery.reason === "finalisation"
+      ? [
+          "The previous run already completed the work — committed the changes, called `journal_summary`, and the workdir is clean — but the provider connection dropped before it could emit the worklab.v2 envelope.",
+          "Do NOT redo the work. Inspect the workdir (`git status`, `git log -1`, the journal tail), confirm the work matches the task instructions, and emit a single `worklab.v2` JSON envelope reporting the existing commit hash.",
+          "If the workdir is dirty or the work is incomplete, emit a `worklab.v2` envelope with `decision: \"pause\"` and pending_actions describing what's missing — do not start a fresh implementation.",
         ]
       : [
           "Continue from the current workspace state. Do not repeat completed work. Do not repeat broad repository scans such as `Glob **/*`; inspect targeted files only and avoid generated/vendor directories.",
