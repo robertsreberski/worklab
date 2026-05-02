@@ -505,6 +505,7 @@ const BASE_SECTION_NAMES = [
   "Capabilities",
   "Workspace",
   "Current Run Guidance",
+  "Resume context",
 ];
 
 // Compose the invariant prefix shared by plan, execute, review and automation.
@@ -515,7 +516,7 @@ function buildBaseSections(input) {
   const {
     agent, skills, memory, journalTail, currentRunComments,
     allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir, qaOutputDir,
-    worklabToolSurfaceMarkdown,
+    worklabToolSurfaceMarkdown, resumeContext,
   } = input;
   return [
     ["Role", agent.instructions || ""],
@@ -526,6 +527,7 @@ function buildBaseSections(input) {
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
     ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir)],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
+    ["Resume context", resumeContext || ""],
   ];
 }
 
