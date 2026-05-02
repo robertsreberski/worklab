@@ -24,6 +24,7 @@ import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 const emptySkill = { name: "", meta: { display_name: "", trigger: "", enabled: true, priority: "" }, body: "" };
 const SKILL_EDIT_SECTIONS = [
@@ -80,6 +81,18 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
     }
   });
   const isDirty = useMemo(() => baseline ? JSON.stringify(skill) !== JSON.stringify(baseline) : true, [skill, baseline]);
+  useAppResume(() => {
+    if (isNew) return;
+    if (!isDirty) {
+      api.getSkill(name)
+        .then((r) => {
+          setSkill(r.skill);
+          setBaseline(r.skill);
+        })
+        .catch(() => setSkill({ notFound: true }));
+    }
+    api.skillUsage(name).then(setUsage).catch(() => {});
+  });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
   const cancel = useCallback(() => {
     guard.requestNavigation("#/skills");

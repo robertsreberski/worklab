@@ -5,6 +5,7 @@ import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { buildProjectTaskProgress } from "../lib/projectTaskProgress.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -264,6 +265,18 @@ function ProjectEditor({ selectedId, onSaved }) {
   }, [isNew, selectedId]);
 
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  useAppResume(() => {
+    if (isNew || isDirty) return;
+    api.getProject(selectedId)
+      .then((res) => {
+        const next = projectDraftFrom(res.project);
+        setDraft(next);
+        setBaseline(next);
+        setError(null);
+      })
+      .catch((err) => setError(err.message || "Project not found"));
+  });
+
   const slugTrimmed = draft.slug.trim();
   const slugValid = slugLooksValid(slugTrimmed);
   const canSave = !!draft.name.trim() && slugValid;
@@ -434,6 +447,7 @@ function ProjectDetail({ selectedId, onChanged }) {
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
+  useAppResume(reload);
 
   const rail = useMemo(() => {
     if (!project) return null;
@@ -609,6 +623,7 @@ export function Projects({ selectedId = null, mode = null }) {
     if (evt.type?.startsWith("project_")) reloadSoon();
     else if (evt.type?.startsWith("task_")) reloadEventually();
   });
+  useAppResume(reloadSoon);
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();

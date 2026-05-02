@@ -13,6 +13,7 @@ import { MarkdownContent } from "../components/Markdown.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { normalizeKbEntry } from "./kb-entry-form.js";
 import { taskRouteId } from "../lib/display.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 const KB_READ_SECTIONS = [
   { id: "kb-read-body", num: "01", label: "Body", meta: "Markdown" },
@@ -99,6 +100,15 @@ export function KbDetail({ slug }) {
 
     return () => { cancelled = true; };
   }, [slug]);
+
+  useAppResume(() => {
+    api.getKb(slug)
+      .then((res) => setEntry(normalizeKbEntry(res.entry)))
+      .catch(() => setEntry({ notFound: true }));
+    api.kbUsage(slug)
+      .then((res) => setUsage(res))
+      .catch(() => setUsage({ tasks: [], agents: [] }));
+  });
 
   const title = entry?.notFound ? "Entry not found" : (entry?.title || slug);
   const categoryAttr = categoryToken(entry?.category);

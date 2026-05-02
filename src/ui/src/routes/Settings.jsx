@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -216,6 +217,18 @@ export function Settings() {
   const runtimeDirty = useMemo(() => runtimeBaseline ? !jsonEqual(runtimeDraft, runtimeBaseline) : false, [runtimeDraft, runtimeBaseline]);
   const mcpDirty = useMemo(() => !jsonEqual(mcpRows, mcpBaselineRows), [mcpRows, mcpBaselineRows]);
   const isDirty = settingsDirty || runtimeDirty || mcpDirty;
+  useAppResume(() => {
+    api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
+    api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
+    api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
+    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    loadSlackStatus().catch(() => setSlackStatus(null));
+    if (!isDirty) {
+      loadSettings().catch((err) => setLoadError(err.message || "Settings failed"));
+      loadRuntime();
+      loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
+    }
+  });
 
   const formSave = useFormSave(async () => {
     if (settingsDirty) {

@@ -9,7 +9,7 @@ import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
-import { onPageVisible, pageIsVisible } from "../lib/pageVisibility.js";
+import { pageIsVisible, useAppResume } from "../lib/pageVisibility.js";
 import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { agentDisplayName, taskDisplayKey, taskRecoveryLabel, taskRouteId } from "../lib/display.js";
@@ -234,16 +234,12 @@ export function TaskDetail({ id, runParam = null }) {
   }, [id]);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadAutomationsSoon = useThrottledCallback(reloadAutomations, 100);
-  const flushHiddenReloads = useCallback(() => {
+  const refreshOnResume = useCallback(() => {
     if (!pageIsVisible()) return;
-    if (hiddenDetailReloadRef.current) {
-      hiddenDetailReloadRef.current = false;
-      reloadSoon();
-    }
-    if (hiddenAutomationsReloadRef.current) {
-      hiddenAutomationsReloadRef.current = false;
-      reloadAutomationsSoon();
-    }
+    hiddenDetailReloadRef.current = false;
+    hiddenAutomationsReloadRef.current = false;
+    reloadSoon();
+    reloadAutomationsSoon();
   }, [reloadAutomationsSoon, reloadSoon]);
 
   useEffect(() => { reload(); }, [reload]);
@@ -259,7 +255,7 @@ export function TaskDetail({ id, runParam = null }) {
     reloadAbortRef.current?.abort?.();
     automationsAbortRef.current?.abort?.();
   }, []);
-  useEffect(() => onPageVisible(flushHiddenReloads), [flushHiddenReloads]);
+  useAppResume(refreshOnResume);
   useEffect(() => {
     const cached = readTaskDetailCache(id);
     if (cached) setData(cached);

@@ -25,6 +25,7 @@ import { LoadingState } from "../components/LoadingState.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 
 // Stage grid in the right rail.
 const TASK_STAGE_OPTIONS = [
@@ -145,6 +146,33 @@ export function TaskEdit({ mode = "create", id = null }) {
   });
 
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
+  useAppResume(() => {
+    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listProjects({ include_archived: "true" }).then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
+    api.listTasks({ view: "summary" }).then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
+    if (mode !== "edit" || !id || isDirty) return;
+    api.getTask(id)
+      .then((data) => {
+        if (!data?.task) { setLoadedTask(null); setNotFound(true); return; }
+        setLoadedTask(data.task);
+        const next = {
+          title: data.task.title || "",
+          instructions: data.task.instructions || "",
+          owner_agent: data.task.owner_agent || null,
+          planner_agent: data.task.planner_agent || null,
+          reviewer_agent: data.task.reviewer_agent || null,
+          stage: data.task.stage || "plan",
+          run_policy: data.task.run_policy || DEFAULT_RUN_POLICY,
+          project_id: data.task.project_id || null,
+          tags: data.task.tags || [],
+          blocked_by_ids: data.task.dependency_ids || [],
+        };
+        setDraft(next);
+        setBaseline(next);
+        setNotFound(false);
+      })
+      .catch(() => setNotFound(true));
+  });
 
   function update(patch) {
     setDraft((d) => ({ ...d, ...patch }));

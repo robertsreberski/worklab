@@ -5,6 +5,7 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
+import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -52,6 +53,7 @@ export function Agents({ selectedName = null }) {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
   useSSE("global", (evt) => { if (evt.type?.startsWith("agent_")) reloadSoon(); });
+  useAppResume(reloadSoon);
   useGlobalShortcuts({
     "/": (event) => {
       event.preventDefault();
