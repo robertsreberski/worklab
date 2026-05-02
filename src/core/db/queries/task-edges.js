@@ -34,6 +34,18 @@ export function listSubtaskChildrenForParent(db, parentTaskId) {
   `).all(parentTaskId);
 }
 
+// R6: list the agent names assigned to a parent's delegated children. Used
+// by the watcher to evaluate `parent_review_policy = skip_when_qa_child`
+// without paying for the full child rows.
+export function listSubtaskChildAgents(db, parentTaskId) {
+  return db.prepare(`
+    SELECT t.owner_agent AS agent_name
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
+  `).all(parentTaskId).map((row) => row.agent_name).filter(Boolean);
+}
+
 // Bulk: subtask children for many parents — owner_task_id is the parent.
 export function listSubtaskChildrenForParents(db, parentTaskIds) {
   if (!parentTaskIds.length) return [];

@@ -213,6 +213,15 @@ export function touchTaskUpdatedAt(db, taskId, updatedAt) {
   db.prepare("UPDATE tasks SET updated_at = ? WHERE id = ?").run(updatedAt, taskId);
 }
 
+// R6: persist the resolved parent_review_policy on the parent task. Called
+// by the watcher after a successful delegation round so subsequent
+// execute-advance transitions can short-circuit the parent.review pass.
+export function setTaskParentReviewPolicy(db, taskId, policy, updatedAt) {
+  db.prepare(
+    "UPDATE tasks SET parent_review_policy = ?, updated_at = ? WHERE id = ?",
+  ).run(policy, updatedAt, taskId);
+}
+
 // R4: lifetime counters that survive `reset_failure_count`. Each helper is a
 // monotonic +1 — callers fire on the same events that adjust the streak
 // counters today.
