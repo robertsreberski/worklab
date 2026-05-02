@@ -348,11 +348,13 @@ function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, m
   const lines = [
     repositoryGitRoot
       ? `Before editing files, inspect the repository state with \`git status --short\` from \`${repositoryGitRoot}\`.`
-      : "Before editing files, inspect the project workdir state.",
+      : "Before editing files, inspect the project workdir state and determine whether Git is available.",
     repositoryInstructions
       ? "Read and follow the repository instructions above before changing files."
       : "If repository instructions are present in the workdir, inspect them before changing files.",
-    "Stage only files that belong to the current task; preserve unrelated dirty work.",
+    repositoryGitRoot
+      ? "Stage only files that belong to the current task; preserve unrelated dirty work."
+      : "If this workdir is not a Git repository, report changed paths and verification instead of forcing Git commits.",
   ];
   if (mode === "review") {
     lines.push("When commits are required, verify the owner made granular commits and reject bundled or uncommitted task work.");
@@ -405,6 +407,8 @@ function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir) {
   const lines = [
     `Tool working directory: \`${effectiveWorkdir}\`.`,
     "Relative paths in built-in tools and stdio MCP tools resolve from this directory.",
+    "Worklab project workdirs may be plain directories, not Git repositories.",
+    "Check that Git is available before using Git-only workflows.",
     "If you create temporary scripts that import project files, put them under this directory, such as `.worklab-tmp/`, rather than `/tmp`.",
   ];
   if (qaOutputDir) {
