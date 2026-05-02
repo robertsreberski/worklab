@@ -31,7 +31,7 @@ function systemdEscape(value) {
   return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function serviceEnv({ dataDir, host, port, workspace, logLevel, timezone }) {
+function serviceEnv({ dataDir, host, port, workspace, logLevel, timezone, drainTimeoutMs }) {
   return {
     WORKLAB_DATA_DIR: dataDir,
     WORKLAB_HOST: host,
@@ -39,6 +39,7 @@ function serviceEnv({ dataDir, host, port, workspace, logLevel, timezone }) {
     WORKLAB_WORKSPACE: workspace,
     WORKLAB_LOG_LEVEL: logLevel,
     WORKLAB_TIMEZONE: timezone,
+    WORKLAB_DRAIN_TIMEOUT_MS: drainTimeoutMs === undefined ? undefined : String(drainTimeoutMs),
     PATH: process.env.PATH || "",
   };
 }
