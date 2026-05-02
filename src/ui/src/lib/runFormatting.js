@@ -67,6 +67,7 @@ function cancellationSummary(run = {}) {
   if (initiator) return `Run cancelled (${initiator})`;
   if (run?.failure_kind === "cancelled_signal") return "Run cancelled (signal)";
   if (run?.failure_kind === "cancelled_stale") return "Run cancelled (stale)";
+  if (run?.failure_kind === "cancelled_shutdown") return "Run cancelled (coordinator shutdown)";
   if (run?.failure_kind === "cancelled") return "Run cancelled (runtime)";
   return "Run cancelled";
 }
@@ -90,7 +91,7 @@ const FAILURE_KIND_TEXT = {
   abandoned: "Worker process ended without a final result.",
 };
 
-const CANCEL_FAMILY = new Set(["cancelled", "cancelled_signal", "cancelled_stale"]);
+const CANCEL_FAMILY = new Set(["cancelled", "cancelled_signal", "cancelled_stale", "cancelled_shutdown"]);
 
 export function describeFailure(run = {}, { continuationLimit = 3 } = {}) {
   const processStatus = cleanText(run?.process_status) || cleanText(run?.status);

@@ -12,6 +12,7 @@ export const FAILURE_KINDS = [
   "cancelled",
   "cancelled_user",
   "cancelled_stale",
+  "cancelled_shutdown",
   "cancelled_signal",
   "abandoned",
 ];
@@ -87,9 +88,14 @@ export function classifyFailure({
   if (resultParseError) return "invalid_result";
   if (timedOut) return "timeout";
   if (cancelRequested) {
-    if (cancelInitiator === "stale_reconcile" || cancelInitiator === "coordinator_shutdown") {
-      return "cancelled_stale";
-    }
+    // R5: distinguish a clean coordinator shutdown from a stale-run reconcile.
+    // Both the audit and the operator care which one: a coordinator_shutdown
+    // means "we asked you to stop", and the work is reconciliation-eligible
+    // on the next boot. A stale_reconcile means the run was already orphaned
+    // (no live coordinator to ask). Mapping both to cancelled_stale hid the
+    // difference and confused the audit-period reports.
+    if (cancelInitiator === "coordinator_shutdown") return "cancelled_shutdown";
+    if (cancelInitiator === "stale_reconcile") return "cancelled_stale";
     if (cancelInitiator === "worker_signal") return "cancelled_signal";
     if (cancelInitiator === "user" || cancelInitiator === "api_cancel") return "cancelled_user";
     return "cancelled";
