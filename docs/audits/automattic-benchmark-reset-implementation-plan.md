@@ -405,8 +405,39 @@ These are explicitly *out of scope* for this branch even though the audit mentio
 
 ## Implementation log
 
-(To be filled in by the executing agent as phases complete. One row per commit.)
-
 | Phase | Recommendation | Commit | Notes |
 |---|---|---|---|
-| 0 | scaffold | _pending_ | _pending_ |
+| pre-0 | baseline lint | `3e7896c` | Re-export edge-consumed core helpers through `src/core/index.js` so the boundary lint goes green. Pre-existing baseline failure unrelated to the plan. |
+| 0 | scaffold | `f815e9c` | `src/agent/tool-bloat.js` and `src/ai/result/lenient-parse.js` stubs + agent-barrel exports. Migration plumbing exercised by existing `src/__tests__/core/db.test.js`. |
+| 1 | R1 (cap) | `28c128d` | `summarisePayload` + `wrapToolsWithBloatGuard`. Wrapped `getPiBuiltinTools` and `initPiMcpTools` returns. |
+| 1 | R1 (persist) | `6852163` | `runArtifactDir` plumbed via `WORKLAB_QA_OUTPUT_DIR` env. New `agent_tool_payload_max_bytes` setting. `tool_results_truncated` aggregated into `task_runs.diagnostics_json`. |
+| 1 | A2 | `92a89af` | REVIEW_DIRECTIVE tool-budget paragraph (prefer `browser_snapshot` over `browser_take_screenshot`). User-side agent files flagged via `TODO(audit-followup)`. |
+| 2 | R3a | `226ae72` | `parseWorklabResultLenient` + worker fallback + `result_recovered_via_lenient` runtime warning surfaced as `diagnostics.result_recovered_via`. |
+| 2 | R3b + A1 | `e7998a9` | `schema_correction` continuations capped at 2. REVIEW_DIRECTIVE JSON-only output contract. |
+| 3 | R2 + R8 | `be25e09` | `terminated_after_completion` subkind detected from `error_details.last_tool_name === "journal_summary"`; `finalisation` recovery reason with single-attempt cap and "do NOT redo the work" prompt. R8 implicit in `continuationLineage` walking `continuation_of_run_id` only. |
+| 4 | R5 | `1a0eb78` | `cancelled_shutdown` failure kind split from `cancelled_stale`. Configurable `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s). Drained-resume protocol deferred. |
+| 5 | R4 + R11 + R12 | `49265f6` | SCHEMA_VERSION 25. Lifetime counters + backfill. `parent_relationship` column + backfill. pi-sdk session_id reuse via `WORKLAB_PROVIDER_SESSION_ID`. `getTaskHealth` exposed as `task.health` on the task detail endpoint. |
+| 6 | R7 | `0766282` | `agent_review_idle_threshold_ms` (default 240 s) for review-mode runs. `last_tool_name` in idle-warning payload. R6 deferred via `TODO(audit-followup)`. |
+| 7 | R10 | `3a707b2` | `reason_kind` enum on `/api/tasks/:id/cancel` (wrong_direction / agent_stuck / context_bloat / scope_change / other). `reason_note` free-text. R9 deferred via `TODO(audit-followup)`. |
+| 8 | A4 | `74e4882` | `data-template/projects/_defaults.json` with audit-derived defaults. A3 (per-agent budgets) deferred via `TODO(audit-followup)`. |
+
+### Status by recommendation
+
+| ID | Status | Commit |
+|---|---|---|
+| R1 | Done | `28c128d`, `6852163` |
+| R2 | Done | `be25e09` |
+| R3 | Done | `226ae72`, `e7998a9` |
+| R4 | Done | `49265f6` |
+| R5 | Partial — drained-resume protocol deferred | `1a0eb78` |
+| R6 | Deferred — `TODO(audit-followup)` in `delegation-handler.js` | — |
+| R7 | Done | `0766282` |
+| R8 | Done (implicit) | `be25e09` |
+| R9 | Deferred — `TODO(audit-followup)` in `delegation-handler.js` | — |
+| R10 | Done | `3a707b2` |
+| R11 | Done | `49265f6` |
+| R12 | Done (pi-sdk only — other providers follow-up) | `49265f6` |
+| A1 | Done | `e7998a9` |
+| A2 | Done | `92a89af` |
+| A3 | Deferred — `TODO(audit-followup)` in `delegation-handler.js` | — |
+| A4 | Done | `74e4882` |

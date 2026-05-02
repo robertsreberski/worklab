@@ -1,10 +1,68 @@
 # Worklab Runtime Audit — `automattic-benchmark-reset` Project
 
 > **Status:** draft, 2026-05-02
+> **Implementation status:** see `automattic-benchmark-reset-implementation-plan.md` § Status by recommendation. R1, R2, R3, R4, R7, R8, R10, R11, R12, A1, A2, A4 landed on branch `runtime-audit-implementation`. R5 is partial (failure-kind split + configurable drain timeout; drained-resume protocol deferred). R6, R9, A3 deferred with `TODO(audit-followup)` markers.
 > **Author:** Claude (Opus 4.7) running an end-to-end audit of every run in the project
 > **Scope:** every task and every run on project `CRoBAXtjQxo0` (`automattic-benchmark-reset`), May 1–2 2026
 > **Source data:** `~/.worklab/worklab.db` snapshot taken on 2026-05-02 at audit time
 > **Working files:** `tmp/runtime-audit/` (raw JSON per task, run index, lifecycle dump, analysis script output)
+
+---
+
+## What changed in the harness
+
+This appendix lists the user-visible additions that landed during the
+implementation pass. Configuration keys without docs elsewhere live here.
+
+### New `task_runs.diagnostics_json` fields
+
+- `tool_results_truncated` (number) — count of tool-result payloads the
+  R1 bloat guard had to truncate during the run.
+- `result_recovered_via` ("lenient") — set when R3a's lenient parser
+  recovered a worklab.v2 envelope after the strict parse failed.
+- `error_details.last_tool_name` / `had_partial_progress` — used by R2 to
+  detect `terminated_after_completion`. (Already populated by pi-sdk; R2
+  taught the watcher to read them.)
+
+### New failure kinds
+
+- `cancelled_shutdown` (R5) — split from `cancelled_stale`; cancellation
+  requested by an active coordinator's SIGTERM/SIGINT handler. Does not
+  count against the failure budget.
+
+### New `task_runs` columns
+
+- `parent_relationship` (R11) — `stage_progression | recovery_continuation
+  | manual_retry | NULL`. Disambiguates the overloaded `parent_run_id`.
+
+### New `tasks` columns
+
+- `lifetime_failure_count`, `lifetime_rejection_count`,
+  `lifetime_recovery_continuation_count` (R4) — monotonic counters that
+  survive `reset_failure_count`.
+
+### New settings keys
+
+- `agent_tool_payload_max_bytes` (R1, default 262144 = 256 KB).
+- `agent_review_idle_threshold_ms` (R7, default 240000 = 4 min).
+
+### New env vars
+
+- `WORKLAB_DRAIN_TIMEOUT_MS` (R5, default 60000) — coordinator shutdown
+  watchdog timeout.
+- `WORKLAB_PROVIDER_SESSION_ID` (R12) — set by the spawn path on recovery
+  continuations so pi-sdk reuses the parent's session_id.
+
+### New continuation reasons
+
+- `finalisation` (R2) — single-shot continuation when the agent finished
+  the work but dropped before emitting the worklab.v2 envelope.
+
+### New API request shape
+
+- `POST /api/tasks/:id/cancel` (R10) accepts `reason_kind` enum
+  (`wrong_direction | agent_stuck | context_bloat | scope_change | other`)
+  and `reason_note` free text. The legacy `reason` field still works.
 
 ---
 
