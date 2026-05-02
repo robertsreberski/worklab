@@ -3543,36 +3543,51 @@ html.assistant-resizing * {
   max-width: 80ch;
 }
 
-/* §6.3 — workflow metadata block (parent breadcrumb, stage_reason, pending
- * actions, blocking issues). Sits above .task-plan-card on TaskDetail. */
-.task-workflow-meta {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-3);
-}
-.task-workflow-parent {
+/* §6.3 — parent breadcrumb plus workflow metadata on TaskDetail. */
+.task-parent-reference {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
   align-self: flex-start;
+  gap: var(--sp-2);
   max-width: 100%;
+  min-width: 0;
   padding: var(--sp-1) var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
   color: var(--text-muted);
   font-size: var(--text-sm);
+  line-height: 1.25;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.task-workflow-parent:hover {
+.task-parent-reference:hover {
   border-color: var(--border-strong);
   color: var(--text);
 }
-.task-workflow-parent-label {
+.task-parent-reference-icon,
+.task-parent-reference-label,
+.task-parent-reference-key {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.task-parent-reference-label {
   text-transform: uppercase;
   letter-spacing: 0.08em;
   font-size: var(--text-xs);
   color: var(--text-subtle);
+}
+.task-parent-reference-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.task-workflow-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
 }
 .task-workflow-stage-reason {
   display: inline-flex;
