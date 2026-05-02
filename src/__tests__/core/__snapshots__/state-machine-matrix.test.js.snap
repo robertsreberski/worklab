@@ -14,6 +14,9 @@ exports[`nextStage matrix snapshot > freezes children completion / blocking 1`] 
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -50,6 +53,9 @@ exports[`nextStage matrix snapshot > freezes children completion / blocking 1`] 
       "sideEffects": [
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "message": "blocker",
@@ -372,6 +378,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -539,6 +548,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -704,6 +716,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -885,6 +900,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -929,6 +947,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_error_text",
         },
         {
@@ -955,6 +976,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_error_text",
@@ -985,6 +1009,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_error_text",
         },
         {
@@ -1011,6 +1038,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_error_text",
@@ -1047,6 +1077,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         {
           "type": "clear_pending_actions",
         },
+        {
+          "type": "clear_pending_questions",
+        },
       ],
       "stage": "blocked",
     },
@@ -1065,6 +1098,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1244,6 +1280,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1431,6 +1470,9 @@ exports[`nextStage matrix snapshot > freezes human_move target × current cross-
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -1482,6 +1524,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -1507,6 +1552,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1541,6 +1589,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
       "sideEffects": [
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "message": "summary",
@@ -1589,6 +1640,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           ],
           "type": "set_pending_actions",
         },
+        {
+          "type": "clear_pending_questions",
+        },
       ],
       "stage": "awaiting_user",
     },
@@ -1603,6 +1657,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1658,6 +1715,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -1683,6 +1743,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1717,6 +1780,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
       "sideEffects": [
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "message": "summary",
@@ -1765,6 +1831,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
           ],
           "type": "set_pending_actions",
         },
+        {
+          "type": "clear_pending_questions",
+        },
       ],
       "stage": "awaiting_user",
     },
@@ -1779,6 +1848,9 @@ exports[`nextStage matrix snapshot > freezes plan/execute decisions 1`] = `
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",
@@ -1852,6 +1924,9 @@ exports[`nextStage matrix snapshot > freezes review-stage decisions 1`] = `
           "type": "clear_pending_actions",
         },
         {
+          "type": "clear_pending_questions",
+        },
+        {
           "type": "clear_blocking_issues",
         },
         {
@@ -1883,6 +1958,9 @@ exports[`nextStage matrix snapshot > freezes review-stage decisions 1`] = `
         },
         {
           "type": "clear_pending_actions",
+        },
+        {
+          "type": "clear_pending_questions",
         },
         {
           "type": "clear_blocking_issues",

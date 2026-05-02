@@ -101,6 +101,27 @@ describe("applyTaskSideEffects", () => {
     expect(row.blocking_issues_json).toBe("[]");
   });
 
+  it("serializes pending_questions as JSON", () => {
+    const db = makeTestDb();
+    const id = seedTask(db);
+    const questions = [{
+      id: "scope",
+      header: "Scope",
+      question: "Which scope should we plan for?",
+      options: [{ id: "small", label: "Small" }, { id: "full", label: "Full" }],
+    }];
+
+    applyTaskSideEffects(db, id, [
+      { type: "set_pending_questions", questions },
+    ], "plan", "awaiting_user");
+    expect(JSON.parse(readTask(db, id).pending_questions_json)).toEqual(questions);
+
+    applyTaskSideEffects(db, id, [
+      { type: "clear_pending_questions" },
+    ], "awaiting_user", "plan");
+    expect(readTask(db, id).pending_questions_json).toBe("[]");
+  });
+
   it("set_failure_count and reset_failure_count update failure_count", () => {
     const db = makeTestDb();
     const id = seedTask(db);

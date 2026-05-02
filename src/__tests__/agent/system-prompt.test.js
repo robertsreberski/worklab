@@ -159,6 +159,7 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("Put the human-facing final comment in `final_text`");
     expect(p).toContain("escape double quotes inside `summary`, `details`, and `final_text`");
     expect(p).toContain("For plan-stage runs, put the complete implementation plan in `details` / the plan body");
+    expect(p).toContain("For plan-stage pauses, use `questions` for 1-3 critical decisions");
     expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
     expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
     expect(p).toContain('"final_text": "Concise human-facing final comment."');
@@ -482,6 +483,7 @@ Return a structured Worklab result as JSON when you finish:
   "artifacts": {},
   "blocking_issues": [],
   "pending_actions": [],
+  "questions": [],
   "subtasks": []
 }
 

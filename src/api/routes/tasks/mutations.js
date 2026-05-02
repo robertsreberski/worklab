@@ -137,7 +137,10 @@ export async function requestCommentRerun({ db, broker, watcher, logger, taskId 
 
     const currentStage = taskStage(task);
     if (!["plan", "execute", "review"].includes(currentStage)) {
-      const result = nextStage(currentStage, { type: "human_move", target: "execute" });
+      const targetStage = currentStage === "awaiting_user"
+        ? latestRetryStage(db, taskId, "plan")
+        : latestRetryStage(db, taskId, "execute");
+      const result = nextStage(currentStage, { type: "human_move", target: targetStage });
       const errorSideEffect = result.sideEffects.find((se) => se.type === "error");
       if (errorSideEffect) {
         return rerunResponseError({ code: "invalid_transition", message: errorSideEffect.message });

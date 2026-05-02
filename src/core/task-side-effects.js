@@ -47,6 +47,14 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
         fields.push("pending_actions_json = ?");
         values.push("[]");
         break;
+      case "set_pending_questions":
+        fields.push("pending_questions_json = ?");
+        values.push(JSON.stringify(sideEffect.questions || []));
+        break;
+      case "clear_pending_questions":
+        fields.push("pending_questions_json = ?");
+        values.push("[]");
+        break;
       case "set_blocking_issues":
         fields.push("blocking_issues_json = ?");
         values.push(JSON.stringify(sideEffect.blockingIssues || []));

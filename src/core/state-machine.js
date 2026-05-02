@@ -57,6 +57,7 @@ function canStartRun(stage) {
 // applyTx writes the JSON columns; UI consumers see them clear immediately.
 const RESET_USER_ARRAYS = [
   { type: "clear_pending_actions" },
+  { type: "clear_pending_questions" },
   { type: "clear_blocking_issues" },
 ];
 
@@ -82,11 +83,22 @@ export function nextStage(currentStage, event) {
       const result = event.result || {};
       const decision = result.decision || "advance";
       const pendingActions = Array.isArray(result.pending_actions) ? result.pending_actions.filter(Boolean) : [];
+      const questions = Array.isArray(result.questions) ? result.questions.filter(Boolean) : [];
       const subtasks = Array.isArray(result.subtasks) ? result.subtasks.filter(Boolean) : [];
 
       if (decision !== "pause" && pendingActions.length > 0) {
         return unchanged(current, [
           { type: "error", message: `pending_actions can only be used with pause (got "${decision}")` },
+        ]);
+      }
+      if (decision !== "pause" && questions.length > 0) {
+        return unchanged(current, [
+          { type: "error", message: `questions can only be used with pause (got "${decision}")` },
+        ]);
+      }
+      if (questions.length > 0 && event.stage !== "plan") {
+        return unchanged(current, [
+          { type: "error", message: "questions can only be used by plan-stage pauses" },
         ]);
       }
       if (decision !== "delegate" && subtasks.length > 0) {
@@ -156,24 +168,29 @@ export function nextStage(currentStage, event) {
       }
 
       if (decision === "pause") {
-        if (pendingActions.length === 0) {
+        if (pendingActions.length === 0 && questions.length === 0) {
           return unchanged(current, [
-            { type: "error", message: "pause requires at least one pending_action" },
+            { type: "error", message: "pause requires at least one pending_action or question" },
           ]);
         }
-        return change("awaiting_user", [
+        const pauseEffects = [
           { type: "clear_error_text" },
           { type: "clear_blocking_issues" },
           { type: "reset_failure_count" },
           { type: "clear_last_failure_kind" },
           { type: "set_stage_reason", reason: result.summary || "awaiting user action" },
-          { type: "set_pending_actions", pendingActions },
-        ]);
+        ];
+        if (pendingActions.length > 0) pauseEffects.push({ type: "set_pending_actions", pendingActions });
+        else pauseEffects.push({ type: "clear_pending_actions" });
+        if (questions.length > 0) pauseEffects.push({ type: "set_pending_questions", questions });
+        else pauseEffects.push({ type: "clear_pending_questions" });
+        return change("awaiting_user", pauseEffects);
       }
 
       if (decision === "block") {
         return change("blocked", [
           { type: "clear_pending_actions" },
+          { type: "clear_pending_questions" },
           { type: "set_error_text", message: result.summary || "agent blocked" },
           { type: "set_stage_reason", reason: result.summary || "agent blocked" },
           { type: "set_blocking_issues", blockingIssues: result.blocking_issues || [] },
@@ -298,6 +315,7 @@ export function nextStage(currentStage, event) {
       if (current !== "awaiting_children") return unchanged(current);
       return change("blocked", [
         { type: "clear_pending_actions" },
+        { type: "clear_pending_questions" },
         { type: "set_error_text", message: event.message || "required child blocked" },
         { type: "set_stage_reason", reason: "required_child_blocked" },
         { type: "set_blocking_issues", blockingIssues: [event.message || "required child blocked"] },
@@ -336,6 +354,7 @@ export function nextStage(currentStage, event) {
         // belong to states the user is leaving behind.
         if (current === "awaiting_user" && target !== "awaiting_user") {
           sideEffects.push({ type: "clear_pending_actions" });
+          sideEffects.push({ type: "clear_pending_questions" });
         }
         if ((current === "blocked" || current === "awaiting_children") && target !== "blocked" && target !== "awaiting_children") {
           sideEffects.push({ type: "clear_blocking_issues" });

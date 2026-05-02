@@ -168,6 +168,7 @@ describe("POST /api/tasks", () => {
     expect(res.body.task.plan_updated_at).toBeNull();
     expect(res.body.task.plan_updated_by).toBeNull();
     expect(res.body.task.plan_source_run_id).toBeNull();
+    expect(res.body.task.pending_questions).toEqual([]);
     expect(res.body.task.priority).toBeUndefined();
   });
 
@@ -1532,6 +1533,92 @@ describe("GET /api/tasks/:id/run-preview", () => {
 
       expect(res.body.error).toMatchObject({ code: "invalid_state", message: "no execute run to review" });
     });
+  });
+});
+
+describe("POST /api/tasks/:id/pending-questions/answer", () => {
+  it("records planning answers, clears pending questions, and resumes the plan stage", async () => {
+    const handleRunRequested = vi.fn(async () => ({ runId: "plan-rerun" }));
+    const { agent, db } = makeTestServer({
+      watcher: {
+        handleRunRequested,
+        cancel: () => true,
+        shutdown: async () => {},
+        isActive: () => false,
+        isRunActive: () => false,
+        getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+        sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
+        maybeAutoStart: () => {},
+        maybeAutoStartDependents: () => {},
+      },
+    });
+    seedAgent(db, "planner");
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Questioned plan",
+      stage: "plan",
+      planner_agent: "planner",
+    }).expect(201);
+    const questions = [{
+      id: "scope",
+      header: "Scope",
+      question: "Which scope should we plan for?",
+      options: [
+        { id: "small", label: "Small", description: "Smallest useful change." },
+        { id: "full", label: "Full", description: "Complete feature." },
+      ],
+    }];
+    db.prepare(`
+      UPDATE tasks
+      SET stage = 'awaiting_user',
+          stage_reason = 'Need scope',
+          pending_questions_json = ?,
+          pending_actions_json = '[]'
+      WHERE id = ?
+    `).run(JSON.stringify(questions), task.id);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, decision, retry_stage)
+      VALUES
+        ('run-plan-pause', ?, 'execute', 'plan', 'planner', 1000, 2000, 'complete', 'succeeded', 'pause', 'plan')
+    `).run(task.id);
+
+    const res = await agent
+      .post(`/api/tasks/${task.id}/pending-questions/answer`)
+      .send({ answers: { scope: { selected: ["full"] } } })
+      .expect(200);
+
+    expect(res.body.rerun).toMatchObject({ requested: true, started: true, runId: "plan-rerun" });
+    expect(handleRunRequested).toHaveBeenCalledWith(task.id);
+    const row = db.prepare("SELECT stage, pending_questions_json, pending_actions_json FROM tasks WHERE id = ?").get(task.id);
+    expect(row.stage).toBe("plan");
+    expect(row.pending_questions_json).toBe("[]");
+    expect(row.pending_actions_json).toBe("[]");
+    const comment = db.prepare("SELECT body, author_type FROM task_comments WHERE task_id = ? ORDER BY created_at DESC LIMIT 1").get(task.id);
+    expect(comment.author_type).toBe("human");
+    expect(comment.body).toContain("Answered planning questions");
+    expect(comment.body).toContain("Which scope should we plan for?");
+    expect(comment.body).toContain("Complete feature.");
+  });
+
+  it("rejects unanswered pending questions", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "Questioned plan" }).expect(201);
+    db.prepare(`
+      UPDATE tasks
+      SET stage = 'awaiting_user',
+          pending_questions_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify([{
+      id: "scope",
+      header: "Scope",
+      question: "Which scope?",
+      options: [{ id: "small", label: "Small" }, { id: "full", label: "Full" }],
+    }]), task.id);
+
+    await agent
+      .post(`/api/tasks/${task.id}/pending-questions/answer`)
+      .send({ answers: {} })
+      .expect(400);
   });
 });
 

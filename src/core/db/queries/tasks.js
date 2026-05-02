@@ -202,6 +202,7 @@ export function markParentAwaitingChildren(db, parentTaskId, updatedAt) {
         error_text = NULL,
         completed_at = NULL,
         pending_actions_json = '[]',
+        pending_questions_json = '[]',
         blocking_issues_json = '[]',
         updated_at = ?
     WHERE id = ?
@@ -229,7 +230,7 @@ export function listProjectTasksWithRunSnapshots(db, projectId) {
     SELECT
       t.id, t.task_key, t.title, t.stage, t.stage_reason, t.run_policy,
       t.owner_agent, t.planner_agent, t.reviewer_agent, t.parent_task_id,
-      t.pending_actions_json, t.blocking_issues_json, t.failure_count,
+      t.pending_actions_json, t.pending_questions_json, t.blocking_issues_json, t.failure_count,
       t.rejection_streak, t.last_failure_kind, t.error_text, t.updated_at,
       (
         SELECT COUNT(*)
