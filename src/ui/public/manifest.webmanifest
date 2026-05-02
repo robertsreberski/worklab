@@ -1,5 +1,6 @@
 {
   "name": "Worklab",
+  "id": "/",
   "short_name": "Worklab",
   "description": "Local AI agent orchestration tool",
   "start_url": "/",

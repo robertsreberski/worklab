@@ -4,6 +4,8 @@ import {
   mcpServerFromRow,
   minutesToMs,
   minutesValue,
+  notificationDescription,
+  notificationStatus,
   runtimePayload,
   searchIndexMeta,
   secondsToMs,
@@ -136,6 +138,14 @@ describe("settings UI duration conversions", () => {
     expect(searchIndexMeta({ errors: 2, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "error", label: "Has errors" });
     expect(searchIndexMeta({ errors: 0, ready: false, model: "openai:text-embedding-3-small" })).toEqual({ status: "running", label: "Paused" });
     expect(searchIndexMeta({ errors: 0, ready: true, model: "openai:text-embedding-3-small" })).toEqual({ status: "enabled", label: "Ready" });
+  });
+
+  it("summarizes browser and PWA notification modes", () => {
+    expect(notificationStatus({ mode: "browser", supported: true, permission: "granted", enabled: true })).toEqual({ status: "enabled", label: "On" });
+    expect(notificationDescription({ mode: "browser", supported: true, permission: "granted", enabled: true })).toBe("Task run starts, completions, and errors in background tabs.");
+    expect(notificationStatus({ mode: "pwa", supported: true, permission: "default", enabled: false })).toEqual({ status: "disabled", label: "PWA off" });
+    expect(notificationDescription({ mode: "pwa", supported: true, permission: "default", enabled: false })).toBe("Mobile PWA push for task runs, even when Worklab is closed.");
+    expect(notificationDescription({ mode: "pwa", supported: false })).toBe("Install Worklab to the mobile Home Screen and open it over a secure origin.");
   });
 
   it("summarizes MCP availability without counting draft rows as unavailable", () => {

@@ -179,13 +179,16 @@ export function settingsPayload(settings = {}) {
 export function notificationStatus(settings) {
   if (!settings?.supported) return { status: "disabled", label: "Unsupported" };
   if (settings.permission === "denied") return { status: "error", label: "Blocked" };
-  if (settings.enabled) return { status: "enabled", label: "On" };
+  if (settings.enabled) return { status: "enabled", label: settings.mode === "pwa" ? "PWA on" : "On" };
+  if (settings.mode === "pwa") return { status: "disabled", label: "PWA off" };
   return { status: "disabled", label: "Off" };
 }
 
 export function notificationDescription(settings) {
+  if (!settings?.supported && settings?.mode === "pwa") return "Install Worklab to the mobile Home Screen and open it over a secure origin.";
   if (!settings?.supported) return "This browser does not support notifications.";
   if (settings.permission === "denied") return "Browser permission is blocked for this site.";
+  if (settings.mode === "pwa") return "Mobile PWA push for task runs, even when Worklab is closed.";
   return "Task run starts, completions, and errors in background tabs.";
 }
 
