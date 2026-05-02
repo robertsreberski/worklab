@@ -1113,7 +1113,7 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
   const stageTokenAnimation = await page.locator(".task-hero-status-row .stage-token-glyph").evaluate((node) => {
     return getComputedStyle(node).animationName;
   });
-  expect(stageTokenAnimation).toBe("wl-pulse");
+  expect(stageTokenAnimation).toBe("wl-stage-token-pulse");
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
   await expect(page.locator(".task-live-header .live-pulse")).toHaveCount(0);
   await expect(page.locator(".task-live-header .status-pill")).toHaveCount(1);
