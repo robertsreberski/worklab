@@ -379,7 +379,7 @@ export function CommanderRow({
         class="commander-cell-pill"
         title={task.stage_reason || undefined}
       >
-        <StageToken stage={displayStage} />
+        <StageToken stage={displayStage} pulse={isStreaming} />
       </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
       {isStreaming && previewEvents.length > 0 && (

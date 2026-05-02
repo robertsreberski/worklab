@@ -72,10 +72,14 @@ describe("design system stylesheet", () => {
     expect(statusPillRule).toMatch(/flex-shrink:\s*0\b/);
   });
 
-  it("uses the shared pulse animation for active stage-token dots", () => {
+  it("uses a contained pulse animation for active stage-token dots", () => {
     const css = readFileSync(stylesPath, "utf8");
     const pulseRule = css.match(/\.stage-token-pulse\s+\.stage-token-glyph\s*\{[^}]*\}/)?.[0] || "";
-    expect(pulseRule).toMatch(/animation:\s*wl-pulse\b/);
+    const pulseKeyframes = css.match(/@keyframes\s+wl-stage-token-pulse\s*\{[\s\S]*?\n\}/)?.[0] || "";
+    const stageTokenRule = css.match(/\.stage-token\s*\{[^}]*\}/)?.[0] || "";
+    expect(pulseRule).toMatch(/animation:\s*wl-stage-token-pulse\b/);
+    expect(stageTokenRule).toMatch(/overflow:\s*hidden\b/);
+    expect(pulseKeyframes).not.toMatch(/transform:\s*scale/);
     expect(css).not.toMatch(/\bpulse-dot\b/);
   });
 

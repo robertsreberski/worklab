@@ -197,6 +197,10 @@
   70%  { transform: scale(2.6); opacity: 0;    }
   100% { transform: scale(2.6); opacity: 0;    }
 }
+@keyframes wl-stage-token-pulse {
+  0%, 100% { opacity: 0.68; }
+  50%      { opacity: 1;    }
+}
 @keyframes wl-tick-in {
   from { opacity: 0; transform: translateY(4px); }
   to   { opacity: 1; transform: translateY(0);   }
@@ -9507,6 +9511,7 @@ html.assistant-resizing * {
   line-height: 1;
   letter-spacing: 0;
   white-space: nowrap;
+  overflow: hidden;
 }
 .stage-token-glyph {
   width: 8px;
@@ -9522,7 +9527,7 @@ html.assistant-resizing * {
   text-overflow: ellipsis;
 }
 .stage-token-pulse .stage-token-glyph {
-  animation: wl-pulse var(--dur-pulse) var(--ease-std) infinite;
+  animation: wl-stage-token-pulse 1800ms var(--ease-std) infinite;
 }
 .stage-token-menu,
 .stage-token-grid {

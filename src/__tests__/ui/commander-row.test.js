@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   commanderLivePreviewEvents,
   commanderRowStagePresentation,
   commanderRunningPreviewEvents,
 } from "../../ui/src/components/CommanderRow.jsx";
+
+const commanderRowSource = readFileSync(
+  resolve(import.meta.dirname, "../../ui/src/components/CommanderRow.jsx"),
+  "utf8",
+);
 
 describe("commander row live preview", () => {
   it("keeps the workflow stage separate from running runtime state", () => {
@@ -25,6 +32,10 @@ describe("commander row live preview", () => {
       displayStage: "plan",
       runtimeStatus: "running",
     });
+  });
+
+  it("pulses the displayed workflow stage while the task is streaming", () => {
+    expect(commanderRowSource).toMatch(/<StageToken\s+stage=\{displayStage\}\s+pulse=\{isStreaming\}/);
   });
 
   it("coalesces consecutive thinking fragments", () => {
