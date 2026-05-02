@@ -24,6 +24,12 @@
 // planner names an unlisted agent. Empty array means "any agent". A
 // per-project setting `delegation.allow_unlisted = true` should downgrade
 // the failure to a warning. UI surface: project settings page picker.
+//
+// TODO(audit-followup): A3 — per-agent run-budget warnings. evaluateBudget(agent,
+// runStats) returns {soft_warn, hard_pause, reason?}; soft → emit warning +
+// post comment; hard → cancel run with cancelled_budget. Configuration lives
+// in data-template/agents/<agent>/budget.json with soft/hard thresholds for
+// cost_usd, duration_ms, num_turns. Runs evaluated on every tool_result event.
 
 export function looksLikePlanBody(text) {
   const body = String(text || "").trim();
