@@ -645,15 +645,13 @@ describe("generateClaudeResponse", () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-claude-mcp-bloat-"));
     const runDir = join(dir, "artifacts");
     const events = [];
+    let hookOutputs = [];
     mockQueryWithHookedStream(async (options) => {
-      const outputs = await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "mcp__playwright__browser_take_screenshot", {}, {
+      hookOutputs = await runSdkHooks(options, "PostToolUse", hookInput("PostToolUse", dir, "mcp__playwright__browser_take_screenshot", {}, {
         tool_response: {
           content: [{ type: "text", text: "x".repeat(2048) }],
         },
       }), "toolu_payload");
-      const output = outputs.find((entry) => entry?.hookSpecificOutput?.hookEventName === "PostToolUse");
-      expect(output.hookSpecificOutput.updatedMCPToolOutput.content[0].text).toContain("truncated tool_result");
-      expect(output.hookSpecificOutput.updatedMCPToolOutput.content[0].text).toContain("saved_to=");
       expect(existsSync(join(runDir, "tool-output"))).toBe(true);
     });
 
@@ -668,6 +666,11 @@ describe("generateClaudeResponse", () => {
         onEvent: (event) => events.push(event),
       });
 
+      const output = hookOutputs.find((entry) => entry?.hookSpecificOutput?.hookEventName === "PostToolUse");
+      expect(Array.isArray(output.hookSpecificOutput.updatedMCPToolOutput)).toBe(true);
+      expect(output.hookSpecificOutput.updatedMCPToolOutput).not.toHaveProperty("content");
+      expect(output.hookSpecificOutput.updatedMCPToolOutput[0].text).toContain("truncated tool_result");
+      expect(output.hookSpecificOutput.updatedMCPToolOutput[0].text).toContain("saved_to=");
       expect(events).toContainEqual(expect.objectContaining({
         type: "runtime_warning",
         warning_kind: "tool_payload_truncated",
