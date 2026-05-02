@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 23;
+export const SCHEMA_VERSION = 24;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -430,6 +430,21 @@ CREATE TABLE IF NOT EXISTS assistant_agent_logs (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_assistant_agent_logs_run ON assistant_agent_logs(assistant_run_id);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  endpoint TEXT NOT NULL UNIQUE,
+  keys_json TEXT NOT NULL,
+  expiration_time INTEGER,
+  user_agent TEXT NOT NULL DEFAULT '',
+  client_kind TEXT NOT NULL DEFAULT 'pwa',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  last_seen_at INTEGER NOT NULL,
+  disabled_at INTEGER,
+  last_error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_active ON push_subscriptions(disabled_at, last_seen_at DESC);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
