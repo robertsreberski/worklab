@@ -55,6 +55,8 @@ describe("settings UI duration conversions", () => {
       slack_run_timeout_ms: minutesToMs("2"),
       assistant_run_timeout_ms: minutesToMs("5"),
       assistant_max_turns: 48,
+      agent_budget_soft_turns: 400,
+      agent_budget_hard_turns: 800,
       delegation_enabled: false,
       delegation_max_depth: 2,
       delegation_max_children_per_round: 7,
@@ -82,6 +84,8 @@ describe("settings UI duration conversions", () => {
     expect(payload.slack_run_timeout_ms).toBe(120000);
     expect(payload.assistant_run_timeout_ms).toBe(300000);
     expect(payload.assistant_max_turns).toBe(48);
+    expect(payload.agent_budget_soft_turns).toBe(400);
+    expect(payload.agent_budget_hard_turns).toBe(800);
     expect(payload.delegation_enabled).toBe(false);
     expect(payload.delegation_max_depth).toBe(2);
     expect(payload.delegation_max_children_per_round).toBe(7);

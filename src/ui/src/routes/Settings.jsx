@@ -734,7 +734,7 @@ export function Settings() {
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={18}>
+                <AdvancedSettings summary="Budgets and recovery" count={20}>
                   <FormGrid columns={3}>
                     <FormField label="Delegation depth">
                       <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
@@ -744,6 +744,12 @@ export function Settings() {
                     </FormField>
                     <FormField label="Parallel children">
                       <NumberStepper min={1} max={50} value={settings.delegation_max_parallel_children ?? 3} ariaLabel="Delegation parallel children" onChange={(value) => setSettings({ ...settings, delegation_max_parallel_children: value })} />
+                    </FormField>
+                    <FormField label="Warn turns">
+                      <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_soft_turns ?? 150} ariaLabel="Agent budget warning turns" onChange={(value) => setSettings({ ...settings, agent_budget_soft_turns: value })} />
+                    </FormField>
+                    <FormField label="Max turns">
+                      <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_hard_turns ?? 300} ariaLabel="Agent budget max turns" onChange={(value) => setSettings({ ...settings, agent_budget_hard_turns: value })} />
                     </FormField>
                     <FormField label="Trigger ratio">
                       <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
