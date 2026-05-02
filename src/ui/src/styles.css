@@ -3600,14 +3600,72 @@ html.assistant-resizing * {
 }
 
 .task-plan-card,
+.task-pending-questions-card,
 .task-subtasks-card,
 .task-automations-card {
   border-radius: var(--radius-sm);
 }
 .task-plan-card .card-header,
+.task-pending-questions-card .card-header,
 .task-subtasks-card .card-header,
 .task-automations-card .card-header {
   margin-bottom: var(--sp-3);
+}
+.task-pending-questions-card {
+  border-left: 2px solid var(--status-progress);
+}
+.task-pending-questions-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.task-pending-question {
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 var(--sp-4);
+  border: 0;
+  border-bottom: 1px solid var(--border);
+}
+.task-pending-question:last-of-type {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.task-pending-question legend {
+  padding: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--text);
+  font-weight: 650;
+  font-size: var(--text-sm);
+}
+.task-pending-question-text {
+  margin-bottom: var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.task-pending-options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.task-pending-radio {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+.task-pending-radio input {
+  margin-top: 2px;
+}
+.task-pending-free-text {
+  margin-top: var(--sp-3);
+}
+.task-pending-question-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 .task-plan-meta {
   margin-bottom: var(--sp-3);

@@ -47,6 +47,7 @@ export const api = {
   runTaskAutomation: (taskId, automationId) => request("POST", `/tasks/${taskId}/automations/${automationId}/run`),
   deleteTask: (id) => request("DELETE", `/tasks/${id}`),
   addComment: (id, body, options = {}) => request("POST", `/tasks/${id}/comments`, { body, rerun: options.rerun === true }),
+  answerPendingQuestions: (id, answers) => request("POST", `/tasks/${id}/pending-questions/answer`, { answers }),
   deleteComment: (id, commentId) => request("DELETE", `/tasks/${encodeURIComponent(id)}/comments/${encodeURIComponent(commentId)}`),
   previewTaskRun: (id) => request("GET", `/tasks/${id}/run-preview`),
   runTask: (id) => request("POST", `/tasks/${id}/run`),

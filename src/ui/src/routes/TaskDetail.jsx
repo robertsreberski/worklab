@@ -49,6 +49,7 @@ import {
   AgentRailRow,
   TaskAutomationsCard,
   TaskContextList,
+  TaskPendingQuestionsCard,
   TaskPlanCard,
   TaskSubtasksCard,
   TaskWorkflowMeta,
@@ -336,6 +337,10 @@ export function TaskDetail({ id, runParam = null }) {
   const lastFinishedRun = runs.find((r) => (r.process_status || r.status) && (r.process_status || r.status) !== "running") || null;
   const lastRunState = lastFinishedRun?.process_status || lastFinishedRun?.status;
   const hasLastRunError = !runningRun && (lastRunState === "failed" || lastRunState === "error" || lastRunState === "abandoned");
+  const pendingQuestions = Array.isArray(task?.pending_questions) ? task.pending_questions : [];
+  const interruptedStage = ["plan", "execute", "review"].includes(lastFinishedRun?.stage)
+    ? lastFinishedRun.stage
+    : (pendingQuestions.length > 0 ? "plan" : "execute");
   const recoveryLabel = taskRecoveryLabel(task);
   const recoveryDetail = recoveryLabel
     ? `${task?.last_run?.recovery?.subkind || "Provider"} interruption; retry is active.`
@@ -447,6 +452,15 @@ export function TaskDetail({ id, runParam = null }) {
     } finally {
       setCommentSaving(false);
     }
+  }
+
+  function handlePendingQuestionsAnswered(result) {
+    if (result?.rerun?.runId) {
+      setHighlightedRunId(result.rerun.runId);
+      setExpandedRunIds((s) => new Set([...s, result.rerun.runId]));
+      setRunError(null);
+    }
+    reload();
   }
 
   async function savePlan() {
@@ -727,8 +741,8 @@ export function TaskDetail({ id, runParam = null }) {
         <Button
           variant="secondary"
           iconLeft={<Icon name="play" size={13} />}
-          onClick={() => applyStatusTransition({ from: "awaiting_user", to: "execute" })}
-          title="Move back to Execute after the requested input is handled."
+          onClick={() => applyStatusTransition({ from: "awaiting_user", to: interruptedStage })}
+          title={`Move back to ${interruptedStage} after the requested input is handled.`}
         >
           Resume work
         </Button>
@@ -940,8 +954,11 @@ export function TaskDetail({ id, runParam = null }) {
       if (runningRun) cancelRun();
       else if (showStuckBanner) retryStuck();
       else if (canRun) runNow();
-      else if (stage === "awaiting_children" || stage === "awaiting_user" || stage === "blocked") {
+      else if (stage === "awaiting_children" || stage === "blocked") {
         applyStatusTransition({ from: stage, to: "execute" });
+      }
+      else if (stage === "awaiting_user") {
+        applyStatusTransition({ from: stage, to: interruptedStage });
       }
       else if (stage === "done") applyStatusTransition({ from: "done", to: "execute" });
     },
@@ -1055,6 +1072,11 @@ export function TaskDetail({ id, runParam = null }) {
               <SectionMarker id="task-workflow" num="03" kicker="Workflow" meta="Hierarchy" />
 
               <TaskWorkflowMeta task={task} />
+
+              <TaskPendingQuestionsCard
+                task={task}
+                onAnswered={handlePendingQuestionsAnswered}
+              />
 
               <TaskSubtasksCard
                 task={task}

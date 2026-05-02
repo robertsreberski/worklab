@@ -93,8 +93,9 @@ export function TaskWorkflowMeta({ task }) {
   const showParent = task.parent && task.parent.id && task.parent.id !== task.id;
   const stageReason = task.stage_reason;
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
+  const pendingQuestions = Array.isArray(task.pending_questions) ? task.pending_questions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
-  const showPendingActions = task.stage === "awaiting_user" && pendingActions.length > 0;
+  const showPendingActions = task.stage === "awaiting_user" && pendingActions.length > 0 && pendingQuestions.length === 0;
   const showStageReason = stageReason && task.stage !== "execute" && task.stage !== "done";
   if (!showParent && !showStageReason && !showPendingActions && blockingIssues.length === 0) {
     return null;
@@ -131,6 +132,136 @@ export function TaskWorkflowMeta({ task }) {
         </Card>
       )}
     </section>
+  );
+}
+
+export function shouldRenderTaskPendingQuestionsCard(task) {
+  return task?.stage === "awaiting_user"
+    && Array.isArray(task.pending_questions)
+    && task.pending_questions.length > 0;
+}
+
+export function isPendingQuestionAnswered(question, answer = {}) {
+  const selected = Array.isArray(answer.selected) ? answer.selected.filter(Boolean) : [];
+  const text = typeof answer.text === "string" ? answer.text.trim() : "";
+  return selected.length > 0 || (question?.allow_free_text === true && text.length > 0);
+}
+
+function emptyQuestionAnswer() {
+  return { selected: [], text: "" };
+}
+
+function optionLabel(option) {
+  return option?.description ? `${option.label} - ${option.description}` : option?.label;
+}
+
+export function TaskPendingQuestionsCard({ task, onAnswered }) {
+  const questions = Array.isArray(task?.pending_questions) ? task.pending_questions : [];
+  const [answers, setAnswers] = useState({});
+  const [saving, setSaving] = useState(false);
+  if (!shouldRenderTaskPendingQuestionsCard(task)) return null;
+
+  function patchAnswer(questionId, patch) {
+    setAnswers((current) => ({
+      ...current,
+      [questionId]: { ...emptyQuestionAnswer(), ...(current[questionId] || {}), ...patch },
+    }));
+  }
+
+  function toggleOption(question, optionId, checked) {
+    const current = answers[question.id] || emptyQuestionAnswer();
+    if (!question.multi_select) {
+      patchAnswer(question.id, { selected: [optionId] });
+      return;
+    }
+    const selected = new Set(current.selected || []);
+    if (checked) selected.add(optionId);
+    else selected.delete(optionId);
+    patchAnswer(question.id, { selected: [...selected] });
+  }
+
+  const complete = questions.every((question) => isPendingQuestionAnswered(question, answers[question.id]));
+
+  async function submitAnswers(event) {
+    event?.preventDefault?.();
+    if (!complete || saving) return;
+    setSaving(true);
+    try {
+      const result = await api.answerPendingQuestions(task.id, answers);
+      if (result?.rerun?.started) {
+        pushToast("Answers submitted and plan resumed", { variant: "success" });
+      } else if (result?.rerun?.error) {
+        pushToast(`Answers submitted; plan did not start: ${result.rerun.error.message}`, { variant: "error" });
+      } else {
+        pushToast("Answers submitted", { variant: "success" });
+      }
+      onAnswered?.(result);
+    } catch (error) {
+      pushToast(`Could not submit answers: ${error.message}`, { variant: "error" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card title="Planning questions" class="task-pending-questions-card">
+      <form class="task-pending-questions-form" onSubmit={submitAnswers}>
+        {questions.map((question, index) => {
+          const answer = answers[question.id] || emptyQuestionAnswer();
+          const selected = new Set(answer.selected || []);
+          return (
+            <fieldset class="task-pending-question" key={question.id || index}>
+              <legend>{question.header || `Question ${index + 1}`}</legend>
+              <div class="task-pending-question-text">{question.question}</div>
+              <div class="task-pending-options">
+                {(question.options || []).map((option) => {
+                  const checked = selected.has(option.id);
+                  if (question.multi_select) {
+                    return (
+                      <Checkbox
+                        key={option.id}
+                        checked={checked}
+                        onChange={(value) => toggleOption(question, option.id, value)}
+                        label={optionLabel(option)}
+                        disabled={saving}
+                      />
+                    );
+                  }
+                  return (
+                    <label key={option.id} class="task-pending-radio">
+                      <input
+                        type="radio"
+                        name={`question-${question.id}`}
+                        checked={checked}
+                        disabled={saving}
+                        onChange={() => toggleOption(question, option.id, true)}
+                      />
+                      <span>{optionLabel(option)}</span>
+                    </label>
+                  );
+                })}
+              </div>
+              {question.allow_free_text && (
+                <Textarea
+                  rows={2}
+                  autoGrow
+                  class="task-pending-free-text"
+                  placeholder="Additional answer..."
+                  value={answer.text || ""}
+                  disabled={saving}
+                  onInput={(event) => patchAnswer(question.id, { text: event.currentTarget.value })}
+                />
+              )}
+            </fieldset>
+          );
+        })}
+        <div class="task-pending-question-actions">
+          <Button type="submit" variant="primary" disabled={!complete || saving}>
+            {saving ? "Submitting..." : "Submit answers"}
+          </Button>
+        </div>
+      </form>
+    </Card>
   );
 }
 

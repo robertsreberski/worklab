@@ -34,6 +34,7 @@ export function projectTaskAttentionItems(task = {}) {
   const items = [];
   const stage = task.stage || "plan";
   const pendingActions = Array.isArray(task.pending_actions) ? task.pending_actions : [];
+  const pendingQuestions = Array.isArray(task.pending_questions) ? task.pending_questions : [];
   const blockingIssues = Array.isArray(task.blocking_issues) ? task.blocking_issues : [];
   const runError = hasRunError(task);
 
@@ -59,6 +60,9 @@ export function projectTaskAttentionItems(task = {}) {
   }
   if (pendingActions.length > 0) {
     items.push({ key: "pending_actions", label: `${pendingActions.length} action${pendingActions.length === 1 ? "" : "s"}`, tone: "warn", title: pendingActions.join("\n") });
+  }
+  if (pendingQuestions.length > 0) {
+    items.push({ key: "pending_questions", label: `${pendingQuestions.length} question${pendingQuestions.length === 1 ? "" : "s"}`, tone: "warn", title: pendingQuestions.map((question) => question.question).filter(Boolean).join("\n") });
   }
   if (task.last_failure_kind && !runError && !hasStaleResolvedFailureKind(task)) {
     items.push({ key: "failure_kind", label: `Failure: ${task.last_failure_kind}`, tone: "warn" });
