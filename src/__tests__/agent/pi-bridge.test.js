@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   coerceMcpContent,
@@ -36,6 +36,38 @@ describe("pi MCP tool helpers", () => {
     const content = coerceMcpContent({ content: [{ type: "text", text: "ok" }] });
 
     expect(content).toEqual([{ type: "text", text: "ok" }]);
+  });
+
+  it("persists oversized MCP images before replacing them with compact text", () => {
+    const root = tempWorkspace();
+    const runArtifactDir = join(root, ".worklab-tmp", "artifacts", "run-image");
+    const imageBytes = Buffer.from("large screenshot payload");
+    const truncations = [];
+
+    const content = coerceMcpContent(
+      { content: [{ type: "image", data: imageBytes.toString("base64"), mimeType: "image/png" }] },
+      {
+        imageInlineMaxBytes: 10,
+        runArtifactDir,
+        toolName: "mcp__playwright__browser_take_screenshot",
+        toolUseId: "shot-1",
+        onTruncate: (event) => truncations.push(event),
+      },
+    );
+
+    expect(content).toHaveLength(1);
+    expect(content[0].type).toBe("text");
+    expect(content[0].text).toContain("saved_to=");
+    const files = readdirSync(join(runArtifactDir, "tool-output"));
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/mcp__playwright__browser_take_screenshot.*\.png$/);
+    expect(readFileSync(join(runArtifactDir, "tool-output", files[0])).toString()).toBe("large screenshot payload");
+    expect(truncations[0]).toMatchObject({
+      tool: "mcp__playwright__browser_take_screenshot",
+      tool_use_id: "shot-1",
+      original_bytes: imageBytes.length,
+      max_bytes: 10,
+    });
   });
 
   it("hard-caps model-supplied built-in tool budgets during execution without schema maxima", () => {
