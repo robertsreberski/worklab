@@ -5,6 +5,7 @@ import {
   normalizeLiveInputBody,
   resolveRunArtifactDir,
   runArtifactSummary,
+  runTodoStateSummary,
   safeRunArtifactPath,
   supportsLiveInputProvider,
   tailRunEventsByVisibleItems,
@@ -34,6 +35,7 @@ function normalizeRun(row, liveInputState = null, events = null) {
     artifact_paths: artifactPaths(artifacts),
     artifacts,
     artifact_summary: runArtifactSummary(artifacts),
+    todo_state: runTodoStateSummary(row.todo_state_json),
     result: row.result_json ? JSON.parse(row.result_json) : null,
     live_input: {
       supported,

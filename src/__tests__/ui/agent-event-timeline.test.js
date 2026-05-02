@@ -108,6 +108,20 @@ describe("agent event timeline normalization", () => {
     expect(items[0].toolResult.output).toBe("ok");
   });
 
+  it("keeps successful run todo tool calls out of the timeline", () => {
+    const items = groupAgentTimelineEvents([
+      { type: "text", text: "Starting" },
+      { type: "tool_use", tool_use_id: "todo-1", name: "mcp__worklab__todo_write", input: { todos: [] } },
+      { type: "tool_result", tool_use_id: "todo-1", output: "{\"ok\":true}", is_error: false },
+      { type: "text", text: "Continuing" },
+    ]);
+
+    expect(items).toEqual([
+      { type: "text", text: "Starting" },
+      { type: "text", text: "Continuing" },
+    ]);
+  });
+
   it("attaches structured output to the matching tool call", () => {
     const structured = { schema: "worklab.v2", summary: "Done", final_text: "Implemented." };
     const items = groupAgentTimelineEvents([

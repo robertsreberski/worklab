@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 27;
+export const SCHEMA_VERSION = 28;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -148,6 +148,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
   artifact_paths_json TEXT NOT NULL DEFAULT '[]',
   artifacts_json TEXT NOT NULL DEFAULT '[]',
   artifact_summary_json TEXT NOT NULL DEFAULT '{}',
+  todo_state_json TEXT NOT NULL DEFAULT '{"todos":[],"updated_at":null,"update_count":0}',
   result_json TEXT,
   cancel_initiator TEXT,
   cancel_reason TEXT,

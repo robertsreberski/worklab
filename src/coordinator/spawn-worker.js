@@ -18,6 +18,7 @@ import { evaluateBudget, loadAgentBudget } from "../core/agent-budgets.js";
 import { insertSystemComment } from "../core/db/queries/comments.js";
 import { newCommentId } from "../core/ids.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import { runTodoStateSummary } from "../core/run-todos.js";
 import {
   captureGitArtifactState,
   collectGitArtifacts,
@@ -726,6 +727,14 @@ export function spawnWorker({
         : null;
       const toolPayloadTruncatedCount = allWarnings.filter((w) => w.kind === "tool_payload_truncated").length;
       const resultRecoveredViaLenient = allWarnings.some((w) => w.kind === "result_recovered_via_lenient");
+      const todoSummary = (() => {
+        try {
+          const row = db.prepare("SELECT todo_state_json FROM task_runs WHERE id = ?").get(runId);
+          return runTodoStateSummary(row?.todo_state_json);
+        } catch {
+          return runTodoStateSummary(null);
+        }
+      })();
       const diagnostics = {
         ...(diagnosticsSeed || {}),
         ...(promptDiagnostics || {}),
@@ -741,6 +750,13 @@ export function spawnWorker({
           before: gitArtifactBefore,
           after: gitArtifactAfter,
           changed: gitArtifacts.length > 0,
+        },
+        run_todo: {
+          used: todoSummary.update_count > 0,
+          update_count: todoSummary.update_count,
+          total: todoSummary.total,
+          completed: todoSummary.completed,
+          open: Math.max(0, todoSummary.total - todoSummary.completed),
         },
         warning_count: allWarnings.length,
         ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),

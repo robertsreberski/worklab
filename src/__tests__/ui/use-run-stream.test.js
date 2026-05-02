@@ -5,6 +5,7 @@ import {
   refreshRunState,
   subscribeRunState,
   subscribeRunStream,
+  todoStateFromToolEvents,
 } from "../../ui/src/lib/useRunStream.js";
 
 class FakeEventSource {
@@ -87,6 +88,37 @@ describe("shared run stream subscriptions", () => {
 
     unsubscribeFirst();
     unsubscribeSecond();
+  });
+
+  it("extracts run todo state from successful todo_write tool results", () => {
+    expect(todoStateFromToolEvents({ todos: [], updated_at: null, update_count: 0 }, [
+      {
+        type: "tool_use",
+        tool_use_id: "todo-1",
+        name: "mcp__worklab__todo_write",
+        input: { todos: [{ content: "Wire MCP tool", status: "in_progress" }] },
+      },
+      {
+        type: "tool_result",
+        tool_use_id: "todo-1",
+        content: JSON.stringify({
+          ok: true,
+          todo_state: {
+            todos: [{ content: "Wire MCP tool", status: "in_progress" }],
+            updated_at: 123,
+            update_count: 1,
+            total: 1,
+            completed: 0,
+          },
+        }),
+        is_error: false,
+      },
+    ])).toMatchObject({
+      total: 1,
+      completed: 0,
+      update_count: 1,
+      todos: [{ content: "Wire MCP tool", status: "in_progress" }],
+    });
   });
 
   it("keeps live updates capped to the latest 10 visible items before full history loads", async () => {

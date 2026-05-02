@@ -4282,6 +4282,93 @@ html.assistant-resizing * {
   justify-content: flex-start;
   padding: 0 var(--sp-4) var(--sp-3);
 }
+.task-live-todos {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, var(--status-progress-bg-10));
+}
+.task-live-todos-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.task-live-todos-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.task-live-todos-count {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+.task-live-todos-list {
+  display: grid;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.task-live-todo-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.task-live-todo-row-active {
+  color: var(--text);
+}
+.task-live-todo-row-completed,
+.task-live-todo-row-muted {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
+.task-live-todo-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  min-width: 18px;
+  height: 18px;
+  color: var(--text-subtle);
+}
+.task-live-todo-row-active .task-live-todo-icon {
+  color: var(--status-progress);
+}
+.task-live-todo-row-completed .task-live-todo-icon {
+  color: var(--status-done);
+}
+.task-live-todo-copy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.task-live-todo-content,
+.task-live-todo-active {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-live-todo-content {
+  font-weight: 600;
+}
+.task-live-todo-active {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+}
 .run-history-notice {
   display: flex;
   align-items: center;

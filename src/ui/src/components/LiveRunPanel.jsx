@@ -30,6 +30,86 @@ export function liveRunComposerState(run, isStreaming = false) {
   };
 }
 
+function normalizeTodoForPanel(todo) {
+  if (!todo?.content || !todo?.status) return null;
+  const normalized = {
+    content: String(todo.content),
+    status: String(todo.status),
+  };
+  if (todo.active_form) normalized.active_form = String(todo.active_form);
+  return normalized;
+}
+
+export function liveRunTodoPanelState(run) {
+  const todos = Array.isArray(run?.todo_state?.todos)
+    ? run.todo_state.todos.map(normalizeTodoForPanel).filter(Boolean)
+    : [];
+  const current = todos.find((todo) => todo.status === "in_progress") || null;
+  const pending = todos.filter((todo) => todo.status === "pending");
+  const completedCount = todos.filter((todo) => todo.status === "completed").length;
+  return {
+    visible: todos.length > 0,
+    current,
+    pending,
+    completedCount,
+    total: todos.length,
+    updatedAt: run?.todo_state?.updated_at || null,
+  };
+}
+
+function TodoStatusIcon({ status }) {
+  if (status === "completed") return <Icon name="check" size={14} />;
+  if (status === "in_progress") return <Icon name="clock" size={14} />;
+  return <Icon name="circle" size={12} />;
+}
+
+function TodoRow({ todo, tone = "" }) {
+  return (
+    <li class={`task-live-todo-row ${tone ? `task-live-todo-row-${tone}` : ""}`}>
+      <span class="task-live-todo-icon"><TodoStatusIcon status={todo.status} /></span>
+      <span class="task-live-todo-copy">
+        <span class="task-live-todo-content">{todo.content}</span>
+        {todo.active_form && <span class="task-live-todo-active">{todo.active_form}</span>}
+      </span>
+    </li>
+  );
+}
+
+export function RunTodoPanel({ run }) {
+  const todoPanel = liveRunTodoPanelState(run);
+  if (!todoPanel.visible) return null;
+  const extraPending = Math.max(0, todoPanel.pending.length - 4);
+  return (
+    <section class="task-live-todos" aria-label="Run todo list">
+      <div class="task-live-todos-header">
+        <span class="task-live-todos-title">
+          <Icon name="layout-list" size={14} />
+          <span>Checklist</span>
+        </span>
+        <span class="task-live-todos-count">{todoPanel.completedCount}/{todoPanel.total}</span>
+      </div>
+      <ul class="task-live-todos-list">
+        {todoPanel.current && <TodoRow todo={todoPanel.current} tone="active" />}
+        {todoPanel.pending.slice(0, 4).map((todo, index) => (
+          <TodoRow todo={todo} key={`${todo.content}-${index}`} />
+        ))}
+        {extraPending > 0 && (
+          <li class="task-live-todo-row task-live-todo-row-muted">
+            <span class="task-live-todo-icon"><Icon name="more-horizontal" size={14} /></span>
+            <span class="task-live-todo-copy">{extraPending} more pending</span>
+          </li>
+        )}
+        {todoPanel.completedCount > 0 && (
+          <li class="task-live-todo-row task-live-todo-row-completed">
+            <span class="task-live-todo-icon"><Icon name="check" size={14} /></span>
+            <span class="task-live-todo-copy">{todoPanel.completedCount} completed</span>
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
+
 export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel, streamState = null }) {
   const fallbackStream = useRunStream(streamState ? null : run?.id, { subscribe: isStreaming });
   const effectiveStream = streamState || fallbackStream;
@@ -95,6 +175,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           ))}
         </div>
       )}
+      <RunTodoPanel run={effectiveRun} />
       <RunHistoryNotice
         eventCount={effectiveStream.eventCount}
         visibleCount={visibleEvents.length}

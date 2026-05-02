@@ -5,6 +5,7 @@ import {
   loadTaskArtifacts,
   resolveProjectRow,
   runArtifactSummary,
+  runTodoStateSummary,
   supportsLiveInputProvider,
 } from "../../../core/index.js";
 import {
@@ -234,6 +235,7 @@ function attachDerivedRunFields(db, task) {
       started_at: runningRow.started_at,
       event_count: runningEvents.length,
       last_event: runningEvents[runningEvents.length - 1] || null,
+      todo_state: runTodoStateSummary(runningRow.todo_state_json),
     } : null,
     last_run: compactLastRun(lastRow, runningRow),
   };
@@ -356,6 +358,7 @@ export function enrichTaskList(db, tasks, config = null) {
       started_at: row.started_at,
       event_count: Number(row.event_count || 0),
       last_event: safeJson(row.last_event_json, null),
+      todo_state: runTodoStateSummary(row.todo_state_json),
     };
   }
 

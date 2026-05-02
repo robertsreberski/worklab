@@ -5,6 +5,7 @@
 // src/api/routes/tasks.js, and src/mcp/agent/server.js consume.
 
 import * as memory from "./memory.js";
+import * as todos from "./todos.js";
 import * as taskGraph from "./tasks.js";
 import * as agentMgmt from "./agents.js";
 import * as kb from "./kb.js";
@@ -17,6 +18,7 @@ const memorySearch = memoryDefs.filter((tool) => ["journal_search", "memory_sear
 
 export const toolDefinitions = [
   ...journalCore,
+  ...todos.definitions,
   ...taskGraph.definitions,
   ...agentMgmt.definitions,
   ...kb.definitions,
@@ -26,6 +28,7 @@ export const toolDefinitions = [
 export function createToolHandlers(context) {
   return {
     ...memory.buildHandlers(context),
+    ...todos.buildHandlers(context),
     ...taskGraph.buildHandlers(context),
     ...agentMgmt.buildHandlers(context),
     ...kb.buildHandlers(context),
