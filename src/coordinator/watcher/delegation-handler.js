@@ -18,6 +18,12 @@
 //     the executor's decision was advance/approve.
 // Deferred because it touches the state-machine dispatch + warrants its own
 // fixture-driven end-to-end coverage.
+//
+// TODO(audit-followup): R9 — projects.allowed_agents allowlist. Add a TEXT
+// JSON column on projects and fail-fast in the delegation path when the
+// planner names an unlisted agent. Empty array means "any agent". A
+// per-project setting `delegation.allow_unlisted = true` should downgrade
+// the failure to a warning. UI surface: project settings page picker.
 
 export function looksLikePlanBody(text) {
   const body = String(text || "").trim();

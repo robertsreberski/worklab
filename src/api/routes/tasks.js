@@ -643,8 +643,33 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const taskRow = resolveTaskRow(db, req.params.id);
     if (!taskRow) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
     const taskId = taskRow.id;
-    const reasonInput = typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "";
-    const reason = reasonInput || null;
+    // R10: structured cancel reason. Operators were leaving cancel events
+    // unlabelled, which made the audit's "why was this cancelled?" pass much
+    // slower. Accept an enum + optional free-text note. The free-text path
+    // stays open for now (back-compat) but emits a runtime_warning so we can
+    // measure adoption before tightening to a hard 400.
+    const REASON_KINDS = new Set([
+      "wrong_direction",
+      "agent_stuck",
+      "context_bloat",
+      "scope_change",
+      "other",
+    ]);
+    const reasonKindInput = typeof req.body?.reason_kind === "string" ? req.body.reason_kind.trim() : "";
+    const reasonNoteInput = typeof req.body?.reason_note === "string"
+      ? req.body.reason_note.trim().slice(0, 500)
+      : (typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 500) : "");
+    if (reasonKindInput && !REASON_KINDS.has(reasonKindInput)) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_cancel_reason",
+          message: `reason_kind must be one of: ${[...REASON_KINDS].join(", ")}`,
+        },
+      });
+    }
+    const reason = reasonKindInput
+      ? (reasonNoteInput ? `${reasonKindInput}: ${reasonNoteInput}` : reasonKindInput)
+      : (reasonNoteInput || null);
     const cancelled = watcher.cancel(taskId, { initiator: "api_cancel", reason });
     if (cancelled) return res.status(204).end();
 
