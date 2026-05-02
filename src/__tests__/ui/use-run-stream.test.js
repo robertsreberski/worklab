@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   closeRunStreamsForTests,
   loadFullRunHistory,
+  refreshRunState,
   subscribeRunState,
   subscribeRunStream,
 } from "../../ui/src/lib/useRunStream.js";
@@ -255,6 +256,58 @@ describe("shared run stream subscriptions", () => {
       "/api/runs/run-full",
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
+
+    unsubscribe();
+  });
+
+  it("force refreshes the current tail after app resume", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => {
+      const callNumber = globalThis.fetch.mock.calls.length;
+      return {
+        ok: true,
+        json: async () => callNumber === 1
+          ? {
+              run: { id: "run-resume", status: "running", process_status: "running" },
+              log: {
+                events: [{ type: "text", text: "before background", _event_seq: 1 }],
+                event_count: 1,
+                events_truncated: false,
+              },
+            }
+          : {
+              run: { id: "run-resume", status: "completed", process_status: "completed" },
+              log: {
+                events: [
+                  { type: "text", text: "missed while hidden", _event_seq: 2 },
+                  { type: "text", text: "finished while hidden", _event_seq: 3 },
+                ],
+                event_count: 3,
+                events_truncated: false,
+              },
+            },
+      };
+    });
+
+    const unsubscribe = subscribeRunState("run-resume", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+    });
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([1]);
+      expect(latest.done).toBe(false);
+    });
+
+    await refreshRunState("run-resume");
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([1, 2, 3]);
+      expect(latest.run.process_status).toBe("completed");
+      expect(latest.done).toBe(true);
+    });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(2);
 
     unsubscribe();
   });
