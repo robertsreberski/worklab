@@ -40,6 +40,20 @@ export const DEFAULT_MAX_FAILURES = 3;
 // can be diagnosed without poisoning execute-side failure budgets.
 export const DEFAULT_MAX_REJECTIONS = 3;
 
+// R6: parent_review_policy values. `default` spawns parent.review when the
+// parent's execute advances; `skip_when_qa_child` skips review when the
+// parent's delegated children include at least one QA/review-style agent;
+// `always_skip` skips review unconditionally.
+export const PARENT_REVIEW_POLICIES = ["default", "skip_when_qa_child", "always_skip"];
+
+// Resolve the effective review behaviour for a parent task on execute-advance.
+// Returns true when the state machine should skip review and auto-approve.
+export function shouldSkipParentReview({ parentReviewPolicy, hasQaChild } = {}) {
+  if (parentReviewPolicy === "always_skip") return true;
+  if (parentReviewPolicy === "skip_when_qa_child" && hasQaChild) return true;
+  return false;
+}
+
 function unchanged(stage, sideEffects = []) {
   return { stage, sideEffects };
 }
@@ -218,7 +232,38 @@ export function nextStage(currentStage, event) {
 
       // Execute advance means work is complete. If a reviewer is assigned,
       // hand off; otherwise this run is the final word.
+      // R6: parent_review_policy can short-circuit the review pass when the
+      // planner has signalled (or the watcher has detected) that a separate
+      // review on the parent is redundant — typically because a QA child
+      // agent already reviewed under the parent's umbrella. We also
+      // auto-approve when the executor and reviewer are the same agent
+      // (the QA-child meta-review case): the reviewer would only be
+      // re-reading its own output, so we skip the LLM call and emit the
+      // approval directly. The watcher gates the executor === reviewer
+      // path on `allow_self_review` by passing `autoApproveSelfReview`.
       if (event.reviewerAgent) {
+        const skipReason = shouldSkipParentReview({
+          parentReviewPolicy: event.parentReviewPolicy,
+          hasQaChild: event.hasQaChild,
+        })
+          ? "parent_review_policy"
+          : (event.autoApproveSelfReview === true
+            && event.executorAgent
+            && event.executorAgent === event.reviewerAgent
+            ? "executor_is_reviewer"
+            : null);
+        if (skipReason) {
+          return change("done", [
+            { type: "clear_error_text" },
+            { type: "clear_stage_reason" },
+            ...RESET_USER_ARRAYS,
+            { type: "reset_failure_count" },
+            { type: "reset_rejection_count" },
+            { type: "clear_last_failure_kind" },
+            { type: "set_completed_at" },
+            { type: "post_review_verdict", verdict: `AUTO-APPROVE (${skipReason})` },
+          ]);
+        }
         return change("review", [
           { type: "clear_error_text" },
           { type: "clear_stage_reason" },

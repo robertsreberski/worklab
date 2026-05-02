@@ -1,35 +1,113 @@
 // Delegation helpers used by the watcher when an agent returns
 // decision=delegate with subtasks. Pure functions: heuristics for whether
 // a stage's final text looks like a plan body, an in-memory cycle check
-// across the freshly-delegated batch, and a builder that appends the
-// child's acceptance criteria + expected artifact onto its instructions.
+// across the freshly-delegated batch, a builder that appends the child's
+// acceptance criteria + expected artifact onto its instructions, the R6
+// parent_review_policy resolution helpers, and the R9 per-project agent
+// allowlist enforcement.
 //
 // The watcher's main loop owns the actual task creation + edge insertion.
-//
-// TODO(audit-followup): R6 — plan-driven parent_review_policy. When the
-// planner delegates and the children include a `*-qa-*` agent, the audit
-// recommends auto-applying `skip_when_qa_child` so the parent's review pass
-// becomes redundant. Adding this requires:
-//   - tasks.parent_review_policy column (default | skip_when_qa_child |
-//     always_skip).
-//   - worklab.v2 envelope plumb-through for the planner-requested policy.
-//   - state-machine consult of the policy on children_completed.
-//   - auto-approve of QA-child meta-reviews when executor === reviewer and
-//     the executor's decision was advance/approve.
-// Deferred because it touches the state-machine dispatch + warrants its own
-// fixture-driven end-to-end coverage.
-//
-// TODO(audit-followup): R9 — projects.allowed_agents allowlist. Add a TEXT
-// JSON column on projects and fail-fast in the delegation path when the
-// planner names an unlisted agent. Empty array means "any agent". A
-// per-project setting `delegation.allow_unlisted = true` should downgrade
-// the failure to a warning. UI surface: project settings page picker.
 //
 // TODO(audit-followup): A3 — per-agent run-budget warnings. evaluateBudget(agent,
 // runStats) returns {soft_warn, hard_pause, reason?}; soft → emit warning +
 // post comment; hard → cancel run with cancelled_budget. Configuration lives
 // in data-template/agents/<agent>/budget.json with soft/hard thresholds for
 // cost_usd, duration_ms, num_turns. Runs evaluated on every tool_result event.
+
+import { PARENT_REVIEW_POLICIES } from "../../core/state-machine.js";
+import { agentNameAllowedByPatterns } from "../../core/projects.js";
+
+const QA_AGENT_PATTERN = /qa|review/i;
+
+// R6: a child counts as a QA/review-style agent when its name (or, lacking
+// an agent assignment, its title/instructions) matches the QA pattern. This
+// is intentionally permissive — `benchmark-qa-reviewer`, `mobile-qa`, and
+// `code-reviewer` should all trip the skip-parent-review heuristic.
+export function isQaChildAgent(agentName) {
+  return QA_AGENT_PATTERN.test(String(agentName || ""));
+}
+
+// True when at least one of the freshly-delegated subtasks targets a QA
+// agent. Falls back to scanning the subtask title when `suggested_agent`
+// is missing — a planner that names "QA the result" without picking the
+// agent still telegraphs intent.
+export function delegationHasQaChild(subtasks) {
+  if (!Array.isArray(subtasks)) return false;
+  return subtasks.some((subtask) => {
+    if (!subtask) return false;
+    const agent = String(subtask.suggested_agent || "").trim();
+    if (agent && isQaChildAgent(agent)) return true;
+    const title = String(subtask.title || "").trim();
+    return title.length > 0 && QA_AGENT_PATTERN.test(title);
+  });
+}
+
+// Resolve the parent_review_policy for a freshly-delegated round. The
+// planner's explicit choice wins (when it's a recognised value); otherwise
+// the watcher derives `skip_when_qa_child` for any delegation that includes
+// a QA-style child, or `default` when no QA child is present.
+export function resolveParentReviewPolicy({ requested, subtasks } = {}) {
+  const requestedValue = typeof requested === "string" ? requested.trim() : "";
+  if (PARENT_REVIEW_POLICIES.includes(requestedValue)) return requestedValue;
+  if (delegationHasQaChild(subtasks)) return "skip_when_qa_child";
+  return "default";
+}
+
+// R9: enforce the per-project agent allowlist. The watcher resolves the
+// project's allowlist + delegation_allow_unlisted flag before calling this;
+// passing `null` (no project, or project lookup miss) means "no project
+// scope, anything goes". An empty allowlist also falls through to "any
+// agent" — that's the back-compat default for projects that haven't been
+// configured yet. When unlisted agents are present and the override is off,
+// returns `{ ok: false, failureKind: "delegation_agent_not_allowed", ... }`
+// so the caller can fail-fast. With the override on (e.g. project with
+// delegation_allow_unlisted=1 or the bundled _defaults.json), returns
+// `{ ok: true, warnings: [...] }` so the caller records a non-fatal
+// warning + continues.
+export function enforceProjectAgentAllowlist({
+  subtasks,
+  parentOwnerAgent,
+  projectAllowlist,
+} = {}) {
+  if (!projectAllowlist) return { ok: true, warnings: [] };
+  const allowed = Array.isArray(projectAllowlist.allowed_agents)
+    ? projectAllowlist.allowed_agents
+    : [];
+  if (allowed.length === 0) return { ok: true, warnings: [] };
+  const items = Array.isArray(subtasks) ? subtasks : [];
+  const offenders = [];
+  const seen = new Set();
+  for (const subtask of items) {
+    const candidate = String(subtask?.suggested_agent || parentOwnerAgent || "").trim();
+    if (!candidate || seen.has(candidate)) continue;
+    seen.add(candidate);
+    if (!agentNameAllowedByPatterns(candidate, allowed)) offenders.push(candidate);
+  }
+  if (offenders.length === 0) return { ok: true, warnings: [] };
+  const allowList = allowed.map((pattern) => `"${pattern}"`).join(", ");
+  const offenderList = offenders.map((name) => `"${name}"`).join(", ");
+  const message = offenders.length === 1
+    ? `agent ${offenderList} is not in the project allowlist [${allowList}]`
+    : `agents ${offenderList} are not in the project allowlist [${allowList}]`;
+  if (projectAllowlist.delegation_allow_unlisted) {
+    return {
+      ok: true,
+      warnings: [{
+        kind: "delegation_unlisted_agent",
+        message: `Delegation outside project allowlist permitted (delegation_allow_unlisted=true): ${message}.`,
+        offenders,
+        allowed,
+      }],
+    };
+  }
+  return {
+    ok: false,
+    failureKind: "delegation_agent_not_allowed",
+    error: `delegation outside project allowlist: ${message}`,
+    offenders,
+    allowed,
+  };
+}
 
 export function looksLikePlanBody(text) {
   const body = String(text || "").trim();

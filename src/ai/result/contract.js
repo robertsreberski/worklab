@@ -41,6 +41,14 @@ export const pendingQuestionSchema = z.object({
   allow_free_text: z.boolean().optional().default(false),
 });
 
+// R6: optional planner-side request to override the parent task's
+// review policy when delegating. The watcher consults this on a successful
+// `decision: delegate` and writes the resolved value to
+// `tasks.parent_review_policy`. Unrecognised values fall back to the
+// watcher-derived default (`skip_when_qa_child` when a QA child is present,
+// else `default`).
+export const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
+
 export const worklabResultSchema = z.object({
   schema: z.literal("worklab.v2"),
   stage: z.enum(STAGES).optional(),
@@ -53,6 +61,7 @@ export const worklabResultSchema = z.object({
   pending_actions: z.array(z.string()).default([]),
   questions: z.array(pendingQuestionSchema).max(3).default([]),
   subtasks: z.array(subtaskSchema).default([]),
+  parent_review_policy: z.enum(PARENT_REVIEW_POLICY_VALUES).optional(),
 }).passthrough();
 
 export const WORKLAB_RESULT_JSON_SCHEMA = {
