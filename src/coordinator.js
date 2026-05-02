@@ -198,10 +198,19 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     shuttingDown = true;
     logger.info("shutdown");
 
+    // R5: workers may be mid-tool-call when SIGTERM lands. Give them up to
+    // `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) to wrap up so the next
+    // coordinator boot doesn't see them as orphaned. The watchdog still kicks
+    // in if a worker is genuinely stuck.
+    const drainTimeoutMs = (() => {
+      const raw = Number(process.env.WORKLAB_DRAIN_TIMEOUT_MS);
+      if (Number.isFinite(raw) && raw > 0) return Math.min(raw, 600_000);
+      return 60_000;
+    })();
     const watchdog = setTimeout(() => {
-      logger.warn("shutdown watchdog fired; forcing exit");
+      logger.warn({ drainTimeoutMs }, "shutdown watchdog fired; forcing exit");
       process.exit(1);
-    }, 5000);
+    }, drainTimeoutMs);
     watchdog.unref();
 
     try { await watcherHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }

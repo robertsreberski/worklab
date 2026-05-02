@@ -273,9 +273,11 @@ export function nextStage(currentStage, event) {
           ? "signal"
           : failureKind === "cancelled_stale"
             ? "stale_reconcile"
-            : failureKind === "cancelled_user"
-              ? "user"
-              : "runtime");
+            : failureKind === "cancelled_shutdown"
+              ? "coordinator_shutdown"
+              : failureKind === "cancelled_user"
+                ? "user"
+                : "runtime");
       const reasonLabel = event.cancelReason
         ? `${initiator}: ${event.cancelReason}`
         : initiator;

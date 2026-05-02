@@ -35,7 +35,10 @@ describe("classifyFailure", () => {
 
   it("classifies stale cancel as cancelled_stale", () => {
     expect(classifyFailure({ cancelRequested: true, cancelInitiator: "stale_reconcile" })).toBe("cancelled_stale");
-    expect(classifyFailure({ cancelRequested: true, cancelInitiator: "coordinator_shutdown" })).toBe("cancelled_stale");
+  });
+
+  it("distinguishes coordinator shutdown from stale cancel (R5)", () => {
+    expect(classifyFailure({ cancelRequested: true, cancelInitiator: "coordinator_shutdown" })).toBe("cancelled_shutdown");
   });
 
   it("classifies raw cancellation exits and signals", () => {
