@@ -73,9 +73,15 @@ Return a structured Worklab result as JSON when you finish:
 
 Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 
+// TODO(audit-followup): A2 — the live `~/.worklab/agents/benchmark-qa-reviewer/`
+// agent prompt file is user-side and not in source control; operators running
+// long-lived projects should re-sync that file from this REVIEW_DIRECTIVE to
+// pick up the playwright tool-budget guidance.
 const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions.
 
 If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
+
+Tool budget: when verifying UI work with the Playwright MCP, prefer \`mcp__playwright__browser_snapshot\` (a compact accessibility tree of the rendered DOM) over \`mcp__playwright__browser_take_screenshot\`. Only fall back to a screenshot when the rejection rests on something the DOM cannot tell you — pixel-level layout, colour, font rendering, or graphical artifacts. Screenshots return base64 payloads that quickly exhaust the context window.
 
 Return a structured Worklab result as JSON when you finish:
 
