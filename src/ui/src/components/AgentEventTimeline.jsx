@@ -461,6 +461,23 @@ function TimelineEvent({ event, isLast, streaming }) {
         maxHeight={5000}
       />
     );
+  } else if (type === "worktree_reconcile") {
+    railIcon = <RailIcon name="git-branch" tone={event.tone === "success" ? "success" : "warn"} />;
+    const meta = [
+      event.status ? event.status.replaceAll("_", " ") : null,
+      event.branch,
+      event.branchHead,
+    ].filter(Boolean).join(" / ");
+    content = (
+      <div>
+        <StructuredContent
+          content={event.text || "Worktree reconciliation recorded."}
+          className={event.tone === "success" ? "agentlog-event-text doc-content" : "agentlog-event-warn doc-content"}
+          maxHeight={5000}
+        />
+        {meta && <div class="agentlog-final-meta">{meta}</div>}
+      </div>
+    );
   } else if (type === "retry") {
     railIcon = <RailIcon name="refresh-cw" />;
     content = (

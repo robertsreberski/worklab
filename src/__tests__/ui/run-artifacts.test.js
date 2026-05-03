@@ -10,6 +10,7 @@ import {
   editedRunArtifactsForDisplay,
   outputRunArtifactsForDisplay,
   runArtifactMetaText,
+  worktreeDisplayState,
 } from "../../ui/src/routes/task-detail/RunCards.jsx";
 
 describe("run artifact extraction", () => {
@@ -272,5 +273,46 @@ describe("run artifact extraction", () => {
       added_lines: 4,
       removed_lines: 1,
     })).toBe("+4 -1");
+  });
+});
+
+describe("run worktree display state", () => {
+  it("labels merged worktree runs with source transition details", () => {
+    expect(worktreeDisplayState({
+      workspace_mode: "worktree",
+      worktree: {
+        status: "merged",
+        branch: "worklab/run/run-1",
+        source_head_before: "abc123456789",
+        source_head_after: "def567890123",
+        branch_head: "def567890123",
+        message: "Worktree merged into source checkout.",
+      },
+    })).toMatchObject({
+      label: "Merged",
+      tone: "success",
+      branch: "worklab/run/run-1",
+      transition: "abc1234 -> def5678",
+      message: "Worktree merged into source checkout.",
+    });
+  });
+
+  it("labels blocked worktree runs as merge paused and preserves the branch", () => {
+    expect(worktreeDisplayState({
+      workspace_mode: "worktree",
+      source_workdir: "/repo",
+      worktree: {
+        status: "blocked_dirty_source",
+        branch: "worklab/run/run-2",
+        branch_head: "aaa111122223333",
+        message: "AI commits remain on worklab/run/run-2 at aaa1111; source checkout was not changed.",
+      },
+    })).toMatchObject({
+      label: "Merge paused",
+      tone: "warn",
+      branch: "worklab/run/run-2",
+      branchHead: "aaa1111",
+      source: "/repo",
+    });
   });
 });
