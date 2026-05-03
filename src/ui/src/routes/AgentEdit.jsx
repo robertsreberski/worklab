@@ -208,6 +208,41 @@ export function memoryContentPlaceholder(memory) {
   return "";
 }
 
+export function learningMemoryStatusLabel(memory) {
+  switch (memory?.status) {
+    case "approved":
+      return "Approved";
+    case "archived":
+      return "Archived";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
+export function learningMemoryStatusTone(memory) {
+  switch (memory?.status) {
+    case "approved":
+      return "complete";
+    case "archived":
+      return "disabled";
+    case "draft":
+    default:
+      return "review";
+  }
+}
+
+export function learningMemoryMeta(memories = []) {
+  const active = (memories || []).filter((memory) => memory.status !== "archived");
+  const draft = active.filter((memory) => memory.status === "draft").length;
+  const approved = active.filter((memory) => memory.status === "approved").length;
+  return [
+    { label: "Active", value: String(active.length) },
+    { label: "Draft", value: String(draft) },
+    { label: "Approved", value: String(approved) },
+  ];
+}
+
 function CapabilityGroup({
   title,
   hint,
@@ -314,6 +349,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const [modelGroups, setModelGroups] = useState([]);
   const [memoryState, setMemoryState] = useState(null);
   const [memoryError, setMemoryError] = useState(null);
+  const [learningMemories, setLearningMemories] = useState([]);
+  const [learningError, setLearningError] = useState(null);
+  const [learningBusyId, setLearningBusyId] = useState(null);
   const [consolidating, setConsolidating] = useState(false);
   const [notice, setNotice] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -333,15 +371,24 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     if (isNew) {
       setMemoryState(null);
       setMemoryError(null);
+      setLearningMemories([]);
+      setLearningError(null);
       return;
     }
     try {
-      const res = await api.getAgentMemory(name);
+      const [res, learning] = await Promise.all([
+        api.getAgentMemory(name),
+        api.listAgentMemories(name, { limit: 50 }),
+      ]);
       setMemoryState(res.memory || null);
+      setLearningMemories(learning.memories || []);
       setMemoryError(null);
+      setLearningError(null);
     } catch (err) {
       setMemoryState(null);
+      setLearningMemories([]);
       setMemoryError(err?.message || "Memory state unavailable");
+      setLearningError(err?.message || "Learning memories unavailable");
     }
   }, [isNew, name]);
 
@@ -426,7 +473,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   useSSE("global", (evt) => {
     if (isNew || !name) return;
     const isThisAgent = evt.agent === name || evt.name === name;
-    if (isThisAgent && (evt.type === "agent_consolidated" || (evt.type === "run_started" && evt.mode === "consolidate"))) {
+    if (isThisAgent && (evt.type === "agent_consolidated" || evt.type === "agent_memory_updated" || (evt.type === "run_started" && evt.mode === "consolidate"))) {
       loadMemory();
     }
   });
@@ -500,6 +547,24 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     }
   }
 
+  function updateLearningDraft(id, patch) {
+    setLearningMemories((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
+
+  async function patchLearningMemory(memory, patch) {
+    setLearningBusyId(memory.id);
+    try {
+      const res = await api.patchAgentMemory(name, memory.id, patch);
+      setLearningMemories((items) => items.map((item) => item.id === memory.id ? res.memory : item));
+      pushToast("Learning memory updated", { variant: "success" });
+    } catch (err) {
+      pushToast(`Memory update failed: ${err.message}`, { variant: "error" });
+      await loadMemory();
+    } finally {
+      setLearningBusyId(null);
+    }
+  }
+
   const title = isNew ? "New agent" : (agent.display_name || agent.name);
   const availableSkillCount = skills.filter((skill) => skill.enabled !== false).length;
   const availableMcpCount = mcpServers.filter((server) => server.available !== false).length;
@@ -550,6 +615,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   ];
   const memoryLabel = memoryFreshnessLabel(memoryState);
   const memoryStatus = memoryFreshnessStatus(memoryState);
+  const activeLearningMemories = learningMemories.filter((memory) => memory.status !== "archived");
+  const draftLearningCount = activeLearningMemories.filter((memory) => memory.status === "draft").length;
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveDisabled = !agent.display_name || modelSaveBlocked;
@@ -620,6 +687,76 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                 Consolidate memory
               </Button>
             </div>
+          </Card>
+        )}
+
+        {!isNew && (
+          <Card
+            variant="spacious"
+            title="Learning memories"
+            headerRight={<StatusPill status={draftLearningCount ? "review" : "complete"} label={draftLearningCount ? `${draftLearningCount} draft` : "Current"} size="sm" />}
+            class="entity-rail-card agent-learning-card"
+          >
+            {learningError && <div class="agent-memory-error">{learningError}</div>}
+            <EntityMetaList items={learningMemoryMeta(learningMemories)} />
+            {activeLearningMemories.length === 0 ? (
+              <div class="agent-learning-empty">No structured memories yet.</div>
+            ) : (
+              <div class="agent-learning-list">
+                {activeLearningMemories.slice(0, 8).map((memory) => {
+                  const busy = learningBusyId === memory.id;
+                  const dirty = memory.content !== memory.original_content && memory.original_content !== undefined;
+                  return (
+                    <div class="agent-learning-item" key={memory.id}>
+                      <div class="agent-learning-item-head">
+                        <span class="agent-learning-kind">{memory.kind}</span>
+                        <StatusPill status={learningMemoryStatusTone(memory)} label={learningMemoryStatusLabel(memory)} size="sm" />
+                      </div>
+                      <Textarea
+                        rows={2}
+                        class="agent-learning-textarea"
+                        value={memory.content || ""}
+                        onInput={(event) => updateLearningDraft(memory.id, {
+                          original_content: memory.original_content ?? memory.content,
+                          content: event.target.value,
+                        })}
+                      />
+                      {memory.evidence && <div class="agent-learning-evidence">{memory.evidence}</div>}
+                      <div class="agent-learning-actions">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={busy || !dirty}
+                          loading={busy && dirty}
+                          onClick={() => patchLearningMemory(memory, { content: memory.content })}
+                        >
+                          Save
+                        </Button>
+                        {memory.status !== "approved" && (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={busy}
+                            loading={busy}
+                            onClick={() => patchLearningMemory(memory, { status: "approved" })}
+                          >
+                            Approve
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => patchLearningMemory(memory, { status: "archived" })}
+                        >
+                          Archive
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </Card>
         )}
 

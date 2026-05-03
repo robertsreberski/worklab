@@ -34,6 +34,7 @@ import {
 import {
   LOG_LEVEL_OPTIONS,
   MCP_TRANSPORT_OPTIONS,
+  AGENT_LEARNING_BACKEND_OPTIONS,
   PLANNING_HARNESS_SELECT_OPTIONS,
   PLANNING_TOOL_POLICY_SELECT_OPTIONS,
   SLACK_EFFORT_OPTIONS,
@@ -627,8 +628,21 @@ export function Settings() {
                     label="Nightly consolidation"
                     description="Refresh agent memory once per day."
                   />
+                  <Switch
+                    checked={settings.agent_learning_enabled !== false}
+                    onChange={(next) => setSettings({ ...settings, agent_learning_enabled: next })}
+                    label="Structured learning"
+                    description="Use approved learning records in future run prompts."
+                  />
                   <FormField label="Consolidation hour">
                     <NumberStepper min={0} max={23} value={settings.consolidation_hour} ariaLabel="Consolidation hour" onChange={(value) => setSettings({ ...settings, consolidation_hour: value })} />
+                  </FormField>
+                  <FormField label="Learning backend">
+                    <Select
+                      value={settings.agent_learning_backend || "worklab_native"}
+                      options={AGENT_LEARNING_BACKEND_OPTIONS}
+                      onChange={(value) => setSettings({ ...settings, agent_learning_backend: value })}
+                    />
                   </FormField>
                 </div>
               </SettingPanel>
@@ -651,13 +665,19 @@ export function Settings() {
                 </FormGrid>
               </SettingPanel>
             </div>
-            <AdvancedSettings summary="Context and logging limits" count={4}>
+            <AdvancedSettings summary="Context and logging limits" count={6}>
               <FormGrid columns={3}>
                 <FormField label="Journal tail lines">
                   <NumberStepper min={0} max={1000} value={settings.journal_tail_lines} ariaLabel="Journal tail lines" onChange={(value) => setSettings({ ...settings, journal_tail_lines: value })} />
                 </FormField>
                 <FormField label="Pinned KB limit">
                   <NumberStepper min={0} max={100} value={settings.kb_pinned_limit} ariaLabel="Pinned KB limit" onChange={(value) => setSettings({ ...settings, kb_pinned_limit: value })} />
+                </FormField>
+                <FormField label="Learning prompt limit">
+                  <NumberStepper min={1} max={25} value={settings.agent_learning_injected_limit ?? 6} ariaLabel="Learning prompt limit" onChange={(value) => setSettings({ ...settings, agent_learning_injected_limit: value })} />
+                </FormField>
+                <FormField label="Auto-approve threshold">
+                  <NumberStepper min={0} max={1} step={0.05} value={settings.agent_learning_auto_approve_threshold ?? 0.85} ariaLabel="Auto-approve threshold" onChange={(value) => setSettings({ ...settings, agent_learning_auto_approve_threshold: value })} />
                 </FormField>
                 <FormField label="Idle warning (minutes)" hint="Requires restart.">
                   <DurationInput disabled={!!runtimeError} value={runtimeDraft.runIdleWarningMs} min={0} step={0.25} onChange={(value) => setRuntimeDraft({ ...runtimeDraft, runIdleWarningMs: value })} ariaLabel="Idle warning" />

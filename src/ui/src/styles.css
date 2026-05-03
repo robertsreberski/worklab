@@ -5061,6 +5061,52 @@ html.assistant-resizing * {
   font-size: var(--text-xs);
   line-height: 1.4;
 }
+.agent-learning-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.agent-learning-list {
+  display: grid;
+  gap: var(--sp-3);
+}
+.agent-learning-item {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.agent-learning-item-head,
+.agent-learning-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  justify-content: space-between;
+}
+.agent-learning-actions {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+.agent-learning-kind {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.agent-learning-textarea {
+  min-height: 64px;
+  resize: vertical;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+}
+.agent-learning-evidence,
+.agent-learning-empty {
+  color: var(--muted);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
 .agent-editor-layout .entity-editor-main > .form-section {
   padding: 0;
   border: 0;
