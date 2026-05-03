@@ -6,8 +6,10 @@ import { pushToast } from "../lib/toast.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
+import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
@@ -33,6 +35,19 @@ const KB_EDIT_SECTIONS = [
   { id: "kb-edit-references", num: "03", label: "References", meta: "Usage" },
 ];
 
+const CATEGORY_OPTIONS = [
+  { value: "", label: "Uncategorized" },
+  { value: "run-results", label: "Run results" },
+  { value: "research", label: "Research" },
+  { value: "decision", label: "Decision" },
+  { value: "qa", label: "QA" },
+  { value: "runbook", label: "Runbook" },
+  { value: "operations", label: "Operations" },
+  { value: "reference", label: "Reference" },
+  { value: "howto", label: "How-to" },
+  { value: "policy", label: "Policy" },
+];
+
 function EntityChromeBridge({ chrome }) {
   useAppChrome(chrome, [chrome]);
   return null;
@@ -42,6 +57,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
   const isNew = slug === "new";
   const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
   const [baseline, setBaseline] = useState(null);
+  const [projects, setProjects] = useState([]);
   const [usage, setUsage] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
@@ -61,17 +77,23 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     return () => { cancelled = true; };
   }, [slug, isNew]);
 
-  function parseTags(raw) {
-    return raw.split(",").map((t) => t.trim()).filter(Boolean);
-  }
+  useEffect(() => {
+    let cancelled = false;
+    api.listProjects({ include_archived: "true" })
+      .then((res) => { if (!cancelled) setProjects(res.projects || []); })
+      .catch(() => { if (!cancelled) setProjects([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   const formSave = useFormSave(async ({ navigateOnSuccess = true } = {}) => {
     if (!entry.title.trim()) throw new Error("Title is required.");
     const payload = {
       title: entry.title.trim(),
       body: entry.body,
-      tags: parseTags(entry.tags),
+      tags: Array.isArray(entry.tags) ? entry.tags : [],
       category: entry.category.trim() || null,
+      subcategory: entry.subcategory.trim() || null,
+      project_id: entry.project_id || null,
       pinned: !!entry.pinned,
     };
     if (isNew) {
@@ -111,6 +133,15 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     Escape: () => cancel(),
   });
 
+  const projectOptions = useMemo(() => [
+    { value: "", label: "Global" },
+    ...projects.map((project) => ({
+      value: project.id,
+      label: project.name || project.slug,
+      description: project.slug,
+    })),
+  ], [projects]);
+
   if (!entry) return <LoadingState caption="Loading entry…" />;
   if (entry.notFound) return (
     <div class="pane-empty">
@@ -135,8 +166,9 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     : categoryKey.includes("policy") ? "policy"
     : categoryKey.includes("ref") ? "reference"
     : null;
-  const tagCount = parseTags(entry.tags || "").length;
+  const tagCount = Array.isArray(entry.tags) ? entry.tags.length : 0;
   const slugLabel = isNew ? "Slug after create" : slug;
+  const selectedProject = projects.find((project) => project.id === entry.project_id) || null;
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveDisabled = !entry.title.trim();
@@ -144,7 +176,9 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
   const usageAgentCount = usage?.agents?.length || 0;
   const contextMeta = [
     { label: "Slug", value: slugLabel },
+    { label: "Project", value: selectedProject?.name || "Global", mono: false },
     { label: "Category", value: entry.category || "Uncategorized", mono: false },
+    { label: "Subcategory", value: entry.subcategory || "None", mono: false },
     { label: "Tags", value: `${tagCount}`, mono: false },
     { label: "Pinned", value: entry.pinned ? "Yes" : "No", mono: false },
     !isNew ? { label: "Used by tasks", value: `${usageTaskCount}`, mono: false } : null,
@@ -243,10 +277,27 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
                   <Input value={entry.title} onInput={(e) => setEntry({ ...entry, title: e.target.value })} placeholder="Entry title" />
                 </FormField>
                 <FormField label="Category">
-                  <Input value={entry.category} onInput={(e) => setEntry({ ...entry, category: e.target.value })} placeholder="reference, howto, policy" />
+                  <Select
+                    variant="native"
+                    value={entry.category || ""}
+                    options={CATEGORY_OPTIONS}
+                    onChange={(category) => setEntry({ ...entry, category })}
+                    ariaLabel="Knowledge category"
+                  />
                 </FormField>
-                <FormField label="Tags" hint="Comma-separated">
-                  <Input value={entry.tags} onInput={(e) => setEntry({ ...entry, tags: e.target.value })} placeholder="api, setup, tutorial" />
+                <FormField label="Project">
+                  <Select
+                    value={entry.project_id || ""}
+                    options={projectOptions}
+                    onChange={(projectId) => setEntry({ ...entry, project_id: projectId || "" })}
+                    ariaLabel="Knowledge project"
+                  />
+                </FormField>
+                <FormField label="Subcategory">
+                  <Input value={entry.subcategory} onInput={(e) => setEntry({ ...entry, subcategory: e.target.value })} placeholder="runtime, ui-audit, migration" />
+                </FormField>
+                <FormField label="Tags">
+                  <TagInput value={entry.tags || []} onChange={(tags) => setEntry({ ...entry, tags })} placeholder="Add tag..." />
                 </FormField>
                 <FormField switchInside>
                   <Switch

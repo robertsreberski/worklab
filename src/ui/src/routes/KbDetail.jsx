@@ -29,7 +29,7 @@ function categoryToken(category) {
   if (c.includes("how")) return "howto";
   if (c.includes("policy")) return "policy";
   if (c.includes("ref")) return "reference";
-  return null;
+  return c.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || null;
 }
 
 function formatDateTime(value) {
@@ -113,6 +113,7 @@ export function KbDetail({ slug }) {
   const title = entry?.notFound ? "Entry not found" : (entry?.title || slug);
   const categoryAttr = categoryToken(entry?.category);
   const tagCount = entry?.tags?.length || 0;
+  const projectLabel = entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
   const usageCount = (usage?.tasks?.length || 0) + (usage?.agents?.length || 0);
   const rail = useMemo(() => {
     if (!entry || entry.notFound) return null;
@@ -122,7 +123,9 @@ export function KbDetail({ slug }) {
           <EntityMetaList
             items={[
               { label: "Slug", value: slug },
+              { label: "Project", value: projectLabel, mono: false },
               { label: "Category", value: entry.category || "Uncategorized", mono: false },
+              { label: "Subcategory", value: entry.subcategory || "None", mono: false },
               { label: "Tags", value: tagCount ? entry.tags.join(", ") : "None", mono: false },
               { label: "Pinned", value: entry.pinned ? "Yes" : "No", mono: false },
               { label: "Author", value: entry.author || "", mono: false },
@@ -136,7 +139,7 @@ export function KbDetail({ slug }) {
         </Card>
       </div>
     );
-  }, [entry, slug, tagCount, usage]);
+  }, [entry, projectLabel, slug, tagCount, usage]);
 
   if (!entry) return <LoadingState caption="Loading entry..." />;
 
@@ -193,6 +196,12 @@ export function KbDetail({ slug }) {
             <span class="pane-row-mono">{slug}</span>
             <span class="pane-row-dot">·</span>
             <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
+            {entry.project?.slug && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>{entry.project.slug}</span>
+              </>
+            )}
             {usageCount > 0 && (
               <>
                 <span class="pane-row-dot">·</span>
@@ -205,6 +214,7 @@ export function KbDetail({ slug }) {
           <>
             {entry.pinned && <Chip variant="accent" leading={<Icon name="pin" size={10} />}>Pinned</Chip>}
             {categoryAttr && <span class="kb-category-badge" data-category={categoryAttr}>{entry.category}</span>}
+            {entry.subcategory && <span class="kb-category-badge" data-category={categoryToken(entry.subcategory)}>{entry.subcategory}</span>}
             <Button
               variant="secondary"
               iconLeft={<Icon name="edit-3" size={13} />}

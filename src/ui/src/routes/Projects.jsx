@@ -34,6 +34,7 @@ import { pushToast } from "../lib/toast.js";
 const PROJECT_SECTIONS = [
   { id: "project-details", num: "01", label: "Details", meta: "Context" },
   { id: "project-tasks", num: "02", label: "Tasks", meta: "Membership" },
+  { id: "project-knowledge", num: "03", label: "Knowledge", meta: "Linked" },
 ];
 
 const PROJECT_EDIT_SECTIONS = [
@@ -494,6 +495,7 @@ function ProjectEditor({ selectedId, onSaved }) {
 
 function ProjectDetail({ selectedId, onChanged }) {
   const [project, setProject] = useState(null);
+  const [knowledgeEntries, setKnowledgeEntries] = useState([]);
   const [error, setError] = useState(null);
   const reloadAbortRef = useRef(null);
 
@@ -502,9 +504,18 @@ function ProjectDetail({ selectedId, onChanged }) {
     const controller = new AbortController();
     reloadAbortRef.current = controller;
     setProject(null);
+    setKnowledgeEntries([]);
     setError(null);
-    return api.getProject(selectedId, { signal: controller.signal })
-      .then((res) => { if (!controller.signal.aborted) setProject(res.project); })
+    return Promise.all([
+      api.getProject(selectedId, { signal: controller.signal }),
+      api.listKb({ project_id: selectedId }, { signal: controller.signal }).catch(() => ({ entries: [] })),
+    ])
+      .then(([projectRes, kbRes]) => {
+        if (!controller.signal.aborted) {
+          setProject(projectRes.project);
+          setKnowledgeEntries(kbRes.entries || []);
+        }
+      })
       .catch((err) => { if (err?.name !== "AbortError") setError(err.message || "Project not found"); });
   }, [selectedId]);
 
@@ -664,6 +675,25 @@ function ProjectDetail({ selectedId, onChanged }) {
                 <ProjectTaskProgress tasks={project.tasks} progress={taskProgress} />
               ) : (
                 <div class="task-plan-empty">No tasks are assigned to this project.</div>
+              )}
+            </section>
+
+            <section class="knowledge-read-section" aria-labelledby="project-knowledge">
+              <SectionMarker id="project-knowledge" num="03" kicker="Knowledge" meta={`${knowledgeEntries.length} linked`} />
+              {knowledgeEntries.length ? (
+                <div class="project-knowledge-list">
+                  {knowledgeEntries.slice(0, 12).map((entry) => (
+                    <a key={entry.slug} href={`#/knowledge/${entry.slug}`} class="project-knowledge-row">
+                      <span class="project-knowledge-title">{entry.title || entry.slug}</span>
+                      <span class="project-knowledge-meta">
+                        {entry.category || "uncategorized"}
+                        {entry.subcategory ? ` · ${entry.subcategory}` : ""}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              ) : (
+                <div class="task-plan-empty">No knowledge entries are linked to this project.</div>
               )}
             </section>
           </main>
