@@ -34,6 +34,7 @@ export const agentCreateSchema = z.object({
   builtin_allowlist: z.array(z.string()).optional(),
   builtin_allowlist_mode: allowlistModeSchema,
   allow_self_review: z.boolean().optional(),
+  browser_tools_review_only: z.boolean().optional(),
   daily_budget_usd: z.number().nonnegative().nullable().optional(),
   per_run_budget_usd: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
@@ -98,6 +99,7 @@ function agentSummary(row) {
     skills_allowlist_mode: row.skills_allowlist_mode,
     mcp_allowlist_mode: row.mcp_allowlist_mode,
     builtin_allowlist_mode: row.builtin_allowlist_mode,
+    browser_tools_review_only: !!row.browser_tools_review_only,
   };
 }
 
@@ -122,6 +124,7 @@ export const definitions = [
         builtin_allowlist: { type: "array", items: { type: "string" } },
         builtin_allowlist_mode: { type: "string", enum: ["all", "custom"] },
         allow_self_review: { type: "boolean" },
+        browser_tools_review_only: { type: "boolean" },
         daily_budget_usd: { type: "number", minimum: 0 },
         per_run_budget_usd: { type: "number", minimum: 0 },
         enabled: { type: "boolean" },
@@ -158,8 +161,8 @@ export function buildHandlers(context) {
             (name, display_name, description, sdk, model, effort, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-             daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             browser_tools_review_only, daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -175,6 +178,7 @@ export function buildHandlers(context) {
           JSON.stringify(builtinAllow.list),
           builtinAllow.mode,
           parsed.allow_self_review === false ? 0 : 1,
+          parsed.browser_tools_review_only === true ? 1 : 0,
           parsed.daily_budget_usd ?? null,
           parsed.per_run_budget_usd ?? null,
           parsed.enabled === false ? 0 : 1,

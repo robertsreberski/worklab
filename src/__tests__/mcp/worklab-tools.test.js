@@ -354,6 +354,7 @@ describe("worklab-tools handlers", () => {
       instructions: "Review changes and report concrete risks.",
       builtin_allowlist_mode: "custom",
       builtin_allowlist: ["Read", "Grep"],
+      browser_tools_review_only: true,
     });
 
     expect(result.agent).toMatchObject({
@@ -364,11 +365,13 @@ describe("worklab-tools handlers", () => {
       effort: "high",
       enabled: true,
       builtin_allowlist_mode: "custom",
+      browser_tools_review_only: true,
     });
     seedDb(c.dataDir, (db) => {
-      const row = db.prepare("SELECT instructions, builtin_allowlist FROM agents WHERE name = 'review-specialist'").get();
+      const row = db.prepare("SELECT instructions, builtin_allowlist, browser_tools_review_only FROM agents WHERE name = 'review-specialist'").get();
       expect(row.instructions).toContain("Review changes");
       expect(JSON.parse(row.builtin_allowlist)).toEqual(["Read", "Grep"]);
+      expect(row.browser_tools_review_only).toBe(1);
     });
   });
 

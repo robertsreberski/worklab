@@ -516,6 +516,7 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "mcp_allowlist_mode", "mcp_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "allow_self_review", "allow_self_review INTEGER NOT NULL DEFAULT 1");
+  addColumnIfMissing(db, "agents", "browser_tools_review_only", "browser_tools_review_only INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "agents", "daily_budget_usd", "daily_budget_usd REAL");
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
