@@ -49,6 +49,26 @@ describe("kbCreate + kbRead (round trip)", () => {
     expect(out.body.trim()).toBe("# heading\n\nSome body");
   });
 
+  it("round-trips project and subcategory metadata", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "project-note",
+      title: "Project Note",
+      body: "body",
+      tags: ["alpha", "alpha", " beta "],
+      category: "research",
+      subcategory: "ui-audit",
+      project_id: "project-1",
+      author: "human",
+    });
+
+    const out = kbRead({ dataDir: d, slug: "project-note" });
+    expect(out.meta.project_id).toBe("project-1");
+    expect(out.meta.subcategory).toBe("ui-audit");
+    expect(out.meta.tags).toEqual(["alpha", "beta"]);
+  });
+
   it("parses block-form (indented) tag lists on read", () => {
     const d = mk();
     mkdirSync(join(d, "knowledge"), { recursive: true });
@@ -362,6 +382,43 @@ describe("kbList", () => {
     seed(d);
     const list = kbList({ dataDir: d, tag: "alpha", category: "projects", pinned: true });
     expect(list.map((x) => x.slug)).toEqual(["two"]);
+  });
+
+  it("filters by project and subcategory", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "one",
+      title: "One",
+      body: "",
+      category: "research",
+      subcategory: "ui-audit",
+      project_id: "project-1",
+      author: "human",
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "two",
+      title: "Two",
+      body: "",
+      category: "research",
+      subcategory: "runtime",
+      project_id: "project-1",
+      author: "human",
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "three",
+      title: "Three",
+      body: "",
+      category: "research",
+      subcategory: "ui-audit",
+      project_id: "project-2",
+      author: "human",
+    });
+
+    const list = kbList({ dataDir: d, project_id: "project-1", subcategory: "ui-audit" });
+    expect(list.map((x) => x.slug)).toEqual(["one"]);
   });
 
   it("returns [] when knowledge dir does not exist", () => {

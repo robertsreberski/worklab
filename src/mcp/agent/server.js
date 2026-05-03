@@ -12,10 +12,11 @@ const context = {
   runId: process.env.WORKLAB_RUN_ID,
   taskId: process.env.WORKLAB_TASK_ID,
   taskTitle: process.env.WORKLAB_TASK_TITLE,
+  projectId: process.env.WORKLAB_PROJECT_ID || null,
 };
 
 for (const [k, v] of Object.entries(context)) {
-  if (!v) {
+  if (k !== "projectId" && !v) {
     console.error(`[worklab-mcp] missing env ${k}`);
     process.exit(1);
   }

@@ -1,10 +1,12 @@
 import { z } from "zod";
 import {
+  compactProject,
   kbCreate,
   kbDelete,
   kbList,
   kbRead,
   kbUpdate,
+  resolveProjectRow,
   uniqueSlug,
 } from "../../core/index.js";
 import {
@@ -20,6 +22,8 @@ const CreateSchema = z.object({
   body: z.string().optional().default(""),
   tags: z.array(z.string()).optional(),
   category: z.string().nullable().optional(),
+  subcategory: z.string().nullable().optional(),
+  project_id: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 });
 
@@ -28,13 +32,57 @@ const PatchSchema = z.object({
   body: z.string().optional(),
   tags: z.array(z.string()).optional(),
   category: z.string().nullable().optional(),
+  subcategory: z.string().nullable().optional(),
+  project_id: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 });
 
+function resolveKbProjectId(db, value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === "") return null;
+  if (!db) return String(value).trim() || null;
+  const row = resolveProjectRow(db, value);
+  if (!row) {
+    const err = new Error(`project not found: ${value}`);
+    err.status = 400;
+    err.code = "validation";
+    throw err;
+  }
+  return row.id;
+}
+
+function sendRouteError(res, error) {
+  if (!error?.status) throw error;
+  return res.status(error.status).json({
+    error: { code: error.code || "error", message: error.message },
+  });
+}
+
+function projectMap(db, projectIds) {
+  const out = new Map();
+  if (!db) return out;
+  for (const id of [...new Set(projectIds.filter(Boolean))]) {
+    const row = resolveProjectRow(db, id);
+    if (row) out.set(id, compactProject(row));
+  }
+  return out;
+}
+
+function attachProjects(db, entries) {
+  const rows = Array.isArray(entries) ? entries : [entries].filter(Boolean);
+  const projects = projectMap(db, rows.map((entry) => entry?.project_id || entry?.meta?.project_id));
+  const attach = (entry) => {
+    if (!entry) return entry;
+    const projectId = entry.project_id || entry.meta?.project_id || null;
+    return { ...entry, project: projectId ? projects.get(projectId) || null : null };
+  };
+  return Array.isArray(entries) ? entries.map(attach) : attach(entries);
+}
+
 export function registerKbRoutes(app, { dataDir, broker, db }) {
-  // GET /api/kb?tag=&category=&pinned=
+  // GET /api/kb?tag=&category=&subcategory=&project_id=&pinned=
   app.get("/api/kb", (req, res) => {
-    const { tag, category } = req.query;
+    const { tag, category, subcategory } = req.query;
     let pinned;
     if (req.query.pinned === "true") pinned = true;
     else if (req.query.pinned === "false") pinned = false;
@@ -43,10 +91,16 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     const filter = {};
     if (tag !== undefined) filter.tag = tag;
     if (category !== undefined) filter.category = category;
+    if (subcategory !== undefined) filter.subcategory = subcategory;
     if (pinned !== undefined) filter.pinned = pinned;
+    try {
+      if (req.query.project_id !== undefined) filter.project_id = resolveKbProjectId(db, req.query.project_id);
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
 
     const entries = kbList({ dataDir, ...filter });
-    res.json({ entries });
+    res.json({ entries: attachProjects(db, entries) });
   });
 
   // GET /api/kb/:slug
@@ -63,7 +117,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     if (!entry) {
       return res.status(404).json({ error: { code: "not_found", message: "kb entry not found" } });
     }
-    res.json({ entry });
+    res.json({ entry: attachProjects(db, entry) });
   });
 
   // POST /api/kb
@@ -75,7 +129,13 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
       });
     }
 
-    const { title, body, tags, category, pinned } = parsed.data;
+    let projectId;
+    try {
+      projectId = resolveKbProjectId(db, parsed.data.project_id);
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+    const { title, body, tags, category, subcategory, pinned } = parsed.data;
     const slug = parsed.data.slug || uniqueSlug(title, (candidate) => Boolean(kbRead({ dataDir, slug: candidate })), {
       fallback: "entry",
     });
@@ -88,6 +148,8 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
         body,
         tags,
         category,
+        subcategory,
+        project_id: projectId,
         pinned,
         author: "human",
       });
@@ -102,7 +164,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     }
 
     broker.broadcast("global", { type: "kb_updated", slug });
-    res.status(201).json({ entry });
+    res.status(201).json({ entry: attachProjects(db, entry) });
   });
 
   // PATCH /api/kb/:slug
@@ -114,9 +176,17 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
       });
     }
 
+    const patch = { ...parsed.data };
+    if ("project_id" in patch) {
+      try {
+        patch.project_id = resolveKbProjectId(db, patch.project_id);
+      } catch (error) {
+        return sendRouteError(res, error);
+      }
+    }
     let entry;
     try {
-      entry = kbUpdate({ dataDir, slug: req.params.slug, patch: parsed.data });
+      entry = kbUpdate({ dataDir, slug: req.params.slug, patch });
     } catch (err) {
       if (err.message.startsWith("invalid slug")) {
         return res.status(400).json({ error: { code: "invalid_slug", message: err.message } });
@@ -128,7 +198,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     }
 
     broker.broadcast("global", { type: "kb_updated", slug: req.params.slug });
-    res.json({ entry });
+    res.json({ entry: attachProjects(db, entry) });
   });
 
   // DELETE /api/kb/:slug

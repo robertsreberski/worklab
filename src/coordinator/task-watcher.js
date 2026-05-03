@@ -325,6 +325,7 @@ export function createTaskWatcher({
       body,
       tags: runResultKbTags({ task, stage, agentName }),
       category: "run-results",
+      project_id: task?.project_id || null,
       pinned: false,
     };
     try {
