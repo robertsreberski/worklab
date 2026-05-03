@@ -16,7 +16,14 @@ const TEST_PAYLOAD = {
 
 function permanentPushFailure(error) {
   const status = Number(error?.statusCode || error?.status);
-  return status === 404 || status === 410;
+  if (status === 404 || status === 410) return true;
+  if (status !== 403) return false;
+  const body = typeof error?.body === "string" ? error.body : "";
+  try {
+    return JSON.parse(body)?.reason === "BadJwtToken";
+  } catch {
+    return body.includes("BadJwtToken");
+  }
 }
 
 function routeUnavailable(res) {
