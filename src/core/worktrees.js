@@ -32,9 +32,8 @@ function normalizeRelativePath(value) {
 function parseDirtyPaths(statusShort) {
   return String(statusShort || "")
     .split("\n")
-    .map((line) => line.trim())
+    .map((line) => line.replace(/^.. ?/, "").replace(/^.* -> /, "").trim())
     .filter(Boolean)
-    .map((line) => line.replace(/^.{2}\s+/, "").replace(/^.* -> /, ""));
 }
 
 function sanitizeBranchPart(value) {
@@ -173,6 +172,7 @@ export function reconcileRunWorktree({
       status: "blocked_dirty_source",
       dirty_paths: parseDirtyPaths(sourceStatus),
       source_head: git(metadata.source_git_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
+      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
       metadata,
     };
   }

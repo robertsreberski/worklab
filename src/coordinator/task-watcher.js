@@ -3,6 +3,7 @@ import {
   DEFAULT_MAX_REJECTIONS,
   nextStage,
 } from "../core/state-machine.js";
+import { appendFileSync } from "node:fs";
 import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
 import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../ai/result/contract.js";
@@ -449,7 +450,11 @@ export function createTaskWatcher({
       .run(metadata ? JSON.stringify(metadata) : null, runId);
   }
 
-  function worktreeBlockMessage(result) {
+  function shortSha(value) {
+    return value ? String(value).slice(0, 7) : null;
+  }
+
+  function baseWorktreeBlockMessage(result) {
     const status = result?.status || "worktree_merge_blocked";
     if (status === "missing_worktree_metadata" || status === "missing_worktree") {
       return "Worktree merge paused because the run's AI worktree metadata is missing. Retry the execute run after checking the run workspace.";
@@ -469,6 +474,106 @@ export function createTaskWatcher({
     return `Worktree merge paused: ${status}.`;
   }
 
+  function worktreeAuditMessage(audit, result) {
+    const branch = audit.branch || "the AI branch";
+    const branchHead = shortSha(audit.branch_head);
+    const sourceBefore = shortSha(audit.source_head_before);
+    const sourceAfter = shortSha(audit.source_head_after);
+    if (audit.status === "merged") {
+      return `Worktree merged into source checkout: ${sourceBefore || "unknown"} -> ${sourceAfter || "unknown"} from ${branch} (${branchHead || "unknown"}). AI branch preserved; temporary worktree ${audit.cleaned ? "cleaned" : "not cleaned"}.`;
+    }
+    if (audit.status === "already_up_to_date") {
+      return `Worktree already in source checkout at ${sourceAfter || branchHead || "unknown"}; AI branch ${branch} is preserved.`;
+    }
+    const base = baseWorktreeBlockMessage(result);
+    if (!audit.branch && !audit.branch_head) {
+      return `${base} AI branch state could not be verified; source checkout was not changed.`;
+    }
+    return `${base} AI commits remain on ${branch}${branchHead ? ` at ${branchHead}` : ""}; source checkout was not changed.`;
+  }
+
+  function buildWorktreeAudit({ runId, taskId, metadata, reconcile, now = Date.now() }) {
+    const status = reconcile?.status || "worktree_merge_blocked";
+    const audit = {
+      status,
+      ok: !!reconcile?.ok,
+      branch: reconcile?.metadata?.branch || metadata?.branch || null,
+      source_workdir: reconcile?.metadata?.source_workdir || metadata?.source_workdir || null,
+      source_git_root: reconcile?.metadata?.source_git_root || metadata?.source_git_root || null,
+      worktree_root: reconcile?.metadata?.worktree_root || metadata?.worktree_root || null,
+      source_head_before: reconcile?.previous_source_head || reconcile?.source_head || metadata?.source_head || null,
+      source_head_after: reconcile?.ok ? (reconcile?.source_head || null) : null,
+      branch_head: reconcile?.branch_head || null,
+      cleaned: reconcile?.cleaned === true,
+      merged_at: reconcile?.ok ? (reconcile?.merged_at || now) : null,
+      dirty_paths: reconcile?.dirty_paths || [],
+      conflict_paths: reconcile?.conflict_paths || [],
+      run_id: runId,
+      task_id: taskId,
+    };
+    audit.message = worktreeAuditMessage(audit, reconcile);
+    return audit;
+  }
+
+  function worktreeAuditEvent(audit) {
+    return {
+      type: "worktree_reconcile",
+      source: "worklab_coordinator",
+      runId: audit.run_id,
+      taskId: audit.task_id,
+      status: audit.status,
+      ok: audit.ok,
+      message: audit.message,
+      branch: audit.branch,
+      sourceWorkdir: audit.source_workdir,
+      sourceGitRoot: audit.source_git_root,
+      worktreeRoot: audit.worktree_root,
+      sourceHeadBefore: audit.source_head_before,
+      sourceHeadAfter: audit.source_head_after,
+      branchHead: audit.branch_head,
+      cleaned: audit.cleaned,
+      dirtyPaths: audit.dirty_paths,
+      conflictPaths: audit.conflict_paths,
+      ts: audit.merged_at || Date.now(),
+    };
+  }
+
+  function appendCoordinatorRunEvent(runId, event) {
+    const row = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+    const log = db.prepare("SELECT id, events FROM agent_logs WHERE task_run_id = ?").get(runId);
+    const events = safeParseJson(log?.events, []);
+    const safeEvents = Array.isArray(events) ? events : [];
+    const maxSeq = safeEvents.reduce((max, item, index) => {
+      const seq = Number(item?._event_seq);
+      return Math.max(max, Number.isFinite(seq) ? seq : index + 1);
+    }, 0);
+    const nextEvent = {
+      ...event,
+      _event_seq: event._event_seq ?? maxSeq + 1,
+      ts: event.ts || Date.now(),
+    };
+    if (log?.id) {
+      db.prepare("UPDATE agent_logs SET events = ? WHERE id = ?")
+        .run(JSON.stringify([...safeEvents, nextEvent]), log.id);
+    }
+    if (row?.raw_output_path) {
+      try {
+        appendFileSync(row.raw_output_path, `${JSON.stringify(nextEvent)}\n`);
+      } catch (err) {
+        logger?.warn?.({ err: err?.message || String(err), runId, rawLogPath: row.raw_output_path }, "raw run log write failed");
+      }
+    }
+    broker?.broadcast?.(runId, nextEvent);
+    broker?.broadcast?.("global", {
+      type: "run_progress",
+      runId,
+      eventSeq: nextEvent._event_seq,
+      eventCount: safeEvents.length + 1,
+      lastEvent: nextEvent,
+    });
+    return nextEvent;
+  }
+
   function reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result }) {
     if (stage !== "execute" || result?.decision !== "advance") return { ok: true, skipped: true };
     if (run?.workspace_mode !== "worktree") return { ok: true, skipped: true };
@@ -476,36 +581,29 @@ export function createTaskWatcher({
     const reconcile = metadata?.worktree_root
       ? reconcileRunWorktree({ metadata, cleanup: true })
       : { ok: false, status: "missing_worktree_metadata", metadata };
+    const audit = buildWorktreeAudit({ runId, taskId, metadata, reconcile });
     const nextMetadata = reconcile.metadata
       ? {
         ...reconcile.metadata,
+        ...audit,
         last_reconcile_status: reconcile.status,
         last_reconcile_at: Date.now(),
       }
       : metadata;
     setRunWorktreeMetadata(runId, nextMetadata);
-    patchRunDiagnostics(runId, {
-      worktree: {
-        status: reconcile.status,
-        ok: reconcile.ok,
-        source_head: reconcile.source_head || null,
-        branch_head: reconcile.branch_head || null,
-        conflict_paths: reconcile.conflict_paths || [],
-        dirty_paths: reconcile.dirty_paths || [],
-      },
-    });
-    if (reconcile.ok) return reconcile;
+    patchRunDiagnostics(runId, { worktree: audit });
+    appendCoordinatorRunEvent(runId, worktreeAuditEvent(audit));
+    if (reconcile.ok) return { ...reconcile, audit };
 
-    const message = worktreeBlockMessage(reconcile);
-    postSystemComment(taskId, message);
+    postSystemComment(taskId, audit.message);
     applySideEffects(taskId, [
       { type: "clear_error_text" },
-      { type: "set_stage_reason", reason: message },
-      { type: "set_pending_actions", pendingActions: [message] },
+      { type: "set_stage_reason", reason: audit.message },
+      { type: "set_pending_actions", pendingActions: [audit.message] },
       { type: "clear_pending_questions" },
       { type: "clear_blocking_issues" },
     ], taskStage(getTaskById(db, taskId)), "awaiting_user");
-    return reconcile;
+    return { ...reconcile, audit };
   }
 
   function continuationParentRun(run) {
@@ -1181,6 +1279,9 @@ export function createTaskWatcher({
       stage,
       events: res.events,
     });
+    if (worktreeReconcile?.audit?.message) {
+      postSystemComment(taskId, worktreeReconcile.audit.message);
+    }
 
     // R6: parent_review_policy + auto-approve on executor === reviewer.
     // Only relevant on the execute → review boundary; review-stage
