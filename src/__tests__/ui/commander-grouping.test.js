@@ -8,6 +8,8 @@ import {
   compareCommanderGroups,
   compareCommanderTasks,
   formatCommanderCost,
+  formatCommanderCostChipLabel,
+  formatCommanderCostSummaryTitle,
   groupKeyFor,
   readCommanderTaskListCache,
   taskMatchesCommanderQuery,
@@ -23,6 +25,31 @@ describe("commander task grouping", () => {
     expect(formatCommanderCost(35.8315)).toBe("$35.83");
     expect(formatCommanderCost(0)).toBe("$0.00");
     expect(formatCommanderCost(null)).toBeNull();
+  });
+
+  it("includes unpriced run counts in commander cost summary labels", () => {
+    const summary = {
+      today: { total_usd: 0.03, run_count: 2, unpriced_run_count: 1 },
+      week: { total_usd: 0.06, run_count: 3, unpriced_run_count: 2 },
+      today_by_agent: [
+        { agent: "alpha", total_usd: 0.01, run_count: 1, unpriced_run_count: 0 },
+        { agent: "beta", total_usd: 0.02, run_count: 1, unpriced_run_count: 1 },
+      ],
+    };
+
+    expect(formatCommanderCostChipLabel(summary)).toBe("$0.03 today");
+    expect(formatCommanderCostSummaryTitle(summary)).toEqual([
+      "Today: $0.03 across 2 priced runs, 1 unpriced run",
+      "This week: $0.06 across 3 priced runs, 2 unpriced runs",
+      "  - alpha: $0.01 (1 priced run)",
+      "  - beta: $0.02 (1 priced run, 1 unpriced run)",
+    ]);
+  });
+
+  it("shows an unpriced commander cost chip when today has only unpriced runs", () => {
+    expect(formatCommanderCostChipLabel({
+      today: { total_usd: 0, run_count: 0, unpriced_run_count: 2 },
+    })).toBe("2 unpriced today");
   });
 
   it("uses the saved task stage even when the latest run errored", () => {
