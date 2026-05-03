@@ -7,6 +7,8 @@ import {
   parseProjectTags,
   projectFromRow,
   projectRouteError,
+  loadRepositoryInstructions,
+  repositoryInstructionsPromptMetadata,
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/index.js";
@@ -260,12 +262,14 @@ export function registerProjectRoutes(app, { db, broker }) {
   app.get("/api/projects/:id", (req, res) => {
     try {
       const row = projectOr404(db, req.params.id);
+      const project = projectFromRow(row);
       const tasks = listProjectTasksWithRunSnapshots(db, row.id).map(projectTaskSummary);
       res.json({
         project: {
-          ...projectFromRow(row),
+          ...project,
           stats: projectStats(db, row.id),
           tasks,
+          repository_instructions: repositoryInstructionsPromptMetadata(loadRepositoryInstructions(project.workdir)),
         },
       });
     } catch (error) {

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -103,6 +103,39 @@ describe("project API", () => {
 
     expect(patched.body.project.workdir).toBe(workdir);
     expect(existsSync(workdir)).toBe(true);
+  });
+
+  it("reports AGENTS.md recognition metadata for project details", async () => {
+    const { agent } = makeTestServer();
+    const workdir = tempWorkdir("repo-with-agents");
+    const created = await agent.post("/api/projects").send({
+      name: "Repo Instructions",
+      workdir,
+    }).expect(201);
+    writeFileSync(join(workdir, "AGENTS.md"), "Use the repository guidance.\n");
+
+    const detail = await agent.get(`/api/projects/${created.body.project.id}`).expect(200);
+
+    expect(detail.body.project.repository_instructions).toMatchObject({
+      recognized: true,
+      filename: "AGENTS.md",
+      path: join(workdir, "AGENTS.md"),
+      size: Buffer.byteLength("Use the repository guidance.\n", "utf8"),
+      truncated: false,
+      injected_into_prompts: true,
+      prompt_section: "Repository instructions",
+    });
+    expect(detail.body.project.repository_instructions.hash).toEqual(expect.any(String));
+    expect(detail.body.project.repository_instructions).not.toHaveProperty("content");
+  });
+
+  it("reports no repository instructions when AGENTS.md is absent", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/projects").send({ name: "No Repo Instructions" }).expect(201);
+
+    const detail = await agent.get(`/api/projects/${created.body.project.id}`).expect(200);
+
+    expect(detail.body.project.repository_instructions).toBeNull();
   });
 
   it("deduplicates generated slugs", async () => {
