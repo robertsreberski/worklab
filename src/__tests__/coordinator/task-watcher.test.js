@@ -343,6 +343,77 @@ describe("task-watcher", () => {
     });
   });
 
+  it("spawns review runs for worktree-enabled Git projects in an isolated worktree", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker", stage: "review", projectId: project.id });
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at)
+      VALUES ('execute-run', ?, 'execute', 'execute', 'coder', 'complete', 'succeeded', ?, ?)
+    `).run(taskId, now - 2000, now - 1000);
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const env = spawn.mock.calls[0][0].env;
+    writeFileSync(join(env.WORKLAB_WORKSPACE, "review-scratch.json"), "{}\n");
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: {
+        schema: "worklab.v2",
+        stage: "review",
+        decision: "reject",
+        summary: "needs changes",
+        details: "",
+        artifacts: {},
+        blocking_issues: ["fix it"],
+        pending_actions: [],
+        subtasks: [],
+      },
+      finalText: "Rejected",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const run = db.prepare("SELECT parent_run_id, workdir, workspace_mode, source_workdir, worktree_json FROM task_runs WHERE id = ?").get(runId);
+    const worktree = JSON.parse(run.worktree_json);
+    expect(env.WORKLAB_WORKSPACE).toBe(join(dataDir, "runs", runId, "worktree"));
+    expect(env.WORKLAB_WORKSPACE).not.toBe(source);
+    expect(run).toMatchObject({
+      parent_run_id: "execute-run",
+      workdir: env.WORKLAB_WORKSPACE,
+      workspace_mode: "worktree",
+      source_workdir: source,
+    });
+    expect(worktree).toMatchObject({
+      mode: "worktree",
+      branch: `worklab/run/${runId}`,
+      runtime_workdir: env.WORKLAB_WORKSPACE,
+    });
+    expect(existsSync(join(source, "review-scratch.json"))).toBe(false);
+    expect(git(source, ["status", "--short"])).toBe("");
+  });
+
   it("rejects required worktree mode when the project workdir is not a Git checkout", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
