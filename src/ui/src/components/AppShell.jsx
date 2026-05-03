@@ -377,7 +377,7 @@ export function AppShell({
   return (
     <AppChromeContext.Provider value={chromeContext}>
       <div
-        class={`app responsive ${activeDock ? "has-mobile-action-dock has-dock" : ""} ${assistantOpen ? "assistant-open" : ""}`.trim()}
+        class={`app responsive ${activeTopbar ? "has-mobile-topbar" : ""} ${activeDock ? "has-mobile-action-dock has-dock" : ""} ${assistantOpen ? "assistant-open" : ""}`.trim()}
         style={{ "--assistant-w": `${assistantWidth}px` }}
       >
         <a href="#main" class="skip-link">Skip to main content</a>

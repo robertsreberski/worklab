@@ -150,6 +150,10 @@
   --shell-rail-collapsed: 64px;
   --assistant-w: 320px;
   --content-max: 1560px;
+  --worklab-safe-area-top: env(safe-area-inset-top, 0px);
+  --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-safe-top: var(--worklab-safe-area-top);
+  --mobile-safe-bottom: var(--worklab-safe-area-bottom);
 
   /* §3.7 / §3.19 component tokens (named magic numbers) */
   --switch-thumb-x: 12px;
@@ -10101,8 +10105,8 @@ html.assistant-resizing * {
   right: 0;
   bottom: 0;
   z-index: 30;
-  height: calc(56px + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
+  height: calc(56px + var(--mobile-safe-bottom));
+  padding-bottom: var(--mobile-safe-bottom);
   grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow-x: clip;
   border-top: 1px solid var(--border);
@@ -10469,13 +10473,13 @@ html.assistant-resizing * {
 
 @media (max-width: 860px) {
   .app.responsive {
-    --mobile-tabbar-height: calc(56px + env(safe-area-inset-bottom, 0px));
-    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)) + 1px);
+    --mobile-tabbar-height: calc(56px + var(--mobile-safe-bottom));
+    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
     grid-template-columns: minmax(0, 1fr);
-    padding-bottom: var(--mobile-tabbar-height);
+    padding-bottom: 0;
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) {
-    --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-3) + max(var(--sp-3), env(safe-area-inset-bottom, 0px)) + 1px);
+    --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
   }
   .app.responsive.has-dock {
     padding-bottom: 0;
@@ -10486,14 +10490,22 @@ html.assistant-resizing * {
   .app.responsive .app-body {
     height: 100dvh;
     min-height: 0;
-    padding-top: env(safe-area-inset-top, 0px);
+    padding-top: var(--mobile-safe-top);
     padding-bottom: var(--mobile-tabbar-height);
+  }
+  .app.responsive.has-mobile-topbar .app-body {
+    padding-top: 0;
   }
   .app.responsive.has-dock .app-body {
     padding-bottom: var(--mobile-action-dock-height);
   }
   .mobile-topbar {
     display: flex;
+  }
+  .app.responsive.has-mobile-topbar .mobile-topbar {
+    height: calc(44px + var(--mobile-safe-top));
+    padding-top: var(--mobile-safe-top);
+    background: var(--surface);
   }
   .app-tabbar {
     display: grid;
@@ -10510,7 +10522,7 @@ html.assistant-resizing * {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-4) max(var(--sp-3), env(safe-area-inset-bottom));
+    padding: var(--sp-3) var(--sp-4) max(var(--sp-3), var(--mobile-safe-bottom));
     border-top: 1px solid var(--border);
     background: linear-gradient(180deg, transparent, var(--surface) 30%);
   }
