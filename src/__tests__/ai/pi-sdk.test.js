@@ -145,6 +145,30 @@ describe("generatePiResponse cancellation handling", () => {
     });
   });
 
+  it("adds stable diagnostics for generic WebSocket provider errors", async () => {
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: abortedStream("WebSocket error", { reason: "error", stopReason: "error" }),
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.cancelled).toBe(false);
+    expect(result.error).toBe("WebSocket error");
+    expect(result.failureKind).toBe("provider_unavailable");
+    expect(result.errorDetails).toMatchObject({
+      pi_stop_reason: "error",
+      pi_error_code: "websocket_error",
+    });
+    expect(result.diagnostics).toMatchObject({
+      pi_stop_reason: "error",
+      pi_error_code: "websocket_error",
+    });
+  });
+
   it("returns the reusable provider session id used by the Pi agent", async () => {
     process.env.WORKLAB_PROVIDER_SESSION_ID = "pi-session-prev";
 
