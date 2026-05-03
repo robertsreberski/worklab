@@ -49,30 +49,57 @@ function toolIdFromCodexItem(raw) {
   return null;
 }
 
-function visibleUnitKeys(event, eventIndex) {
+function coalescibleKind(block, { direct = false } = {}) {
+  if (!block || typeof block !== "object") return null;
+  if (block.type !== "thinking" && (direct || block.type !== "text")) return null;
+  const text = block.text || block.thinking || block.content || "";
+  return String(text).trim() ? block.type : null;
+}
+
+function eventPieces(event, eventIndex) {
   const target = eventTarget(event);
-  const keys = [];
+  const pieces = [];
   const addToolKey = (id) => {
-    if (id) keys.push(`tool:${id}`);
+    if (id) pieces.push({ key: `tool:${id}`, eventIndex });
   };
 
   addToolKey(toolIdFromCodexItem(target));
   addToolKey(toolIdFromBlock(target));
 
   const blocks = contentBlocks(event);
-  blocks.forEach((block, blockIndex) => {
+  blocks.forEach((block) => {
     const toolId = toolIdFromBlock(block);
-    if (toolId) keys.push(`tool:${toolId}`);
-    else keys.push(`event:${eventIndex}:block:${blockIndex}`);
+    if (toolId) {
+      pieces.push({ key: `tool:${toolId}`, eventIndex });
+      return;
+    }
+    const kind = coalescibleKind(block);
+    if (kind) pieces.push({ coalescibleKind: kind, eventIndex });
+    else pieces.push({ key: `event:${eventIndex}:block:${pieces.length}`, eventIndex });
   });
 
-  if (!keys.length) keys.push(`event:${eventIndex}`);
-  return [...new Set(keys)];
+  if (!pieces.length) {
+    const kind = coalescibleKind(target, { direct: true });
+    pieces.push(kind ? { coalescibleKind: kind, eventIndex } : { key: `event:${eventIndex}`, eventIndex });
+  }
+  return pieces;
 }
 
 function eventOrder(event, index) {
   const seq = Number(event?._event_seq);
   return Number.isFinite(seq) ? seq : index + 1;
+}
+
+function ensureUnit(units, key, order, index) {
+  let unit = units.get(key);
+  if (!unit) {
+    unit = { key, latestOrder: order, latestIndex: index, eventIndexes: new Set() };
+    units.set(key, unit);
+  }
+  unit.latestOrder = Math.max(unit.latestOrder, order);
+  unit.latestIndex = Math.max(unit.latestIndex, index);
+  unit.eventIndexes.add(index);
+  return unit;
 }
 
 export function tailRunEventsByVisibleItems(events = [], limit = null) {
@@ -81,17 +108,25 @@ export function tailRunEventsByVisibleItems(events = [], limit = null) {
   if (!Number.isFinite(parsed) || parsed < 1 || events.length <= parsed) return events;
 
   const units = new Map();
+  let currentCoalesced = null;
+  let coalescedIndex = 0;
   events.forEach((event, index) => {
     const order = eventOrder(event, index);
-    for (const key of visibleUnitKeys(event, index)) {
-      let unit = units.get(key);
-      if (!unit) {
-        unit = { key, latestOrder: order, latestIndex: index, eventIndexes: new Set() };
-        units.set(key, unit);
+    for (const piece of eventPieces(event, index)) {
+      let key = piece.key;
+      if (piece.coalescibleKind) {
+        if (currentCoalesced?.kind !== piece.coalescibleKind) {
+          currentCoalesced = {
+            kind: piece.coalescibleKind,
+            key: `coalesced:${piece.coalescibleKind}:${coalescedIndex}`,
+          };
+          coalescedIndex += 1;
+        }
+        key = currentCoalesced.key;
+      } else {
+        currentCoalesced = null;
       }
-      unit.latestOrder = Math.max(unit.latestOrder, order);
-      unit.latestIndex = Math.max(unit.latestIndex, index);
-      unit.eventIndexes.add(index);
+      ensureUnit(units, key, order, index);
     }
   });
 
