@@ -81,7 +81,6 @@ describe("settings UI duration conversions", () => {
       planning_harness: "execplan_deep",
       planning_tool_policy: "read_only_no_shell",
       agent_learning_enabled: false,
-      agent_learning_backend: "mem0",
       agent_learning_injected_limit: 12,
       agent_learning_auto_approve_threshold: 0.7,
     });
@@ -111,7 +110,7 @@ describe("settings UI duration conversions", () => {
     expect(payload.planning_harness).toBe("execplan_deep");
     expect(payload.planning_tool_policy).toBe("read_only_no_shell");
     expect(payload.agent_learning_enabled).toBe(false);
-    expect(payload.agent_learning_backend).toBe("mem0");
+    expect(payload).not.toHaveProperty(["agent_learning", "backend"].join("_"));
     expect(payload.agent_learning_injected_limit).toBe(12);
     expect(payload.agent_learning_auto_approve_threshold).toBe(0.7);
   });

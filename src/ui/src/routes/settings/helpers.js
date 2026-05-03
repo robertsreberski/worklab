@@ -10,12 +10,6 @@ export const LOG_LEVEL_OPTIONS = ["trace", "debug", "info", "warn", "error", "fa
 export const SLACK_EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"].map((value) => ({ value, label: value }));
 export const PLANNING_HARNESS_SELECT_OPTIONS = PLANNING_HARNESS_OPTIONS.map(({ value, label, description }) => ({ value, label, description }));
 export const PLANNING_TOOL_POLICY_SELECT_OPTIONS = PLANNING_TOOL_POLICY_OPTIONS.map(({ value, label, description }) => ({ value, label, description }));
-export const AGENT_LEARNING_BACKEND_OPTIONS = [
-  { value: "worklab_native", label: "Worklab native", description: "Local SQLite learning records with Worklab prompt injection." },
-  { value: "mem0", label: "Mem0", description: "Adapter slot for managed memory." },
-  { value: "zep_graphiti", label: "Zep / Graphiti", description: "Adapter slot for temporal graph memory." },
-  { value: "langmem", label: "LangMem", description: "Adapter slot for semantic, episodic, and procedural extraction." },
-];
 export const MCP_TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
   { value: "http", label: "HTTP" },
@@ -192,7 +186,6 @@ export function settingsPayload(settings = {}) {
     planning_harness: settings.planning_harness || DEFAULT_PLANNING_HARNESS,
     planning_tool_policy: settings.planning_tool_policy || DEFAULT_PLANNING_TOOL_POLICY,
     agent_learning_enabled: settings.agent_learning_enabled !== false,
-    agent_learning_backend: settings.agent_learning_backend || "worklab_native",
     agent_learning_injected_limit: Number(settings.agent_learning_injected_limit ?? 6),
     agent_learning_auto_approve_threshold: Number(settings.agent_learning_auto_approve_threshold ?? 0.85),
   };

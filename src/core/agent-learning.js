@@ -219,8 +219,7 @@ export function recordAgentMemoryCandidates(db, {
 }
 
 export function agentLearningNativeEnabled(settings = {}) {
-  return settings.agent_learning_enabled !== false
-    && (settings.agent_learning_backend || "worklab_native") === "worklab_native";
+  return settings.agent_learning_enabled !== false;
 }
 
 function failureCandidateFromRun(run) {
