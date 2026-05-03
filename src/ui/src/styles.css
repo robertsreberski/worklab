@@ -4848,6 +4848,14 @@ html.assistant-resizing * {
   gap: 3px;
   min-width: 0;
 }
+.knowledge-filter-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.knowledge-filter-row .select {
+  min-width: 0;
+}
 .pane-row-description {
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -7994,6 +8002,33 @@ html.assistant-resizing * {
 .knowledge-read-usage-list li {
   align-items: flex-start;
 }
+.project-knowledge-list {
+  display: grid;
+  gap: var(--sp-2);
+}
+.project-knowledge-row {
+  display: grid;
+  gap: 2px;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  color: var(--text);
+  text-decoration: none;
+}
+.project-knowledge-row:hover {
+  border-color: var(--border-strong);
+  background: var(--surface);
+}
+.project-knowledge-title {
+  font-weight: 650;
+  line-height: 1.25;
+}
+.project-knowledge-meta {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.25;
+}
 .project-archive-toggle {
   display: inline-flex;
   align-items: center;
@@ -8830,6 +8865,7 @@ html.assistant-resizing * {
   .pane-list-head > .button { width: 100%; }
   .pane-list-head .tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; gap: var(--sp-3); }
   .pane-list-head .tabs::-webkit-scrollbar { display: none; }
+  .knowledge-filter-row { grid-template-columns: 1fr; }
   .task-edit-body { padding: var(--sp-4) var(--sp-3); }
   .task-detail { padding: var(--sp-4); grid-template-columns: 1fr; }
   .app.has-mobile-action-dock .task-detail,

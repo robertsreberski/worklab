@@ -2,14 +2,16 @@ export const EMPTY_KB_FORM_ENTRY = {
   slug: "",
   title: "",
   category: "",
-  tags: "",
+  subcategory: "",
+  project_id: "",
+  tags: [],
   pinned: false,
   body: "",
 };
 
 export function normalizeKbEntry(entry) {
   const source = entry?.meta && typeof entry.meta === "object"
-    ? { ...entry.meta, body: entry.body }
+    ? { ...entry.meta, body: entry.body, project: entry.project || null }
     : (entry || {});
 
   const tags = Array.isArray(source.tags)
@@ -20,6 +22,9 @@ export function normalizeKbEntry(entry) {
     slug: source.slug || "",
     title: source.title || "",
     category: source.category || "",
+    subcategory: source.subcategory || "",
+    project_id: source.project_id || "",
+    project: source.project || null,
     tags,
     pinned: !!source.pinned,
     body: source.body || "",
@@ -37,8 +42,10 @@ export function normalizeKbFormEntry(entry) {
     slug: normalized.slug,
     title: normalized.title,
     category: normalized.category,
+    subcategory: normalized.subcategory,
+    project_id: normalized.project_id,
     pinned: normalized.pinned,
     body: normalized.body,
-    tags: normalized.tags.join(", "),
+    tags: normalized.tags,
   };
 }

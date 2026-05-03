@@ -5,7 +5,7 @@ import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -17,20 +17,25 @@ import { KbDetail } from "./KbDetail.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
-const CATEGORY_TABS = [
-  { value: "all",       label: "All" },
-  { value: "reference", label: "Reference" },
-  { value: "howto",     label: "How-to" },
-  { value: "policy",    label: "Policy" },
-  { value: "pinned",    label: "Pinned" },
-];
-
-function categoryToken(category) {
+function tokenForBadge(category) {
   const c = (category || "").toLowerCase();
   if (c.includes("how")) return "howto";
   if (c.includes("policy")) return "policy";
   if (c.includes("ref")) return "reference";
-  return null;
+  return c.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || null;
+}
+
+function optionLabel(value, fallback = "Uncategorized") {
+  if (!value) return fallback;
+  return String(value).replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
+}
+
+function uniqueOptions(entries, key, allLabel, noneLabel = "Uncategorized") {
+  const values = [...new Set(entries.map((entry) => entry[key] || "").filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  return [
+    { value: "all", label: allLabel },
+    ...values.map((value) => ({ value, label: optionLabel(value, noneLabel) })),
+  ];
 }
 
 export function formatKnowledgeAge(value, now = Date.now()) {
@@ -54,8 +59,13 @@ export function knowledgeTimestamp(value) {
 
 export function Knowledge({ selectedSlug = null, mode = null }) {
   const [entries, setEntries] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("all");
   const [category, setCategory] = useState("all");
+  const [subcategory, setSubcategory] = useState("all");
+  const [tag, setTag] = useState("all");
+  const [pinned, setPinned] = useState("all");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -71,6 +81,13 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => () => reloadAbortRef.current?.abort?.(), []);
+  useEffect(() => {
+    let cancelled = false;
+    api.listProjects({ include_archived: "true" })
+      .then((res) => { if (!cancelled) setProjects(res.projects || []); })
+      .catch(() => { if (!cancelled) setProjects([]); });
+    return () => { cancelled = true; };
+  }, []);
   useSSE("global", (evt) => { if (evt.type?.startsWith("kb_")) reloadSoon(); });
   useAppResume(reloadSoon);
   useGlobalShortcuts({
@@ -84,14 +101,20 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     let list = entries;
-    if (category === "pinned") list = list.filter((e) => e.pinned);
-    else if (category !== "all") list = list.filter((e) => categoryToken(e.category) === category);
+    if (projectId !== "all") list = list.filter((e) => (e.project_id || "") === projectId);
+    if (category !== "all") list = list.filter((e) => (e.category || "") === category);
+    if (subcategory !== "all") list = list.filter((e) => (e.subcategory || "") === subcategory);
+    if (tag !== "all") list = list.filter((e) => (e.tags || []).includes(tag));
+    if (pinned === "pinned") list = list.filter((e) => e.pinned);
+    else if (pinned === "unpinned") list = list.filter((e) => !e.pinned);
     if (q) {
       list = list.filter((e) =>
         e.title?.toLowerCase().includes(q) ||
         e.slug?.toLowerCase().includes(q) ||
+        e.project?.name?.toLowerCase().includes(q) ||
+        e.project?.slug?.toLowerCase().includes(q) ||
         e.category?.toLowerCase().includes(q) ||
-        e.body?.toLowerCase().includes(q) ||
+        e.subcategory?.toLowerCase().includes(q) ||
         (e.tags || []).some((t) => t.toLowerCase().includes(q))
       );
     }
@@ -99,9 +122,26 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       return (knowledgeTimestamp(b.updated_at) || 0) - (knowledgeTimestamp(a.updated_at) || 0);
     });
-  }, [entries, query, category]);
+  }, [entries, query, projectId, category, subcategory, tag, pinned]);
 
-  const hasFilter = query.trim() || category !== "all";
+  const projectOptions = useMemo(() => [
+    { value: "all", label: "All projects" },
+    ...projects.map((project) => ({ value: project.id, label: project.name || project.slug, description: project.slug })),
+  ], [projects]);
+  const categoryOptions = useMemo(() => uniqueOptions(entries, "category", "All categories"), [entries]);
+  const subcategoryOptions = useMemo(() => uniqueOptions(entries, "subcategory", "All subcategories", "None"), [entries]);
+  const tagOptions = useMemo(() => [
+    { value: "all", label: "All tags" },
+    ...[...new Set(entries.flatMap((entry) => entry.tags || []))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((value) => ({ value, label: value })),
+  ], [entries]);
+  const pinnedOptions = [
+    { value: "all", label: "All pins" },
+    { value: "pinned", label: "Pinned" },
+    { value: "unpinned", label: "Unpinned" },
+  ];
+  const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all";
 
   const listHeader = (
     <PaneListHeader
@@ -113,13 +153,19 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
       actionLabel="New entry"
       onAction={() => { navigateHash("#/knowledge/new"); }}
     >
-      <Tabs ariaLabel="Filter by category" value={category} onChange={setCategory} tabs={CATEGORY_TABS} />
+      <div class="knowledge-filter-row">
+        <Select value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />
+        <Select value={category} options={categoryOptions} onChange={setCategory} ariaLabel="Filter knowledge by category" />
+        <Select value={subcategory} options={subcategoryOptions} onChange={setSubcategory} ariaLabel="Filter knowledge by subcategory" />
+        <Select value={tag} options={tagOptions} onChange={setTag} ariaLabel="Filter knowledge by tag" />
+        <Select value={pinned} options={pinnedOptions} onChange={setPinned} ariaLabel="Filter knowledge by pin state" />
+      </div>
     </PaneListHeader>
   );
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setCategory("all"); }} />
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); }} />
     ) : (
       <EmptyState
         title="No entries yet"
@@ -129,7 +175,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
     )
   ) : (
     filtered.map((e) => {
-      const cat = categoryToken(e.category);
+      const cat = tokenForBadge(e.category);
       return (
         <PaneRow
           key={e.slug}
@@ -148,7 +194,9 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
           title={e.title}
           sub={(
             <span class="knowledge-row-sub">
-              {cat && <span class="kb-category-badge" data-category={cat}>{cat}</span>}
+              {e.project?.slug && <span class="pane-row-mono">{e.project.slug}</span>}
+              {e.category && <span class="kb-category-badge" data-category={cat}>{e.category}</span>}
+              {e.subcategory && <span class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</span>}
               <span class="pane-row-mono">{e.slug}</span>
             </span>
           )}
