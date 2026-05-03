@@ -527,6 +527,75 @@ describe("run input assembly", () => {
     });
   });
 
+  it("suppresses known browser MCP servers and skills only during execute when browser tools are review-only", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      db.prepare("UPDATE agents SET browser_tools_review_only = 1 WHERE name = 'owner'").run();
+      mkdirSync(join(config.dataDir, "skills", "browser-use"), { recursive: true });
+      writeFileSync(join(config.dataDir, "skills", "browser-use", "SKILL.md"), `---
+name: browser-use
+display_name: Browser Use
+trigger: Use Browser Use or Playwright for visual app checks.
+---
+Browser skill body that mentions Playwright.
+`);
+      mkdirSync(join(config.dataDir, "skills", "frontend"), { recursive: true });
+      writeFileSync(join(config.dataDir, "skills", "frontend", "SKILL.md"), `---
+name: frontend
+display_name: Frontend
+trigger: Implement UI changes.
+---
+Frontend skill body.
+`);
+      mkdirSync(join(config.dataDir, "config"), { recursive: true });
+      writeFileSync(join(config.dataDir, "config", "mcp.json"), JSON.stringify({
+        mcpServers: {
+          playwright: { command: "/bin/sh" },
+          "context-a8c": { command: "/bin/sh" },
+        },
+      }));
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status)
+        VALUES ('run-exec-prior', ?, 'execute', 'execute', 'owner', 1000, 2000, 'complete', 'succeeded')
+      `).run(task.id);
+
+      const execute = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-execute-browser-filtered",
+        mode: "execute",
+      });
+      const review = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-review-browser-available",
+        mode: "review",
+        priorRunId: "run-exec-prior",
+      });
+
+      expect(execute.skills.map((skill) => skill.name)).toEqual(["frontend"]);
+      expect(Object.keys(execute.mcpServers)).toEqual(expect.arrayContaining(["worklab", "context-a8c"]));
+      expect(execute.mcpServers).not.toHaveProperty("playwright");
+      expect(execute.skillDirs).toEqual([join(config.dataDir, "skills", "frontend")]);
+      expect(execute.systemPrompt).toContain("frontend");
+      expect(execute.systemPrompt).not.toContain("browser-use");
+      expect(execute.systemPrompt).not.toContain("Browser skill body");
+      expect(execute.systemPrompt).not.toContain("Other MCP servers connected: context-a8c, playwright");
+
+      expect(review.skills.map((skill) => skill.name).sort()).toEqual(["browser-use", "frontend"]);
+      expect(review.mcpServers).toHaveProperty("playwright");
+      expect(review.systemPrompt).toContain("browser-use");
+      expect(review.systemPrompt).toContain("Playwright");
+      expect(review.skillDirs).toBeUndefined();
+    });
+  });
+
   it("uses the spawn-time workdir snapshot recorded on task_runs", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "owner", "Execute as owner.");

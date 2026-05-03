@@ -14,6 +14,7 @@ import { applyPlanningToolPolicy } from "./planning-harness.js";
 import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
+import { applyBrowserToolsReviewOnlyPolicy } from "./browser-tool-policy.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
 import { getTaskById } from "./db/queries/tasks.js";
 import { getLatestExecuteRunSummary, getRunById } from "./db/queries/runs.js";
@@ -177,10 +178,10 @@ export function buildTaskRunMessages({ mode, task }) {
   }];
 }
 
-export function loadAgentCapabilities({ config, agent, agentName, runId, env }) {
+export function loadAgentCapabilities({ config, agent, agentName, runId, env, mode = null }) {
   requireDataDir(config);
   const availableSkills = loadSkills(join(config.dataDir, "skills")).filter((skill) => skill.enabled !== false);
-  const skills = resolveAllowlist({
+  let skills = resolveAllowlist({
     mode: agent.skills_allowlist_mode,
     allowlist: parseStoredAllowlist(agent.skills_allowlist),
     all: availableSkills,
@@ -188,11 +189,15 @@ export function loadAgentCapabilities({ config, agent, agentName, runId, env }) 
   });
 
   const allMcpServers = getAvailableMcpServers(config.dataDir, { repoRoot: config.repoRoot });
-  const mcpServers = resolveAllowlistMap({
+  let mcpServers = resolveAllowlistMap({
     mode: agent.mcp_allowlist_mode,
     allowlist: parseStoredAllowlist(agent.mcp_allowlist),
     all: allMcpServers,
   });
+
+  const browserPolicy = applyBrowserToolsReviewOnlyPolicy({ agent, mode, skills, mcpServers });
+  skills = browserPolicy.skills;
+  mcpServers = browserPolicy.mcpServers;
 
   const baseMcpEnv = {
     WORKLAB_RUN_ID: runId,
@@ -221,10 +226,17 @@ export function loadAgentCapabilities({ config, agent, agentName, runId, env }) 
     ? [...WORKLAB_BUILTIN_TOOLS]
     : [];
 
-  return { skills, mcpServers, allowedTools, disallowedTools };
+  return {
+    skills,
+    mcpServers,
+    allowedTools,
+    disallowedTools,
+    skillDirs: browserPolicy.skillDirs,
+    capabilityRestrictions: browserPolicy.capabilityRestrictions,
+  };
 }
 
-export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
+export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = null }) {
   requireDataDir(config);
   const task = getTaskById(db, taskId);
   if (!task) throw runInputError(404, "not_found", `task ${taskId} not found`);
@@ -261,11 +273,12 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     agent: agentName,
     maxJournalLines: settings.journal_tail_lines,
   });
-  const { skills, mcpServers, allowedTools, disallowedTools } = loadAgentCapabilities({
+  const { skills, mcpServers, allowedTools, disallowedTools, skillDirs, capabilityRestrictions } = loadAgentCapabilities({
     config,
     agent,
     agentName,
     runId,
+    mode,
     env: {
       WORKLAB_TASK_ID: taskId,
       WORKLAB_TASK_TITLE: task.title,
@@ -300,11 +313,13 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     projectContextHash: projectRunContext.projectContextHash,
     commentRows,
     skills,
+    skillDirs,
     memory,
     journalTail,
     mcpServers,
     allowedTools,
     disallowedTools,
+    capabilityRestrictions,
     pinnedKb,
     settings,
     delegation,
@@ -563,7 +578,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
 }
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "" }) {
-  const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
+  const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
   const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({
     mode,

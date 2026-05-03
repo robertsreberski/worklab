@@ -62,7 +62,7 @@ export async function runTask(ctx) {
   } catch (err) {
     return { kind: "task", error: err.message || String(err) };
   }
-  const { task, agent, skills, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages } = input;
+  const { task, agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
@@ -73,6 +73,7 @@ export async function runTask(ctx) {
       db,
       dataDir: config.dataDir,
       skills,
+      skillDirs,
       messages,
       cwd: config.workspace,
       mcpServers,
