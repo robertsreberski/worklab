@@ -4,6 +4,7 @@ import { makeTestServer } from "../helpers/test-server.js";
 const EMPTY_SUMMARY = {
   run_count: 0,
   costed_run_count: 0,
+  unpriced_run_count: 0,
   total_cost_usd: 0,
   average_cost_usd: null,
   running_count: 0,
@@ -91,6 +92,7 @@ describe("activity", () => {
     insertRun(db, { id: "alpha-old", taskId: task.id, agent: "alpha", startedAt: now - 1000, costUsd: 0.01 });
     insertRun(db, { id: "alpha-running", taskId: task.id, agent: "alpha", status: "running", processStatus: "running", startedAt: now - 2000 });
     insertRun(db, { id: "alpha-error", taskId: task.id, agent: "alpha", status: "error", processStatus: "failed", startedAt: now - 3000, costUsd: 0.04 });
+    insertRun(db, { id: "alpha-unpriced", taskId: task.id, agent: "alpha", startedAt: now - 4000 });
     insertRun(db, { id: "beta-new", taskId: task.id, agent: "beta", startedAt: now + 1, costUsd: 0.99 });
 
     const res = await agent.get("/api/activity?agent=alpha&limit=1").expect(200);
@@ -98,8 +100,9 @@ describe("activity", () => {
     expect(res.body.items).toHaveLength(1);
     expect(res.body.items[0].id).toBe("alpha-new");
     expect(res.body.summary).toMatchObject({
-      run_count: 4,
+      run_count: 5,
       costed_run_count: 3,
+      unpriced_run_count: 1,
       running_count: 1,
       error_count: 1,
     });

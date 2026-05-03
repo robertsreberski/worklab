@@ -41,6 +41,12 @@ export function summarizeActivity(db, { filters, params }) {
     SELECT
       COUNT(*) AS run_count,
       COUNT(COALESCE(r.cost_usd, l.cost_usd)) AS costed_run_count,
+      SUM(CASE
+        WHEN COALESCE(r.cost_usd, l.cost_usd) IS NULL
+          AND r.status != 'running'
+          AND COALESCE(r.process_status, r.status) != 'running'
+        THEN 1 ELSE 0
+      END) AS unpriced_run_count,
       COALESCE(SUM(COALESCE(r.cost_usd, l.cost_usd)), 0) AS total_cost_usd,
       SUM(CASE WHEN r.status = 'running' OR r.process_status = 'running' THEN 1 ELSE 0 END) AS running_count,
       SUM(CASE WHEN r.status IN ('error', 'failed') OR r.process_status IN ('error', 'failed') THEN 1 ELSE 0 END) AS error_count

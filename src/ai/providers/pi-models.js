@@ -78,7 +78,7 @@ function resolveCustomPiModel(resolved, options) {
         input: Number(pricing.input_per_million) || 0,
         output: Number(pricing.output_per_million) || 0,
         cacheRead: Number(pricing.cached_input_per_million) || 0,
-        cacheWrite: 0,
+        cacheWrite: Number(pricing.cache_write_per_million) || 0,
       },
       contextWindow: Number(capabilities.context_window || capabilities.num_ctx) || 128000,
       maxTokens: Number(capabilities.max_tokens) || 16384,

@@ -539,18 +539,22 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     const inputTokens = usage?.input_tokens ?? usage?.inputTokens ?? 0;
     const outputTokens = usage?.output_tokens ?? usage?.outputTokens ?? 0;
     const cachedTokens = usage?.cache_read_tokens ?? usage?.cachedInputTokens ?? 0;
+    const cacheCreationTokens = usage?.cache_creation_tokens ?? usage?.cacheCreationTokens ?? 0;
+    const billableInputTokens = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
     const costUsd = estimateCost({
       db: options.db,
       model: reference,
-      inputTokens,
+      inputTokens: billableInputTokens,
       outputTokens,
       cachedTokens,
+      cacheWriteTokens: cacheCreationTokens,
     });
     const enrichedUsage = {
       ...usage,
       input_tokens: inputTokens || null,
       output_tokens: outputTokens || null,
       cache_read_tokens: cachedTokens || null,
+      cache_creation_tokens: cacheCreationTokens || null,
       cost_usd: costUsd,
     };
     return {

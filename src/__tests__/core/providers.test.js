@@ -17,6 +17,7 @@ import {
   resolveVercelModel,
   setModelEnabled,
   testProvider,
+  upsertModel,
   validateBaseUrl,
 } from "../../core/providers.js";
 import { _resetForTests } from "../../core/crypto.js";
@@ -140,6 +141,38 @@ describe("providers", () => {
     setModelEnabled({ db, id: first.id, enabled: true });
     await discoverModels({ db, dataDir, providerId: provider.id, fetchImpl });
     expect(listModels({ db, providerId: provider.id })[0]).toMatchObject({ model_name: "qwen2.5-coder:14b", enabled: true });
+  });
+
+  it("preserves manually entered pricing across rediscovery", async () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "compat",
+      provider_type: "openai_compat",
+      base_url: "http://localhost:8000",
+    });
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ data: [{ id: "priced-model" }] }) });
+    const [first] = await discoverModels({ db, dataDir, providerId: provider.id, fetchImpl });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: first.model_name,
+      pricing: {
+        input_per_million: 1,
+        cached_input_per_million: 0.1,
+        cache_write_per_million: 1.25,
+        output_per_million: 5,
+      },
+    });
+
+    await discoverModels({ db, dataDir, providerId: provider.id, fetchImpl });
+
+    expect(listModels({ db, providerId: provider.id })[0].pricing).toMatchObject({
+      input_per_million: 1,
+      cached_input_per_million: 0.1,
+      cache_write_per_million: 1.25,
+      output_per_million: 5,
+    });
   });
 
   it("rejects disabled models when resolving Vercel model references", async () => {

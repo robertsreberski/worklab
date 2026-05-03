@@ -457,6 +457,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       inputTokens,
       outputTokens,
       cachedTokens,
+      cacheWriteTokens: cacheCreationTokens,
     });
     const enrichedUsage = {
       ...usage,
