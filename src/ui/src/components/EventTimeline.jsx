@@ -108,6 +108,24 @@ function structuredOutputKey(value) {
   try { return JSON.stringify(value); } catch { return String(value); }
 }
 
+function shortSha(value) {
+  return value ? String(value).slice(0, 7) : null;
+}
+
+function normalizeWorktreeReconcileEvent(ev) {
+  const ok = ev.ok === true;
+  return {
+    type: "worktree_reconcile",
+    text: ev.message || (ok ? "Worktree merge recorded." : "Worktree merge paused."),
+    tone: ok ? "success" : "warn",
+    status: ev.status || null,
+    branch: ev.branch || null,
+    sourceHeadBefore: shortSha(ev.sourceHeadBefore),
+    sourceHeadAfter: shortSha(ev.sourceHeadAfter),
+    branchHead: shortSha(ev.branchHead),
+  };
+}
+
 function eventTarget(ev) {
   return ev?.type === "sdk_event" && ev.event ? ev.event : ev;
 }
@@ -163,6 +181,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   }
   if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
+  if (ev.type === "worktree_reconcile") return normalizeWorktreeReconcileEvent(ev);
   if (ev.type === "structured_output") {
     return normalizeStructuredOutputEvent(ev);
   }

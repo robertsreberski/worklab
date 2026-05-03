@@ -4,6 +4,28 @@ import { normalizeToolTokenEvent } from "../../ui/src/components/primitives/Tool
 import { mergeRunEvents } from "../../ui/src/lib/useRunStream.js";
 
 describe("worklab event timeline normalization", () => {
+  it("normalizes coordinator worktree reconciliation events", () => {
+    expect(normalizeWorklabEvents([{
+      type: "worktree_reconcile",
+      status: "merged",
+      ok: true,
+      message: "Worktree merged into source checkout: abc1234 -> def5678.",
+      branch: "worklab/run/run-1",
+      sourceHeadBefore: "abc123456",
+      sourceHeadAfter: "def567890",
+      branchHead: "def567890",
+    }])).toEqual([{
+      type: "worktree_reconcile",
+      text: "Worktree merged into source checkout: abc1234 -> def5678.",
+      tone: "success",
+      status: "merged",
+      branch: "worklab/run/run-1",
+      sourceHeadBefore: "abc1234",
+      sourceHeadAfter: "def5678",
+      branchHead: "def5678",
+    }]);
+  });
+
   it("compacts final result payloads after visible assistant text", () => {
     const events = normalizeWorklabEvents([
       {

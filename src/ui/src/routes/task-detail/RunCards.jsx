@@ -88,17 +88,63 @@ function RunCancellationNote({ run }) {
   );
 }
 
-function RunWorktreeNote({ run }) {
+function shortSha(value) {
+  return value ? String(value).slice(0, 7) : null;
+}
+
+export function worktreeDisplayState(run) {
   if (run?.workspace_mode !== "worktree") return null;
   const worktree = run.worktree || {};
-  const branch = worktree.branch || null;
   const status = worktree.last_reconcile_status || worktree.status || null;
+  const branch = worktree.branch || null;
+  const branchHead = shortSha(worktree.branch_head);
+  const before = shortSha(worktree.source_head_before || worktree.previous_source_head);
+  const after = shortSha(worktree.source_head_after || worktree.source_head);
+  const paused = [
+    "blocked_dirty_source",
+    "blocked_uncommitted_worktree",
+    "merge_conflict",
+    "source_moved",
+    "missing_worktree_metadata",
+    "missing_worktree",
+    "worktree_merge_blocked",
+  ].includes(status);
+  let label = "Worktree";
+  let tone = "neutral";
+  if (status === "merged") {
+    label = "Merged";
+    tone = "success";
+  } else if (status === "already_up_to_date") {
+    label = "Already in source";
+    tone = "success";
+  } else if (paused) {
+    label = "Merge paused";
+    tone = "warn";
+  }
+  return {
+    label,
+    tone,
+    status,
+    branch,
+    branchHead,
+    source: run.source_workdir || worktree.source_workdir || null,
+    transition: before && after ? `${before} -> ${after}` : null,
+    message: worktree.message || null,
+  };
+}
+
+function RunWorktreeNote({ run }) {
+  const state = worktreeDisplayState(run);
+  if (!state) return null;
   return (
     <div class="run-worktree-note">
       <span class="run-worktree-note-label">Worktree</span>
-      {status && <span>{status.replaceAll("_", " ")}</span>}
-      {branch && <code>{branch}</code>}
-      {run.source_workdir && <span class="truncate">Source: {run.source_workdir}</span>}
+      <span>{state.label}</span>
+      {state.transition && <code>{state.transition}</code>}
+      {state.branch && <code>{state.branch}</code>}
+      {state.branchHead && <code>{state.branchHead}</code>}
+      {state.source && <span class="truncate">Source: {state.source}</span>}
+      {state.message && <span class="truncate">{state.message}</span>}
     </div>
   );
 }
@@ -259,6 +305,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
     ? "No final text"
     : null;
   const warnings = Array.isArray(run.warnings) ? run.warnings : [];
+  const worktreeState = worktreeDisplayState(run);
   return (
     <details
       open={expanded}
@@ -290,8 +337,8 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                     </span>
                   )}
                   <RunBudgetBadge run={run} warnings={warnings} />
-                  {run.workspace_mode === "worktree" && (
-                    <span class="run-warning-badge" title={run.source_workdir || undefined}>Worktree</span>
+                  {worktreeState && (
+                    <span class="run-warning-badge" title={worktreeState.message || worktreeState.source || undefined}>{worktreeState.label}</span>
                   )}
                   {run.cancel_initiator && (
                     <span class="run-warning-badge run-cancel-chip" title={run.cancel_reason || run.cancel_initiator}>
@@ -315,8 +362,8 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                   <span class="run-warning-badge run-warning-count">⚠ {warnings.length}</span>
                 )}
                 <RunBudgetBadge run={run} warnings={warnings} />
-                {run.workspace_mode === "worktree" && (
-                  <span class="run-warning-badge" title={run.source_workdir || undefined}>Worktree</span>
+                {worktreeState && (
+                  <span class="run-warning-badge" title={worktreeState.message || worktreeState.source || undefined}>{worktreeState.label}</span>
                 )}
                 {run.cancel_initiator && (
                   <span class="run-warning-badge run-cancel-chip">{run.cancel_initiator}</span>
