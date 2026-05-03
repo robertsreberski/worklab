@@ -320,6 +320,8 @@ export {
   listAgentMemories,
   normalizeAgentMemoryCandidate,
   recordAgentMemoryCandidates,
+  recordRunResultLearning,
+  searchAgentMemories,
   selectAgentLearningMemories,
   updateAgentMemory,
   upsertAgentMemory,

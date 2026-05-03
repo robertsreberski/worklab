@@ -16,6 +16,7 @@ import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { applyBrowserToolsReviewOnlyPolicy } from "./browser-tool-policy.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
+import { formatAgentLearningContext, selectAgentLearningMemories } from "./agent-learning.js";
 import { getTaskById } from "./db/queries/tasks.js";
 import { getLatestExecuteRunSummary, getRunById } from "./db/queries/runs.js";
 import { getAgentByName } from "./db/queries/agents.js";
@@ -273,6 +274,15 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     agent: agentName,
     maxJournalLines: settings.journal_tail_lines,
   });
+  const learningMemories = settings.agent_learning_enabled && settings.agent_learning_backend === "worklab_native"
+    ? selectAgentLearningMemories(db, {
+      agentName,
+      projectId: projectRunContext.project?.id || task.project_id || null,
+      taskId,
+      limit: settings.agent_learning_injected_limit,
+    })
+    : [];
+  const learningMemoryContext = formatAgentLearningContext(learningMemories);
   const { skills, mcpServers, allowedTools, disallowedTools, skillDirs, capabilityRestrictions } = loadAgentCapabilities({
     config,
     agent,
@@ -315,6 +325,8 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     skills,
     skillDirs,
     memory,
+    learningMemories,
+    learningMemoryContext,
     journalTail,
     mcpServers,
     allowedTools,
@@ -474,6 +486,7 @@ function diagnosticsForPrompt(prompt, setup) {
     },
     artifacts: setup.taskArtifacts?.summary || null,
     resolvedBlockers: Array.isArray(setup.resolvedBlockers) ? setup.resolvedBlockers.length : 0,
+    learningMemories: Array.isArray(setup.learningMemories) ? setup.learningMemories.length : 0,
     resumeContext: !!setup.resumeContext,
     planning: setup.planningDiagnostics || null,
   };
@@ -573,13 +586,14 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     delegationHash: shortHash(delegationSignature),
     planningHash: shortHash(planningSignature),
     memoryHash: shortHash(setup.memory || ""),
+    learningHash: shortHash((setup.learningMemories || []).map((memory) => `${memory.id}:${memory.updated_at}:${memory.status}`).join("|")),
     journalHash: shortHash(setup.journalTail || ""),
   });
 }
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "" }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
-  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
+  const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({
     mode,
     settings: setup.settings,
@@ -601,7 +615,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   if (mode === "plan" || mode === "execute") {
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
-      agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, journalTail,
+      agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, learningMemoryContext, journalTail,
       workspaceMode: setup.workspaceMode, sourceWorkdir: setup.sourceWorkdir, worktree: setup.worktree,
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
@@ -627,7 +641,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       contextCacheHit: !!cached,
     };
     return {
-      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers,
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers, learningMemories,
       allowedTools, disallowedTools, toolPolicy,
       promptDiagnostics: diagnostics,
     };
@@ -646,7 +660,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const execution = extractExecutionFromEvents(priorEvents, priorRun);
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt({
-      agent, task, skills, memory, journalTail,
+      agent, task, skills, memory, learningMemoryContext, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
       resolvedBlockers,
       settings: setup.settings,
@@ -678,7 +692,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
-      priorRun, priorEvents, execution, taskArtifacts, resolvedBlockers, promptDiagnostics: diagnostics,
+      priorRun, priorEvents, execution, taskArtifacts, resolvedBlockers, learningMemories, promptDiagnostics: diagnostics,
       allowedTools, disallowedTools, toolPolicy,
     };
   }

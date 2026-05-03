@@ -317,6 +317,24 @@ describe("worklab_result contract", () => {
     });
   });
 
+  it("preserves optional memory candidates for structured agent learning", () => {
+    const parsed = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "done",
+      details: "",
+      memory_candidates: [
+        { kind: "procedure", content: "Use focused tests first.", confidence: 0.9 },
+      ],
+    });
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.memory_candidates).toEqual([
+      { kind: "procedure", scope: "agent", content: "Use focused tests first.", evidence: "", confidence: 0.9 },
+    ]);
+  });
+
   it("validates runtime semantics for pending actions and subtasks", () => {
     const base = {
       schema: "worklab.v2",
@@ -398,6 +416,7 @@ describe("worklab_result contract", () => {
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.parent_review_policy).toMatchObject({
       type: ["string", "null"],
     });
+    expect(WORKLAB_RESULT_JSON_SCHEMA.properties.memory_candidates.type).toBe("array");
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.schema).toEqual({
       type: "string",
       enum: ["worklab.v2"],

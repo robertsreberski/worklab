@@ -9,6 +9,7 @@ import {
   appendJournalSummary,
   readRunLog,
   search,
+  searchAgentMemories,
 } from "../../../core/index.js";
 
 export const journalAppendSchema = z.object({ bullet: z.string().min(1, "bullet is required") });
@@ -133,7 +134,14 @@ export function buildHandlers(context) {
     },
     async memory_search(input) {
       const { query, limit, agent: targetAgent } = memorySearchSchema.parse(input);
-      const results = await withDb(dataDir, (db) => search({ db, dataDir, query, kind: "memory", agent: targetAgent, limit: limit || 8 }));
+      const results = await withDb(dataDir, async (db) => {
+        const capped = limit || 8;
+        const indexed = await search({ db, dataDir, query, kind: "memory", agent: targetAgent, limit: capped });
+        const learned = searchAgentMemories(db, { query, agentName: targetAgent || agent, limit: capped });
+        return [...learned, ...indexed]
+          .sort((a, b) => (b.score || 0) - (a.score || 0))
+          .slice(0, capped);
+      });
       return { results };
     },
   };

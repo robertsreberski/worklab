@@ -28,6 +28,7 @@ const RESULT_FIELD_RULES = `Structured result rules:
 - Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
 - When using \`subtasks\`, keep each child bounded, include enough instructions for another agent to run independently, set \`suggested_agent\` to an enabled agent name when a specific owner is appropriate, and use \`acceptance_criteria\` / \`expected_artifact\` for the child's done condition.
 - Subtask \`acceptance_criteria\` and \`depends_on\` must be arrays of strings. Delegate subtask shape: \`{"title":"Child task","instructions":"Do the bounded work.","suggested_agent":"agent-name","required":true,"depends_on":[],"acceptance_criteria":["Done condition."],"expected_artifact":"Short artifact description."}\`.
+- Use \`memory_candidates\` only for durable facts, preferences, procedures, failures, decisions, or episodes that should help future runs. Include concrete evidence and a confidence from 0 to 1. Leave it empty for routine run notes.
 - For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
 
 const WORK_DIRECTIVE = `Do the task work requested by the instructions.
@@ -49,7 +50,8 @@ Return a structured Worklab result as JSON when you finish:
   "blocking_issues": [],
   "pending_actions": [],
   "questions": [],
-  "subtasks": []
+  "subtasks": [],
+  "memory_candidates": []
 }
 
 Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
@@ -77,7 +79,8 @@ Return a structured Worklab result as JSON when you finish:
   "blocking_issues": [],
   "pending_actions": [],
   "questions": [],
-  "subtasks": []
+  "subtasks": [],
+  "memory_candidates": []
 }
 
 Escape double quotes inside review notes or final_text so the response remains valid JSON.
@@ -502,6 +505,7 @@ const BASE_SECTION_NAMES = [
   "Pinned knowledge",
   "Skills",
   "Memory",
+  "Learned memory",
   "Recent journal",
   "Capabilities",
   "Workspace",
@@ -515,7 +519,7 @@ const BASE_SECTION_NAMES = [
 // substring comparisons on the rendered prompt.
 function buildBaseSections(input) {
   const {
-    agent, skills, memory, journalTail, currentRunComments,
+    agent, skills, memory, learningMemoryContext, journalTail, currentRunComments,
     allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir, qaOutputDir,
     workspaceMode, sourceWorkdir, worktree, worklabToolSurfaceMarkdown, resumeContext,
   } = input;
@@ -524,6 +528,7 @@ function buildBaseSections(input) {
     ["Pinned knowledge", formatPinnedKb(pinnedKb)],
     ["Skills", renderSkills(skills).trim()],
     ["Memory", memory || ""],
+    ["Learned memory", learningMemoryContext || ""],
     ["Recent journal", journalTail || ""],
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
     ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode, sourceWorkdir, worktree })],

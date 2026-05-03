@@ -218,6 +218,52 @@ export function recordAgentMemoryCandidates(db, {
   return stats;
 }
 
+export function agentLearningNativeEnabled(settings = {}) {
+  return settings.agent_learning_enabled !== false
+    && (settings.agent_learning_backend || "worklab_native") === "worklab_native";
+}
+
+function failureCandidateFromRun(run) {
+  const processStatus = run?.process_status || run?.processStatus || run?.status;
+  if (processStatus !== "failed" && processStatus !== "abandoned") return null;
+  const detail = oneLine(run.error_text || run.details || run.summary || run.failure_kind);
+  if (!detail) return null;
+  return {
+    kind: "failure",
+    scope: "agent",
+    status: "draft",
+    content: `Prior run ${run.id || ""} failed${run.failure_kind ? ` with ${run.failure_kind}` : ""}: ${detail}`,
+    evidence: run.id ? `Task run ${run.id}` : "",
+    confidence: 0.55,
+    source: "run_failure",
+  };
+}
+
+export function recordRunResultLearning(db, {
+  task = null,
+  run = null,
+  result = null,
+  settings = {},
+  now = Date.now(),
+} = {}) {
+  const empty = { inserted: 0, updated: 0, skipped: 0, memories: [] };
+  if (!agentLearningNativeEnabled(settings)) return { ...empty, disabled: true };
+  const explicit = Array.isArray(result?.memory_candidates) ? result.memory_candidates : [];
+  const failure = explicit.length ? null : failureCandidateFromRun(run);
+  const candidates = failure ? [failure] : explicit;
+  if (!candidates.length) return empty;
+  return recordAgentMemoryCandidates(db, {
+    agentName: run?.agent_name || run?.agentName,
+    projectId: task?.project_id || task?.projectId || run?.project_id || run?.projectId || null,
+    taskId: task?.id || run?.task_id || run?.taskId || null,
+    runId: run?.id || null,
+    source: failure ? "run_failure" : "run_result",
+    autoApproveThreshold: settings.agent_learning_auto_approve_threshold ?? 0.85,
+    now,
+    candidates,
+  });
+}
+
 export function listAgentMemories(db, { agentName, status = null, kind = null, limit = 50 } = {}) {
   const where = [];
   const params = [];
@@ -245,6 +291,63 @@ export function listAgentMemories(db, { agentName, status = null, kind = null, l
       rowid DESC
     LIMIT ?
   `).all(...params, capped).map(rowToMemory);
+}
+
+function queryTokens(query) {
+  return String(query || "")
+    .toLowerCase()
+    .split(/[^a-z0-9_.-]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2);
+}
+
+function memorySnippet(memory, tokens) {
+  const body = [memory.content, memory.evidence].filter(Boolean).join(" ");
+  const lower = body.toLowerCase();
+  const first = tokens.map((token) => lower.indexOf(token)).filter((index) => index >= 0).sort((a, b) => a - b)[0] ?? 0;
+  const start = Math.max(0, first - 60);
+  const end = Math.min(body.length, start + 220);
+  return `${start > 0 ? "..." : ""}${body.slice(start, end)}${end < body.length ? "..." : ""}`;
+}
+
+export function searchAgentMemories(db, { query, agentName = null, status = "approved", limit = 8 } = {}) {
+  const tokens = queryTokens(query);
+  if (!tokens.length) return [];
+  const capped = Math.max(1, Math.min(Number(limit) || 8, 50));
+  const where = ["status = ?"];
+  const params = [status];
+  if (agentName) {
+    where.push("agent_name = ?");
+    params.push(agentName);
+  }
+  const rows = db.prepare(`
+    SELECT * FROM agent_memories
+    WHERE ${where.join(" AND ")}
+    ORDER BY updated_at DESC
+    LIMIT 500
+  `).all(...params).map(rowToMemory);
+  return rows
+    .map((memory) => {
+      const haystack = `${memory.content} ${memory.evidence || ""}`.toLowerCase();
+      const matches = tokens.filter((token) => haystack.includes(token));
+      if (!matches.length) return null;
+      const tokenScore = matches.length / tokens.length;
+      const score = (tokenScore * 0.7) + (Number(memory.confidence || 0) * 0.3);
+      return {
+        kind: "agent_memory",
+        ref: `agent_memories/${memory.id}`,
+        source_ref: `agent_memories/${memory.id}`,
+        title: `${memory.kind} memory`,
+        agent: memory.agent_name,
+        memory_kind: memory.kind,
+        status: memory.status,
+        snippet: memorySnippet(memory, tokens),
+        score,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, capped);
 }
 
 export function updateAgentMemory(db, id, patch = {}, { now = Date.now() } = {}) {
