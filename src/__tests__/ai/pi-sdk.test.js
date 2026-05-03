@@ -69,6 +69,7 @@ function completeStream(text, { onDone } = {}) {
 describe("generatePiResponse cancellation handling", () => {
   afterEach(() => {
     delete process.env.WORKLAB_PROVIDER_SESSION_ID;
+    delete process.env.WORKLAB_PI_CODEX_TRANSPORT;
   });
 
   it("treats provider/runtime aborts as provider errors when Worklab did not abort", async () => {
@@ -162,10 +163,12 @@ describe("generatePiResponse cancellation handling", () => {
     expect(result.errorDetails).toMatchObject({
       pi_stop_reason: "error",
       pi_error_code: "websocket_error",
+      pi_transport: "sse",
     });
     expect(result.diagnostics).toMatchObject({
       pi_stop_reason: "error",
       pi_error_code: "websocket_error",
+      pi_transport: "sse",
     });
   });
 
@@ -184,6 +187,79 @@ describe("generatePiResponse cancellation handling", () => {
 
     expect(result.providerSessionId).toBe("pi-session-prev");
     expect(result.diagnostics.provider_session_id).toBe("pi-session-prev");
+  });
+});
+
+describe("generatePiResponse Codex transport", () => {
+  afterEach(() => {
+    delete process.env.WORKLAB_PI_CODEX_TRANSPORT;
+  });
+
+  it("uses SSE for Pi OpenAI Codex by default", async () => {
+    let streamOptions = null;
+    const streamFn = (model, context, options) => {
+      streamOptions = options;
+      return completeStream("done")(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.error).toBeNull();
+    expect(streamOptions).toMatchObject({ transport: "sse" });
+    expect(result.diagnostics.pi_transport).toBe("sse");
+  });
+
+  it("keeps non-Codex Pi providers on the Pi transport default", async () => {
+    let streamOptions = null;
+    const streamFn = (model, context, options) => {
+      streamOptions = options;
+      return completeStream("done")(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.error).toBeNull();
+    expect(streamOptions).toMatchObject({ transport: "auto" });
+    expect(result.diagnostics.pi_transport).toBe("auto");
+  });
+
+  it("allows an explicit Codex transport override for debugging", async () => {
+    process.env.WORKLAB_PI_CODEX_TRANSPORT = "websocket-cached";
+    let streamOptions = null;
+    const streamFn = (model, context, options) => {
+      streamOptions = options;
+      return completeStream("done")(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+
+    expect(result.error).toBeNull();
+    expect(streamOptions).toMatchObject({ transport: "websocket-cached" });
+    expect(result.diagnostics.pi_transport).toBe("websocket-cached");
   });
 });
 
