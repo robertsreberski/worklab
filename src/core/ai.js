@@ -1,4 +1,4 @@
-import { getModel as getPiModel, getModels as getPiModels, supportsXhigh } from "@mariozechner/pi-ai";
+import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@mariozechner/pi-ai";
 import { getSkillAccessDirs } from "../agent/prompt/skill-index.js";
 import {
   canonicalizeLegacyModelReference,
@@ -166,7 +166,13 @@ function openaiReasoningCapabilities(model, runtime = "sdk") {
 
 function piReasoningLevels(model) {
   if (!model?.reasoning) return undefined;
-  return ["none", "low", "medium", "high", ...(supportsXhigh(model) ? ["xhigh"] : [])];
+  let levels = [];
+  try {
+    levels = getSupportedThinkingLevels(model);
+  } catch {
+    levels = [];
+  }
+  return ["none", "low", "medium", "high", ...(levels.includes("xhigh") ? ["xhigh"] : [])];
 }
 
 function piModelCapabilities(model, runtimeKind = "pi-agent") {
