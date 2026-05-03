@@ -260,6 +260,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         runArtifactDir,
         toolPayloadMaxBytes,
         onTruncate,
+        toolPolicy: options.toolPolicy,
       });
 
     const structuredTool = createStructuredOutputTool(options.outputSchema, (value) => {

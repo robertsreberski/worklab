@@ -1,4 +1,10 @@
 import { DEFAULT_EMBEDDING_MODEL, parseEmbeddingReference } from "./embeddings.js";
+import {
+  DEFAULT_PLANNING_HARNESS,
+  DEFAULT_PLANNING_TOOL_POLICY,
+  validatePlanningHarnessSetting,
+  validatePlanningToolPolicySetting,
+} from "./planning-harness.js";
 import { normalizeRuntimeModelReference } from "../ai/runtime/model-refs.js";
 import { listSettings, upsertSetting } from "./db/queries/settings.js";
 
@@ -46,6 +52,8 @@ export const DEFAULT_SETTINGS = {
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
   agent_provider_recovery_base_delay_ms: 30000,
+  planning_harness: DEFAULT_PLANNING_HARNESS,
+  planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
   delegation_enabled: true,
   delegation_max_depth: 1,
   delegation_max_children_per_round: 5,
@@ -199,6 +207,10 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 0, max: 20 });
     case "agent_provider_recovery_base_delay_ms":
       return integerInRange(key, value, { min: 0, max: 300000 });
+    case "planning_harness":
+      return validatePlanningHarnessSetting(key, value);
+    case "planning_tool_policy":
+      return validatePlanningToolPolicySetting(key, value);
     case "delegation_max_depth":
       return integerInRange(key, value, { min: 0, max: 10 });
     case "delegation_max_children_per_round":

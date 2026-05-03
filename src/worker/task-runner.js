@@ -62,7 +62,7 @@ export async function runTask(ctx) {
   } catch (err) {
     return { kind: "task", error: err.message || String(err) };
   }
-  const { task, agent, skills, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
+  const { task, agent, skills, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
@@ -78,6 +78,7 @@ export async function runTask(ctx) {
       mcpServers,
       allowedTools,
       disallowedTools,
+      toolPolicy,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
       outputSchema: WORKLAB_RESULT_JSON_SCHEMA,

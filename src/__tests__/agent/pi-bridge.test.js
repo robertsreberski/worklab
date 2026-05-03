@@ -147,6 +147,18 @@ describe("pi MCP tool helpers", () => {
     expect(resolveMcpStdioCwd({ cwd: "/opt/mcp" }, "/repo/project")).toBe("/opt/mcp");
   });
 
+  it("blocks non-read-only Bash commands when planning shell policy is enforced", async () => {
+    const root = tempWorkspace();
+    const bash = getPiBuiltinTools(["Bash"], {
+      cwd: root,
+      toolPolicy: { bashReadOnly: true },
+    }).find((tool) => tool.name === "Bash");
+
+    await expect(bash.execute("tool-write", { command: "touch should-not-exist" })).rejects.toThrow("Planning shell policy");
+    const result = await bash.execute("tool-read", { command: "pwd" });
+    expect(result.content[0].text.trim()).toContain("worklab-pi-bridge-");
+  });
+
   it("routes Playwright MCP relative artifact filenames into the QA output directory", () => {
     const root = tempWorkspace();
     const qaOutputDir = join(root, ".worklab-tmp", "artifacts", "run-1");

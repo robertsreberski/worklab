@@ -192,7 +192,27 @@ function integerSchema() {
   return { type: "integer" };
 }
 
-function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent, toolLimits } = {}) {
+function isReadOnlyShellCommand(command) {
+  const text = String(command || "").trim();
+  if (!text) return false;
+  if (/[;&|`<>]|\$\(/.test(text)) return false;
+  return [
+    /^pwd(\s|$)/,
+    /^ls(\s|$)/,
+    /^find(\s|$)/,
+    /^rg(\s|$)/,
+    /^grep(\s|$)/,
+    /^sed(\s|$)/,
+    /^awk(\s|$)/,
+    /^cat(\s|$)/,
+    /^head(\s|$)/,
+    /^tail(\s|$)/,
+    /^wc(\s|$)/,
+    /^git\s+(status|diff|log|show|branch|rev-parse|ls-files)(\s|$)/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function createBuiltinTool(name, label, description, parameters, execute, { cwd, onEvent, toolLimits, toolPolicy } = {}) {
   return {
     name,
     label,
@@ -202,6 +222,9 @@ function createBuiltinTool(name, label, description, parameters, execute, { cwd,
     async execute(toolCallId, params, signal) {
       if (signal?.aborted) throw new Error("tool execution aborted");
       const normalized = normalizePiBuiltinToolParams(name, params, { cwd, toolLimits });
+      if (name === "Bash" && toolPolicy?.bashReadOnly && !isReadOnlyShellCommand(normalized.command)) {
+        throw new Error("Error: Planning shell policy allows only read-only inspection commands.");
+      }
       const isFileEdit = name === "Write" || name === "Edit";
       let editState = null;
       if (isFileEdit && normalized.file_path) {
@@ -292,6 +315,7 @@ export function getPiBuiltinTools(allowedTools, {
   runArtifactDir = null,
   onTruncate = null,
   toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
+  toolPolicy = null,
 } = {}) {
   const textLimitSchema = integerSchema();
   const bashLimitSchema = integerSchema();
@@ -306,17 +330,17 @@ export function getPiBuiltinTools(allowedTools, {
       start_line: { type: "integer" },
       limit: { type: "integer" },
       max_output_chars: textLimitSchema,
-    }, ["file_path"]), readToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["file_path"]), readToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     Write: createBuiltinTool("Write", "Write", "Write content to a local file.", objectSchema({
       file_path: { type: "string" },
       content: { type: "string" },
-    }, ["file_path", "content"]), writeToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["file_path", "content"]), writeToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     Edit: createBuiltinTool("Edit", "Edit", "Replace an exact string in a local file.", objectSchema({
       file_path: { type: "string" },
       old_string: { type: "string" },
       new_string: { type: "string" },
       replace_all: { type: "boolean" },
-    }, ["file_path", "old_string", "new_string"]), editToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["file_path", "old_string", "new_string"]), editToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     Glob: createBuiltinTool("Glob", "Glob", "Find files matching a pattern.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
@@ -324,7 +348,7 @@ export function getPiBuiltinTools(allowedTools, {
       offset: { type: "integer" },
       max_matches: { type: "integer" },
       max_output_chars: textLimitSchema,
-    }, ["pattern"]), globToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["pattern"]), globToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     Grep: createBuiltinTool("Grep", "Grep", "Search file contents with ripgrep. Defaults to returning matching file paths; use output_mode='content' only for exact snippets.", objectSchema({
       pattern: { type: "string" },
       path: { type: "string" },
@@ -338,23 +362,23 @@ export function getPiBuiltinTools(allowedTools, {
       offset: { type: "integer" },
       max_matches: { type: "integer" },
       max_output_chars: textLimitSchema,
-    }, ["pattern"]), grepToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["pattern"]), grepToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     Bash: createBuiltinTool("Bash", "Bash", "Execute a shell command in the Worklab workspace.", objectSchema({
       command: { type: "string" },
       workdir: { type: "string" },
       description: { type: "string" },
       timeout: bashTimeoutSchema,
       max_output_chars: bashLimitSchema,
-    }, ["command"]), bashToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["command"]), bashToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     WebFetch: createBuiltinTool("WebFetch", "Web Fetch", "Fetch a URL and return text.", objectSchema({
       url: { type: "string" },
       headers: { type: "object", additionalProperties: { type: "string" } },
       max_output_chars: textLimitSchema,
-    }, ["url"]), webFetchToolImpl, { cwd, onEvent, toolLimits }),
+    }, ["url"]), webFetchToolImpl, { cwd, onEvent, toolLimits, toolPolicy }),
     WebSearch: createBuiltinTool("WebSearch", "Web Search", "Search the web and return result summaries.", objectSchema({
       query: { type: "string" },
       limit: { type: "integer" },
-    }, ["query"]), webSearchToolImpl, { cwd, onEvent }),
+    }, ["query"]), webSearchToolImpl, { cwd, onEvent, toolPolicy }),
   };
   const names = Array.isArray(allowedTools) ? allowedTools : Object.keys(all);
   const tools = names.map((name) => all[name]).filter(Boolean);

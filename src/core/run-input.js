@@ -10,6 +10,7 @@ import { extractExecutionFromEvents } from "./review-exec.js";
 import { kbListPinned } from "./kb.js";
 import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "../agent/allowlists.js";
 import { readSettings } from "./settings.js";
+import { applyPlanningToolPolicy } from "./planning-harness.js";
 import { nextStage } from "./state-machine.js";
 import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
@@ -459,6 +460,7 @@ function diagnosticsForPrompt(prompt, setup) {
     artifacts: setup.taskArtifacts?.summary || null,
     resolvedBlockers: Array.isArray(setup.resolvedBlockers) ? setup.resolvedBlockers.length : 0,
     resumeContext: !!setup.resumeContext,
+    planning: setup.planningDiagnostics || null,
   };
 }
 
@@ -518,6 +520,13 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
       ].join(":");
     }).join("|"),
   ].join("\n");
+  const planningSignature = [
+    setup.settings?.planning_harness || "",
+    setup.settings?.planning_tool_policy || "",
+    setup.planningDiagnostics?.enforceable ? "1" : "0",
+    (setup.allowedTools || []).join("|"),
+    (setup.disallowedTools || []).join("|"),
+  ].join("\n");
   return makeContextCacheKey({
     taskId: setup.task?.id || "",
     agentName: setup.agent?.name || "",
@@ -547,6 +556,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     artifactsHash: shortHash(artifactSignature.join("|")),
     resolvedBlockersHash: shortHash(blockerSignature.join("|")),
     delegationHash: shortHash(delegationSignature),
+    planningHash: shortHash(planningSignature),
     memoryHash: shortHash(setup.memory || ""),
     journalHash: shortHash(setup.journalTail || ""),
   });
@@ -554,7 +564,14 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
 
 export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "" }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId });
-  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, allowedTools, disallowedTools, delegation } = setup;
+  const { agent, task, skills, memory, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
+  const capabilityPolicy = applyPlanningToolPolicy({
+    mode,
+    settings: setup.settings,
+    allowedTools: setup.allowedTools,
+    disallowedTools: setup.disallowedTools,
+  });
+  const { allowedTools, disallowedTools, toolPolicy } = capabilityPolicy;
   const messages = buildTaskRunMessages({ mode, task });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
   const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
@@ -562,7 +579,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
 
   const cache = contextCache || getProcessContextCache();
   const cacheKey = makeSetupSignature(
-    { ...setup, commentRows, allowedTools, mcpServers, pinnedKb, taskArtifacts, resolvedBlockers },
+    { ...setup, commentRows, allowedTools, disallowedTools, mcpServers, pinnedKb, taskArtifacts, resolvedBlockers, planningDiagnostics: capabilityPolicy.diagnostics },
     { mode, priorRunId },
   );
 
@@ -574,6 +591,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
+      settings: setup.settings,
       resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
@@ -582,9 +600,20 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const cached = cache.get(cacheKey);
     const prompt = cached || buildSystemPrompt(promptInput, mode);
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts, resolvedBlockers }), contextCacheHit: !!cached };
+    const diagnostics = {
+      ...diagnosticsForPrompt(prompt, {
+        ...setup,
+        allowedTools,
+        disallowedTools,
+        taskArtifacts,
+        resolvedBlockers,
+        planningDiagnostics: capabilityPolicy.diagnostics,
+      }),
+      contextCacheHit: !!cached,
+    };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers,
+      allowedTools, disallowedTools, toolPolicy,
       promptDiagnostics: diagnostics,
     };
   }
@@ -605,6 +634,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       agent, task, skills, memory, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
       resolvedBlockers,
+      settings: setup.settings,
       resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
       worklabToolSurfaceMarkdown,
@@ -620,10 +650,21 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       delegation,
     }, "review");
     if (!cached) cache.set(cacheKey, prompt);
-    const diagnostics = { ...diagnosticsForPrompt(prompt, { ...setup, taskArtifacts, resolvedBlockers }), contextCacheHit: !!cached };
+    const diagnostics = {
+      ...diagnosticsForPrompt(prompt, {
+        ...setup,
+        allowedTools,
+        disallowedTools,
+        taskArtifacts,
+        resolvedBlockers,
+        planningDiagnostics: capabilityPolicy.diagnostics,
+      }),
+      contextCacheHit: !!cached,
+    };
     return {
       ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
       priorRun, priorEvents, execution, taskArtifacts, resolvedBlockers, promptDiagnostics: diagnostics,
+      allowedTools, disallowedTools, toolPolicy,
     };
   }
 
@@ -680,6 +721,8 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now(), 
     workspace_mode: runInput.workspaceMode || "direct",
     source_workdir: runInput.sourceWorkdir || null,
     worktree: runInput.worktree || null,
+    planning_harness: runInput.promptDiagnostics?.planning?.harness || null,
+    planning_tool_policy: runInput.promptDiagnostics?.planning?.tool_policy || null,
     generated_at: now,
   };
   const tools = [
@@ -704,6 +747,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now(), 
         format: "markdown",
       })),
       tools,
+      diagnostics: runInput.promptDiagnostics,
     },
   };
 }

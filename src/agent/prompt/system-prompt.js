@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildSkillIndex } from "./skill-index.js";
 import { stripWorklabResultJson } from "../../ai/result/contract.js";
+import { buildPlanningDirective, formatPlanningHarnessSection } from "../../core/planning-harness.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
 
@@ -28,28 +29,6 @@ const RESULT_FIELD_RULES = `Structured result rules:
 - When using \`subtasks\`, keep each child bounded, include enough instructions for another agent to run independently, set \`suggested_agent\` to an enabled agent name when a specific owner is appropriate, and use \`acceptance_criteria\` / \`expected_artifact\` for the child's done condition.
 - Subtask \`acceptance_criteria\` and \`depends_on\` must be arrays of strings. Delegate subtask shape: \`{"title":"Child task","instructions":"Do the bounded work.","suggested_agent":"agent-name","required":true,"depends_on":[],"acceptance_criteria":["Done condition."],"expected_artifact":"Short artifact description."}\`.
 - For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
-
-const PLAN_DIRECTIVE = `Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Do not do implementation work during planning.
-
-When repository instructions require commits, include explicit granular commit expectations in the implementation plan and in any delegated subtask instructions. Keep delegated subtasks bounded so each child can commit its own coherent changes without bundling unrelated work.
-
-Return a structured Worklab result as JSON when you finish:
-
-{
-  "schema": "worklab.v2",
-  "stage": "plan",
-  "decision": "advance",
-  "summary": "Short outcome.",
-  "details": "Complete implementation plan.",
-  "final_text": "Short human-facing plan status.",
-  "artifacts": {},
-  "blocking_issues": [],
-  "pending_actions": [],
-  "questions": [],
-  "subtasks": []
-}
-
-Use decision "advance" when the plan is ready and the task should move to work, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 
 const WORK_DIRECTIVE = `Do the task work requested by the instructions.
 
@@ -335,6 +314,21 @@ function buildTaskBody(task, comments) {
   ].filter(Boolean).join("\n");
 }
 
+function formatPlanArtifact(task = {}) {
+  const body = String(task.plan_body || "").trim();
+  if (!body) return "";
+  const meta = [
+    task.plan_source_run_id ? `Source run: \`${task.plan_source_run_id}\`` : "",
+    task.plan_updated_by ? `Updated by: ${task.plan_updated_by}` : "",
+    task.plan_updated_at ? `Updated: ${formatTimestamp(task.plan_updated_at)}` : "",
+  ].filter(Boolean).join("\n");
+  return [
+    "Treat this saved plan as the current implementation contract.",
+    meta,
+    body,
+  ].filter(Boolean).join("\n\n");
+}
+
 function buildProjectBody(project, effectiveWorkdir) {
   if (!project) return "";
   return [
@@ -554,8 +548,8 @@ function hashPrefix(sectionPairs) {
   return hash.digest("hex").slice(0, 16);
 }
 
-function modeDirective(mode) {
-  if (mode === "plan") return PLAN_DIRECTIVE;
+function modeDirective(mode, settings) {
+  if (mode === "plan") return buildPlanningDirective(settings);
   if (mode === "review") return REVIEW_DIRECTIVE;
   if (mode === "automation") return AUTOMATION_DIRECTIVE;
   if (mode === "consolidate") return CONSOLIDATION_DIRECTIVE;
@@ -592,6 +586,10 @@ export function buildSystemPrompt(input, mode) {
     parts.push(section("Automation", buildAutomationBody(input.automation)));
     sectionNames.push("Automation");
   } else {
+    if (mode === "plan") {
+      parts.push(section("Planning harness", formatPlanningHarnessSection(input.settings)));
+      sectionNames.push("Planning harness");
+    }
     parts.push(section("Repository instructions", formatRepositoryInstructions(input.repositoryInstructions)));
     if (input.repositoryInstructions) sectionNames.push("Repository instructions");
     parts.push(section("Repository workflow", formatRepositoryWorkflow({
@@ -604,6 +602,10 @@ export function buildSystemPrompt(input, mode) {
     if (input.project) sectionNames.push("Project");
     parts.push(section("Task", buildTaskBody(input.task, input.comments)));
     sectionNames.push("Task");
+    if (mode === "execute" || mode === "review") {
+      parts.push(section("Plan artifact", formatPlanArtifact(input.task)));
+      if (input.task?.plan_body) sectionNames.push("Plan artifact");
+    }
     parts.push(section("Resolved blocker context", formatResolvedBlockers(input.resolvedBlockers)));
     if (input.resolvedBlockers?.length) sectionNames.push("Resolved blocker context");
     if (mode === "plan" || mode === "execute") {
@@ -638,7 +640,7 @@ export function buildSystemPrompt(input, mode) {
     sectionNames.push("DELIVERABLE_PERSISTENCE");
   }
   parts.push(RESULT_FIELD_RULES);
-  parts.push(modeDirective(mode));
+  parts.push(modeDirective(mode, input.settings));
   sectionNames.push("RESULT_FIELD_RULES", `directive:${mode}`);
 
   return {

@@ -6,6 +6,7 @@ import { makeTestDb } from "../helpers/test-db.js";
 import { buildNextTaskRunPreview, buildTaskRunInput } from "../../core/run-input.js";
 import { createContextCache } from "../../core/context-cache.js";
 import { appendJournalEntry, writeMemory } from "../../core/journal.js";
+import { writeSettings } from "../../core/settings.js";
 
 function withRunInputDb(fn) {
   const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-input-"));
@@ -653,6 +654,67 @@ describe("run input assembly", () => {
       expect(preview.system_prompt).toBe(input.systemPrompt);
       expect(preview.system_prompt).toContain("Plan as specialist.");
       expect(preview.system_prompt).not.toContain("Own the work.");
+    });
+  });
+
+  it("adds planning harness diagnostics and read-only plan tools to plan previews", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Own the task.");
+      seedAgent(db, "planner", "Plan as specialist.");
+      const task = seedTask(db, { stage: "plan", owner_agent: "owner", planner_agent: "planner" });
+      writeSettings(db, {
+        planning_harness: "numbered_steps",
+        planning_tool_policy: "read_only_no_shell",
+      });
+
+      const preview = buildNextTaskRunPreview({ db, config, taskId: task.id, now: 98765 });
+
+      expect(preview.input.metadata).toMatchObject({
+        planning_harness: "numbered_steps",
+        planning_tool_policy: "read_only_no_shell",
+      });
+      expect(preview.system_prompt).toContain("Harness: numbered steps");
+      expect(preview.system_prompt).toContain("Forbidden during planning: Write, Edit, and Bash");
+      expect(preview.input.diagnostics.planning).toMatchObject({
+        harness: "numbered_steps",
+        tool_policy: "read_only_no_shell",
+        enforceable: true,
+      });
+    });
+  });
+
+  it("includes planning harness settings in prompt cache signatures", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Own the task.");
+      seedAgent(db, "planner", "Plan as specialist.");
+      seedTask(db, { stage: "plan", owner_agent: "owner", planner_agent: "planner" });
+      const cache = createContextCache();
+
+      writeSettings(db, { planning_harness: "fast_handoff" });
+      const first = buildTaskRunInput({
+        db,
+        config,
+        taskId: "task-1",
+        agentName: "planner",
+        runId: "run-first",
+        mode: "plan",
+        contextCache: cache,
+      });
+
+      writeSettings(db, { planning_harness: "execplan_deep" });
+      const second = buildTaskRunInput({
+        db,
+        config,
+        taskId: "task-1",
+        agentName: "planner",
+        runId: "run-second",
+        mode: "plan",
+        contextCache: cache,
+      });
+
+      expect(first.systemPrompt).toContain("Harness: fast handoff");
+      expect(second.systemPrompt).toContain("Harness: ExecPlan deep");
+      expect(second.promptDiagnostics.contextCacheHit).toBe(false);
     });
   });
 
