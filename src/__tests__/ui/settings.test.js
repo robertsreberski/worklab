@@ -80,6 +80,10 @@ describe("settings UI duration conversions", () => {
       agent_provider_recovery_base_delay_ms: secondsToMs("45"),
       planning_harness: "execplan_deep",
       planning_tool_policy: "read_only_no_shell",
+      agent_learning_enabled: false,
+      agent_learning_backend: "mem0",
+      agent_learning_injected_limit: 12,
+      agent_learning_auto_approve_threshold: 0.7,
     });
     expect(payload.worker_timeout_ms).toBe(1800000);
     expect(payload.cancel_grace_ms).toBe(5000);
@@ -106,6 +110,10 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_provider_recovery_base_delay_ms).toBe(45000);
     expect(payload.planning_harness).toBe("execplan_deep");
     expect(payload.planning_tool_policy).toBe("read_only_no_shell");
+    expect(payload.agent_learning_enabled).toBe(false);
+    expect(payload.agent_learning_backend).toBe("mem0");
+    expect(payload.agent_learning_injected_limit).toBe(12);
+    expect(payload.agent_learning_auto_approve_threshold).toBe(0.7);
   });
 
   it("keeps runtime idle warning payload in milliseconds", () => {

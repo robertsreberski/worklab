@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   formatMemoryBytes,
+  learningMemoryMeta,
+  learningMemoryStatusLabel,
+  learningMemoryStatusTone,
   memoryContentPlaceholder,
   memoryFreshnessLabel,
   memoryFreshnessStatus,
@@ -51,5 +54,21 @@ describe("agent memory UI helpers", () => {
       expect.objectContaining({ label: "Journal", value: "Changed" }),
       expect.objectContaining({ label: "Run", value: "run-1", mono: true }),
     ]));
+  });
+
+  it("maps structured learning memory statuses", () => {
+    expect(learningMemoryStatusLabel({ status: "draft" })).toBe("Draft");
+    expect(learningMemoryStatusTone({ status: "draft" })).toBe("review");
+    expect(learningMemoryStatusLabel({ status: "approved" })).toBe("Approved");
+    expect(learningMemoryStatusTone({ status: "approved" })).toBe("complete");
+    expect(learningMemoryMeta([
+      { status: "draft" },
+      { status: "approved" },
+      { status: "archived" },
+    ])).toEqual([
+      { label: "Active", value: "2" },
+      { label: "Draft", value: "1" },
+      { label: "Approved", value: "1" },
+    ]);
   });
 });
