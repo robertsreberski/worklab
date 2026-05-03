@@ -269,6 +269,9 @@ describe("worklab-tools KB handlers", () => {
     }
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve substantial task deliverables");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("Knowledge Base, not kilobytes");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.outputSchema?.required).toContain("slug");
+    expect(toolDefinitions.find((t) => t.name === "kb_read")?.annotations).toMatchObject({ readOnlyHint: true });
+    expect(toolDefinitions.find((t) => t.name === "kb_delete")?.annotations).toMatchObject({ destructiveHint: true });
   });
 
   it("toolDefinitions has 17 total entries (4 existing + 2 todo + agent create + 5 KB + 3 search + 2 subtask graph)", () => {

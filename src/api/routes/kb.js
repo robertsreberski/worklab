@@ -37,6 +37,78 @@ const PatchSchema = z.object({
   pinned: z.boolean().optional(),
 });
 
+const OrganizeSchema = z.object({
+  apply: z.boolean().optional().default(false),
+});
+
+const SUBCATEGORY_TAGS = [
+  "ui-audit",
+  "runtime",
+  "observability",
+  "datasets",
+  "harnesses",
+  "benchmarks",
+  "prs",
+  "pr-import",
+  "migration",
+  "redirects",
+  "accessibility",
+  "responsive",
+  "fixtures",
+  "design-system",
+  "level-design",
+  "battle",
+  "progression",
+  "content-pipeline",
+  "live-smoke",
+  "complexity",
+  "qa",
+];
+
+const NOISY_SUBCATEGORY_TAGS = new Set([
+  "run-result",
+  "execute",
+  "research",
+  "audit",
+  "approved",
+  "approve",
+  "implementation",
+  "validation",
+  "evidence",
+  "automattic",
+  "benchmark",
+  "benchmark-reset",
+  "automattic-benchmark",
+  "automattic-benchmark-reset",
+  "pokemario",
+  "wpcom",
+  "wp-sandbox",
+]);
+
+function slugToken(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function entryText(meta) {
+  return [
+    meta.slug,
+    meta.title,
+    meta.category,
+    meta.subcategory,
+    ...(Array.isArray(meta.tags) ? meta.tags : []),
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+}
+
+function hasSignal(text, token) {
+  if (!token) return false;
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text);
+}
+
 function resolveKbProjectId(db, value) {
   if (value === undefined) return undefined;
   if (value === null || value === "") return null;
@@ -79,6 +151,127 @@ function attachProjects(db, entries) {
   return Array.isArray(entries) ? entries.map(attach) : attach(entries);
 }
 
+function taskUsageProjectId(db, entry) {
+  if (!db) return null;
+  const slug = entry.slug || entry.meta?.slug;
+  const title = entry.title || entry.meta?.title || "";
+  const needles = [slug, title].map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
+  if (!needles.length) return null;
+  const matches = (text) => {
+    const haystack = String(text || "").toLowerCase();
+    return needles.some((needle) => haystack.includes(needle));
+  };
+  const counts = new Map();
+  const add = (projectId) => {
+    if (!projectId) return;
+    counts.set(projectId, (counts.get(projectId) || 0) + 1);
+  };
+  for (const row of db.prepare("SELECT project_id, title, instructions FROM tasks WHERE project_id IS NOT NULL").all()) {
+    if (matches(row.title) || matches(row.instructions)) add(row.project_id);
+  }
+  for (const row of db.prepare(`
+    SELECT t.project_id, c.body
+    FROM task_comments c
+    JOIN tasks t ON t.id = c.task_id
+    WHERE t.project_id IS NOT NULL
+  `).all()) {
+    if (matches(row.body)) add(row.project_id);
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length) return null;
+  if (ranked[1] && ranked[1][1] === ranked[0][1]) return null;
+  return ranked[0][0];
+}
+
+function projectAliases(project) {
+  const aliases = new Set([slugToken(project.slug), slugToken(project.name)]);
+  const nameParts = slugToken(project.name).split("-").filter((part) => part.length > 4);
+  for (const part of nameParts) aliases.add(part);
+  try {
+    const tags = JSON.parse(project.tags_json || "[]");
+    for (const tag of Array.isArray(tags) ? tags : []) {
+      const alias = slugToken(tag);
+      if (alias.length > 3) aliases.add(alias);
+    }
+  } catch {
+    // Ignore malformed project tags; project matching falls back to slug/name.
+  }
+  return [...aliases].filter(Boolean);
+}
+
+function tagProjectId(db, meta) {
+  if (!db) return null;
+  const tokens = new Set([
+    slugToken(meta.slug),
+    slugToken(meta.title),
+    ...(Array.isArray(meta.tags) ? meta.tags.map(slugToken) : []),
+  ].filter(Boolean));
+  const matches = [];
+  const projects = db.prepare("SELECT id, slug, name, tags_json, archived FROM projects").all();
+  for (const project of projects) {
+    const aliases = projectAliases(project);
+    if (aliases.some((alias) => tokens.has(alias))) matches.push(project);
+  }
+  const active = matches.filter((project) => !project.archived);
+  const candidates = active.length ? active : matches;
+  return candidates.length === 1 ? candidates[0].id : null;
+}
+
+function inferCategory(meta) {
+  const current = String(meta.category || "").trim();
+  if (current && current !== "uncategorized") return null;
+  const text = entryText(meta);
+  if (hasSignal(text, "qa")) return "qa";
+  if (hasSignal(text, "run-result") || hasSignal(text, "final-answer") || String(meta.slug || "").startsWith("run-")) return "run-results";
+  if (hasSignal(text, "decision") || hasSignal(text, "strategy")) return "decision";
+  if (hasSignal(text, "runbook")) return "runbook";
+  if (hasSignal(text, "operations")) return "operations";
+  if (hasSignal(text, "audit") || hasSignal(text, "research") || hasSignal(text, "brief") || hasSignal(text, "inventory") || hasSignal(text, "map")) return "research";
+  return null;
+}
+
+function inferSubcategory(meta) {
+  if (meta.subcategory) return null;
+  const text = entryText(meta);
+  for (const tag of SUBCATEGORY_TAGS) {
+    if (hasSignal(text, tag)) return tag;
+  }
+  const candidate = (Array.isArray(meta.tags) ? meta.tags : [])
+    .map(slugToken)
+    .find((tag) => tag && !NOISY_SUBCATEGORY_TAGS.has(tag) && !tag.startsWith("task-") && !tag.startsWith("agent-"));
+  return candidate || null;
+}
+
+function organizeProposalForEntry({ db, entry }) {
+  const meta = entry.meta || entry;
+  const patch = {};
+  const reasons = [];
+  if (!meta.project_id) {
+    const projectId = taskUsageProjectId(db, meta) || tagProjectId(db, meta);
+    if (projectId) {
+      patch.project_id = projectId;
+      reasons.push("project");
+    }
+  }
+  const category = inferCategory(meta);
+  if (category && category !== meta.category) {
+    patch.category = category;
+    reasons.push("category");
+  }
+  const subcategory = inferSubcategory(meta);
+  if (subcategory && subcategory !== meta.subcategory) {
+    patch.subcategory = subcategory;
+    reasons.push("subcategory");
+  }
+  if (!Object.keys(patch).length) return null;
+  return {
+    slug: meta.slug,
+    title: meta.title || meta.slug,
+    patch,
+    reasons,
+  };
+}
+
 export function registerKbRoutes(app, { dataDir, broker, db }) {
   // GET /api/kb?tag=&category=&subcategory=&project_id=&pinned=
   app.get("/api/kb", (req, res) => {
@@ -101,6 +294,37 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
 
     const entries = kbList({ dataDir, ...filter });
     res.json({ entries: attachProjects(db, entries) });
+  });
+
+  // POST /api/kb/organize
+  app.post("/api/kb/organize", (req, res) => {
+    const parsed = OrganizeSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: { code: "validation", message: parsed.error.issues[0]?.message ?? "invalid request body" },
+      });
+    }
+    const apply = parsed.data.apply === true;
+    const entries = kbList({ dataDir }).map((meta) => kbRead({ dataDir, slug: meta.slug })).filter(Boolean);
+    const proposals = entries
+      .map((entry) => organizeProposalForEntry({ db, entry }))
+      .filter(Boolean);
+    let applied = 0;
+    if (apply) {
+      for (const proposal of proposals) {
+        kbUpdate({ dataDir, slug: proposal.slug, patch: proposal.patch });
+        broker.broadcast("global", { type: "kb_updated", slug: proposal.slug });
+        applied += 1;
+      }
+    }
+    res.json({
+      ok: true,
+      apply,
+      count: entries.length,
+      proposed: proposals.length,
+      applied,
+      proposals: attachProjects(db, proposals),
+    });
   });
 
   // GET /api/kb/:slug

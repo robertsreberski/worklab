@@ -16,8 +16,8 @@ export const object = (properties = {}, required = [], additionalProperties = fa
   additionalProperties,
 });
 
-export function tool(name, description, inputSchema = object()) {
-  return { name, description, inputSchema };
+export function tool(name, description, inputSchema = object(), extra = {}) {
+  return { name, description, inputSchema, ...extra };
 }
 
 // Common typed slots reused across many definitions.

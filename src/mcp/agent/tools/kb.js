@@ -63,6 +63,10 @@ export const kbListSchema = z.object({
 export const kbSearchSchema = z.object({
   query: z.string().min(1, "query is required"),
   limit: z.number().int().min(1).max(50).optional(),
+  tag: z.string().optional(),
+  category: z.string().optional(),
+  subcategory: z.string().optional(),
+  project_id: z.string().optional(),
 });
 
 async function bestEffortIndexKb(dataDir, slug) {
@@ -70,6 +74,25 @@ async function bestEffortIndexKb(dataDir, slug) {
     await withDb(dataDir, (db) => indexPath({ db, dataDir, filePath: kbPath(dataDir, slug) }));
   } catch { /* watcher/startup indexer will retry */ }
 }
+
+const okSlugOutputSchema = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+    slug: { type: "string" },
+  },
+  required: ["ok", "slug"],
+  additionalProperties: false,
+};
+
+const okOutputSchema = {
+  type: "object",
+  properties: {
+    ok: { type: "boolean" },
+  },
+  required: ["ok"],
+  additionalProperties: false,
+};
 
 export const definitions = [
   {
@@ -105,6 +128,8 @@ export const definitions = [
       },
       required: ["slug", "title", "body"],
     },
+    outputSchema: okSlugOutputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "kb_update",
@@ -131,6 +156,8 @@ export const definitions = [
       },
       required: ["slug", "patch"],
     },
+    outputSchema: okOutputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: false },
   },
   {
     name: "kb_delete",
@@ -142,6 +169,8 @@ export const definitions = [
       },
       required: ["slug"],
     },
+    outputSchema: okOutputSchema,
+    annotations: { readOnlyHint: false, destructiveHint: true },
   },
   {
     name: "kb_read",
@@ -154,6 +183,7 @@ export const definitions = [
       },
       required: ["slug"],
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: "kb_list",
@@ -169,6 +199,7 @@ export const definitions = [
         pinned: { type: "boolean", description: "Filter to pinned (true) or unpinned (false) entries" },
       },
     },
+    annotations: { readOnlyHint: true },
   },
   {
     name: "kb_search",
@@ -178,9 +209,14 @@ export const definitions = [
       properties: {
         query: { type: "string" },
         limit: { type: "number", minimum: 1, maximum: 50 },
+        tag: { type: "string", description: "Filter to entries that include this tag" },
+        project_id: { type: "string", description: "Filter to entries linked to this Worklab project id" },
+        category: { type: "string", description: "Filter to entries with this category" },
+        subcategory: { type: "string", description: "Filter to entries with this subcategory" },
       },
       required: ["query"],
     },
+    annotations: { readOnlyHint: true },
   },
 ];
 
@@ -224,8 +260,18 @@ export function buildHandlers(context) {
       return { entries };
     },
     async kb_search(input) {
-      const { query, limit } = kbSearchSchema.parse(input);
-      const results = await withDb(dataDir, (db) => search({ db, dataDir, query, kind: "kb", limit: limit || 8 }));
+      const { query, limit, tag, category, subcategory, project_id } = kbSearchSchema.parse(input);
+      const results = await withDb(dataDir, (db) => search({
+        db,
+        dataDir,
+        query,
+        kind: "kb",
+        tag,
+        category,
+        subcategory,
+        project_id,
+        limit: limit || 8,
+      }));
       return { results };
     },
   };
