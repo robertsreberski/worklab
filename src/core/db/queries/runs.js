@@ -260,19 +260,36 @@ export function getStaleRunningRunForTask(db, taskId) {
 // Cost-summary aggregates for the /api/runs/cost-summary endpoint.
 export function getCostSummarySince(db, sinceMs) {
   return db.prepare(`
-    SELECT COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
+    SELECT
+      COALESCE(SUM(cost_usd), 0) AS total,
+      COUNT(cost_usd) AS runs,
+      SUM(CASE
+        WHEN cost_usd IS NULL
+          AND status != 'running'
+          AND COALESCE(process_status, status) != 'running'
+        THEN 1 ELSE 0
+      END) AS unpriced_runs
     FROM task_runs
-    WHERE started_at >= ? AND cost_usd IS NOT NULL
+    WHERE started_at >= ?
   `).get(sinceMs);
 }
 
 export function getCostSummaryByAgentSince(db, sinceMs) {
   return db.prepare(`
-    SELECT agent_name, COALESCE(SUM(cost_usd), 0) AS total, COUNT(*) AS runs
+    SELECT
+      agent_name,
+      COALESCE(SUM(cost_usd), 0) AS total,
+      COUNT(cost_usd) AS runs,
+      SUM(CASE
+        WHEN cost_usd IS NULL
+          AND status != 'running'
+          AND COALESCE(process_status, status) != 'running'
+        THEN 1 ELSE 0
+      END) AS unpriced_runs
     FROM task_runs
-    WHERE started_at >= ? AND cost_usd IS NOT NULL
+    WHERE started_at >= ?
     GROUP BY agent_name
-    ORDER BY total DESC
+    ORDER BY total DESC, unpriced_runs DESC
   `).all(sinceMs);
 }
 

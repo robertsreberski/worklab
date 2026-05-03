@@ -22,6 +22,7 @@ function emptySummary() {
   return {
     run_count: 0,
     costed_run_count: 0,
+    unpriced_run_count: 0,
     total_cost_usd: 0,
     average_cost_usd: null,
     running_count: 0,
@@ -124,6 +125,7 @@ export function registerActivityRoutes(app, { db }) {
     const summary = row ? {
       run_count: Number(row.run_count || 0),
       costed_run_count: costedRunCount,
+      unpriced_run_count: Number(row.unpriced_run_count || 0),
       total_cost_usd: totalCostUsd,
       average_cost_usd: costedRunCount > 0 ? totalCostUsd / costedRunCount : null,
       running_count: Number(row.running_count || 0),

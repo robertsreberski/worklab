@@ -156,9 +156,22 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const week = getCostSummarySince(db, weekStart);
     const byAgent = getCostSummaryByAgentSince(db, todayStart.getTime());
     res.json({
-      today: { total_usd: Number(today.total || 0), run_count: today.runs },
-      week: { total_usd: Number(week.total || 0), run_count: week.runs },
-      today_by_agent: byAgent.map((row) => ({ agent: row.agent_name, total_usd: Number(row.total || 0), run_count: row.runs })),
+      today: {
+        total_usd: Number(today.total || 0),
+        run_count: today.runs,
+        unpriced_run_count: Number(today.unpriced_runs || 0),
+      },
+      week: {
+        total_usd: Number(week.total || 0),
+        run_count: week.runs,
+        unpriced_run_count: Number(week.unpriced_runs || 0),
+      },
+      today_by_agent: byAgent.map((row) => ({
+        agent: row.agent_name,
+        total_usd: Number(row.total || 0),
+        run_count: row.runs,
+        unpriced_run_count: Number(row.unpriced_runs || 0),
+      })),
     });
   });
 

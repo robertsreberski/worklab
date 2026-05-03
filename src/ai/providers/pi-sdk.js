@@ -465,6 +465,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       inputTokens: usage.input,
       outputTokens: usage.output,
       cachedTokens: usage.cacheRead,
+      cacheWriteTokens: usage.cacheWrite,
     });
     if (!piErrorPayload && (stopReason === "error" || stopReason === "aborted")) {
       piErrorPayload = capturePiErrorPayload(lastAssistant);

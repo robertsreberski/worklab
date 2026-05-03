@@ -237,11 +237,21 @@ export function getModelByProviderAndName({ db, providerId, modelName }) {
   return rowToModel(db.prepare("SELECT * FROM custom_models WHERE provider_id = ? AND model_name = ?").get(providerId, modelName));
 }
 
+function pricingHasRates(pricing = {}) {
+  return [
+    pricing.input_per_million,
+    pricing.cached_input_per_million,
+    pricing.cache_write_per_million,
+    pricing.output_per_million,
+  ].some((value) => Number.isFinite(Number(value)));
+}
+
 export function upsertModel({ db, providerId, modelName, displayName, alias, capabilities = {}, pricing = {}, enabled }) {
   const existing = getModelByProviderAndName({ db, providerId, modelName });
   const now = Date.now();
   const caps = JSON.stringify(capabilities || {});
-  const price = JSON.stringify(pricing || {});
+  const nextPricing = existing && !pricingHasRates(pricing) ? existing.pricing : (pricing || {});
+  const price = JSON.stringify(nextPricing);
   if (existing) {
     db.prepare(`
       UPDATE custom_models

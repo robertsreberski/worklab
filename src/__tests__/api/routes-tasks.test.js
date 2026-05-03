@@ -130,8 +130,8 @@ describe("GET /api/runs/cost-summary", () => {
     const yesterday = todayStart.getTime() - 24 * 60 * 60 * 1000;
     const older = todayStart.getTime() - 8 * 24 * 60 * 60 * 1000;
     const insertRun = db.prepare(`
-      INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, cost_usd)
-      VALUES (?, ?, 'execute', ?, ?, 'complete', ?)
+      INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status, cost_usd)
+      VALUES (?, ?, 'execute', ?, ?, 'complete', 'complete', ?)
     `);
     insertRun.run("today-alpha", task.id, "alpha", today, 0.01);
     insertRun.run("today-beta", task.id, "beta", today + 1, 0.02);
@@ -142,12 +142,14 @@ describe("GET /api/runs/cost-summary", () => {
     const res = await agent.get("/api/runs/cost-summary").expect(200);
 
     expect(res.body.today.run_count).toBe(2);
+    expect(res.body.today.unpriced_run_count).toBe(1);
     expect(res.body.today.total_usd).toBeCloseTo(0.03);
     expect(res.body.week.run_count).toBe(3);
+    expect(res.body.week.unpriced_run_count).toBe(1);
     expect(res.body.week.total_usd).toBeCloseTo(0.06);
     expect(res.body.today_by_agent).toEqual([
-      { agent: "beta", total_usd: 0.02, run_count: 1 },
-      { agent: "alpha", total_usd: 0.01, run_count: 1 },
+      { agent: "beta", total_usd: 0.02, run_count: 1, unpriced_run_count: 1 },
+      { agent: "alpha", total_usd: 0.01, run_count: 1, unpriced_run_count: 0 },
     ]);
   });
 });

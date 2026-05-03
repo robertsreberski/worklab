@@ -710,6 +710,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     inputTokens,
     outputTokens,
     cachedTokens,
+    cacheWriteTokens: cacheCreationTokens,
   });
   const enrichedUsage = {
     ...usage,
