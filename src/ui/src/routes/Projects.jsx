@@ -13,6 +13,7 @@ import { PaneRow } from "../components/PaneRow.jsx";
 import { PaneListHeader, DetailHead, SectionMarker } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
+import { Select } from "../components/primitives/Select.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
@@ -41,6 +42,12 @@ const PROJECT_EDIT_SECTIONS = [
   { id: "project-edit-allowed-agents", num: "03", label: "Allowed agents", meta: "Delegation" },
 ];
 
+const WORKTREE_MODE_OPTIONS = [
+  { value: "off", label: "Off", description: "Run directly in the project workdir." },
+  { value: "auto", label: "Auto", description: "Use an isolated Git worktree when the project supports it." },
+  { value: "required", label: "Required", description: "Block execute runs unless an isolated Git worktree is available." },
+];
+
 function EntityChromeBridge({ chrome }) {
   useAppChrome(chrome, [chrome]);
   return null;
@@ -63,11 +70,16 @@ function projectDraftFrom(project = {}) {
     description: project.description || "",
     context: project.context || "",
     workdir: project.workdir || "",
+    worktree_mode: project.worktree_mode || "off",
     tags: project.tags || [],
     allowed_agents: Array.isArray(project.allowed_agents) ? project.allowed_agents : [],
     delegation_allow_unlisted: !!project.delegation_allow_unlisted,
     archived: !!project.archived,
   };
+}
+
+function worktreeModeLabel(value) {
+  return WORKTREE_MODE_OPTIONS.find((option) => option.value === value)?.label || "Off";
 }
 
 function formatProjectAge(value) {
@@ -301,6 +313,7 @@ function ProjectEditor({ selectedId, onSaved }) {
         description: draft.description,
         context: draft.context,
         workdir: draft.workdir.trim() || null,
+        worktree_mode: draft.worktree_mode || "off",
         tags: draft.tags || [],
         allowed_agents: draft.allowed_agents || [],
         delegation_allow_unlisted: !!draft.delegation_allow_unlisted,
@@ -350,6 +363,7 @@ function ProjectEditor({ selectedId, onSaved }) {
           <EntityMetaList items={[
             { label: "Slug", value: isNew ? "Generated on create" : draft.slug },
             { label: "Workdir", value: draft.workdir || "Default workspace", mono: false },
+            { label: "Worktrees", value: worktreeModeLabel(draft.worktree_mode), mono: false },
             { label: "Tags", value: `${(draft.tags || []).length}`, mono: false },
             {
               label: "Allowed agents",
@@ -415,6 +429,15 @@ function ProjectEditor({ selectedId, onSaved }) {
                 </FormField>
                 <FormField label="Workdir" hint="Optional. Overrides the default workspace for assigned task runs.">
                   <Input value={draft.workdir} onInput={(event) => update({ workdir: event.currentTarget.value })} placeholder="/path/to/project" />
+                </FormField>
+                <FormField label="Worktrees" hint="Execute runs use the source checkout as truth and merge back only after success.">
+                  <Select
+                    variant="native"
+                    value={draft.worktree_mode || "off"}
+                    options={WORKTREE_MODE_OPTIONS}
+                    onChange={(worktreeMode) => update({ worktree_mode: worktreeMode })}
+                    ariaLabel="Project worktree mode"
+                  />
                 </FormField>
                 <FormField label="Tags">
                   <TagInput value={draft.tags || []} onChange={(tags) => update({ tags })} placeholder="Add tag..." />
@@ -497,6 +520,7 @@ function ProjectDetail({ selectedId, onChanged }) {
           <EntityMetaList items={[
             { label: "Slug", value: project.slug },
             { label: "Workdir", value: project.workdir || "Default workspace", mono: false },
+            { label: "Worktrees", value: worktreeModeLabel(project.worktree_mode), mono: false },
             { label: "Tasks", value: String(project.stats?.task_count || 0), mono: false },
             { label: "Tags", value: project.tags?.length ? project.tags.join(", ") : "None", mono: false },
             {
@@ -621,6 +645,10 @@ function ProjectDetail({ selectedId, onChanged }) {
                   </Button>
                 )}
               </div>
+              <div class="project-workdir-row">
+                <span class="project-workdir-label">Worktrees</span>
+                <span class="project-workdir-value">{worktreeModeLabel(project.worktree_mode)}</span>
+              </div>
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
                   <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} />
@@ -740,6 +768,9 @@ export function Projects({ selectedId = null, mode = null }) {
           <span class="knowledge-row-sub">
             <span class="pane-row-mono">{project.slug}</span>
             {project.archived && <span class="kb-category-badge">archived</span>}
+            {project.worktree_mode && project.worktree_mode !== "off" && (
+              <span class="kb-category-badge">worktrees {project.worktree_mode}</span>
+            )}
           </span>
         )}
         trailing={(

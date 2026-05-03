@@ -453,6 +453,7 @@ function rowToRun(row) {
     diagnostics_json,
     artifacts_json,
     artifact_summary_json,
+    worktree_json,
     ...run
   } = row;
   const hasLog = Boolean(log_id);
@@ -462,6 +463,9 @@ function rowToRun(row) {
     ...run,
     parent_run_id: run.parent_run_id || null,
     process_status: run.process_status || "running",
+    workspace_mode: run.workspace_mode || "direct",
+    source_workdir: run.source_workdir || null,
+    worktree: safeParseJson(worktree_json, null),
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
     artifact_paths: artifactPaths(artifacts),
     artifacts,

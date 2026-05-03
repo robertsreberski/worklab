@@ -22,6 +22,8 @@ describe("task run preview formatting", () => {
           project_id: "project-1",
           project_slug: "demo-project",
           project_name: "Demo Project",
+          workspace_mode: "worktree",
+          source_workdir: "/tmp/demo-source",
           workdir: "/tmp/demo-project",
           agent_name: "owner",
           model: "claude:claude-sonnet-4-6",
@@ -43,6 +45,8 @@ describe("task run preview formatting", () => {
     expect(text).toContain("# Run input");
     expect(text).toContain("## Metadata\n\n- Task: T-1");
     expect(text).toContain("- Project: Demo Project");
+    expect(text).toContain("- Workspace mode: worktree");
+    expect(text).toContain("- Source checkout: /tmp/demo-source");
     expect(text).toContain("- Workdir: /tmp/demo-project");
     expect(text).toContain("## System message\n\n- Format: markdown");
     expect(text).toContain("```markdown\n## Role\n\nDo work.\n```");

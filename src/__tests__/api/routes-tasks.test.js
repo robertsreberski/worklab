@@ -377,6 +377,35 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
 
+  it("includes parsed worktree metadata on task detail runs", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    const worktree = {
+      mode: "worktree",
+      branch: "worklab/run/run-worktree",
+      source_workdir: "/repo",
+      runtime_workdir: "/data/runs/run-worktree/worktree",
+      status: "merged",
+    };
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, agent_name, started_at, status, workspace_mode, source_workdir, worktree_json)
+      VALUES ('run-worktree', ?, 'execute', 'alpha', ?, 'complete', 'worktree', '/repo', ?)
+    `).run(task.id, 1235, JSON.stringify(worktree));
+
+    const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+    expect(res.body.runs[0]).toMatchObject({
+      id: "run-worktree",
+      workspace_mode: "worktree",
+      source_workdir: "/repo",
+      worktree: {
+        branch: "worklab/run/run-worktree",
+        runtime_workdir: "/data/runs/run-worktree/worktree",
+      },
+    });
+  });
+
   it("returns task-level artifact totals across all completed run outcomes", async () => {
     const { agent, db } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });

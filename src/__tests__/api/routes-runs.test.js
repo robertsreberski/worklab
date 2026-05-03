@@ -47,6 +47,35 @@ describe("GET /api/runs/:id", () => {
     });
   });
 
+  it("returns parsed worktree metadata for worktree runs", async () => {
+    const { agent, db } = makeTestServer();
+    const taskId = newTaskId();
+    const runId = newRunId();
+    const now = Date.now();
+    const worktree = {
+      mode: "worktree",
+      branch: `worklab/run/${runId}`,
+      source_workdir: "/repo",
+      runtime_workdir: `/data/runs/${runId}/worktree`,
+      status: "created",
+    };
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, agent_name, started_at, status, workspace_mode, source_workdir, worktree_json)
+      VALUES (?, ?, 'execute', 'a', ?, 'complete', 'worktree', '/repo', ?)
+    `).run(runId, taskId, now, JSON.stringify(worktree));
+
+    const res = await agent.get(`/api/runs/${runId}?events=none`).expect(200);
+
+    expect(res.body.run.workspace_mode).toBe("worktree");
+    expect(res.body.run.source_workdir).toBe("/repo");
+    expect(res.body.run.worktree).toMatchObject({
+      branch: `worklab/run/${runId}`,
+      runtime_workdir: `/data/runs/${runId}/worktree`,
+    });
+  });
+
   it("returns a normalized todo state for a run", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();
