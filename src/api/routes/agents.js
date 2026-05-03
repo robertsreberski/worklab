@@ -47,6 +47,7 @@ function rowToAgent(row) {
     builtin_allowlist: parseStoredAllowlist(row.builtin_allowlist),
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
     allow_self_review: !!row.allow_self_review,
+    browser_tools_review_only: !!row.browser_tools_review_only,
     daily_budget_usd: row.daily_budget_usd == null ? null : Number(row.daily_budget_usd),
     per_run_budget_usd: row.per_run_budget_usd == null ? null : Number(row.per_run_budget_usd),
   };
@@ -66,6 +67,7 @@ const PATCHABLE = [
   "builtin_allowlist",
   "builtin_allowlist_mode",
   "allow_self_review",
+  "browser_tools_review_only",
   "daily_budget_usd",
   "per_run_budget_usd",
   "enabled",
@@ -286,10 +288,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
     const enabled = req.body.enabled === false ? 0 : 1;
     let allowSelfReview;
+    let browserToolsReviewOnly;
     let dailyBudgetUsd;
     let perRunBudgetUsd;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
+      browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
       dailyBudgetUsd = normalizeBudgetField("daily_budget_usd", req.body.daily_budget_usd);
       perRunBudgetUsd = normalizeBudgetField("per_run_budget_usd", req.body.per_run_budget_usd);
     } catch (err) {
@@ -311,6 +315,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       builtinAllowlistJson: JSON.stringify(builtinAllow.list),
       builtinAllowlistMode: builtinAllow.mode,
       allowSelfReview,
+      browserToolsReviewOnly,
       dailyBudgetUsd,
       perRunBudgetUsd,
       enabled,
@@ -393,7 +398,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
           values.push(JSON.stringify(req.body[k] ?? []));
         } else if (k === "enabled") {
           values.push(req.body[k] ? 1 : 0);
-        } else if (k === "allow_self_review") {
+        } else if (k === "allow_self_review" || k === "browser_tools_review_only") {
           try {
             values.push(normalizeBooleanField(k, req.body[k], false));
           } catch (err) {

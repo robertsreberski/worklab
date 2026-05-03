@@ -154,14 +154,15 @@ describe("openDb + runMigrations", () => {
     ]));
   });
 
-  it("defaults new agents to allowing self-review", () => {
+  it("defaults new agents to allowing self-review and review-only browser tools off", () => {
     const db = openDb(":memory:");
     runMigrations(db);
     const now = Date.now();
     db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("default-review", "Default Review", "claude", "claude:claude-sonnet-4-6", now, now);
-    const row = db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get("default-review");
+    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only FROM agents WHERE name = ?").get("default-review");
     expect(row.allow_self_review).toBe(1);
+    expect(row.browser_tools_review_only).toBe(0);
   });
 
   it("migration drops legacy task workflow columns and schedule tables", () => {

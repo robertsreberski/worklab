@@ -228,6 +228,7 @@ function appendAgentContext(lines, { db, context }) {
   if (agent.description) lines.push(`Description: ${oneLine(agent.description, 300)}`);
   if (agent.instructions) lines.push(`Instructions excerpt:\n${block(agent.instructions, 1200)}`);
   lines.push(`Allowlist modes: skills=${agent.skills_allowlist_mode || "all"}, mcp=${agent.mcp_allowlist_mode || "all"}, builtins=${agent.builtin_allowlist_mode || "all"}`);
+  lines.push(`Browser tools review-only: ${agent.browser_tools_review_only ? "yes" : "no"}`);
   const runs = listRecentAgentRuns(db, agent.name, 6);
   if (runs.length) {
     lines.push("Recent agent runs:");

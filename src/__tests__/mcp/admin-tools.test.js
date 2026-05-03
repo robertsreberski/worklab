@@ -37,6 +37,7 @@ describe("admin MCP tools", () => {
       skills_allowlist: { type: "array" },
       mcp_allowlist: { type: "array" },
       builtin_allowlist: { type: "array" },
+      browser_tools_review_only: { type: "boolean" },
       per_run_budget_usd: { type: "number" },
     });
   });
@@ -108,6 +109,7 @@ describe("admin MCP tools", () => {
           builtin_allowlist: [],
           builtin_allowlist_mode: "all",
           allow_self_review: true,
+          browser_tools_review_only: true,
           enabled: true,
           last_run_at: 123,
           run_count_30d: 4,
@@ -131,6 +133,7 @@ describe("admin MCP tools", () => {
       model: "pi:openai-codex:gpt-5.5",
       skills_allowlist: { mode: "custom", count: 1 },
       mcp_allowlist: { mode: "custom", count: 1 },
+      browser_tools_review_only: true,
     });
     expect(result.agents[0]).not.toHaveProperty("instructions");
     expect(JSON.stringify(result)).not.toContain("Very long private instructions");
