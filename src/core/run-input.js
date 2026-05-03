@@ -274,7 +274,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     agent: agentName,
     maxJournalLines: settings.journal_tail_lines,
   });
-  const learningMemories = settings.agent_learning_enabled && settings.agent_learning_backend === "worklab_native"
+  const learningMemories = settings.agent_learning_enabled !== false
     ? selectAgentLearningMemories(db, {
       agentName,
       projectId: projectRunContext.project?.id || task.project_id || null,

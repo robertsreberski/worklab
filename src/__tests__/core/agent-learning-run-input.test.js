@@ -77,16 +77,16 @@ describe("run input agent learning", () => {
     });
   });
 
-  it("disables learning prompt injection when the backend setting is external", () => {
+  it("disables learning prompt injection when structured learning is off", () => {
     withDb(({ db, config }) => {
       seedAgent(db);
       seedTaskAndRun(db);
-      db.prepare("INSERT INTO settings (key, value) VALUES ('agent_learning_backend', ?)").run(JSON.stringify("mem0"));
+      db.prepare("INSERT INTO settings (key, value) VALUES ('agent_learning_enabled', ?)").run(JSON.stringify(false));
       recordAgentMemoryCandidates(db, {
         agentName: "owner",
         taskId: "task-1",
         autoApproveThreshold: 0.5,
-        candidates: [{ kind: "procedure", content: "This native memory is ignored in external mode.", confidence: 0.9 }],
+        candidates: [{ kind: "procedure", content: "This native memory is ignored while learning is off.", confidence: 0.9 }],
       });
 
       const input = buildTaskRunInput({
@@ -99,7 +99,7 @@ describe("run input agent learning", () => {
       });
 
       expect(input.learningMemories).toEqual([]);
-      expect(input.systemPrompt).not.toContain("This native memory is ignored in external mode.");
+      expect(input.systemPrompt).not.toContain("This native memory is ignored while learning is off.");
     });
   });
 });

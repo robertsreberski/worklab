@@ -34,7 +34,6 @@ import {
 import {
   LOG_LEVEL_OPTIONS,
   MCP_TRANSPORT_OPTIONS,
-  AGENT_LEARNING_BACKEND_OPTIONS,
   PLANNING_HARNESS_SELECT_OPTIONS,
   PLANNING_TOOL_POLICY_SELECT_OPTIONS,
   SLACK_EFFORT_OPTIONS,
@@ -636,13 +635,6 @@ export function Settings() {
                   />
                   <FormField label="Consolidation hour">
                     <NumberStepper min={0} max={23} value={settings.consolidation_hour} ariaLabel="Consolidation hour" onChange={(value) => setSettings({ ...settings, consolidation_hour: value })} />
-                  </FormField>
-                  <FormField label="Learning backend">
-                    <Select
-                      value={settings.agent_learning_backend || "worklab_native"}
-                      options={AGENT_LEARNING_BACKEND_OPTIONS}
-                      onChange={(value) => setSettings({ ...settings, agent_learning_backend: value })}
-                    />
                   </FormField>
                 </div>
               </SettingPanel>

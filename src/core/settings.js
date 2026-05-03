@@ -55,7 +55,6 @@ export const DEFAULT_SETTINGS = {
   planning_harness: DEFAULT_PLANNING_HARNESS,
   planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
   agent_learning_enabled: true,
-  agent_learning_backend: "worklab_native",
   agent_learning_injected_limit: 6,
   agent_learning_auto_approve_threshold: 0.85,
   delegation_enabled: true,
@@ -66,7 +65,6 @@ export const DEFAULT_SETTINGS = {
 };
 
 const AGENT_EFFORTS = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
-const AGENT_LEARNING_BACKENDS = new Set(["worklab_native", "mem0", "zep_graphiti", "langmem"]);
 
 function coerceStored(value) {
   try { return JSON.parse(value); } catch { return value; }
@@ -75,7 +73,9 @@ function coerceStored(value) {
 export function readSettings(db) {
   const rows = listSettings(db);
   const out = { ...DEFAULT_SETTINGS };
-  for (const row of rows) out[row.key] = coerceStored(row.value);
+  for (const row of rows) {
+    if (row.key in DEFAULT_SETTINGS) out[row.key] = coerceStored(row.value);
+  }
   return out;
 }
 
@@ -219,11 +219,6 @@ export function validateSetting(key, value) {
     case "agent_learning_enabled":
       if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
       return value;
-    case "agent_learning_backend": {
-      const text = stringValue(key, value, { required: true });
-      if (!AGENT_LEARNING_BACKENDS.has(text)) throw new Error(`${key} must be one of: ${[...AGENT_LEARNING_BACKENDS].join(", ")}`);
-      return text;
-    }
     case "agent_learning_injected_limit":
       return integerInRange(key, value, { min: 1, max: 25 });
     case "agent_learning_auto_approve_threshold":

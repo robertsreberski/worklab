@@ -185,7 +185,6 @@ describe("agent learning memory", () => {
       },
       settings: {
         agent_learning_enabled: true,
-        agent_learning_backend: "worklab_native",
         agent_learning_auto_approve_threshold: 0.85,
       },
       now: 1700000005000,
