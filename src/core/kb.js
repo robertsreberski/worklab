@@ -21,6 +21,8 @@ const FRONTMATTER_ORDER = [
   "slug",
   "tags",
   "category",
+  "subcategory",
+  "project_id",
   "pinned",
   "author",
   "created_at",
@@ -320,14 +322,27 @@ function ensureKnowledgeDir(dataDir) {
   return kd;
 }
 
+function normalizeTags(tags) {
+  if (!Array.isArray(tags)) return [];
+  return [...new Set(tags.map((tag) => String(tag || "").trim()).filter(Boolean))];
+}
+
+function normalizeNullableString(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
 // --- List entry normalization ----------------------------------------------
 
 function normalizeMetaForList(meta) {
   return {
     slug: meta.slug ?? null,
     title: meta.title ?? null,
-    tags: Array.isArray(meta.tags) ? meta.tags : [],
+    tags: normalizeTags(meta.tags),
     category: meta.category ?? null,
+    subcategory: meta.subcategory ?? null,
+    project_id: meta.project_id ?? null,
     pinned: meta.pinned === true,
     author: meta.author ?? null,
     created_at: meta.created_at ?? null,
@@ -366,8 +381,10 @@ export function kbRead({ dataDir, slug }) {
   const normalized = {
     ...meta,
     slug: meta.slug ?? slug,
-    tags: Array.isArray(meta.tags) ? meta.tags : [],
+    tags: normalizeTags(meta.tags),
     category: meta.category ?? null,
+    subcategory: meta.subcategory ?? null,
+    project_id: meta.project_id ?? null,
     pinned: meta.pinned === true,
   };
   return { meta: normalized, body };
@@ -380,6 +397,8 @@ export function kbCreate({
   body,
   tags = [],
   category = null,
+  subcategory = null,
+  project_id = null,
   pinned = false,
   author,
   now = new Date(),
@@ -394,8 +413,10 @@ export function kbCreate({
   const meta = {
     title,
     slug,
-    tags: Array.isArray(tags) ? tags : [],
-    category: category === undefined ? null : category,
+    tags: normalizeTags(tags),
+    category: normalizeNullableString(category),
+    subcategory: normalizeNullableString(subcategory),
+    project_id: normalizeNullableString(project_id),
     pinned: pinned === true,
     author: author ?? null,
     created_at: ts,
@@ -425,8 +446,10 @@ export function kbUpdate({ dataDir, slug, patch = {}, now = new Date() }) {
   merged.created_at = existing.created_at ?? isoTimestamp(now);
   merged.updated_at = isoTimestamp(now);
   // Normalize shapes.
-  if (!Array.isArray(merged.tags)) merged.tags = [];
-  if (merged.category === undefined) merged.category = null;
+  merged.tags = normalizeTags(merged.tags);
+  merged.category = normalizeNullableString(merged.category);
+  merged.subcategory = normalizeNullableString(merged.subcategory);
+  merged.project_id = normalizeNullableString(merged.project_id);
   merged.pinned = merged.pinned === true;
 
   const newBody = "body" in patch ? patch.body : existingBody;
@@ -457,6 +480,8 @@ export function kbListPinned({ dataDir, limit = 10 } = {}) {
           title: entry.meta.title ?? null,
           body: entry.body,
           category: entry.meta.category ?? null,
+          subcategory: entry.meta.subcategory ?? null,
+          project_id: entry.meta.project_id ?? null,
           tags: Array.isArray(entry.meta.tags) ? entry.meta.tags : [],
           pinned: entry.meta.pinned === true,
           author: entry.meta.author ?? null,
@@ -476,7 +501,7 @@ export function kbListPinned({ dataDir, limit = 10 } = {}) {
   }
 }
 
-export function kbList({ dataDir, tag, category, pinned } = {}) {
+export function kbList({ dataDir, tag, category, subcategory, project_id, pinned } = {}) {
   const dir = knowledgeDir(dataDir);
   if (!existsSync(dir)) return [];
   const out = [];
@@ -501,6 +526,8 @@ export function kbList({ dataDir, tag, category, pinned } = {}) {
     // Filters.
     if (tag !== undefined && !meta.tags.includes(tag)) continue;
     if (category !== undefined && meta.category !== category) continue;
+    if (subcategory !== undefined && meta.subcategory !== subcategory) continue;
+    if (project_id !== undefined && meta.project_id !== project_id) continue;
     if (pinned !== undefined && meta.pinned !== pinned) continue;
     out.push(meta);
   }

@@ -16,7 +16,9 @@ import { apiRequest, buildSpecHandlers } from "../../shared/tool-registry.js";
 export const definitions = [
   tool("worklab_kb_list", "List Worklab Knowledge Base entries. In Worklab tool names, `kb` means Knowledge Base, not kilobytes.", object({
     tag: string("Tag filter"),
+    project_id: string("Project id or slug filter"),
     category: string("Category filter"),
+    subcategory: string("Subcategory filter"),
     pinned: boolean("Pinned filter"),
   })),
   tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"])),
@@ -26,6 +28,8 @@ export const definitions = [
     body: string("Markdown body"),
     tags: arrayOfString("Tags"),
     category: string("Category"),
+    subcategory: string("Subcategory"),
+    project_id: string("Project id or slug"),
     pinned: boolean("Pinned"),
   }, ["title"])),
   tool("worklab_kb_update", "Patch a Worklab Knowledge Base entry.", object({ slug: slugSchema, patch: patchSchema }, ["slug", "patch"])),
@@ -39,7 +43,7 @@ export const definitions = [
 ];
 
 const specs = [
-  ["worklab_kb_list", "GET", "/api/kb", ["tag", "category", "pinned"]],
+  ["worklab_kb_list", "GET", "/api/kb", ["tag", "project_id", "category", "subcategory", "pinned"]],
   ["worklab_kb_read", "GET", "/api/kb/:slug"],
   ["worklab_kb_create", "POST", "/api/kb", [], "input"],
   ["worklab_kb_update", "PATCH", "/api/kb/:slug", [], "patch"],

@@ -19,10 +19,10 @@ describe("worklab-tools KB handlers", () => {
     dirs.length = 0;
   });
 
-  function ctx(agent = "alice") {
+  function ctx(agent = "alice", patch = {}) {
     const d = mkdtempSync(join(tmpdir(), "worklab-tools-kb-"));
     dirs.push(d);
-    return { dataDir: d, agent, runId: "r1", taskId: "t1", taskTitle: "demo" };
+    return { dataDir: d, agent, runId: "r1", taskId: "t1", taskTitle: "demo", ...patch };
   }
 
   // ── kb_create ────────────────────────────────────────────────────────────
@@ -56,6 +56,21 @@ describe("worklab-tools KB handlers", () => {
     expect(read.meta.tags).toEqual(["a", "b"]);
     expect(read.meta.category).toBe("ops");
     expect(read.meta.pinned).toBe(true);
+  });
+
+  it("kb_create inherits project id from run context and stores subcategory", async () => {
+    const c = ctx("alice", { projectId: "project-1" });
+    const h = createToolHandlers(c);
+    await h.kb_create({
+      slug: "project-note",
+      title: "Project Note",
+      body: "body",
+      category: "research",
+      subcategory: "ui-audit",
+    });
+    const read = await h.kb_read({ slug: "project-note" });
+    expect(read.meta.project_id).toBe("project-1");
+    expect(read.meta.subcategory).toBe("ui-audit");
   });
 
   it("kb_create rejects invalid slug", async () => {

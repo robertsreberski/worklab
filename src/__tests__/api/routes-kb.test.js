@@ -61,6 +61,48 @@ describe("kb REST routes", () => {
     expect(res.body.entries[0].slug).toBe("c1");
   });
 
+  it("GET /api/kb filters by project slug and subcategory", async () => {
+    const { agent } = mkServer();
+    const project = await agent
+      .post("/api/projects")
+      .send({ name: "Project One", slug: "project-one" })
+      .expect(201);
+    await agent
+      .post("/api/kb")
+      .send({
+        slug: "project-entry",
+        title: "Project Entry",
+        body: "",
+        project_id: "project-one",
+        category: "research",
+        subcategory: "ui-audit",
+      })
+      .expect(201);
+    await agent
+      .post("/api/kb")
+      .send({
+        slug: "other-entry",
+        title: "Other Entry",
+        body: "",
+        category: "research",
+        subcategory: "ui-audit",
+      })
+      .expect(201);
+
+    const res = await agent.get("/api/kb?project_id=project-one&subcategory=ui-audit").expect(200);
+    expect(res.body.entries).toHaveLength(1);
+    expect(res.body.entries[0]).toMatchObject({
+      slug: "project-entry",
+      project_id: project.body.project.id,
+      project: {
+        id: project.body.project.id,
+        slug: "project-one",
+        name: "Project One",
+      },
+      subcategory: "ui-audit",
+    });
+  });
+
   it("GET /api/kb filters by pinned=true (string coercion)", async () => {
     const { agent } = mkServer();
     await agent.post("/api/kb").send({ slug: "pinned", title: "Pinned", body: "", pinned: true });
@@ -164,6 +206,27 @@ describe("kb REST routes", () => {
     expect(res.body.entry.meta.tags).toEqual(["a", "b"]);
     expect(res.body.entry.meta.category).toBe("ref");
     expect(res.body.entry.meta.pinned).toBe(true);
+  });
+
+  it("POST /api/kb resolves project slug and stores subcategory", async () => {
+    const { agent } = mkServer();
+    const project = await agent
+      .post("/api/projects")
+      .send({ name: "Project One", slug: "project-one" })
+      .expect(201);
+    const res = await agent
+      .post("/api/kb")
+      .send({
+        slug: "project-meta",
+        title: "Project Meta",
+        body: "body",
+        project_id: "project-one",
+        subcategory: "runtime",
+      })
+      .expect(201);
+    expect(res.body.entry.meta.project_id).toBe(project.body.project.id);
+    expect(res.body.entry.meta.subcategory).toBe("runtime");
+    expect(res.body.entry.project.slug).toBe("project-one");
   });
 
   it("POST /api/kb returns 409 when slug already exists", async () => {

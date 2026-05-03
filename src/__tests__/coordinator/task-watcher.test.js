@@ -1537,6 +1537,54 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
   });
 
+  it("stores fallback knowledge under the task project", async () => {
+    const db = makeTestDb();
+    const dataDir = tempDataDir();
+    seedAgent(db, "coder");
+    const project = seedProject(db);
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      dataDir,
+    });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Research complete",
+      details: "Complete detail.",
+      final_text: "Research complete.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: `${richFinalAnswer()}\n\n\`\`\`json\n${JSON.stringify(worklabResult)}\n\`\`\``,
+      worklabResult,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    const slug = slugify(`run-${runId}`, "run-result");
+    const entry = kbRead({ dataDir, slug });
+    expect(entry.meta.project_id).toBe(project.id);
+  });
+
   it("stores Codex-style assistant prose in knowledge when finalText is only the structured comment", async () => {
     const db = makeTestDb();
     const dataDir = tempDataDir();
