@@ -397,6 +397,17 @@ export {
   writeRuntimeConfig,
 } from "./execenv.js";
 
+// ---------- Worktrees ----------
+export {
+  conflictPaths,
+  gitStatusShort,
+  inspectWorktreeSupport,
+  prepareRunWorktree,
+  reconcileRunWorktree,
+  runWorktreeRoot,
+  worktreeBranchForRun,
+} from "./worktrees.js";
+
 // ---------- Assistant ----------
 export {
   DEFAULT_ASSISTANT_THREAD_ID,
