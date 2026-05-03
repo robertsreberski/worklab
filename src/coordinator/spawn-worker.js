@@ -95,6 +95,7 @@ export function spawnWorker({
   let promptDiagnostics = null;
   const stderrTail = createStderrTail({ limit: stderrTailLimit });
   let finalPayload = null;
+  let structuredOutputResult = null;
   let errorMessage = null;
   let resultError = null;
   let workerDiagnostics = null;
@@ -509,6 +510,8 @@ export function spawnWorker({
     }
     const { rawEvent } = emitEvent(parsed);
     mergeWorkerDiagnostics(rawEvent.diagnostics);
+    const recoveredStructuredResult = worklabResultFromStructuredOutputEvent(rawEvent);
+    if (recoveredStructuredResult) structuredOutputResult = recoveredStructuredResult;
     if (rawEvent.type === "final") finalPayload = rawEvent;
     if (rawEvent.type === "error") {
       errorMessage = rawEvent.message;
@@ -685,7 +688,9 @@ export function spawnWorker({
             resultParseError: !!resultError,
             hint: explicitFailureKind,
           }) || "spawn");
-      const result = finalPayload?.worklab_result || null;
+      const recoveredStructuredResult = !finalPayload?.worklab_result ? structuredOutputResult : null;
+      const result = finalPayload?.worklab_result || recoveredStructuredResult || null;
+      const recoveredFinalText = recoveredStructuredResult ? finalTextFromWorklabResult(recoveredStructuredResult) : null;
       const finalWarnings = Array.isArray(finalPayload?.warnings) ? finalPayload.warnings : [];
       const allWarnings = [...warnings, ...finalWarnings];
       const providerSessionId = finalPayload?.provider_session_id
@@ -769,6 +774,7 @@ export function spawnWorker({
         warning_count: allWarnings.length,
         ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),
         ...(resultRecoveredViaLenient ? { result_recovered_via: "lenient" } : {}),
+        ...(recoveredStructuredResult ? { structured_output_recovered_as_final: true } : {}),
         cancel_initiator: cancelInitiator,
         cancel_reason: cancelReason,
         ...(signal ? { exit_signal: signal } : {}),
@@ -876,7 +882,7 @@ export function spawnWorker({
         events,
         warnings: allWarnings,
         diagnostics,
-        finalText: finalPayload?.text || null,
+        finalText: finalPayload?.text || recoveredFinalText,
         worklabResult: result,
         artifacts,
         artifactSummary,
@@ -935,6 +941,36 @@ export function spawnWorker({
     get drainAcknowledged() { return drainAcknowledged; },
     get drainTimedOut() { return drainTimedOut; },
   };
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function isWorklabResult(value) {
+  return isPlainObject(value)
+    && value.schema === "worklab.v2"
+    && typeof value.decision === "string";
+}
+
+function worklabResultFromStructuredOutputEvent(rawEvent) {
+  const event = rawEvent?.type === "sdk_event" && rawEvent.event ? rawEvent.event : rawEvent;
+  if (event?.type !== "structured_output") return null;
+  const candidates = [
+    event.worklab_result,
+    event.value,
+    event.value?.worklab_result,
+    rawEvent?.worklab_result,
+  ];
+  return candidates.find(isWorklabResult) || null;
+}
+
+function finalTextFromWorklabResult(result) {
+  for (const key of ["final_text", "summary", "details"]) {
+    const value = result?.[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return null;
 }
 
 function numberOrNull(value) {

@@ -86,6 +86,63 @@ describe("spawnWorker", () => {
     });
   });
 
+  it("recovers valid structured_output worklab_result when no final event arrives", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db, { mode: "plan" });
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Plan is ready.",
+      details: "1. Update tests.\n2. Implement the prompt guardrails.",
+      final_text: "Plan is ready.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      memory_candidates: [],
+    };
+    const script = {
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "structured_output",
+            source: "claude_sdk_output_format",
+            value: worklabResult,
+            worklab_result: worklabResult,
+          },
+        },
+      ],
+      exitCode: 0,
+    };
+
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "plan", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId,
+      taskId,
+      broker,
+      db,
+      runIdleWarningMs: 0,
+    });
+    const result = await handle.done;
+
+    expect(result.processStatus).toBe("succeeded");
+    expect(result.finalText).toBe("Plan is ready.");
+    expect(result.worklabResult).toEqual(worklabResult);
+    const run = db.prepare("SELECT process_status, decision, result_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(run.process_status).toBe("succeeded");
+    expect(run.decision).toBe("advance");
+    expect(JSON.parse(run.result_json)).toEqual(worklabResult);
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      structured_output_recovered_as_final: true,
+    });
+  });
+
   it("persists artifact metadata from completed file edit events", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
