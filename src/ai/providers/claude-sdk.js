@@ -74,13 +74,17 @@ function resultEventError(event) {
     : `Claude result error${label ? ` (${label})` : ""}${detail ? `: ${detail}` : ""}`;
   return {
     message,
-    failureKind: subtype === "error_max_turns" ? "usage_limit" : "provider_unavailable",
+    failureKind: subtype === "error_max_turns"
+      ? "usage_limit"
+      : subtype === "error_max_structured_output_retries"
+        ? "invalid_result"
+        : "provider_unavailable",
   };
 }
 
-function makeRuntimeWarning(message) {
+function makeRuntimeWarning(message, warningKind = "claude_post_success_error") {
   return {
-    warning_kind: "claude_post_success_error",
+    warning_kind: warningKind,
     message,
   };
 }
@@ -150,6 +154,7 @@ function buildClaudeErrorDetails({
   lastToolName = null,
   toolResultsSeen = 0,
   numTurns = 0,
+  lastStructuredOutputRejection = null,
 }) {
   const resolvedSubtype = subtype || event?.subtype || event?.type || null;
   const turnCount = Number(event?.num_turns ?? numTurns) || 0;
@@ -162,8 +167,32 @@ function buildClaudeErrorDetails({
     tool_results_seen: toolResultsSeen,
     turn_count: turnCount,
     max_turns_hit: resolvedSubtype === "error_max_turns",
+    structured_output_retry_exhausted: resolvedSubtype === "error_max_structured_output_retries",
+    last_structured_output_rejection: lastStructuredOutputRejection || null,
     provider_session_id: providerSessionId || null,
   };
+}
+
+function toolResultText(block) {
+  const content = block?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((item) => item?.text || item?.content || "").filter(Boolean).join("\n");
+  }
+  if (content == null) return "";
+  try { return JSON.stringify(content); } catch { return String(content); }
+}
+
+function structuredOutputRejectionFromEvent(event) {
+  if (event?.type !== "user" || !Array.isArray(event.message?.content)) return null;
+  for (const block of event.message.content) {
+    if (block?.type === "tool_result" && block.is_error) {
+      const text = toolResultText(block);
+      if (/structured output|required schema|worklab/i.test(text)) return text;
+    }
+  }
+  const result = stringifyError(event.tool_use_result);
+  return /structured output|required schema|worklab/i.test(result) ? result : null;
 }
 
 const CLAUDE_FILE_EDIT_MATCHER = "Edit|Write|NotebookEdit";
@@ -530,12 +559,17 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let structuredResultSource = null;
   let structuredResult = undefined;
   let errorDetails = null;
+  let lastStructuredOutputRejection = null;
 
   const rawFinalText = () => resultText || text;
   const finalText = () => finalTextFromStructuredOutput(worklabResult, rawFinalText(), structuredResult);
 
   function hasUsableFinalOutput() {
     return Boolean(worklabResult) || String(finalText() || "").trim().length > 0;
+  }
+
+  function hasPreservableFinalOutput() {
+    return successfulResultSeen ? hasUsableFinalOutput() : Boolean(worklabResult);
   }
 
   function preservePostSuccessError(message) {
@@ -559,6 +593,8 @@ export async function generateClaudeResponse(systemPrompt, options) {
       if (nextSessionId) providerSessionId = nextSessionId;
       emitEvent(event);
       if (event?.type === "tool_progress" && event.tool_name) noteToolUse(event.tool_name);
+      const structuredOutputRejection = structuredOutputRejectionFromEvent(event);
+      if (structuredOutputRejection) lastStructuredOutputRejection = structuredOutputRejection;
       const structured = extractWorklabResult(event);
       if (structured.ok) {
         worklabResult = structured.result;
@@ -582,7 +618,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
       }
       else if (event.type === "error") {
         const message = event.error?.message || event.error || "sdk stream error";
-        if (successfulResultSeen && hasUsableFinalOutput()) {
+        if (hasPreservableFinalOutput()) {
           preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${message}`);
         } else {
           errorMessage = message;
@@ -595,13 +631,19 @@ export async function generateClaudeResponse(systemPrompt, options) {
             lastToolName,
             toolResultsSeen,
             numTurns,
+            lastStructuredOutputRejection,
           });
         }
         break;
       } else if (event.type === "result") {
         const resultError = resultEventError(event);
         if (resultError) {
-          if (successfulResultSeen && hasUsableFinalOutput()) {
+          if (!successfulResultSeen) {
+            usage = event.usage || usage;
+            durationMs = event.duration_ms || durationMs;
+            numTurns = event.num_turns || numTurns;
+          }
+          if (hasPreservableFinalOutput()) {
             preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${resultError.message}`);
           } else {
             usage = event.usage || usage;
@@ -609,6 +651,9 @@ export async function generateClaudeResponse(systemPrompt, options) {
             numTurns = event.num_turns || numTurns;
             errorMessage = resultError.message;
             failureKind = resultError.failureKind;
+            if (failureKind === "invalid_result") {
+              runtimeWarnings.push(makeRuntimeWarning(resultError.message, "worklab_result_validation"));
+            }
             errorDetails = buildClaudeErrorDetails({
               event,
               subtype: event.subtype || "result_error",
@@ -617,6 +662,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
               lastToolName,
               toolResultsSeen,
               numTurns,
+              lastStructuredOutputRejection,
             });
           }
         } else {
@@ -645,6 +691,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
           lastToolName,
           toolResultsSeen,
           numTurns,
+          lastStructuredOutputRejection,
         });
       }
     }

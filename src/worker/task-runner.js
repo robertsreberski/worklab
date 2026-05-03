@@ -94,6 +94,7 @@ export async function runTask(ctx) {
         failureKind: result.failureKind,
         errorDetails: result.errorDetails || null,
         providerSessionId: result.providerSessionId || null,
+        runtimeWarnings: result.runtimeWarnings,
       };
     }
     const parsedResult = resultFromResponseOrFallback(result, {

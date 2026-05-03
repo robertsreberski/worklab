@@ -79,13 +79,6 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     "decision",
     "summary",
     "details",
-    "final_text",
-    "artifacts",
-    "blocking_issues",
-    "pending_actions",
-    "questions",
-    "subtasks",
-    "parent_review_policy",
   ],
   properties: {
     schema: { type: "string", enum: ["worklab.v2"] },
@@ -94,7 +87,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     summary: { type: "string" },
     details: { type: "string" },
     final_text: { type: "string" },
-    artifacts: { type: "object", additionalProperties: false, properties: {}, required: [] },
+    artifacts: { type: "object", additionalProperties: true },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
     questions: {
@@ -458,11 +451,119 @@ function collectWorklabCandidates(value, out, seen = new Set(), depth = 0) {
   }
 }
 
+const STRUCTURED_RESULT_FIELDS = new Set([
+  "schema",
+  "stage",
+  "decision",
+  "summary",
+  "details",
+  "final_text",
+  "artifacts",
+  "blocking_issues",
+  "pending_actions",
+  "questions",
+  "subtasks",
+  "parent_review_policy",
+]);
+
+const STRUCTURED_JSON_FIELDS = new Set([
+  "artifacts",
+  "blocking_issues",
+  "pending_actions",
+  "questions",
+  "subtasks",
+]);
+
+const STRUCTURED_STRING_FIELDS = new Set([
+  "schema",
+  "stage",
+  "decision",
+  "summary",
+  "details",
+  "final_text",
+  "parent_review_policy",
+]);
+
+function firstNonNegative(values) {
+  const sorted = values.filter((value) => Number.isInteger(value) && value >= 0).sort((a, b) => a - b);
+  return sorted[0] ?? -1;
+}
+
+function cleanStructuredStringField(value, fieldName) {
+  if (typeof value !== "string") return value;
+  const closeTag = value.indexOf(`</${fieldName}>`);
+  const parameterTag = value.search(/<parameter\s+name=/i);
+  const invokeTag = value.indexOf("</invoke>");
+  const end = firstNonNegative([closeTag, parameterTag, invokeTag]);
+  return (end >= 0 ? value.slice(0, end) : value).trim();
+}
+
+function parseStructuredParameterValue(field, rawValue) {
+  const text = String(rawValue || "").trim();
+  if (STRUCTURED_JSON_FIELDS.has(field)) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return undefined;
+    }
+  }
+  if (STRUCTURED_STRING_FIELDS.has(field)) return cleanStructuredStringField(text, field);
+  return undefined;
+}
+
+function extractStructuredParameters(text) {
+  const raw = String(text || "");
+  const params = {};
+  const re = /<parameter\s+name=(["'])([^"']+)\1\s*>/gi;
+  let match;
+  while ((match = re.exec(raw))) {
+    const field = match[2];
+    if (!STRUCTURED_RESULT_FIELDS.has(field)) continue;
+    const start = match.index + match[0].length;
+    const nextParameter = raw.slice(start).search(/<parameter\s+name=/i);
+    const closeParameter = raw.indexOf("</parameter>", start);
+    const closeField = raw.indexOf(`</${field}>`, start);
+    const closeInvoke = raw.indexOf("</invoke>", start);
+    const relativeNext = nextParameter >= 0 ? start + nextParameter : -1;
+    const end = firstNonNegative([closeParameter, closeField, closeInvoke, relativeNext]);
+    const value = parseStructuredParameterValue(field, raw.slice(start, end >= 0 ? end : raw.length));
+    if (value !== undefined) params[field] = value;
+  }
+  return params;
+}
+
+function hasEmbeddedStructuredParameters(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value).some((item) => typeof item === "string" && /<parameter\s+name=/i.test(item));
+}
+
+export function recoverStructuredWorklabResult(value, fallback = {}) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.schema !== "worklab.v2") return null;
+  if (!hasEmbeddedStructuredParameters(value)) return null;
+  const recovered = { ...value };
+  const lifted = {};
+  for (const [field, fieldValue] of Object.entries(value)) {
+    if (typeof fieldValue !== "string") continue;
+    Object.assign(lifted, extractStructuredParameters(fieldValue));
+    if (STRUCTURED_STRING_FIELDS.has(field)) {
+      recovered[field] = cleanStructuredStringField(fieldValue, field);
+    }
+  }
+  for (const [field, fieldValue] of Object.entries(lifted)) {
+    if (!(field in recovered) || recovered[field] == null || recovered[field] === "") {
+      recovered[field] = fieldValue;
+    }
+  }
+  return normalizeWorklabResult(recovered, fallback);
+}
+
 export function extractWorklabResult(value, fallback = {}) {
   const candidates = [];
   collectWorklabCandidates(value, candidates);
   const candidate = candidates[candidates.length - 1];
   if (!candidate) return { ok: false, error: "no worklab_result found", result: null };
+  const recovered = recoverStructuredWorklabResult(candidate, fallback);
+  if (recovered?.ok) return recovered;
   return normalizeWorklabResult(candidate, fallback);
 }
 

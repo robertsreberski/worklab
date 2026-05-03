@@ -249,6 +249,44 @@ describe("worklab_result contract", () => {
     expect(parsed.result.summary).toBe("done");
   });
 
+  it("recovers Claude SDK structured-output fields embedded as parameter text", () => {
+    const event = {
+      type: "assistant",
+      message: {
+        content: [{
+          type: "tool_use",
+          name: "StructuredOutput",
+          input: {
+            schema: "worklab.v2",
+            stage: "execute",
+            decision: "advance",
+            summary: "Delivered UI audit.",
+            details: "Scope and findings.</details>\n<parameter name=\"final_text\">Audit complete.</final_text>\n<parameter name=\"artifacts\">{\"kb_slug\":\"ui-audit-activity-workspace\"}</parameter>\n<parameter name=\"blocking_issues\">[]",
+            pending_actions: [],
+            questions: [],
+            subtasks: [],
+            parent_review_policy: "default",
+          },
+        }],
+      },
+    };
+
+    const parsed = extractWorklabResult(event);
+
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result).toMatchObject({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Delivered UI audit.",
+      details: "Scope and findings.",
+      final_text: "Audit complete.",
+      artifacts: { kb_slug: "ui-audit-activity-workspace" },
+      blocking_issues: [],
+      parent_review_policy: "default",
+    });
+  });
+
   it("extracts the latest result from Codex agent message item streams", () => {
     const parsed = extractWorklabResult({
       type: "item.completed",
@@ -351,11 +389,12 @@ describe("worklab_result contract", () => {
     }).ok).toBe(false);
   });
 
-  it("exports a strict JSON schema for Codex structured output", () => {
+  it("exports a structured-output schema aligned with runtime defaults", () => {
     for (const objectSchema of collectObjectSchemas(WORKLAB_RESULT_JSON_SCHEMA)) {
+      if (objectSchema === WORKLAB_RESULT_JSON_SCHEMA.properties.artifacts) continue;
       expect(objectSchema.additionalProperties).toBe(false);
     }
-    expect(WORKLAB_RESULT_JSON_SCHEMA.required).toEqual(Object.keys(WORKLAB_RESULT_JSON_SCHEMA.properties));
+    expect(WORKLAB_RESULT_JSON_SCHEMA.required).toEqual(["schema", "stage", "decision", "summary", "details"]);
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.parent_review_policy).toMatchObject({
       type: ["string", "null"],
     });
@@ -366,13 +405,11 @@ describe("worklab_result contract", () => {
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.questions.type).toBe("array");
   });
 
-  it("keeps strict artifact and subtask shapes in the exported JSON schema", () => {
+  it("allows arbitrary artifacts but keeps strict subtask shapes in the exported JSON schema", () => {
     const artifacts = WORKLAB_RESULT_JSON_SCHEMA.properties.artifacts;
     expect(artifacts).toMatchObject({
       type: "object",
-      additionalProperties: false,
-      properties: {},
-      required: [],
+      additionalProperties: true,
     });
 
     const subtask = WORKLAB_RESULT_JSON_SCHEMA.properties.subtasks.items;
