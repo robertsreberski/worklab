@@ -25,6 +25,12 @@ function parseEvents(value) {
   }
 }
 
+function safeJson(value, fallback) {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+
 function normalizeRun(row, liveInputState = null, events = null) {
   const processStatus = row.process_status || "running";
   const supported = supportsLiveInputProvider(row.provider_kind);
@@ -32,6 +38,9 @@ function normalizeRun(row, liveInputState = null, events = null) {
   return {
     ...row,
     process_status: processStatus,
+    workspace_mode: row.workspace_mode || "direct",
+    source_workdir: row.source_workdir || null,
+    worktree: safeJson(row.worktree_json, null),
     artifact_paths: artifactPaths(artifacts),
     artifacts,
     artifact_summary: runArtifactSummary(artifacts),

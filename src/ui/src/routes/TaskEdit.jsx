@@ -241,6 +241,7 @@ export function TaskEdit({ mode = "create", id = null }) {
         project.slug,
         project.archived ? "archived" : null,
         project.workdir ? "custom workdir" : null,
+        project.worktree_mode && project.worktree_mode !== "off" ? `worktrees ${project.worktree_mode}` : null,
       ].filter(Boolean).join(" · "),
     })),
   ], [projects]);
@@ -353,6 +354,12 @@ export function TaskEdit({ mode = "create", id = null }) {
                 <span class="task-edit-project-preview-label">Workdir</span>
                 <span class="task-edit-project-preview-value mono">
                   {selectedProject.workdir || "Default workspace"}
+                </span>
+              </div>
+              <div class="task-edit-project-preview-row">
+                <span class="task-edit-project-preview-label">Worktrees</span>
+                <span class="task-edit-project-preview-value">
+                  {selectedProject.worktree_mode === "required" ? "Required" : selectedProject.worktree_mode === "auto" ? "Auto" : "Off"}
                 </span>
               </div>
               {selectedProject.context && (

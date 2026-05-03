@@ -87,6 +87,21 @@ function RunCancellationNote({ run }) {
   );
 }
 
+function RunWorktreeNote({ run }) {
+  if (run?.workspace_mode !== "worktree") return null;
+  const worktree = run.worktree || {};
+  const branch = worktree.branch || null;
+  const status = worktree.last_reconcile_status || worktree.status || null;
+  return (
+    <div class="run-worktree-note">
+      <span class="run-worktree-note-label">Worktree</span>
+      {status && <span>{status.replaceAll("_", " ")}</span>}
+      {branch && <code>{branch}</code>}
+      {run.source_workdir && <span class="truncate">Source: {run.source_workdir}</span>}
+    </div>
+  );
+}
+
 function RunDiagnosticsDisclosure({ run }) {
   const diag = run?.diagnostics;
   if (!diag || typeof diag !== "object") return null;
@@ -274,6 +289,9 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                     </span>
                   )}
                   <RunBudgetBadge run={run} warnings={warnings} />
+                  {run.workspace_mode === "worktree" && (
+                    <span class="run-warning-badge" title={run.source_workdir || undefined}>Worktree</span>
+                  )}
                   {run.cancel_initiator && (
                     <span class="run-warning-badge run-cancel-chip" title={run.cancel_reason || run.cancel_initiator}>
                       {run.cancel_initiator}
@@ -296,6 +314,9 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                   <span class="run-warning-badge run-warning-count">⚠ {warnings.length}</span>
                 )}
                 <RunBudgetBadge run={run} warnings={warnings} />
+                {run.workspace_mode === "worktree" && (
+                  <span class="run-warning-badge" title={run.source_workdir || undefined}>Worktree</span>
+                )}
                 {run.cancel_initiator && (
                   <span class="run-warning-badge run-cancel-chip">{run.cancel_initiator}</span>
                 )}
@@ -322,6 +343,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
         </div>
       )}
       <RunCancellationNote run={run} />
+      <RunWorktreeNote run={run} />
       <RunWarningsList warnings={warnings} agents={agents} />
       <RunContinuationLinks run={run} />
       <RunFailureDetails run={run} agents={agents} />
