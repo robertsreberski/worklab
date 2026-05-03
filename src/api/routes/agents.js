@@ -7,8 +7,8 @@ import {
   getProvider,
   isValidSlug,
   loadSkills,
+  normalizeModelReference,
   normalizeReasoningEffortForModel,
-  parseModelReference,
   readAgentMemoryState,
   readRunSection,
   uniqueSlug,
@@ -72,7 +72,7 @@ const PATCHABLE = [
 ];
 
 function validateModelForAgent({ db, dataDir, model }) {
-  const resolved = parseModelReference(model);
+  const resolved = normalizeModelReference(model);
   const builtin = getBuiltinModelByReference(resolved.reference);
   if (builtin) {
     const availabilityKey = resolved.sdk === "pi" ? `pi:${resolved.provider}` : resolved.sdk;
@@ -257,8 +257,10 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       { fallback: "agent" },
     );
     let resolved;
+    let canonicalModel;
     try {
       resolved = validateModelForAgent({ db, dataDir, model });
+      canonicalModel = resolved.reference;
     } catch (err) {
       return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
     }
@@ -269,16 +271,16 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
 
     const now = Date.now();
-    const effort = normalizeAgentEffort({ db, dataDir, model, resolved, effort: req.body.effort || "medium" });
+    const effort = normalizeAgentEffort({ db, dataDir, model: canonicalModel, resolved, effort: req.body.effort || "medium" });
     const description = req.body.description || null;
     const instructions = req.body.instructions || "";
     let skillsAllow;
     let mcpAllow;
     let builtinAllow;
     try {
-      skillsAllow = createAllowlist({ body: req.body, listKey: "skills_allowlist", dataDir, model });
-      mcpAllow = createAllowlist({ body: req.body, listKey: "mcp_allowlist", dataDir, model });
-      builtinAllow = createAllowlist({ body: req.body, listKey: "builtin_allowlist", dataDir, model });
+      skillsAllow = createAllowlist({ body: req.body, listKey: "skills_allowlist", dataDir, model: canonicalModel });
+      mcpAllow = createAllowlist({ body: req.body, listKey: "mcp_allowlist", dataDir, model: canonicalModel });
+      builtinAllow = createAllowlist({ body: req.body, listKey: "builtin_allowlist", dataDir, model: canonicalModel });
     } catch (err) {
       return res.status(400).json({ error: { code: "unavailable_selection", message: err.message } });
     }
@@ -299,7 +301,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       displayName: display_name,
       description,
       sdk: resolved.sdk,
-      model,
+      model: canonicalModel,
       effort,
       instructions,
       skillsAllowlistJson: JSON.stringify(skillsAllow.list),
@@ -355,7 +357,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
 
     const fields = [];
     const values = [];
-    const targetModel = req.body.model || existing.model;
+    let targetModel = existing.model;
     let targetResolved = null;
     let wroteEffort = false;
 
@@ -365,9 +367,10 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         if (k === "model") {
           try {
             const resolved = req.body[k] === existing.model
-              ? parseModelReference(req.body[k])
+              ? normalizeModelReference(req.body[k])
               : validateModelForAgent({ db, dataDir, model: req.body[k] });
             targetResolved = resolved;
+            targetModel = resolved.reference;
             fields.push("sdk = ?");
             values.push(resolved.sdk);
           } catch (err) {
@@ -377,7 +380,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         if (k === "sdk") continue;
         if (k === "effort") {
           try {
-            targetResolved ||= parseModelReference(targetModel);
+            targetResolved ||= normalizeModelReference(targetModel);
+            targetModel = targetResolved.reference;
             req.body[k] = normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: req.body[k] });
             wroteEffort = true;
           } catch (err) {
@@ -402,7 +406,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             return res.status(400).json({ error: { code: "validation", message: err.message } });
           }
         } else {
-          values.push(req.body[k]);
+          values.push(k === "model" ? targetModel : req.body[k]);
         }
       }
     }
@@ -421,7 +425,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     }
 
     if ("model" in req.body && !wroteEffort) {
-      targetResolved ||= parseModelReference(targetModel);
+      targetResolved ||= normalizeModelReference(targetModel);
+      targetModel = targetResolved.reference;
       fields.push("effort = ?");
       values.push(normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: existing.effort || "medium" }));
     }

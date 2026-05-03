@@ -6,12 +6,13 @@ import { z } from "zod";
 import { withDb } from "./shared.js";
 import { agentExists, getAgentByName } from "../../../core/db/queries/agents.js";
 import {
+  buildModelCapabilities,
   getBuiltinModelByReference,
   getModelByProviderAndName,
   getProvider,
   isValidSlug,
+  normalizeModelReference,
   normalizeReasoningEffortForModel,
-  parseModelReference,
   uniqueSlug,
   WORKLAB_BUILTIN_TOOLS,
 } from "../../../core/index.js";
@@ -54,16 +55,24 @@ function allowlistFor(input, listKey, modeKey) {
 }
 
 function validateAgentModel({ db, dataDir, model }) {
-  const resolved = parseModelReference(model);
-  if (resolved.sdk !== "vercel") {
-    if (!getBuiltinModelByReference(model)) throw new Error(`unknown built-in model: ${model}`);
+  const resolved = normalizeModelReference(model);
+  const reference = resolved.reference;
+  if (getBuiltinModelByReference(reference)) {
     return resolved;
   }
-  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: false });
-  if (!provider) throw new Error(`provider not found: ${resolved.providerId}`);
+
+  if (resolved.sdk !== "pi") throw new Error(`unknown built-in model: ${reference}`);
+  const provider = getProvider({ db, dataDir, id: resolved.provider, includeKey: false });
+  if (!provider) throw new Error(`provider not found: ${resolved.provider}`);
   if (!provider.enabled) throw new Error(`provider disabled: ${provider.name}`);
-  const modelRow = getModelByProviderAndName({ db, providerId: resolved.providerId, modelName: resolved.modelName });
-  if (modelRow && !modelRow.enabled) throw new Error(`model disabled: ${resolved.modelName}`);
+  const modelRow = getModelByProviderAndName({ db, providerId: resolved.provider, modelName: resolved.model });
+  if (!modelRow) return resolved;
+  if (modelRow && !modelRow.enabled) throw new Error(`model disabled: ${resolved.model}`);
+
+  const capabilities = buildModelCapabilities(provider.provider_type, modelRow.model_name, modelRow.capabilities);
+  if (!capabilities.runnable_for_agent) {
+    throw new Error(`model is not runnable for agents: ${capabilities.unavailable_reason}`);
+  }
   return resolved;
 }
 
@@ -129,6 +138,7 @@ export function buildHandlers(context) {
       const parsed = agentCreateSchema.parse(input);
       return await withDb(dataDir, (db) => {
         const resolved = validateAgentModel({ db, dataDir, model: parsed.model });
+        const model = resolved.reference;
         const finalName = parsed.name || uniqueSlug(parsed.display_name, (candidate) =>
           agentExists(db, candidate),
           { fallback: "agent" },
@@ -140,7 +150,7 @@ export function buildHandlers(context) {
         const skillsAllow = allowlistFor(parsed, "skills_allowlist", "skills_allowlist_mode");
         const mcpAllow = allowlistFor(parsed, "mcp_allowlist", "mcp_allowlist_mode");
         const builtinAllow = allowlistFor(parsed, "builtin_allowlist", "builtin_allowlist_mode");
-        builtinAllow.list = validateBuiltinAllowlist(parsed.model, builtinAllow.list);
+        builtinAllow.list = validateBuiltinAllowlist(model, builtinAllow.list);
         const now = Date.now();
         const effort = normalizeReasoningEffortForModel(resolved, parsed.effort || "medium");
         db.prepare(`
@@ -155,7 +165,7 @@ export function buildHandlers(context) {
           parsed.display_name,
           parsed.description || null,
           resolved.sdk,
-          parsed.model,
+          model,
           effort,
           parsed.instructions || "",
           JSON.stringify(skillsAllow.list),

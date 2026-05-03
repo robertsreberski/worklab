@@ -281,6 +281,27 @@ describe("agents CRUD", () => {
     expect(codex.body.agent.sdk).toBe("pi");
   });
 
+  it("canonicalizes legacy runtime model refs on create and patch", async () => {
+    const { agent } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "legacy-codex",
+      display_name: "Legacy Codex",
+      model: "codex:gpt-5.5",
+    }).expect(201);
+    expect(created.body.agent).toMatchObject({
+      sdk: "pi",
+      model: "pi:openai-codex:gpt-5.5",
+    });
+
+    const patched = await agent.patch("/api/agents/legacy-codex").send({
+      model: "openai:gpt-5.5",
+    }).expect(200);
+    expect(patched.body.agent).toMatchObject({
+      sdk: "pi",
+      model: "pi:openai:gpt-5.5",
+    });
+  });
+
   it("normalizes stale max effort on create and patch", async () => {
     const { agent } = makeTestServer();
     const created = await agent.post("/api/agents").send({

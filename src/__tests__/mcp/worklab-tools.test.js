@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
+import { createProvider, upsertModel } from "../../core/providers.js";
 import { createToolHandlers } from "../../mcp/agent/tools/index.js";
 
 describe("worklab-tools handlers", () => {
@@ -368,6 +369,55 @@ describe("worklab-tools handlers", () => {
       const row = db.prepare("SELECT instructions, builtin_allowlist FROM agents WHERE name = 'review-specialist'").get();
       expect(row.instructions).toContain("Review changes");
       expect(JSON.parse(row.builtin_allowlist)).toEqual(["Read", "Grep"]);
+    });
+  });
+
+  it("agent_create canonicalizes legacy runtime model refs", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, () => {});
+
+    const result = await createToolHandlers(c).agent_create({
+      display_name: "Legacy Codex Specialist",
+      model: "codex:gpt-5.5",
+    });
+
+    expect(result.agent).toMatchObject({
+      name: "legacy-codex-specialist",
+      model: "pi:openai-codex:gpt-5.5",
+      sdk: "pi",
+    });
+  });
+
+  it("agent_create accepts runnable custom Pi provider models", async () => {
+    const c = ctx();
+    let providerId;
+    seedDb(c.dataDir, (db) => {
+      const provider = createProvider({
+        db,
+        dataDir: c.dataDir,
+        name: "local",
+        provider_type: "openai_compat",
+        base_url: "http://localhost:8000",
+      });
+      providerId = provider.id;
+      upsertModel({
+        db,
+        providerId,
+        modelName: "gemma3:4b",
+        displayName: "gemma3:4b",
+        enabled: true,
+      });
+    });
+
+    const result = await createToolHandlers(c).agent_create({
+      display_name: "Local Model Specialist",
+      model: `pi:${providerId}:gemma3:4b`,
+    });
+
+    expect(result.agent).toMatchObject({
+      name: "local-model-specialist",
+      model: `pi:${providerId}:gemma3:4b`,
+      sdk: "pi",
     });
   });
 });

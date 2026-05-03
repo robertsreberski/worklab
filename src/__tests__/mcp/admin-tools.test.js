@@ -96,7 +96,7 @@ describe("admin MCP tools", () => {
           name: "game-dev",
           display_name: "Game Dev",
           description: "Builds games",
-          sdk: "codex",
+          sdk: "pi",
           model: "pi:openai-codex:gpt-5.5",
           effort: "xhigh",
           instructions: "Very long private instructions ".repeat(1000),
@@ -237,7 +237,7 @@ describe("admin MCP tools", () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
       groups: [
         {
-          id: "codex",
+          id: "pi:openai-codex",
           label: "OpenAI Codex",
           runtime_kind: "pi-agent",
           models: [
@@ -245,7 +245,7 @@ describe("admin MCP tools", () => {
               value: "pi:openai-codex:gpt-5.5",
               label: "Codex GPT-5.5",
               description: "Flagship",
-              sdk: "codex",
+              sdk: "pi",
               provider: "openai-codex",
               model: "gpt-5.5",
               capabilities: {
@@ -278,12 +278,12 @@ describe("admin MCP tools", () => {
     }), { status: 200, headers: { "content-type": "application/json" } }));
     const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
 
-    const result = await handlers.worklab_model_available({ sdk: "codex", limit: 1 });
+    const result = await handlers.worklab_model_available({ sdk: "pi", limit: 1 });
 
     expect(result).toMatchObject({ count: 2, available_count: 2, matched: 1, returned: 1, truncated: false });
     expect(result.models[0]).toMatchObject({
       value: "pi:openai-codex:gpt-5.5",
-      sdk: "codex",
+      sdk: "pi",
       provider: "openai-codex",
       context_window: 400000,
       max_tokens: 128000,

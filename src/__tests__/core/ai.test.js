@@ -6,6 +6,7 @@ import {
   getBuiltinModels,
   canonicalizeLegacyModelReference,
   isValidModelReference,
+  normalizeModelReference,
   normalizeReasoningEffortForModel,
   parseModelReference,
   resolveModel,
@@ -62,6 +63,15 @@ describe("explicit model references", () => {
     expect(canonicalizeLegacyModelReference("vercel:p1:gemma3:4b")).toBe("pi:p1:gemma3:4b");
     expect(canonicalizeLegacyModelReference("claude-code:claude-sonnet-4-6")).toBe("claude:claude-sonnet-4-6");
     expect(canonicalizeLegacyModelReference("pi:openai:gpt-5.5")).toBe("pi:openai:gpt-5.5");
+  });
+
+  it("normalizes legacy runtime aliases for ingress compatibility", () => {
+    expect(normalizeModelReference("codex:gpt-5.5")).toMatchObject({
+      sdk: "pi",
+      provider: "openai-codex",
+      model: "gpt-5.5",
+      reference: "pi:openai-codex:gpt-5.5",
+    });
   });
 
   it("reserves old runtime aliases for future dedicated bridges", () => {

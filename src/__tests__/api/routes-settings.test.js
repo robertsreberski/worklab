@@ -119,6 +119,17 @@ describe("settings", () => {
     expect(res.body.settings.delegation_auto_run_children).toBe(false);
   });
 
+  it("PATCH canonicalizes legacy agent runtime model settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({
+      slack_model: "codex:gpt-5.5",
+      assistant_model: "openai:gpt-5.5",
+    }).expect(200);
+    const res = await agent.get("/api/settings").expect(200);
+    expect(res.body.settings.slack_model).toBe("pi:openai-codex:gpt-5.5");
+    expect(res.body.settings.assistant_model).toBe("pi:openai:gpt-5.5");
+  });
+
   it("PATCH rejects unknown keys", async () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({ bogus: 1 }).expect(400);

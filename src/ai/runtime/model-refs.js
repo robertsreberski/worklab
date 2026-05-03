@@ -42,6 +42,10 @@ export function canonicalizeLegacyModelReference(value) {
   return value;
 }
 
+export function normalizeRuntimeModelReference(value) {
+  return parseRuntimeModelReference(canonicalizeLegacyModelReference(value));
+}
+
 export function sdkFromModelReference(value) {
   const parsed = parseRuntimeModelReference(value);
   return parsed.sdk;
