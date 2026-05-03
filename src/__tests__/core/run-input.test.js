@@ -95,6 +95,7 @@ describe("run input assembly", () => {
           agent_name: "owner",
           model: "claude:claude-sonnet-4-6",
           effort: "medium",
+          workspace_mode: "direct",
           generated_at: now,
         },
         system: { format: "markdown", content: input.systemPrompt },
@@ -551,6 +552,52 @@ describe("run input assembly", () => {
       const refreshedHash = db.prepare("SELECT project_context_hash FROM task_runs WHERE id = ?")
         .get("run-snap").project_context_hash;
       expect(refreshedHash).not.toBe("snap-hash");
+    });
+  });
+
+  it("uses spawn-time worktree metadata snapshots recorded on task_runs", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const project = seedProject(db, { workdir: "/tmp/source-project" });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+      const worktree = {
+        mode: "worktree",
+        status: "created",
+        branch: "worklab/run/run-worktree",
+        source_workdir: "/tmp/source-project",
+        source_git_root: "/tmp/source-project",
+        source_head: "abc123",
+        worktree_root: "/tmp/worklab-data/runs/run-worktree/worktree",
+        runtime_workdir: "/tmp/worklab-data/runs/run-worktree/worktree",
+        relative_workdir: "",
+      };
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, project_id, mode, stage, agent_name, started_at, status, process_status,
+           workdir, project_context_hash, workspace_mode, source_workdir, worktree_json)
+        VALUES ('run-worktree', ?, ?, 'execute', 'execute', 'owner', 1000, 'running', 'running',
+          ?, 'snap-hash', 'worktree', ?, ?)
+      `).run(task.id, project.id, worktree.runtime_workdir, worktree.source_workdir, JSON.stringify(worktree));
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-worktree",
+        mode: "execute",
+      });
+
+      expect(input.effectiveWorkdir).toBe(worktree.runtime_workdir);
+      expect(input.workspaceMode).toBe("worktree");
+      expect(input.sourceWorkdir).toBe(worktree.source_workdir);
+      expect(input.worktree).toMatchObject({
+        branch: "worklab/run/run-worktree",
+        runtime_workdir: worktree.runtime_workdir,
+      });
+      expect(input.systemPrompt).toContain("Workspace mode: `worktree`");
+      expect(input.systemPrompt).toContain("Source checkout: `/tmp/source-project`");
+      expect(input.systemPrompt).toContain("AI worktree branch: `worklab/run/run-worktree`");
     });
   });
 

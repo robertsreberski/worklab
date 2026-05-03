@@ -43,6 +43,7 @@ export function insertProject(db, {
   description,
   context,
   workdir,
+  worktreeMode = "off",
   tagsJson,
   allowedAgentsJson = "[]",
   delegationAllowUnlisted = 0,
@@ -52,11 +53,11 @@ export function insertProject(db, {
 }) {
   db.prepare(`
     INSERT INTO projects
-      (id, slug, name, description, context_markdown, workdir, tags_json,
+      (id, slug, name, description, context_markdown, workdir, worktree_mode, tags_json,
        allowed_agents_json, delegation_allow_unlisted, archived, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, slug, name, description, context, workdir, tagsJson,
+    id, slug, name, description, context, workdir, worktreeMode, tagsJson,
     allowedAgentsJson, delegationAllowUnlisted ? 1 : 0,
     archived, createdAt, updatedAt,
   );

@@ -67,10 +67,11 @@ describe("admin MCP tools", () => {
       name: "Project",
       context: "Shared context",
       workdir: "/tmp/project",
+      worktree_mode: "auto",
     });
     expect(project.url).toBe("http://localhost:7878/api/projects");
     expect(project.method).toBe("POST");
-    expect(project.body).toMatchObject({ name: "Project", context: "Shared context", workdir: "/tmp/project" });
+    expect(project.body).toMatchObject({ name: "Project", context: "Shared context", workdir: "/tmp/project", worktree_mode: "auto" });
 
     const projectList = await handlers.worklab_project_list({ q: "proj", include_archived: true });
     expect(projectList.url).toBe("http://localhost:7878/api/projects?q=proj&include_archived=true");
