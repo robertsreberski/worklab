@@ -1,5 +1,10 @@
 import { getModel as getPiModel, getModels as getPiModels, supportsXhigh } from "@mariozechner/pi-ai";
 import { getSkillAccessDirs } from "../agent/prompt/skill-index.js";
+import {
+  canonicalizeLegacyModelReference,
+  parseRuntimeModelReference,
+} from "../ai/runtime/model-refs.js";
+import { resolveRuntimeBridge } from "../ai/runtime/registry.js";
 import { readSettings } from "./settings.js";
 import {
   buildModelCapabilities,
@@ -40,7 +45,7 @@ function piModelIds(provider, fallback) {
 export const BUILTIN_OPENAI_MODELS = piModelIds("openai", FALLBACK_OPENAI_MODELS);
 export const BUILTIN_CODEX_MODELS = piModelIds("openai-codex", FALLBACK_CODEX_MODELS);
 
-export const VALID_MODEL_SDKS = ["claude", "openai", "vercel", "claude-code", "codex", "pi"];
+export const VALID_MODEL_SDKS = ["claude", "pi"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 
 const EXTRA_PI_PROVIDER_IDS = [
@@ -185,7 +190,7 @@ function piModelCapabilities(model, runtimeKind = "pi-agent") {
   };
 }
 
-function piModelMetadata(provider, modelId, sdk, { labelPrefix = "", description = null } = {}) {
+function piModelMetadata(provider, modelId, { labelPrefix = "", description = null } = {}) {
   let model;
   try {
     model = getPiModel(provider, modelId);
@@ -194,10 +199,10 @@ function piModelMetadata(provider, modelId, sdk, { labelPrefix = "", description
   }
   const label = [labelPrefix, model?.name || MODEL_SHORT_LABELS[modelId] || modelId].filter(Boolean).join(" ");
   return {
-    value: `${sdk}:${modelId}`,
+    value: `pi:${provider}:${modelId}`,
     label,
     description: description || model?.name || null,
-    sdk,
+    sdk: "pi",
     provider,
     model: modelId,
     capabilities: model ? piModelCapabilities(model) : openaiReasoningCapabilities(modelId),
@@ -256,16 +261,16 @@ const BUILTIN_MODEL_GROUPS = [
     ],
   },
   {
-    id: "openai",
+    id: "pi:openai",
     label: "OpenAI",
-    models: BUILTIN_OPENAI_MODELS.map((model) => piModelMetadata("openai", model, "openai", {
+    models: BUILTIN_OPENAI_MODELS.map((model) => piModelMetadata("openai", model, {
       description: model === "gpt-5.5" ? "Flagship" : null,
     })),
   },
   {
-    id: "codex",
+    id: "pi:openai-codex",
     label: "OpenAI Codex",
-    models: BUILTIN_CODEX_MODELS.map((model) => piModelMetadata("openai-codex", model, "codex", {
+    models: BUILTIN_CODEX_MODELS.map((model) => piModelMetadata("openai-codex", model, {
       labelPrefix: "Codex",
       description: `ChatGPT OAuth via pi-ai / ${model}`,
     })),
@@ -283,16 +288,6 @@ function getPiProviderGroups() {
     }))
     .filter((group) => group.models.length > 0);
 }
-
-const HIDDEN_LEGACY_MODELS = BUILTIN_CLAUDE_MODELS.map((model) => ({
-  value: `claude-code:${model}`,
-  label: `Claude Code ${MODEL_SHORT_LABELS[model] || model}`,
-  description: "Legacy alias routed through the Claude Agent SDK.",
-  sdk: "claude-code",
-  model,
-  capabilities: claudeReasoningCapabilities(model),
-  deprecated: true,
-}));
 
 function withBuiltinToolMetadata(model) {
   if (Array.isArray(model?.builtin_tools)) {
@@ -317,10 +312,7 @@ export function getBuiltinModelGroups() {
 }
 
 export function getBuiltinModels() {
-  return [
-    ...getBuiltinModelGroups().flatMap((group) => group.models),
-    ...HIDDEN_LEGACY_MODELS.map(withBuiltinToolMetadata),
-  ];
+  return getBuiltinModelGroups().flatMap((group) => group.models);
 }
 
 export function getBuiltinModelByReference(reference) {
@@ -329,14 +321,6 @@ export function getBuiltinModelByReference(reference) {
 
 function inferFallbackCapabilities(resolved) {
   if (!resolved?.sdk) return null;
-  if (resolved.sdk === "openai" || resolved.sdk === "codex") {
-    const provider = resolved.sdk === "codex" ? "openai-codex" : "openai";
-    try {
-      return piModelCapabilities(getPiModel(provider, resolved.model));
-    } catch {
-      return openaiReasoningCapabilities(resolved.model);
-    }
-  }
   if (resolved.sdk === "pi") {
     try {
       return piModelCapabilities(getPiModel(resolved.provider, resolved.model));
@@ -344,8 +328,8 @@ function inferFallbackCapabilities(resolved) {
       return openaiReasoningCapabilities(resolved.model);
     }
   }
-  if (resolved.sdk === "claude" || resolved.sdk === "claude-code") {
-    return claudeReasoningCapabilities(resolved.model, resolved.sdk === "claude-code" ? "cli" : "sdk");
+  if (resolved.sdk === "claude") {
+    return claudeReasoningCapabilities(resolved.model);
   }
   return null;
 }
@@ -399,51 +383,8 @@ export function normalizeReasoningEffortForModel(modelRefOrResolved, effort, cap
   return nearestSupportedEffortAtOrBelow(levels, requested);
 }
 
-function requireModelPart(value, message) {
-  if (!value || typeof value !== "string" || value.trim() !== value) {
-    throw new Error(message);
-  }
-  return value;
-}
-
 export function parseModelReference(value) {
-  if (!value || typeof value !== "string") throw new Error("model reference required");
-
-  if (value.startsWith("vercel:")) {
-    const rest = value.slice("vercel:".length);
-    const i = rest.indexOf(":");
-    if (i <= 0 || i === rest.length - 1) {
-      throw new Error("invalid vercel model reference; expected vercel:<providerId>:<modelName>");
-    }
-    const providerId = requireModelPart(rest.slice(0, i), "provider id required");
-    const modelName = requireModelPart(rest.slice(i + 1), "model name required");
-    return { sdk: "vercel", model: modelName, providerId, modelName, reference: value };
-  }
-
-  if (value.startsWith("pi:")) {
-    const rest = value.slice("pi:".length);
-    const i = rest.indexOf(":");
-    if (i <= 0 || i === rest.length - 1) {
-      throw new Error("invalid pi model reference; expected pi:<providerId>:<modelName>");
-    }
-    const provider = requireModelPart(rest.slice(0, i), "provider id required");
-    const model = requireModelPart(rest.slice(i + 1), "model id required");
-    return { sdk: "pi", provider, model, reference: value };
-  }
-
-  const i = value.indexOf(":");
-  if (i <= 0 || i === value.length - 1) {
-    throw new Error("invalid model reference; expected <sdk>:<modelId>");
-  }
-  const sdk = value.slice(0, i);
-  const model = requireModelPart(value.slice(i + 1), "model id required");
-  if (sdk !== "claude" && sdk !== "openai" && sdk !== "claude-code" && sdk !== "codex") {
-    throw new Error(`unknown sdk: ${sdk}`);
-  }
-  if (["haiku", "sonnet", "opus"].includes(model)) {
-    throw new Error("tier aliases are not valid model references; use an exact model id");
-  }
-  return { sdk, model, reference: value };
+  return parseRuntimeModelReference(value);
 }
 
 export function isValidModelReference(value) {
@@ -459,19 +400,9 @@ export function resolveModel(value) {
   return parseModelReference(value);
 }
 
-async function loadBackend(sdk, { liveInput = false } = {}) {
-  if (sdk === "claude") return (await import("../ai/providers/claude-sdk.js")).claudeSdkBackend;
-  if (sdk === "claude-code") return (await import("../ai/providers/claude-sdk.js")).claudeSdkBackend;
-  if (sdk === "openai") return (await import("../ai/providers/pi-sdk.js")).piOpenAiBackend;
-  if (sdk === "vercel") return (await import("../ai/providers/pi-sdk.js")).piVercelBackend;
-  if (sdk === "codex") return (await import("../ai/providers/pi-sdk.js")).piCodexBackend;
-  if (sdk === "pi") return (await import("../ai/providers/pi-sdk.js")).piGenericBackend;
-  throw new Error(`unsupported sdk: ${sdk}`);
-}
-
 export async function resolveBackendFor(modelRef, { liveInput = false } = {}) {
   const resolved = typeof modelRef === "string" ? parseModelReference(modelRef) : modelRef;
-  return loadBackend(resolved.sdk, { liveInput });
+  return resolveRuntimeBridge(resolved, { liveInput });
 }
 
 function loadSettingsSafely(db) {
@@ -483,20 +414,28 @@ function loadSettingsSafely(db) {
   }
 }
 
+function piProviderExists(provider) {
+  try {
+    return getPiModels(provider).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 function resolveCustomProviderContext(resolved, { db, dataDir }) {
-  if (resolved.sdk !== "vercel") return null;
-  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: true });
+  if (resolved.sdk !== "pi" || piProviderExists(resolved.provider)) return null;
+  const provider = getProvider({ db, dataDir, id: resolved.provider, includeKey: true });
   if (!provider) {
-    throw new Error(`provider not found: ${resolved.providerId}`);
+    throw new Error(`provider not found: ${resolved.provider}`);
   }
   const modelRow = getModelByProviderAndName({
     db,
-    providerId: resolved.providerId,
-    modelName: resolved.modelName,
+    providerId: resolved.provider,
+    modelName: resolved.model,
   }) || null;
   const capabilities = modelRow
-    ? buildModelCapabilities(provider.provider_type, resolved.modelName, modelRow.capabilities)
-    : resolveReasoningCapabilities(provider.provider_type, resolved.modelName, {});
+    ? buildModelCapabilities(provider.provider_type, resolved.model, modelRow.capabilities)
+    : resolveReasoningCapabilities(provider.provider_type, resolved.model, {});
   return {
     customProvider: provider,
     customModel: modelRow,
@@ -505,7 +444,7 @@ function resolveCustomProviderContext(resolved, { db, dataDir }) {
   };
 }
 
-function vercelProviderError(resolved, message) {
+function runtimeProviderError(resolved, message) {
   return {
     text: null,
     events: [],
@@ -514,19 +453,19 @@ function vercelProviderError(resolved, message) {
     numTurns: 0,
     model: resolved?.reference || resolved?.model || null,
     effort: null,
-    sdk: "vercel",
+    sdk: resolved?.sdk || null,
     cancelled: false,
     error: message,
     failureKind: "provider_unavailable",
     runtimeWarnings: [],
-    diagnostics: { vercel_provider_error: true },
+    diagnostics: { provider_error: true },
   };
 }
 
 // Caller-side dependency injection: providers (src/ai/providers/*) must not
 // reach back into core/. generateResponse pre-computes everything those
 // adapters need — normalized effort, settings, skill access dirs, and (for
-// custom/vercel models) the provider/model rows + capabilities — and passes
+// custom Pi providers) the provider/model rows + capabilities — and passes
 // them through options.
 export async function generateResponse(systemPrompt, options) {
   const resolved = options.model?.sdk ? options.model : parseModelReference(options.model);
@@ -535,14 +474,14 @@ export async function generateResponse(systemPrompt, options) {
     : getSkillAccessDirs(options.skills || []);
   const settings = options.settings || loadSettingsSafely(options.db);
   let customContext = null;
-  if (resolved.sdk === "vercel") {
+  if (resolved.sdk === "pi") {
     try {
       customContext = resolveCustomProviderContext(resolved, {
         db: options.db,
         dataDir: options.dataDir,
       });
     } catch (err) {
-      return vercelProviderError(resolved, err?.message || String(err));
+      return runtimeProviderError(resolved, err?.message || String(err));
     }
   }
   const baseOptions = {
@@ -552,9 +491,12 @@ export async function generateResponse(systemPrompt, options) {
     settings,
     ...(customContext || {}),
   };
-  const nextOptions = resolved.sdk === "vercel"
-    ? baseOptions
-    : { ...baseOptions, effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium") };
-  const backend = await loadBackend(resolved.sdk, { liveInput: !!options.liveInput });
+  const nextOptions = {
+    ...baseOptions,
+    effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium", customContext?.modelCapabilities),
+  };
+  const backend = await resolveRuntimeBridge(resolved, { liveInput: !!options.liveInput });
   return backend.execute(systemPrompt, nextOptions);
 }
+
+export { canonicalizeLegacyModelReference };

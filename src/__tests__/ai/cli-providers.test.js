@@ -3,21 +3,17 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildCliCommand, generateCliResponse } from "../../ai/providers/claude-cli.js";
-import { parseModelReference } from "../../core/ai.js";
+import { parseModelReference, canonicalizeLegacyModelReference } from "../../core/ai.js";
 import { WORKLAB_RESULT_JSON_SCHEMA } from "../../ai/result/contract.js";
 import { buildExecuteSystemPrompt } from "../../agent/prompt/system-prompt.js";
 import { loadSkills } from "../../core/skills.js";
 
 describe("CLI provider adapters", () => {
-  it("parses Claude Code and Codex model references", () => {
-    expect(parseModelReference("claude-code:claude-sonnet-4-6")).toMatchObject({
-      sdk: "claude-code",
-      model: "claude-sonnet-4-6",
-    });
-    expect(parseModelReference("codex:gpt-5.5")).toMatchObject({
-      sdk: "codex",
-      model: "gpt-5.5",
-    });
+  it("keeps Claude Code and Codex CLI ids reserved outside the active runtime parser", () => {
+    expect(canonicalizeLegacyModelReference("claude-code:claude-sonnet-4-6")).toBe("claude:claude-sonnet-4-6");
+    expect(canonicalizeLegacyModelReference("codex:gpt-5.5")).toBe("pi:openai-codex:gpt-5.5");
+    expect(() => parseModelReference("claude-code:claude-sonnet-4-6")).toThrow(/reserved runtime/i);
+    expect(() => parseModelReference("codex:gpt-5.5")).toThrow(/reserved runtime/i);
   });
 
   it("generates Claude Code stream-json command with inline schema, system prompt, and prompt separator", () => {

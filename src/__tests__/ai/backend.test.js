@@ -4,42 +4,38 @@ import { backendCapabilities, backendUsesExecenvConfig, backendSupportsSessionRe
 describe("backendCapabilities", () => {
   it("resolves by sdk kind", () => {
     expect(backendCapabilities("claude")).toMatchObject({ kind: "claude", runtime: "sdk" });
-    expect(backendCapabilities("claude-code")).toMatchObject({ kind: "claude-code", runtime: "sdk", native_runtime_config: null });
-    expect(backendCapabilities("codex")).toMatchObject({ kind: "codex", runtime: "pi-agent", native_runtime_config: null });
     expect(backendCapabilities("pi")).toMatchObject({ kind: "pi", runtime: "pi-agent" });
   });
 
   it("resolves by parsed model object", () => {
-    expect(backendCapabilities({ sdk: "openai", model: "gpt-5.5" }).kind).toBe("openai");
+    expect(backendCapabilities({ sdk: "pi", provider: "openai", model: "gpt-5.5" }).kind).toBe("pi");
   });
 
-  it("throws on unknown sdk", () => {
+  it("throws on unknown or reserved sdk", () => {
     expect(() => backendCapabilities("nope")).toThrow();
+    expect(() => backendCapabilities("codex")).toThrow(/unknown provider sdk/i);
+    expect(() => backendCapabilities("claude-code")).toThrow(/unknown provider sdk/i);
   });
 });
 
 describe("backendUsesExecenvConfig", () => {
   it("pi and SDK backends do not need native runtime config files", () => {
-    expect(backendUsesExecenvConfig("claude-code")).toBe(false);
-    expect(backendUsesExecenvConfig("codex")).toBe(false);
     expect(backendUsesExecenvConfig("claude")).toBe(false);
-    expect(backendUsesExecenvConfig("openai")).toBe(false);
-    expect(backendUsesExecenvConfig("vercel")).toBe(false);
+    expect(backendUsesExecenvConfig("pi")).toBe(false);
   });
 });
 
 describe("backendSupportsSessionResume", () => {
   it("does not claim session resume for SDK-backed providers", () => {
-    expect(backendSupportsSessionResume("claude-code")).toBe(false);
     expect(backendSupportsSessionResume("claude")).toBe(false);
-    expect(backendSupportsSessionResume("codex")).toBe(false);
+    expect(backendSupportsSessionResume("pi")).toBe(false);
   });
 });
 
 describe("BACKEND_CAPABILITIES", () => {
   it("covers every PROVIDER_KIND", () => {
     expect(Object.keys(BACKEND_CAPABILITIES).sort()).toEqual(
-      ["claude", "claude-code", "codex", "openai", "pi", "vercel"],
+      ["claude", "pi"],
     );
   });
 });

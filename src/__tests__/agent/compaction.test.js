@@ -38,8 +38,8 @@ describe("agent compaction", () => {
     const manager = createAgentCompactionManager({
       db,
       runId: "run_1",
-      providerKind: "codex",
-      modelReference: "codex:gpt-test",
+      providerKind: "pi",
+      modelReference: "pi:openai-codex:gpt-test",
       model: { id: "gpt-test", contextWindow: 32000 },
       settings: {
         agent_compaction_trigger_ratio: 0.2,
@@ -204,8 +204,8 @@ describe("agent compaction", () => {
     const manager = createAgentCompactionManager({
       db,
       runId: "run_1",
-      providerKind: "codex",
-      modelReference: "codex:gpt-test",
+      providerKind: "pi",
+      modelReference: "pi:openai-codex:gpt-test",
       model: { id: "gpt-test", contextWindow: 32000 },
       settings: {
         agent_compaction_trigger_ratio: 0.2,

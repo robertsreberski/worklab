@@ -522,7 +522,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       },
       durationMs: Date.now() - start,
       numTurns: turnCount || assistantMessages.length || finalMessages.length,
-      model: resolved.sdk === "vercel" ? resolved.reference : runtime.model.id,
+      model: resolved.reference || `pi:${resolved.provider}:${resolved.model}`,
       effort: options.effort || null,
       sdk: resolved.sdk,
       cancelled: externalAbort,
@@ -593,25 +593,33 @@ export async function generatePiResponse(systemPrompt, options = {}) {
 }
 
 export const piOpenAiBackend = {
-  kind: "openai",
-  capabilities: backendCapabilities("openai"),
+  kind: "pi",
+  capabilities: backendCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piCodexBackend = {
-  kind: "codex",
-  capabilities: backendCapabilities("codex"),
+  kind: "pi",
+  capabilities: backendCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piVercelBackend = {
-  kind: "vercel",
-  capabilities: backendCapabilities("vercel"),
+  kind: "pi",
+  capabilities: backendCapabilities("pi"),
   execute: generatePiResponse,
 };
 
 export const piGenericBackend = {
   kind: "pi",
   capabilities: backendCapabilities("pi"),
+  execute: generatePiResponse,
+};
+
+export const piRuntimeBridge = {
+  id: "pi",
+  kind: "pi",
+  capabilities: backendCapabilities("pi"),
+  supports: (ref) => ref?.sdk === "pi",
   execute: generatePiResponse,
 };

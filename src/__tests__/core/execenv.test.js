@@ -28,25 +28,25 @@ describe("prepareExecenv", () => {
     }
   });
 
-  it("does not write native runtime configs for pi-backed legacy providers", () => {
+  it("does not write native runtime configs for canonical SDK and pi providers", () => {
     const dataDir = makeDataDir();
     try {
-      const claudeCode = prepareExecenv({
+      const claude = prepareExecenv({
         dataDir, runId: "run-cli",
         agent: { name: "coder", display_name: "Coder" },
         task: { title: "Implement feature", task_key: "T-1", stage: "execute" },
-        providerKind: "claude-code",
+        providerKind: "claude",
         systemPrompt: "## Role\nyou are a coder",
       });
-      const codex = prepareExecenv({
+      const pi = prepareExecenv({
         dataDir, runId: "run-codex",
         agent: { name: "ops", display_name: "Ops" },
         task: { title: "Sweep" },
-        providerKind: "codex",
+        providerKind: "pi",
         systemPrompt: "## Capabilities",
       });
-      expect(claudeCode.runtimeConfigPath).toBeNull();
-      expect(codex.runtimeConfigPath).toBeNull();
+      expect(claude.runtimeConfigPath).toBeNull();
+      expect(pi.runtimeConfigPath).toBeNull();
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }

@@ -40,6 +40,8 @@ describe("getBuiltinProviderAvailability", () => {
     const result = getBuiltinProviderAvailability();
     expect(result.claude.available).toBe(false);
     expect(result.openai.available).toBe(false);
+    expect(result["pi:openai"].available).toBe(false);
+    expect(result["pi:openai-codex"].available).toBe(false);
     expect(result.claude.reason).toMatch(/ANTHROPIC_API_KEY/);
     expect(result.openai.reason).toMatch(/OPENAI_API_KEY/);
   });
@@ -67,6 +69,7 @@ describe("getBuiltinProviderAvailability", () => {
     process.env.OPENAI_API_KEY = "sk-openai";
     const result = getBuiltinProviderAvailability();
     expect(result.openai.available).toBe(true);
+    expect(result["pi:openai"].available).toBe(true);
     expect(result.openai.reason).toBe(null);
   });
 
@@ -77,21 +80,17 @@ describe("getBuiltinProviderAvailability", () => {
     expect(result.claude.available).toBe(false);
   });
 
-  it("reports local CLI versions and env-backed CLI auth", () => {
-    const execImpl = vi.fn((command, args) => {
-      if (command === "claude" && args[0] === "--version") return "2.1.0 (Claude Code)\n";
-      if (command === "codex" && args[0] === "--version") return "codex-cli 0.125.0\n";
-      throw new Error(`unexpected probe: ${command} ${args.join(" ")}`);
-    });
+  it("reports canonical pi Codex auth without exposing reserved CLI runtime ids", () => {
     const result = getBuiltinProviderAvailability({
       env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth", CODEX_API_KEY: "codex", PATH: fakeCliPath() },
-      execImpl,
+      execImpl: vi.fn(() => ""),
     });
-    expect(result["claude-code"]).toMatchObject({ available: true, command_available: true, version: "2.1.0 (Claude Code)" });
-    expect(result.codex).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "codex_api_key" });
+    expect(result["pi:openai-codex"]).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "codex_api_key" });
+    expect(result).not.toHaveProperty("claude-code");
+    expect(result).not.toHaveProperty("codex");
   });
 
-  it("requires Claude CLI authentication when only the command is installed", () => {
+  it("marks pi Codex unavailable without env or pi OAuth credentials", () => {
     const execImpl = vi.fn((command, args) => {
       if (args[0] === "--version") return `${command} version\n`;
       throw Object.assign(new Error("not logged in"), { stderr: "not logged in" });
@@ -100,10 +99,8 @@ describe("getBuiltinProviderAvailability", () => {
       env: { PATH: fakeCliPath() },
       execImpl,
     });
-    expect(result["claude-code"].available).toBe(false);
-    expect(result["claude-code"].reason).toMatch(/claude auth login/i);
-    expect(result.codex.available).toBe(false);
-    expect(result.codex.reason).toMatch(/OPENAI_CODEX_API_KEY/i);
+    expect(result["pi:openai-codex"].available).toBe(false);
+    expect(result["pi:openai-codex"].reason).toMatch(/OPENAI_CODEX_API_KEY/i);
   });
 
   it("marks Codex available from pi OAuth credentials", () => {
@@ -113,6 +110,6 @@ describe("getBuiltinProviderAvailability", () => {
       "openai-codex": { access: "token", refresh: "refresh", expires: Date.now() + 60_000 },
     }));
     const result = getBuiltinProviderAvailability({ env: { PATH: "" }, dataDir: dir });
-    expect(result.codex).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "pi-oauth" });
+    expect(result["pi:openai-codex"]).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "pi-oauth" });
   });
 });

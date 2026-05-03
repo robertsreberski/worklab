@@ -15,7 +15,17 @@ import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
-import { backendCapabilities } from "../backend.js";
+
+const DORMANT_CLI_CAPABILITIES = {
+  streaming: true,
+  structured_output: true,
+  supports_session_resume: false,
+  native_runtime_config: null,
+  supports_mcp: true,
+  supports_skills: true,
+  supports_builtin_tools: true,
+  supports_live_input: true,
+};
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -506,12 +516,12 @@ export async function generateCliResponse(systemPrompt, options = {}) {
 
 export const claudeCodeBackend = {
   kind: "claude-code",
-  capabilities: backendCapabilities("claude-code"),
+  capabilities: { kind: "claude-code", runtime: "cli", ...DORMANT_CLI_CAPABILITIES },
   execute: generateCliResponse,
 };
 
 export const codexCliBackend = {
   kind: "codex-cli",
-  capabilities: backendCapabilities("codex"),
+  capabilities: { kind: "codex-cli", runtime: "cli", ...DORMANT_CLI_CAPABILITIES },
   execute: generateCliResponse,
 };

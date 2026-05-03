@@ -10,7 +10,19 @@ import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
-import { backendCapabilities } from "../backend.js";
+
+const DORMANT_CODEX_APP_CAPABILITIES = {
+  kind: "codex-app",
+  runtime: "app-server",
+  streaming: true,
+  structured_output: true,
+  supports_session_resume: false,
+  native_runtime_config: null,
+  supports_mcp: true,
+  supports_skills: true,
+  supports_builtin_tools: true,
+  supports_live_input: true,
+};
 
 function promptFromMessages(messages) {
   return Array.isArray(messages)
@@ -589,7 +601,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
 }
 
 export const codexAppBackend = {
-  kind: "codex",
-  capabilities: backendCapabilities("codex"),
+  kind: "codex-app",
+  capabilities: DORMANT_CODEX_APP_CAPABILITIES,
   execute: generateCodexAppResponse,
 };

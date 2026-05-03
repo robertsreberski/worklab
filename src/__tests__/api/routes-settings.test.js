@@ -36,7 +36,7 @@ describe("settings", () => {
     expect(res.body.settings.consolidation_enabled).toBe(true);
     expect(res.body.settings.worker_timeout_ms).toBe(1800000);
     expect(res.body.settings.default_embedding_model).toBe("");
-    expect(res.body.settings.assistant_model).toBe("openai:gpt-5.5");
+    expect(res.body.settings.assistant_model).toBe("pi:openai:gpt-5.5");
     expect(res.body.settings.assistant_effort).toBe("high");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(300000);
     expect(res.body.settings.assistant_max_turns).toBe(32);
@@ -77,13 +77,13 @@ describe("settings", () => {
       slack_enabled: true,
       slack_user_id: "UROBERT",
       slack_agent_name: "assistant",
-      slack_model: "codex:gpt-5.5",
+      slack_model: "pi:openai-codex:gpt-5.5",
       slack_effort: "xhigh",
       slack_channel_ids: ["C1", "C2"],
       slack_run_timeout_ms: 60000,
       slack_notify_task_completed: true,
       slack_notify_task_errors: false,
-      assistant_model: "codex:gpt-5.4",
+      assistant_model: "pi:openai-codex:gpt-5.4",
       assistant_effort: "medium",
       assistant_run_timeout_ms: 45000,
       assistant_max_turns: 48,
@@ -104,7 +104,7 @@ describe("settings", () => {
     expect(res.body.settings.slack_user_id).toBe("UROBERT");
     expect(res.body.settings.slack_channel_ids).toEqual(["C1", "C2"]);
     expect(res.body.settings.slack_notify_task_errors).toBe(false);
-    expect(res.body.settings.assistant_model).toBe("codex:gpt-5.4");
+    expect(res.body.settings.assistant_model).toBe("pi:openai-codex:gpt-5.4");
     expect(res.body.settings.assistant_effort).toBe("medium");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(45000);
     expect(res.body.settings.assistant_max_turns).toBe(48);

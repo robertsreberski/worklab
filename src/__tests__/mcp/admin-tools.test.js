@@ -97,7 +97,7 @@ describe("admin MCP tools", () => {
           display_name: "Game Dev",
           description: "Builds games",
           sdk: "codex",
-          model: "codex:gpt-5.5",
+          model: "pi:openai-codex:gpt-5.5",
           effort: "xhigh",
           instructions: "Very long private instructions ".repeat(1000),
           skills_allowlist: ["sprite-work"],
@@ -127,7 +127,7 @@ describe("admin MCP tools", () => {
     expect(result).toMatchObject({ count: 2, matched: 1, returned: 1, truncated: false });
     expect(result.agents[0]).toMatchObject({
       name: "game-dev",
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       skills_allowlist: { mode: "custom", count: 1 },
       mcp_allowlist: { mode: "custom", count: 1 },
     });
@@ -158,7 +158,7 @@ describe("admin MCP tools", () => {
           agent: {
             name: "builder",
             display_name: "Builder",
-            model: "codex:gpt-5.5",
+            model: "pi:openai-codex:gpt-5.5",
             effort: "high",
             instructions: "Long private instructions ".repeat(500),
             skills_allowlist: ["frontend"],
@@ -176,13 +176,13 @@ describe("admin MCP tools", () => {
     const handlers = createAdminToolHandlers({ baseUrl: "http://localhost:7878", fetchImpl });
 
     const task = await handlers.worklab_task_create({ title: "Build it", instructions: "Long task instructions" });
-    const agent = await handlers.worklab_agent_create({ display_name: "Builder", model: "codex:gpt-5.5" });
+    const agent = await handlers.worklab_agent_create({ display_name: "Builder", model: "pi:openai-codex:gpt-5.5" });
 
     expect(task.task).toMatchObject({ id: "task-1", task_key: "T-1", dependency_count: 1 });
     expect(JSON.stringify(task)).not.toContain("Long task instructions");
     expect(agent.agent).toMatchObject({
       name: "builder",
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       skills_allowlist: { mode: "custom", count: 1 },
     });
     expect(JSON.stringify(agent)).not.toContain("Long private instructions");
@@ -242,7 +242,7 @@ describe("admin MCP tools", () => {
           runtime_kind: "pi-agent",
           models: [
             {
-              value: "codex:gpt-5.5",
+              value: "pi:openai-codex:gpt-5.5",
               label: "Codex GPT-5.5",
               description: "Flagship",
               sdk: "codex",
@@ -282,7 +282,7 @@ describe("admin MCP tools", () => {
 
     expect(result).toMatchObject({ count: 2, available_count: 2, matched: 1, returned: 1, truncated: false });
     expect(result.models[0]).toMatchObject({
-      value: "codex:gpt-5.5",
+      value: "pi:openai-codex:gpt-5.5",
       sdk: "codex",
       provider: "openai-codex",
       context_window: 400000,

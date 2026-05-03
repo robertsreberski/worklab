@@ -66,7 +66,7 @@ describe("slack integration", () => {
       slack_enabled: true,
       slack_user_id: "UROBERT",
       slack_agent_name: "assistant",
-      slack_model: "codex:gpt-5.5",
+      slack_model: "pi:openai-codex:gpt-5.5",
       slack_effort: "xhigh",
       slack_channel_ids: [],
     });

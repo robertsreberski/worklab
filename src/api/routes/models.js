@@ -55,10 +55,10 @@ export function registerModelRoutes(app, { db, dataDir }) {
         const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
         if (!capabilities.runnable_for_agent) return [];
         return [{
-          value: `vercel:${provider.id}:${model.model_name}`,
+          value: `pi:${provider.id}:${model.model_name}`,
           label: model.display_name || model.model_name,
           description: `${provider.name} / ${model.model_name}`,
-          sdk: "vercel",
+          sdk: "pi",
           runtime_kind: "pi-agent",
           provider_id: provider.id,
           provider_name: provider.name,

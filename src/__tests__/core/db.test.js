@@ -446,4 +446,53 @@ describe("openDb + runMigrations", () => {
     const row = db.prepare("SELECT sdk, model FROM agents WHERE name = 'legacy'").get();
     expect(row).toMatchObject({ sdk: "claude", model: "sonnet" });
   });
+
+  it("canonicalizes legacy active runtime model references on saved agents and settings", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("openai-agent", "OpenAI Agent", "openai", "openai:gpt-5.5", now, now);
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("codex-agent", "Codex Agent", "codex", "codex:gpt-5.5", now, now);
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("custom-agent", "Custom Agent", "vercel", "vercel:provider-1:gemma3:4b", now, now);
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("claude-code-agent", "Claude Code Agent", "claude-code", "claude-code:claude-sonnet-4-6", now, now);
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("slack_model", JSON.stringify("codex:gpt-5.5"));
+    db.prepare("INSERT INTO settings (key, value) VALUES (?, ?)").run("assistant_model", JSON.stringify("openai:gpt-5.5"));
+
+    runMigrations(db);
+
+    expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'openai-agent'").get())
+      .toMatchObject({ sdk: "pi", model: "pi:openai:gpt-5.5" });
+    expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'codex-agent'").get())
+      .toMatchObject({ sdk: "pi", model: "pi:openai-codex:gpt-5.5" });
+    expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'custom-agent'").get())
+      .toMatchObject({ sdk: "pi", model: "pi:provider-1:gemma3:4b" });
+    expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'claude-code-agent'").get())
+      .toMatchObject({ sdk: "claude", model: "claude:claude-sonnet-4-6" });
+    expect(JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'slack_model'").get().value))
+      .toBe("pi:openai-codex:gpt-5.5");
+    expect(JSON.parse(db.prepare("SELECT value FROM settings WHERE key = 'assistant_model'").get().value))
+      .toBe("pi:openai:gpt-5.5");
+  });
+
+  it("does not rewrite historical agent log model snapshots during canonical runtime migration", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+    const now = Date.now();
+    const taskId = newTaskId();
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run(taskId, "audit", now, now);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, status, process_status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("run_legacy", taskId, "execute", "agent", "complete", "succeeded", now);
+    db.prepare("INSERT INTO agent_logs (id, task_run_id, events, model, status, created_at) VALUES (?, ?, ?, ?, ?, ?)")
+      .run("log_legacy", "run_legacy", "[]", "codex:gpt-5.5", "complete", now);
+
+    runMigrations(db);
+
+    expect(db.prepare("SELECT model FROM agent_logs WHERE id = 'log_legacy'").get().model)
+      .toBe("codex:gpt-5.5");
+  });
 });

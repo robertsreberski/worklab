@@ -20,7 +20,7 @@ describe("task display helpers", () => {
   });
 
   it("describes agents with full model reference and effort", () => {
-    expect(agentModelEffortLabel({ model: "codex:gpt-5.5", effort: "medium" })).toBe("codex:gpt-5.5 · medium effort");
+    expect(agentModelEffortLabel({ model: "pi:openai-codex:gpt-5.5", effort: "medium" })).toBe("pi:openai-codex:gpt-5.5 · medium effort");
     expect(agentModelEffortLabel({ model: "claude:claude-sonnet-4-6" })).toBe("claude:claude-sonnet-4-6");
   });
 

@@ -8,9 +8,11 @@ const PRICING = {
   "gpt-5.4": { input: 2.5, cachedInput: 0.25, output: 15.0 },
 };
 
-function vercelPricing(db, reference) {
-  if (!db || typeof reference !== "string" || !reference.startsWith("vercel:")) return null;
-  const rest = reference.slice("vercel:".length);
+function customProviderPricing(db, reference) {
+  if (!db || typeof reference !== "string") return null;
+  const prefix = reference.startsWith("vercel:") ? "vercel:" : (reference.startsWith("pi:") ? "pi:" : null);
+  if (!prefix) return null;
+  const rest = reference.slice(prefix.length);
   const i = rest.indexOf(":");
   if (i <= 0) return null;
   const providerId = rest.slice(0, i);
@@ -30,10 +32,12 @@ function vercelPricing(db, reference) {
 }
 
 export function estimateCost({ db, model, inputTokens = 0, outputTokens = 0, cachedTokens = 0 }) {
-  const modelId = typeof model === "string" && model.includes(":") && !model.startsWith("vercel:")
-    ? model.slice(model.indexOf(":") + 1)
-    : model;
-  const pricing = vercelPricing(db, model) || PRICING[modelId] || { input: 0, cachedInput: 0, output: 0 };
+  const modelId = typeof model === "string" && model.startsWith("pi:")
+    ? model.slice(model.indexOf(":", "pi:".length) + 1)
+    : (typeof model === "string" && model.includes(":") && !model.startsWith("vercel:")
+        ? model.slice(model.indexOf(":") + 1)
+        : model);
+  const pricing = customProviderPricing(db, model) || PRICING[modelId] || { input: 0, cachedInput: 0, output: 0 };
   const freshInput = Math.max(0, inputTokens - cachedTokens);
   return (
     (freshInput / 1_000_000) * pricing.input +

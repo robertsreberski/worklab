@@ -1,54 +1,67 @@
-// Provider-layer type contracts. These are JSDoc-only; the codebase is JS
-// (no TypeScript) so the types act as documentation and as targets for the
-// provider registry's `validate` step. When a provider is added, it implements
-// this contract and registers itself via `registerProvider`.
+// Worklab AI runtime contracts. These are JSDoc-only; the codebase is JS
+// (no TypeScript), so the types document the bridge surface that active
+// runtimes implement through src/ai/runtime/registry.js.
 
 /**
- * @typedef {Object} ProviderModelRef
- * @property {string} sdk         Provider id ("claude" | "pi" | "claude-cli" | "codex-cli" | "codex-app" | …)
- * @property {string} model       Model name (e.g. "claude-opus-4-7")
- * @property {string} reference   Canonical "sdk:model" string used by callers
- * @property {string} [provider]  Custom-provider id when sdk === "pi" / "openai-compat"
+ * @typedef {Object} RuntimeModelRef
+ * @property {"claude" | "pi"} sdk       Canonical active runtime id.
+ * @property {string} model              Provider model id.
+ * @property {string} reference          Original canonical model reference.
+ * @property {string} [provider]         Pi provider id when sdk === "pi".
  */
 
 /**
- * @typedef {Object} RunRequest
- * @property {string}             systemPrompt
- * @property {Array<Object>}      messages         Multi-turn message array (provider-normalized)
- * @property {ProviderModelRef}   model
- * @property {Array<Object>}      [tools]          Tool definitions visible to the model
- * @property {string}             [effort]         Reasoning effort: low/medium/high/xhigh/max
- * @property {AbortSignal}        [signal]
- * @property {(event: ProviderEvent) => void} [onEvent]
+ * @typedef {Object} RuntimeRequest
+ * @property {string} systemPrompt
+ * @property {Array<Object>} messages
+ * @property {RuntimeModelRef} model
+ * @property {string} [effort]
+ * @property {string} [cwd]
+ * @property {Object<string, Object>} [mcpServers]
+ * @property {Array<string>} [allowedTools]
+ * @property {Array<string>} [disallowedTools]
+ * @property {string} [permissionMode]
+ * @property {number} [maxTurns]
+ * @property {Object} [outputSchema]
+ * @property {string} [runArtifactDir]
+ * @property {AbortSignal} [abortSignal]
+ * @property {Object} [liveInput]
+ * @property {Object} [settings]
+ * @property {(event: RuntimeEvent) => void} [onEvent]
  */
 
 /**
- * @typedef {Object} ProviderEvent
- * @property {string} type   "text" | "tool_use" | "tool_result" | "thinking" | "final" | …
- *
- * The exact payload depends on `type`. See `src/ai/streaming/events.js` for
- * normalized event shapes.
+ * @typedef {Object} RuntimeEvent
+ * @property {string} type
  */
 
 /**
- * @typedef {Object} ProviderResult
- * @property {string}            status        "complete" | "error" | "cancelled"
- * @property {string}             [text]
- * @property {Object}             [worklab_result]
- * @property {Object}             [usage]
- * @property {string}             [model]
- * @property {string}             [providerSessionId]
- * @property {Array<Object>}      [warnings]
- * @property {string}             [failureKind]
- * @property {string}             [error]
+ * @typedef {Object} RuntimeResult
+ * @property {string|null} [text]
+ * @property {Object} [worklabResult]
+ * @property {string} [structuredResultSource]
+ * @property {Array<RuntimeEvent>} [events]
+ * @property {Object} [usage]
+ * @property {number} [durationMs]
+ * @property {number} [numTurns]
+ * @property {string} [model]
+ * @property {string} [effort]
+ * @property {"claude" | "pi"} [sdk]
+ * @property {boolean} [cancelled]
+ * @property {string|null} [error]
+ * @property {Object|null} [errorDetails]
+ * @property {string|null} [failureKind]
+ * @property {string|null} [providerSessionId]
+ * @property {Array<Object>} [runtimeWarnings]
+ * @property {Object} [diagnostics]
  */
 
 /**
- * @typedef {Object} ApiProvider
- * @property {string}    id                  Stable identifier ("claude", "pi", …)
- * @property {(ref: ProviderModelRef) => boolean} supports
- * @property {(req: RunRequest) => Promise<ProviderResult>} execute
- * @property {() => { available: boolean, reason?: string }} [validate]
+ * @typedef {Object} RuntimeBridge
+ * @property {"claude" | "pi"} id
+ * @property {(ref: RuntimeModelRef) => boolean} supports
+ * @property {(ref?: RuntimeModelRef) => Object} capabilities
+ * @property {(systemPrompt: string, req: RuntimeRequest) => Promise<RuntimeResult>} execute
  */
 
-export const PROVIDER_KIND_VALUES = ["claude", "pi", "claude-cli", "codex-cli", "codex-app"];
+export const PROVIDER_KIND_VALUES = ["claude", "pi"];

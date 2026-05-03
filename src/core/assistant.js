@@ -323,7 +323,7 @@ Return only one JSON object with this exact schema:
     const assistantMessageId = newAssistantMessageId();
     const runId = newRunId();
     const settings = readSettings(this.db);
-    const model = settings.assistant_model || settings.slack_model || "openai:gpt-5.5";
+    const model = settings.assistant_model || settings.slack_model || "pi:openai:gpt-5.5";
     const effort = settings.assistant_effort || settings.slack_effort || "high";
     const logPath = rawLogPath(this.config.dataDir, runId);
 
@@ -433,7 +433,7 @@ Return only one JSON object with this exact schema:
         viewContext,
       });
       const systemPrompt = this.buildSystemPrompt({ agentName, skills, memory, journalTail, history, input, currentView });
-      const model = resolveModel(settings.assistant_model || settings.slack_model || "openai:gpt-5.5");
+      const model = resolveModel(settings.assistant_model || settings.slack_model || "pi:openai:gpt-5.5");
       const mcpServers = assistantMcpServers(this.config);
       const response = await this.runAgent(systemPrompt, {
         model,
