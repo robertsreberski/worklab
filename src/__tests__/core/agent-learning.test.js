@@ -4,6 +4,7 @@ import {
   formatAgentLearningContext,
   listAgentMemories,
   recordAgentMemoryCandidates,
+  recordRunResultLearning,
   selectAgentLearningMemories,
 } from "../../core/agent-learning.js";
 
@@ -166,5 +167,35 @@ describe("agent learning memory", () => {
     expect(formatAgentLearningContext(memories)).toContain("## Learned procedures");
     expect(formatAgentLearningContext(memories)).toContain("Run `npm run build:ui` after UI changes.");
     expect(formatAgentLearningContext(memories)).not.toContain("draft");
+  });
+
+  it("records memory candidates from a completed run result when native learning is enabled", () => {
+    const db = makeTestDb();
+    seedAgent(db);
+    seedTask(db);
+    seedRun(db);
+
+    const result = recordRunResultLearning(db, {
+      task: { id: "task-1", project_id: null },
+      run: { id: "run-1", agent_name: "coder", process_status: "succeeded" },
+      result: {
+        memory_candidates: [
+          { kind: "preference", scope: "agent", content: "Prefer compact status updates.", evidence: "User corrected verbosity.", confidence: 0.9 },
+        ],
+      },
+      settings: {
+        agent_learning_enabled: true,
+        agent_learning_backend: "worklab_native",
+        agent_learning_auto_approve_threshold: 0.85,
+      },
+      now: 1700000005000,
+    });
+
+    expect(result.inserted).toBe(1);
+    expect(listAgentMemories(db, { agentName: "coder" })[0]).toMatchObject({
+      kind: "preference",
+      status: "approved",
+      content: "Prefer compact status updates.",
+    });
   });
 });

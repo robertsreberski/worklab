@@ -48,6 +48,16 @@ export const pendingQuestionSchema = z.object({
 // watcher-derived default (`skip_when_qa_child` when a QA child is present,
 // else `default`).
 export const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
+export const MEMORY_CANDIDATE_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
+export const MEMORY_CANDIDATE_SCOPES = ["agent", "project", "task", "global"];
+
+const memoryCandidateSchema = z.object({
+  kind: z.enum(MEMORY_CANDIDATE_KINDS).default("fact"),
+  scope: z.enum(MEMORY_CANDIDATE_SCOPES).default("agent"),
+  content: z.string().trim().min(1),
+  evidence: z.string().optional().default(""),
+  confidence: z.number().min(0).max(1).default(0.5),
+});
 
 const parentReviewPolicySchema = z.preprocess((value) => {
   if (value == null || value === "") return undefined;
@@ -68,6 +78,7 @@ export const worklabResultSchema = z.object({
   questions: z.array(pendingQuestionSchema).max(3).default([]),
   subtasks: z.array(subtaskSchema).default([]),
   parent_review_policy: parentReviewPolicySchema,
+  memory_candidates: z.array(memoryCandidateSchema).default([]),
 }).passthrough();
 
 export const WORKLAB_RESULT_JSON_SCHEMA = {
@@ -156,6 +167,22 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     parent_review_policy: {
       type: ["string", "null"],
       description: `Optional parent review policy request. Recognized values: ${PARENT_REVIEW_POLICY_VALUES.join(", ")}. Unknown values are accepted and resolved by the watcher fallback.`,
+    },
+    memory_candidates: {
+      type: "array",
+      description: "Optional durable learnings from this run. Use sparingly for facts, preferences, procedures, failures, decisions, or episodes that should help future runs.",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "scope", "content", "evidence", "confidence"],
+        properties: {
+          kind: { type: "string", enum: MEMORY_CANDIDATE_KINDS },
+          scope: { type: "string", enum: MEMORY_CANDIDATE_SCOPES },
+          content: { type: "string" },
+          evidence: { type: "string" },
+          confidence: { type: "number", minimum: 0, maximum: 1 },
+        },
+      },
     },
   },
 };
@@ -464,6 +491,7 @@ const STRUCTURED_RESULT_FIELDS = new Set([
   "questions",
   "subtasks",
   "parent_review_policy",
+  "memory_candidates",
 ]);
 
 const STRUCTURED_JSON_FIELDS = new Set([
@@ -472,6 +500,7 @@ const STRUCTURED_JSON_FIELDS = new Set([
   "pending_actions",
   "questions",
   "subtasks",
+  "memory_candidates",
 ]);
 
 const STRUCTURED_STRING_FIELDS = new Set([
@@ -632,5 +661,6 @@ export function synthesizeWorklabResult({ stage = "execute", decision = "advance
     pending_actions: [],
     questions: [],
     subtasks: [],
+    memory_candidates: [],
   };
 }

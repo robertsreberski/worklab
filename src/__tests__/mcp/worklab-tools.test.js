@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
+import { recordAgentMemoryCandidates } from "../../core/agent-learning.js";
 import { createToolHandlers } from "../../mcp/agent/tools/index.js";
 
 describe("worklab-tools handlers", () => {
@@ -63,6 +64,24 @@ describe("worklab-tools handlers", () => {
     const h = createToolHandlers(c);
     const r = await h.memory_read({});
     expect(r.content).toBe("# memory\nstuff");
+  });
+
+  it("memory_search includes structured learning memories", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare(`
+        INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at)
+        VALUES ('a', 'A', 'claude', 'claude:claude-sonnet-4-6', 1, 1)
+      `).run();
+      recordAgentMemoryCandidates(db, {
+        agentName: "a",
+        autoApproveThreshold: 0.5,
+        candidates: [{ kind: "procedure", content: "Run focused memory tests before full verification.", confidence: 0.9 }],
+      });
+    });
+    const h = createToolHandlers(c);
+    const r = await h.memory_search({ query: "focused memory tests" });
+    expect(r.results.some((result) => result.kind === "agent_memory" && result.snippet.includes("focused memory tests"))).toBe(true);
   });
 
   it("todo_write replaces the current run checklist and todo_read returns it", async () => {

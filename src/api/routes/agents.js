@@ -7,10 +7,12 @@ import {
   getProvider,
   isValidSlug,
   loadSkills,
+  listAgentMemories,
   normalizeModelReference,
   normalizeReasoningEffortForModel,
   readAgentMemoryState,
   readRunSection,
+  updateAgentMemory,
   uniqueSlug,
 } from "../../core/index.js";
 import {
@@ -344,6 +346,32 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       consolidating: Boolean(consolidation?.isActive?.(req.params.name)),
     });
     res.json({ memory });
+  });
+
+  app.get("/api/agents/:name/memories", (req, res) => {
+    if (!agentExists(db, req.params.name)) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const memories = listAgentMemories(db, {
+      agentName: req.params.name,
+      status: req.query.status || null,
+      kind: req.query.kind || null,
+      limit,
+    });
+    res.json({ memories });
+  });
+
+  app.patch("/api/agents/:name/memories/:memoryId", (req, res) => {
+    if (!agentExists(db, req.params.name)) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
+    const current = listAgentMemories(db, { agentName: req.params.name, limit: 200 })
+      .find((memory) => memory.id === req.params.memoryId);
+    if (!current) return res.status(404).json({ error: { code: "not_found", message: "memory not found" } });
+    try {
+      const memory = updateAgentMemory(db, req.params.memoryId, req.body || {});
+      broker.broadcast("global", { type: "agent_memory_updated", name: req.params.name, memory_id: req.params.memoryId });
+      res.json({ memory });
+    } catch (err) {
+      res.status(400).json({ error: { code: "validation", message: err.message } });
+    }
   });
 
   app.post("/api/agents/:name/consolidate", (req, res) => {

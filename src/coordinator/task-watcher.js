@@ -10,6 +10,7 @@ import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 import { readSettings } from "../core/settings.js";
+import { recordRunResultLearning } from "../core/agent-learning.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
@@ -1277,6 +1278,19 @@ export function createTaskWatcher({
     if (!run) return;
 
     const processStatus = runProcessStatus(res);
+    try {
+      const recorded = recordRunResultLearning(db, {
+        task,
+        run: { ...run, process_status: processStatus, status: res.status || run.status },
+        result: res.worklabResult || safeParseJson(run.result_json, null),
+        settings: readSettings(db),
+      });
+      if (recorded.memories?.length) {
+        broker?.broadcast?.("global", { type: "agent_memory_updated", name: run.agent_name, count: recorded.memories.length });
+      }
+    } catch (err) {
+      logger?.warn?.({ err: err.message, runId }, "failed to record agent learning memory");
+    }
     if (processStatus === "succeeded" || res.status === "complete") {
       handleSuccessfulExit(taskId, runId, res, task, run);
     } else {
