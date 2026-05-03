@@ -616,6 +616,11 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_runs_status ON assistant_runs(status, started_at DESC)");
   db.exec("CREATE TABLE IF NOT EXISTS assistant_agent_logs (id TEXT PRIMARY KEY, assistant_run_id TEXT NOT NULL REFERENCES assistant_runs(id) ON DELETE CASCADE, events TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_assistant_agent_logs_run ON assistant_agent_logs(assistant_run_id)");
+  db.exec("CREATE TABLE IF NOT EXISTS agent_memories (id TEXT PRIMARY KEY, agent_name TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE, kind TEXT NOT NULL, scope TEXT NOT NULL DEFAULT 'agent', status TEXT NOT NULL DEFAULT 'draft', content TEXT NOT NULL, content_key TEXT NOT NULL, evidence TEXT, confidence REAL NOT NULL DEFAULT 0.5, project_id TEXT REFERENCES projects(id) ON DELETE SET NULL, task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL, run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL, source TEXT NOT NULL DEFAULT 'manual', metadata_json TEXT NOT NULL DEFAULT '{}', supersedes_id TEXT REFERENCES agent_memories(id) ON DELETE SET NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, last_used_at INTEGER, use_count INTEGER NOT NULL DEFAULT 0)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_agent_status ON agent_memories(agent_name, status, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, project_id, task_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_run ON agent_memories(run_id)");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memories_active_dedupe ON agent_memories(agent_name, kind, scope, content_key) WHERE status <> 'archived'");
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
   rebuildTaskWorkflowTables(db);

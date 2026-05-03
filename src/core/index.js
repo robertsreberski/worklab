@@ -105,6 +105,7 @@ export { getBuiltinProviderAvailability } from "./credentials.js";
 // ---------- IDs + slugs ----------
 export {
   newAgentLogId,
+  newAgentMemoryId,
   newAutomationId,
   newAutomationRunId,
   newAutomationTriggerId,
@@ -310,6 +311,19 @@ export {
   readAgentMemoryContext,
   readAgentMemoryState,
 } from "./memory.js";
+
+export {
+  AGENT_MEMORY_KINDS,
+  AGENT_MEMORY_SCOPES,
+  AGENT_MEMORY_STATUSES,
+  formatAgentLearningContext,
+  listAgentMemories,
+  normalizeAgentMemoryCandidate,
+  recordAgentMemoryCandidates,
+  selectAgentLearningMemories,
+  updateAgentMemory,
+  upsertAgentMemory,
+} from "./agent-learning.js";
 
 // ---------- Projects ----------
 export {
