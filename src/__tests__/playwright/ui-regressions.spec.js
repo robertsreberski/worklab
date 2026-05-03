@@ -2015,6 +2015,113 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(page.locator(".app-tabbar button", { hasText: "More" })).toHaveClass(/active/);
 });
 
+test("mobile tabbar does not create document scroll space below content", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(50);
+
+  const metrics = await page.evaluate(() => {
+    const app = document.querySelector(".app");
+    const appBody = document.querySelector(".app-body");
+    const appMain = document.querySelector(".app-main");
+    const tabbar = document.querySelector(".app-tabbar");
+    const appStyles = app ? getComputedStyle(app) : null;
+    const bodyStyles = appBody ? getComputedStyle(appBody) : null;
+    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      windowScrollY: Math.round(window.scrollY),
+      viewportHeight: window.innerHeight,
+      documentScrollHeight: document.documentElement.scrollHeight,
+      bodyScrollHeight: document.body.scrollHeight,
+      appPaddingBottom: appStyles ? parsePx(appStyles.paddingBottom) : 0,
+      bodyPaddingBottom: bodyStyles ? parsePx(bodyStyles.paddingBottom) : 0,
+      mainOverflowY: appMain ? getComputedStyle(appMain).overflowY : "",
+      tabbarDisplay: tabbarStyles?.display || "",
+      tabbarOverflowX: tabbarStyles?.overflowX || "",
+      tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
+      tabbarBottom: tabbar ? Math.round(tabbar.getBoundingClientRect().bottom) : 0,
+    };
+  });
+
+  expect(metrics.windowScrollY).toBe(0);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+  expect(metrics.bodyScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+  expect(metrics.appPaddingBottom).toBe(0);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.mainOverflowY).toBe("auto");
+  expect(metrics.tabbarDisplay).toBe("grid");
+  expect(["clip", "hidden"]).toContain(metrics.tabbarOverflowX);
+  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
+});
+
+test("mobile topbar owns the status safe-area background", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`);
+  await expect(page.locator(".mobile-topbar")).toBeVisible();
+  await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
+  await page.addStyleTag({
+    content: `
+      :root {
+        --worklab-safe-area-top: 31px;
+        --worklab-safe-area-bottom: 11px;
+      }
+    `,
+  });
+  await page.waitForTimeout(50);
+
+  const metrics = await page.evaluate(() => {
+    const app = document.querySelector(".app");
+    const appBody = document.querySelector(".app-body");
+    const topbar = document.querySelector(".mobile-topbar");
+    const back = document.querySelector(".mobile-topbar-back");
+    const main = document.querySelector(".app-main");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const topbarRect = topbar?.getBoundingClientRect();
+    const backRect = back?.getBoundingClientRect();
+    const mainRect = main?.getBoundingClientRect();
+    const dockRect = dock?.getBoundingClientRect();
+    const appStyles = app ? getComputedStyle(app) : null;
+    const bodyStyles = appBody ? getComputedStyle(appBody) : null;
+    const topbarStyles = topbar ? getComputedStyle(topbar) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      hasTopbarClass: app?.classList.contains("has-mobile-topbar") || false,
+      appPaddingTop: appStyles ? parsePx(appStyles.paddingTop) : -1,
+      bodyPaddingTop: bodyStyles ? parsePx(bodyStyles.paddingTop) : -1,
+      bodyPaddingBottom: bodyStyles ? parsePx(bodyStyles.paddingBottom) : -1,
+      topbarHeight: topbarRect ? Math.round(topbarRect.height) : 0,
+      topbarTop: topbarRect ? Math.round(topbarRect.top) : -1,
+      topbarPaddingTop: topbarStyles ? parsePx(topbarStyles.paddingTop) : -1,
+      topbarBackground: topbarStyles?.backgroundColor || "",
+      backTop: backRect ? Math.round(backRect.top) : -1,
+      backHeight: backRect ? Math.round(backRect.height) : 0,
+      mainTop: mainRect ? Math.round(mainRect.top) : -1,
+      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
+      dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
+      viewportHeight: window.innerHeight,
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(metrics.hasTopbarClass).toBe(true);
+  expect(metrics.appPaddingTop).toBe(0);
+  expect(metrics.bodyPaddingTop).toBe(0);
+  expect(metrics.topbarHeight).toBe(75);
+  expect(metrics.topbarTop).toBe(0);
+  expect(metrics.topbarPaddingTop).toBe(31);
+  expect(metrics.topbarBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(metrics.backTop).toBeGreaterThanOrEqual(31);
+  expect(metrics.backTop + metrics.backHeight).toBeLessThanOrEqual(metrics.topbarHeight);
+  expect(metrics.mainTop).toBe(metrics.topbarHeight);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.dockHeight);
+  expect(metrics.dockBottom).toBe(metrics.viewportHeight);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
 test("commander stage and project filters share selector sizing", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844 },
