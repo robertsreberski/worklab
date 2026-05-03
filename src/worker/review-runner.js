@@ -106,7 +106,7 @@ export async function runReview(ctx) {
   } catch (err) {
     return { kind: "review", error: err.message || String(err) };
   }
-  const { agent, skills, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
+  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
@@ -117,6 +117,7 @@ export async function runReview(ctx) {
       db,
       dataDir: config.dataDir,
       skills,
+      skillDirs,
       messages,
       cwd: config.workspace,
       mcpServers,
