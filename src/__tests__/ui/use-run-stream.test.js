@@ -238,6 +238,52 @@ describe("shared run stream subscriptions", () => {
     unsubscribe();
   });
 
+  it("keeps streamed thinking chunks as one live tail item", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        run: { id: "run-thinking-tail", status: "running", process_status: "running" },
+        log: { events: [], event_count: 0, events_truncated: false },
+      }),
+    }));
+
+    const unsubscribe = subscribeRunState("run-thinking-tail", (snapshot) => snapshots.push(snapshot), {
+      subscribe: true,
+      maxEvents: 10,
+    });
+
+    await vi.waitFor(() => {
+      expect(snapshots.at(-1)).toMatchObject({ loading: false });
+    });
+
+    for (let index = 1; index <= 20; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({
+          type: "assistant",
+          message: { content: [{ type: "thinking", text: `thought ${index} ` }] },
+          _event_seq: index,
+        }),
+      });
+    }
+    for (let index = 21; index <= 25; index += 1) {
+      FakeEventSource.instances[0].onmessage({
+        data: JSON.stringify({ type: "text", text: `event ${index}`, _event_seq: index }),
+      });
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const latest = snapshots.at(-1);
+    expect(latest.events.map((event) => event._event_seq)).toEqual(
+      Array.from({ length: 25 }, (_, index) => index + 1),
+    );
+    expect(latest.eventCount).toBe(25);
+    expect(latest.eventsTruncated).toBe(false);
+    expect(latest.fullHistoryLoaded).toBe(false);
+
+    unsubscribe();
+  });
+
   it("keeps live file artifacts after their source events leave the compact tail", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => ({
