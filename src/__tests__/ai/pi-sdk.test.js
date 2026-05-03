@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { generatePiResponse } from "../../ai/providers/pi-sdk.js";
 import { resolveModel } from "../../core/ai.js";
+import { createLiveInputQueue } from "../../core/live-input.js";
+import { formatLiveInputGuidance } from "../../ai/live-input-prompt.js";
 
 const EMPTY_USAGE = {
   input: 0,
@@ -30,6 +32,35 @@ function abortedStream(message = "terminated", { code = null, requestId = null, 
         ...(requestId ? { requestId } : {}),
       };
       stream.push({ type: "error", reason, error });
+    });
+    return stream;
+  };
+}
+
+function assistantMessage(model, text, { stopReason = "stop" } = {}) {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: EMPTY_USAGE,
+    stopReason,
+    timestamp: Date.now(),
+  };
+}
+
+function completeStream(text, { onDone } = {}) {
+  return (model, context) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const message = assistantMessage(model, text);
+      stream.push({ type: "start", partial: message });
+      stream.push({ type: "text_start", contentIndex: 0, partial: message });
+      stream.push({ type: "text_delta", contentIndex: 0, delta: text, partial: message });
+      stream.push({ type: "text_end", contentIndex: 0, content: text, partial: message });
+      stream.push({ type: "done", reason: "stop", message });
+      onDone?.({ model, context });
     });
     return stream;
   };
@@ -129,6 +160,47 @@ describe("generatePiResponse cancellation handling", () => {
 
     expect(result.providerSessionId).toBe("pi-session-prev");
     expect(result.diagnostics.provider_session_id).toBe("pi-session-prev");
+  });
+});
+
+describe("generatePiResponse live input", () => {
+  it("continues with live input that arrives just after the first assistant response", async () => {
+    const liveInput = createLiveInputQueue();
+    const contexts = [];
+    let streamCount = 0;
+    const streamFn = (model, context) => {
+      streamCount += 1;
+      contexts.push(context);
+      return completeStream(streamCount === 1 ? "Initial answer" : "Guided answer", {
+        onDone: () => {
+          if (streamCount === 1) {
+            liveInput.push({ id: "live-1", body: "Please narrow this to the API route.", createdAt: 123 });
+          }
+        },
+      })(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      liveInput,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+    });
+    liveInput.close();
+
+    expect(result.error).toBeNull();
+    expect(streamCount).toBe(2);
+    expect(contexts[1].messages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: "user",
+        content: formatLiveInputGuidance("Please narrow this to the API route."),
+      }),
+    ]));
+    expect(result.text).toBe("Guided answer");
   });
 });
 

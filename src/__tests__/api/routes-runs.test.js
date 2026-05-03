@@ -309,7 +309,7 @@ describe("POST /api/runs/:id/messages", () => {
     return { taskId, runId };
   }
 
-  it("persists and delivers a live run message", async () => {
+  it("delivers a live run message without creating a task comment", async () => {
     const deliveries = [];
     const watcher = {
       handleRunRequested: async () => ({ runId: "fake-run" }),
@@ -342,12 +342,8 @@ describe("POST /api/runs/:id/messages", () => {
         authorType: "human",
       },
     });
-    const comment = db.prepare("SELECT * FROM task_comments WHERE task_id = ?").get(taskId);
-    expect(comment).toMatchObject({
-      id: res.body.message.id,
-      author_type: "human",
-      body: "Please inspect the migration path.",
-    });
+    expect(res.body.runId).toBe(runId);
+    expect(db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId)).toHaveLength(0);
     expect(broker.size("global")).toBe(0);
   });
 
@@ -414,7 +410,7 @@ describe("POST /api/runs/:id/messages", () => {
     await agent.post(`/api/runs/${runId}/messages`).send({ body: "x".repeat(8001) }).expect(400);
   });
 
-  it("returns a delivery failure when persistence succeeds but worker delivery fails", async () => {
+  it("returns a delivery failure without creating a task comment", async () => {
     const watcher = {
       handleRunRequested: async () => ({ runId: "fake-run" }),
       cancel: () => true,
@@ -434,8 +430,12 @@ describe("POST /api/runs/:id/messages", () => {
       .expect(409);
 
     expect(res.body.delivered).toBe(false);
+    expect(res.body.runId).toBe(runId);
+    expect(res.body.message).toMatchObject({
+      body: "Try another path.",
+    });
     expect(res.body.error.code).toBe("delivery_failed");
-    expect(db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId)).toHaveLength(1);
+    expect(db.prepare("SELECT * FROM task_comments WHERE task_id = ?").all(taskId)).toHaveLength(0);
   });
 });
 
