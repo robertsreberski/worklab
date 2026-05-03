@@ -532,6 +532,9 @@ function ProjectDetail({ selectedId, onChanged }) {
             { label: "Slug", value: project.slug },
             { label: "Workdir", value: project.workdir || "Default workspace", mono: false },
             { label: "Worktrees", value: worktreeModeLabel(project.worktree_mode), mono: false },
+            project.repository_instructions?.recognized
+              ? { label: "Repository instructions", value: `${project.repository_instructions.filename} recognized`, mono: false }
+              : null,
             { label: "Tasks", value: String(project.stats?.task_count || 0), mono: false },
             { label: "Tags", value: project.tags?.length ? project.tags.join(", ") : "None", mono: false },
             {
@@ -660,6 +663,16 @@ function ProjectDetail({ selectedId, onChanged }) {
                 <span class="project-workdir-label">Worktrees</span>
                 <span class="project-workdir-value">{worktreeModeLabel(project.worktree_mode)}</span>
               </div>
+              {project.repository_instructions?.recognized && (
+                <div class="project-repository-status" title={project.repository_instructions.path || undefined}>
+                  <Chip variant="trigger" leading={<Icon name="file-text" size={10} />}>
+                    {project.repository_instructions.filename} recognized
+                  </Chip>
+                  <span>
+                    Injected into task run prompts as {project.repository_instructions.prompt_section || "Repository instructions"}.
+                  </span>
+                </div>
+              )}
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
                   <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} />

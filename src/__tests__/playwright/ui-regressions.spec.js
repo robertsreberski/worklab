@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -336,6 +336,9 @@ test.beforeAll(async () => {
     ok: [201],
   });
   skillName = skill.skill.name;
+  const projectWorkdir = join(workspaceDir, "mobile-layout-project");
+  mkdirSync(projectWorkdir, { recursive: true });
+  writeFileSync(join(projectWorkdir, "AGENTS.md"), "Use AGENTS.md guidance in task prompts.\n");
   const project = await requestJson("/api/projects", {
     method: "POST",
     body: {
@@ -343,6 +346,7 @@ test.beforeAll(async () => {
       slug: "mobile-layout-project",
       description: "Seeded project for mobile read actions.",
       context: "This seeded project keeps the project read page populated for mobile chrome tests.",
+      workdir: projectWorkdir,
       tags: ["mobile", "layout"],
     },
     ok: [201],
@@ -1854,6 +1858,17 @@ test("mobile agents skills projects and knowledge panes preserve compact premium
       `mobile polished pane ${route.hash}`,
     );
   }
+});
+
+test("project detail surfaces AGENTS.md prompt injection status", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${baseUrl}/#/projects/${projectSlug}`);
+
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
+  await expect(page.locator(".project-repository-status")).toContainText("AGENTS.md recognized");
+  await expect(page.locator(".project-repository-status")).toContainText("Injected into task run prompts as Repository instructions.");
+  await expect(page.locator(".entity-meta-row", { hasText: "Repository instructions" })).toContainText("AGENTS.md recognized");
+  await expectNoHorizontalOverflow(page, "project AGENTS.md status");
 });
 
 test("mobile scroll containers keep final content above bottom chrome", async ({ page }) => {
