@@ -43,6 +43,42 @@ export function formatCommanderCost(value) {
   return `$${number.toFixed(2)}`;
 }
 
+function labeledRun(count, label) {
+  return `${count} ${label} run${count === 1 ? "" : "s"}`;
+}
+
+function costSummarySegment(row = {}) {
+  const costed = Number(row.run_count || 0);
+  const unpriced = Number(row.unpriced_run_count || 0);
+  return `${labeledRun(costed, "priced")}${unpriced > 0 ? `, ${labeledRun(unpriced, "unpriced")}` : ""}`;
+}
+
+export function formatCommanderCostSummaryTitle(summary) {
+  const today = summary?.today || {};
+  const week = summary?.week || {};
+  const todayLabel = formatCommanderCost(today.total_usd) || "$0.00";
+  const weekLabel = formatCommanderCost(week.total_usd) || "$0.00";
+  const lines = [`Today: ${todayLabel} across ${costSummarySegment(today)}`];
+  if (Number(week.run_count || 0) > Number(today.run_count || 0)
+    || Number(week.unpriced_run_count || 0) > Number(today.unpriced_run_count || 0)) {
+    lines.push(`This week: ${weekLabel} across ${costSummarySegment(week)}`);
+  }
+  for (const row of summary?.today_by_agent || []) {
+    lines.push(`  - ${row.agent || "unattributed"}: ${formatCommanderCost(row.total_usd) || "$0.00"} (${costSummarySegment(row)})`);
+  }
+  return lines;
+}
+
+export function formatCommanderCostChipLabel(summary) {
+  const today = summary?.today;
+  if (!today || !Number.isFinite(Number(today.total_usd))) return null;
+  const costed = Number(today.run_count || 0);
+  const unpriced = Number(today.unpriced_run_count || 0);
+  if (costed > 0) return `${formatCommanderCost(today.total_usd)} today`;
+  if (unpriced > 0) return `${unpriced} unpriced today`;
+  return null;
+}
+
 function DailyCostChip() {
   const [summary, setSummary] = useState(null);
   useEffect(() => {
@@ -56,19 +92,12 @@ function DailyCostChip() {
     const handle = setInterval(load, 60_000);
     return () => { cancelled = true; clearInterval(handle); };
   }, []);
-  if (!summary?.today || !Number.isFinite(summary.today.total_usd) || summary.today.run_count === 0) return null;
-  const todayLabel = formatCommanderCost(summary.today.total_usd);
-  const weekLabel = formatCommanderCost(summary.week.total_usd);
-  const titleLines = [`Today: ${todayLabel} across ${summary.today.run_count} run${summary.today.run_count === 1 ? "" : "s"}`];
-  if (summary.week.run_count > summary.today.run_count) {
-    titleLines.push(`This week: ${weekLabel} across ${summary.week.run_count} runs`);
-  }
-  for (const row of summary.today_by_agent || []) {
-    titleLines.push(`  - ${row.agent || "unattributed"}: ${formatCommanderCost(row.total_usd)}`);
-  }
+  const chipLabel = formatCommanderCostChipLabel(summary);
+  if (!chipLabel) return null;
+  const titleLines = formatCommanderCostSummaryTitle(summary);
   return (
     <span class="commander-cost-chip" title={titleLines.join("\n")}>
-      {todayLabel} today
+      {chipLabel}
     </span>
   );
 }

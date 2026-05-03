@@ -173,12 +173,14 @@ export function Activity() {
   const stats = useMemo(() => {
     const runs = Number(summary?.run_count || 0);
     const costedRuns = Number(summary?.costed_run_count || 0);
+    const unpricedRuns = Number(summary?.unpriced_run_count || 0);
     const running = Number(summary?.running_count || 0);
     const errors = Number(summary?.error_count || 0);
     const settled = Math.max(0, runs - running - errors);
     return {
       runs,
       costedRuns,
+      unpricedRuns,
       running,
       errors,
       settled,
@@ -216,6 +218,7 @@ export function Activity() {
             <div class="activity-stat-subline">
               <span>{stats.averageCost}/run avg</span>
               <span>{fmtCount(stats.costedRuns)} costed</span>
+              {stats.unpricedRuns > 0 && <span>{fmtCount(stats.unpricedRuns)} unpriced</span>}
             </div>
             <div
               class="activity-cost-chart"
