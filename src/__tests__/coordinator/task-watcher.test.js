@@ -82,6 +82,19 @@ function tempDataDir() {
   return mkdtempSync(join(tmpdir(), "worklab-rich-final-"));
 }
 
+function seedRunLog(db, runId, dataDir) {
+  const rawDir = join(dataDir, "logs", "runs");
+  mkdirSync(rawDir, { recursive: true });
+  const rawLogPath = join(rawDir, `${runId}.jsonl`);
+  const initialEvent = { type: "final", text: "worker done", _event_seq: 1 };
+  writeFileSync(rawLogPath, `${JSON.stringify(initialEvent)}\n`);
+  db.prepare("UPDATE task_runs SET raw_output_path = ? WHERE id = ?").run(rawLogPath, runId);
+  db.prepare(
+    "INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'running', ?)",
+  ).run(`log-${runId}`, runId, JSON.stringify([initialEvent]), Date.now());
+  return rawLogPath;
+}
+
 function richFinalAnswer() {
   return `# Complete Restaurant Research
 
@@ -376,10 +389,13 @@ describe("task-watcher", () => {
     });
 
     const { runId } = await watcher.handleRunRequested(taskId);
+    const rawLogPath = seedRunLog(db, runId, dataDir);
+    const sourceHeadBefore = git(source, ["rev-parse", "HEAD"]);
     const runtimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
     writeFileSync(join(runtimeWorkdir, "feature.txt"), "AI feature\n");
     git(runtimeWorkdir, ["add", "feature.txt"]);
     git(runtimeWorkdir, ["commit", "-m", "add ai feature"]);
+    const branchHead = git(runtimeWorkdir, ["rev-parse", "HEAD"]);
 
     resolveDone({
       exitCode: 0,
@@ -394,8 +410,38 @@ describe("task-watcher", () => {
     expect(readFileSync(join(source, "feature.txt"), "utf8")).toBe("AI feature\n");
     expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage).toBe("done");
     const run = db.prepare("SELECT worktree_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
-    expect(JSON.parse(run.worktree_json)).toMatchObject({ status: "merged", cleaned: true });
-    expect(JSON.parse(run.diagnostics_json).worktree).toMatchObject({ status: "merged" });
+    expect(JSON.parse(run.worktree_json)).toMatchObject({
+      status: "merged",
+      cleaned: true,
+      source_head_before: sourceHeadBefore,
+      source_head_after: branchHead,
+      branch_head: branchHead,
+      message: expect.stringContaining("Worktree merged into source checkout"),
+    });
+    expect(JSON.parse(run.diagnostics_json).worktree).toMatchObject({
+      status: "merged",
+      source_head_before: sourceHeadBefore,
+      source_head_after: branchHead,
+      branch_head: branchHead,
+      message: expect.stringContaining("AI branch preserved"),
+    });
+    const events = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
+    expect(events.at(-1)).toMatchObject({
+      type: "worktree_reconcile",
+      source: "worklab_coordinator",
+      runId,
+      taskId,
+      status: "merged",
+      ok: true,
+      sourceHeadBefore,
+      sourceHeadAfter: branchHead,
+      branchHead,
+      cleaned: true,
+    });
+    expect(readFileSync(rawLogPath, "utf8")).toContain("\"type\":\"worktree_reconcile\"");
+    const systemComment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'system' AND body LIKE 'Worktree merged%'").get(taskId);
+    expect(systemComment.body).toContain(branchHead.slice(0, 7));
+    expect(systemComment.body).toContain("AI branch preserved");
   });
 
   it("pauses worktree merge when the source checkout is dirty at finalization", async () => {
@@ -421,11 +467,13 @@ describe("task-watcher", () => {
       dataDir,
     });
 
-    await watcher.handleRunRequested(taskId);
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const rawLogPath = seedRunLog(db, runId, dataDir);
     const runtimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
     writeFileSync(join(runtimeWorkdir, "feature.txt"), "AI feature\n");
     git(runtimeWorkdir, ["add", "feature.txt"]);
     git(runtimeWorkdir, ["commit", "-m", "add ai feature"]);
+    const branchHead = git(runtimeWorkdir, ["rev-parse", "HEAD"]);
     writeFileSync(join(source, "README.md"), "Human dirty edit\n");
 
     resolveDone({
@@ -442,7 +490,21 @@ describe("task-watcher", () => {
     const task = db.prepare("SELECT stage, stage_reason, pending_actions_json FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("awaiting_user");
     expect(task.stage_reason).toContain("source checkout has uncommitted changes");
+    expect(task.stage_reason).toContain(`worklab/run/${runId}`);
+    expect(task.stage_reason).toContain(branchHead.slice(0, 7));
     expect(JSON.parse(task.pending_actions_json)[0]).toContain("README.md");
+    const events = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
+    expect(events.at(-1)).toMatchObject({
+      type: "worktree_reconcile",
+      source: "worklab_coordinator",
+      runId,
+      taskId,
+      status: "blocked_dirty_source",
+      ok: false,
+      branchHead,
+      dirtyPaths: ["README.md"],
+    });
+    expect(readFileSync(rawLogPath, "utf8")).toContain("\"status\":\"blocked_dirty_source\"");
   });
 
   it("delegated subtasks inherit the parent project", async () => {
