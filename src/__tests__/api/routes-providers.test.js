@@ -561,5 +561,70 @@ describe("provider routes", () => {
       const res = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ enabled: true }).expect(400);
       expect(res.body.error.message).toMatch(/not runnable for agents or embeddings/i);
     });
+
+    it("updates and clears custom model pricing", async () => {
+      const dataDir = tmpDataDir();
+      const { agent, db } = makeTestServer({ dataDir });
+
+      const createRes = await agent.post("/api/providers").send({
+        name: "hosted",
+        provider_type: "openai_compat",
+        base_url: "https://api.example.com",
+        trust_public_url: true,
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      const model = upsertModel({
+        db,
+        providerId: id,
+        modelName: "priced-model",
+        displayName: "priced-model",
+        enabled: true,
+      });
+
+      const priced = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({
+        pricing: {
+          input_per_million: 2,
+          cached_input_per_million: 0.2,
+          cache_write_per_million: 2.5,
+          output_per_million: 8,
+        },
+      }).expect(200);
+      expect(priced.body.model.pricing).toMatchObject({
+        input_per_million: 2,
+        cached_input_per_million: 0.2,
+        cache_write_per_million: 2.5,
+        output_per_million: 8,
+      });
+
+      const cleared = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({ pricing: {} }).expect(200);
+      expect(cleared.body.model.pricing).toEqual({});
+    });
+
+    it("rejects invalid custom model pricing", async () => {
+      const dataDir = tmpDataDir();
+      const { agent, db } = makeTestServer({ dataDir });
+
+      const createRes = await agent.post("/api/providers").send({
+        name: "hosted",
+        provider_type: "openai_compat",
+        base_url: "https://api.example.com",
+        trust_public_url: true,
+      }).expect(201);
+
+      const id = createRes.body.provider.id;
+      const model = upsertModel({
+        db,
+        providerId: id,
+        modelName: "priced-model",
+        displayName: "priced-model",
+      });
+
+      const res = await agent.patch(`/api/providers/${id}/models/${model.id}`).send({
+        pricing: { input_per_million: -1 },
+      }).expect(400);
+      expect(res.body.error.code).toBe("validation");
+      expect(res.body.error.message).toMatch(/invalid pricing value/i);
+    });
   });
 });

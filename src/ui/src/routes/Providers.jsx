@@ -66,6 +66,15 @@ const PROVIDER_EDIT_SECTIONS = [
   { id: "provider-edit-models", num: "02", label: "Models", meta: "Discovery" },
 ];
 
+export const MODEL_PRICING_FIELDS = [
+  { key: "input_per_million", label: "Input" },
+  { key: "cached_input_per_million", label: "Cached" },
+  { key: "cache_write_per_million", label: "Cache write" },
+  { key: "output_per_million", label: "Output" },
+];
+
+const LOCAL_ZERO_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
+
 function EntityChromeBridge({ chrome }) {
   useAppChrome(chrome, [chrome]);
   return null;
@@ -133,11 +142,124 @@ function modelSwitchLabel(model) {
   return model.enabled ? "Enabled" : "Disabled";
 }
 
+function finitePrice(value) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+export function hasModelPricingRates(pricing = {}) {
+  return MODEL_PRICING_FIELDS.some((field) => finitePrice(pricing?.[field.key]) != null);
+}
+
+export function nextModelPricing(pricing = {}, key, rawValue) {
+  const next = {};
+  for (const field of MODEL_PRICING_FIELDS) {
+    const value = finitePrice(pricing?.[field.key]);
+    if (value != null) next[field.key] = value;
+  }
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) {
+    delete next[key];
+    return next;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) return null;
+  next[key] = value;
+  return next;
+}
+
+function sameModelPricing(a = {}, b = {}) {
+  return MODEL_PRICING_FIELDS.every((field) => finitePrice(a?.[field.key]) === finitePrice(b?.[field.key]));
+}
+
+function formatPricingDraft(value) {
+  const number = finitePrice(value);
+  return number == null ? "" : String(number);
+}
+
+function isPrivateProviderBaseUrl(baseUrl) {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    return host === "localhost"
+      || host === "host.docker.internal"
+      || host === "::1"
+      || host.startsWith("127.")
+      || host.startsWith("10.")
+      || host.startsWith("192.168.")
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+      || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host);
+  } catch {
+    return false;
+  }
+}
+
+export function modelPricingState(provider = {}, model = {}) {
+  if (hasModelPricingRates(model.pricing)) return "priced";
+  if (LOCAL_ZERO_PROVIDER_TYPES.has(provider.provider_type) || isPrivateProviderBaseUrl(provider.base_url)) return "local";
+  return "unpriced";
+}
+
+function modelPricingLabel(state) {
+  if (state === "priced") return "Priced";
+  if (state === "local") return "Local $0";
+  return "Unpriced";
+}
+
+function modelPricingVariant(state) {
+  if (state === "priced") return "accent";
+  if (state === "local") return "tag";
+  return "ghost";
+}
+
+function PricingInput({ model, field, onSave }) {
+  const savedValue = formatPricingDraft(model.pricing?.[field.key]);
+  const [draft, setDraft] = useState(savedValue);
+  const [invalid, setInvalid] = useState(false);
+
+  useEffect(() => {
+    setDraft(savedValue);
+    setInvalid(false);
+  }, [model.id, savedValue]);
+
+  function saveDraft() {
+    const next = nextModelPricing(model.pricing, field.key, draft);
+    if (!next) {
+      setInvalid(true);
+      setDraft(savedValue);
+      pushToast("Enter a non-negative price.", { variant: "error" });
+      return;
+    }
+    setInvalid(false);
+    if (sameModelPricing(next, model.pricing || {})) return;
+    onSave(model, field.key, draft);
+  }
+
+  return (
+    <Input
+      type="number"
+      min="0"
+      step="0.001"
+      inputmode="decimal"
+      value={draft}
+      invalid={invalid}
+      placeholder="-"
+      onInput={(event) => setDraft(event.target.value)}
+      onBlur={saveDraft}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.currentTarget.blur();
+      }}
+      aria-label={`${field.label} price per million tokens`}
+    />
+  );
+}
+
 function ProviderEdit({ providerId, onSaved, onDeleted }) {
   const isNew = providerId === "new";
   const [provider, setProvider] = useState(isNew ? EMPTY_FORM : null);
   const [baseline, setBaseline] = useState(isNew ? EMPTY_FORM : null);
   const [models, setModels] = useState([]);
+  const modelsRef = useRef([]);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -146,6 +268,10 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     const response = await api.listProviderModels(id);
     setModels(response.models || []);
   }, []);
+
+  useEffect(() => {
+    modelsRef.current = models;
+  }, [models]);
 
   const testProviderConnection = useCallback(async (id = providerId, { isCancelled = () => false } = {}) => {
     if (isNew) return null;
@@ -242,6 +368,23 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     onSaved?.(providerId);
     return providerId;
   });
+
+  const saveModelPricing = useCallback(async (model, key, rawValue) => {
+    const currentModel = modelsRef.current.find((item) => item.id === model.id) || model;
+    const pricing = nextModelPricing(currentModel.pricing, key, rawValue);
+    if (!pricing || sameModelPricing(pricing, currentModel.pricing || {})) return;
+    modelsRef.current = modelsRef.current.map((item) => (item.id === model.id ? { ...item, pricing } : item));
+    setModels(modelsRef.current);
+    try {
+      const response = await api.patchProviderModel(providerId, model.id, { pricing });
+      modelsRef.current = modelsRef.current.map((item) => (item.id === model.id ? response.model : item));
+      setModels(modelsRef.current);
+      pushToast("Model pricing saved", { variant: "success" });
+    } catch (error) {
+      pushToast(`Model pricing failed: ${error.message}`, { variant: "error" });
+      loadModels(providerId).catch(() => {});
+    }
+  }, [loadModels, providerId]);
 
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
   const cancel = () => guard.requestNavigation("#/providers");
@@ -529,6 +672,22 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                                 }}
                                 label={modelSwitchLabel(model)}
                               />
+                            </div>
+                            <div class="provider-model-pricing">
+                              <div class="provider-model-pricing-head">
+                                <span>Pricing per 1M tokens</span>
+                                <Chip variant={modelPricingVariant(modelPricingState(provider, model))}>
+                                  {modelPricingLabel(modelPricingState(provider, model))}
+                                </Chip>
+                              </div>
+                              <div class="provider-model-pricing-grid">
+                                {MODEL_PRICING_FIELDS.map((field) => (
+                                  <label class="provider-model-price-field" key={field.key}>
+                                    <span>{field.label}</span>
+                                    <PricingInput model={model} field={field} onSave={saveModelPricing} />
+                                  </label>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         );
