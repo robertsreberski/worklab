@@ -123,4 +123,28 @@ describe("push notification service", () => {
       last_error: "gone",
     });
   });
+
+  it("disables subscriptions after APNs BadJwtToken failures", async () => {
+    const db = makeTestDb();
+    seedTaskRun(db);
+    upsertPushSubscription(db, { subscription, now: 1000 });
+    const error = Object.assign(new Error("Received unexpected response code"), {
+      statusCode: 403,
+      body: "{\"reason\":\"BadJwtToken\"}",
+    });
+    const sender = vi.fn(async () => { throw error; });
+    const service = createWorklabPushNotificationService({ db, dataDir: "/tmp/worklab-test", sender, now: () => 2000 });
+
+    await service.notifyRunLifecycle({
+      type: "run_started",
+      runId: "run-1",
+      taskId: "task-1",
+      processStatus: "running",
+    });
+
+    expect(db.prepare("SELECT disabled_at, last_error FROM push_subscriptions WHERE endpoint = ?").get(subscription.endpoint)).toEqual({
+      disabled_at: 2000,
+      last_error: "Received unexpected response code",
+    });
+  });
 });

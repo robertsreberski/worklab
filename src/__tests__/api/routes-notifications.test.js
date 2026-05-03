@@ -79,4 +79,22 @@ describe("notification routes", () => {
       },
     }));
   });
+
+  it("disables subscriptions after APNs BadJwtToken test push failures", async () => {
+    const error = Object.assign(new Error("Received unexpected response code"), {
+      statusCode: 403,
+      body: "{\"reason\":\"BadJwtToken\"}",
+    });
+    const sender = vi.fn(async () => { throw error; });
+    const { agent, db } = server({ notifications: { sender } });
+    await agent.post("/api/notifications/subscriptions").send({ subscription }).expect(200);
+
+    const res = await agent.post("/api/notifications/test").expect(200);
+
+    expect(res.body).toEqual({ sent: 0, failed: 1 });
+    expect(db.prepare("SELECT disabled_at, last_error FROM push_subscriptions WHERE endpoint = ?").get(subscription.endpoint)).toMatchObject({
+      disabled_at: expect.any(Number),
+      last_error: "Received unexpected response code",
+    });
+  });
 });
