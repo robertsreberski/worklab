@@ -17,6 +17,7 @@ import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
 import { slugify } from "../core/slugs.js";
 import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
+import { reconcileRunWorktree } from "../core/worktrees.js";
 import { getTaskById, setTaskParentReviewPolicy } from "../core/db/queries/tasks.js";
 import {
   getRunById,
@@ -439,6 +440,70 @@ export function createTaskWatcher({
       }),
       runId,
     );
+  }
+
+  function setRunWorktreeMetadata(runId, metadata) {
+    db.prepare("UPDATE task_runs SET worktree_json = ? WHERE id = ?")
+      .run(metadata ? JSON.stringify(metadata) : null, runId);
+  }
+
+  function worktreeBlockMessage(result) {
+    const status = result?.status || "worktree_merge_blocked";
+    if (status === "missing_worktree_metadata" || status === "missing_worktree") {
+      return "Worktree merge paused because the run's AI worktree metadata is missing. Retry the execute run after checking the run workspace.";
+    }
+    if (status === "blocked_dirty_source") {
+      return `Worktree merge paused because the source checkout has uncommitted changes: ${(result.dirty_paths || []).join(", ") || "unknown paths"}.`;
+    }
+    if (status === "blocked_uncommitted_worktree") {
+      return `Worktree merge paused because the AI worktree has uncommitted changes: ${(result.dirty_paths || []).join(", ") || "unknown paths"}. Commit or discard those changes before retrying.`;
+    }
+    if (status === "merge_conflict") {
+      return `Worktree merge paused because current source changes conflict with AI work: ${(result.conflict_paths || []).join(", ") || "unknown paths"}. Resolve in the AI worktree with the source checkout treated as authoritative, then retry.`;
+    }
+    if (status === "source_moved") {
+      return "Worktree merge paused because the source checkout moved during reconciliation. Retry when the source checkout is stable.";
+    }
+    return `Worktree merge paused: ${status}.`;
+  }
+
+  function reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result }) {
+    if (stage !== "execute" || result?.decision !== "advance") return { ok: true, skipped: true };
+    if (run?.workspace_mode !== "worktree") return { ok: true, skipped: true };
+    const metadata = safeParseJson(run.worktree_json, null);
+    const reconcile = metadata?.worktree_root
+      ? reconcileRunWorktree({ metadata, cleanup: true })
+      : { ok: false, status: "missing_worktree_metadata", metadata };
+    const nextMetadata = reconcile.metadata
+      ? {
+        ...reconcile.metadata,
+        last_reconcile_status: reconcile.status,
+        last_reconcile_at: Date.now(),
+      }
+      : metadata;
+    setRunWorktreeMetadata(runId, nextMetadata);
+    patchRunDiagnostics(runId, {
+      worktree: {
+        status: reconcile.status,
+        ok: reconcile.ok,
+        source_head: reconcile.source_head || null,
+        branch_head: reconcile.branch_head || null,
+        conflict_paths: reconcile.conflict_paths || [],
+        dirty_paths: reconcile.dirty_paths || [],
+      },
+    });
+    if (reconcile.ok) return reconcile;
+
+    const message = worktreeBlockMessage(reconcile);
+    postSystemComment(taskId, message);
+    applySideEffects(taskId, [
+      { type: "clear_error_text" },
+      { type: "set_stage_reason", reason: message },
+      { type: "set_pending_actions", pendingActions: [message] },
+      { type: "clear_pending_questions" },
+      { type: "clear_blocking_issues" },
+    ], taskStage(getTaskById(db, taskId)), "awaiting_user");
+    return reconcile;
   }
 
   function continuationParentRun(run) {
@@ -1079,6 +1144,8 @@ export function createTaskWatcher({
     }
 
     updateRunResult(runId, result);
+    const worktreeReconcile = reconcileSuccessfulWorktreeRun({ taskId, runId, run, stage, result });
+    if (worktreeReconcile && worktreeReconcile.ok === false) return;
     postAgentFinalComment(taskId, agentName, result, res.finalText, {
       task,
       run,
