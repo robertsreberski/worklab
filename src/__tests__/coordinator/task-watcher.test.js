@@ -531,16 +531,17 @@ describe("task-watcher", () => {
     seedAgent(db, "coder");
     writeSettings(db, { delegation_max_children_per_round: 1 });
     const taskId = seedTask(db, { owner: "coder" });
-    let resolveDone;
-    const spawn = vi.fn(() => ({
-      pid: 1,
-      done: new Promise((resolve) => { resolveDone = resolve; }),
-      cancel: vi.fn(),
-    }));
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
-    await watcher.handleRunRequested(taskId);
+    const { runId } = await watcher.handleRunRequested(taskId);
 
-    resolveDone({
+    resolvers[0]({
       exitCode: 0,
       status: "complete",
       processStatus: "succeeded",
@@ -561,10 +562,26 @@ describe("task-watcher", () => {
 
     const task = db.prepare("SELECT stage, error_text, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
     expect(task.stage).toBe("execute");
-    expect(task.error_text).toMatch(/invalid delegation: delegation requested 2 subtasks, max is 1/);
-    expect(task.last_failure_kind).toBe("invalid_result");
+    expect(task.error_text).toBeNull();
+    expect(task.last_failure_kind).toBe("invalid_delegation");
     expect(db.prepare("SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?").get(taskId).count).toBe(0);
-    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "schema_correction",
+    });
+    const run = db.prepare("SELECT failure_kind, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(run.failure_kind).toBe("invalid_delegation");
+    expect(JSON.parse(run.diagnostics_json)).toMatchObject({
+      continuation_scheduled: true,
+      continuation_reason: "schema_correction",
+      delegation_requested_children: 2,
+      delegation_max_children: 1,
+      delegation_validation_error: "delegation requested 2 subtasks, max is 1",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic schema-correction%'").get(taskId);
+    expect(comment.body).toContain("max children is 1");
+    expect(comment.body).toContain("merge adjacent subtasks owned by the same agent or touching the same files");
   });
 
   it("rejects delegated subtasks with disabled or missing suggested agents", async () => {
