@@ -154,6 +154,8 @@ describe("retryableProviderFailureInfo", () => {
     "ECONNRESET while reading response",
     "Premature close",
     "Stream disconnected before completion",
+    "WebSocket error",
+    "websocket disconnected before completion",
   ])("treats %s as a retryable provider termination", (message) => {
     expect(retryableProviderFailureInfo({
       failureKind: "provider_unavailable",
@@ -164,6 +166,12 @@ describe("retryableProviderFailureInfo", () => {
   it("does not treat generic termination text as retryable without provider classification", () => {
     expect(retryableProviderFailureInfo({
       errorText: "terminated",
+    })).toMatchObject({ retryable: false, subkind: null });
+  });
+
+  it("does not treat generic WebSocket text as retryable without provider classification", () => {
+    expect(retryableProviderFailureInfo({
+      errorText: "WebSocket error",
     })).toMatchObject({ retryable: false, subkind: null });
   });
 

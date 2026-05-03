@@ -173,6 +173,11 @@ function pickPiErrorCodeFromException(err) {
   );
 }
 
+function inferPiErrorCode(message) {
+  if (/websocket/i.test(String(message || ""))) return "websocket_error";
+  return null;
+}
+
 function lastTextSnippet(...sources) {
   for (let i = sources.length - 1; i >= 0; i -= 1) {
     const arr = sources[i];
@@ -481,12 +486,13 @@ export async function generatePiResponse(systemPrompt, options = {}) {
               || "Pi agent aborted before final output"
             : null);
     const errorMessage = normalizePiErrorMessage(rawErrorMessage);
+    const piErrorCode = piErrorPayload?.code || inferPiErrorCode(errorMessage);
     const hadPartialProgress = !externalAbort
       && (stopReason === "error" || stopReason === "aborted")
       && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
     const errorDetails = errorMessage ? {
       pi_stop_reason: stopReason,
-      pi_error_code: piErrorPayload?.code || null,
+      pi_error_code: piErrorCode || null,
       pi_request_id: piErrorPayload?.request_id || null,
       last_text_excerpt: lastTextSnippet(assistantTexts, assistantThinking),
       last_tool_name: lastToolName,
@@ -503,7 +509,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
       external_abort: externalAbort,
-      ...(piErrorPayload?.code ? { pi_error_code: piErrorPayload.code } : {}),
+      ...(piErrorCode ? { pi_error_code: piErrorCode } : {}),
       ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
       ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
       ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
@@ -542,11 +548,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const errorMessage = normalizePiErrorMessage(
       piErrorPayload?.error_message || err?.message || String(err),
     );
+    const piErrorCode = piErrorPayload?.code || exceptionCode || inferPiErrorCode(errorMessage);
     const hadPartialProgress = !externalAbort
       && (toolResultsSeen > 0 || assistantTexts.length > 0 || assistantThinking.length > 0);
     const errorDetails = (!externalAbort && errorMessage) ? {
       pi_stop_reason: "error",
-      pi_error_code: piErrorPayload?.code || exceptionCode || null,
+      pi_error_code: piErrorCode || null,
       pi_request_id: piErrorPayload?.request_id || null,
       last_text_excerpt: lastTextSnippet(assistantTexts, assistantThinking),
       last_tool_name: lastToolName,
@@ -580,8 +587,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
         turn_count: turnCount,
         external_abort: externalAbort,
-        ...(piErrorPayload?.code || exceptionCode
-          ? { pi_error_code: piErrorPayload?.code || exceptionCode }
+        ...(piErrorCode
+          ? { pi_error_code: piErrorCode }
           : {}),
         ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
         ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),

@@ -1185,6 +1185,40 @@ describe("task-watcher", () => {
     });
   });
 
+  it("starts a recovery continuation after a provider WebSocket error", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable' WHERE id = ?").run(runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "WebSocket error",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: runId,
+      continuation_reason: "provider_retryable",
+      retryable_provider_error: true,
+      provider_error_subkind: "terminated",
+    });
+  });
+
   it("recovery continuation does not reset failure_count (only user retry does)", async () => {
     const db = makeTestDb();
     writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
@@ -1326,6 +1360,43 @@ describe("task-watcher", () => {
       continuation_reason: "provider_retryable_context_risk",
       provider_error_subkind: "retryable_request",
       provider_request_id: "7e4dca0a-6e17-486c-9af6-59785816e5de",
+    });
+  });
+
+  it("uses high context risk for WebSocket recovery diagnostics", async () => {
+    const db = makeTestDb();
+    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder" });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const { runId } = await watcher.handleRunRequested(taskId);
+    db.prepare(`
+      UPDATE task_runs
+      SET status = 'error', process_status = 'failed', failure_kind = 'provider_unavailable',
+          diagnostics_json = ?
+      WHERE id = ?
+    `).run(JSON.stringify({ context_risk: "high" }), runId);
+
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "provider_unavailable",
+      error: "WebSocket error",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(spawn.mock.calls[1][0].diagnosticsSeed).toMatchObject({
+      continuation_reason: "provider_retryable_context_risk",
+      provider_error_subkind: "terminated",
     });
   });
 
