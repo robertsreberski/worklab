@@ -34,6 +34,8 @@ import {
 import {
   LOG_LEVEL_OPTIONS,
   MCP_TRANSPORT_OPTIONS,
+  PLANNING_HARNESS_SELECT_OPTIONS,
+  PLANNING_TOOL_POLICY_SELECT_OPTIONS,
   SLACK_EFFORT_OPTIONS,
   jsonEqual,
   mcpAvailabilitySummary,
@@ -629,6 +631,24 @@ export function Settings() {
                     <NumberStepper min={0} max={23} value={settings.consolidation_hour} ariaLabel="Consolidation hour" onChange={(value) => setSettings({ ...settings, consolidation_hour: value })} />
                   </FormField>
                 </div>
+              </SettingPanel>
+              <SettingPanel icon="file-text" title="Planning harness" meta="Plan-stage prompt and tool policy.">
+                <FormGrid columns={2}>
+                  <FormField label="Harness">
+                    <Select
+                      value={settings.planning_harness || "balanced_polished"}
+                      options={PLANNING_HARNESS_SELECT_OPTIONS}
+                      onChange={(value) => setSettings({ ...settings, planning_harness: value })}
+                    />
+                  </FormField>
+                  <FormField label="Tool policy">
+                    <Select
+                      value={settings.planning_tool_policy || "read_only_shell_allowlist"}
+                      options={PLANNING_TOOL_POLICY_SELECT_OPTIONS}
+                      onChange={(value) => setSettings({ ...settings, planning_tool_policy: value })}
+                    />
+                  </FormField>
+                </FormGrid>
               </SettingPanel>
             </div>
             <AdvancedSettings summary="Context and logging limits" count={4}>
