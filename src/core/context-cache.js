@@ -84,6 +84,7 @@ export function makeContextCacheKey({
   artifactsHash = "",
   resolvedBlockersHash = "",
   delegationHash = "",
+  planningHash = "",
   memoryHash = "",
   journalHash = "",
   capabilitiesHash = "",
@@ -103,7 +104,7 @@ export function makeContextCacheKey({
     repositoryInstructionsHash || "",
     repositoryGitRootHash || "",
     commentsHash, skillsHash, mcpHash, builtinHash,
-    kbHash, artifactsHash, resolvedBlockersHash, delegationHash, memoryHash, journalHash, capabilitiesHash,
+    kbHash, artifactsHash, resolvedBlockersHash, delegationHash, planningHash, memoryHash, journalHash, capabilitiesHash,
   ];
   return createHash("sha256").update(parts.join("|")).digest("hex").slice(0, 24);
 }

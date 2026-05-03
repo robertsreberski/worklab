@@ -18,6 +18,55 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("do things");
   });
 
+  it("renders the balanced polished planning harness by default", () => {
+    const p = buildPlanSystemPrompt({ agent: baseAgent, task: { ...baseTask, stage: "plan" }, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
+    expect(p).toContain("## Planning harness");
+    expect(p).toContain("Harness: balanced polished");
+    expect(p).toContain("Summary");
+    expect(p).toContain("Key Changes");
+    expect(p).toContain("Test Plan");
+    expect(p).toContain("Assumptions");
+    expect(p).toContain("Plan this task.");
+    expect(p).toContain("Do not implement it.");
+  });
+
+  it("renders deep ExecPlan guidance when selected", () => {
+    const p = buildPlanSystemPrompt({
+      agent: baseAgent,
+      task: { ...baseTask, stage: "plan" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      settings: { planning_harness: "execplan_deep", planning_tool_policy: "read_only_no_shell" },
+    });
+    expect(p).toContain("Harness: ExecPlan deep");
+    expect(p).toContain("self-contained ExecPlan");
+    expect(p).toContain("Forbidden during planning: Write, Edit, and Bash");
+  });
+
+  it("injects the saved plan artifact into execute prompts", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: {
+        ...baseTask,
+        plan_body: "## Summary\n\nImplement the settings selector.\n\n## Test Plan\n\nRun focused tests.",
+        plan_updated_by: "planner",
+        plan_source_run_id: "run-plan",
+      },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    expect(p).toContain("## Plan artifact");
+    expect(p).toContain("Treat this saved plan as the current implementation contract.");
+    expect(p).toContain("Source run: `run-plan`");
+    expect(p).toContain("Implement the settings selector.");
+  });
+
   it("renders skill index with priority:always inlined", () => {
     const skills = [
       { name: "pin", trigger: "always", enabled: true, priority: "always", body: "PIN-BODY" },

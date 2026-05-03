@@ -52,6 +52,8 @@ describe("settings", () => {
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);
+    expect(res.body.settings.planning_harness).toBe("balanced_polished");
+    expect(res.body.settings.planning_tool_policy).toBe("read_only_shell_allowlist");
     expect(res.body.settings.delegation_enabled).toBe(true);
     expect(res.body.settings.delegation_max_depth).toBe(1);
     expect(res.body.settings.delegation_max_children_per_round).toBe(5);
@@ -91,6 +93,8 @@ describe("settings", () => {
       agent_budget_hard_turns: 800,
       agent_provider_recovery_enabled: false,
       agent_provider_recovery_base_delay_ms: 1000,
+      planning_harness: "execplan_deep",
+      planning_tool_policy: "read_only_no_shell",
       delegation_enabled: false,
       delegation_max_depth: 2,
       delegation_max_children_per_round: 7,
@@ -112,6 +116,8 @@ describe("settings", () => {
     expect(res.body.settings.agent_budget_hard_turns).toBe(800);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(false);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
+    expect(res.body.settings.planning_harness).toBe("execplan_deep");
+    expect(res.body.settings.planning_tool_policy).toBe("read_only_no_shell");
     expect(res.body.settings.delegation_enabled).toBe(false);
     expect(res.body.settings.delegation_max_depth).toBe(2);
     expect(res.body.settings.delegation_max_children_per_round).toBe(7);
@@ -142,6 +148,12 @@ describe("settings", () => {
     await agent.patch("/api/settings").send({ delegation_max_children_per_round: 0 }).expect(400);
     await agent.patch("/api/settings").send({ delegation_max_parallel_children: 0 }).expect(400);
     await agent.patch("/api/settings").send({ delegation_auto_run_children: 1 }).expect(400);
+  });
+
+  it("PATCH rejects invalid planning harness settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ planning_harness: "verbose_magic" }).expect(400);
+    await agent.patch("/api/settings").send({ planning_tool_policy: "full_access" }).expect(400);
   });
 
   it("PATCH rejects invalid agent turn budget settings", async () => {
