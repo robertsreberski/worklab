@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import { loadSkills } from "./skills.js";
 import { enrichCommentRows } from "./comments.js";
 import { getAvailableMcpServers } from "./mcp-config.js";
@@ -16,6 +15,7 @@ import { taskStage } from "./task-side-effects.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "./task-agents.js";
 import { applyBrowserToolsReviewOnlyPolicy } from "./browser-tool-policy.js";
 import { getProcessContextCache, makeContextCacheKey, shortHash } from "./context-cache.js";
+import { findRepositoryGitRoot, loadRepositoryInstructions } from "./repository-instructions.js";
 import { formatAgentLearningContext, selectAgentLearningMemories } from "./agent-learning.js";
 import { getTaskById } from "./db/queries/tasks.js";
 import { getLatestExecuteRunSummary, getRunById } from "./db/queries/runs.js";
@@ -52,54 +52,6 @@ function safeParseJson(value, fallback = null) {
   if (value === null || value === undefined) return fallback;
   if (typeof value !== "string") return value;
   try { return JSON.parse(value); } catch { return fallback; }
-}
-
-const REPOSITORY_INSTRUCTION_FILES = ["AGENTS.md"];
-const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 24_000;
-
-export function loadRepositoryInstructions(workdir) {
-  if (!workdir) return null;
-  for (const filename of REPOSITORY_INSTRUCTION_FILES) {
-    const path = join(workdir, filename);
-    try {
-      if (!existsSync(path)) continue;
-      const stat = statSync(path);
-      if (!stat.isFile()) continue;
-      const raw = readFileSync(path, "utf8");
-      const content = raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS
-        ? `${raw.slice(0, REPOSITORY_INSTRUCTIONS_MAX_CHARS)}\n...[truncated]`
-        : raw;
-      return {
-        filename,
-        path,
-        content,
-        hash: shortHash(raw),
-        size: Buffer.byteLength(raw, "utf8"),
-        truncated: raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS,
-      };
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-export function findRepositoryGitRoot(workdir) {
-  if (!workdir) return null;
-  let current = resolve(workdir);
-  while (current) {
-    const gitPath = join(current, ".git");
-    try {
-      const stat = statSync(gitPath);
-      if (stat.isDirectory() || stat.isFile()) return current;
-    } catch {
-      // Continue walking to the parent.
-    }
-    const parent = dirname(current);
-    if (!parent || parent === current) break;
-    current = parent;
-  }
-  return null;
 }
 
 export function modeForTaskStage(stage) {

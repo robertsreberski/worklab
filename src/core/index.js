@@ -349,6 +349,12 @@ export {
   uniqueProjectSlug,
 } from "./projects.js";
 
+export {
+  findRepositoryGitRoot,
+  loadRepositoryInstructions,
+  repositoryInstructionsPromptMetadata,
+} from "./repository-instructions.js";
+
 // ---------- Automations ----------
 export {
   createAutomationRunRows,
