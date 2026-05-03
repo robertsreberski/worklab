@@ -18,6 +18,14 @@ import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
 import { inspectWorktreeSupport, prepareRunWorktree } from "../../core/worktrees.js";
 
+const WORKTREE_TASK_MODES = new Set(["plan", "execute", "review"]);
+
+function shouldUseProjectWorktree(mode, project) {
+  return WORKTREE_TASK_MODES.has(mode)
+    && project?.worktree_mode
+    && project.worktree_mode !== "off";
+}
+
 function assertAgentRunnable(db, agentName) {
   const agent = getAgentByName(db, agentName);
   if (!agent) throw new Error(`agent not found: ${agentName}`);
@@ -67,7 +75,7 @@ export function spawnTaskRun({
   let workspaceMode = "direct";
   let sourceWorkdir = null;
   let worktreeMetadata = null;
-  if (mode === "execute" && projectRunContext.project?.worktree_mode && projectRunContext.project.worktree_mode !== "off") {
+  if (shouldUseProjectWorktree(mode, projectRunContext.project)) {
     const support = inspectWorktreeSupport(sourceWorkspace);
     if (!support.supported) {
       if (projectRunContext.project.worktree_mode === "required") {
