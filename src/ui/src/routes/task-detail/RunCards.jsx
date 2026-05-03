@@ -14,6 +14,7 @@ import {
   buildRunArtifactTree,
   extractRunArtifacts,
   groupRunArtifacts,
+  normalizeStoredArtifacts,
   runArtifactSummary,
 } from "../../lib/runArtifacts.js";
 import { formatActivityTime, formatDate } from "./format.js";
@@ -376,24 +377,58 @@ function taskArtifactsTitle(task, runningRun) {
   return parts.join(" · ");
 }
 
+function artifactSources(artifact = {}) {
+  return new Set([
+    artifact.source,
+    ...(Array.isArray(artifact.sources) ? artifact.sources : []),
+  ].filter(Boolean));
+}
+
+function isEditedArtifact(artifact = {}) {
+  const sources = artifactSources(artifact);
+  return artifact.artifact_type === "code_change" || sources.has("file_edit");
+}
+
+const OUTPUT_ARTIFACT_RANK = {
+  qa_output: 1,
+  generated_output: 2,
+  git_commit: 3,
+  scratch: 4,
+};
+
+export function editedRunArtifactsForDisplay(artifacts = []) {
+  return normalizeStoredArtifacts(artifacts).filter(isEditedArtifact);
+}
+
+export function outputRunArtifactsForDisplay(artifacts = []) {
+  return normalizeStoredArtifacts(artifacts)
+    .filter((artifact) => !isEditedArtifact(artifact))
+    .sort((left, right) => {
+      const rank = (OUTPUT_ARTIFACT_RANK[left.artifact_type] || 99) - (OUTPUT_ARTIFACT_RANK[right.artifact_type] || 99);
+      if (rank) return rank;
+      return String(left.display_path || left.path).localeCompare(String(right.display_path || right.path));
+    });
+}
+
+export function runArtifactMetaText(node = {}) {
+  if (node.type && node.type !== "file") return "";
+  const delta = artifactDeltaLabel(node);
+  if (delta) return delta;
+  if (node.status === "in_progress" || node.status === "running") return "pending";
+  if (node.event_count > 1) return `${node.event_count} edits`;
+  if (node.artifact_type === "qa_output") return "qa";
+  if (node.artifact_type === "git_commit") return "commit";
+  return "";
+}
+
 function RunArtifactMeta({ node }) {
   if (node.type !== "file") return null;
-  if (node.unavailable_reason) {
-    if (node.artifact_type === "qa_output") return <span class="run-artifact-meta muted">qa</span>;
-    return <span class="run-artifact-meta muted">{node.unavailable_reason}</span>;
-  }
-  if (node.event_count > 1) {
-    return <span class="run-artifact-meta muted">{node.event_count} edits</span>;
-  }
-  if (node.artifact_type === "git_commit") {
-    return <span class="run-artifact-meta muted">commit</span>;
-  }
-  const delta = artifactDeltaLabel(node);
-  if (delta) return <span class="run-artifact-meta delta">{delta}</span>;
-  if (node.status === "in_progress" || node.status === "running") {
-    return <span class="run-artifact-meta pending">pending</span>;
-  }
-  return null;
+  const text = runArtifactMetaText(node);
+  if (!text) return null;
+  const tone = text.startsWith("+")
+    ? "delta"
+    : text === "pending" ? "pending" : "muted";
+  return <span class={`run-artifact-meta ${tone}`}>{text}</span>;
 }
 
 export function RunArtifactsSection({ task, runningRun, streamState = null }) {
@@ -416,9 +451,11 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
       { id: runningRun?.id || "running", started_at: runningRun?.started_at, artifacts: liveArtifacts },
     ]);
   }, [task?.artifacts, liveArtifacts, runningRun?.id, runningRun?.started_at]);
-  const groups = useMemo(() => groupRunArtifacts(artifacts), [artifacts]);
-  const tree = useMemo(() => buildRunArtifactTree(artifacts), [artifacts]);
-  const summary = useMemo(() => runArtifactSummary(artifacts), [artifacts]);
+  const editedArtifacts = useMemo(() => editedRunArtifactsForDisplay(artifacts), [artifacts]);
+  const outputArtifacts = useMemo(() => outputRunArtifactsForDisplay(artifacts), [artifacts]);
+  const outputGroups = useMemo(() => groupRunArtifacts(outputArtifacts), [outputArtifacts]);
+  const tree = useMemo(() => buildRunArtifactTree(editedArtifacts), [editedArtifacts]);
+  const summary = useMemo(() => runArtifactSummary(editedArtifacts), [editedArtifacts]);
   const summaryLabel = summary.files > 0
     ? `${summary.files} file${summary.files === 1 ? "" : "s"}`
     : null;
@@ -426,16 +463,16 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
     ? `+${summary.added_lines} -${summary.removed_lines}`
     : null;
   const emptyText = loading
-    ? "Loading artifacts..."
+    ? "Loading edited files..."
     : isStreaming
-      ? "No artifacts recorded yet."
-      : "No artifacts recorded.";
+      ? "No edited files recorded yet."
+      : "No edited files recorded.";
 
   if (!task) return null;
   return (
     <div class="run-artifacts-section">
       <div class="task-rail-section-head">
-        <span class="all-caps">Artifacts</span>
+        <span class="all-caps">Edited files</span>
         {summaryLabel && (
           <span class="run-artifacts-summary">
             <span>{summaryLabel}</span>
@@ -444,31 +481,33 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
         )}
       </div>
       <div class="run-artifacts-context" title={task.id}>{taskArtifactsTitle(task, runningRun)}</div>
-      {groups.length ? (
-        <div class="run-artifact-groups">
-          {groups.map((group) => (
-            <section class="run-artifact-group" key={group.id}>
-              <div class="run-artifact-group-title">
-                <span>{group.label}</span>
-                <span>{group.summary.files}</span>
-              </div>
-              <FileTree
-                files={group.tree}
-                ariaLabel={`${group.label} artifacts`}
-                renderMeta={(node) => <RunArtifactMeta node={node} />}
-                getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
-              />
-            </section>
-          ))}
-        </div>
-      ) : (
-        <FileTree
-          files={tree}
-          ariaLabel="Task artifacts"
-          emptyText={emptyText}
-          renderMeta={(node) => <RunArtifactMeta node={node} />}
-          getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
-        />
+      <FileTree
+        files={tree}
+        ariaLabel="Edited files"
+        emptyText={emptyText}
+        renderMeta={(node) => <RunArtifactMeta node={node} />}
+        getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+      />
+      {outputGroups.length > 0 && (
+        <details class="run-artifact-outputs">
+          <summary>Run outputs · {outputArtifacts.length}</summary>
+          <div class="run-artifact-groups">
+            {outputGroups.map((group) => (
+              <section class="run-artifact-group" key={group.id}>
+                <div class="run-artifact-group-title">
+                  <span>{group.label}</span>
+                  <span>{group.summary.files}</span>
+                </div>
+                <FileTree
+                  files={group.tree}
+                  ariaLabel={`${group.label} artifacts`}
+                  renderMeta={(node) => <RunArtifactMeta node={node} />}
+                  getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
+                />
+              </section>
+            ))}
+          </div>
+        </details>
       )}
     </div>
   );

@@ -55,12 +55,42 @@ describe("artifact collection", () => {
       kind: "update",
       status: "completed",
       last_run_id: "run-delta",
+      added_lines: 1,
+      removed_lines: 1,
+      has_line_delta: true,
     });
+    expect(artifacts.find((artifact) => artifact.path.endsWith("src/existing.js"))?.unavailable_reason).toBeNull();
     expect(artifacts.find((artifact) => artifact.path.endsWith("report.txt"))).toMatchObject({
       artifact_type: "generated_output",
       source: "workspace_delta",
       kind: "add",
     });
+  });
+
+  it("collects workspace delta hunks for small edited files", () => {
+    const workdir = makeRoot();
+    mkdirSync(join(workdir, "src"), { recursive: true });
+    writeFileSync(join(workdir, "src", "app.js"), "one\ntwo\nthree\n");
+
+    const before = createWorkspaceSnapshot({ workdir });
+
+    writeFileSync(join(workdir, "src", "app.js"), "one\nTWO\nthree\nfour\n");
+
+    const { artifacts } = collectWorkspaceDeltaArtifacts(before, {
+      workdir,
+      runId: "run-delta",
+      endedAt: 1234,
+    });
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      display_path: "src/app.js",
+      added_lines: 2,
+      removed_lines: 1,
+      has_line_delta: true,
+      unavailable_reason: null,
+    });
+    expect(artifacts[0].hunks).toEqual([{ start: 2, end: 2 }, { start: 4, end: 4 }]);
   });
 
   it("collects QA output files with safe run artifact links", () => {

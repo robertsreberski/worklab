@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   aggregateRunArtifacts,
+  artifactsForRunRow,
   formatHunkRanges,
   formatTaskArtifactsForPrompt,
   loadTaskArtifacts,
+  normalizeStoredArtifacts,
 } from "../../core/run-artifacts.js";
 import { makeTestDb } from "../helpers/test-db.js";
 
@@ -114,6 +116,81 @@ describe("core run artifacts", () => {
 
     expect(body).toContain("Task-wide file changes before this run: 1 file, +2 -1 across 1 run.");
     expect(body).toContain("- `src/a.js` (+2 -1, last run `run-1`)");
+  });
+
+  it("displays a single absolute artifact relative to the run workspace", () => {
+    const artifacts = artifactsForRunRow({
+      id: "run-workspace",
+      workdir: "/Users/me/project",
+      artifacts_json: JSON.stringify([{
+        path: "/Users/me/project/src/app.js",
+        kind: "update",
+        status: "completed",
+        artifact_type: "code_change",
+      }]),
+    });
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      path: "/Users/me/project/src/app.js",
+      display_path: "src/app.js",
+    });
+  });
+
+  it("displays legacy artifact path fallbacks relative to the run workspace", () => {
+    const artifacts = artifactsForRunRow({
+      id: "run-legacy-paths",
+      workdir: "/Users/me/project",
+      artifact_paths_json: JSON.stringify([
+        "/Users/me/project/src/fallback.js",
+      ]),
+    });
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      path: "/Users/me/project/src/fallback.js",
+      display_path: "src/fallback.js",
+    });
+  });
+
+  it("displays worktree runtime artifacts relative to the source workspace", () => {
+    const artifacts = artifactsForRunRow({
+      id: "run-worktree",
+      workdir: "/Users/me/.worklab/runs/run-worktree/worktree/packages/app",
+      source_workdir: "/Users/me/project/packages/app",
+      worktree_json: JSON.stringify({
+        runtime_workdir: "/Users/me/.worklab/runs/run-worktree/worktree/packages/app",
+        worktree_root: "/Users/me/.worklab/runs/run-worktree/worktree",
+      }),
+      artifacts_json: JSON.stringify([{
+        path: "/Users/me/.worklab/runs/run-worktree/worktree/packages/app/src/app.js",
+        kind: "update",
+        status: "completed",
+        artifact_type: "code_change",
+      }]),
+    });
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0].display_path).toBe("src/app.js");
+    expect(artifacts[0].display_path).not.toContain(".worklab");
+    expect(artifacts[0].display_path).not.toContain("worktree");
+  });
+
+  it("normalizes stored legacy artifacts at read time without rewriting raw paths", () => {
+    const artifacts = normalizeStoredArtifacts([{
+      path: "/Users/me/project/src/legacy.js",
+      display_path: "legacy.js",
+      kind: "update",
+      status: "completed",
+      artifact_type: "code_change",
+    }], {
+      run: { workdir: "/Users/me/project" },
+    });
+
+    expect(artifacts[0]).toMatchObject({
+      path: "/Users/me/project/src/legacy.js",
+      display_path: "src/legacy.js",
+    });
   });
 
   it("replaces older-run hunks with the latest run's ranges, but keeps cumulative line counts", () => {
