@@ -175,6 +175,44 @@ describe("providers", () => {
     });
   });
 
+  it("keeps omitted pricing but clears explicitly empty pricing updates", () => {
+    const provider = createProvider({
+      db,
+      dataDir,
+      name: "compat",
+      provider_type: "openai_compat",
+      base_url: "http://localhost:8000",
+    });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "priced-model",
+      pricing: {
+        input_per_million: 1,
+        output_per_million: 5,
+      },
+    });
+
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "priced-model",
+      displayName: "Priced model",
+    });
+    expect(listModels({ db, providerId: provider.id })[0].pricing).toMatchObject({
+      input_per_million: 1,
+      output_per_million: 5,
+    });
+
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "priced-model",
+      pricing: {},
+    });
+    expect(listModels({ db, providerId: provider.id })[0].pricing).toEqual({});
+  });
+
   it("rejects disabled models when resolving Vercel model references", async () => {
     const provider = createProvider({
       db,

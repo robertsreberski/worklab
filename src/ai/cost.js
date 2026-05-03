@@ -12,8 +12,9 @@ const CLAUDE_PRICING = {
 };
 
 function finiteOrNull(value) {
+  if (value == null || value === "") return null;
   const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
 function rate(value, fallback = 0) {
@@ -21,9 +22,9 @@ function rate(value, fallback = 0) {
   return n == null ? fallback : n;
 }
 
-function normalizePricing(pricing, { source, priced = true } = {}) {
+function normalizePricing(pricing, { source, priced = true, missing = 0 } = {}) {
   if (!pricing || typeof pricing !== "object") return null;
-  const input = rate(pricing.input ?? pricing.input_per_million);
+  const input = rate(pricing.input ?? pricing.input_per_million, missing);
   const cacheRead = rate(
     pricing.cacheRead
       ?? pricing.cachedInput
@@ -34,8 +35,9 @@ function normalizePricing(pricing, { source, priced = true } = {}) {
     pricing.cacheWrite
       ?? pricing.cache_write_per_million
       ?? pricing.cache_creation_per_million,
+    missing,
   );
-  const output = rate(pricing.output ?? pricing.output_per_million);
+  const output = rate(pricing.output ?? pricing.output_per_million, missing);
   return { input, cacheRead, cacheWrite, output, source, priced };
 }
 
@@ -107,7 +109,7 @@ function customProviderPricing(db, parsed) {
     if (!row) return null;
     const pricing = row.pricing_json ? JSON.parse(row.pricing_json) : {};
     if (pricingHasRates(pricing)) {
-      return normalizePricing(pricing, { source: "custom" });
+      return normalizePricing(pricing, { source: "custom", missing: null });
     }
     if (["ollama", "lmstudio", "vllm"].includes(row.provider_type) || isPrivateHost(row.base_url)) {
       return zeroPricing("custom-local");
@@ -157,10 +159,18 @@ export function estimateCost({
   const cacheWrite = Math.max(0, Number(cacheWriteTokens ?? cacheCreationTokens) || 0);
   const input = Math.max(0, Number(inputTokens) || 0);
   const output = Math.max(0, Number(outputTokens) || 0);
-  return (
-    (input / 1_000_000) * pricing.input +
-    (cacheRead / 1_000_000) * pricing.cacheRead +
-    (cacheWrite / 1_000_000) * pricing.cacheWrite +
-    (output / 1_000_000) * pricing.output
-  );
+  const parts = [
+    [input, pricing.input],
+    [cacheRead, pricing.cacheRead],
+    [cacheWrite, pricing.cacheWrite],
+    [output, pricing.output],
+  ];
+  let total = 0;
+  for (const [tokens, price] of parts) {
+    if (tokens <= 0) continue;
+    const priceNumber = finiteOrNull(price);
+    if (priceNumber == null) return null;
+    total += (tokens / 1_000_000) * priceNumber;
+  }
+  return total;
 }

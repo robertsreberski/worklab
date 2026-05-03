@@ -8440,6 +8440,42 @@ html.assistant-resizing * {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.provider-model-pricing {
+  padding-top: var(--sp-3);
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+.provider-model-pricing-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+  margin-bottom: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.provider-model-pricing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  gap: var(--sp-2);
+}
+.provider-model-price-field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.provider-model-price-field > span {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+.provider-model-price-field .input {
+  width: 100%;
+  font-family: var(--font-mono);
+}
 
 /* §6.11 Automations — recent run row meta cluster */
 .automation-list-row-meta {

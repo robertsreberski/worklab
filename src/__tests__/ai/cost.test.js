@@ -99,6 +99,37 @@ describe("cost estimation", () => {
     });
   }));
 
+  it("does not undercount hosted custom models when a used rate is missing", () => withDb((db) => {
+    const provider = createProvider({
+      db,
+      name: "hosted",
+      provider_type: "openai_compat",
+      base_url: "https://api.example.com",
+      trust_public_url: true,
+    });
+    upsertModel({
+      db,
+      providerId: provider.id,
+      modelName: "partial",
+      pricing: {
+        input_per_million: 2,
+      },
+    });
+
+    expect(estimateCost({
+      db,
+      model: `pi:${provider.id}:partial`,
+      inputTokens: 1_000_000,
+      outputTokens: 0,
+    })).toBeCloseTo(2);
+    expect(estimateCost({
+      db,
+      model: `pi:${provider.id}:partial`,
+      inputTokens: 1_000_000,
+      outputTokens: 1,
+    })).toBeNull();
+  }));
+
   it("treats private/local custom providers as explicit zero marginal cost unless pricing is entered", () => withDb((db) => {
     const provider = createProvider({
       db,

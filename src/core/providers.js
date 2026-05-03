@@ -32,6 +32,12 @@ const OLLAMA_EFFORT_REASONING_HINTS = ["gpt-oss"];
 const OLLAMA_EFFORT_REASONING_LEVELS = ["low", "medium", "high"];
 const OLLAMA_TOGGLE_REASONING_HINTS = ["deepseek", "qwen", "qwq", "thinking", "reasoning"];
 const AGENT_CHAT_CAPABILITIES = new Set(["chat", "completion", "tools", "thinking", "reasoning", "vision"]);
+const MODEL_PRICING_KEYS = [
+  "input_per_million",
+  "cached_input_per_million",
+  "cache_write_per_million",
+  "output_per_million",
+];
 
 const PRIVATE_HOSTNAMES = new Set(["localhost", "host.docker.internal"]);
 const PRIVATE_V4_CIDRS = [
@@ -237,20 +243,49 @@ export function getModelByProviderAndName({ db, providerId, modelName }) {
   return rowToModel(db.prepare("SELECT * FROM custom_models WHERE provider_id = ? AND model_name = ?").get(providerId, modelName));
 }
 
-function pricingHasRates(pricing = {}) {
-  return [
-    pricing.input_per_million,
-    pricing.cached_input_per_million,
-    pricing.cache_write_per_million,
-    pricing.output_per_million,
-  ].some((value) => Number.isFinite(Number(value)));
+function pricingRate(value) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-export function upsertModel({ db, providerId, modelName, displayName, alias, capabilities = {}, pricing = {}, enabled }) {
+function pricingHasRates(pricing = {}) {
+  return MODEL_PRICING_KEYS.some((key) => pricingRate(pricing?.[key]) != null);
+}
+
+export function normalizeModelPricing(pricing = {}) {
+  if (!pricing || typeof pricing !== "object" || Array.isArray(pricing)) return {};
+  const next = {};
+  for (const key of MODEL_PRICING_KEYS) {
+    const raw = pricing[key];
+    if (raw == null || raw === "") continue;
+    const value = Number(raw);
+    if (!Number.isFinite(value) || value < 0) throw new Error(`invalid pricing value: ${key}`);
+    next[key] = value;
+  }
+  return next;
+}
+
+export function upsertModel(options) {
+  const {
+    db,
+    providerId,
+    modelName,
+    displayName,
+    alias,
+    capabilities = {},
+    pricing,
+    enabled,
+    preservePricing = false,
+  } = options;
+  const pricingProvided = Object.prototype.hasOwnProperty.call(options, "pricing");
   const existing = getModelByProviderAndName({ db, providerId, modelName });
   const now = Date.now();
   const caps = JSON.stringify(capabilities || {});
-  const nextPricing = existing && !pricingHasRates(pricing) ? existing.pricing : (pricing || {});
+  const normalizedPricing = pricingProvided ? normalizeModelPricing(pricing || {}) : undefined;
+  const nextPricing = existing && (!pricingProvided || (preservePricing && !pricingHasRates(normalizedPricing)))
+    ? existing.pricing
+    : (normalizedPricing || {});
   const price = JSON.stringify(nextPricing);
   if (existing) {
     db.prepare(`
@@ -499,6 +534,7 @@ export async function discoverModels({ db, dataDir, providerId, fetchImpl = fetc
     modelName: model.modelName,
     displayName: model.displayName,
     capabilities: model.capabilities,
+    preservePricing: true,
     enabled: model.capabilities?.embedding === true
       && !getModelByProviderAndName({ db, providerId: provider.id, modelName: model.modelName })
       ? true

@@ -121,31 +121,35 @@ export function registerProviderRoutes(app, { db, dataDir, broker }) {
     if (!model || model.provider_id !== req.params.id) return error(res, 404, "not_found", "model not found");
     const body = req.body || {};
     const provider = getProvider({ db, dataDir, id: req.params.id, includeKey: false });
-    if (body.enabled === true) {
-      const capabilities = modelRunStatus(provider, model, body.capabilities ?? model.capabilities);
-      if (!capabilities.runnable_for_agent && capabilities.embedding !== true) {
-        return error(res, 400, "validation", `model is not runnable for agents or embeddings: ${capabilities.unavailable_reason}`);
+    try {
+      if (body.enabled === true) {
+        const capabilities = modelRunStatus(provider, model, body.capabilities ?? model.capabilities);
+        if (!capabilities.runnable_for_agent && capabilities.embedding !== true) {
+          return error(res, 400, "validation", `model is not runnable for agents or embeddings: ${capabilities.unavailable_reason}`);
+        }
       }
+      let updated;
+      if (body.display_name !== undefined || body.alias !== undefined || body.capabilities !== undefined || body.pricing !== undefined) {
+        updated = upsertModel({
+          db,
+          providerId: req.params.id,
+          modelName: model.model_name,
+          displayName: body.display_name ?? model.display_name,
+          alias: body.alias ?? model.alias,
+          capabilities: body.capabilities ?? model.capabilities,
+          pricing: body.pricing ?? model.pricing,
+          ...(body.enabled !== undefined ? { enabled: !!body.enabled } : {}),
+        });
+      } else if (body.enabled !== undefined) {
+        updated = setModelEnabled({ db, id: req.params.modelId, enabled: !!body.enabled });
+      } else {
+        updated = model;
+      }
+      broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
+      res.json({ model: withCapabilities(provider, updated) });
+    } catch (err) {
+      error(res, 400, "validation", err.message);
     }
-    let updated;
-    if (body.display_name !== undefined || body.alias !== undefined || body.capabilities !== undefined || body.pricing !== undefined) {
-      updated = upsertModel({
-        db,
-        providerId: req.params.id,
-        modelName: model.model_name,
-        displayName: body.display_name ?? model.display_name,
-        alias: body.alias ?? model.alias,
-        capabilities: body.capabilities ?? model.capabilities,
-        pricing: body.pricing ?? model.pricing,
-        ...(body.enabled !== undefined ? { enabled: !!body.enabled } : {}),
-      });
-    } else if (body.enabled !== undefined) {
-      updated = setModelEnabled({ db, id: req.params.modelId, enabled: !!body.enabled });
-    } else {
-      updated = model;
-    }
-    broker.broadcast("global", { type: "provider_models_updated", id: req.params.id });
-    res.json({ model: withCapabilities(provider, updated) });
   });
 
   // Reverse link: which agents point at this provider. Agent model strings
