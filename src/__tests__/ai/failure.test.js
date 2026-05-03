@@ -53,6 +53,7 @@ describe("classifyFailure", () => {
 
   it("respects an explicit hint when valid", () => {
     expect(classifyFailure({ exitCode: 1, errorText: "x", hint: "tool_failure" })).toBe("tool_failure");
+    expect(classifyFailure({ exitCode: 1, errorText: "x", hint: "invalid_delegation" })).toBe("invalid_delegation");
   });
 
   it("ignores invalid hints", () => {
@@ -80,7 +81,7 @@ describe("classifyFailure", () => {
   it("FAILURE_KINDS includes the new entries", () => {
     expect(FAILURE_KINDS).toEqual(expect.arrayContaining([
       "budget_exceeded", "child_failed", "cancelled", "cancelled_user", "cancelled_stale", "cancelled_signal",
-      "provider_unavailable_exhausted",
+      "invalid_delegation", "provider_unavailable_exhausted",
     ]));
   });
 

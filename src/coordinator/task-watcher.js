@@ -570,6 +570,7 @@ export function createTaskWatcher({
   }
 
   function schemaCorrectionFailure({ failureKind, res, run }) {
+    if (failureKind === "invalid_delegation") return true;
     if (failureKind !== "invalid_result") return false;
     if (res?.resultError) return true;
     const diagnostics = {
@@ -734,6 +735,19 @@ export function createTaskWatcher({
         : "provider_retryable",
       providerInfo: recovery.providerInfo,
     });
+    const diagnostics = {
+      ...safeParseJson(run?.diagnostics_json, {}),
+      ...(res?.diagnostics || {}),
+    };
+    const delegationRetryGuidance = failureKind === "invalid_delegation"
+      ? [
+          `The previous delegation request exceeded policy: ${diagnostics.delegation_validation_error || res?.error || "invalid delegation"}.`,
+          diagnostics.delegation_max_children
+            ? `The max children is ${diagnostics.delegation_max_children}. Return at most that many subtasks; merge adjacent subtasks owned by the same agent or touching the same files.`
+            : "Return at most the configured max children; merge adjacent subtasks owned by the same agent or touching the same files.",
+          "Preserve the original work by combining instructions, acceptance criteria, expected artifacts, and depends_on references inside the fewer subtasks.",
+        ]
+      : [];
     const heading = recovery.reason === "usage_limit"
       ? "Automatic continuation after context-window overflow."
       : recovery.reason === "schema_correction"
@@ -745,6 +759,7 @@ export function createTaskWatcher({
         : `Automatic continuation after retryable provider error${recovery.providerInfo?.subkind ? ` (${recovery.providerInfo.subkind})` : ""}.`;
     const retryGuidance = recovery.reason === "schema_correction"
       ? [
+          ...delegationRetryGuidance,
           "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
           "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
           "Do not use XML, tool-call syntax, or `<parameter name=...>` tags; every field must be a top-level JSON property.",
@@ -865,7 +880,17 @@ export function createTaskWatcher({
     }
     const maxChildren = Number(settings.delegation_max_children_per_round ?? 5);
     if (items.length > maxChildren) {
-      return { ok: false, error: `delegation requested ${items.length} subtasks, max is ${maxChildren}` };
+      const error = `delegation requested ${items.length} subtasks, max is ${maxChildren}`;
+      return {
+        ok: false,
+        error,
+        failureKind: "invalid_delegation",
+        diagnostics: {
+          delegation_requested_children: items.length,
+          delegation_max_children: maxChildren,
+          delegation_validation_error: error,
+        },
+      };
     }
     if (detectSubtaskCycles(items)) {
       return { ok: false, error: "delegated subtasks form a dependency cycle" };
@@ -1131,6 +1156,7 @@ export function createTaskWatcher({
           error: `${errorPrefix}: ${validation.error}`,
           processStatus: "failed",
           failureKind,
+          diagnostics: validation.diagnostics,
         }, task, run);
         return;
       }
@@ -1251,6 +1277,9 @@ export function createTaskWatcher({
        SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, ?)
        WHERE id = ?`,
     ).run(failureKind, stage, runId);
+    if (res?.diagnostics && typeof res.diagnostics === "object" && !Array.isArray(res.diagnostics)) {
+      patchRunDiagnostics(runId, res.diagnostics);
+    }
     maybeStartRecoveryContinuation({
       taskId,
       runId,

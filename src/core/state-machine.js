@@ -22,6 +22,7 @@ export const FAILURE_KINDS = [
   "stall",
   "usage_limit",
   "invalid_result",
+  "invalid_delegation",
   "tool_failure",
   "cancelled",
   "cancelled_user",
