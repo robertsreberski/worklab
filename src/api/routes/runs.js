@@ -12,7 +12,6 @@ import {
 } from "../../core/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
-import { insertHumanComment } from "../../core/db/queries/comments.js";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -142,20 +141,19 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
       }
 
       const now = Date.now();
-      const commentId = newCommentId();
-      insertHumanComment(db, { id: commentId, taskId: row.task_id, body: normalized.body, createdAt: now });
-      broker.broadcast("global", { type: "task_updated", id: row.task_id });
+      const messageId = newCommentId();
 
       const delivery = await watcher.sendRunMessage(row.id, {
-        id: commentId,
+        id: messageId,
         body: normalized.body,
         createdAt: now,
         authorType: "human",
       });
-      const message = { id: commentId, body: normalized.body, created_at: now };
+      const message = { id: messageId, body: normalized.body, created_at: now };
       if (!delivery?.ok) {
         return res.status(409).json({
           delivered: false,
+          runId: row.id,
           message,
           error: {
             code: delivery?.code || "delivery_failed",
@@ -163,7 +161,7 @@ export function registerRunRoutes(app, { db, broker, dataDir, watcher }) {
           },
         });
       }
-      res.status(202).json({ delivered: true, message });
+      res.status(202).json({ delivered: true, runId: row.id, message });
     } catch (err) {
       next(err);
     }
