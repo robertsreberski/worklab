@@ -2,6 +2,7 @@ import { mkdirSync } from "node:fs";
 import {
   newProjectId,
   normalizeProjectWorkdir,
+  normalizeProjectWorktreeMode,
   parseProjectAllowedAgents,
   parseProjectTags,
   projectFromRow,
@@ -126,6 +127,7 @@ function normalizeProjectCreate(db, body = {}) {
     description: typeof body.description === "string" ? body.description : "",
     context: typeof body.context === "string" ? body.context : "",
     workdir: normalizeProjectWorkdir(body.workdir, null),
+    worktreeMode: normalizeProjectWorktreeMode(body.worktree_mode, "off"),
     tags: parseProjectTags(body.tags),
     allowedAgents: normalizeAllowedAgentsInput(body.allowed_agents) ?? [],
     delegationAllowUnlisted: body.delegation_allow_unlisted === true ? 1 : 0,
@@ -166,6 +168,10 @@ function normalizeProjectPatch(db, existing, body = {}) {
     ensureProjectWorkdir(workdir);
     fields.push("workdir = ?");
     values.push(workdir);
+  }
+  if ("worktree_mode" in body) {
+    fields.push("worktree_mode = ?");
+    values.push(normalizeProjectWorktreeMode(body.worktree_mode, existing.worktree_mode || "off"));
   }
   if ("tags" in body) {
     fields.push("tags_json = ?");
@@ -216,6 +222,7 @@ export function registerProjectRoutes(app, { db, broker }) {
         description: project.description,
         context: project.context,
         workdir: project.workdir,
+        worktreeMode: project.worktreeMode,
         tagsJson: JSON.stringify(project.tags),
         allowedAgentsJson: JSON.stringify(project.allowedAgents || []),
         delegationAllowUnlisted: project.delegationAllowUnlisted ? 1 : 0,

@@ -26,6 +26,7 @@ describe("project API", () => {
       description: "Customer app",
       context: "Use the mobile design system.",
       workdir,
+      worktree_mode: "auto",
       tags: ["ios", "mobile"],
     }).expect(201);
 
@@ -37,6 +38,7 @@ describe("project API", () => {
       tags: ["ios", "mobile"],
       archived: false,
       workdir,
+      worktree_mode: "auto",
     });
     expect(existsSync(workdir)).toBe(true);
 
@@ -46,16 +48,19 @@ describe("project API", () => {
     const patched = await agent.patch(`/api/projects/${created.body.project.slug}`).send({
       name: "Mobile Surface",
       context: "Updated project context.",
+      worktree_mode: "required",
       archived: false,
     }).expect(200);
     expect(patched.body.project).toMatchObject({
       slug: "mobile-app",
       name: "Mobile Surface",
       context: "Updated project context.",
+      worktree_mode: "required",
     });
 
     const detail = await agent.get(`/api/projects/${created.body.project.id}`).expect(200);
     expect(detail.body.project.stats).toMatchObject({ task_count: 0, by_stage: {} });
+    expect(detail.body.project.worktree_mode).toBe("required");
 
     await agent.delete(`/api/projects/${created.body.project.id}`).expect(204);
     expect((await agent.get("/api/projects").expect(200)).body.projects).toEqual([]);
@@ -73,6 +78,19 @@ describe("project API", () => {
     expect(response.body.error).toMatchObject({
       code: "validation",
       message: "workdir must use an absolute path or ~/path",
+    });
+  });
+
+  it("rejects invalid project worktree modes", async () => {
+    const { agent } = makeTestServer();
+    const response = await agent.post("/api/projects").send({
+      name: "Bad Worktree Mode",
+      worktree_mode: "sometimes",
+    }).expect(400);
+
+    expect(response.body.error).toMatchObject({
+      code: "validation",
+      message: "worktree_mode must be one of: off, auto, required",
     });
   });
 

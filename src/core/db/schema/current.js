@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 29;
+export const SCHEMA_VERSION = 30;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS projects (
   description TEXT NOT NULL DEFAULT '',
   context_markdown TEXT NOT NULL DEFAULT '',
   workdir TEXT,
+  worktree_mode TEXT NOT NULL DEFAULT 'off',
   tags_json TEXT NOT NULL DEFAULT '[]',
   allowed_agents_json TEXT NOT NULL DEFAULT '[]',
   delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0,
@@ -157,6 +158,9 @@ CREATE TABLE IF NOT EXISTS task_runs (
   provider_session_id TEXT,
   execenv_path TEXT,
   workdir TEXT,
+  workspace_mode TEXT NOT NULL DEFAULT 'direct',
+  source_workdir TEXT,
+  worktree_json TEXT,
   project_context_hash TEXT,
   cost_usd REAL,
   transcript_tail_json TEXT

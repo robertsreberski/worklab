@@ -416,15 +416,22 @@ function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpS
   return lines.join("\n");
 }
 
-function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir) {
+function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode = "direct", sourceWorkdir = null, worktree = null } = {}) {
   if (!effectiveWorkdir) return "";
   const lines = [
     `Tool working directory: \`${effectiveWorkdir}\`.`,
+    `Workspace mode: \`${workspaceMode || "direct"}\`.`,
     "Relative paths in built-in tools and stdio MCP tools resolve from this directory.",
     "Worklab project workdirs may be plain directories, not Git repositories.",
     "Check that Git is available before using Git-only workflows.",
     "If you create temporary scripts that import project files, put them under this directory, such as `.worklab-tmp/`, rather than `/tmp`.",
   ];
+  if (workspaceMode === "worktree") {
+    if (sourceWorkdir) lines.push(`Source checkout: \`${sourceWorkdir}\`.`);
+    if (worktree?.branch) lines.push(`AI worktree branch: \`${worktree.branch}\`.`);
+    lines.push("Do not edit the source checkout directly. Make task changes in the tool working directory and commit them on the AI worktree branch before returning the final result.");
+    lines.push("Worklab merges the AI worktree back only after verifying the source checkout is still clean; if current source changes conflict, treat the source checkout as the authority.");
+  }
   if (qaOutputDir) {
     lines.push(`Temporary QA artifact directory: \`${qaOutputDir}\`.`);
     lines.push("Use `WORKLAB_QA_OUTPUT_DIR` for browser screenshots, browser snapshots, console captures, and raw QA logs unless the user explicitly asks for durable repo artifacts.");
@@ -516,7 +523,7 @@ function buildBaseSections(input) {
   const {
     agent, skills, memory, journalTail, currentRunComments,
     allowedTools, disallowedTools, mcpServers, pinnedKb, effectiveWorkdir, qaOutputDir,
-    worklabToolSurfaceMarkdown, resumeContext,
+    workspaceMode, sourceWorkdir, worktree, worklabToolSurfaceMarkdown, resumeContext,
   } = input;
   return [
     ["Role", agent.instructions || ""],
@@ -525,7 +532,7 @@ function buildBaseSections(input) {
     ["Memory", memory || ""],
     ["Recent journal", journalTail || ""],
     ["Capabilities", renderCapabilitiesBlock({ allowedTools, disallowedTools, mcpServers, worklabToolSurfaceMarkdown })],
-    ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir)],
+    ["Workspace", formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode, sourceWorkdir, worktree })],
     ["Current Run Guidance", formatCurrentRunGuidance(currentRunComments)],
     ["Resume context", resumeContext || ""],
   ];

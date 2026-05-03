@@ -182,6 +182,9 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "todo_state_json", "todo_state_json TEXT NOT NULL DEFAULT '{\"todos\":[],\"updated_at\":null,\"update_count\":0}'");
   addColumnIfMissing(db, "task_runs", "result_json", "result_json TEXT");
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'direct'");
+  addColumnIfMissing(db, "task_runs", "source_workdir", "source_workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "worktree_json", "worktree_json TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "transcript_tail_json", "transcript_tail_json TEXT");
 }
@@ -480,6 +483,7 @@ export function runMigrations(db) {
       description TEXT NOT NULL DEFAULT '',
       context_markdown TEXT NOT NULL DEFAULT '',
       workdir TEXT,
+      worktree_mode TEXT NOT NULL DEFAULT 'off',
       tags_json TEXT NOT NULL DEFAULT '[]',
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
@@ -495,6 +499,9 @@ export function runMigrations(db) {
   if (tableExists(db, "task_runs")) {
     addColumnIfMissing(db, "task_runs", "project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL");
     addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+    addColumnIfMissing(db, "task_runs", "workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'direct'");
+    addColumnIfMissing(db, "task_runs", "source_workdir", "source_workdir TEXT");
+    addColumnIfMissing(db, "task_runs", "worktree_json", "worktree_json TEXT");
     addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   }
   if (tableExists(db, "automations")) {
@@ -547,6 +554,9 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "provider_session_id", "provider_session_id TEXT");
   addColumnIfMissing(db, "task_runs", "execenv_path", "execenv_path TEXT");
   addColumnIfMissing(db, "task_runs", "workdir", "workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "workspace_mode", "workspace_mode TEXT NOT NULL DEFAULT 'direct'");
+  addColumnIfMissing(db, "task_runs", "source_workdir", "source_workdir TEXT");
+  addColumnIfMissing(db, "task_runs", "worktree_json", "worktree_json TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
@@ -557,6 +567,7 @@ export function runMigrations(db) {
   // delegation outside the allowlist from a hard fail to a warning.
   addColumnIfMissing(db, "projects", "allowed_agents_json", "allowed_agents_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "projects", "delegation_allow_unlisted", "delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "projects", "worktree_mode", "worktree_mode TEXT NOT NULL DEFAULT 'off'");
   addColumnIfMissing(db, "custom_providers", "enabled", "enabled INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "custom_models", "display_name", "display_name TEXT");
   addColumnIfMissing(db, "custom_models", "capabilities_json", "capabilities_json TEXT NOT NULL DEFAULT '{}'");

@@ -8,6 +8,8 @@ import {
   resolveProjectByIdOrSlug,
 } from "./db/queries/projects.js";
 
+export const PROJECT_WORKTREE_MODES = ["off", "auto", "required"];
+
 export function projectRouteError(status, code, message) {
   return Object.assign(new Error(message), { status, code });
 }
@@ -50,6 +52,15 @@ export function normalizeProjectSlug(value) {
     throw projectRouteError(400, "validation", "slug must use lowercase letters, digits, and hyphens");
   }
   return slug;
+}
+
+export function normalizeProjectWorktreeMode(value, fallback = "off") {
+  if (value === undefined) return fallback;
+  const mode = String(value ?? "").trim() || "off";
+  if (!PROJECT_WORKTREE_MODES.includes(mode)) {
+    throw projectRouteError(400, "validation", `worktree_mode must be one of: ${PROJECT_WORKTREE_MODES.join(", ")}`);
+  }
+  return mode;
 }
 
 export function uniqueProjectSlug(db, { name, slug, existingId = null }) {
@@ -124,6 +135,7 @@ export function projectFromRow(row) {
     description: row.description || "",
     context: row.context_markdown || "",
     workdir: row.workdir || null,
+    worktree_mode: normalizeProjectWorktreeMode(row.worktree_mode, "off"),
     tags: parseProjectTags(row.tags_json),
     allowed_agents: parseProjectAllowedAgents(row.allowed_agents_json),
     delegation_allow_unlisted: !!row.delegation_allow_unlisted,
@@ -151,6 +163,7 @@ export function compactProject(row) {
     name: project.name,
     description: project.description,
     workdir: project.workdir,
+    worktree_mode: project.worktree_mode,
     archived: project.archived,
   };
 }
@@ -185,6 +198,7 @@ export function projectContextHash(project) {
       project.description || "",
       project.context || project.context_markdown || "",
       project.workdir || "",
+      project.worktree_mode || "",
     ].join("\0"))
     .digest("hex")
     .slice(0, 16);
@@ -208,7 +222,7 @@ export function resolveTaskProjectRunContext({ db, config = {}, task, runSnapsho
 export function loadRunSnapshot(db, runId) {
   if (!runId) return null;
   const row = db.prepare(
-    "SELECT project_id, workdir, project_context_hash, diagnostics_json FROM task_runs WHERE id = ?",
+    "SELECT project_id, workdir, workspace_mode, source_workdir, worktree_json, project_context_hash, diagnostics_json FROM task_runs WHERE id = ?",
   ).get(runId);
   return row || null;
 }

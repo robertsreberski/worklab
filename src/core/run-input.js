@@ -232,6 +232,9 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
   const settings = readSettings(db);
   const runSnapshot = loadRunSnapshot(db, runId);
   const runDiagnostics = safeParseJson(runSnapshot?.diagnostics_json, {});
+  const workspaceMode = runSnapshot?.workspace_mode || "direct";
+  const sourceWorkdir = runSnapshot?.source_workdir || null;
+  const worktree = safeParseJson(runSnapshot?.worktree_json, null);
   const resumeContext = renderResumeSnapshot(runDiagnostics?.resume_snapshot);
   const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
   const repositoryInstructions = loadRepositoryInstructions(projectRunContext.effectiveWorkdir);
@@ -286,6 +289,9 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId }) {
     agent,
     project: projectRunContext.project,
     effectiveWorkdir: projectRunContext.effectiveWorkdir,
+    workspaceMode,
+    sourceWorkdir,
+    worktree,
     repositoryInstructions,
     repositoryGitRoot,
     qaOutputDir,
@@ -429,6 +435,8 @@ function diagnosticsForPrompt(prompt, setup) {
       slug: setup.project.slug,
       contextHash: setup.projectContextHash,
       workdir: setup.effectiveWorkdir,
+      workspaceMode: setup.workspaceMode || "direct",
+      sourceWorkdir: setup.sourceWorkdir || null,
     } : null,
     repositoryInstructions: setup.repositoryInstructions ? {
       path: setup.repositoryInstructions.path,
@@ -436,6 +444,13 @@ function diagnosticsForPrompt(prompt, setup) {
       truncated: !!setup.repositoryInstructions.truncated,
     } : null,
     repositoryGitRoot: setup.repositoryGitRoot || null,
+    workspaceMode: setup.workspaceMode || "direct",
+    sourceWorkdir: setup.sourceWorkdir || null,
+    worktree: setup.worktree ? {
+      branch: setup.worktree.branch || null,
+      status: setup.worktree.status || null,
+      runtime_workdir: setup.worktree.runtime_workdir || null,
+    } : null,
     toolCount: {
       skills: Array.isArray(skills) ? skills.length : 0,
       builtin: Array.isArray(allowedTools) ? allowedTools.filter((tool) => !disallowedTools.includes(tool)).length : 0,
@@ -513,6 +528,12 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     projectId: setup.project?.id || "",
     projectUpdatedAt: setup.project?.updated_at || 0,
     projectWorkdirHash: shortHash(setup.effectiveWorkdir || ""),
+    workspaceModeHash: shortHash([
+      setup.workspaceMode || "direct",
+      setup.sourceWorkdir || "",
+      setup.worktree?.branch || "",
+      setup.worktree?.status || "",
+    ].join("|")),
     qaOutputHash: shortHash(setup.qaOutputDir || ""),
     projectContextHash: setup.projectContextHash || "",
     repositoryInstructionsHash: setup.repositoryInstructions?.hash || "",
@@ -549,6 +570,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const priorRuns = loadPriorRunSummaries(db, taskId, runId);
     const promptInput = {
       agent, task, project: setup.project, effectiveWorkdir: setup.effectiveWorkdir, qaOutputDir: setup.qaOutputDir, skills, memory, journalTail,
+      workspaceMode: setup.workspaceMode, sourceWorkdir: setup.sourceWorkdir, worktree: setup.worktree,
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
@@ -589,6 +611,9 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       allowedTools, disallowedTools, mcpServers,
       project: setup.project,
       effectiveWorkdir: setup.effectiveWorkdir,
+      workspaceMode: setup.workspaceMode,
+      sourceWorkdir: setup.sourceWorkdir,
+      worktree: setup.worktree,
       qaOutputDir: setup.qaOutputDir,
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
@@ -652,6 +677,9 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now(), 
     project_name: runInput.project?.name || null,
     project_context_hash: runInput.projectContextHash || null,
     workdir: runInput.effectiveWorkdir || config.workspace || null,
+    workspace_mode: runInput.workspaceMode || "direct",
+    source_workdir: runInput.sourceWorkdir || null,
+    worktree: runInput.worktree || null,
     generated_at: now,
   };
   const tools = [

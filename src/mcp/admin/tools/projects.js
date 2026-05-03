@@ -23,6 +23,7 @@ export const definitions = [
     description: string("Short project description"),
     context: string("Markdown context inserted into every assigned task run"),
     workdir: string("Optional run workdir override"),
+    worktree_mode: string("Worktree mode: off, auto, or required"),
     tags: arrayOfString("Tags"),
     archived: boolean("Whether the project starts archived"),
   }, ["name"])),
