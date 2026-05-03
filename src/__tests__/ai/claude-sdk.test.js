@@ -352,6 +352,108 @@ describe("generateClaudeResponse", () => {
     expect(r.failureKind).toBe("provider_unavailable");
   });
 
+  it("preserves recovered StructuredOutput when Claude exhausts schema retries after the tool call", async () => {
+    const malformedStructured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Delivered UI audit.",
+      details: "Scope and findings.</details>\n<parameter name=\"final_text\">Audit complete.</final_text>\n<parameter name=\"artifacts\">{\"kb_slug\":\"ui-audit-activity-workspace\"}</parameter>",
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      parent_review_policy: "default",
+    };
+    mockQuery.mockReturnValue(mockStream([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "toolu_structured",
+            name: "StructuredOutput",
+            input: malformedStructured,
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "toolu_structured",
+            is_error: true,
+            content: "Output does not match required schema: root: must have required property 'artifacts'",
+          }],
+        },
+      },
+      {
+        type: "result",
+        subtype: "error_max_structured_output_retries",
+        is_error: false,
+        errors: ["Failed to provide valid structured output after 5 attempts"],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 27,
+        session_id: "claude-session-structured-retries",
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      effort: "high",
+      onEvent: () => {},
+    });
+
+    expect(r.error).toBeNull();
+    expect(r.failureKind).toBeNull();
+    expect(r.worklabResult).toMatchObject({
+      summary: "Delivered UI audit.",
+      details: "Scope and findings.",
+      final_text: "Audit complete.",
+      artifacts: { kb_slug: "ui-audit-activity-workspace" },
+    });
+    expect(r.structuredResultSource).toBe("message");
+    expect(r.text).toBe("Audit complete.");
+    expect(r.runtimeWarnings).toContainEqual(expect.objectContaining({
+      warning_kind: "claude_post_success_error",
+    }));
+  });
+
+  it("classifies unrecoverable Claude structured-output retry exhaustion as invalid_result", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      { type: "assistant", message: { content: [{ type: "text", text: "I have the answer but cannot format it." }] } },
+      {
+        type: "result",
+        subtype: "error_max_structured_output_retries",
+        is_error: false,
+        errors: ["Failed to provide valid structured output after 5 attempts"],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 27,
+        session_id: "claude-session-structured-failed",
+      },
+    ]));
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      effort: "high",
+      onEvent: () => {},
+    });
+
+    expect(r.error).toBe("Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts");
+    expect(r.failureKind).toBe("invalid_result");
+    expect(r.errorDetails).toMatchObject({
+      claude_error_subtype: "error_max_structured_output_retries",
+      structured_output_retry_exhausted: true,
+      provider_session_id: "claude-session-structured-failed",
+      turn_count: 27,
+    });
+  });
+
   it("preserves successful final output when Claude emits a trailing execution error", async () => {
     mockQuery.mockReturnValue(mockStreamWithThrow([
       { type: "assistant", message: { content: [{ type: "text", text: "working" }] } },

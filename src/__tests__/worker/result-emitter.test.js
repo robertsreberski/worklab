@@ -35,4 +35,29 @@ describe("emitFinalResult", () => {
       provider_session_id: "claude-session-1",
     }));
   });
+
+  it("emits runtime warnings before terminal provider errors", () => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind: "task",
+      error: "Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts",
+      failureKind: "invalid_result",
+      runtimeWarnings: [{
+        warning_kind: "worklab_result_validation",
+        message: "Claude exhausted structured output retries.",
+      }],
+    });
+
+    expect(exitCode).toBe(1);
+    expect(emit.mock.calls.map(([event]) => event.type)).toEqual(["runtime_warning", "error"]);
+    expect(emit.mock.calls[0][0]).toMatchObject({
+      type: "runtime_warning",
+      warning_kind: "worklab_result_validation",
+    });
+    expect(emit.mock.calls[1][0]).toMatchObject({
+      type: "error",
+      failureKind: "invalid_result",
+    });
+  });
 });

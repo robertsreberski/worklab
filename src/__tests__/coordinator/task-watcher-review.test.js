@@ -301,6 +301,54 @@ describe("task-watcher v2 workflow", () => {
     expect(comment.body).toContain("Escape double quotes inside strings");
   });
 
+  it("auto-recovers Claude structured-output retry exhaustion with schema-correction guidance", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", stage: "execute" });
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", workspace: "/workspace" });
+
+    const { runId: failedRunId } = await watcher.handleRunRequested(taskId);
+    db.prepare("UPDATE task_runs SET status = 'error', process_status = 'failed', failure_kind = 'invalid_result', error_text = ? WHERE id = ?")
+      .run("Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts", failedRunId);
+    resolvers[0]({
+      exitCode: 1,
+      status: "error",
+      processStatus: "failed",
+      failureKind: "invalid_result",
+      error: "Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts",
+      warnings: [{
+        warning_kind: "worklab_result_validation",
+        message: "Claude exhausted structured output retries.",
+      }],
+      diagnostics: {
+        error_details: {
+          claude_error_subtype: "error_max_structured_output_retries",
+          structured_output_retry_exhausted: true,
+        },
+      },
+    });
+    await waitFor(() => spawn.mock.calls.length >= 2);
+
+    expect(calls[1].args).toEqual(expect.arrayContaining(["--mode", "execute", "--agent", "coder"]));
+    expect(calls[1].diagnosticsSeed).toMatchObject({
+      continuation_of_run_id: failedRunId,
+      continuation_reason: "schema_correction",
+    });
+    const retryRun = db.prepare("SELECT parent_run_id, mode, stage, diagnostics_json FROM task_runs WHERE id != ? ORDER BY started_at DESC LIMIT 1")
+      .get(failedRunId);
+    expect(retryRun).toMatchObject({ parent_run_id: failedRunId, mode: "execute", stage: "execute" });
+    expect(JSON.parse(retryRun.diagnostics_json)).toMatchObject({
+      continuation_of_run_id: failedRunId,
+      continuation_reason: "schema_correction",
+    });
+
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic schema-correction continuation%'").get(taskId);
+    expect(comment.body).toContain("Return exactly one valid `worklab.v2` JSON object");
+    expect(comment.body).toContain("Do not use XML, tool-call syntax, or `<parameter name=");
+    expect(comment.body).toContain("Do not redo completed work");
+  });
+
   it("review rejection routes back to execute and clears stale errors", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

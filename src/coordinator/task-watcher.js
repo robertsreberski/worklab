@@ -505,6 +505,18 @@ export function createTaskWatcher({
   function schemaCorrectionFailure({ failureKind, res, run }) {
     if (failureKind !== "invalid_result") return false;
     if (res?.resultError) return true;
+    const diagnostics = {
+      ...safeParseJson(run?.diagnostics_json, {}),
+      ...(res?.diagnostics || {}),
+    };
+    const errorDetails = diagnostics.error_details || {};
+    if (
+      errorDetails.structured_output_retry_exhausted
+      || errorDetails.claude_error_subtype === "error_max_structured_output_retries"
+      || diagnostics.claude_error_subtype === "error_max_structured_output_retries"
+    ) {
+      return true;
+    }
     const kinds = warningKindSet([
       ...safeParseJson(run?.warnings_json, []),
       ...(Array.isArray(res?.warnings) ? res.warnings : []),
@@ -668,7 +680,9 @@ export function createTaskWatcher({
       ? [
           "Return exactly one valid `worklab.v2` JSON object that preserves your prior decision.",
           "Escape double quotes inside strings, especially in `summary`, `details`, and `final_text`.",
+          "Do not use XML, tool-call syntax, or `<parameter name=...>` tags; every field must be a top-level JSON property.",
           "Do not include markdown fences or prose before or after the JSON.",
+          "Do not redo completed work; inspect the prior run log, workspace, journal, or KB entries only as needed to re-emit the envelope.",
         ]
       : recovery.reason === "finalisation"
       ? [

@@ -49,6 +49,7 @@ export function emitFinalResult(ctx, result) {
     emit({ type: "cancelled" });
     return 130;
   }
+  emitRuntimeWarnings(emit, result);
   if (result.error) {
     emit({
       type: "error",
@@ -58,8 +59,6 @@ export function emitFinalResult(ctx, result) {
     });
     return 1;
   }
-
-  emitRuntimeWarnings(emit, result);
 
   if (result.kind === "consolidate") {
     if (result.memoryWritten) {
