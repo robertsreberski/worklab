@@ -924,7 +924,7 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toEqual(structured);
+      expect(result.worklabResult).toEqual({ ...structured, memory_candidates: [] });
       expect(result.structuredResultSource).toBe("agent_message");
       expect(result.text).toBe("Human-facing final comment.");
       expect(result.text).not.toContain("technical justification");

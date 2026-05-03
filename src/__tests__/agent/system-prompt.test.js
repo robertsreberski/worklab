@@ -536,7 +536,8 @@ Return a structured Worklab result as JSON when you finish:
   "blocking_issues": [],
   "pending_actions": [],
   "questions": [],
-  "subtasks": []
+  "subtasks": [],
+  "memory_candidates": []
 }
 
 Escape double quotes inside review notes or final_text so the response remains valid JSON.
