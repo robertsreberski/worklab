@@ -359,7 +359,7 @@ describe("worklab-tools handlers", () => {
       name: "review-specialist",
       display_name: "Review Specialist",
       model: "pi:openai-codex:gpt-5.5",
-      sdk: "codex",
+      sdk: "pi",
       effort: "high",
       enabled: true,
       builtin_allowlist_mode: "custom",
