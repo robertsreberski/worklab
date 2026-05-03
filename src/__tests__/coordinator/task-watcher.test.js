@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
@@ -48,13 +49,33 @@ function seedProject(db, patch = {}) {
     description: patch.description || "Project description.",
     context: patch.context || "Project context.",
     workdir: patch.workdir || null,
+    worktreeMode: patch.worktreeMode || "off",
   };
   db.prepare(`
     INSERT INTO projects
-      (id, slug, name, description, context_markdown, workdir, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(project.id, project.slug, project.name, project.description, project.context, project.workdir, now, now);
+      (id, slug, name, description, context_markdown, workdir, worktree_mode, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(project.id, project.slug, project.name, project.description, project.context, project.workdir, project.worktreeMode, now, now);
   return project;
+}
+
+function git(cwd, args) {
+  return execFileSync("git", args, {
+    cwd,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+}
+
+function makeGitRepo() {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "worklab-task-worktree-source-")));
+  git(root, ["init"]);
+  git(root, ["config", "user.email", "worklab@example.test"]);
+  git(root, ["config", "user.name", "Worklab Test"]);
+  writeFileSync(join(root, "README.md"), "Initial\n");
+  git(root, ["add", "README.md"]);
+  git(root, ["commit", "-m", "initial"]);
+  return root;
 }
 
 function tempDataDir() {
@@ -268,6 +289,160 @@ describe("task-watcher", () => {
     const run = db.prepare("SELECT project_id, workdir, project_context_hash FROM task_runs WHERE id = ?").get(runId);
     expect(run).toMatchObject({ project_id: project.id, workdir });
     expect(run.project_context_hash).toMatch(/^[0-9a-f]{16}$/);
+  });
+
+  it("spawns execute runs for worktree-enabled Git projects in an isolated worktree", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    const spawn = vi.fn(() => ({ pid: 1, done: new Promise(() => {}), cancel: vi.fn() }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const env = spawn.mock.calls[0][0].env;
+    const run = db.prepare("SELECT workdir, workspace_mode, source_workdir, worktree_json FROM task_runs WHERE id = ?").get(runId);
+    const worktree = JSON.parse(run.worktree_json);
+
+    expect(env.WORKLAB_WORKSPACE).toBe(join(dataDir, "runs", runId, "worktree"));
+    expect(env.WORKLAB_WORKSPACE).not.toBe(source);
+    expect(existsSync(env.WORKLAB_WORKSPACE)).toBe(true);
+    expect(run).toMatchObject({
+      workdir: env.WORKLAB_WORKSPACE,
+      workspace_mode: "worktree",
+      source_workdir: source,
+    });
+    expect(worktree).toMatchObject({
+      mode: "worktree",
+      branch: `worklab/run/${runId}`,
+      source_git_root: source,
+      runtime_workdir: env.WORKLAB_WORKSPACE,
+    });
+  });
+
+  it("rejects required worktree mode when the project workdir is not a Git checkout", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = realpathSync(mkdtempSync(join(tmpdir(), "worklab-task-worktree-nongit-")));
+    const project = seedProject(db, { workdir: source, worktreeMode: "required" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    const spawn = vi.fn();
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir: mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-")),
+    });
+
+    await expect(watcher.handleRunRequested(taskId)).rejects.toThrow(/worktree mode is required/);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(db.prepare("SELECT COUNT(*) AS count FROM task_runs").get().count).toBe(0);
+  });
+
+  it("merges committed worktree changes back to the source checkout before marking execute done", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    const runtimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
+    writeFileSync(join(runtimeWorkdir, "feature.txt"), "AI feature\n");
+    git(runtimeWorkdir, ["add", "feature.txt"]);
+    git(runtimeWorkdir, ["commit", "-m", "add ai feature"]);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(readFileSync(join(source, "feature.txt"), "utf8")).toBe("AI feature\n");
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage).toBe("done");
+    const run = db.prepare("SELECT worktree_json, diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    expect(JSON.parse(run.worktree_json)).toMatchObject({ status: "merged", cleaned: true });
+    expect(JSON.parse(run.diagnostics_json).worktree).toMatchObject({ status: "merged" });
+  });
+
+  it("pauses worktree merge when the source checkout is dirty at finalization", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    await watcher.handleRunRequested(taskId);
+    const runtimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
+    writeFileSync(join(runtimeWorkdir, "feature.txt"), "AI feature\n");
+    git(runtimeWorkdir, ["add", "feature.txt"]);
+    git(runtimeWorkdir, ["commit", "-m", "add ai feature"]);
+    writeFileSync(join(source, "README.md"), "Human dirty edit\n");
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(existsSync(join(source, "feature.txt"))).toBe(false);
+    const task = db.prepare("SELECT stage, stage_reason, pending_actions_json FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("awaiting_user");
+    expect(task.stage_reason).toContain("source checkout has uncommitted changes");
+    expect(JSON.parse(task.pending_actions_json)[0]).toContain("README.md");
   });
 
   it("delegated subtasks inherit the parent project", async () => {

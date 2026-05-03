@@ -16,6 +16,7 @@ import { resolveTaskProjectRunContext } from "../../core/projects.js";
 import { resolveRunArtifactDir } from "../../core/run-artifact-paths.js";
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
+import { inspectWorktreeSupport, prepareRunWorktree } from "../../core/worktrees.js";
 
 function assertAgentRunnable(db, agentName) {
   const agent = getAgentByName(db, agentName);
@@ -53,6 +54,7 @@ export function spawnTaskRun({
 }) {
   const { providerKind } = assertAgentRunnable(db, agentName);
   const settings = readSettings(db);
+  const runId = newRunId();
   const projectRunContext = resolveTaskProjectRunContext({
     db,
     config: { workspace, repoRoot },
@@ -61,8 +63,27 @@ export function spawnTaskRun({
   if (projectRunContext.project?.workdir) {
     mkdirSync(projectRunContext.project.workdir, { recursive: true });
   }
-  const runId = newRunId();
-  const effectiveWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
+  const sourceWorkspace = projectRunContext.effectiveWorkdir || workspace || repoRoot || "";
+  let workspaceMode = "direct";
+  let sourceWorkdir = null;
+  let worktreeMetadata = null;
+  if (mode === "execute" && projectRunContext.project?.worktree_mode && projectRunContext.project.worktree_mode !== "off") {
+    const support = inspectWorktreeSupport(sourceWorkspace);
+    if (!support.supported) {
+      if (projectRunContext.project.worktree_mode === "required") {
+        throw new Error(`project worktree mode is required but unavailable: ${support.reason || "unsupported"}`);
+      }
+    } else {
+      worktreeMetadata = prepareRunWorktree({
+        sourceWorkdir: sourceWorkspace,
+        runId,
+        dataDir,
+      });
+      workspaceMode = "worktree";
+      sourceWorkdir = worktreeMetadata.source_workdir;
+    }
+  }
+  const effectiveWorkspace = worktreeMetadata?.runtime_workdir || sourceWorkspace;
   let qaOutputDir = null;
   if (effectiveWorkspace) {
     qaOutputDir = resolveRunArtifactDir({ workdir: effectiveWorkspace, runId });
@@ -88,8 +109,8 @@ export function spawnTaskRun({
   db.prepare(
     `INSERT INTO task_runs
       (id, task_id, project_id, parent_run_id, parent_relationship, mode, stage, agent_name, provider_kind,
-       started_at, status, process_status, retry_stage, workdir, project_context_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?)`,
+       started_at, status, process_status, retry_stage, workdir, workspace_mode, source_workdir, worktree_json, project_context_hash)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?)`,
   ).run(
     runId,
     task.id,
@@ -102,7 +123,10 @@ export function spawnTaskRun({
     providerKind,
     now,
     stage,
-    projectRunContext.effectiveWorkdir || null,
+    effectiveWorkspace || null,
+    workspaceMode,
+    sourceWorkdir,
+    worktreeMetadata ? JSON.stringify(worktreeMetadata) : null,
     projectRunContext.projectContextHash,
   );
   if (diagnosticsSeed && typeof diagnosticsSeed === "object") {
@@ -163,6 +187,8 @@ export function spawnTaskRun({
     WORKLAB_DATA_DIR: dataDir || "",
     WORKLAB_REPO_ROOT: repoRoot || "",
     WORKLAB_WORKSPACE: effectiveWorkspace,
+    WORKLAB_WORKSPACE_MODE: workspaceMode,
+    ...(sourceWorkdir ? { WORKLAB_SOURCE_WORKDIR: sourceWorkdir } : {}),
     ...(qaOutputDir ? { WORKLAB_QA_OUTPUT_DIR: qaOutputDir, PLAYWRIGHT_MCP_OUTPUT_DIR: qaOutputDir } : {}),
     ...(projectRunContext.project ? {
       WORKLAB_PROJECT_ID: projectRunContext.project.id,
