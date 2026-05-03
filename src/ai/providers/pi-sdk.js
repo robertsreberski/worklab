@@ -200,6 +200,22 @@ function readRuntimeSettings(explicitSettings) {
   return explicitSettings && typeof explicitSettings === "object" ? explicitSettings : {};
 }
 
+const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
+
+function resolvePiTransport(model, runtimeWarnings) {
+  if (model?.api !== "openai-codex-responses") return "auto";
+  const raw = process.env.WORKLAB_PI_CODEX_TRANSPORT?.trim();
+  if (!raw) return "sse";
+  const transport = raw.toLowerCase();
+  if (PI_CODEX_TRANSPORTS.has(transport)) return transport;
+  runtimeWarnings.push({
+    warning_kind: "invalid_pi_codex_transport",
+    message: "Ignoring invalid WORKLAB_PI_CODEX_TRANSPORT; expected sse, auto, websocket, or websocket-cached.",
+    value: raw,
+  });
+  return "sse";
+}
+
 export async function generatePiResponse(systemPrompt, options = {}) {
   const resolved = options.model;
   const start = Date.now();
@@ -219,6 +235,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let piErrorPayload = null;
   let toolResultsSeen = 0;
   let lastToolName = null;
+  let piTransport = "auto";
   const providerSessionId = options.sessionId
     || process.env.WORKLAB_PROVIDER_SESSION_ID
     || options.runId
@@ -229,6 +246,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
 
   try {
     const runtime = resolvePiRuntimeModel(resolved, options);
+    piTransport = resolvePiTransport(runtime.model, runtimeWarnings);
     const capabilities = runtime.capabilities || {};
     const settings = readRuntimeSettings(options.settings);
     const reference = resolved.reference
@@ -302,6 +320,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       transformContext: compaction.transformContext,
       afterToolCall: compaction.afterToolCall,
       sessionId: providerSessionId,
+      transport: piTransport,
       steeringMode: "one-at-a-time",
       followUpMode: "one-at-a-time",
       toolExecution: "sequential",
@@ -413,6 +432,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
             pi_stop_reason: "aborted",
             max_turns_hit: false,
             max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
+            pi_transport: piTransport,
             turn_count: turnCount,
             external_abort: true,
             ...(compaction?.diagnostics?.() || {}),
@@ -501,10 +521,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
       max_turns_hit: maxTurnsHit,
       provider_session_id: providerSessionId,
+      pi_transport: piTransport,
     } : null;
     const diagnostics = {
       provider_session_id: providerSessionId,
       pi_stop_reason: stopReason,
+      pi_transport: piTransport,
       max_turns_hit: maxTurnsHit,
       max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
       turn_count: turnCount || assistantMessages.length || finalMessages.length,
@@ -562,6 +584,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       turn_count: turnCount,
       max_turns_hit: maxTurnsHit,
       provider_session_id: providerSessionId,
+      pi_transport: piTransport,
     } : null;
     return {
       text: assistantTexts.join("") || null,
@@ -583,6 +606,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       diagnostics: {
         provider_session_id: providerSessionId,
         pi_stop_reason: externalAbort ? "aborted" : "error",
+        pi_transport: piTransport,
         max_turns_hit: maxTurnsHit,
         max_turns: Number.isFinite(Number(options.maxTurns)) ? Number(options.maxTurns) : null,
         turn_count: turnCount,
