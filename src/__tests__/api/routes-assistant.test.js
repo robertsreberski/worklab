@@ -101,7 +101,7 @@ describe("assistant routes", () => {
             usage: { input_tokens: 20, output_tokens: 10, cost_usd: 0.001 },
             durationMs: 42,
             numTurns: 2,
-            model: "openai:gpt-5.5",
+            model: "pi:openai:gpt-5.5",
             effort: "high",
           };
         }),
@@ -109,7 +109,7 @@ describe("assistant routes", () => {
     });
     writeSettings(server.db, {
       slack_agent_name: "mickey",
-      assistant_model: "openai:gpt-5.5",
+      assistant_model: "pi:openai:gpt-5.5",
       assistant_effort: "high",
       assistant_run_timeout_ms: 60000,
     });
@@ -178,7 +178,7 @@ describe("assistant routes", () => {
         usage: { input_tokens: 12, output_tokens: 7 },
         durationMs: 5,
         numTurns: 1,
-        model: "openai:gpt-5.5",
+        model: "pi:openai:gpt-5.5",
         effort: "high",
       };
     });
@@ -381,7 +381,7 @@ describe("assistant routes", () => {
       usage: {},
       durationMs: 1,
       numTurns: 1,
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       effort: "high",
       failureKind: "usage_limit",
     }));

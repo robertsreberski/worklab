@@ -9,11 +9,6 @@ export const EMPTY_USAGE = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-const SDK_PI_PROVIDERS = {
-  openai: "openai",
-  codex: "openai-codex",
-};
-
 function rootUrl(baseUrl) {
   return String(baseUrl || "").replace(/\/+$/, "").replace(/\/(api|v1)$/, "");
 }
@@ -42,7 +37,7 @@ function customCompat(capabilities, isPrivate) {
   };
 }
 
-// Build the pi-runtime view of a custom (vercel) provider/model from
+// Build the pi-runtime view of a custom provider/model from
 // pre-resolved primitives. The caller (core/ai.js#generateResponse) reads
 // the provider/model rows and computes the capabilities + isPrivate flag
 // before invoking the provider, so this function never reaches into the
@@ -51,18 +46,18 @@ function resolveCustomPiModel(resolved, options) {
   const provider = options.customProvider;
   if (!provider) {
     throw new Error(
-      `vercel provider context missing for ${resolved.providerId}: caller must pass options.customProvider`,
+      `pi custom provider context missing for ${resolved.provider}: caller must pass options.customProvider`,
     );
   }
-  if (!provider.enabled) throw new Error(`provider disabled: ${resolved.providerId}`);
+  if (!provider.enabled) throw new Error(`provider disabled: ${resolved.provider}`);
   const modelRow = options.customModel || null;
   if (modelRow && modelRow.enabled === false) {
-    throw new Error(`model disabled: ${resolved.modelName}`);
+    throw new Error(`model disabled: ${resolved.model}`);
   }
   const capabilities = options.modelCapabilities;
   if (!capabilities || typeof capabilities !== "object") {
     throw new Error(
-      `vercel model capabilities missing for ${resolved.modelName}: caller must pass options.modelCapabilities`,
+      `pi custom model capabilities missing for ${resolved.model}: caller must pass options.modelCapabilities`,
     );
   }
   const isPrivate = typeof options.isPrivateProvider === "boolean"
@@ -72,8 +67,8 @@ function resolveCustomPiModel(resolved, options) {
   const pricing = modelRow?.pricing || {};
   return {
     model: {
-      id: resolved.modelName,
-      name: modelRow?.display_name || resolved.modelName,
+      id: resolved.model,
+      name: modelRow?.display_name || resolved.model,
       api: "openai-completions",
       provider: providerName,
       baseUrl: openAiCompatBaseUrl(provider),
@@ -95,9 +90,9 @@ function resolveCustomPiModel(resolved, options) {
 }
 
 export function resolvePiRuntimeModel(resolved, options) {
-  if (resolved.sdk === "vercel") return resolveCustomPiModel(resolved, options);
-  const provider = resolved.sdk === "pi" ? resolved.provider : SDK_PI_PROVIDERS[resolved.sdk];
-  if (!provider) throw new Error(`unsupported pi sdk: ${resolved.sdk}`);
+  if (options.customProvider) return resolveCustomPiModel(resolved, options);
+  if (resolved.sdk !== "pi") throw new Error(`unsupported pi sdk: ${resolved.sdk}`);
+  const provider = resolved.provider;
   const model = getPiModel(provider, resolved.model);
   return {
     model,

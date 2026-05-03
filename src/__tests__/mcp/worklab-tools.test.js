@@ -347,7 +347,7 @@ describe("worklab-tools handlers", () => {
 
     const result = await createToolHandlers(c).agent_create({
       display_name: "Review Specialist",
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       effort: "high",
       description: "Reviews implementation work.",
       instructions: "Review changes and report concrete risks.",
@@ -358,7 +358,7 @@ describe("worklab-tools handlers", () => {
     expect(result.agent).toMatchObject({
       name: "review-specialist",
       display_name: "Review Specialist",
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       sdk: "codex",
       effort: "high",
       enabled: true,

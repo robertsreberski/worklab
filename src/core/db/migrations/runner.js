@@ -1,6 +1,10 @@
 import { SCHEMA_SQL, SCHEMA_VERSION } from "../schema/current.js";
 import { STAGES } from "../../state-machine.js";
 import { backfillTaskKeys } from "../../task-keys.js";
+import {
+  canonicalizeLegacyModelReference,
+  parseRuntimeModelReference,
+} from "../../../ai/runtime/model-refs.js";
 
 // Legacy task_runs.status mapping kept inside the migration helpers — the rest
 // of the codebase reads `process_status` directly. Old DBs may have only the
@@ -403,6 +407,67 @@ function rebuildTaskWorkflowTables(db) {
   }
 }
 
+function canonicalSdkForModelReference(model) {
+  try {
+    return parseRuntimeModelReference(model).sdk;
+  } catch {
+    return null;
+  }
+}
+
+function canonicalizeStoredSettingValue(raw) {
+  let value = raw;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    value = raw;
+  }
+  if (typeof value !== "string") return null;
+  let canonical;
+  try {
+    canonical = canonicalizeLegacyModelReference(value);
+    parseRuntimeModelReference(canonical);
+  } catch {
+    return null;
+  }
+  return canonical === value ? null : JSON.stringify(canonical);
+}
+
+function canonicalizeRuntimeModelRefs(db) {
+  if (tableExists(db, "agents")) {
+    const rows = db.prepare("SELECT name, model FROM agents").all();
+    const update = db.prepare("UPDATE agents SET sdk = ?, model = ? WHERE name = ?");
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        let canonical;
+        try {
+          canonical = canonicalizeLegacyModelReference(row.model);
+          parseRuntimeModelReference(canonical);
+        } catch {
+          continue;
+        }
+        if (canonical === row.model) continue;
+        const sdk = canonicalSdkForModelReference(canonical);
+        if (!sdk) continue;
+        update.run(sdk, canonical, row.name);
+      }
+    });
+    tx();
+  }
+
+  if (tableExists(db, "settings")) {
+    const rows = db.prepare("SELECT key, value FROM settings WHERE key IN ('slack_model', 'assistant_model')").all();
+    const update = db.prepare("UPDATE settings SET value = ? WHERE key = ?");
+    const tx = db.transaction(() => {
+      for (const row of rows) {
+        const canonical = canonicalizeStoredSettingValue(row.value);
+        if (canonical) update.run(canonical, row.key);
+      }
+    });
+    tx();
+  }
+}
+
 export function runMigrations(db) {
   // Existing pre-v8 databases may have `tasks` but not `stage`; SCHEMA_SQL
   // creates an index on stage, so add the column before executing the full
@@ -554,6 +619,7 @@ export function runMigrations(db) {
   normalizeWorkflowState(db);
   backfillTaskKeys(db);
   clearResolvedTaskFailureKinds(db);
+  canonicalizeRuntimeModelRefs(db);
   // R4 backfill: derive lifetime_* counters from existing task_runs history.
   // Idempotent — only writes when the lifetime column is still 0 so re-running
   // migrations after the operator has logged real activity doesn't clobber

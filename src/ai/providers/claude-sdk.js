@@ -745,3 +745,11 @@ export const claudeSdkBackend = {
   capabilities: backendCapabilities("claude"),
   execute: generateClaudeResponse,
 };
+
+export const claudeRuntimeBridge = {
+  id: "claude",
+  kind: "claude",
+  capabilities: backendCapabilities("claude"),
+  supports: (ref) => ref?.sdk === "claude",
+  execute: generateClaudeResponse,
+};

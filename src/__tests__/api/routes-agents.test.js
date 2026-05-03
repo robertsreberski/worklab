@@ -256,29 +256,29 @@ describe("agents CRUD", () => {
     const { agent } = makeTestServer();
     await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" });
 
-    const updated = await agent.patch("/api/agents/coder").send({ sdk: "claude", model: "openai:gpt-5.5" }).expect(200);
-    expect(updated.body.agent.sdk).toBe("openai");
-    expect(updated.body.agent.model).toBe("openai:gpt-5.5");
+    const updated = await agent.patch("/api/agents/coder").send({ sdk: "claude", model: "pi:openai:gpt-5.5" }).expect(200);
+    expect(updated.body.agent.sdk).toBe("pi");
+    expect(updated.body.agent.model).toBe("pi:openai:gpt-5.5");
 
     const rejected = await agent.patch("/api/agents/coder").send({ model: "openai:opus" }).expect(400);
     expect(rejected.body.error.code).toBe("invalid_model");
   });
 
-  it("accepts local CLI model references", async () => {
+  it("accepts canonical runtime model references", async () => {
     const { agent } = makeTestServer();
     const claude = await agent.post("/api/agents").send({
       name: "claude-cli",
       display_name: "Claude CLI",
-      model: "claude-code:claude-sonnet-4-6",
+      model: "claude:claude-sonnet-4-6",
     }).expect(201);
-    expect(claude.body.agent.sdk).toBe("claude-code");
+    expect(claude.body.agent.sdk).toBe("claude");
 
     const codex = await agent.post("/api/agents").send({
       name: "codex-cli",
       display_name: "Codex CLI",
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
     }).expect(201);
-    expect(codex.body.agent.sdk).toBe("codex");
+    expect(codex.body.agent.sdk).toBe("pi");
   });
 
   it("normalizes stale max effort on create and patch", async () => {
@@ -286,7 +286,7 @@ describe("agents CRUD", () => {
     const created = await agent.post("/api/agents").send({
       name: "openai-effort",
       display_name: "OpenAI Effort",
-      model: "openai:gpt-5.5",
+      model: "pi:openai:gpt-5.5",
       effort: "max",
     }).expect(201);
     expect(created.body.agent.effort).toBe("xhigh");
@@ -311,7 +311,7 @@ describe("agents CRUD", () => {
     const res = await agent.post("/api/agents").send({
       name: "openai-missing",
       display_name: "OpenAI Missing",
-      model: "openai:gpt-5.5",
+      model: "pi:openai:gpt-5.5",
     }).expect(400);
     expect(res.body.error.code).toBe("invalid_model");
     expect(res.body.error.message).toMatch(/OPENAI_API_KEY/);
@@ -368,7 +368,7 @@ describe("agents CRUD", () => {
       const res = await agent.post("/api/agents").send({
         name: "embedder",
         display_name: "Embedder",
-        model: `vercel:${provider.id}:nomic-embed-text:v1.5`,
+        model: `pi:${provider.id}:nomic-embed-text:v1.5`,
       }).expect(400);
       expect(res.body.error.code).toBe("invalid_model");
       expect(res.body.error.message).toMatch(/not runnable for agents/i);

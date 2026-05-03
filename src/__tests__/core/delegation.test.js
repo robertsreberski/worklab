@@ -13,7 +13,7 @@ function seedAgent(db, name, patch = {}) {
     patch.display_name || name,
     patch.description || "",
     patch.sdk || "codex",
-    patch.model || "codex:gpt-5.5",
+    patch.model || "pi:openai-codex:gpt-5.5",
     patch.effort || "xhigh",
     patch.enabled === false ? 0 : 1,
     now,

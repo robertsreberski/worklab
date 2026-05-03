@@ -42,7 +42,7 @@ describe("generatePiResponse cancellation handling", () => {
 
   it("treats provider/runtime aborts as provider errors when Worklab did not abort", async () => {
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: abortedStream("terminated"),
@@ -66,7 +66,7 @@ describe("generatePiResponse cancellation handling", () => {
     let streamCalled = false;
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: () => {
@@ -91,7 +91,7 @@ describe("generatePiResponse cancellation handling", () => {
 
   it("captures pi_error_code from the stream error event", async () => {
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: abortedStream("terminated", { code: "UND_ERR_SOCKET", requestId: "req_abc123" }),
@@ -118,7 +118,7 @@ describe("generatePiResponse cancellation handling", () => {
     process.env.WORKLAB_PROVIDER_SESSION_ID = "pi-session-prev";
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: abortedStream("terminated"),
@@ -135,7 +135,7 @@ describe("generatePiResponse cancellation handling", () => {
 describe("generatePiResponse error details", () => {
   it("includes errorDetails on the result when the stream errors mid-turn", async () => {
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: abortedStream("terminated", { code: "UND_ERR_SOCKET", requestId: "req_x" }),
@@ -187,7 +187,7 @@ describe("generatePiResponse error details", () => {
     };
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: streamWithText,
@@ -231,7 +231,7 @@ describe("generatePiResponse error details", () => {
     };
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: streamWithLongText,
@@ -272,7 +272,7 @@ describe("generatePiResponse error details", () => {
     };
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: erroringStream,
@@ -294,7 +294,7 @@ describe("generatePiResponse error details", () => {
     ac.abort();
 
     const result = await generatePiResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: abortedStream("ignored"),

@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("../../core/index.js", () => ({
   buildTaskRunInput: vi.fn(() => ({
     task: { stage: "execute" },
-    agent: { model: "codex:gpt-5.5", effort: "medium" },
+    agent: { model: "pi:openai-codex:gpt-5.5", effort: "medium" },
     skills: [],
     mcpServers: {},
     allowedTools: [],
@@ -16,7 +16,7 @@ vi.mock("../../core/index.js", () => ({
     messages: [],
   })),
   generateResponse: mocks.generateResponse,
-  resolveModel: vi.fn((model) => ({ sdk: "codex", model: "gpt-5.5", reference: model })),
+  resolveModel: vi.fn((model) => ({ sdk: "pi", provider: "openai-codex", model: "gpt-5.5", reference: model })),
 }));
 
 const { runTask } = await import("../../worker/task-runner.js");
@@ -61,7 +61,7 @@ describe("task runner result parsing", () => {
       usage: {},
       durationMs: 1,
       numTurns: 1,
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       effort: "medium",
     });
 
@@ -79,7 +79,7 @@ describe("task runner result parsing", () => {
       usage: {},
       durationMs: 1,
       numTurns: 1,
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       effort: "medium",
     });
 
@@ -101,7 +101,7 @@ describe("task runner result parsing", () => {
       usage: {},
       durationMs: 1,
       numTurns: 1,
-      model: "codex:gpt-5.5",
+      model: "pi:openai-codex:gpt-5.5",
       effort: "medium",
       providerSessionId: "provider-session-1",
     });

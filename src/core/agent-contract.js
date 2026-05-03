@@ -28,10 +28,6 @@ export const EVENT_KINDS = [
 
 export const PROVIDER_KINDS = [
   "claude",
-  "openai",
-  "vercel",
-  "claude-code",
-  "codex",
   "pi",
 ];
 

@@ -16,7 +16,7 @@ import { apiRequest, buildSpecHandlers } from "../../shared/tool-registry.js";
 const agentCreateInput = object({
   name: string("Optional lowercase slug. If omitted, Worklab generates one from display_name."),
   display_name: string("Agent display name"),
-  model: string("Explicit model reference, for example codex:gpt-5.5 or claude:claude-sonnet-4-6"),
+  model: string("Explicit model reference, for example pi:openai-codex:gpt-5.5 or claude:claude-sonnet-4-6"),
   effort: string("Reasoning effort: none, low, medium, high, xhigh, or max"),
   description: string("Short description"),
   instructions: string("Agent instructions"),

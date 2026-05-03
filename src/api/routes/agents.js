@@ -73,9 +73,8 @@ const PATCHABLE = [
 
 function validateModelForAgent({ db, dataDir, model }) {
   const resolved = parseModelReference(model);
-  if (resolved.sdk !== "vercel") {
-    const builtin = getBuiltinModelByReference(resolved.reference);
-    if (!builtin) throw new Error(`unknown built-in model: ${resolved.reference}`);
+  const builtin = getBuiltinModelByReference(resolved.reference);
+  if (builtin) {
     const availabilityKey = resolved.sdk === "pi" ? `pi:${resolved.provider}` : resolved.sdk;
     const availability = getBuiltinProviderAvailability({ dataDir })[availabilityKey];
     if (availability?.available === false) {
@@ -84,13 +83,14 @@ function validateModelForAgent({ db, dataDir, model }) {
     return resolved;
   }
 
-  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: false });
-  if (!provider) throw new Error(`provider not found: ${resolved.providerId}`);
+  if (resolved.sdk !== "pi") throw new Error(`unknown built-in model: ${resolved.reference}`);
+  const provider = getProvider({ db, dataDir, id: resolved.provider, includeKey: false });
+  if (!provider) throw new Error(`provider not found: ${resolved.provider}`);
   if (!provider.enabled) throw new Error(`provider disabled: ${provider.name}`);
 
-  const modelRow = getModelByProviderAndName({ db, providerId: resolved.providerId, modelName: resolved.modelName });
+  const modelRow = getModelByProviderAndName({ db, providerId: resolved.provider, modelName: resolved.model });
   if (!modelRow) return resolved;
-  if (!modelRow.enabled) throw new Error(`model disabled: ${resolved.modelName}`);
+  if (!modelRow.enabled) throw new Error(`model disabled: ${resolved.model}`);
 
   const capabilities = buildModelCapabilities(provider.provider_type, modelRow.model_name, modelRow.capabilities);
   if (!capabilities.runnable_for_agent) {
@@ -102,10 +102,12 @@ function validateModelForAgent({ db, dataDir, model }) {
 function capabilitiesForAgentModel({ db, dataDir, model, resolved }) {
   if (resolved?.capabilities) return resolved.capabilities;
   const ref = resolved?.reference || model;
-  if (resolved?.sdk !== "vercel") return getBuiltinModelByReference(ref)?.capabilities || null;
+  const builtin = getBuiltinModelByReference(ref);
+  if (builtin) return builtin.capabilities || null;
+  if (resolved?.sdk !== "pi") return null;
 
-  const provider = getProvider({ db, dataDir, id: resolved.providerId, includeKey: false });
-  const modelRow = provider ? getModelByProviderAndName({ db, providerId: resolved.providerId, modelName: resolved.modelName }) : null;
+  const provider = getProvider({ db, dataDir, id: resolved.provider, includeKey: false });
+  const modelRow = provider ? getModelByProviderAndName({ db, providerId: resolved.provider, modelName: resolved.model }) : null;
   return provider && modelRow
     ? buildModelCapabilities(provider.provider_type, modelRow.model_name, modelRow.capabilities)
     : null;

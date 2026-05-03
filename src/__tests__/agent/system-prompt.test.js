@@ -200,7 +200,7 @@ describe("buildExecuteSystemPrompt", () => {
         maxParallelChildren: 3,
         autoRunChildren: true,
         availableAgents: [
-          { name: "researcher", display_name: "Researcher", description: "Parallel research.", sdk: "codex", model: "codex:gpt-5.5", effort: "xhigh" },
+          { name: "researcher", display_name: "Researcher", description: "Parallel research.", sdk: "pi", model: "pi:openai-codex:gpt-5.5", effort: "xhigh" },
         ],
         childTasks: [
           {

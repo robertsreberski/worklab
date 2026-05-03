@@ -1,6 +1,7 @@
 // Shared helpers for worker-mode runners.
 
 export function maxTurnsForModel(model, fallback) {
-  if (["claude", "claude-code", "codex"].includes(model?.sdk)) return undefined;
+  if (model?.sdk === "claude") return undefined;
+  if (model?.sdk === "pi" && model?.provider === "openai-codex") return undefined;
   return fallback;
 }

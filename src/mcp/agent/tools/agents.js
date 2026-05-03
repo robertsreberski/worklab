@@ -96,7 +96,7 @@ export const definitions = [
   {
     name: "agent_create",
     description:
-      "Create a Worklab agent from inside a run. Use explicit model references such as codex:gpt-5.5, claude:claude-sonnet-4-6, or vercel:<providerId>:<modelName>.",
+      "Create a Worklab agent from inside a run. Use explicit model references such as pi:openai-codex:gpt-5.5, claude:claude-sonnet-4-6, or pi:<providerId>:<modelName>.",
     inputSchema: {
       type: "object",
       properties: {

@@ -62,18 +62,18 @@ describe("provider routes", () => {
     const res = await agent.get("/api/models/available").expect(200);
     expect(res.body.models.map((m) => m.value)).toContain("claude:claude-sonnet-4-6");
     for (const piModel of getPiModels("openai")) {
-      expect(res.body.models.map((m) => m.value)).toContain(`openai:${piModel.id}`);
+      expect(res.body.models.map((m) => m.value)).toContain(`pi:openai:${piModel.id}`);
     }
     for (const piModel of getPiModels("openai-codex")) {
-      expect(res.body.models.map((m) => m.value)).toContain(`codex:${piModel.id}`);
+      expect(res.body.models.map((m) => m.value)).toContain(`pi:openai-codex:${piModel.id}`);
     }
-    expect(res.body.models.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:${model.model_name}`);
-    expect(res.body.groups.find((g) => g.id === "codex").label).toBe("OpenAI Codex");
+    expect(res.body.models.map((m) => m.value)).toContain(`pi:${p.body.provider.id}:${model.model_name}`);
+    expect(res.body.groups.find((g) => g.id === "pi:openai-codex").label).toBe("OpenAI Codex");
     expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
     expect(typeof res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").disabled).toBe("boolean");
-    expect(res.body.models.find((m) => m.value === "codex:gpt-5.5").supports_builtin_tools).toBe(true);
+    expect(res.body.models.find((m) => m.value === "pi:openai-codex:gpt-5.5").supports_builtin_tools).toBe(true);
     expect(res.body.models.some((m) => m.value === "pi:google:gemini-2.5-pro")).toBe(true);
-    expect(res.body.models.find((m) => m.value === `vercel:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
+    expect(res.body.models.find((m) => m.value === `pi:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
 
   it("omits enabled non-runnable custom models from the agent model catalogue", async () => {
@@ -93,7 +93,7 @@ describe("provider routes", () => {
     });
 
     const res = await agent.get("/api/models/available").expect(200);
-    expect(res.body.models.map((m) => m.value)).not.toContain(`vercel:${p.body.provider.id}:nomic-embed-text:v1.5`);
+    expect(res.body.models.map((m) => m.value)).not.toContain(`pi:${p.body.provider.id}:nomic-embed-text:v1.5`);
   });
 
   it("omits saved models from unsupported legacy provider types", async () => {
@@ -113,7 +113,7 @@ describe("provider routes", () => {
     });
 
     const res = await agent.get("/api/models/available").expect(200);
-    expect(res.body.models.map((m) => m.value)).not.toContain("vercel:legacy:claude-compatible");
+    expect(res.body.models.map((m) => m.value)).not.toContain("pi:legacy:claude-compatible");
   });
 
   it("accepts curated hosted provider types", async () => {
@@ -482,7 +482,7 @@ describe("provider routes", () => {
       expect(res.body.model.enabled).toBe(true);
 
       const agentModels = await agent.get("/api/models/available").expect(200);
-      expect(agentModels.body.models.map((m) => m.value)).not.toContain(`vercel:${id}:nomic-embed-text:v1.5`);
+      expect(agentModels.body.models.map((m) => m.value)).not.toContain(`pi:${id}:nomic-embed-text:v1.5`);
 
       const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
       expect(embeddingModels.body.groups.flatMap((group) => group.models).map((m) => m.value))

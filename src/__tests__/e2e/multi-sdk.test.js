@@ -165,26 +165,26 @@ function createCustomProviderModel(modelName = "gemma3:4b") {
     capabilities: { tool_use: true, reasoning: true },
   });
   setModelEnabled({ db, id: model.id, enabled: true });
-  return `vercel:${provider.id}:${modelName}`;
+  return `pi:${provider.id}:${modelName}`;
 }
 
 describe("generateResponse pi-backed dispatch", () => {
-  it("resolves and runs openai: references through the pi agent runtime", async () => {
+  it("resolves and runs pi:openai references through the pi agent runtime", async () => {
     const events = [];
     const result = await generateResponse("You are a test assistant.", {
-      model: resolveModel("openai:gpt-5.5"),
+      model: resolveModel("pi:openai:gpt-5.5"),
       effort: "medium",
       messages: [{ role: "user", content: "hi" }],
       streamFn: textStream("Hello from pi OpenAI"),
       onEvent: (event) => events.push(event),
     });
 
-    expect(result).toMatchObject({ sdk: "openai", model: "gpt-5.5", text: "Hello from pi OpenAI" });
+    expect(result).toMatchObject({ sdk: "pi", model: "pi:openai:gpt-5.5", text: "Hello from pi OpenAI" });
     expect(result.usage.input_tokens).toBe(20);
     expect(result.usage.output_tokens).toBe(8);
     expect(events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.text === "Hello from pi OpenAI")).toBe(true);
     expect(Number.isFinite(estimateCost({
-      model: `openai:${result.model}`,
+      model: result.model,
       inputTokens: result.usage.input_tokens,
       outputTokens: result.usage.output_tokens,
     }))).toBe(true);
@@ -192,13 +192,13 @@ describe("generateResponse pi-backed dispatch", () => {
 
   it("returns an error field when the pi stream ends with an error", async () => {
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
+      model: resolveModel("pi:openai:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: errorStream("network timeout"),
     });
 
-    expect(result.sdk).toBe("openai");
+    expect(result.sdk).toBe("pi");
     expect(result.error).toMatch(/network timeout/);
     expect(result.durationMs).toBeGreaterThanOrEqual(0);
   });
@@ -215,13 +215,13 @@ describe("generateResponse pi-backed dispatch", () => {
       sequence_number: 2,
     };
     const result = await generateResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
       messages: [{ role: "user", content: "hello" }],
       streamFn: errorStream(`Codex error: ${JSON.stringify(providerError)}`),
     });
 
-    expect(result.sdk).toBe("codex");
+    expect(result.sdk).toBe("pi");
     expect(result.error).toBe("Your input exceeds the context window of this model. Please adjust your input and try again.");
     expect(result.error).not.toContain("invalid_request_error");
     expect(result.failureKind).toBe("usage_limit");
@@ -230,7 +230,7 @@ describe("generateResponse pi-backed dispatch", () => {
   it("captures provider thinking snapshots when no thinking deltas were emitted", async () => {
     const events = [];
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
+      model: resolveModel("pi:openai:gpt-5.5"),
       effort: "high",
       messages: [{ role: "user", content: "hello" }],
       streamFn: thinkingEndStream("Reviewed the available tools.", "Done."),
@@ -245,7 +245,7 @@ describe("generateResponse pi-backed dispatch", () => {
   it("does not duplicate text_end snapshots after text deltas", async () => {
     const events = [];
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
+      model: resolveModel("pi:openai:gpt-5.5"),
       effort: "medium",
       messages: [{ role: "user", content: "hello" }],
       streamFn: textDeltaAndEndStream("Hello once."),
@@ -257,7 +257,7 @@ describe("generateResponse pi-backed dispatch", () => {
     expect(textEvents.map((event) => event.message.content[0].text)).toEqual(["Hello once."]);
   });
 
-  it("runs custom provider vercel: references through the same pi runtime", async () => {
+  it("runs custom provider pi:<provider>: references through the same pi runtime", async () => {
     const modelRef = createCustomProviderModel();
     const result = await generateResponse("sys", {
       db,
@@ -268,7 +268,7 @@ describe("generateResponse pi-backed dispatch", () => {
       streamFn: textStream("Hello from custom provider"),
     });
 
-    expect(result).toMatchObject({ sdk: "vercel", model: modelRef, text: "Hello from custom provider" });
+    expect(result).toMatchObject({ sdk: "pi", model: modelRef, text: "Hello from custom provider" });
     expect(result.usage.input_tokens).toBe(20);
   });
 
@@ -276,25 +276,25 @@ describe("generateResponse pi-backed dispatch", () => {
     const result = await generateResponse("sys", {
       db,
       dataDir,
-      model: resolveModel("vercel:bad-id:some-model"),
+      model: resolveModel("pi:bad-id:some-model"),
       effort: "low",
       messages: [{ role: "user", content: "hi" }],
       streamFn: textStream("unused"),
     });
 
-    expect(result.sdk).toBe("vercel");
+    expect(result.sdk).toBe("pi");
     expect(result.error).toMatch(/provider not found/);
   });
 
-  it("supports codex: references without the legacy Codex CLI path", async () => {
+  it("supports pi:openai-codex references without the legacy Codex CLI path", async () => {
     const result = await generateResponse("sys", {
-      model: resolveModel("codex:gpt-5.5"),
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "high",
       messages: [{ role: "user", content: "hi" }],
       streamFn: textStream("Codex via pi"),
     });
 
-    expect(result).toMatchObject({ sdk: "codex", model: "gpt-5.5", text: "Codex via pi" });
+    expect(result).toMatchObject({ sdk: "pi", model: "pi:openai-codex:gpt-5.5", text: "Codex via pi" });
   });
 
   it("supports explicit pi:<provider>:<model> references", async () => {
@@ -308,7 +308,7 @@ describe("generateResponse pi-backed dispatch", () => {
       streamFn: textStream("Gemini via pi"),
     });
 
-    expect(result).toMatchObject({ sdk: "pi", model: "gemini-2.5-pro", text: "Gemini via pi" });
+    expect(result).toMatchObject({ sdk: "pi", model: "pi:google:gemini-2.5-pro", text: "Gemini via pi" });
   });
 
   it("captures StructuredOutput tool calls as Worklab results", async () => {
@@ -325,7 +325,7 @@ describe("generateResponse pi-backed dispatch", () => {
       subtasks: [],
     };
     const result = await generateResponse("sys", {
-      model: resolveModel("openai:gpt-5.5"),
+      model: resolveModel("pi:openai:gpt-5.5"),
       effort: "medium",
       messages: [{ role: "user", content: "hi" }],
       outputSchema: {
@@ -349,12 +349,12 @@ describe("resolveModel parse coverage", () => {
     expect(resolveModel("claude:claude-sonnet-4-6")).toMatchObject({ sdk: "claude", model: "claude-sonnet-4-6" });
   });
 
-  it("openai: form", () => {
-    expect(resolveModel("openai:gpt-5.5")).toMatchObject({ sdk: "openai", model: "gpt-5.5" });
+  it("pi:openai form", () => {
+    expect(resolveModel("pi:openai:gpt-5.5")).toMatchObject({ sdk: "pi", provider: "openai", model: "gpt-5.5" });
   });
 
-  it("vercel: form preserves colons in model name", () => {
-    expect(resolveModel("vercel:abc123:gemma3:4b")).toMatchObject({ sdk: "vercel", providerId: "abc123", modelName: "gemma3:4b" });
+  it("pi: custom provider form preserves colons in model name", () => {
+    expect(resolveModel("pi:abc123:gemma3:4b")).toMatchObject({ sdk: "pi", provider: "abc123", model: "gemma3:4b" });
   });
 
   it("pi: form preserves colons in model name", () => {
