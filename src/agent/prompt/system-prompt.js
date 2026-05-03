@@ -307,6 +307,35 @@ function formatReviewRunLogs(execution, resolvedBlockers = []) {
   return lines.filter(Boolean).join("\n");
 }
 
+function formatWorklabBaseGuardrails({ mode, delegation } = {}) {
+  if (!["plan", "execute", "review"].includes(mode)) return "";
+  const sections = [];
+  if (mode === "plan") {
+    const maxChildren = delegation?.maxChildrenPerRound ?? "the configured limit";
+    sections.push([
+      "### worklab-delegating",
+      `Never return more than the configured max children per round (${maxChildren}). If the work has more pieces, merge adjacent subtasks owned by the same agent or touching the same files, and preserve granular commit expectations inside the merged instructions.`,
+      "Give each child a bounded title, instructions, acceptance_criteria, expected_artifact, and exact depends_on references to sibling titles or existing task ids.",
+    ].join("\n\n"));
+  }
+  sections.push([
+    "### worklab-final-result",
+    "Return exactly one final `worklab.v2` JSON object when you finish. Put user-facing prose in `final_text`, not around the JSON.",
+    "Do not include XML, invoke tags, or tool-call syntax inside JSON string fields; those belong to model/tool protocol, not result data.",
+  ].join("\n\n"));
+  sections.push([
+    "### worklab-run-recovery",
+    "Inspect prior runs with targeted `run_log_read` when exact history matters. Prefer tail or offset reads, avoid rereading huge logs, and continue from durable workspace, journal, KB, and artifact state.",
+  ].join("\n\n"));
+  if (mode === "plan" || mode === "execute") {
+    sections.push([
+      "### worklab-tool-hygiene",
+      "Journal and todo payloads are plain strings or JSON values for that tool only. Do not paste closing XML, invoke snippets, or unrelated tool-call markup into Worklab tool arguments.",
+    ].join("\n\n"));
+  }
+  return sections.join("\n\n");
+}
+
 function buildTaskBody(task, comments) {
   return [
     `**Title:** ${task.title}`,
@@ -586,6 +615,9 @@ export function buildSystemPrompt(input, mode) {
   const prefixHash = hashPrefix(baseSections);
   const parts = renderSectionParts(baseSections);
   const sectionNames = [...BASE_SECTION_NAMES];
+  const baseGuardrails = formatWorklabBaseGuardrails({ mode, delegation: input.delegation });
+  parts.push(section("Worklab base guardrails", baseGuardrails));
+  if (baseGuardrails) sectionNames.push("Worklab base guardrails");
 
   if (mode === "automation") {
     parts.push(section("Automation", buildAutomationBody(input.automation)));

@@ -332,6 +332,70 @@ describe("buildExecuteSystemPrompt", () => {
 });
 
 describe("buildPlanSystemPrompt", () => {
+  it("injects plan-mode Worklab base guardrails regardless of agent skills", () => {
+    const p = buildPlanSystemPrompt({
+      agent: { name: "planner", instructions: "plan carefully" },
+      task: { id: "t1", title: "demo", stage: "plan", instructions: "do things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      delegation: {
+        enabled: true,
+        canDelegate: true,
+        depth: 0,
+        maxDepth: 1,
+        maxChildrenPerRound: 5,
+        maxParallelChildren: 3,
+        autoRunChildren: true,
+        availableAgents: [],
+        childTasks: [],
+      },
+    });
+
+    expect(p).toContain("## Worklab base guardrails");
+    expect(p).toContain("### worklab-delegating");
+    expect(p).toContain("Never return more than the configured max children per round");
+    expect(p).toContain("merge adjacent subtasks owned by the same agent or touching the same files");
+    expect(p).toContain("### worklab-final-result");
+    expect(p).toContain("Do not include XML, invoke tags, or tool-call syntax inside JSON string fields");
+    expect(p).toContain("### worklab-run-recovery");
+    expect(p).toContain("Inspect prior runs with targeted `run_log_read`");
+    expect(p).toContain("### worklab-tool-hygiene");
+  });
+
+  it("keeps execute and review base guardrails mode-specific", () => {
+    const execute = buildExecuteSystemPrompt({
+      agent: { name: "coder", instructions: "code carefully" },
+      task: { id: "t1", title: "demo", stage: "execute", instructions: "do things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    const review = buildReviewSystemPrompt({
+      agent: { name: "reviewer", instructions: "review carefully" },
+      task: { id: "t1", title: "demo", stage: "review", instructions: "review things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: { finalText: "done", agentName: "coder", numTurns: 1, durationMs: 100, runId: "run-1" },
+    });
+
+    expect(execute).toContain("### worklab-final-result");
+    expect(execute).toContain("### worklab-run-recovery");
+    expect(execute).toContain("### worklab-tool-hygiene");
+    expect(execute).not.toContain("### worklab-delegating");
+    expect(review).toContain("### worklab-final-result");
+    expect(review).toContain("### worklab-run-recovery");
+    expect(review).not.toContain("### worklab-delegating");
+    expect(review).not.toContain("### worklab-tool-hygiene");
+  });
+
   it("uses the planning directive without asking for implementation work", () => {
     const p = buildPlanSystemPrompt({
       agent: { name: "planner", instructions: "plan carefully" },
