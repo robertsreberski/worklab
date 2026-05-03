@@ -1,11 +1,14 @@
 # `src/ai/` — Provider Layer
 
-Pure provider plumbing: SDKs, CLIs, the structured-result contract, failure
+Pure runtime plumbing: SDKs, CLIs, the structured-result contract, failure
 classification, and streaming-event normalization. This layer **never reads
 or writes the database**, knows nothing about the workflow state machine,
-and does not spawn workers — it is a pi-mono-style provider kernel that
+and does not spawn workers — it is a pi-mono-style runtime kernel that
 the agent kernel (`src/agent/`) and the rest of the app consume through
-provider backends.
+runtime bridges.
+
+See `docs/ai-runtime-bridge.md` for canonical runtime references, migration
+rules, and the checklist for adding a new SDK or CLI bridge.
 
 ## May import from
 
@@ -32,6 +35,9 @@ src/ai/
 ├── live-input-prompt.js
 ├── pi-oauth.js
 ├── registry.js
+├── runtime/
+│   ├── model-refs.js
+│   └── registry.js
 ├── result/
 │   ├── contract.js
 │   └── decisions.js
