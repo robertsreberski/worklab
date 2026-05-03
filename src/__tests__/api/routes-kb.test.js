@@ -17,10 +17,10 @@ describe("kb REST routes", () => {
     const d = mkdtempSync(join(tmpdir(), "worklab-kb-"));
     dirs.push(d);
     mkdirSync(join(d, "knowledge"), { recursive: true });
-    const { app, broker, agent } = makeTestServer({ dataDir: d });
+    const { app, broker, agent, db } = makeTestServer({ dataDir: d });
     // Spy on broker.broadcast AFTER creating the server so we capture calls.
     vi.spyOn(broker, "broadcast");
-    return { agent, dataDir: d, broker };
+    return { agent, dataDir: d, broker, db };
   }
 
   // ── GET /api/kb ─────────────────────────────────────────────────────────────
@@ -150,6 +150,55 @@ describe("kb REST routes", () => {
     const { agent } = mkServer();
     const res = await agent.get("/api/kb/INVALID_SLUG").expect(400);
     expect(res.body.error.code).toBe("invalid_slug");
+  });
+
+  it("POST /api/kb/organize previews and applies project/category metadata", async () => {
+    const { agent, db } = mkServer();
+    const project = await agent
+      .post("/api/projects")
+      .send({ name: "Project One", slug: "project-one" })
+      .expect(201);
+    await agent
+      .post("/api/kb")
+      .send({ slug: "runtime-note", title: "Runtime audit note", body: "body", tags: ["runtime", "audit"] })
+      .expect(201);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, project_id, title, instructions, stage, run_policy, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'done', 'manual', ?, ?)
+    `).run(
+      "task-1",
+      "T-1",
+      "task-1",
+      project.body.project.id,
+      "Runtime audit",
+      "See #/knowledge/runtime-note for the durable audit.",
+      now,
+      now,
+    );
+
+    const preview = await agent.post("/api/kb/organize").send({ apply: false }).expect(200);
+    expect(preview.body.apply).toBe(false);
+    expect(preview.body.proposals).toContainEqual(expect.objectContaining({
+      slug: "runtime-note",
+      patch: expect.objectContaining({
+        project_id: project.body.project.id,
+        category: "research",
+        subcategory: "runtime",
+      }),
+    }));
+
+    const before = await agent.get("/api/kb/runtime-note").expect(200);
+    expect(before.body.entry.meta.project_id).toBeNull();
+
+    const applied = await agent.post("/api/kb/organize").send({ apply: true }).expect(200);
+    expect(applied.body.apply).toBe(true);
+    expect(applied.body.applied).toBeGreaterThan(0);
+    const after = await agent.get("/api/kb/runtime-note").expect(200);
+    expect(after.body.entry.meta.project_id).toBe(project.body.project.id);
+    expect(after.body.entry.meta.category).toBe("research");
+    expect(after.body.entry.meta.subcategory).toBe("runtime");
   });
 
   // ── POST /api/kb ────────────────────────────────────────────────────────────

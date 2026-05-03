@@ -20,8 +20,8 @@ export const definitions = [
     category: string("Category filter"),
     subcategory: string("Subcategory filter"),
     pinned: boolean("Pinned filter"),
-  })),
-  tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"])),
+  }), { annotations: { readOnlyHint: true } }),
+  tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"]), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_create", "Create a Worklab Knowledge Base entry.", object({
     slug: slugSchema,
     title: string("Title"),
@@ -31,15 +31,22 @@ export const definitions = [
     subcategory: string("Subcategory"),
     project_id: string("Project id or slug"),
     pinned: boolean("Pinned"),
-  }, ["title"])),
-  tool("worklab_kb_update", "Patch a Worklab Knowledge Base entry.", object({ slug: slugSchema, patch: patchSchema }, ["slug", "patch"])),
-  tool("worklab_kb_delete", "Delete a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"])),
+  }, ["title"]), { annotations: { readOnlyHint: false, destructiveHint: false } }),
+  tool("worklab_kb_update", "Patch a Worklab Knowledge Base entry.", object({ slug: slugSchema, patch: patchSchema }, ["slug", "patch"]), { annotations: { readOnlyHint: false, destructiveHint: false } }),
+  tool("worklab_kb_delete", "Delete a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"]), { annotations: { readOnlyHint: false, destructiveHint: true } }),
+  tool("worklab_kb_organize", "Preview or apply conservative Knowledge Base project/category/subcategory metadata backfill. Defaults to dry-run unless apply is true.", object({
+    apply: boolean("Apply proposed metadata changes. Defaults to false for dry-run."),
+  }), { annotations: { readOnlyHint: false, destructiveHint: false } }),
   tool("worklab_search", "Search the Worklab Knowledge Base, journals, and memories.", object({
     query: string("Search query"),
     kind: string("all, kb, journal, or memory"),
     agent: string("Optional agent scope"),
+    tag: string("Optional KB tag filter"),
+    project_id: string("Optional KB project id filter"),
+    category: string("Optional KB category filter"),
+    subcategory: string("Optional KB subcategory filter"),
     limit: number("Max results"),
-  }, ["query"])),
+  }, ["query"]), { annotations: { readOnlyHint: true } }),
 ];
 
 const specs = [
@@ -48,6 +55,7 @@ const specs = [
   ["worklab_kb_create", "POST", "/api/kb", [], "input"],
   ["worklab_kb_update", "PATCH", "/api/kb/:slug", [], "patch"],
   ["worklab_kb_delete", "DELETE", "/api/kb/:slug"],
+  ["worklab_kb_organize", "POST", "/api/kb/organize", [], "input"],
 ];
 
 export function buildHandlers(client) {
@@ -58,6 +66,10 @@ export function buildHandlers(client) {
       q: input.query,
       kind: input.kind || "all",
       agent: input.agent,
+      tag: input.tag,
+      project_id: input.project_id,
+      category: input.category,
+      subcategory: input.subcategory,
       limit: input.limit,
     },
   });

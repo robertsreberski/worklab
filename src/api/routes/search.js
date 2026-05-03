@@ -25,6 +25,10 @@ export function registerSearchRoutes(app, { db, dataDir }) {
         query: q,
         kind,
         agent: req.query.agent || null,
+        tag: req.query.tag || undefined,
+        category: req.query.category || undefined,
+        subcategory: req.query.subcategory || undefined,
+        project_id: req.query.project_id || undefined,
         limit: parseLimit(req.query.limit),
       });
       res.json({ results });

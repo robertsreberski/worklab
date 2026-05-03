@@ -294,7 +294,7 @@ export function scanSources({ dataDir, kind = "all" } = {}) {
         kind: "kb",
         source_ref: `knowledge/${meta.slug}.md`,
         title: entry.meta.title || meta.slug,
-        body: entry.body,
+        body: kbIndexBody(entry),
         slug: meta.slug,
       });
     }
@@ -333,6 +333,18 @@ export function scanSources({ dataDir, kind = "all" } = {}) {
   return sources.filter((source) => String(source.body || "").trim().length > 0);
 }
 
+function kbIndexBody(entry) {
+  const meta = entry.meta || {};
+  const lines = [
+    meta.project_id ? `Project: ${meta.project_id}` : "",
+    meta.category ? `Category: ${meta.category}` : "",
+    meta.subcategory ? `Subcategory: ${meta.subcategory}` : "",
+    Array.isArray(meta.tags) && meta.tags.length ? `Tags: ${meta.tags.join(", ")}` : "",
+  ].filter(Boolean);
+  if (!lines.length) return entry.body;
+  return `${lines.join("\n")}\n\n${entry.body || ""}`;
+}
+
 export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldStop = () => false } = {}) {
   const modelRef = getEmbeddingModel(db);
   const sources = scanSources({ dataDir });
@@ -368,7 +380,7 @@ export async function indexPath({ db, dataDir, filePath, fetchImpl = fetch }) {
       fetchImpl,
       modelRef: modelRef || null,
       allowVector,
-      source: { kind: "kb", source_ref: `knowledge/${slug}.md`, title: entry.meta.title || slug, body: entry.body, slug },
+      source: { kind: "kb", source_ref: `knowledge/${slug}.md`, title: entry.meta.title || slug, body: kbIndexBody(entry), slug },
     });
   }
   const m = /^agents\/([^/]+)\/(JOURNAL|MEMORY)\.md$/.exec(rel);
@@ -416,10 +428,40 @@ function resultFromRow(row, score, tokens) {
   };
 }
 
-export async function search({ db, dataDir, query, kind = "all", agent = null, limit = 8, fetchImpl = fetch } = {}) {
+function kbFiltersActive(filters) {
+  return ["tag", "category", "subcategory", "project_id"].some((key) => filters[key] !== undefined && filters[key] !== null && filters[key] !== "");
+}
+
+function kbResultMatches({ dataDir, result, filters }) {
+  if (result.kind !== "kb" || !kbFiltersActive(filters)) return true;
+  if (!result.slug) return false;
+  const entry = kbRead({ dataDir, slug: result.slug });
+  if (!entry) return false;
+  const meta = entry.meta || {};
+  if (filters.project_id !== undefined && meta.project_id !== filters.project_id) return false;
+  if (filters.category !== undefined && meta.category !== filters.category) return false;
+  if (filters.subcategory !== undefined && meta.subcategory !== filters.subcategory) return false;
+  if (filters.tag !== undefined && !(Array.isArray(meta.tags) && meta.tags.includes(filters.tag))) return false;
+  return true;
+}
+
+export async function search({
+  db,
+  dataDir,
+  query,
+  kind = "all",
+  agent = null,
+  limit = 8,
+  tag,
+  category,
+  subcategory,
+  project_id,
+  fetchImpl = fetch,
+} = {}) {
   const tokens = searchTokens(query);
   if (!tokens.length) return [];
   const capped = Math.max(1, Math.min(Number(limit) || 8, 50));
+  const kbFilters = { tag, category, subcategory, project_id };
   const where = [];
   const params = [];
   if (kind && kind !== "all") {
@@ -486,6 +528,7 @@ export async function search({ db, dataDir, query, kind = "all", agent = null, l
       return resultFromRow(item.row, score, tokens);
     })
     .sort((a, b) => b.score - a.score)
+    .filter((result) => kbResultMatches({ dataDir, result, filters: kbFilters }))
     .slice(0, capped);
   return ranked;
 }

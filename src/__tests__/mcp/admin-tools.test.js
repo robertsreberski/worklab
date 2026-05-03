@@ -13,6 +13,7 @@ describe("admin MCP tools", () => {
     expect(names).toContain("worklab_task_comment_delete");
     expect(names).toContain("worklab_agent_create");
     expect(names).toContain("worklab_automation_create");
+    expect(names).toContain("worklab_kb_organize");
     expect(names).not.toContain("worklab_schedule_create");
     expect(names).toContain("worklab_service_restart");
   });
@@ -20,10 +21,20 @@ describe("admin MCP tools", () => {
   // Snapshot-style guard: catches accidental drift after the per-domain
   // tool-module split. Tool names must be unique and the total count must
   // not change without an explicit edit to this number.
-  it("registers exactly 66 unique admin tool definitions", () => {
-    expect(adminToolDefinitions.length).toBe(66);
+  it("registers exactly 67 unique admin tool definitions", () => {
+    expect(adminToolDefinitions.length).toBe(67);
     const names = adminToolDefinitions.map((tool) => tool.name);
     expect(new Set(names).size).toBe(adminToolDefinitions.length);
+  });
+
+  it("marks KB admin tools with read/destructive annotations", () => {
+    expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_list")?.annotations).toMatchObject({
+      readOnlyHint: true,
+    });
+    expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_delete")?.annotations).toMatchObject({
+      destructiveHint: true,
+    });
+    expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_organize")?.inputSchema.properties).toHaveProperty("apply");
   });
 
   it("defines create-agent with explicit MCP fields", () => {
