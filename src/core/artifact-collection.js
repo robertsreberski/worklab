@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { readFileChangeSnapshot, statsForCompletedChange } from "../ai/file-change-stats.js";
 import { artifactTypeForPath, normalizeArtifactPath, normalizeStoredArtifacts } from "./run-artifacts.js";
 
 const DEFAULT_MAX_FILES = 20_000;
@@ -60,11 +61,21 @@ function shouldSkipDir(name, absolutePath, { includePath = null } = {}) {
 function snapshotFile(path, root) {
   const stat = statSync(path);
   if (!stat.isFile()) return null;
+  const contentSnapshot = readFileChangeSnapshot(path);
+  const safeContentSnapshot = typeof contentSnapshot.content === "string" && contentSnapshot.content.includes("\0")
+    ? {
+      exists: contentSnapshot.exists,
+      size: contentSnapshot.size,
+      line_count: contentSnapshot.line_count,
+      unavailable_reason: "binary",
+    }
+    : contentSnapshot;
   return {
     path,
     relative_path: normalizeArtifactPath(relative(root, path)),
     size_bytes: stat.size,
     mtime_ms: Math.trunc(stat.mtimeMs),
+    ...safeContentSnapshot,
   };
 }
 
@@ -124,6 +135,13 @@ function artifactFromDelta({ file, before = null, kind, workdir, runId, endedAt 
   const absolutePath = file?.path || (before?.relative_path ? join(workdir, before.relative_path) : null);
   const normalizedPath = normalizeArtifactPath(absolutePath);
   const relativePath = file?.relative_path || before?.relative_path || normalizeArtifactPath(relative(workdir, absolutePath));
+  const lineStats = statsForCompletedChange(
+    { path: relativePath, kind },
+    before || { exists: false, line_count: 0 },
+    file || { exists: false, line_count: 0 },
+  ) || {};
+  const addedLines = numberOrNull(lineStats.added_lines);
+  const removedLines = numberOrNull(lineStats.removed_lines);
   return {
     path: normalizedPath,
     display_path: relativePath,
@@ -135,13 +153,13 @@ function artifactFromDelta({ file, before = null, kind, workdir, runId, endedAt 
     temporary: false,
     size_bytes: numberOrNull(file?.size_bytes ?? before?.size_bytes),
     event_count: 0,
-    added_lines: 0,
-    removed_lines: 0,
-    has_line_delta: false,
-    before_lines: null,
-    after_lines: null,
-    unavailable_reason: "line_stats_unavailable",
-    hunks: [],
+    added_lines: addedLines || 0,
+    removed_lines: removedLines || 0,
+    has_line_delta: addedLines != null || removedLines != null,
+    before_lines: numberOrNull(lineStats.before_lines),
+    after_lines: numberOrNull(lineStats.after_lines),
+    unavailable_reason: lineStats.unavailable_reason || null,
+    hunks: Array.isArray(lineStats.hunks) ? lineStats.hunks : [],
     run_ids: runId ? [runId] : [],
     first_run_id: runId || null,
     last_run_id: runId || null,

@@ -79,6 +79,47 @@ function isAbsolutePath(path) {
   return normalizeArtifactPath(path).startsWith("/");
 }
 
+function stripTrailingSlash(value) {
+  const normalized = normalizeArtifactPath(value);
+  if (normalized === "/") return normalized;
+  return normalized.replace(/\/+$/, "");
+}
+
+function relativeToRoot(path, root) {
+  const target = normalizeArtifactPath(path);
+  const base = stripTrailingSlash(root);
+  if (!target || !base || !isAbsolutePath(target) || !isAbsolutePath(base)) return "";
+  if (target === base) return "";
+  if (!target.startsWith(`${base}/`)) return "";
+  return target.slice(base.length + 1);
+}
+
+function worktreeFromRun(run = {}) {
+  const parsed = safeJsonParse(run?.worktree_json ?? run?.worktree, null);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+}
+
+function displayRoots(options = {}) {
+  const run = options.run || options;
+  const worktree = worktreeFromRun(run);
+  return [
+    worktree.runtime_workdir,
+    run?.workdir,
+    run?.source_workdir,
+    worktree.source_workdir,
+    worktree.worktree_root,
+    worktree.source_git_root,
+  ].map(stripTrailingSlash).filter(Boolean);
+}
+
+function displayPathFromRoots(path, roots = []) {
+  for (const root of roots) {
+    const relative = relativeToRoot(path, root);
+    if (relative) return relative;
+  }
+  return "";
+}
+
 function dirnameParts(path) {
   const parts = pathParts(path);
   return parts.slice(0, Math.max(0, parts.length - 1));
@@ -100,14 +141,20 @@ function commonPrefix(list) {
   return first.slice(0, end);
 }
 
-function displayPathMap(paths) {
+function displayPathMap(paths, options = {}) {
   const normalized = paths.map(normalizeArtifactPath).filter(Boolean);
+  const roots = displayRoots(options);
   const absolute = normalized.filter(isAbsolutePath);
   const prefix = absolute.length === normalized.length
     ? commonPrefix(absolute.map(dirnameParts))
     : [];
   const map = new Map();
   for (const path of normalized) {
+    const rooted = displayPathFromRoots(path, roots);
+    if (rooted) {
+      map.set(path, rooted);
+      continue;
+    }
     const parts = pathParts(path);
     const displayParts = prefix.length && isAbsolutePath(path)
       ? parts.slice(prefix.length)
@@ -286,6 +333,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     ?? (incomingEventSeq == null ? 0 : 1);
   const existing = map.get(rawPath) || {
     path: rawPath,
+    display_path: change?.display_path || change?.displayPath || meta.display_path || null,
     kind,
     status: "in_progress",
     artifact_type: incomingType,
@@ -327,6 +375,12 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   map.set(rawPath, {
     ...existing,
     ...mergeRunMetadata(existing, meta),
+    display_path: displayPathFromRoots(rawPath, displayRoots(meta))
+      || change?.display_path
+      || change?.displayPath
+      || meta.display_path
+      || existing.display_path
+      || null,
     kind: kind || existing.kind,
     status: mergeStatus(existing.status, status),
     artifact_type: mergeArtifactType(existing.artifact_type, incomingType),
@@ -378,13 +432,18 @@ function normalizeEvent(event) {
   return [event];
 }
 
-function finalizeArtifacts(map) {
-  const displayPaths = displayPathMap([...map.keys()]);
+function finalizeArtifacts(map, options = {}) {
+  const displayPaths = displayPathMap([...map.keys()], options);
+  const roots = displayRoots(options);
   return [...map.values()]
     .map((artifact) => ({
       ...artifact,
       run_ids: asArray(artifact.run_ids),
-      display_path: displayPaths.get(artifact.path) || artifact.path,
+      display_path: displayPathFromRoots(artifact.path, roots)
+        || displayPathFromRoots(artifact.display_path, roots)
+        || (artifact.display_path && !isAbsolutePath(artifact.display_path) ? normalizeArtifactPath(artifact.display_path) : "")
+        || displayPaths.get(artifact.path)
+        || artifact.path,
     }))
     .sort((left, right) => String(left.display_path).localeCompare(String(right.display_path)));
 }
@@ -421,10 +480,10 @@ export function extractRunArtifacts(events = [], options = {}) {
     }
   }
 
-  return finalizeArtifacts(byPath);
+  return finalizeArtifacts(byPath, { run });
 }
 
-export function normalizeStoredArtifacts(value) {
+export function normalizeStoredArtifacts(value, options = {}) {
   const parsed = safeJsonParse(value, []);
   if (!Array.isArray(parsed)) return [];
   const byPath = new Map();
@@ -460,7 +519,7 @@ export function normalizeStoredArtifacts(value) {
       last_seen_at: lineNumber(item.last_seen_at),
     });
   }
-  return finalizeArtifacts(byPath);
+  return finalizeArtifacts(byPath, options);
 }
 
 export function artifactsFromPaths(paths = [], run = null) {
@@ -497,7 +556,7 @@ export function artifactsFromPaths(paths = [], run = null) {
     };
     byPath.set(rawPath, { ...base, ...mergeRunMetadata(base, run || {}) });
   }
-  return finalizeArtifacts(byPath);
+  return finalizeArtifacts(byPath, { run });
 }
 
 export function artifactPaths(artifacts = []) {
@@ -524,10 +583,11 @@ export function runArtifactSummary(artifacts = []) {
 export function aggregateRunArtifacts(runs = []) {
   const byPath = new Map();
   for (const run of runs || []) {
-    const artifacts = normalizeStoredArtifacts(run?.artifacts || run?.artifacts_json || []);
+    const artifacts = normalizeStoredArtifacts(run?.artifacts || run?.artifacts_json || [], { run });
     for (const artifact of artifacts) {
       mergeArtifact(byPath, {
         path: artifact.path,
+        display_path: artifact.display_path,
         kind: artifact.kind,
         line_stats: {
           before_lines: artifact.before_lines,
@@ -573,7 +633,7 @@ function parseArtifactPathsJson(value) {
 
 export function artifactsForRunRow(row, { events = null } = {}) {
   if (!row) return [];
-  const stored = normalizeStoredArtifacts(row.artifacts_json || row.artifacts);
+  const stored = normalizeStoredArtifacts(row.artifacts_json || row.artifacts, { run: row });
   if (stored.length) return stored;
   if (Array.isArray(events)) {
     const fromEvents = extractRunArtifacts(events, {
@@ -584,6 +644,7 @@ export function artifactsForRunRow(row, { events = null } = {}) {
     if (fromEvents.length) return fromEvents;
   }
   return artifactsFromPaths(parseArtifactPathsJson(row.artifact_paths_json || row.artifact_paths), {
+    ...row,
     run_id: row.id,
     started_at: row.started_at,
     ended_at: row.ended_at,
@@ -594,6 +655,7 @@ export function loadTaskArtifacts(db, taskId, { excludeRunId = null, fallbackToL
   if (!db || !taskId) return { artifacts: [], summary: runArtifactSummary([]) };
   const rows = db.prepare(`
     SELECT id, status, process_status, mode, stage, started_at, ended_at,
+           workdir, workspace_mode, source_workdir, worktree_json,
            artifact_paths_json, artifacts_json, artifact_summary_json
     FROM task_runs
     WHERE task_id = ?

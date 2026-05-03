@@ -6,6 +6,11 @@ import {
   groupRunArtifacts,
   runArtifactSummary,
 } from "../../ui/src/lib/runArtifacts.js";
+import {
+  editedRunArtifactsForDisplay,
+  outputRunArtifactsForDisplay,
+  runArtifactMetaText,
+} from "../../ui/src/routes/task-detail/RunCards.jsx";
 
 describe("run artifact extraction", () => {
   it("builds a nested tree from completed file edit results", () => {
@@ -227,5 +232,45 @@ describe("run artifact extraction", () => {
       ["git_commit", "Git provenance", 1],
       ["scratch", "Scratch and diagnostics", 1],
     ]);
+  });
+
+  it("selects edited files as the primary artifact display", () => {
+    const artifacts = [
+      { path: "src/app.js", display_path: "src/app.js", artifact_type: "code_change", source: "workspace_delta" },
+      { path: "notes.txt", display_path: "notes.txt", artifact_type: "generated_output", source: "file_edit" },
+      { path: "console.log", display_path: "console.log", artifact_type: "qa_output", source: "qa_output_dir" },
+      { path: "git/commits/abc123", display_path: "git/commits/abc123", artifact_type: "git_commit", source: "git" },
+      { path: ".worklab-tmp/script.py", display_path: ".worklab-tmp/script.py", artifact_type: "scratch", source: "workspace_delta" },
+    ];
+
+    expect(editedRunArtifactsForDisplay(artifacts).map((artifact) => artifact.display_path)).toEqual([
+      "notes.txt",
+      "src/app.js",
+    ]);
+    expect(outputRunArtifactsForDisplay(artifacts).map((artifact) => artifact.display_path)).toEqual([
+      "console.log",
+      "git/commits/abc123",
+      ".worklab-tmp/script.py",
+    ]);
+  });
+
+  it("does not expose internal unavailable or worktree labels in artifact meta", () => {
+    expect(runArtifactMetaText({
+      type: "file",
+      artifact_type: "code_change",
+      unavailable_reason: "line_stats_unavailable",
+    })).toBe("");
+    expect(runArtifactMetaText({
+      type: "file",
+      artifact_type: "code_change",
+      workspace_mode: "worktree",
+    })).not.toMatch(/worktree/i);
+    expect(runArtifactMetaText({
+      type: "file",
+      artifact_type: "code_change",
+      has_line_delta: true,
+      added_lines: 4,
+      removed_lines: 1,
+    })).toBe("+4 -1");
   });
 });
