@@ -76,6 +76,15 @@ describe("provider routes", () => {
     expect(res.body.models.find((m) => m.value === `pi:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
 
+  it("does not advertise reserved runtime prefixes for agent models", async () => {
+    const { agent } = makeTestServer({ dataDir: tmpDataDir() });
+    const res = await agent.get("/api/models/available").expect(200);
+    const reserved = ["codex:", "openai:", "vercel:", "claude-code:"];
+    for (const model of res.body.models) {
+      expect(reserved.some((prefix) => String(model.value).startsWith(prefix))).toBe(false);
+    }
+  });
+
   it("omits enabled non-runnable custom models from the agent model catalogue", async () => {
     const { agent, db } = makeTestServer({ dataDir: tmpDataDir() });
     const p = await agent.post("/api/providers").send({

@@ -1,5 +1,5 @@
 import { DEFAULT_EMBEDDING_MODEL, parseEmbeddingReference } from "./embeddings.js";
-import { isValidModelReference } from "./ai.js";
+import { normalizeRuntimeModelReference } from "../ai/runtime/model-refs.js";
 import { listSettings, upsertSetting } from "./db/queries/settings.js";
 
 export const DEFAULT_SETTINGS = {
@@ -95,6 +95,15 @@ function numberInRange(key, value, { min = -Infinity, max = Infinity } = {}) {
   return n;
 }
 
+function agentRuntimeModelReference(key, value) {
+  const text = stringValue(key, value, { required: true });
+  try {
+    return normalizeRuntimeModelReference(text).reference;
+  } catch {
+    throw new Error(`${key} must be a valid model reference`);
+  }
+}
+
 export function validateSetting(key, value) {
   switch (key) {
     case "consolidation_hour":
@@ -129,11 +138,8 @@ export function validateSetting(key, value) {
     case "slack_user_id":
     case "slack_agent_name":
       return stringValue(key, value);
-    case "slack_model": {
-      const text = stringValue(key, value, { required: true });
-      if (!isValidModelReference(text)) throw new Error(`${key} must be a valid model reference`);
-      return text;
-    }
+    case "slack_model":
+      return agentRuntimeModelReference(key, value);
     case "slack_effort": {
       const text = stringValue(key, value, { required: true });
       if (!AGENT_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...AGENT_EFFORTS].join(", ")}`);
@@ -143,11 +149,8 @@ export function validateSetting(key, value) {
       return stringArray(key, value);
     case "slack_run_timeout_ms":
       return integerInRange(key, value, { min: 1000, max: Number.MAX_SAFE_INTEGER });
-    case "assistant_model": {
-      const text = stringValue(key, value, { required: true });
-      if (!isValidModelReference(text)) throw new Error(`${key} must be a valid model reference`);
-      return text;
-    }
+    case "assistant_model":
+      return agentRuntimeModelReference(key, value);
     case "assistant_effort": {
       const text = stringValue(key, value, { required: true });
       if (!AGENT_EFFORTS.has(text)) throw new Error(`${key} must be one of: ${[...AGENT_EFFORTS].join(", ")}`);

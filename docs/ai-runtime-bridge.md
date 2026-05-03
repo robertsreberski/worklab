@@ -18,7 +18,7 @@ Current Pi provider examples:
 - `pi:google:gemini-2.5-pro`
 - `pi:<customProviderId>:<modelName>`
 
-Reserved ids are not accepted by normal agent/model validation:
+Reserved ids are not accepted by strict runtime parsing:
 
 - `openai:<model>` is reserved for a future OpenAI-native runtime.
 - `codex:<model>` and `codex-cli:<model>` are reserved for future Codex runtimes.
@@ -31,7 +31,9 @@ use provider ids such as `openai:<embeddingModel>` or
 
 ## Legacy Migration
 
-The migration-only canonicalizer rewrites saved active runtime refs:
+The compatibility canonicalizer rewrites legacy refs before persistence at
+agent/settings ingress boundaries, and migrations apply the same mapping to
+saved active runtime refs:
 
 - `openai:<model>` -> `pi:openai:<model>`
 - `codex:<model>` -> `pi:openai-codex:<model>`

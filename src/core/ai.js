@@ -2,6 +2,7 @@ import { getModel as getPiModel, getModels as getPiModels, supportsXhigh } from 
 import { getSkillAccessDirs } from "../agent/prompt/skill-index.js";
 import {
   canonicalizeLegacyModelReference,
+  normalizeRuntimeModelReference,
   parseRuntimeModelReference,
 } from "../ai/runtime/model-refs.js";
 import { resolveRuntimeBridge } from "../ai/runtime/registry.js";
@@ -385,6 +386,10 @@ export function normalizeReasoningEffortForModel(modelRefOrResolved, effort, cap
 
 export function parseModelReference(value) {
   return parseRuntimeModelReference(value);
+}
+
+export function normalizeModelReference(value) {
+  return normalizeRuntimeModelReference(value);
 }
 
 export function isValidModelReference(value) {

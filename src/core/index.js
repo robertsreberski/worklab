@@ -65,6 +65,7 @@ export {
   getBuiltinModelGroups,
   getBuiltinModels,
   isValidModelReference,
+  normalizeModelReference,
   normalizeReasoningEffortForModel,
   parseModelReference,
   resolveBackendFor,
