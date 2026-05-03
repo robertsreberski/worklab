@@ -68,6 +68,7 @@ const emptyAgent = {
   builtin_allowlist: [],
   builtin_allowlist_mode: "all",
   allow_self_review: true,
+  browser_tools_review_only: false,
   daily_budget_usd: null,
   per_run_budget_usd: null,
   enabled: true,
@@ -527,6 +528,11 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         : "Unavailable",
       mono: false,
     },
+    {
+      label: "Browser tools",
+      value: agent.browser_tools_review_only ? "Review only" : "All stages",
+      mono: false,
+    },
   ];
   const runtimeMeta = [
     { label: "Slug", value: isNew ? "Generated after create" : agent.name },
@@ -757,6 +763,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, allow_self_review: next })}
                     label="Allow self-review"
                     description="Reviewer may approve its own execute run."
+                  />
+                </FormField>
+                <FormField switchInside>
+                  <Switch
+                    checked={!!agent.browser_tools_review_only}
+                    onChange={(next) => setAgent({ ...agent, browser_tools_review_only: next })}
+                    label="Disable browser tools in execute"
+                    description="Playwright MCP and Browser Use or Playwright skills stay available for review runs."
                   />
                 </FormField>
                 <FormField label="Daily budget">
