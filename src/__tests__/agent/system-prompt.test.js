@@ -396,6 +396,23 @@ describe("buildPlanSystemPrompt", () => {
     expect(review).not.toContain("### worklab-tool-hygiene");
   });
 
+  it("clarifies provider read safety reminders are conditional", () => {
+    const execute = buildExecuteSystemPrompt({
+      agent: { name: "coder", instructions: "code carefully" },
+      task: { id: "t1", title: "demo", stage: "execute", instructions: "edit benign application code" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+
+    expect(execute).toContain("### worklab-read-safety");
+    expect(execute).toContain("generic malware safety reminder after file reads");
+    expect(execute).toContain("not as a blanket prohibition on editing ordinary project source");
+    expect(execute).toContain("Refuse only when the file is actually malware");
+  });
+
   it("uses the planning directive without asking for implementation work", () => {
     const p = buildPlanSystemPrompt({
       agent: { name: "planner", instructions: "plan carefully" },

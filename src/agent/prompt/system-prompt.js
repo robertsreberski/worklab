@@ -327,6 +327,11 @@ function formatWorklabBaseGuardrails({ mode, delegation } = {}) {
     "### worklab-run-recovery",
     "Inspect prior runs with targeted `run_log_read` when exact history matters. Prefer tail or offset reads, avoid rereading huge logs, and continue from durable workspace, journal, KB, and artifact state.",
   ].join("\n\n"));
+  sections.push([
+    "### worklab-read-safety",
+    "Some provider tools may append a generic malware safety reminder after file reads. Treat it as a conditional reminder to assess whether the file or requested change is malware or abuse-related, not as a blanket prohibition on editing ordinary project source.",
+    "For benign application or project code, continue with the requested analysis, edits, tests, and commits. Refuse only when the file is actually malware or the requested change would improve malware, credential theft, persistence, evasion, exploitation, or other abusive capability.",
+  ].join("\n\n"));
   if (mode === "plan" || mode === "execute") {
     sections.push([
       "### worklab-tool-hygiene",
