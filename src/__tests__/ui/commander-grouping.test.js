@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   RUNTIME_GROUPS,
+  agentBulkOptions,
   clearCommanderTaskListCache,
   commanderTaskSortBucket,
   commanderTaskListCacheKey,
@@ -44,6 +45,15 @@ describe("commander task grouping", () => {
       "  - alpha: $0.01 (1 priced run)",
       "  - beta: $0.02 (1 priced run, 1 unpriced run)",
     ]);
+  });
+
+  it("omits disabled agents from bulk assignment options", () => {
+    const options = agentBulkOptions([
+      { name: "enabled-owner", display_name: "Enabled Owner", enabled: true },
+      { name: "disabled-owner", display_name: "Disabled Owner", enabled: false },
+    ]);
+
+    expect(options.map((option) => option.value)).toEqual(["__unassigned__", "enabled-owner"]);
   });
 
   it("shows an unpriced commander cost chip when today has only unpriced runs", () => {
