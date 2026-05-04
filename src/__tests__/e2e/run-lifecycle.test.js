@@ -79,7 +79,7 @@ describe("e2e: full run lifecycle via fake worker", () => {
     // Create task with owner in execute stage
     res = await fetch(`${baseUrl}/api/tasks`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e run", owner_agent: "e2e-coder", stage: "execute" }),
+      body: JSON.stringify({ title: "e2e run", instructions: "End-to-end run-lifecycle harness: drive the fake worker through one execute pass and verify auto-flip-to-done with a final comment.", owner_agent: "e2e-coder", stage: "execute" }),
     });
     expect(res.status).toBe(201);
     const { task } = await res.json();

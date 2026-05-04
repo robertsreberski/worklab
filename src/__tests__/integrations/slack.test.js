@@ -7,6 +7,7 @@ import { writeSettings } from "../../core/settings.js";
 import { slackMessageFilterReason } from "../../integrations/slack/filter.js";
 import { parseTriageResult } from "../../integrations/slack/triage-result.js";
 import { createWorklabSlackService } from "../../integrations/slack/service.js";
+import { buildTriageSystemPrompt } from "../../integrations/slack/context.js";
 
 function makeConfig(dataDir) {
   return {
@@ -210,5 +211,20 @@ describe("slack integration", () => {
 
     expect(app.client.chat.postMessage.mock.calls[0][0].text).toContain("Worklab task needs attention");
     expect(app.client.chat.postMessage.mock.calls[0][0].text).toContain("timeout");
+  });
+
+  it("triage prompt teaches the agent to expand Slack messages into proper task briefs", () => {
+    const prompt = buildTriageSystemPrompt({
+      agentName: "Assistant",
+      memory: "",
+      journalTail: "",
+      input: { type: "message", text: "fix login plz" },
+      skills: [],
+      now: new Date("2026-05-04T00:00:00Z"),
+    });
+    expect(prompt).toContain("worklab_task_create");
+    expect(prompt).toContain("acceptance criteria");
+    expect(prompt).toContain("80 chars");
+    expect(prompt).toMatch(/genuinely a one-line note/);
   });
 });

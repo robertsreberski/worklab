@@ -55,10 +55,16 @@ async function createAgent(baseUrl, name) {
 }
 
 async function createTask(baseUrl, body) {
+  // intelligence-ramp Phase 6.1 floor: API now requires >=80 chars of
+  // instructions by default. Fill in a realistic-looking brief unless the
+  // caller explicitly supplied one.
+  const withInstructions = body?.instructions
+    ? body
+    : { ...body, instructions: body?.instructions ?? "End-to-end harness brief: drive the fake worker through the configured script and assert lifecycle bookkeeping." };
   const res = await fetch(`${baseUrl}/api/tasks`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(withInstructions),
   });
   expect(res.status).toBe(201);
   return (await res.json()).task;

@@ -147,7 +147,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e approve", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
+      body: JSON.stringify({ title: "e2e approve", instructions: "End-to-end review-lifecycle harness: executor runs and reviewer should APPROVE, sending the task into done.", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
     });
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();
@@ -221,7 +221,7 @@ describe("e2e: reviewer lifecycle (APPROVE / REJECT) via fake worker", () => {
     const taskRes = await fetch(`${ctx.baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "e2e reject", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
+      body: JSON.stringify({ title: "e2e reject", instructions: "End-to-end review-lifecycle harness: executor runs and reviewer should REJECT with notes, bouncing the task back to execute.", owner_agent: "exec", reviewer_agent: "reviewer", stage: "execute", run_policy: "manual" }),
     });
     expect(taskRes.status).toBe(201);
     const { task } = await taskRes.json();

@@ -76,6 +76,52 @@ function newClientRequestId() {
   return `task-create-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+// intelligence-ramp Phase 6.2: live char count + soft warning band so the
+// operator sees the API's 80-char hard floor + 200-char "good brief" line
+// before they hit Save.
+export const INSTRUCTIONS_HARD_MIN = 80;
+export const INSTRUCTIONS_SOFT_MIN = 200;
+
+export function instructionsCoachState(value) {
+  const length = String(value || "").trim().length;
+  if (length === 0) {
+    return {
+      length,
+      tone: "instructions-coach-empty",
+      label: `Empty. Tasks need at least ${INSTRUCTIONS_HARD_MIN} characters of instructions to save.`,
+    };
+  }
+  if (length < INSTRUCTIONS_HARD_MIN) {
+    return {
+      length,
+      tone: "instructions-coach-error",
+      label: `${INSTRUCTIONS_HARD_MIN - length} more characters needed before this saves. Describe acceptance criteria, not just the headline.`,
+    };
+  }
+  if (length < INSTRUCTIONS_SOFT_MIN) {
+    return {
+      length,
+      tone: "instructions-coach-warn",
+      label: `Thin brief (${length} chars). Consider naming the files involved, what "done" looks like, and how to verify it.`,
+    };
+  }
+  return {
+    length,
+    tone: "instructions-coach-good",
+    label: `${length} chars — the agent has enough to work with.`,
+  };
+}
+
+export function InstructionsCoach({ value }) {
+  const { length, tone, label } = instructionsCoachState(value);
+  return (
+    <div class={`instructions-coach ${tone}`} role="status">
+      <span class="instructions-coach-count">{length}</span>
+      <span class="instructions-coach-label">{label}</span>
+    </div>
+  );
+}
+
 export function TaskEdit({ mode = "create", id = null }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
@@ -473,16 +519,17 @@ export function TaskEdit({ mode = "create", id = null }) {
                   <SectionMarker id="task-edit-instructions" num="02" kicker="Instructions" meta="Markdown" />
                   <FormField
                     label="Instructions"
-                    hint="Sent to the owner. Markdown supported."
+                    hint="Sent to the owner. Markdown supported. Cover what 'done' looks like, the files or systems involved, and how the work should be verified."
                   >
                     <Textarea
                       rows={10}
                       monospace
                       autoGrow
-                      placeholder="What should the owner do?"
+                      placeholder="What should the owner do? Include acceptance criteria, files to touch, tests to run, and any constraints. A one-liner like 'fix login' will produce a one-liner result."
                       value={draft.instructions}
                       onInput={(e) => update({ instructions: e.target.value })}
                     />
+                    <InstructionsCoach value={draft.instructions} />
                   </FormField>
                 </section>
 
