@@ -50,6 +50,15 @@ export const pendingQuestionSchema = z.object({
 export const PARENT_REVIEW_POLICY_VALUES = ["default", "skip_when_qa_child", "always_skip"];
 export const MEMORY_CANDIDATE_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
 export const MEMORY_CANDIDATE_SCOPES = ["agent", "project", "task", "global"];
+export const VERIFICATION_EVIDENCE_KINDS = ["test", "build", "lint", "manual_check", "screenshot", "n_a"];
+
+const verificationEvidenceSchema = z.object({
+  kind: z.enum(VERIFICATION_EVIDENCE_KINDS),
+  command_or_url: z.string().trim().optional().default(""),
+  exit_code_or_status: z.string().trim().optional().default(""),
+  snippet: z.string().optional().default(""),
+  reason: z.string().optional().default(""),
+}).passthrough();
 
 const memoryCandidateSchema = z.object({
   kind: z.enum(MEMORY_CANDIDATE_KINDS).default("fact"),
@@ -79,6 +88,7 @@ export const worklabResultSchema = z.object({
   subtasks: z.array(subtaskSchema).default([]),
   parent_review_policy: parentReviewPolicySchema,
   memory_candidates: z.array(memoryCandidateSchema).default([]),
+  verification_evidence: z.array(verificationEvidenceSchema).default([]),
 }).passthrough();
 
 export const WORKLAB_RESULT_JSON_SCHEMA = {
@@ -184,6 +194,22 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
         },
       },
     },
+    verification_evidence: {
+      type: "array",
+      description: "Reviewer evidence for an approve decision: each row records what was actually checked. Include the exact command_or_url that was run (so the coordinator can cross-reference the tool log), the exit_code_or_status, and a short snippet of the output. Use kind='n_a' with a reason for tasks that genuinely don't need verification (pure docs, research).",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["kind", "command_or_url", "exit_code_or_status", "snippet", "reason"],
+        properties: {
+          kind: { type: "string", enum: VERIFICATION_EVIDENCE_KINDS },
+          command_or_url: { type: "string" },
+          exit_code_or_status: { type: "string" },
+          snippet: { type: "string" },
+          reason: { type: "string" },
+        },
+      },
+    },
   },
 };
 
@@ -194,6 +220,7 @@ export function normalizeWorklabResult(value, fallback = {}) {
     pending_actions: [],
     questions: [],
     subtasks: [],
+    verification_evidence: [],
     final_text: "",
     ...fallback,
     ...(value || {}),

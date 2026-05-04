@@ -436,4 +436,50 @@ describe("worklab_result contract", () => {
     expect(subtask.properties.suggested_agent.type).toEqual(["string", "null"]);
     expect(subtask.properties.expected_artifact.type).toEqual(["string", "null"]);
   });
+
+  describe("verification_evidence (Phase 4)", () => {
+    it("accepts well-formed evidence rows and defaults to []", () => {
+      const empty = normalizeWorklabResult({
+        schema: "worklab.v2",
+        stage: "review",
+        decision: "approve",
+        summary: "ok",
+      });
+      expect(empty.ok).toBe(true);
+      expect(empty.result.verification_evidence).toEqual([]);
+
+      const full = normalizeWorklabResult({
+        schema: "worklab.v2",
+        stage: "review",
+        decision: "approve",
+        summary: "ok",
+        verification_evidence: [
+          { kind: "test", command_or_url: "npm test foo", exit_code_or_status: "0", snippet: "OK 7" },
+          { kind: "n_a", reason: "documentation only" },
+        ],
+      });
+      expect(full.ok).toBe(true);
+      expect(full.result.verification_evidence).toHaveLength(2);
+      expect(full.result.verification_evidence[0]).toMatchObject({ kind: "test", command_or_url: "npm test foo" });
+      expect(full.result.verification_evidence[1].kind).toBe("n_a");
+    });
+
+    it("rejects evidence rows with unrecognised kinds", () => {
+      const bad = normalizeWorklabResult({
+        schema: "worklab.v2",
+        stage: "review",
+        decision: "approve",
+        summary: "ok",
+        verification_evidence: [{ kind: "guess" }],
+      });
+      expect(bad.ok).toBe(false);
+    });
+
+    it("exposes verification_evidence in the JSON schema", () => {
+      const ve = WORKLAB_RESULT_JSON_SCHEMA.properties.verification_evidence;
+      expect(ve.type).toBe("array");
+      expect(ve.items.required).toEqual(["kind", "command_or_url", "exit_code_or_status", "snippet", "reason"]);
+      expect(ve.items.properties.kind.enum).toEqual(["test", "build", "lint", "manual_check", "screenshot", "n_a"]);
+    });
+  });
 });

@@ -20,6 +20,8 @@ import { slugify } from "../core/slugs.js";
 import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { reconcileRunWorktree } from "../core/worktrees.js";
+import { loadTaskArtifacts } from "../core/run-artifacts.js";
+import { crossCheckVerificationEvidence } from "../core/verification-evidence.js";
 import { getTaskById, setTaskParentReviewPolicy } from "../core/db/queries/tasks.js";
 import {
   getRunById,
@@ -1306,6 +1308,34 @@ export function createTaskWatcher({
         }
       }
     }
+    // intelligence-ramp Phase 4: feed the verification gate. The state
+    // machine refuses (block) or warns (warn) when the reviewer approves a
+    // task with code artifacts but didn't emit verification_evidence — or
+    // when its evidence rows don't match any tool call in the run logs
+    // (deterministic post-check against fabrication).
+    let verificationMode = null;
+    let hasArtifacts = false;
+    let evidenceCrossCheck = null;
+    if (stage === "review") {
+      verificationMode = readSettings(db)?.agent_verification_gate_mode || "warn";
+      if (verificationMode !== "off") {
+        try {
+          const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId, fallbackToLogs: false });
+          hasArtifacts = (taskArtifacts?.artifacts?.length || 0) > 0;
+        } catch {
+          hasArtifacts = false;
+        }
+        try {
+          evidenceCrossCheck = crossCheckVerificationEvidence(db, {
+            reviewRunId: runId,
+            parentRunId: run.parent_run_id || null,
+            evidence: result?.verification_evidence,
+          });
+        } catch {
+          evidenceCrossCheck = null;
+        }
+      }
+    }
     const next = nextStage(taskStage(task), {
       type: "run_succeeded",
       stage,
@@ -1315,6 +1345,9 @@ export function createTaskWatcher({
       parentReviewPolicy,
       hasQaChild,
       autoApproveSelfReview,
+      verificationMode,
+      hasArtifacts,
+      evidenceCrossCheck,
       rejectionCount: task.rejection_streak || 0,
       maxRejections: maxRejectionLimit(),
     });

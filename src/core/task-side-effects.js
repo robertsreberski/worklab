@@ -151,6 +151,18 @@ export function applyTaskSideEffects(db, taskId, sideEffects, currentStage, newS
       case "spawn_reviewer":
       case "create_subtasks":
         break;
+      case "verification_warning":
+        // intelligence-ramp Phase 4 soft-launch: surfaced as a system comment
+        // so operators can see which approvals would have been bounced under
+        // agent_verification_gate_mode='block'. Does not change task stage.
+        insertSystemComment(db, {
+          id: newCommentId(),
+          taskId,
+          body: `VERIFICATION WARNING: ${sideEffect.message || "approve without verification_evidence"}`,
+          createdAt: now,
+        });
+        logger?.warn?.({ taskId, message: sideEffect.message }, "verification gate warning");
+        break;
       case "error":
         logger?.warn?.({ taskId, message: sideEffect.message }, "state machine emitted error side effect");
         break;

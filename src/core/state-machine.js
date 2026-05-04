@@ -127,7 +127,41 @@ export function nextStage(currentStage, event) {
       // refuse to silently approve.
       if (event.stage === "review") {
         if (decision === "approve") {
-          return change("done", [
+          // intelligence-ramp Phase 4: verification gate. The reviewer must
+          // produce verification_evidence when the task has artifacts (code
+          // changes), and each evidence row must correspond to a real tool
+          // call recorded in the run logs (deterministic post-check against
+          // fabrication). gateMode="warn" still approves but records a
+          // warning; "block" refuses the transition; "off" disables the gate.
+          const gateMode = event.verificationMode || "warn";
+          const evidence = Array.isArray(result.verification_evidence)
+            ? result.verification_evidence.filter(Boolean)
+            : [];
+          const cross = event.evidenceCrossCheck || null;
+          const validEvidenceCount = evidence.length === 0
+            ? 0
+            : evidence.length - (cross?.unmatchedCount || 0);
+          const evidenceMissing = event.hasArtifacts && validEvidenceCount === 0;
+          const evidenceFabricated = event.hasArtifacts && evidence.length > 0 && (cross?.unmatchedCount || 0) > 0;
+          const gateApplies = (evidenceMissing || evidenceFabricated) && gateMode !== "off";
+
+          if (gateApplies && gateMode === "block") {
+            const reason = evidenceFabricated
+              ? `${cross.unmatchedCount} of ${cross.totalChecked} verification_evidence rows did not match any tool call in the run logs`
+              : "review approved without verification_evidence";
+            return change("execute", [
+              { type: "clear_completed_at" },
+              { type: "clear_error_text" },
+              ...RESET_USER_ARRAYS,
+              { type: "set_last_failure_kind", kind: "unverified_completion" },
+              { type: "set_stage_reason", reason },
+              {
+                type: "post_review_comment",
+                notes: `The reviewer approved the work but ${reason}. Re-run the verification (tests, build, manual checks) and emit verification_evidence rows that name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.`,
+              },
+            ]);
+          }
+          const approveSideEffects = [
             { type: "clear_error_text" },
             { type: "clear_stage_reason" },
             ...RESET_USER_ARRAYS,
@@ -135,7 +169,14 @@ export function nextStage(currentStage, event) {
             { type: "reset_rejection_count" },
             { type: "clear_last_failure_kind" },
             { type: "set_completed_at" },
-          ]);
+          ];
+          if (gateApplies && gateMode === "warn") {
+            const message = evidenceFabricated
+              ? `Approve emitted with ${cross.unmatchedCount}/${cross.totalChecked} verification_evidence rows unmatched by the run's tool log; would have been bounced under block mode.`
+              : "Approve emitted without verification_evidence; the task has artifacts that should have been verified.";
+            approveSideEffects.unshift({ type: "verification_warning", message });
+          }
+          return change("done", approveSideEffects);
         }
         if (decision === "reject") {
           const rejectionCount = (event.rejectionCount ?? 0) + 1;

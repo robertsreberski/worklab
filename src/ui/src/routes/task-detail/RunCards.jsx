@@ -160,6 +160,53 @@ function RunDiagnosticsDisclosure({ run }) {
   );
 }
 
+const VERIFICATION_KIND_TONES = {
+  test: "verification-pass",
+  build: "verification-pass",
+  lint: "verification-pass",
+  manual_check: "verification-manual",
+  screenshot: "verification-manual",
+  n_a: "verification-na",
+};
+
+function looksLikeFailure(status) {
+  const text = String(status || "").trim().toLowerCase();
+  if (!text) return false;
+  if (text === "0" || text === "ok" || text === "pass" || text === "passed" || text === "success") return false;
+  if (text === "n/a" || text === "skipped") return false;
+  return /\b(fail|error|reject|denied|timeout)\b/.test(text) || /^[1-9]/.test(text);
+}
+
+function RunVerificationPanel({ run }) {
+  if (run?.mode !== "review") return null;
+  const evidence = Array.isArray(run?.result?.verification_evidence)
+    ? run.result.verification_evidence.filter(Boolean)
+    : [];
+  if (evidence.length === 0) return null;
+  return (
+    <details class="run-diagnostics run-verification" open>
+      <summary>Verification ({evidence.length})</summary>
+      <ul class="run-verification-list">
+        {evidence.map((row, index) => {
+          const failed = looksLikeFailure(row.exit_code_or_status);
+          const tone = failed ? "verification-fail" : (VERIFICATION_KIND_TONES[row.kind] || "verification-pass");
+          return (
+            <li key={index} class={`run-verification-item ${tone}`}>
+              <div class="run-verification-head">
+                <span class="run-verification-kind">{row.kind}</span>
+                {row.command_or_url && <code class="run-verification-cmd">{row.command_or_url}</code>}
+                {row.exit_code_or_status && <span class="run-verification-status">{row.exit_code_or_status}</span>}
+              </div>
+              {row.snippet && <pre class="run-verification-snippet">{row.snippet}</pre>}
+              {row.reason && <div class="run-verification-reason">{row.reason}</div>}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
+  );
+}
+
 function RunEconomicsPanel({ run }) {
   const overheadTokens = Number(run?.first_turn_overhead_tokens);
   const inputTokens = Number(run?.first_turn_input_tokens);
@@ -429,6 +476,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
       <RunWarningsList warnings={warnings} agents={agents} />
       <RunContinuationLinks run={run} />
       <RunFailureDetails run={run} agents={agents} />
+      <RunVerificationPanel run={run} />
       <RunEconomicsPanel run={run} />
       <RunDiagnosticsDisclosure run={run} />
       <RunHistoryNotice

@@ -226,7 +226,7 @@ describe("generateClaudeResponse", () => {
       type: "structured_output",
       source: "claude_sdk_output_format",
       value: structured,
-      worklab_result: { ...structured, memory_candidates: [] },
+      worklab_result: { ...structured, memory_candidates: [], verification_evidence: [] },
     });
   });
 
