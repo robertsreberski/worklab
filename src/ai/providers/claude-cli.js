@@ -19,7 +19,10 @@ import { createStderrTail } from "../failure.js";
 const DORMANT_CLI_CAPABILITIES = {
   streaming: true,
   structured_output: true,
-  supports_session_resume: false,
+  // intelligence-ramp Phase 5.1: claude-cli supports resume via `--resume` and
+  // surfaces session_id from init/result events; the bridge wraps the env-var
+  // hand-off the coordinator already populates on continuations.
+  supports_session_resume: true,
   native_runtime_config: null,
   supports_mcp: true,
   supports_skills: true,
@@ -277,12 +280,20 @@ export function buildCliCommand({
   permissionMode,
   maxTurns,
   skillDirs,
+  resumeSessionId,
 }) {
   // Effort is expected to be pre-normalized by core/ai.js#generateResponse
   // before reaching this provider. Direct callers of buildCliCommand must
   // pass an already-normalized reasoning level (low/medium/high/xhigh/none).
   const normalizedEffort = typeof effort === "string" && effort.trim() ? effort : null;
   if (sdk === "claude-code") {
+    // intelligence-ramp Phase 5.1: when the coordinator hands us a parent
+    // session id (recovery continuation, R12), pass --resume so the host
+    // CLI can keep its own conversation cache warm. Otherwise stay
+    // ephemeral so unrelated runs never bleed into each other.
+    const resumeFlag = typeof resumeSessionId === "string" && resumeSessionId.trim().length > 0
+      ? ["--resume", resumeSessionId.trim()]
+      : ["--no-session-persistence"];
     const args = [
       "-p",
       "--output-format", "stream-json",
@@ -290,7 +301,7 @@ export function buildCliCommand({
       "--json-schema", JSON.stringify(WORKLAB_RESULT_JSON_SCHEMA),
       "--model", model,
       "--append-system-prompt", systemPrompt,
-      "--no-session-persistence",
+      ...resumeFlag,
     ];
     if (normalizedEffort) args.push("--effort", normalizedEffort);
     if (permissionMode) args.push("--permission-mode", permissionMode);
@@ -347,6 +358,10 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     ? join(dir, "mcp.json")
     : null;
   if (mcpConfigPath) writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }, null, 2));
+  const reusableSessionId = (typeof options.sessionId === "string" && options.sessionId.trim())
+    || (typeof process.env.WORKLAB_PROVIDER_SESSION_ID === "string" && process.env.WORKLAB_PROVIDER_SESSION_ID.trim())
+    || null;
+  let providerSessionId = reusableSessionId || null;
   const commandSpec = buildCliCommand({
     sdk: resolved.sdk,
     model: resolved.model,
@@ -364,6 +379,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     skillDirs: Array.isArray(options.skillDirs)
       ? options.skillDirs
       : getSkillAccessDirs(options.skills || []),
+    resumeSessionId: reusableSessionId,
   });
 
   const events = [];
@@ -417,6 +433,13 @@ export async function generateCliResponse(systemPrompt, options = {}) {
         pushUniqueText(texts, text);
       }
       if (raw.usage) usage = raw.usage;
+      // intelligence-ramp Phase 5.1: capture session_id from CLI events so the
+      // coordinator can chain it on the next continuation. Claude Code emits
+      // session_id on the init system message and again on the result event.
+      const candidateSessionId = raw.session_id ?? raw.sessionId ?? raw.thread_id ?? null;
+      if (typeof candidateSessionId === "string" && candidateSessionId.trim().length > 0) {
+        providerSessionId = candidateSessionId.trim();
+      }
       if (raw.type === "error") {
         const rawError = raw.message || raw.error || "cli error";
         errorMessage = typeof rawError === "string" ? rawError : JSON.stringify(rawError);
@@ -478,6 +501,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       model: reference,
       effort: options.effort || null,
       sdk: resolved.sdk,
+      providerSessionId: providerSessionId || null,
+      provider_session_id: providerSessionId || null,
       cancelled: !!options.abortSignal?.aborted,
       error: errorMessage ? formatCliError(errorMessage, commandSpec.command) : null,
       failureKind,
@@ -501,6 +526,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       model: resolved?.reference || null,
       effort: options.effort || null,
       sdk: resolved?.sdk || "cli",
+      providerSessionId: providerSessionId || null,
+      provider_session_id: providerSessionId || null,
       cancelled: !!options.abortSignal?.aborted,
       error: err.message || String(err),
       failureKind: failureKind || "provider_unavailable",

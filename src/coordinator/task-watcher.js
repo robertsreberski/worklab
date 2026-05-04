@@ -84,6 +84,33 @@ import { findDrainedResumeCandidates, reconcileStaleRunningRuns } from "./watche
 
 const AUTO_RUN_POLICY = "auto_plan_execute";
 
+// intelligence-ramp Phase 5.4: build a short markdown block (parent task ref +
+// parent's final_text + summary) that gets appended to each child's
+// instructions so the child agent has the parent's reasoning + last outcome
+// without rerunning the parent's investigation. Returns "" when there's
+// nothing useful to add. Exported for unit testing.
+export function buildDelegationContextBlock({ parentTask, parentRunId, parentResult } = {}) {
+  if (!parentTask) return "";
+  const lines = ["## Parent task context"];
+  const parentRef = parentTask.task_key || parentTask.id;
+  lines.push(`Delegated by parent task **${parentRef}** ("${parentTask.title || ""}").`);
+  if (parentRunId) lines.push(`Parent run id: \`${parentRunId}\``);
+  const summary = parentResult?.summary && String(parentResult.summary).trim();
+  const finalText = parentResult?.final_text && String(parentResult.final_text).trim();
+  const details = parentResult?.details && String(parentResult.details).trim();
+  if (summary) lines.push(`Parent summary: ${summary}`);
+  if (finalText) {
+    lines.push("", "**Parent final_text (read this; don't redo work it already covers):**", finalText);
+  } else if (details) {
+    lines.push("", "**Parent details:**", details.slice(0, 2000));
+  }
+  lines.push(
+    "",
+    "Use this context to skip rediscovery of work the parent already did. Build on it; don't restart from zero. If the parent's findings conflict with what you observe, surface the conflict in your final result rather than silently overriding.",
+  );
+  return lines.join("\n");
+}
+
 export function createTaskWatcher({
   db,
   broker,
@@ -1058,6 +1085,18 @@ export function createTaskWatcher({
     const now = Date.now();
     const warnings = [];
 
+    // intelligence-ramp Phase 5.4: bridge parent → child context. The audit's
+    // QA-execute pattern (children re-discovering work the parent already
+    // did) happens because each subtask spawns as a fully independent run
+    // with no view of the parent's transcript. Threading the parent's final
+    // text + summary into each child's instructions gives the executor
+    // enough breadcrumbs to skip rediscovery.
+    const parentContextBlock = buildDelegationContextBlock({
+      parentTask,
+      parentRunId: runId,
+      parentResult: options.parentResult || null,
+    });
+
     // R6: resolve and persist parent_review_policy as part of the same tx
     // so a successful delegation always leaves the parent with a coherent
     // policy recorded. The watcher's later execute → review transition
@@ -1080,7 +1119,10 @@ export function createTaskWatcher({
         const childId = newTaskId();
         const taskKey = nextTaskKey(db);
         const required = subtask.required === false ? 0 : 1;
-        const instructions = appendDelegationDoneCriteria(subtask.instructions || "", subtask);
+        const baseInstructions = appendDelegationDoneCriteria(subtask.instructions || "", subtask);
+        const instructions = parentContextBlock
+          ? `${baseInstructions}\n\n${parentContextBlock}`
+          : baseInstructions;
         db.prepare(`
           INSERT INTO tasks
             (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
@@ -1376,7 +1418,10 @@ export function createTaskWatcher({
         { ...task, stage: next.stage },
         runId,
         delegated.subtasks,
-        { requestedReviewPolicy: result?.parent_review_policy },
+        {
+          requestedReviewPolicy: result?.parent_review_policy,
+          parentResult: result,
+        },
       );
       maybeRunDelegatedChildren(taskId, children);
     }

@@ -16,7 +16,12 @@ const DORMANT_CODEX_APP_CAPABILITIES = {
   runtime: "app-server",
   streaming: true,
   structured_output: true,
-  supports_session_resume: false,
+  // intelligence-ramp Phase 5.2: codex-app emits the started thread id, which
+  // we surface as provider_session_id so the coordinator can hand it back to
+  // the next continuation. The app-server itself always starts a fresh
+  // thread today (no thread/load primitive in this protocol revision), so
+  // the value primarily lets us correlate continuations in the run log.
+  supports_session_resume: true,
   native_runtime_config: null,
   supports_mcp: true,
   supports_skills: true,
@@ -464,6 +469,12 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       config.model_reasoning_effort = normalizedEffort;
       if (normalizedEffort !== "none") config.model_reasoning_summary = "auto";
     }
+    // intelligence-ramp Phase 5.2: codex-app's protocol revision shipped with
+    // Worklab today exposes thread/start but no thread/load primitive, so
+    // continuations always start a fresh thread. We still record the
+    // returned thread id as provider_session_id so the run log links the
+    // chain. TODO(intelligence-ramp): add thread/load + reusableSessionId
+    // pass-through when the codex protocol supports resume.
     const thread = await client.request("thread/start", {
       model: resolved.model,
       modelProvider: "openai",
@@ -568,6 +579,8 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       model: reference,
       effort: options.effort || null,
       sdk: "codex",
+      providerSessionId: threadId || null,
+      provider_session_id: threadId || null,
       cancelled: !!options.abortSignal?.aborted,
       error: errorMessage,
       failureKind,
@@ -590,6 +603,8 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       model: resolved?.reference || `codex:${resolved?.model || ""}`,
       effort: options.effort || null,
       sdk: "codex",
+      providerSessionId: threadId || null,
+      provider_session_id: threadId || null,
       cancelled: !!options.abortSignal?.aborted,
       error: err?.message || String(err),
       failureKind: failureKind || "provider_unavailable",
