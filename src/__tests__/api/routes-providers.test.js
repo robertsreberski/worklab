@@ -60,9 +60,10 @@ describe("provider routes", () => {
     });
 
     const res = await agent.get("/api/models/available").expect(200);
+    expect(res.body.groups.map((g) => g.id)).not.toContain("pi:openai");
     expect(res.body.models.map((m) => m.value)).toContain("claude:claude-sonnet-4-6");
     for (const piModel of getPiModels("openai")) {
-      expect(res.body.models.map((m) => m.value)).toContain(`pi:openai:${piModel.id}`);
+      expect(res.body.models.map((m) => m.value)).not.toContain(`pi:openai:${piModel.id}`);
     }
     for (const piModel of getPiModels("openai-codex")) {
       expect(res.body.models.map((m) => m.value)).toContain(`pi:openai-codex:${piModel.id}`);
@@ -77,6 +78,18 @@ describe("provider routes", () => {
     expect(res.body.models.find((m) => m.value === "codex:gpt-5.5").runtime_kind).toBe("cli");
     expect(res.body.models.some((m) => m.value === "pi:google:gemini-2.5-pro")).toBe(true);
     expect(res.body.models.find((m) => m.value === `pi:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
+  });
+
+  it("keeps OpenAI embedding models out of the agent catalogue but available for Settings", async () => {
+    const { agent } = makeTestServer({ dataDir: tmpDataDir() });
+
+    const agentModels = await agent.get("/api/models/available").expect(200);
+    expect(agentModels.body.groups.map((g) => g.id)).not.toContain("pi:openai");
+    expect(agentModels.body.models.map((m) => m.value).some((value) => String(value).startsWith("pi:openai:"))).toBe(false);
+
+    const embeddingModels = await agent.get("/api/models/embeddings").expect(200);
+    const openai = embeddingModels.body.groups.find((group) => group.id === "openai");
+    expect(openai?.models.map((m) => m.value)).toContain("openai:text-embedding-3-small");
   });
 
   it("does not advertise reserved runtime prefixes for agent models", async () => {

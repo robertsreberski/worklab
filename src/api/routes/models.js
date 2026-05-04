@@ -34,7 +34,7 @@ function runtimeModelMetadata(model, group, availability) {
 
 export function registerModelRoutes(app, { db, dataDir }) {
   app.get("/api/models/available", (_req, res) => {
-    const groups = getBuiltinModelGroups();
+    const groups = getBuiltinModelGroups().filter((group) => group.id !== "pi:openai");
     const availability = getBuiltinProviderAvailability({ dataDir });
     for (const group of groups) {
       const avail = availability[group.id];

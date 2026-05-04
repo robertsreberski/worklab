@@ -270,7 +270,7 @@ export function Settings() {
   const currentEmbedding = settings?.default_embedding_model || "";
   const allEmbeddingValues = embeddingGroups.flatMap((g) => (g.models || []).map((m) => m.value));
   const currentSlackModel = settings?.slack_model || "pi:openai-codex:gpt-5.5";
-  const currentAssistantModel = settings?.assistant_model || "pi:openai:gpt-5.5";
+  const currentAssistantModel = settings?.assistant_model || "pi:openai-codex:gpt-5.5";
   const slackModelOptions = modelSelectOptions(modelGroups, currentSlackModel);
   const assistantModelOptions = modelSelectOptions(modelGroups, currentAssistantModel);
   const embeddingOptions = [
