@@ -76,32 +76,6 @@ function newClientRequestId() {
   return `task-create-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function instructionsCoachState(value) {
-  const length = String(value || "").trim().length;
-  if (length === 0) {
-    return {
-      length,
-      tone: "instructions-coach-empty",
-      label: "Optional. Add context only when it helps the agent.",
-    };
-  }
-  return {
-    length,
-    tone: "instructions-coach-good",
-    label: "Instructions recorded.",
-  };
-}
-
-export function InstructionsCoach({ value }) {
-  const { length, tone, label } = instructionsCoachState(value);
-  return (
-    <div class={`instructions-coach ${tone}`} role="status">
-      <span class="instructions-coach-count">{length}</span>
-      <span class="instructions-coach-label">{label}</span>
-    </div>
-  );
-}
-
 export function TaskEdit({ mode = "create", id = null }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
@@ -499,17 +473,16 @@ export function TaskEdit({ mode = "create", id = null }) {
                   <SectionMarker id="task-edit-instructions" num="02" kicker="Instructions" meta="Markdown" />
                   <FormField
                     label="Instructions"
-                    hint="Sent to the owner. Markdown supported. Cover what 'done' looks like, the files or systems involved, and how the work should be verified."
+                    hint="Optional context sent to the owner. Markdown supported."
                   >
                     <Textarea
                       rows={10}
                       monospace
                       autoGrow
-                      placeholder="What should the owner do? Include acceptance criteria, files to touch, tests to run, and any constraints. A one-liner like 'fix login' will produce a one-liner result."
+                      placeholder="Add any context, constraints, references, or notes for the owner."
                       value={draft.instructions}
                       onInput={(e) => update({ instructions: e.target.value })}
                     />
-                    <InstructionsCoach value={draft.instructions} />
                   </FormField>
                 </section>
 
