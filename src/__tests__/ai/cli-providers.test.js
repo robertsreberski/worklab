@@ -42,6 +42,33 @@ describe("CLI provider adapters", () => {
     expect(cmd.args.slice(-2)).toEqual(["--", "do work"]);
   });
 
+  it("passes --resume <session_id> when a parent session is available, replacing --no-session-persistence", () => {
+    const cmd = buildCliCommand({
+      sdk: "claude-code",
+      model: "claude-sonnet-4-6",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+      resumeSessionId: "claude-session-abc",
+    });
+    expect(cmd.args).toEqual(expect.arrayContaining(["--resume", "claude-session-abc"]));
+    expect(cmd.args).not.toContain("--no-session-persistence");
+  });
+
+  it("falls back to --no-session-persistence when no resume id is supplied", () => {
+    const cmd = buildCliCommand({
+      sdk: "claude-code",
+      model: "claude-sonnet-4-6",
+      cwd: "/repo",
+      schemaPath: "/tmp/schema.json",
+      systemPrompt: "system",
+      prompt: "do work",
+    });
+    expect(cmd.args).toContain("--no-session-persistence");
+    expect(cmd.args).not.toContain("--resume");
+  });
+
   it("maps Claude Code MCP, effort, permissions, and tool allowlists to CLI flags", () => {
     const cmd = buildCliCommand({
       sdk: "claude-code",
@@ -154,6 +181,48 @@ describe("CLI provider adapters", () => {
     });
     expect(cmd.args).toContain("model_reasoning_effort=none");
     expect(cmd.args).not.toContain("model_reasoning_summary=\"auto\"");
+  });
+
+  it("captures session_id from CLI events and surfaces it as provider_session_id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-session-"));
+    const fakeClaude = join(dir, "claude");
+    const originalPath = process.env.PATH;
+    const events = [
+      { type: "system", subtype: "init", session_id: "session-from-init" },
+      { type: "assistant", message: { content: [{ type: "text", text: "Working..." }] } },
+      {
+        type: "result",
+        subtype: "success",
+        session_id: "session-from-result",
+        result: JSON.stringify({
+          schema: "worklab.v2",
+          stage: "execute",
+          decision: "advance",
+          summary: "ok",
+          details: "",
+          final_text: "done",
+        }),
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    ];
+    writeFileSync(fakeClaude, `#!/bin/sh
+${events.map((event) => `printf '%s\\n' '${JSON.stringify(event)}'`).join("\n")}
+exit 0
+`);
+    chmodSync(fakeClaude, 0o755);
+    process.env.PATH = `${dir}:${originalPath || ""}`;
+    try {
+      const result = await generateCliResponse("system", {
+        model: { sdk: "claude-code", model: "fake" },
+        messages: [{ role: "user", content: "do work" }],
+        cwd: process.cwd(),
+      });
+      expect(result.providerSessionId).toBe("session-from-result");
+      expect(result.provider_session_id).toBe("session-from-result");
+    } finally {
+      process.env.PATH = originalPath;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("treats exit 0 with no CLI output as a retryable provider termination", async () => {

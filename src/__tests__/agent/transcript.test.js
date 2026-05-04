@@ -85,4 +85,44 @@ describe("buildTranscriptTailSnapshot", () => {
     expect(renderResumeSnapshot(null)).toBe("");
     expect(renderResumeSnapshot({ turns: [] })).toBe("");
   });
+
+  it("summarises older turns into one-paragraph entries while keeping the trailing few verbatim", () => {
+    const events = [];
+    for (let i = 1; i <= 8; i += 1) {
+      events.push(...turnEvents(i, {
+        response: `assistant text turn ${i}`,
+        toolName: i % 2 === 0 ? "Read" : "Bash",
+        toolInput: { file_path: `/tmp/x-${i}.ts` },
+        toolResult: `result for turn ${i}`,
+      }));
+    }
+    const snapshot = buildTranscriptTailSnapshot(events, { maxTurns: 6, verbatimTurns: 2 });
+    expect(snapshot.turn_count).toBe(8);
+    expect(snapshot.turns).toHaveLength(2);
+    expect(snapshot.earlier_turn_summaries).toHaveLength(4);
+    const lastSummary = snapshot.earlier_turn_summaries.at(-1);
+    expect(lastSummary.turn_index).toBe(6);
+    expect(lastSummary.summary).toMatch(/assistant text turn 6/);
+    expect(lastSummary.summary).toMatch(/tools: Read/);
+  });
+
+  it("renderResumeSnapshot prepends the earlier-turn summaries before the verbatim turns", () => {
+    const events = [];
+    for (let i = 1; i <= 5; i += 1) {
+      events.push(...turnEvents(i, {
+        response: `step ${i}`,
+        toolName: "Bash",
+        toolInput: { command: `echo ${i}` },
+        toolResult: `out ${i}`,
+      }));
+    }
+    const snapshot = buildTranscriptTailSnapshot(events, { maxTurns: 5, verbatimTurns: 2 });
+    const rendered = renderResumeSnapshot(snapshot);
+    expect(rendered).toContain("Earlier turns (summarized)");
+    expect(rendered).toMatch(/Turn 1: .*step 1/);
+    expect(rendered).toMatch(/Turn 3: .*step 3/);
+    expect(rendered).toContain("### Turn 4");
+    expect(rendered).toContain("### Turn 5");
+    expect(rendered.indexOf("Earlier turns (summarized)")).toBeLessThan(rendered.indexOf("### Turn 4"));
+  });
 });
