@@ -609,3 +609,14 @@ export const codexAppBackend = {
   capabilities: DORMANT_CODEX_APP_CAPABILITIES,
   execute: generateCodexAppResponse,
 };
+
+// CLI bridge for sdk='pi' agents that opt into execution_mode='cli'. The
+// codex `app-server` is more capable than `codex exec` (better event
+// streaming, MCP support), so this is the default CLI path for codex/openai.
+export const codexAppRuntimeBridge = {
+  id: "codex-app",
+  kind: "codex-app",
+  capabilities: DORMANT_CODEX_APP_CAPABILITIES,
+  supports: (ref, options) => ref?.sdk === "pi" && options?.executionMode === "cli",
+  execute: generateCodexAppResponse,
+};

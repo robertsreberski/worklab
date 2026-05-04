@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS agents (
   browser_tools_review_only INTEGER NOT NULL DEFAULT 0,
   daily_budget_usd REAL,
   per_run_budget_usd REAL,
+  execution_mode TEXT NOT NULL DEFAULT 'sdk',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

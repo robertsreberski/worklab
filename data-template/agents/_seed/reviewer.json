@@ -12,5 +12,6 @@
   "builtin_allowlist_mode": "all",
   "allow_self_review": 0,
   "browser_tools_review_only": 0,
+  "execution_mode": "cli",
   "enabled": 1
 }

@@ -519,6 +519,11 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "browser_tools_review_only", "browser_tools_review_only INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "agents", "daily_budget_usd", "daily_budget_usd REAL");
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
+  // intelligence-ramp Phase 2: per-agent execution mode toggle. Existing rows
+  // default to 'sdk' for backward compatibility (in-process Claude/Pi loops).
+  // The seeded planner / executor / reviewer ship with 'cli' so the host's
+  // claude / codex CLIs do the heavy lifting.
+  addColumnIfMissing(db, "agents", "execution_mode", "execution_mode TEXT NOT NULL DEFAULT 'sdk'");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
   // R4: cumulative lifetime counters that survive `reset_failure_count`. The
   // existing `failure_count` / `rejection_streak` columns reset on success, so

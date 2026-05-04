@@ -125,6 +125,7 @@ export async function runReview(ctx) {
     const result = await generateResponse(systemPrompt, {
       model,
       effort: agent.effort || "medium",
+      executionMode: agent.execution_mode || "sdk",
       db,
       dataDir: config.dataDir,
       skills,

@@ -411,9 +411,9 @@ export function resolveModel(value) {
   return parseModelReference(value);
 }
 
-export async function resolveBackendFor(modelRef, { liveInput = false } = {}) {
+export async function resolveBackendFor(modelRef, { liveInput = false, executionMode = "sdk" } = {}) {
   const resolved = typeof modelRef === "string" ? parseModelReference(modelRef) : modelRef;
-  return resolveRuntimeBridge(resolved, { liveInput });
+  return resolveRuntimeBridge(resolved, { liveInput, executionMode });
 }
 
 function loadSettingsSafely(db) {
@@ -506,8 +506,12 @@ export async function generateResponse(systemPrompt, options) {
     ...baseOptions,
     effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium", customContext?.modelCapabilities),
   };
-  const backend = await resolveRuntimeBridge(resolved, { liveInput: !!options.liveInput });
-  return backend.execute(systemPrompt, nextOptions);
+  const executionMode = typeof options.executionMode === "string" ? options.executionMode : "sdk";
+  const backend = await resolveRuntimeBridge(resolved, {
+    liveInput: !!options.liveInput,
+    executionMode,
+  });
+  return backend.execute(systemPrompt, { ...nextOptions, executionMode });
 }
 
 export { canonicalizeLegacyModelReference };
