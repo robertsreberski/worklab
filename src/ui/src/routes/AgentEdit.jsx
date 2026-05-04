@@ -602,6 +602,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   ];
   const runtimeMeta = [
     { label: "Slug", value: isNew ? "Generated after create" : agent.name },
+    { label: "Execution mode", value: (agent.execution_mode === "sdk" ? "sdk" : "cli").toUpperCase() },
     { label: "SDK", value: agent.sdk || String(agent.model || "").split(":", 1)[0] || "—" },
     { label: "Model ref", value: agent.model },
     {
@@ -849,6 +850,17 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
             <SectionMarker id="agent-edit-runtime" num="02" kicker="Runtime" meta="Model" />
             <FormSection kicker="Runtime" title="Model & reasoning">
+              <FormField
+                label="Execution mode"
+                description="CLI routes through the host claude / codex binaries — inherits their tool surface, MCP handling, and session resume. SDK runs Worklab's in-process loop with custom compaction, tool-bloat guards, and provider-side outputFormat (json_schema) enforcement. The choice gates which providers and tool surface apply below."
+              >
+                <RadioGroup
+                  ariaLabel="Execution mode"
+                  value={agent.execution_mode === "sdk" ? "sdk" : "cli"}
+                  onChange={(v) => setAgent({ ...agent, execution_mode: v })}
+                  options={[{ value: "cli", label: "CLI" }, { value: "sdk", label: "SDK" }]}
+                />
+              </FormField>
               <FormGrid columns={2}>
                 <FormField label="Model" required>
                   <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
@@ -894,7 +906,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
 
             <SectionMarker id="agent-edit-policy" num="03" kicker="Policy" meta="Review" />
             <FormSection kicker="Policy" title="Review & budgets">
-              <FormGrid columns={3}>
+              <FormGrid columns={2}>
                 <FormField switchInside>
                   <Switch
                     checked={!!agent.allow_self_review}
@@ -909,14 +921,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, browser_tools_review_only: next })}
                     label="Disable browser tools in execute"
                     description="Playwright MCP and Browser Use or Playwright skills stay available for review runs."
-                  />
-                </FormField>
-                <FormField label="Execution mode" description="CLI delegates to the host's claude / codex binary (recommended). SDK runs the in-process loop with Worklab's compaction + tool guards.">
-                  <RadioGroup
-                    ariaLabel="Execution mode"
-                    value={agent.execution_mode === "sdk" ? "sdk" : "cli"}
-                    onChange={(v) => setAgent({ ...agent, execution_mode: v })}
-                    options={[{ value: "cli", label: "CLI" }, { value: "sdk", label: "SDK" }]}
                   />
                 </FormField>
                 <FormField label="Daily budget">
