@@ -7,37 +7,23 @@ const CADENCE = `Journal as you work — call \`journal_append\` for facts you d
 
 const TODO_CADENCE = `For multi-step work, keep a short run-local checklist with \`todo_write\`. Update it when the active step changes or a meaningful step completes. Use at most one \`in_progress\` item. This checklist is execution state for the current run, not a substitute for Worklab tasks, subtasks, pending_actions, or the final \`worklab_result\`.`;
 
-const DELIVERABLE_PERSISTENCE = `Preserve durable deliverables in the Worklab Knowledge Base:
-- In Worklab tool names, the \`kb_\` prefix means Knowledge Base, not kilobytes.
-- If the run produces a substantial user-facing deliverable such as a research report, guide, runbook, decision record, implementation notes, or reusable analysis, save the complete deliverable with \`kb_create\` or \`kb_update\` before your final result when Worklab Knowledge Base tools are available.
-- Use a readable slug and title, Markdown body, useful tags, and an appropriate category such as \`run-results\`, \`research\`, \`runbook\`, or \`decision\`.
-- Mention the Worklab Knowledge Base slug or link in \`final_text\` so the task comment points to the full deliverable.
-- Keep \`final_text\` concise; do not squeeze long deliverables into \`final_text\`. If KB tools are unavailable or saving fails, still include enough final prose for Worklab to preserve it as a fallback.`;
+const DELIVERABLE_PERSISTENCE = `When the run produces a substantial deliverable (research report, guide, runbook, decision record, reusable analysis), save the complete body via \`kb_create\` or \`kb_update\` (\`kb_\` = Knowledge Base, not kilobytes) before returning. Use a readable slug, useful tags, an appropriate category (\`run-results\` / \`research\` / \`runbook\` / \`decision\`), and reference the slug in \`final_text\`. Don't squeeze long deliverables into \`final_text\`.`;
 
 const RESULT_FIELD_RULES = `Structured result rules:
-- Worklab needs one final \`worklab.v2\` JSON object when the task is complete. Treat \`worklab.v2\` as final-result data, not progress output.
-- Do not preface the final JSON with process narration such as "now I will output the result"; put user-facing text in \`final_text\`.
-- During the run, use normal prose or journal entries for progress. If a structured progress object appears before completion, keep going; the final valid result supersedes earlier structured progress.
-- Put the human-facing final comment in \`final_text\`. Keep it concise; for structured-only runtimes, this is the text Worklab will post as the final comment.
-- JSON string fields must be valid JSON strings: escape double quotes inside \`summary\`, \`details\`, and \`final_text\` as \`\\"\`.
-- Keep \`summary\` and \`details\` as structured metadata for Worklab, not as the main user-visible answer.
-- For plan-stage runs, put the complete implementation plan in \`details\` / the plan body and use \`final_text\` only for a short status comment.
-- Put execution steps and completed-work notes in \`details\`, not in \`pending_actions\`.
-- Use \`pending_actions\` only with decision "pause", for exact actions the human must take before the task can continue.
-- For plan-stage pauses, use \`questions\` for 1-3 critical decisions that the human must answer before a useful plan can be written. Prefer 2-4 concrete options per question, with the recommended option first.
-- Use \`subtasks\` only with decision "delegate", for child Worklab tasks that should be created.
-- When using \`subtasks\`, keep each child bounded, include enough instructions for another agent to run independently, set \`suggested_agent\` to an enabled agent name when a specific owner is appropriate, and use \`acceptance_criteria\` / \`expected_artifact\` for the child's done condition.
-- Subtask \`acceptance_criteria\` and \`depends_on\` must be arrays of strings. Delegate subtask shape: \`{"title":"Child task","instructions":"Do the bounded work.","suggested_agent":"agent-name","required":true,"depends_on":[],"acceptance_criteria":["Done condition."],"expected_artifact":"Short artifact description."}\`.
-- Use \`memory_candidates\` only for durable facts, preferences, procedures, failures, decisions, or episodes that should help future runs. Include concrete evidence and a confidence from 0 to 1. Leave it empty for routine run notes.
-- For "advance", "approve", and "reject", keep both \`pending_actions\` and \`subtasks\` empty.`;
+- End each completed run with one \`worklab.v2\` JSON object. Earlier structured-looking text is treated as progress; only the final object counts.
+- Put the human-facing comment in \`final_text\`. Keep \`summary\` and \`details\` as structured metadata for Worklab.
+- For plan-stage runs, put the complete implementation plan in \`details\` / the plan body; \`final_text\` is the short status note.
+- \`pending_actions\` requires decision "pause" (exact actions the human must take). \`subtasks\` requires decision "delegate". \`questions\` is for plan-stage pauses needing human input — prefer 2–4 concrete options per question, recommended one first. Keep all three empty for "advance", "approve", "reject".
+- Each subtask: \`{"title":"…","instructions":"…","suggested_agent":"…","required":true,"depends_on":[],"acceptance_criteria":["…"],"expected_artifact":"…"}\`. Bound the work and give enough context for another agent to run independently.
+- \`memory_candidates\` is for durable facts, preferences, procedures, failures, decisions, or episodes with concrete evidence and confidence 0–1. Empty for routine notes.`;
 
 const WORK_DIRECTIVE = `Do the task work requested by the instructions.
 
-Keep local shell work bounded: avoid whole-home or whole-disk scans unless the user explicitly asked for that scope, prefer targeted paths, use commands that cap output, and summarize large results instead of dumping full command output.
+Keep shell work bounded — targeted paths, commands that cap output, no whole-home or whole-disk scans unless the user asked for that scope.
 
-If repository or project instructions require commits, create granular commits before returning the final result. Report the commit hash or hashes, the verification commands you ran, and any remaining dirty worktree state.
+If repository or project instructions require commits, make them granular before returning. Report commit hash(es), verification commands you ran, and any remaining dirty worktree state in \`final_text\`.
 
-Return a structured Worklab result as JSON when you finish:
+Final result shape:
 
 {
   "schema": "worklab.v2",
@@ -62,11 +48,11 @@ Use decision "advance" when the work is complete, "delegate" when bounded subtas
 // pick up the playwright tool-budget guidance.
 const REVIEW_DIRECTIVE = `Review the owner's work against the task instructions.
 
-If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
+If commits were required, verify the owner made granular commits and didn't bundle unrelated changes. Reject when required commits are missing, unrelated changes are mixed in, or the final output hides a dirty worktree.
 
-Tool budget: when verifying UI work with the Playwright MCP, prefer \`mcp__playwright__browser_snapshot\` (a compact accessibility tree of the rendered DOM) over \`mcp__playwright__browser_take_screenshot\`. Only fall back to a screenshot when the rejection rests on something the DOM cannot tell you — pixel-level layout, colour, font rendering, or graphical artifacts. Screenshots return base64 payloads that quickly exhaust the context window.
+UI verification: prefer \`mcp__playwright__browser_snapshot\` (compact accessibility tree of the rendered DOM) over \`mcp__playwright__browser_take_screenshot\`. Only fall back to a screenshot when the rejection rests on something the DOM cannot tell you — pixel-level layout, colour, font rendering, or graphical artifacts. Screenshot base64 payloads exhaust the context window quickly.
 
-Return a structured Worklab result as JSON when you finish:
+Final result shape:
 
 {
   "schema": "worklab.v2",
@@ -83,10 +69,7 @@ Return a structured Worklab result as JSON when you finish:
   "memory_candidates": []
 }
 
-Escape double quotes inside review notes or final_text so the response remains valid JSON.
-Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.
-
-JSON-only output contract: the very last thing you emit must be a single \`worklab.v2\` JSON object — nothing before it, nothing after it, no markdown fences. Put your prose review in \`details\` and your one-line user-facing comment in \`final_text\`. Do not wrap the JSON in \`\`\`json fences, do not introduce it with phrases like "here is my review", and do not append a verdict line outside the JSON. The harness re-runs you with stricter prompting if it can't parse the result, but only twice — make the first attempt clean.`;
+Use decision "approve" when the work satisfies the task and "reject" when changes are required.`;
 
 const CONSOLIDATION_DIRECTIVE = "Rewrite `MEMORY.md` using the current journal and existing memory. Organize as Procedures / Facts / Gotchas. Deduplicate. Drop anything older than 90 days unless it's a durable fact. Return only the complete new MEMORY.md content.";
 
@@ -470,24 +453,17 @@ function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode 
   return lines.join("\n");
 }
 
+// Only emit the policy when delegation is a live option for the current run.
+// The negative cases (disabled workspace, depth ceiling, missing agents) waste
+// turn-1 tokens reminding the model of an option it doesn't have — the absence
+// of "Available agents" + "Delegation policy" is a stronger signal than prose.
 function formatDelegationPolicy(context) {
-  if (!context) return "";
+  if (!context?.enabled || !context?.canDelegate) return "";
   const lines = [];
-  if (!context.enabled) {
-    lines.push("Delegation is disabled for this workspace. Do not return decision \"delegate\".");
-    if (context.disabledReason) lines.push(`Reason: ${context.disabledReason}.`);
-    return lines.join("\n");
-  }
-
-  lines.push(`Delegation policy: ${context.canDelegate ? "available" : "unavailable"} for this task.`);
-  lines.push(`Current depth: ${context.depth}/${context.maxDepth}. Max children per round: ${context.maxChildrenPerRound}. Max parallel child runs: ${context.maxParallelChildren}.`);
+  lines.push(`Delegation budget: depth ${context.depth}/${context.maxDepth}, up to ${context.maxChildrenPerRound} children per round, ${context.maxParallelChildren} parallel.`);
   lines.push(context.autoRunChildren
-    ? "Delegated children auto-run when their dependencies are clear."
+    ? "Delegated children auto-run when dependencies clear."
     : "Delegated children are created but do not auto-run.");
-  if (!context.canDelegate) {
-    lines.push(`Do not return decision "delegate": ${context.disabledReason || "delegation is unavailable"}.`);
-    return lines.join("\n");
-  }
   lines.push("Return decision \"delegate\" when the work naturally splits into independent investigation, implementation, research, drafting, QA, or specialist review tracks that can run in parallel or with clear dependencies.");
   lines.push("Proceed with decision \"advance\" instead when the task is small, tightly coupled, already decomposed into children, or when delegation would create coordination overhead without reducing risk or time.");
   lines.push("Use at most the configured child limit, prefer required children for work the parent must synthesize, and use optional children only for helpful extra validation.");
@@ -654,7 +630,7 @@ export function buildSystemPrompt(input, mode) {
       parts.push(section("Child tasks", formatChildTasks(input.delegation)));
       if (input.delegation?.childTasks?.length) sectionNames.push("Child tasks");
       parts.push(section("Delegation policy", formatDelegationPolicy(input.delegation)));
-      if (input.delegation) sectionNames.push("Delegation policy");
+      if (input.delegation?.enabled && input.delegation?.canDelegate) sectionNames.push("Delegation policy");
       parts.push(section("Available agents", formatAvailableAgents(input.delegation)));
       if (input.delegation?.enabled && input.delegation?.availableAgents?.length) sectionNames.push("Available agents");
     }

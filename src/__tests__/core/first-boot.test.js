@@ -2,7 +2,8 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { seedDataFromTemplate } from "../../core/first-boot.js";
+import { seedDataFromTemplate, seedDefaultAgents } from "../../core/first-boot.js";
+import { makeTestDb } from "../helpers/test-db.js";
 
 describe("seedDataFromTemplate", () => {
   const created = [];
@@ -36,5 +37,65 @@ describe("seedDataFromTemplate", () => {
     seedDataFromTemplate({ templateDir: template, dataDir: data });
     expect(existsSync(join(data, "knowledge", "welcome.md"))).toBe(false);
     expect(readFileSync(join(data, "existing.txt"), "utf8")).toBe("mine");
+  });
+});
+
+describe("seedDefaultAgents", () => {
+  const created = [];
+  afterEach(() => {
+    for (const d of created) rmSync(d, { recursive: true, force: true });
+    created.length = 0;
+  });
+
+  function mkSeedDir(defs) {
+    const root = mkdtempSync(join(tmpdir(), "worklab-seed-"));
+    created.push(root);
+    const seedDir = join(root, "agents", "_seed");
+    mkdirSync(seedDir, { recursive: true });
+    for (const def of defs) {
+      writeFileSync(join(seedDir, `${def.name}.json`), JSON.stringify(def));
+    }
+    return root;
+  }
+
+  it("inserts default agents that don't already exist", () => {
+    const db = makeTestDb();
+    const templateDir = mkSeedDir([
+      { name: "planner", display_name: "Planner", sdk: "claude", model: "claude:claude-opus-4-7", instructions: "plan it" },
+      { name: "executor", display_name: "Executor", sdk: "claude", model: "claude:claude-sonnet-4-6", instructions: "do it" },
+    ]);
+    const result = seedDefaultAgents({ db, templateDir });
+    expect(result.seeded).toBe(2);
+    const rows = db.prepare("SELECT name, display_name, sdk, model FROM agents ORDER BY name").all();
+    expect(rows).toEqual([
+      { name: "executor", display_name: "Executor", sdk: "claude", model: "claude:claude-sonnet-4-6" },
+      { name: "planner", display_name: "Planner", sdk: "claude", model: "claude:claude-opus-4-7" },
+    ]);
+  });
+
+  it("skips agents that already exist (idempotent)", () => {
+    const db = makeTestDb();
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, instructions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("planner", "User Planner", "claude", "claude:claude-haiku-4-5", "user-customised", now, now);
+    const templateDir = mkSeedDir([
+      { name: "planner", display_name: "Default Planner", sdk: "claude", model: "claude:claude-opus-4-7", instructions: "default" },
+      { name: "executor", display_name: "Executor", sdk: "claude", model: "claude:claude-sonnet-4-6", instructions: "do it" },
+    ]);
+    const result = seedDefaultAgents({ db, templateDir });
+    expect(result.seeded).toBe(1);
+    expect(result.skipped).toContain("planner");
+    const planner = db.prepare("SELECT display_name, instructions FROM agents WHERE name = 'planner'").get();
+    expect(planner.display_name).toBe("User Planner");
+    expect(planner.instructions).toBe("user-customised");
+  });
+
+  it("returns gracefully when seed dir is missing", () => {
+    const db = makeTestDb();
+    const root = mkdtempSync(join(tmpdir(), "worklab-noseed-"));
+    created.push(root);
+    const result = seedDefaultAgents({ db, templateDir: root });
+    expect(result.seeded).toBe(0);
+    expect(result.reason).toBe("no-seed-dir");
   });
 });

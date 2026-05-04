@@ -199,21 +199,17 @@ describe("buildExecuteSystemPrompt", () => {
     const p = buildExecuteSystemPrompt({ agent: baseAgent, task: baseTask, skills: [], memory: "", journalTail: "", comments: [], pinnedKb: [] });
     expect(p).toContain("Journal as you work");
     expect(p).toContain("keep a short run-local checklist with `todo_write`");
-    expect(p).toContain("Preserve durable deliverables in the Worklab Knowledge Base");
-    expect(p).toContain("the `kb_` prefix means Knowledge Base, not kilobytes");
-    expect(p).toContain("save the complete deliverable with `kb_create` or `kb_update`");
-    expect(p).toContain("Mention the Worklab Knowledge Base slug or link in `final_text`");
-    expect(p).toContain("Worklab needs one final `worklab.v2` JSON object");
-    expect(p).toContain("Do not preface the final JSON with process narration");
-    expect(p).toContain("the final valid result supersedes earlier structured progress");
-    expect(p).toContain("Put the human-facing final comment in `final_text`");
-    expect(p).toContain("escape double quotes inside `summary`, `details`, and `final_text`");
-    expect(p).toContain("For plan-stage runs, put the complete implementation plan in `details` / the plan body");
-    expect(p).toContain("For plan-stage pauses, use `questions` for 1-3 critical decisions");
-    expect(p).toContain("Use `pending_actions` only with decision \"pause\"");
-    expect(p).toContain("Use `subtasks` only with decision \"delegate\"");
+    expect(p).toContain("`kb_` = Knowledge Base, not kilobytes");
+    expect(p).toContain("save the complete body via `kb_create` or `kb_update`");
+    expect(p).toContain("reference the slug in `final_text`");
+    expect(p).toContain("End each completed run with one `worklab.v2` JSON object");
+    expect(p).toContain("Put the human-facing comment in `final_text`");
+    expect(p).toContain("For plan-stage runs, put the complete implementation plan");
+    expect(p).toContain("plan-stage pauses needing human input");
+    expect(p).toContain('`pending_actions` requires decision "pause"');
+    expect(p).toContain('`subtasks` requires decision "delegate"');
     expect(p).toContain('"final_text": "Concise human-facing final comment."');
-    expect(p).toContain("For \"advance\", \"approve\", and \"reject\", keep both `pending_actions` and `subtasks` empty.");
+    expect(p).toContain('Keep all three empty for "advance", "approve", "reject".');
     expect(p.trim().endsWith('and "block" when you cannot continue.')).toBe(true);
   });
 
@@ -229,6 +225,71 @@ describe("buildExecuteSystemPrompt", () => {
     const kbIdx = p.indexOf("Conventions");
     expect(kbIdx).toBeGreaterThan(instrIdx);
     expect(p.indexOf("demo")).toBeGreaterThan(kbIdx);
+  });
+
+  it("omits Delegation policy when delegation is unavailable at this depth", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      delegation: {
+        enabled: true,
+        canDelegate: false,
+        depth: 1,
+        maxDepth: 1,
+        maxChildrenPerRound: 5,
+        maxParallelChildren: 3,
+        autoRunChildren: true,
+        availableAgents: [],
+        childTasks: [],
+        disabledReason: "max depth reached",
+      },
+    });
+    expect(p).not.toContain("## Delegation policy");
+    expect(p).not.toContain("Delegation is disabled");
+    expect(p).not.toContain("max depth reached");
+  });
+
+  it("omits Delegation policy when delegation is disabled for the workspace", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      delegation: {
+        enabled: false,
+        canDelegate: false,
+        depth: 0,
+        maxDepth: 1,
+        maxChildrenPerRound: 5,
+        maxParallelChildren: 3,
+        autoRunChildren: true,
+        availableAgents: [],
+        childTasks: [],
+        disabledReason: "delegation off",
+      },
+    });
+    expect(p).not.toContain("## Delegation policy");
+  });
+
+  it("keeps the minimal-input prompt under 8000 characters", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+    });
+    expect(p.length).toBeLessThan(8000);
   });
 
   it("renders delegation policy, available agents, and child summaries", () => {
@@ -469,7 +530,7 @@ describe("buildReviewSystemPrompt", () => {
     const journalIdx = p.indexOf("- j1");
     const taskIdx = p.indexOf("**Title:** demo");
     const execIdx = p.indexOf("## Work output");
-    const directiveIdx = p.indexOf("Return a structured Worklab result as JSON");
+    const directiveIdx = p.indexOf("Final result shape:");
     expect(roleIdx).toBeGreaterThanOrEqual(0);
     expect(kbIdx).toBeGreaterThan(roleIdx);
     expect(skillIdx).toBeGreaterThan(kbIdx);
@@ -598,34 +659,12 @@ describe("buildReviewSystemPrompt", () => {
       pinnedKb: [],
       execution: baseExecution,
     });
-    const directive = `Review the owner's work against the task instructions.
-
-If repository or project instructions required granular commits, verify that the owner committed the relevant work separately and did not bundle unrelated changes. Reject the work when required commits are missing, unrelated changes are mixed together, or the final output hides a dirty worktree.
-
-Tool budget: when verifying UI work with the Playwright MCP, prefer \`mcp__playwright__browser_snapshot\` (a compact accessibility tree of the rendered DOM) over \`mcp__playwright__browser_take_screenshot\`. Only fall back to a screenshot when the rejection rests on something the DOM cannot tell you — pixel-level layout, colour, font rendering, or graphical artifacts. Screenshots return base64 payloads that quickly exhaust the context window.
-
-Return a structured Worklab result as JSON when you finish:
-
-{
-  "schema": "worklab.v2",
-  "stage": "review",
-  "decision": "approve",
-  "summary": "Short outcome.",
-  "details": "Optional review notes.",
-  "final_text": "Human-facing review comment.",
-  "artifacts": {},
-  "blocking_issues": [],
-  "pending_actions": [],
-  "questions": [],
-  "subtasks": [],
-  "memory_candidates": []
-}
-
-Escape double quotes inside review notes or final_text so the response remains valid JSON.
-Use decision "approve" when the work satisfies the task and "reject" when changes are required. For compatibility, include a first-line verdict inside details when helpful, but the JSON decision is authoritative.
-
-JSON-only output contract: the very last thing you emit must be a single \`worklab.v2\` JSON object — nothing before it, nothing after it, no markdown fences. Put your prose review in \`details\` and your one-line user-facing comment in \`final_text\`. Do not wrap the JSON in \`\`\`json fences, do not introduce it with phrases like "here is my review", and do not append a verdict line outside the JSON. The harness re-runs you with stricter prompting if it can't parse the result, but only twice — make the first attempt clean.`;
-    expect(p.trim().endsWith(directive)).toBe(true);
+    expect(p).toContain("Review the owner's work against the task instructions.");
+    expect(p).toContain("verify the owner made granular commits");
+    expect(p).toContain("`mcp__playwright__browser_snapshot`");
+    expect(p).toContain('"stage": "review"');
+    expect(p).toContain('"decision": "approve"');
+    expect(p.trim().endsWith('Use decision "approve" when the work satisfies the task and "reject" when changes are required.')).toBe(true);
   });
 
   it("does NOT contain the CADENCE instruction", () => {
