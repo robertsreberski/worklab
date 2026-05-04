@@ -29,6 +29,7 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
+import { executionModeIncompatibilityReason } from "../../../ai/runtime/model-refs.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
@@ -487,21 +488,31 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     </div>
   );
 
+  const executionMode = agent.execution_mode === "sdk" ? "sdk" : "cli";
   const modelOptions = [
     ...modelGroups.map((group) => ({
       label: modelGroupLabel(group),
-      options: (group.models || []).map((m) => ({
-        value: m.value,
-        label: m.label || m.value,
-        disabled: group.available === false || m.available === false || m.disabled === true,
-        description: modelOptionDescription(m, group),
-      })),
+      options: (group.models || []).map((m) => {
+        const baseDisabled = group.available === false || m.available === false || m.disabled === true;
+        const modeReason = executionModeIncompatibilityReason(m.value, executionMode);
+        const baseDescription = modelOptionDescription(m, group);
+        const description = modeReason
+          ? (baseDescription ? `${baseDescription} · Requires SDK mode` : "Requires SDK mode")
+          : baseDescription;
+        return {
+          value: m.value,
+          label: m.label || m.value,
+          disabled: baseDisabled || !!modeReason,
+          description,
+        };
+      }),
     })),
     ...(allModels.some((m) => m.value === agent.model) ? [] : [{
       label: "Saved value",
       options: [{ value: agent.model, label: `${agent.model} (unavailable)`, disabled: true, description: "Saved model is not in the current catalogue." }],
     }]),
   ];
+  const currentModelExecutionWarning = executionModeIncompatibilityReason(agent.model, executionMode);
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
   const useRadioForEffort = reasoningMode === "effort" && reasoningLevels.length >= 3 && reasoningLevels.length <= 5;
   const headerModelLabel = modelDisplayName(agent.model, modelOptions);
@@ -862,7 +873,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                 />
               </FormField>
               <FormGrid columns={2}>
-                <FormField label="Model" required>
+                <FormField label="Model" required hint={currentModelExecutionWarning ? `⚠ ${currentModelExecutionWarning} Switch to SDK mode above, or pick a CLI-compatible model.` : undefined}>
                   <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
                 </FormField>
                 <FormField

@@ -84,3 +84,38 @@ export function parseRuntimeModelReference(value) {
 
 export const ACTIVE_RUNTIME_KINDS = [...ACTIVE_RUNTIME_IDS];
 export const RESERVED_RUNTIME_KINDS = [...RESERVED_RUNTIME_IDS];
+
+// intelligence-ramp: which model refs can run under which execution_mode.
+//   sdk='claude' (any model)              → CLI (claude binary) or SDK (Anthropic)
+//   sdk='pi' + provider='openai-codex'    → CLI (codex app-server) or SDK (pi-sdk)
+//   sdk='pi' + provider != 'openai-codex' → SDK only (pi-sdk handles vercel-ai,
+//                                           openai, custom OpenAI-compatible
+//                                           providers; codex app-server can't
+//                                           speak those protocols).
+const CODEX_PI_PROVIDER = "openai-codex";
+
+// Returns null when the combo is fine; otherwise a short reason string the
+// UI / API can show.
+export function executionModeIncompatibilityReason(modelRefOrParsed, executionMode) {
+  if (!executionMode || executionMode === "sdk") return null;
+  if (executionMode !== "cli") return null;
+  let parsed;
+  try {
+    parsed = typeof modelRefOrParsed === "string"
+      ? parseRuntimeModelReference(modelRefOrParsed)
+      : modelRefOrParsed;
+  } catch {
+    return null;
+  }
+  if (!parsed) return null;
+  if (parsed.sdk === "claude") return null;
+  if (parsed.sdk === "pi" && parsed.provider === CODEX_PI_PROVIDER) return null;
+  if (parsed.sdk === "pi") {
+    return `Provider \`${parsed.provider}\` only runs under SDK execution mode (codex app-server can only speak the codex protocol).`;
+  }
+  return `sdk \`${parsed.sdk}\` is not supported under CLI execution mode.`;
+}
+
+export function isModelCompatibleWithExecutionMode(modelRefOrParsed, executionMode) {
+  return executionModeIncompatibilityReason(modelRefOrParsed, executionMode) === null;
+}
