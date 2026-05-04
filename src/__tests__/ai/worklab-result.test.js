@@ -440,6 +440,8 @@ describe("worklab_result contract", () => {
     expect(artifacts).toMatchObject({
       type: "object",
       additionalProperties: false,
+      properties: {},
+      required: [],
     });
 
     const subtask = WORKLAB_RESULT_JSON_SCHEMA.properties.subtasks.items;
