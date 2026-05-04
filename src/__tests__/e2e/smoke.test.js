@@ -33,7 +33,7 @@ describe("e2e smoke", () => {
     let res = await fetch(`${baseUrl}/api/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "smoke task" }),
+      body: JSON.stringify({ title: "smoke task", instructions: "End-to-end smoke harness: create-list-update task lifecycle exercising the API surface enough to catch obvious regressions." }),
     });
     expect(res.status).toBe(201);
     const { task } = await res.json();
