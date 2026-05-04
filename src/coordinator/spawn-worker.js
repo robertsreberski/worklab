@@ -67,7 +67,7 @@ export function spawnWorker({
   persistDebounceMs = 250,
   dataDir = env.WORKLAB_DATA_DIR,
   runTimeoutMs = 30 * 60 * 1000,
-  runIdleWarningMs = 120 * 1000,
+  runIdleWarningMs = 240 * 1000,
   logInlineLimit = 12_000,
   contextBloatEventChars = 100_000,
   contextBloatTotalChars = 500_000,

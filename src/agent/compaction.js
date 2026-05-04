@@ -9,9 +9,13 @@ const DEFAULT_SUMMARY_MAX_TOKENS = 16000;
 const DEFAULT_MIN_SAVINGS_TOKENS = 20000;
 const DEFAULT_TOOL_PAYLOAD_COMPACTION_TRIGGER_CHARS = 0;
 const DEFAULT_TOOL_PRUNE_TRIGGER_TOKENS = 40000;
-const DEFAULT_TOOL_TEXT_LIMIT_CHARS = 16000;
-const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 20000;
-const DEFAULT_MCP_TEXT_LIMIT_CHARS = 12000;
+// intelligence-ramp Phase 3: lifted from 16K/20K/12K. Mid-task tool reads
+// (large file edits, long bash output, deep MCP results) were being silently
+// clipped before the agent could reason about them. The 256KB hard ceiling
+// in tool-bloat.js still protects against runaway payloads.
+const DEFAULT_TOOL_TEXT_LIMIT_CHARS = 64000;
+const DEFAULT_BASH_OUTPUT_LIMIT_CHARS = 64000;
+const DEFAULT_MCP_TEXT_LIMIT_CHARS = 48000;
 const DEFAULT_SEARCH_RESULT_LIMIT = 100;
 const DEFAULT_IMAGE_INLINE_MAX_BYTES = 250000;
 const DEFAULT_TOOL_PAYLOAD_MAX_BYTES = 262144;
@@ -264,6 +268,47 @@ function buildCompactionMessage({ id, seq, metrics, firstKeptIndex, compactedCou
   };
 }
 
+function firstNonEmptyLine(text) {
+  for (const raw of String(text || "").split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line) return line;
+  }
+  return "";
+}
+
+function summarizeToolResultBody(message) {
+  const parts = Array.isArray(message?.content) ? message.content : [];
+  let textChars = 0;
+  let firstSnippet = "";
+  let imageCount = 0;
+  let imageBytes = 0;
+  for (const part of parts) {
+    if (part?.type === "text") {
+      const t = String(part.text || "");
+      textChars += t.length;
+      if (!firstSnippet) firstSnippet = firstNonEmptyLine(t);
+    } else if (part?.type === "image") {
+      imageCount += 1;
+      imageBytes += base64Bytes(part.data);
+    }
+  }
+  const facts = [];
+  if (textChars > 0) facts.push(`${textChars} text chars`);
+  if (imageCount > 0) facts.push(`${imageCount} image${imageCount === 1 ? "" : "s"} (~${imageBytes} bytes)`);
+  if (message?.isError) facts.push("status: error");
+  if (firstSnippet) {
+    const snip = firstSnippet.length > 160 ? `${firstSnippet.slice(0, 160).trimEnd()}…` : firstSnippet;
+    facts.push(`first line: "${snip}"`);
+  }
+  return facts.join("; ");
+}
+
+// Replace older tool_result bodies with a 1–3 sentence lossy summary
+// instead of dropping them. Keeps the agent able to reason about prior
+// work (filename, byte count, error status, first-line excerpt) without
+// paying the original payload cost. The full payload remains on disk
+// under <runArtifactDir>/tool-output/ for explicit re-fetch via the
+// artifact path that tool-bloat.js records in details.
 function pruneToolResultContent(message, metrics) {
   const details = {
     ...(message.details || {}),
@@ -271,15 +316,16 @@ function pruneToolResultContent(message, metrics) {
     pruned_tokens_estimate: metrics.tokens,
     pruned_chars_estimate: metrics.chars,
   };
+  const toolLabel = message.toolName || details.tool || "tool";
   const artifact = details.artifact_path || details.full_output_path || details.path || null;
-  const content = [{
-    type: "text",
-    text: [
-      `[pruned older ${message.toolName || details.tool || "tool"} result from context]`,
-      `Estimated removed tokens: ${metrics.tokens}.`,
-      artifact ? `Full output artifact: ${artifact}` : "Use a targeted tool call if the raw output is needed again.",
-    ].join("\n"),
-  }];
+  const summary = summarizeToolResultBody(message);
+  const lines = [
+    `[older ${toolLabel} result, summarized to free ~${metrics.tokens} tokens of context]`,
+  ];
+  if (summary) lines.push(summary);
+  if (artifact) lines.push(`Full output preserved at: ${artifact}`);
+  else lines.push("Re-issue a targeted tool call (narrower query / smaller range) if the raw payload is needed again.");
+  const content = [{ type: "text", text: lines.join("\n") }];
   return { ...message, content, details };
 }
 
@@ -334,10 +380,15 @@ function truncateText(text, limit, label) {
   if (value.length <= limit) {
     return { text: value, truncated: false, originalLength: value.length };
   }
+  // First-class truncation marker: tells the model exactly what was cut and
+  // what it should do about it. The audit found agents failing tasks because
+  // they didn't notice silent ellipses — be loud and actionable.
+  const totalKb = Math.round(value.length / 1024);
+  const shownKb = Math.round(limit / 1024);
   const marker = [
     "",
-    `[truncated ${label || "tool"} result from ${value.length} to ${limit} characters for context budget]`,
-    "Use a narrower command/tool query or read a specific file/range for the missing detail.",
+    `[!!! ${label || "tool"} OUTPUT TRUNCATED — ${shownKb}KB of ${totalKb}KB shown above. The tool returned ${value.length - limit} more characters that you cannot see.]`,
+    "If those characters matter for the task, narrow the query (smaller range, more specific pattern) or paginate. Don't assume the missing tail is empty.",
   ].join("\n");
   return {
     text: `${value.slice(0, Math.max(0, limit - marker.length))}${marker}`,

@@ -19,7 +19,7 @@ describe("loadConfig", () => {
     expect(c.dataDir).toMatch(/\/\.worklab$/);
     expect(c.logLevel).toBe("info");
     expect(c.runTimeoutMs).toBe(30 * 60 * 1000);
-    expect(c.runIdleWarningMs).toBe(120 * 1000);
+    expect(c.runIdleWarningMs).toBe(240 * 1000);
     expect(c.logInlineLimit).toBe(12_000);
     expect(c.drainTimeoutMs).toBe(60_000);
   });

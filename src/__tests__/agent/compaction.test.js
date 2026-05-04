@@ -86,9 +86,87 @@ describe("agent compaction", () => {
 
     expect(compacted.changed).toBe(true);
     expect(compacted.result.content[0].text.length).toBeLessThan(4000);
-    expect(compacted.result.content[0].text).toContain("truncated Read result");
+    expect(compacted.result.content[0].text).toContain("Read OUTPUT TRUNCATED");
+    expect(compacted.result.content[0].text).toContain("narrow the query");
     expect(compacted.result.content[1].text).toContain("omitted inline image");
     expect(compacted.result.details.context_compacted).toBe(true);
+  });
+
+  it("truncation marker reports both the visible and total size", () => {
+    const policy = resolveAgentCompactionPolicy(
+      { agent_tool_text_limit_chars: 1000 },
+      { contextWindow: 32000 },
+    );
+    const result = {
+      content: [{ type: "text", text: "x".repeat(8000) }],
+      details: { tool: "Read" },
+    };
+    const compacted = compactToolResultForContext(result, policy, { toolName: "Read" });
+    expect(compacted.changed).toBe(true);
+    const body = compacted.result.content[0].text;
+    expect(body).toMatch(/\d+KB of \d+KB shown above/);
+    expect(body).toMatch(/cannot see/);
+  });
+
+  it("lossy summary keeps a first-line snippet and artifact pointer", async () => {
+    const manager = createAgentCompactionManager({
+      model: { id: "gpt-test", contextWindow: 32000 },
+      settings: {
+        agent_compaction_trigger_ratio: 0.95,
+        agent_compaction_keep_recent_tokens: 4000,
+        agent_tool_prune_trigger_tokens: 1000,
+      },
+    });
+    const messages = [];
+    for (let index = 0; index < 18; index += 1) {
+      messages.push({ role: "user", content: `step ${index}` });
+      messages.push({ role: "assistant", content: [{ type: "toolCall", id: `read-${index}`, name: "Read", arguments: { file_path: `file-${index}.js` } }] });
+      messages.push({
+        role: "toolResult",
+        toolName: "Read",
+        content: [{ type: "text", text: `OPENING-LINE-${index}\n${"x".repeat(4000)}` }],
+        details: { tool: "Read", artifact_path: `/tmp/run/tool-output/read-${index}.txt` },
+      });
+    }
+    messages.push({ role: "user", content: "recent instruction" });
+
+    await manager.transformContext(messages);
+    const summarized = messages.find((m) => m.role === "toolResult" && m.details?.context_pruned);
+    expect(summarized).toBeTruthy();
+    const body = summarized.content[0].text;
+    expect(body).toContain("summarized to free");
+    expect(body).toMatch(/text chars/);
+    expect(body).toMatch(/first line: "OPENING-LINE-/);
+    expect(body).toMatch(/Full output preserved at: \/tmp\/run\/tool-output\//);
+    expect(body).not.toContain("Re-issue a targeted tool call");
+  });
+
+  it("lossy summary falls back to retry hint when no artifact path is recorded", async () => {
+    const manager = createAgentCompactionManager({
+      model: { id: "gpt-test", contextWindow: 32000 },
+      settings: {
+        agent_compaction_trigger_ratio: 0.95,
+        agent_compaction_keep_recent_tokens: 4000,
+        agent_tool_prune_trigger_tokens: 1000,
+      },
+    });
+    const messages = [];
+    for (let index = 0; index < 18; index += 1) {
+      messages.push({ role: "user", content: `step ${index}` });
+      messages.push({ role: "assistant", content: [{ type: "toolCall", id: `bash-${index}`, name: "Bash" }] });
+      messages.push({
+        role: "toolResult",
+        toolName: "Bash",
+        content: [{ type: "text", text: `cmd output ${index}\n${"y".repeat(4000)}` }],
+        details: { tool: "Bash" },
+      });
+    }
+    messages.push({ role: "user", content: "recent" });
+
+    await manager.transformContext(messages);
+    const summarized = messages.find((m) => m.role === "toolResult" && m.details?.context_pruned);
+    expect(summarized.content[0].text).toContain("Re-issue a targeted tool call");
+    expect(summarized.content[0].text).not.toMatch(/Full output preserved/);
   });
 
   it("prunes old tool results before forcing a full transcript compaction", async () => {
