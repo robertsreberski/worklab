@@ -55,6 +55,31 @@ describe("agents CRUD", () => {
     expect(res.body.agent.per_run_budget_usd).toBeNull();
   });
 
+  it("defaults execution_mode to 'sdk' on POST and accepts 'cli'", async () => {
+    const { agent, db } = makeTestServer();
+    const def = await agent.post("/api/agents").send({ name: "default-mode", display_name: "Default", model: "claude:claude-sonnet-4-6" }).expect(201);
+    expect(def.body.agent.execution_mode).toBe("sdk");
+    const cli = await agent.post("/api/agents").send({ name: "cli-mode", display_name: "Cli", model: "claude:claude-sonnet-4-6", execution_mode: "cli" }).expect(201);
+    expect(cli.body.agent.execution_mode).toBe("cli");
+    const row = db.prepare("SELECT execution_mode FROM agents WHERE name = 'cli-mode'").get();
+    expect(row.execution_mode).toBe("cli");
+  });
+
+  it("rejects invalid execution_mode on POST", async () => {
+    const { agent } = makeTestServer();
+    const res = await agent.post("/api/agents").send({ name: "bogus", display_name: "B", model: "claude:claude-sonnet-4-6", execution_mode: "wat" }).expect(400);
+    expect(res.body.error.code).toBe("validation");
+  });
+
+  it("PATCH updates execution_mode", async () => {
+    const { agent, db } = makeTestServer();
+    await agent.post("/api/agents").send({ name: "mover", display_name: "Mover", model: "claude:claude-sonnet-4-6" }).expect(201);
+    const patched = await agent.patch("/api/agents/mover").send({ execution_mode: "cli" }).expect(200);
+    expect(patched.body.agent.execution_mode).toBe("cli");
+    const row = db.prepare("SELECT execution_mode FROM agents WHERE name = 'mover'").get();
+    expect(row.execution_mode).toBe("cli");
+  });
+
   it("POST /api/agents accepts explicit policy and budget fields", async () => {
     const { agent, db } = makeTestServer();
     const res = await agent.post("/api/agents").send({

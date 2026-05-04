@@ -20,7 +20,22 @@ export const RUNTIME_CAPABILITIES = {
   },
 };
 
+// CLI bridges are checked first when execution_mode='cli'. Without that flag
+// the resolver falls through to the SDK bridges below, preserving the
+// pre-Phase-2 behaviour for any agent that hasn't opted in.
 const builtinBridgeSpecs = {
+  "claude-code": {
+    id: "claude-code",
+    supports: (ref, options) => ref?.sdk === "claude" && options?.executionMode === "cli",
+    capabilities: () => ({ kind: "claude-code", runtime: "cli", ...COMMON_CAPABILITIES }),
+    load: async () => (await import("../providers/claude-cli.js")).claudeCodeRuntimeBridge,
+  },
+  "codex-app": {
+    id: "codex-app",
+    supports: (ref, options) => ref?.sdk === "pi" && options?.executionMode === "cli",
+    capabilities: () => ({ kind: "codex-app", runtime: "cli", ...COMMON_CAPABILITIES }),
+    load: async () => (await import("../providers/codex-app.js")).codexAppRuntimeBridge,
+  },
   claude: {
     id: "claude",
     supports: (ref) => ref?.sdk === "claude",
@@ -52,9 +67,9 @@ export function runtimeCapabilities(sdkOrModel) {
   return { kind: sdk, ...caps };
 }
 
-export async function resolveRuntimeBridge(modelRef) {
+export async function resolveRuntimeBridge(modelRef, options = {}) {
   for (const spec of Object.values(builtinBridgeSpecs)) {
-    if (spec.supports(modelRef)) return spec.load();
+    if (spec.supports(modelRef, options)) return spec.load();
   }
   throw new Error(`unsupported sdk: ${modelRef?.sdk || "unknown"}`);
 }

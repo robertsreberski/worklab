@@ -71,6 +71,7 @@ const emptyAgent = {
   browser_tools_review_only: false,
   daily_budget_usd: null,
   per_run_budget_usd: null,
+  execution_mode: "cli",
   enabled: true,
 };
 
@@ -908,6 +909,14 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, browser_tools_review_only: next })}
                     label="Disable browser tools in execute"
                     description="Playwright MCP and Browser Use or Playwright skills stay available for review runs."
+                  />
+                </FormField>
+                <FormField label="Execution mode" description="CLI delegates to the host's claude / codex binary (recommended). SDK runs the in-process loop with Worklab's compaction + tool guards.">
+                  <RadioGroup
+                    ariaLabel="Execution mode"
+                    value={agent.execution_mode === "sdk" ? "sdk" : "cli"}
+                    onChange={(v) => setAgent({ ...agent, execution_mode: v })}
+                    options={[{ value: "cli", label: "CLI" }, { value: "sdk", label: "SDK" }]}
                   />
                 </FormField>
                 <FormField label="Daily budget">

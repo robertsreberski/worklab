@@ -90,6 +90,20 @@ describe("seedDefaultAgents", () => {
     expect(planner.instructions).toBe("user-customised");
   });
 
+  it("persists execution_mode from seed JSON", () => {
+    const db = makeTestDb();
+    const templateDir = mkSeedDir([
+      { name: "planner", display_name: "Planner", sdk: "claude", model: "claude:claude-opus-4-7", instructions: "plan", execution_mode: "cli" },
+      { name: "fallback-pi", display_name: "Fallback", sdk: "pi", model: "pi:openai:gpt-test", instructions: "do", execution_mode: "sdk" },
+    ]);
+    seedDefaultAgents({ db, templateDir });
+    const rows = db.prepare("SELECT name, execution_mode FROM agents ORDER BY name").all();
+    expect(rows).toEqual([
+      { name: "fallback-pi", execution_mode: "sdk" },
+      { name: "planner", execution_mode: "cli" },
+    ]);
+  });
+
   it("returns gracefully when seed dir is missing", () => {
     const db = makeTestDb();
     const root = mkdtempSync(join(tmpdir(), "worklab-noseed-"));

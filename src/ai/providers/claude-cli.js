@@ -526,3 +526,19 @@ export const codexCliBackend = {
   capabilities: { kind: "codex-cli", runtime: "cli", ...DORMANT_CLI_CAPABILITIES },
   execute: generateCliResponse,
 };
+
+// CLI bridge for sdk='claude' agents that opt into execution_mode='cli'.
+// generateCliResponse internally branches on resolved.sdk; the SDK shape
+// from parseModelReference uses 'claude', the CLI builder expects
+// 'claude-code', so we shim the model ref here rather than scattering
+// translation logic across the registry.
+export const claudeCodeRuntimeBridge = {
+  id: "claude-code",
+  kind: "claude-code",
+  capabilities: { kind: "claude-code", runtime: "cli", ...DORMANT_CLI_CAPABILITIES },
+  supports: (ref, options) => ref?.sdk === "claude" && options?.executionMode === "cli",
+  execute: (systemPrompt, options) => generateCliResponse(systemPrompt, {
+    ...options,
+    model: { ...options.model, sdk: "claude-code" },
+  }),
+};

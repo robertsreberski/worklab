@@ -52,6 +52,7 @@ function rowToAgent(row) {
     browser_tools_review_only: !!row.browser_tools_review_only,
     daily_budget_usd: row.daily_budget_usd == null ? null : Number(row.daily_budget_usd),
     per_run_budget_usd: row.per_run_budget_usd == null ? null : Number(row.per_run_budget_usd),
+    execution_mode: row.execution_mode || "sdk",
   };
 }
 
@@ -72,8 +73,21 @@ const PATCHABLE = [
   "browser_tools_review_only",
   "daily_budget_usd",
   "per_run_budget_usd",
+  "execution_mode",
   "enabled",
 ];
+
+const VALID_EXECUTION_MODES = new Set(["sdk", "cli"]);
+
+function normalizeExecutionMode(value, fallback = "sdk") {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") throw new Error("execution_mode must be a string");
+  const trimmed = value.trim();
+  if (!VALID_EXECUTION_MODES.has(trimmed)) {
+    throw new Error(`execution_mode must be one of: ${[...VALID_EXECUTION_MODES].join(", ")}`);
+  }
+  return trimmed;
+}
 
 function validateModelForAgent({ db, dataDir, model }) {
   const resolved = normalizeModelReference(model);
@@ -293,11 +307,13 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let browserToolsReviewOnly;
     let dailyBudgetUsd;
     let perRunBudgetUsd;
+    let executionMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
       dailyBudgetUsd = normalizeBudgetField("daily_budget_usd", req.body.daily_budget_usd);
       perRunBudgetUsd = normalizeBudgetField("per_run_budget_usd", req.body.per_run_budget_usd);
+      executionMode = normalizeExecutionMode(req.body.execution_mode, "sdk");
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
@@ -320,6 +336,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       browserToolsReviewOnly,
       dailyBudgetUsd,
       perRunBudgetUsd,
+      executionMode,
       enabled,
       createdAt: now,
       updatedAt: now,
@@ -435,6 +452,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         } else if (k === "daily_budget_usd" || k === "per_run_budget_usd") {
           try {
             values.push(normalizeBudgetField(k, req.body[k]));
+          } catch (err) {
+            return res.status(400).json({ error: { code: "validation", message: err.message } });
+          }
+        } else if (k === "execution_mode") {
+          try {
+            values.push(normalizeExecutionMode(req.body[k], existing.execution_mode || "sdk"));
           } catch (err) {
             return res.status(400).json({ error: { code: "validation", message: err.message } });
           }

@@ -87,6 +87,7 @@ export function insertAgent(db, {
   browserToolsReviewOnly,
   dailyBudgetUsd,
   perRunBudgetUsd,
+  executionMode,
   enabled,
   createdAt,
   updatedAt,
@@ -96,15 +97,18 @@ export function insertAgent(db, {
       (name, display_name, description, sdk, model, effort, instructions,
        skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
        builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-       browser_tools_review_only, daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       browser_tools_review_only, daily_budget_usd, per_run_budget_usd,
+       execution_mode, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name, displayName, description, sdk, model, effort, instructions,
     skillsAllowlistJson, skillsAllowlistMode,
     mcpAllowlistJson, mcpAllowlistMode,
     builtinAllowlistJson, builtinAllowlistMode,
     allowSelfReview, browserToolsReviewOnly,
-    dailyBudgetUsd, perRunBudgetUsd, enabled, createdAt, updatedAt,
+    dailyBudgetUsd, perRunBudgetUsd,
+    executionMode || "sdk",
+    enabled, createdAt, updatedAt,
   );
 }
 
