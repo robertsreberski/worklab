@@ -66,12 +66,15 @@ describe("provider routes", () => {
     }
     for (const piModel of getPiModels("openai-codex")) {
       expect(res.body.models.map((m) => m.value)).toContain(`pi:openai-codex:${piModel.id}`);
+      expect(res.body.models.map((m) => m.value)).toContain(`codex:${piModel.id}`);
     }
     expect(res.body.models.map((m) => m.value)).toContain(`pi:${p.body.provider.id}:${model.model_name}`);
     expect(res.body.groups.find((g) => g.id === "pi:openai-codex").label).toBe("OpenAI Codex");
+    expect(res.body.groups.find((g) => g.id === "codex").label).toBe("Codex CLI");
     expect(res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").capabilities.reasoning_mode).toBe("effort");
     expect(typeof res.body.models.find((m) => m.value === "claude:claude-sonnet-4-6").disabled).toBe("boolean");
     expect(res.body.models.find((m) => m.value === "pi:openai-codex:gpt-5.5").supports_builtin_tools).toBe(true);
+    expect(res.body.models.find((m) => m.value === "codex:gpt-5.5").runtime_kind).toBe("cli");
     expect(res.body.models.some((m) => m.value === "pi:google:gemini-2.5-pro")).toBe(true);
     expect(res.body.models.find((m) => m.value === `pi:${p.body.provider.id}:${model.model_name}`).supports_builtin_tools).toBe(true);
   });
@@ -79,7 +82,7 @@ describe("provider routes", () => {
   it("does not advertise reserved runtime prefixes for agent models", async () => {
     const { agent } = makeTestServer({ dataDir: tmpDataDir() });
     const res = await agent.get("/api/models/available").expect(200);
-    const reserved = ["codex:", "openai:", "vercel:", "claude-code:"];
+    const reserved = ["openai:", "vercel:", "claude-code:"];
     for (const model of res.body.models) {
       expect(reserved.some((prefix) => String(model.value).startsWith(prefix))).toBe(false);
     }

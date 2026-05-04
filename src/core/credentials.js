@@ -56,6 +56,7 @@ export function getBuiltinProviderAvailability({
   const openaiEnv = !!env.OPENAI_API_KEY;
   const probeEnv = { ...process.env, ...env, PATH: path };
   const codexAuth = piAuthAvailable("openai-codex", { env: probeEnv, dataDir });
+  const codexCliAvailable = commandOnPath("codex", path);
   const piProviders = [
     "github-copilot",
     "google-gemini-cli",
@@ -100,6 +101,12 @@ export function getBuiltinProviderAvailability({
       reason: codexAuth.reason,
       runtime_kind: "pi-agent",
       auth: codexAuth.auth,
+    },
+    codex: {
+      available: codexCliAvailable,
+      reason: codexCliAvailable ? null : "Install or add the codex CLI to PATH.",
+      runtime_kind: "cli",
+      auth: codexCliAvailable ? "codex-cli" : "missing-command",
     },
     pi: {
       available: true,

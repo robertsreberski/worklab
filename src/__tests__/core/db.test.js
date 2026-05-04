@@ -456,6 +456,8 @@ describe("openDb + runMigrations", () => {
       .run("openai-agent", "OpenAI Agent", "openai", "openai:gpt-5.5", now, now);
     db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("codex-agent", "Codex Agent", "codex", "codex:gpt-5.5", now, now);
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, execution_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
+      .run("pi-codex-cli-agent", "Pi Codex CLI Agent", "pi", "pi:openai-codex:gpt-5.5", "cli", now, now);
     db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("custom-agent", "Custom Agent", "vercel", "vercel:provider-1:gemma3:4b", now, now);
     db.prepare("INSERT INTO agents (name, display_name, sdk, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
@@ -467,8 +469,10 @@ describe("openDb + runMigrations", () => {
 
     expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'openai-agent'").get())
       .toMatchObject({ sdk: "pi", model: "pi:openai:gpt-5.5" });
-    expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'codex-agent'").get())
-      .toMatchObject({ sdk: "pi", model: "pi:openai-codex:gpt-5.5" });
+    expect(db.prepare("SELECT sdk, model, execution_mode FROM agents WHERE name = 'codex-agent'").get())
+      .toMatchObject({ sdk: "codex", model: "codex:gpt-5.5", execution_mode: "cli" });
+    expect(db.prepare("SELECT sdk, model, execution_mode FROM agents WHERE name = 'pi-codex-cli-agent'").get())
+      .toMatchObject({ sdk: "codex", model: "codex:gpt-5.5", execution_mode: "cli" });
     expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'custom-agent'").get())
       .toMatchObject({ sdk: "pi", model: "pi:provider-1:gemma3:4b" });
     expect(db.prepare("SELECT sdk, model FROM agents WHERE name = 'claude-code-agent'").get())

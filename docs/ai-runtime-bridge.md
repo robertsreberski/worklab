@@ -10,18 +10,23 @@ Active agent runtime references use only these prefixes:
 
 - `claude:<modelId>` for the Claude Agent SDK bridge.
 - `pi:<providerId>:<modelId>` for the Pi Agent SDK bridge.
+- `codex:<modelId>` for the Codex CLI bridge.
 
 Current Pi provider examples:
 
 - `pi:openai:gpt-5.5`
-- `pi:openai-codex:gpt-5.5`
+- `pi:openai-codex:gpt-5.5` (Pi SDK, not CLI)
 - `pi:google:gemini-2.5-pro`
 - `pi:<customProviderId>:<modelName>`
+
+Current CLI examples:
+
+- `codex:gpt-5.5` (Codex CLI app-server)
 
 Reserved ids are not accepted by strict runtime parsing:
 
 - `openai:<model>` is reserved for a future OpenAI-native runtime.
-- `codex:<model>` and `codex-cli:<model>` are reserved for future Codex runtimes.
+- `codex-cli:<model>` is reserved for a future alternate Codex CLI runtime.
 - `vercel:<providerId>:<model>` is reserved for future Vercel runtime work.
 - `claude-code:<model>` is reserved for a future Claude Code CLI bridge.
 
@@ -36,9 +41,14 @@ agent/settings ingress boundaries, and migrations apply the same mapping to
 saved active runtime refs:
 
 - `openai:<model>` -> `pi:openai:<model>`
-- `codex:<model>` -> `pi:openai-codex:<model>`
+- `codex:<model>` remains `codex:<model>` for agents and is forced to
+  `execution_mode='cli'`; SDK-only settings still map legacy `codex:<model>`
+  to `pi:openai-codex:<model>`.
 - `vercel:<providerId>:<model>` -> `pi:<providerId>:<model>`
 - `claude-code:<model>` -> `claude:<model>`
+
+Saved agents with `execution_mode='cli'` and `pi:openai-codex:<model>` are
+repaired to `codex:<model>` because `pi:openai-codex` is SDK-only.
 
 Database migrations apply this only to current saved configuration:
 
@@ -53,7 +63,7 @@ Historical run/log snapshots are not rewritten.
 
 A runtime bridge exposes:
 
-- `id`: canonical runtime id, currently `pi` or `claude`.
+- `id`: canonical runtime id, currently `pi`, `claude`, or `codex`.
 - `supports(ref)`: returns true for refs handled by the bridge.
 - `capabilities(ref)`: reports runtime capabilities for UI and execenv logic.
 - `execute(systemPrompt, request)`: runs the provider and returns a normalized
@@ -78,9 +88,9 @@ The Claude bridge handles `claude:*` refs through the Claude Agent SDK. It owns
 Claude SDK stream interpretation, structured output recovery, runtime warnings,
 usage, diagnostics, and post-success SDK error handling.
 
-Dormant CLI/app adapters may exist in `src/ai/providers`, but they are not
-registered active runtime bridges until their reserved ids are intentionally
-enabled.
+The Codex bridge handles `codex:*` refs through the local Codex CLI app-server
+when the agent uses `execution_mode='cli'`. The Pi `openai-codex` provider
+remains SDK-only and is routed through `pi-sdk`.
 
 ## Adding A Runtime
 

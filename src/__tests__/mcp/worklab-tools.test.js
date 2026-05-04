@@ -394,19 +394,21 @@ describe("worklab-tools handlers", () => {
     });
   });
 
-  it("agent_create canonicalizes legacy runtime model refs", async () => {
+  it("agent_create creates Codex CLI agents with explicit execution mode", async () => {
     const c = ctx();
     seedDb(c.dataDir, () => {});
 
     const result = await createToolHandlers(c).agent_create({
       display_name: "Legacy Codex Specialist",
       model: "codex:gpt-5.5",
+      execution_mode: "cli",
     });
 
     expect(result.agent).toMatchObject({
       name: "legacy-codex-specialist",
-      model: "pi:openai-codex:gpt-5.5",
-      sdk: "pi",
+      model: "codex:gpt-5.5",
+      sdk: "codex",
+      execution_mode: "cli",
     });
   });
 

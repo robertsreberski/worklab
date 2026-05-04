@@ -1,5 +1,5 @@
-const RESERVED_RUNTIME_IDS = new Set(["openai", "codex", "vercel", "claude-code", "codex-cli"]);
-const ACTIVE_RUNTIME_IDS = new Set(["claude", "pi"]);
+const RESERVED_RUNTIME_IDS = new Set(["openai", "vercel", "claude-code", "codex-cli"]);
+const ACTIVE_RUNTIME_IDS = new Set(["claude", "pi", "codex"]);
 
 function requirePart(value, message) {
   if (!value || typeof value !== "string" || value.trim() !== value) {
@@ -23,7 +23,7 @@ export function canonicalizeLegacyModelReference(value) {
   }
   if (value.startsWith("codex:")) {
     const model = requirePart(value.slice("codex:".length), "model id required");
-    return `pi:openai-codex:${model}`;
+    return `codex:${model}`;
   }
   if (value.startsWith("vercel:")) {
     const rest = value.slice("vercel:".length);
@@ -73,7 +73,7 @@ export function parseRuntimeModelReference(value) {
   const model = requirePart(value.slice(i + 1), "model id required");
 
   if (RESERVED_RUNTIME_IDS.has(sdk)) {
-    throw new Error(`reserved runtime id: ${sdk}; use a canonical pi:* or claude:* model reference`);
+    throw new Error(`reserved runtime id: ${sdk}; use a canonical pi:*, claude:*, or codex:* model reference`);
   }
   if (!ACTIVE_RUNTIME_IDS.has(sdk)) {
     throw new Error(`unknown sdk: ${sdk}`);
@@ -86,19 +86,13 @@ export const ACTIVE_RUNTIME_KINDS = [...ACTIVE_RUNTIME_IDS];
 export const RESERVED_RUNTIME_KINDS = [...RESERVED_RUNTIME_IDS];
 
 // intelligence-ramp: which model refs can run under which execution_mode.
-//   sdk='claude' (any model)              → CLI (claude binary) or SDK (Anthropic)
-//   sdk='pi' + provider='openai-codex'    → CLI (codex app-server) or SDK (pi-sdk)
-//   sdk='pi' + provider != 'openai-codex' → SDK only (pi-sdk handles vercel-ai,
-//                                           openai, custom OpenAI-compatible
-//                                           providers; codex app-server can't
-//                                           speak those protocols).
-const CODEX_PI_PROVIDER = "openai-codex";
+//   sdk='claude' → CLI (claude binary) or SDK (Anthropic)
+//   sdk='codex'  → CLI only (codex app-server)
+//   sdk='pi'     → SDK only (pi-sdk handles openai-codex and other providers)
 
 // Returns null when the combo is fine; otherwise a short reason string the
 // UI / API can show.
 export function executionModeIncompatibilityReason(modelRefOrParsed, executionMode) {
-  if (!executionMode || executionMode === "sdk") return null;
-  if (executionMode !== "cli") return null;
   let parsed;
   try {
     parsed = typeof modelRefOrParsed === "string"
@@ -108,10 +102,20 @@ export function executionModeIncompatibilityReason(modelRefOrParsed, executionMo
     return null;
   }
   if (!parsed) return null;
+  if (!executionMode) return null;
+  if (executionMode === "sdk") {
+    if (parsed.sdk === "codex") {
+      return "Codex CLI requires CLI execution mode.";
+    }
+    return null;
+  }
+  if (executionMode !== "cli") return null;
   if (parsed.sdk === "claude") return null;
-  if (parsed.sdk === "pi" && parsed.provider === CODEX_PI_PROVIDER) return null;
+  if (parsed.sdk === "codex") return null;
   if (parsed.sdk === "pi") {
-    return `Provider \`${parsed.provider}\` only runs under SDK execution mode (codex app-server can only speak the codex protocol).`;
+    const provider = parsed.provider || "unknown";
+    const suffix = provider === "openai-codex" ? "; use codex:<model> for Codex CLI" : "";
+    return `Provider \`${provider}\` only runs under SDK execution mode${suffix}.`;
   }
   return `sdk \`${parsed.sdk}\` is not supported under CLI execution mode.`;
 }
