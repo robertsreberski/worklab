@@ -10,6 +10,33 @@ function normalizeRoleForAvatar(role) {
   return undefined;
 }
 
+export function agentPickerOptions({ agents = [], value = null, allowClear = true } = {}) {
+  const options = [];
+  if (allowClear) {
+    options.push({
+      value: "__unassigned__",
+      label: "Unassigned",
+      _unassigned: true,
+    });
+  }
+  for (const a of agents) {
+    const isDisabled = a.enabled === false;
+    if (isDisabled && a.name !== value) continue;
+    const metadata = agentModelEffortLabel(a);
+    options.push({
+      value: a.name,
+      label: a.display_name || humanizeSlug(a.name),
+      description: [
+        isDisabled ? "disabled" : null,
+        metadata || null,
+      ].filter(Boolean).join(" · ") || undefined,
+      disabled: isDisabled,
+      _agent: a,
+    });
+  }
+  return options;
+}
+
 export function AgentPicker({
   value,
   onChange,
@@ -20,26 +47,7 @@ export function AgentPicker({
   class: className = "",
   ariaLabel,
 }) {
-  const options = [];
-  if (allowClear) {
-    options.push({
-      value: "__unassigned__",
-      label: "Unassigned",
-      _unassigned: true,
-    });
-  }
-  for (const a of agents) {
-    const metadata = agentModelEffortLabel(a);
-    options.push({
-      value: a.name,
-      label: a.display_name || humanizeSlug(a.name),
-      description: [
-        a.enabled === false ? "disabled" : null,
-        metadata || null,
-      ].filter(Boolean).join(" · ") || undefined,
-      _agent: a,
-    });
-  }
+  const options = agentPickerOptions({ agents, value, allowClear });
 
   const unassignedAvatar = (
     <span class="agent-avatar unassigned agent-avatar-sm" aria-hidden="true">

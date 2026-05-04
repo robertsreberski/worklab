@@ -208,10 +208,10 @@ const BULK_RUN_POLICY_OPTIONS = [
   { value: "manual", label: "Manual" },
 ];
 
-function agentBulkOptions(agents) {
+export function agentBulkOptions(agents) {
   return [
     { value: "__unassigned__", label: "Unassigned" },
-    ...agents.map((agent) => {
+    ...agents.filter((agent) => agent.enabled !== false).map((agent) => {
       const metadata = agentModelEffortLabel(agent);
       return {
         value: agent.name,
