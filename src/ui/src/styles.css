@@ -8706,6 +8706,12 @@ html.assistant-resizing * {
   max-height: 320px;
   overflow: auto;
 }
+.run-economics-grid {
+  margin-top: var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+}
 .run-summary-meta {
   color: var(--text-muted);
   font-size: var(--text-sm);

@@ -740,6 +740,11 @@ export function spawnWorker({
           })
         : null;
       const toolPayloadTruncatedCount = allWarnings.filter((w) => w.kind === "tool_payload_truncated").length;
+      const toolOutputsPrunedCount = rawEvents.reduce((acc, event) => {
+        const target = event?.type === "sdk_event" && event.event ? event.event : event;
+        if (target?.type !== "tool_context_pruned") return acc;
+        return acc + (Number(target.pruned_tool_results) || 0);
+      }, 0);
       const resultRecoveredViaLenient = allWarnings.some((w) => w.kind === "result_recovered_via_lenient");
       const todoSummary = (() => {
         try {
@@ -773,6 +778,7 @@ export function spawnWorker({
         },
         warning_count: allWarnings.length,
         ...(toolPayloadTruncatedCount > 0 ? { tool_results_truncated: toolPayloadTruncatedCount } : {}),
+        ...(toolOutputsPrunedCount > 0 ? { tool_outputs_pruned: toolOutputsPrunedCount } : {}),
         ...(resultRecoveredViaLenient ? { result_recovered_via: "lenient" } : {}),
         ...(recoveredStructuredResult ? { structured_output_recovered_as_final: true } : {}),
         cancel_initiator: cancelInitiator,
@@ -820,6 +826,9 @@ export function spawnWorker({
         }
       }
 
+      const firstTurnInputTokens = numberOrNull(promptDiagnostics?.first_turn_input_tokens);
+      const firstTurnOverheadTokens = numberOrNull(promptDiagnostics?.first_turn_overhead_tokens);
+
       db.prepare(
         `UPDATE task_runs
          SET status = ?, process_status = ?, ended_at = ?, exit_code = ?,
@@ -828,7 +837,8 @@ export function spawnWorker({
              artifact_paths_json = ?, artifacts_json = ?, artifact_summary_json = ?,
              cancel_initiator = ?, cancel_reason = ?,
              warnings_json = ?, diagnostics_json = ?,
-             provider_session_id = ?, execenv_path = ?, cost_usd = ?
+             provider_session_id = ?, execenv_path = ?, cost_usd = ?,
+             first_turn_input_tokens = ?, first_turn_overhead_tokens = ?
          WHERE id = ?`,
       ).run(
         status,
@@ -851,6 +861,8 @@ export function spawnWorker({
         providerSessionId,
         execenvPath,
         costUsd,
+        firstTurnInputTokens,
+        firstTurnOverheadTokens,
         runId,
       );
 

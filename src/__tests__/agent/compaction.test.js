@@ -5,6 +5,7 @@ import {
   COMPACTED_CONTEXT_MARKER,
   compactToolResultForContext,
   createAgentCompactionManager,
+  estimateFirstTurnInput,
   isLikelyContextTermination,
   resolveAgentCompactionPolicy,
 } from "../../agent/compaction.js";
@@ -286,5 +287,30 @@ describe("isLikelyContextTermination", () => {
     expect(isLikelyContextTermination("rate limit reached", {
       context_compactions: 5,
     })).toBe(false);
+  });
+});
+
+describe("estimateFirstTurnInput", () => {
+  it("splits overhead and input estimates by char-to-token ratio", () => {
+    const systemPrompt = "x".repeat(400);
+    const messages = [{ role: "user", content: "y".repeat(80) }];
+    const result = estimateFirstTurnInput({ systemPrompt, messages });
+    expect(result.overheadChars).toBe(400);
+    expect(result.overheadTokens).toBe(100);
+    expect(result.inputChars).toBeGreaterThan(result.overheadChars);
+    expect(result.inputTokens).toBeGreaterThan(result.overheadTokens);
+  });
+
+  it("returns zero overhead for empty system prompt", () => {
+    const result = estimateFirstTurnInput({ systemPrompt: "", messages: [] });
+    expect(result.overheadTokens).toBe(0);
+    expect(result.overheadChars).toBe(0);
+    expect(result.inputTokens).toBe(0);
+  });
+
+  it("survives missing arguments", () => {
+    const result = estimateFirstTurnInput();
+    expect(result.overheadTokens).toBe(0);
+    expect(result.inputTokens).toBe(0);
   });
 });

@@ -164,7 +164,9 @@ CREATE TABLE IF NOT EXISTS task_runs (
   worktree_json TEXT,
   project_context_hash TEXT,
   cost_usd REAL,
-  transcript_tail_json TEXT
+  transcript_tail_json TEXT,
+  first_turn_input_tokens INTEGER,
+  first_turn_overhead_tokens INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);

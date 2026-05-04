@@ -560,6 +560,11 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "worktree_json", "worktree_json TEXT");
   addColumnIfMissing(db, "task_runs", "project_context_hash", "project_context_hash TEXT");
   addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
+  // intelligence-ramp Phase 0: capture turn-1 input size separately from
+  // billed input_tokens (which collapses cache hits). Lets us measure
+  // how much prompt-overhead the agent actually carries on cold starts.
+  addColumnIfMissing(db, "task_runs", "first_turn_input_tokens", "first_turn_input_tokens INTEGER");
+  addColumnIfMissing(db, "task_runs", "first_turn_overhead_tokens", "first_turn_overhead_tokens INTEGER");
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "task_runs", "todo_state_json", "todo_state_json TEXT NOT NULL DEFAULT '{\"todos\":[],\"updated_at\":null,\"update_count\":0}'");

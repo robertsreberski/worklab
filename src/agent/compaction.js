@@ -90,6 +90,18 @@ export function estimateAgentMessages(messages = []) {
   }, { tokens: 0, chars: 0, imageBytes: 0 });
 }
 
+export function estimateFirstTurnInput({ systemPrompt = "", messages = [] } = {}) {
+  const overheadChars = String(systemPrompt || "").length;
+  const overheadTokens = Math.ceil(overheadChars / 4);
+  const messageEstimate = estimateAgentMessages(messages);
+  return {
+    overheadTokens,
+    overheadChars,
+    inputTokens: overheadTokens + messageEstimate.tokens,
+    inputChars: overheadChars + messageEstimate.chars,
+  };
+}
+
 export function resolveAgentCompactionPolicy(settings = {}, model = {}) {
   const contextWindow = clampInteger(model?.contextWindow, DEFAULT_CONTEXT_WINDOW, 32000, 10_000_000);
   const triggerRatio = clampNumber(

@@ -6,6 +6,7 @@ import {
   writeMemory,
 } from "../core/index.js";
 import { buildConsolidationSystemPrompt } from "../agent/prompt/system-prompt.js";
+import { estimateFirstTurnInput } from "../agent/compaction.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
@@ -26,6 +27,17 @@ export async function runConsolidate(ctx) {
   const systemPrompt = buildConsolidationSystemPrompt({ agent, memory, journal });
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
+  const consolidateMessages = [{ role: "user", content: "Consolidate this agent's journal into MEMORY.md." }];
+  const firstTurn = estimateFirstTurnInput({ systemPrompt, messages: consolidateMessages });
+  emit({
+    type: "prompt_built",
+    diagnostics: {
+      first_turn_input_tokens: firstTurn.inputTokens,
+      first_turn_overhead_tokens: firstTurn.overheadTokens,
+      first_turn_input_chars: firstTurn.inputChars,
+      first_turn_overhead_chars: firstTurn.overheadChars,
+    },
+  });
   try {
     const result = await generateResponse(systemPrompt, {
       model,
@@ -33,7 +45,7 @@ export async function runConsolidate(ctx) {
       db,
       dataDir: config.dataDir,
       skills: [],
-      messages: [{ role: "user", content: "Consolidate this agent's journal into MEMORY.md." }],
+      messages: consolidateMessages,
       cwd: config.workspace,
       mcpServers: {},
       allowedTools: [],
