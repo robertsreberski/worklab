@@ -156,7 +156,7 @@ export function settingsPayload(settings = {}) {
     slack_run_timeout_ms: Number(settings.slack_run_timeout_ms ?? 120000),
     slack_notify_task_completed: settings.slack_notify_task_completed !== false,
     slack_notify_task_errors: settings.slack_notify_task_errors !== false,
-    assistant_model: settings.assistant_model || "pi:openai:gpt-5.5",
+    assistant_model: settings.assistant_model || "pi:openai-codex:gpt-5.5",
     assistant_effort: settings.assistant_effort || "high",
     assistant_run_timeout_ms: Number(settings.assistant_run_timeout_ms ?? 300000),
     assistant_max_turns: Number(settings.assistant_max_turns ?? 32),

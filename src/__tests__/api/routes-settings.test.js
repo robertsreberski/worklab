@@ -36,7 +36,7 @@ describe("settings", () => {
     expect(res.body.settings.consolidation_enabled).toBe(true);
     expect(res.body.settings.worker_timeout_ms).toBe(1800000);
     expect(res.body.settings.default_embedding_model).toBe("");
-    expect(res.body.settings.assistant_model).toBe("pi:openai:gpt-5.5");
+    expect(res.body.settings.assistant_model).toBe("pi:openai-codex:gpt-5.5");
     expect(res.body.settings.assistant_effort).toBe("high");
     expect(res.body.settings.assistant_run_timeout_ms).toBe(300000);
     expect(res.body.settings.assistant_max_turns).toBe(32);

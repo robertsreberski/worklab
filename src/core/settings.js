@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS = {
   slack_run_timeout_ms: 120000,
   slack_notify_task_completed: true,
   slack_notify_task_errors: true,
-  assistant_model: "pi:openai:gpt-5.5",
+  assistant_model: "pi:openai-codex:gpt-5.5",
   assistant_effort: "high",
   assistant_run_timeout_ms: 300000,
   assistant_max_turns: 32,
