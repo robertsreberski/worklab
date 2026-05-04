@@ -151,7 +151,10 @@ function planJsonContract() {
   "blocking_issues": [],
   "pending_actions": [],
   "questions": [],
-  "subtasks": []
+  "subtasks": [],
+  "parent_review_policy": null,
+  "memory_candidates": [],
+  "verification_evidence": []
 }`;
 }
 

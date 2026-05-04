@@ -37,7 +37,9 @@ Final result shape:
   "pending_actions": [],
   "questions": [],
   "subtasks": [],
-  "memory_candidates": []
+  "parent_review_policy": null,
+  "memory_candidates": [],
+  "verification_evidence": []
 }
 
 Use decision "advance" when the work is complete, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
@@ -66,7 +68,9 @@ Final result shape:
   "pending_actions": [],
   "questions": [],
   "subtasks": [],
-  "memory_candidates": []
+  "parent_review_policy": null,
+  "memory_candidates": [],
+  "verification_evidence": []
 }
 
 Use decision "approve" when the work satisfies the task and "reject" when changes are required.`;

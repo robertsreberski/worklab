@@ -410,8 +410,10 @@ describe("worklab_result contract", () => {
   it("exports a structured-output schema aligned with runtime defaults", () => {
     for (const objectSchema of collectObjectSchemas(WORKLAB_RESULT_JSON_SCHEMA)) {
       expect(objectSchema.additionalProperties).toBe(false);
+      if (objectSchema.properties) {
+        expect(objectSchema.required).toEqual(Object.keys(objectSchema.properties));
+      }
     }
-    expect(WORKLAB_RESULT_JSON_SCHEMA.required).toEqual(["schema", "stage", "decision", "summary", "details"]);
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.parent_review_policy).toMatchObject({
       type: ["string", "null"],
     });
