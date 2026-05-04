@@ -2,9 +2,19 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { shortHash } from "./context-cache.js";
 
-export const REPOSITORY_INSTRUCTION_FILES = ["AGENTS.md"];
-export const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 24_000;
+// Lookup order matters: CLAUDE.md is the modern Claude Code convention,
+// AGENTS.md is the codex-style fallback. We do NOT auto-merge — keeping them
+// separate is a deliberate choice some projects make (different audiences
+// for the two files), so silently concatenating would surprise users.
+export const REPOSITORY_INSTRUCTION_FILES = ["CLAUDE.md", "AGENTS.md"];
+export const REPOSITORY_INSTRUCTIONS_MAX_CHARS = 64_000;
 export const REPOSITORY_INSTRUCTIONS_PROMPT_SECTION = "Repository instructions";
+
+function truncationMarker(rawLength, capChars) {
+  const totalKb = Math.round(rawLength / 1024);
+  const shownKb = Math.round(capChars / 1024);
+  return `\n\n[!!! TRUNCATED — repository instructions are ${totalKb} KB, only the first ${shownKb} KB are shown above. Read the source file directly for the rest if it matters.]`;
+}
 
 export function loadRepositoryInstructions(workdir) {
   if (!workdir) return null;
@@ -15,8 +25,9 @@ export function loadRepositoryInstructions(workdir) {
       const stat = statSync(path);
       if (!stat.isFile()) continue;
       const raw = readFileSync(path, "utf8");
-      const content = raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS
-        ? `${raw.slice(0, REPOSITORY_INSTRUCTIONS_MAX_CHARS)}\n...[truncated]`
+      const truncated = raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS;
+      const content = truncated
+        ? `${raw.slice(0, REPOSITORY_INSTRUCTIONS_MAX_CHARS)}${truncationMarker(raw.length, REPOSITORY_INSTRUCTIONS_MAX_CHARS)}`
         : raw;
       return {
         filename,
@@ -24,7 +35,7 @@ export function loadRepositoryInstructions(workdir) {
         content,
         hash: shortHash(raw),
         size: Buffer.byteLength(raw, "utf8"),
-        truncated: raw.length > REPOSITORY_INSTRUCTIONS_MAX_CHARS,
+        truncated,
       };
     } catch {
       continue;

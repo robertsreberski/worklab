@@ -13,6 +13,7 @@ import {
   loadConfig,
   logger,
   seedDataFromTemplate,
+  seedDefaultAgents,
 } from "./core/index.js";
 import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
@@ -95,6 +96,12 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
 
   const dbPath = join(config.dataDir, "worklab.db");
   const db = getDb(dbPath);
+
+  // Seed the default planner / executor / reviewer trio if missing. Idempotent —
+  // existing rows with the same name are left alone, so users can rename or
+  // delete them without re-seeding on every boot.
+  const agentSeedResult = seedDefaultAgents({ db, templateDir, logger });
+  if (agentSeedResult.seeded > 0) logger.info({ seeded: agentSeedResult.seeded }, "seeded default agents");
 
   const workerBinary = join(config.repoRoot, "src", "worker.js");
 

@@ -123,7 +123,7 @@ describe("run input assembly", () => {
       });
 
       expect(input.systemPrompt).toContain("## Delegation policy");
-      expect(input.systemPrompt).toContain("Delegation policy: available");
+      expect(input.systemPrompt).toContain("Delegation budget: depth");
       expect(input.systemPrompt).toContain("## Available agents");
       expect(input.systemPrompt).toContain("`helper`");
       expect(input.delegation.canDelegate).toBe(true);
@@ -455,6 +455,29 @@ describe("run input assembly", () => {
       expect(input.promptDiagnostics.repositoryInstructions).toMatchObject({
         path: join(workdir, "AGENTS.md"),
       });
+    });
+  });
+
+  it("prefers CLAUDE.md over AGENTS.md when both exist", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const workdir = join(config.dataDir, "repo-with-both");
+      mkdirSync(workdir, { recursive: true });
+      writeFileSync(join(workdir, "AGENTS.md"), "agents-md-only content");
+      writeFileSync(join(workdir, "CLAUDE.md"), "claude-md-content wins");
+      const project = seedProject(db, { workdir });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-claude-md",
+        mode: "execute",
+      });
+      expect(input.systemPrompt).toContain(`Source: \`${join(workdir, "CLAUDE.md")}\``);
+      expect(input.systemPrompt).toContain("claude-md-content wins");
+      expect(input.systemPrompt).not.toContain("agents-md-only content");
     });
   });
 

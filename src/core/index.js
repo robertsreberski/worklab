@@ -146,7 +146,7 @@ export {
   loadEnvFile,
   resolveDataDirFromEnv,
 } from "./env.js";
-export { seedDataFromTemplate } from "./first-boot.js";
+export { seedDataFromTemplate, seedDefaultAgents } from "./first-boot.js";
 export { logger, createLogger } from "./logger.js";
 
 // ---------- Crypto + tokens + service ----------
