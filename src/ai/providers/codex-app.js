@@ -585,7 +585,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       error: errorMessage,
       failureKind,
       diagnostics: {
-        ...(codexErrorCode ? { pi_error_code: codexErrorCode } : {}),
+        ...(codexErrorCode ? { codex_error_code: codexErrorCode } : {}),
         ...(hadPartialProgress && failureKind === "provider_unavailable"
           ? { had_partial_progress: true }
           : {}),
@@ -609,7 +609,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       error: err?.message || String(err),
       failureKind: failureKind || "provider_unavailable",
       diagnostics: {
-        ...(err?.code ? { pi_error_code: String(err.code) } : {}),
+        ...(err?.code ? { codex_error_code: String(err.code) } : {}),
         ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
       },
     };

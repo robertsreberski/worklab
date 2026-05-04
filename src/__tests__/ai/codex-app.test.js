@@ -320,7 +320,7 @@ rl.on("line", (line) => {
       });
       expect(result.failureKind).toBe("provider_unavailable");
       expect(result.error).toBeTruthy();
-      expect(result.diagnostics).toMatchObject({ pi_error_code: "codex_app_server_closed" });
+      expect(result.diagnostics).toMatchObject({ codex_error_code: "codex_app_server_closed" });
     } finally {
       liveInput.close();
       rmSync(dir, { recursive: true, force: true });

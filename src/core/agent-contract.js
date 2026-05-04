@@ -29,6 +29,7 @@ export const EVENT_KINDS = [
 export const PROVIDER_KINDS = [
   "claude",
   "pi",
+  "codex",
 ];
 
 export class RunResultInvalid extends Error {
