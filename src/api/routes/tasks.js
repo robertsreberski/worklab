@@ -7,7 +7,6 @@ import {
   newTaskId,
   nextStage,
   nextTaskKey,
-  readSettings,
   resolveProjectId,
   resolveTaskRow,
   runtimeTaskVisibility,
@@ -259,23 +258,6 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     }
     if (!title || typeof title !== "string") {
       return res.status(400).json({ error: { code: "validation", message: "title is required" } });
-    }
-    // intelligence-ramp Phase 6: require non-trivial instructions so the agent
-    // sees an actual brief instead of a one-liner. Skipped when the operator
-    // sets task_instructions_min_chars to 0.
-    const minInstructionsChars = Number(readSettings(db)?.task_instructions_min_chars ?? 80);
-    if (minInstructionsChars > 0) {
-      const trimmedInstructions = typeof instructions === "string" ? instructions.trim() : "";
-      if (trimmedInstructions.length < minInstructionsChars) {
-        return res.status(400).json({
-          error: {
-            code: "instructions_too_short",
-            message: `instructions must be at least ${minInstructionsChars} characters; got ${trimmedInstructions.length}. Describe what "done" looks like, not just the headline.`,
-            min_chars: minInstructionsChars,
-            got_chars: trimmedInstructions.length,
-          },
-        });
-      }
     }
     if (!STAGES.includes(stage)) {
       return res.status(400).json({ error: { code: "validation", message: `invalid stage: ${stage}` } });

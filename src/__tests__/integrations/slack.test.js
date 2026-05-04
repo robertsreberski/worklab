@@ -213,7 +213,7 @@ describe("slack integration", () => {
     expect(app.client.chat.postMessage.mock.calls[0][0].text).toContain("timeout");
   });
 
-  it("triage prompt teaches the agent to expand Slack messages into proper task briefs", () => {
+  it("triage prompt teaches the agent to create tasks without instruction length targets", () => {
     const prompt = buildTriageSystemPrompt({
       agentName: "Mickey",
       memory: "",
@@ -223,8 +223,10 @@ describe("slack integration", () => {
       now: new Date("2026-05-04T00:00:00Z"),
     });
     expect(prompt).toContain("worklab_task_create");
-    expect(prompt).toContain("acceptance criteria");
-    expect(prompt).toContain("80 chars");
+    expect(prompt).toContain("instructions: optional context");
+    expect(prompt).toContain("Slack thread link / message ts");
+    expect(prompt).not.toContain("80 chars");
+    expect(prompt).not.toContain("acceptance criteria");
     expect(prompt).toMatch(/genuinely a one-line note/);
   });
 });

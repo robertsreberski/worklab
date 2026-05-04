@@ -1,40 +1,31 @@
 import { describe, expect, it } from "vitest";
 import {
-  INSTRUCTIONS_HARD_MIN,
-  INSTRUCTIONS_SOFT_MIN,
   instructionsCoachState,
 } from "../../ui/src/routes/TaskEdit.jsx";
 
 describe("instructionsCoachState", () => {
-  it("flags an empty value with the API's hard minimum", () => {
+  it("treats an empty value as optional guidance", () => {
     const state = instructionsCoachState("");
     expect(state.length).toBe(0);
     expect(state.tone).toBe("instructions-coach-empty");
-    expect(state.label).toContain(`${INSTRUCTIONS_HARD_MIN}`);
+    expect(state.label).not.toMatch(/need|required|minimum|save/i);
   });
 
   it("counts whitespace as empty", () => {
     expect(instructionsCoachState("   \n  \t").tone).toBe("instructions-coach-empty");
   });
 
-  it("returns an error tone with the remaining-chars hint when below the hard min", () => {
+  it("does not warn or error for short instructions", () => {
     const value = "fix the login flow";
     const state = instructionsCoachState(value);
-    expect(state.tone).toBe("instructions-coach-error");
-    expect(state.label).toContain(`${INSTRUCTIONS_HARD_MIN - value.length} more characters needed`);
+    expect(state.tone).toBe("instructions-coach-good");
+    expect(state.label).not.toMatch(/more characters|thin brief|done looks like|verify/i);
   });
 
-  it("returns a warning tone between the hard floor and the soft minimum", () => {
-    const value = "x".repeat(INSTRUCTIONS_HARD_MIN + 10);
-    const state = instructionsCoachState(value);
-    expect(state.tone).toBe("instructions-coach-warn");
-    expect(state.label).toContain("Thin brief");
-  });
-
-  it("returns the good tone past the soft minimum", () => {
-    const value = "x".repeat(INSTRUCTIONS_SOFT_MIN + 5);
+  it("keeps the same non-blocking state for longer instructions", () => {
+    const value = "x".repeat(205);
     const state = instructionsCoachState(value);
     expect(state.tone).toBe("instructions-coach-good");
-    expect(state.label).toMatch(/agent has enough/);
+    expect(state.label).not.toMatch(/minimum|thin brief/i);
   });
 });

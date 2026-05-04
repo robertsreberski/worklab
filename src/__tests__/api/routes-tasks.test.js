@@ -179,28 +179,18 @@ describe("POST /api/tasks", () => {
     await agent.post("/api/tasks").send({}).expect(400);
   });
 
-  it("enforces task_instructions_min_chars when the setting is non-zero", async () => {
+  it("allows missing, empty, and short instructions even when a legacy minimum setting exists", async () => {
     const { agent, db } = makeTestServer();
-    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('task_instructions_min_chars', '80')").run();
-    const tooShort = await agent.post("/api/tasks").send({
-      title: "fix login",
-      instructions: "fix it",
-    }).expect(400);
-    expect(tooShort.body.error.code).toBe("instructions_too_short");
-    expect(tooShort.body.error.min_chars).toBe(80);
-    expect(tooShort.body.error.got_chars).toBe("fix it".length);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('task_instructions_min_chars', '240')").run();
 
-    const okBrief = "Investigate the failing login flow on /api/auth/login. Reproduce with Cypress, fix root cause, add a regression test.";
-    const ok = await agent.post("/api/tasks").send({
-      title: "fix login",
-      instructions: okBrief,
-    }).expect(201);
-    expect(ok.body.task.title).toBe("fix login");
-  });
+    const missing = await agent.post("/api/tasks").send({ title: "bare title" }).expect(201);
+    expect(missing.body.task.instructions).toBe("");
 
-  it("treats task_instructions_min_chars=0 as off (default test posture)", async () => {
-    const { agent } = makeTestServer();
-    await agent.post("/api/tasks").send({ title: "bare title" }).expect(201);
+    const empty = await agent.post("/api/tasks").send({ title: "empty brief", instructions: "" }).expect(201);
+    expect(empty.body.task.instructions).toBe("");
+
+    const short = await agent.post("/api/tasks").send({ title: "short brief", instructions: "fix it" }).expect(201);
+    expect(short.body.task.instructions).toBe("fix it");
   });
 
   it("rejects legacy status and executor fields", async () => {
