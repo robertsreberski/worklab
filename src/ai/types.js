@@ -4,7 +4,7 @@
 
 /**
  * @typedef {Object} RuntimeModelRef
- * @property {"claude" | "pi"} sdk       Canonical active runtime id.
+ * @property {"claude" | "pi" | "codex"} sdk Canonical active runtime id.
  * @property {string} model              Provider model id.
  * @property {string} reference          Original canonical model reference.
  * @property {string} [provider]         Pi provider id when sdk === "pi".
@@ -46,7 +46,7 @@
  * @property {number} [numTurns]
  * @property {string} [model]
  * @property {string} [effort]
- * @property {"claude" | "pi"} [sdk]
+ * @property {"claude" | "pi" | "codex"} [sdk]
  * @property {boolean} [cancelled]
  * @property {string|null} [error]
  * @property {Object|null} [errorDetails]
@@ -58,10 +58,10 @@
 
 /**
  * @typedef {Object} RuntimeBridge
- * @property {"claude" | "pi"} id
+ * @property {"claude" | "pi" | "codex"} id
  * @property {(ref: RuntimeModelRef) => boolean} supports
  * @property {(ref?: RuntimeModelRef) => Object} capabilities
  * @property {(systemPrompt: string, req: RuntimeRequest) => Promise<RuntimeResult>} execute
  */
 
-export const PROVIDER_KIND_VALUES = ["claude", "pi"];
+export const PROVIDER_KIND_VALUES = ["claude", "pi", "codex"];
