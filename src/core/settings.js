@@ -55,6 +55,12 @@ export const DEFAULT_SETTINGS = {
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
   agent_provider_recovery_base_delay_ms: 30000,
+  // intelligence-ramp Phase 4: gate the review→done transition on
+  // verification_evidence. "warn" (default) emits a runtime warning but still
+  // approves; "block" refuses the transition; "off" disables the gate
+  // entirely. Soft-launch defaults to "warn" so operators can see what
+  // would have been bounced before flipping to block.
+  agent_verification_gate_mode: "warn",
   planning_harness: DEFAULT_PLANNING_HARNESS,
   planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
   agent_learning_enabled: true,
@@ -215,6 +221,14 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 0, max: 20 });
     case "agent_provider_recovery_base_delay_ms":
       return integerInRange(key, value, { min: 0, max: 300000 });
+    case "agent_verification_gate_mode": {
+      if (typeof value !== "string") throw new Error(`${key} must be a string`);
+      const trimmed = value.trim();
+      if (!["off", "warn", "block"].includes(trimmed)) {
+        throw new Error(`${key} must be one of: off, warn, block`);
+      }
+      return trimmed;
+    }
     case "planning_harness":
       return validatePlanningHarnessSetting(key, value);
     case "planning_tool_policy":

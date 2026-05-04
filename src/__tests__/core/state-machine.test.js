@@ -342,4 +342,116 @@ describe("workflow stage reducer", () => {
     expect(r.sideEffects).toContainEqual({ type: "reset_rejection_count" });
     expect(r.sideEffects).toContainEqual({ type: "clear_last_failure_kind" });
   });
+
+  describe("verification gate (Phase 4)", () => {
+    it("warn mode still approves but emits a verification_warning side effect", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: { decision: "approve", summary: "ok", verification_evidence: [] },
+        hasArtifacts: true,
+        verificationMode: "warn",
+      });
+      expect(r.stage).toBe("done");
+      expect(r.sideEffects).toContainEqual(expect.objectContaining({ type: "verification_warning" }));
+      expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+    });
+
+    it("block mode bounces approve back to execute with unverified_completion", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: { decision: "approve", summary: "ok", verification_evidence: [] },
+        hasArtifacts: true,
+        verificationMode: "block",
+      });
+      expect(r.stage).toBe("execute");
+      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "unverified_completion" });
+      expect(r.sideEffects.find((s) => s.type === "post_review_comment")?.notes).toMatch(/verification/i);
+    });
+
+    it("off mode skips the gate entirely (no warning even when evidence is empty)", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: { decision: "approve", summary: "ok", verification_evidence: [] },
+        hasArtifacts: true,
+        verificationMode: "off",
+      });
+      expect(r.stage).toBe("done");
+      expect(r.sideEffects).not.toContainEqual(expect.objectContaining({ type: "verification_warning" }));
+    });
+
+    it("approve sails through when the task has no artifacts (pure docs/research)", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: { decision: "approve", summary: "ok", verification_evidence: [] },
+        hasArtifacts: false,
+        verificationMode: "block",
+      });
+      expect(r.stage).toBe("done");
+      expect(r.sideEffects).not.toContainEqual(expect.objectContaining({ type: "verification_warning" }));
+    });
+
+    it("block mode bounces when every evidence row is unmatched by the run's tool log", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "test", command_or_url: "npm test foo", exit_code_or_status: "0", snippet: "" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "block",
+        evidenceCrossCheck: { totalChecked: 1, matchedCount: 0, unmatchedCount: 1 },
+      });
+      expect(r.stage).toBe("execute");
+      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "unverified_completion" });
+      expect(r.sideEffects.find((s) => s.type === "set_stage_reason")?.reason).toMatch(/did not match/);
+    });
+
+    it("warn mode notes how many evidence rows were unmatched", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "test", command_or_url: "npm test foo" },
+            { kind: "test", command_or_url: "npm test bar" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "warn",
+        evidenceCrossCheck: { totalChecked: 2, matchedCount: 1, unmatchedCount: 1 },
+      });
+      expect(r.stage).toBe("done");
+      const warning = r.sideEffects.find((s) => s.type === "verification_warning");
+      expect(warning?.message).toMatch(/1\/2/);
+    });
+
+    it("approve passes when all evidence rows match", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "test", command_or_url: "npm test foo", exit_code_or_status: "0" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "block",
+        evidenceCrossCheck: { totalChecked: 1, matchedCount: 1, unmatchedCount: 0 },
+      });
+      expect(r.stage).toBe("done");
+      expect(r.sideEffects).not.toContainEqual(expect.objectContaining({ type: "verification_warning" }));
+    });
+  });
 });
