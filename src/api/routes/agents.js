@@ -318,9 +318,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
-    // intelligence-ramp follow-up: refuse model + execution_mode combos that
-    // can't actually run. Today only sdk='pi' + provider != 'openai-codex'
-    // breaks under cli mode (codex app-server only speaks the codex protocol).
+    // Refuse model + execution_mode combos that cannot actually run. Codex
+    // CLI is codex:<model>; pi:* providers, including openai-codex, are SDK.
     {
       const reason = executionModeIncompatibilityReason(resolved, executionMode);
       if (reason) {
@@ -504,9 +503,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       values.push(normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: existing.effort || "medium" }));
     }
 
-    // intelligence-ramp follow-up: refuse model + execution_mode combos that
-    // can't actually run. Run after the per-field loop so we check the values
-    // that will actually be persisted (mix of patch + existing).
+    // Refuse model + execution_mode combos that cannot actually run. Run after
+    // the per-field loop so we check the values that will actually be
+    // persisted (mix of patch + existing).
     {
       const effectiveExecutionMode = "execution_mode" in req.body
         ? normalizeExecutionMode(req.body.execution_mode, existing.execution_mode || "sdk")

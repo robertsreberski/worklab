@@ -409,7 +409,6 @@ describe("worklab_result contract", () => {
 
   it("exports a structured-output schema aligned with runtime defaults", () => {
     for (const objectSchema of collectObjectSchemas(WORKLAB_RESULT_JSON_SCHEMA)) {
-      if (objectSchema === WORKLAB_RESULT_JSON_SCHEMA.properties.artifacts) continue;
       expect(objectSchema.additionalProperties).toBe(false);
     }
     expect(WORKLAB_RESULT_JSON_SCHEMA.required).toEqual(["schema", "stage", "decision", "summary", "details"]);
@@ -424,11 +423,21 @@ describe("worklab_result contract", () => {
     expect(WORKLAB_RESULT_JSON_SCHEMA.properties.questions.type).toBe("array");
   });
 
-  it("allows arbitrary artifacts but keeps strict subtask shapes in the exported JSON schema", () => {
+  it("keeps exported output-schema objects strict while parsing stored artifacts permissively", () => {
+    const parsed = normalizeWorklabResult({
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "ok",
+      artifacts: { patch: "path" },
+    });
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.artifacts).toEqual({ patch: "path" });
+
     const artifacts = WORKLAB_RESULT_JSON_SCHEMA.properties.artifacts;
     expect(artifacts).toMatchObject({
       type: "object",
-      additionalProperties: true,
+      additionalProperties: false,
     });
 
     const subtask = WORKLAB_RESULT_JSON_SCHEMA.properties.subtasks.items;

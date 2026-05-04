@@ -108,7 +108,7 @@ export const WORKLAB_RESULT_JSON_SCHEMA = {
     summary: { type: "string" },
     details: { type: "string" },
     final_text: { type: "string" },
-    artifacts: { type: "object", additionalProperties: true },
+    artifacts: { type: "object", additionalProperties: false },
     blocking_issues: { type: "array", items: { type: "string" } },
     pending_actions: { type: "array", items: { type: "string" } },
     questions: {

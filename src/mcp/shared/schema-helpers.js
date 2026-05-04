@@ -94,6 +94,7 @@ export function compactAgent(row) {
     sdk: row.sdk || null,
     model: row.model || null,
     effort: row.effort || null,
+    execution_mode: row.execution_mode || null,
     enabled: row.enabled !== false,
     allow_self_review: !!row.allow_self_review,
     browser_tools_review_only: !!row.browser_tools_review_only,

@@ -16,18 +16,20 @@ describe("AI runtime bridge registry", () => {
       .resolves.toMatchObject({ id: "pi" });
     await expect(resolveRuntimeBridge({ sdk: "claude", model: "claude-sonnet-4-6" }))
       .resolves.toMatchObject({ id: "claude" });
+    await expect(resolveRuntimeBridge({ sdk: "codex", model: "gpt-5.5" }))
+      .rejects.toThrow(/unsupported sdk/i);
   });
 
   it("routes to CLI bridges when execution_mode='cli'", async () => {
     await expect(resolveRuntimeBridge({ sdk: "claude", model: "claude-sonnet-4-6" }, { executionMode: "cli" }))
       .resolves.toMatchObject({ id: "claude-code" });
-    await expect(resolveRuntimeBridge({ sdk: "pi", provider: "openai", model: "gpt-5.5" }, { executionMode: "cli" }))
+    await expect(resolveRuntimeBridge({ sdk: "codex", model: "gpt-5.5" }, { executionMode: "cli" }))
       .resolves.toMatchObject({ id: "codex-app" });
+    await expect(resolveRuntimeBridge({ sdk: "pi", provider: "openai-codex", model: "gpt-5.5" }, { executionMode: "cli" }))
+      .resolves.toMatchObject({ id: "pi" });
   });
 
   it("rejects unrecognized sdk values regardless of execution mode", async () => {
-    await expect(resolveRuntimeBridge({ sdk: "codex", model: "gpt-5.5" }))
-      .rejects.toThrow(/unsupported sdk/i);
     await expect(resolveRuntimeBridge({ sdk: "claude-code", model: "claude-sonnet-4-6" }))
       .rejects.toThrow(/unsupported sdk/i);
     await expect(resolveRuntimeBridge({ sdk: "claude-code", model: "claude-sonnet-4-6" }, { executionMode: "cli" }))

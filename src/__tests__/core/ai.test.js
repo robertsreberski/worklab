@@ -59,31 +59,31 @@ describe("explicit model references", () => {
 
   it("canonicalizes legacy runtime aliases for migration only", () => {
     expect(canonicalizeLegacyModelReference("openai:gpt-5.5")).toBe("pi:openai:gpt-5.5");
-    expect(canonicalizeLegacyModelReference("codex:gpt-5.5")).toBe("pi:openai-codex:gpt-5.5");
+    expect(canonicalizeLegacyModelReference("codex:gpt-5.5")).toBe("codex:gpt-5.5");
     expect(canonicalizeLegacyModelReference("vercel:p1:gemma3:4b")).toBe("pi:p1:gemma3:4b");
     expect(canonicalizeLegacyModelReference("claude-code:claude-sonnet-4-6")).toBe("claude:claude-sonnet-4-6");
     expect(canonicalizeLegacyModelReference("pi:openai:gpt-5.5")).toBe("pi:openai:gpt-5.5");
   });
 
-  it("normalizes legacy runtime aliases for ingress compatibility", () => {
+  it("normalizes codex model references as first-class CLI runtime refs", () => {
     expect(normalizeModelReference("codex:gpt-5.5")).toMatchObject({
-      sdk: "pi",
-      provider: "openai-codex",
+      sdk: "codex",
       model: "gpt-5.5",
-      reference: "pi:openai-codex:gpt-5.5",
+      reference: "codex:gpt-5.5",
     });
   });
 
-  it("reserves old runtime aliases for future dedicated bridges", () => {
+  it("reserves old runtime aliases except codex which is active", () => {
     expect(() => parseModelReference("openai:gpt-5.5")).toThrow(/reserved runtime/i);
-    expect(() => parseModelReference("codex:gpt-5.5")).toThrow(/reserved runtime/i);
+    expect(parseModelReference("codex:gpt-5.5")).toMatchObject({ sdk: "codex", model: "gpt-5.5" });
     expect(() => parseModelReference("vercel:p1:gemma3:4b")).toThrow(/reserved runtime/i);
     expect(() => parseModelReference("claude-code:claude-sonnet-4-6")).toThrow(/reserved runtime/i);
   });
 
-  it("advertises pi-agent tool, skill, and MCP support accurately", () => {
+  it("advertises pi-agent and codex CLI tool, skill, and MCP support accurately", () => {
     const claude = getBuiltinModelByReference("claude:claude-sonnet-4-6");
     const codex = getBuiltinModelByReference("pi:openai-codex:gpt-5.5");
+    const codexCli = getBuiltinModelByReference("codex:gpt-5.5");
 
     expect(claude).toMatchObject({
       sdk: "claude",
@@ -111,16 +111,29 @@ describe("explicit model references", () => {
       },
     });
     expect(codex.builtin_tools).toEqual(expect.arrayContaining(["Read", "Write", "Edit", "Bash"]));
+    expect(codexCli).toMatchObject({
+      sdk: "codex",
+      model: "gpt-5.5",
+      supports_builtin_tools: true,
+      capabilities: {
+        runtime_kind: "cli",
+        mcp_mode: "inline-config",
+        skills_mode: "prompt-index",
+      },
+    });
   });
 
   it("advertises the current pi-ai OpenAI and Codex catalogues", () => {
     const groups = getBuiltinModelGroups();
     const openaiValues = groups.find((group) => group.id === "pi:openai")?.models.map((model) => model.value);
     const codexValues = groups.find((group) => group.id === "pi:openai-codex")?.models.map((model) => model.value);
+    const codexCliValues = groups.find((group) => group.id === "codex")?.models.map((model) => model.value);
 
     expect(openaiValues).toEqual(getPiModels("openai").map((model) => `pi:openai:${model.id}`));
     expect(codexValues).toEqual(getPiModels("openai-codex").map((model) => `pi:openai-codex:${model.id}`));
+    expect(codexCliValues).toEqual(getPiModels("openai-codex").map((model) => `codex:${model.id}`));
     expect(getBuiltinModels().map((model) => model.value)).toContain("pi:openai-codex:gpt-5.5");
+    expect(getBuiltinModels().map((model) => model.value)).toContain("codex:gpt-5.5");
   });
 
   it("advertises per-model reasoning effort levels", () => {

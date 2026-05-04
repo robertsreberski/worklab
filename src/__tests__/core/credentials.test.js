@@ -80,14 +80,14 @@ describe("getBuiltinProviderAvailability", () => {
     expect(result.claude.available).toBe(false);
   });
 
-  it("reports canonical pi Codex auth without exposing reserved CLI runtime ids", () => {
+  it("reports Pi Codex auth and active Codex CLI readiness independently", () => {
     const result = getBuiltinProviderAvailability({
       env: { CLAUDE_CODE_OAUTH_TOKEN: "oauth", CODEX_API_KEY: "codex", PATH: fakeCliPath() },
       execImpl: vi.fn(() => ""),
     });
     expect(result["pi:openai-codex"]).toMatchObject({ available: true, runtime_kind: "pi-agent", auth: "codex_api_key" });
+    expect(result.codex).toMatchObject({ available: true, runtime_kind: "cli", auth: "codex-cli" });
     expect(result).not.toHaveProperty("claude-code");
-    expect(result).not.toHaveProperty("codex");
   });
 
   it("marks pi Codex unavailable without env or pi OAuth credentials", () => {
@@ -101,9 +101,10 @@ describe("getBuiltinProviderAvailability", () => {
     });
     expect(result["pi:openai-codex"].available).toBe(false);
     expect(result["pi:openai-codex"].reason).toMatch(/OPENAI_CODEX_API_KEY/i);
+    expect(result.codex).toMatchObject({ available: true, runtime_kind: "cli", auth: "codex-cli" });
   });
 
-  it("marks Codex available from pi OAuth credentials", () => {
+  it("marks Pi Codex available from pi OAuth credentials", () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-pi-auth-"));
     dirs.push(dir);
     writeFileSync(join(dir, "pi-auth.json"), JSON.stringify({

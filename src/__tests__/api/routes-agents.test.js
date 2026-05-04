@@ -94,14 +94,26 @@ describe("agents CRUD", () => {
     expect(res.body.error.message).toMatch(/openai/);
   });
 
-  it("accepts POST when execution_mode='cli' is paired with pi:openai-codex (the supported pair)", async () => {
+  it("accepts POST when execution_mode='cli' is paired with a codex model", async () => {
     const { agent } = makeTestServer();
     await agent.post("/api/agents").send({
       name: "good-combo",
       display_name: "Good",
-      model: "pi:openai-codex:gpt-5.5",
+      model: "codex:gpt-5.5",
       execution_mode: "cli",
     }).expect(201);
+  });
+
+  it("rejects POST when execution_mode='cli' is paired with pi:openai-codex", async () => {
+    const { agent } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "bad-pi-codex-cli",
+      display_name: "Bad Pi Codex CLI",
+      model: "pi:openai-codex:gpt-5.5",
+      execution_mode: "cli",
+    }).expect(400);
+    expect(res.body.error.code).toBe("incompatible_execution_mode");
+    expect(res.body.error.message).toMatch(/openai-codex.*SDK/i);
   });
 
   it("rejects PATCH that would land an incompatible model+execution_mode pair", async () => {
@@ -359,29 +371,33 @@ describe("agents CRUD", () => {
     const codex = await agent.post("/api/agents").send({
       name: "codex-cli",
       display_name: "Codex CLI",
-      model: "pi:openai-codex:gpt-5.5",
+      model: "codex:gpt-5.5",
+      execution_mode: "cli",
     }).expect(201);
-    expect(codex.body.agent.sdk).toBe("pi");
+    expect(codex.body.agent.sdk).toBe("codex");
   });
 
-  it("canonicalizes legacy runtime model refs on create and patch", async () => {
+  it("canonicalizes legacy runtime model refs on create and patch while keeping codex first-class", async () => {
     const { agent } = makeTestServer();
     const created = await agent.post("/api/agents").send({
       name: "legacy-codex",
       display_name: "Legacy Codex",
       model: "codex:gpt-5.5",
+      execution_mode: "cli",
     }).expect(201);
     expect(created.body.agent).toMatchObject({
-      sdk: "pi",
-      model: "pi:openai-codex:gpt-5.5",
+      sdk: "codex",
+      model: "codex:gpt-5.5",
     });
 
     const patched = await agent.patch("/api/agents/legacy-codex").send({
       model: "openai:gpt-5.5",
+      execution_mode: "sdk",
     }).expect(200);
     expect(patched.body.agent).toMatchObject({
       sdk: "pi",
       model: "pi:openai:gpt-5.5",
+      execution_mode: "sdk",
     });
   });
 

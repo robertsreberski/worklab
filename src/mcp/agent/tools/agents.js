@@ -16,14 +16,17 @@ import {
   uniqueSlug,
   WORKLAB_BUILTIN_TOOLS,
 } from "../../../core/index.js";
+import { executionModeIncompatibilityReason } from "../../../ai/runtime/model-refs.js";
 
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();
+const executionModeSchema = z.enum(["cli", "sdk"]).optional();
 
 export const agentCreateSchema = z.object({
   name: z.string().optional(),
   display_name: z.string().min(1, "display_name is required"),
   model: z.string().min(1, "model is required"),
+  execution_mode: executionModeSchema,
   effort: effortSchema,
   description: z.string().optional(),
   instructions: z.string().optional(),
@@ -95,6 +98,7 @@ function agentSummary(row) {
     model: row.model,
     sdk: row.sdk,
     effort: row.effort,
+    execution_mode: row.execution_mode || "sdk",
     enabled: !!row.enabled,
     skills_allowlist_mode: row.skills_allowlist_mode,
     mcp_allowlist_mode: row.mcp_allowlist_mode,
@@ -107,13 +111,14 @@ export const definitions = [
   {
     name: "agent_create",
     description:
-      "Create a Worklab agent from inside a run. Use explicit model references such as pi:openai-codex:gpt-5.5, claude:claude-sonnet-4-6, or pi:<providerId>:<modelName>.",
+      "Create a Worklab agent from inside a run. Use explicit model references such as codex:gpt-5.5, pi:openai-codex:gpt-5.5, claude:claude-sonnet-4-6, or pi:<providerId>:<modelName>. Set execution_mode=cli for codex:* models.",
     inputSchema: {
       type: "object",
       properties: {
         name: { type: "string", description: "Optional lowercase slug. If omitted, Worklab derives one from display_name." },
         display_name: { type: "string", description: "Agent display name" },
         model: { type: "string", description: "Explicit model reference" },
+        execution_mode: { type: "string", enum: ["cli", "sdk"], description: "Execution mode. codex:* requires cli; pi:* requires sdk." },
         effort: { type: "string", enum: ["none", "low", "medium", "high", "xhigh", "max"] },
         description: { type: "string" },
         instructions: { type: "string" },
@@ -142,6 +147,9 @@ export function buildHandlers(context) {
       return await withDb(dataDir, (db) => {
         const resolved = validateAgentModel({ db, dataDir, model: parsed.model });
         const model = resolved.reference;
+        const executionMode = parsed.execution_mode || "sdk";
+        const modeReason = executionModeIncompatibilityReason(resolved, executionMode);
+        if (modeReason) throw new Error(modeReason);
         const finalName = parsed.name || uniqueSlug(parsed.display_name, (candidate) =>
           agentExists(db, candidate),
           { fallback: "agent" },
@@ -161,8 +169,9 @@ export function buildHandlers(context) {
             (name, display_name, description, sdk, model, effort, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-             browser_tools_review_only, daily_budget_usd, per_run_budget_usd, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             browser_tools_review_only, daily_budget_usd, per_run_budget_usd,
+             execution_mode, enabled, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -181,6 +190,7 @@ export function buildHandlers(context) {
           parsed.browser_tools_review_only === true ? 1 : 0,
           parsed.daily_budget_usd ?? null,
           parsed.per_run_budget_usd ?? null,
+          executionMode,
           parsed.enabled === false ? 0 : 1,
           now,
           now,

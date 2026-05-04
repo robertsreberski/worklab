@@ -46,7 +46,7 @@ function piModelIds(provider, fallback) {
 export const BUILTIN_OPENAI_MODELS = piModelIds("openai", FALLBACK_OPENAI_MODELS);
 export const BUILTIN_CODEX_MODELS = piModelIds("openai-codex", FALLBACK_CODEX_MODELS);
 
-export const VALID_MODEL_SDKS = ["claude", "pi"];
+export const VALID_MODEL_SDKS = ["claude", "pi", "codex"];
 export const WORKLAB_BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
 
 const EXTRA_PI_PROVIDER_IDS = [
@@ -217,6 +217,17 @@ function piModelMetadata(provider, modelId, { labelPrefix = "", description = nu
   };
 }
 
+function codexModelMetadata(modelId) {
+  return {
+    value: `codex:${modelId}`,
+    label: `Codex ${MODEL_SHORT_LABELS[modelId] || modelId}`,
+    description: `Codex CLI / ${modelId}`,
+    sdk: "codex",
+    model: modelId,
+    capabilities: openaiReasoningCapabilities(modelId, "cli"),
+  };
+}
+
 function piProviderModels(provider) {
   let models = [];
   try {
@@ -282,6 +293,11 @@ const BUILTIN_MODEL_GROUPS = [
       description: `ChatGPT OAuth via pi-ai / ${model}`,
     })),
   },
+  {
+    id: "codex",
+    label: "Codex CLI",
+    models: BUILTIN_CODEX_MODELS.map((model) => codexModelMetadata(model)),
+  },
 ];
 
 function getPiProviderGroups() {
@@ -337,6 +353,9 @@ function inferFallbackCapabilities(resolved) {
   }
   if (resolved.sdk === "claude") {
     return claudeReasoningCapabilities(resolved.model);
+  }
+  if (resolved.sdk === "codex") {
+    return openaiReasoningCapabilities(resolved.model, "cli");
   }
   return null;
 }

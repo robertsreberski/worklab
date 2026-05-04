@@ -11,7 +11,7 @@ import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 
-const DORMANT_CODEX_APP_CAPABILITIES = {
+const CODEX_APP_CAPABILITIES = {
   kind: "codex-app",
   runtime: "app-server",
   streaming: true,
@@ -621,17 +621,17 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
 
 export const codexAppBackend = {
   kind: "codex-app",
-  capabilities: DORMANT_CODEX_APP_CAPABILITIES,
+  capabilities: CODEX_APP_CAPABILITIES,
   execute: generateCodexAppResponse,
 };
 
-// CLI bridge for sdk='pi' agents that opt into execution_mode='cli'. The
+// CLI bridge for sdk='codex' agents that opt into execution_mode='cli'. The
 // codex `app-server` is more capable than `codex exec` (better event
-// streaming, MCP support), so this is the default CLI path for codex/openai.
+// streaming, MCP support), so this is the default CLI path for Codex.
 export const codexAppRuntimeBridge = {
   id: "codex-app",
   kind: "codex-app",
-  capabilities: DORMANT_CODEX_APP_CAPABILITIES,
-  supports: (ref, options) => ref?.sdk === "pi" && options?.executionMode === "cli",
+  capabilities: CODEX_APP_CAPABILITIES,
+  supports: (ref, options) => ref?.sdk === "codex" && options?.executionMode === "cli",
   execute: generateCodexAppResponse,
 };

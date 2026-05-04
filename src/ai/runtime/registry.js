@@ -18,6 +18,10 @@ export const RUNTIME_CAPABILITIES = {
     runtime: "pi-agent",
     ...COMMON_CAPABILITIES,
   },
+  codex: {
+    runtime: "cli",
+    ...COMMON_CAPABILITIES,
+  },
 };
 
 // CLI bridges are checked first when execution_mode='cli'. Without that flag
@@ -32,7 +36,7 @@ const builtinBridgeSpecs = {
   },
   "codex-app": {
     id: "codex-app",
-    supports: (ref, options) => ref?.sdk === "pi" && options?.executionMode === "cli",
+    supports: (ref, options) => ref?.sdk === "codex" && options?.executionMode === "cli",
     capabilities: () => ({ kind: "codex-app", runtime: "cli", ...COMMON_CAPABILITIES }),
     load: async () => (await import("../providers/codex-app.js")).codexAppRuntimeBridge,
   },

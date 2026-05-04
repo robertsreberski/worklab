@@ -120,7 +120,11 @@ function numberInRange(key, value, { min = -Infinity, max = Infinity } = {}) {
 function agentRuntimeModelReference(key, value) {
   const text = stringValue(key, value, { required: true });
   try {
-    return normalizeRuntimeModelReference(text).reference;
+    const normalized = normalizeRuntimeModelReference(text);
+    if (normalized.sdk === "codex") {
+      throw new Error("codex cli refs require an agent execution_mode");
+    }
+    return normalized.reference;
   } catch {
     throw new Error(`${key} must be a valid model reference`);
   }

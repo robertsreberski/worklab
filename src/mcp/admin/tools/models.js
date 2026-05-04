@@ -13,7 +13,7 @@ import { apiRequest, buildSpecHandlers } from "../../shared/tool-registry.js";
 export const definitions = [
   tool("worklab_model_available", "List compact model choices. Use provider/model detail tools or worklab_api_request for full raw metadata.", object({
     q: string("Search query"),
-    sdk: string("Filter by runtime SDK or provider family, for example pi, claude, openai-codex, or a custom provider id"),
+    sdk: string("Filter by runtime SDK or provider family, for example pi, claude, codex, openai-codex, or a custom provider id"),
     available: boolean("Filter by availability"),
     limit: number("Max models to return"),
   })),

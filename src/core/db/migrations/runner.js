@@ -428,7 +428,13 @@ function canonicalizeStoredSettingValue(raw) {
   if (typeof value !== "string") return null;
   let canonical;
   try {
-    canonical = canonicalizeLegacyModelReference(value);
+    if (value.startsWith("codex:")) {
+      const model = value.slice("codex:".length);
+      if (!model || model.trim() !== model) throw new Error("model id required");
+      canonical = `pi:openai-codex:${model}`;
+    } else {
+      canonical = canonicalizeLegacyModelReference(value);
+    }
     parseRuntimeModelReference(canonical);
   } catch {
     return null;
@@ -436,23 +442,38 @@ function canonicalizeStoredSettingValue(raw) {
   return canonical === value ? null : JSON.stringify(canonical);
 }
 
+function canonicalizeStoredAgentModel(row) {
+  let canonical;
+  try {
+    canonical = canonicalizeLegacyModelReference(row.model);
+    if (row.execution_mode === "cli" && canonical.startsWith("pi:openai-codex:")) {
+      canonical = `codex:${canonical.slice("pi:openai-codex:".length)}`;
+    }
+    parseRuntimeModelReference(canonical);
+  } catch {
+    return null;
+  }
+  const sdk = canonicalSdkForModelReference(canonical);
+  if (!sdk) return null;
+  const executionMode = sdk === "codex" ? "cli" : row.execution_mode;
+  return { sdk, model: canonical, executionMode };
+}
+
 function canonicalizeRuntimeModelRefs(db) {
   if (tableExists(db, "agents")) {
-    const rows = db.prepare("SELECT name, model FROM agents").all();
-    const update = db.prepare("UPDATE agents SET sdk = ?, model = ? WHERE name = ?");
+    const hasExecutionMode = hasColumn(db, "agents", "execution_mode");
+    const rows = db.prepare(`SELECT name, sdk, model${hasExecutionMode ? ", execution_mode" : ""} FROM agents`).all();
+    const update = hasExecutionMode
+      ? db.prepare("UPDATE agents SET sdk = ?, model = ?, execution_mode = ? WHERE name = ?")
+      : db.prepare("UPDATE agents SET sdk = ?, model = ? WHERE name = ?");
     const tx = db.transaction(() => {
       for (const row of rows) {
-        let canonical;
-        try {
-          canonical = canonicalizeLegacyModelReference(row.model);
-          parseRuntimeModelReference(canonical);
-        } catch {
-          continue;
-        }
-        if (canonical === row.model) continue;
-        const sdk = canonicalSdkForModelReference(canonical);
-        if (!sdk) continue;
-        update.run(sdk, canonical, row.name);
+        const canonical = canonicalizeStoredAgentModel(row);
+        if (!canonical) continue;
+        const modeChanged = hasExecutionMode && canonical.executionMode && canonical.executionMode !== row.execution_mode;
+        if (canonical.sdk === row.sdk && canonical.model === row.model && !modeChanged) continue;
+        if (hasExecutionMode) update.run(canonical.sdk, canonical.model, canonical.executionMode || row.execution_mode || "sdk", row.name);
+        else update.run(canonical.sdk, canonical.model, row.name);
       }
     });
     tx();

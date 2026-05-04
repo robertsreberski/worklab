@@ -9,11 +9,11 @@ import { buildExecuteSystemPrompt } from "../../agent/prompt/system-prompt.js";
 import { loadSkills } from "../../core/skills.js";
 
 describe("CLI provider adapters", () => {
-  it("keeps Claude Code and Codex CLI ids reserved outside the active runtime parser", () => {
+  it("keeps Claude Code reserved while accepting Codex as an active CLI runtime", () => {
     expect(canonicalizeLegacyModelReference("claude-code:claude-sonnet-4-6")).toBe("claude:claude-sonnet-4-6");
-    expect(canonicalizeLegacyModelReference("codex:gpt-5.5")).toBe("pi:openai-codex:gpt-5.5");
+    expect(canonicalizeLegacyModelReference("codex:gpt-5.5")).toBe("codex:gpt-5.5");
     expect(() => parseModelReference("claude-code:claude-sonnet-4-6")).toThrow(/reserved runtime/i);
-    expect(() => parseModelReference("codex:gpt-5.5")).toThrow(/reserved runtime/i);
+    expect(parseModelReference("codex:gpt-5.5")).toMatchObject({ sdk: "codex", model: "gpt-5.5" });
   });
 
   it("generates Claude Code stream-json command with inline schema, system prompt, and prompt separator", () => {

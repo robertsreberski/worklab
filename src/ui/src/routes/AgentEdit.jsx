@@ -79,6 +79,18 @@ const emptyAgent = {
 function flattenModels(groups = []) {
   return groups.flatMap((group) => (group.models || []).map((model) => ({ ...model, group: group.label })));
 }
+function executionModeRequirement(reason) {
+  if (!reason) return null;
+  if (/sdk/i.test(reason)) return "Requires SDK mode";
+  if (/cli/i.test(reason)) return "Requires CLI mode";
+  return reason;
+}
+function executionModeWarningHint(reason) {
+  if (!reason) return undefined;
+  if (/sdk/i.test(reason)) return `${reason} Switch to SDK mode above, or pick a CLI-compatible model.`;
+  if (/cli/i.test(reason)) return `${reason} Switch to CLI mode above, or pick an SDK-compatible model.`;
+  return reason;
+}
 function getReasoningMode(option) {
   if (!option?.capabilities) return "effort";
   const mode = option.capabilities.reasoning_mode;
@@ -496,8 +508,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         const baseDisabled = group.available === false || m.available === false || m.disabled === true;
         const modeReason = executionModeIncompatibilityReason(m.value, executionMode);
         const baseDescription = modelOptionDescription(m, group);
+        const requirement = executionModeRequirement(modeReason);
         const description = modeReason
-          ? (baseDescription ? `${baseDescription} · Requires SDK mode` : "Requires SDK mode")
+          ? (baseDescription ? `${baseDescription} · ${requirement}` : requirement)
           : baseDescription;
         return {
           value: m.value,
@@ -873,7 +886,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                 />
               </FormField>
               <FormGrid columns={2}>
-                <FormField label="Model" required hint={currentModelExecutionWarning ? `⚠ ${currentModelExecutionWarning} Switch to SDK mode above, or pick a CLI-compatible model.` : undefined}>
+                <FormField label="Model" required hint={currentModelExecutionWarning ? `⚠ ${executionModeWarningHint(currentModelExecutionWarning)}` : undefined}>
                   <Select value={agent.model} options={modelOptions} onChange={setModel} searchable />
                 </FormField>
                 <FormField
