@@ -80,6 +80,52 @@ describe("agents CRUD", () => {
     expect(row.execution_mode).toBe("cli");
   });
 
+  it("rejects POST when execution_mode='cli' is paired with a non-codex pi model", async () => {
+    const { agent } = makeTestServer();
+    const res = await agent.post("/api/agents").send({
+      name: "bad-combo",
+      display_name: "Bad",
+      model: "pi:openai:gpt-4",
+      execution_mode: "cli",
+    }).expect(400);
+    expect(res.body.error.code).toBe("incompatible_execution_mode");
+    expect(res.body.error.execution_mode).toBe("cli");
+    expect(res.body.error.model).toBe("pi:openai:gpt-4");
+    expect(res.body.error.message).toMatch(/openai/);
+  });
+
+  it("accepts POST when execution_mode='cli' is paired with pi:openai-codex (the supported pair)", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/agents").send({
+      name: "good-combo",
+      display_name: "Good",
+      model: "pi:openai-codex:gpt-5.5",
+      execution_mode: "cli",
+    }).expect(201);
+  });
+
+  it("rejects PATCH that would land an incompatible model+execution_mode pair", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/agents").send({
+      name: "patch-target",
+      display_name: "Patch",
+      model: "claude:claude-sonnet-4-6",
+      execution_mode: "cli",
+    }).expect(201);
+    const res = await agent.patch("/api/agents/patch-target").send({ model: "pi:openai:gpt-4" }).expect(400);
+    expect(res.body.error.code).toBe("incompatible_execution_mode");
+
+    const res2 = await agent.post("/api/agents").send({
+      name: "sdk-mover",
+      display_name: "SDK Mover",
+      model: "pi:openai:gpt-4",
+      execution_mode: "sdk",
+    }).expect(201);
+    expect(res2.body.agent.execution_mode).toBe("sdk");
+    const flip = await agent.patch("/api/agents/sdk-mover").send({ execution_mode: "cli" }).expect(400);
+    expect(flip.body.error.code).toBe("incompatible_execution_mode");
+  });
+
   it("POST /api/agents accepts explicit policy and budget fields", async () => {
     const { agent, db } = makeTestServer();
     const res = await agent.post("/api/agents").send({

@@ -15,6 +15,7 @@ import {
   updateAgentMemory,
   uniqueSlug,
 } from "../../core/index.js";
+import { executionModeIncompatibilityReason } from "../../ai/runtime/model-refs.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -317,6 +318,22 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
     }
+    // intelligence-ramp follow-up: refuse model + execution_mode combos that
+    // can't actually run. Today only sdk='pi' + provider != 'openai-codex'
+    // breaks under cli mode (codex app-server only speaks the codex protocol).
+    {
+      const reason = executionModeIncompatibilityReason(resolved, executionMode);
+      if (reason) {
+        return res.status(400).json({
+          error: {
+            code: "incompatible_execution_mode",
+            message: reason,
+            execution_mode: executionMode,
+            model: canonicalModel,
+          },
+        });
+      }
+    }
 
     insertAgent(db, {
       name: finalName,
@@ -485,6 +502,33 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       targetModel = targetResolved.reference;
       fields.push("effort = ?");
       values.push(normalizeAgentEffort({ db, dataDir, model: targetModel, resolved: targetResolved, effort: existing.effort || "medium" }));
+    }
+
+    // intelligence-ramp follow-up: refuse model + execution_mode combos that
+    // can't actually run. Run after the per-field loop so we check the values
+    // that will actually be persisted (mix of patch + existing).
+    {
+      const effectiveExecutionMode = "execution_mode" in req.body
+        ? normalizeExecutionMode(req.body.execution_mode, existing.execution_mode || "sdk")
+        : (existing.execution_mode || "sdk");
+      const effectiveModel = "model" in req.body ? targetModel : existing.model;
+      let effectiveResolved = targetResolved;
+      if (!effectiveResolved && effectiveModel) {
+        try { effectiveResolved = normalizeModelReference(effectiveModel); } catch { effectiveResolved = null; }
+      }
+      const reason = effectiveResolved
+        ? executionModeIncompatibilityReason(effectiveResolved, effectiveExecutionMode)
+        : null;
+      if (reason) {
+        return res.status(400).json({
+          error: {
+            code: "incompatible_execution_mode",
+            message: reason,
+            execution_mode: effectiveExecutionMode,
+            model: effectiveModel,
+          },
+        });
+      }
     }
 
     if (fields.length > 0) {
