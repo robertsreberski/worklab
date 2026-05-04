@@ -8712,30 +8712,6 @@ html.assistant-resizing * {
   flex-wrap: wrap;
   gap: var(--sp-2) var(--sp-4);
 }
-.instructions-coach {
-  margin-top: var(--sp-2);
-  padding: var(--sp-2);
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-2);
-  font-size: var(--text-sm);
-  background: var(--surface-sunken);
-  border-left: 3px solid transparent;
-}
-.instructions-coach-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-  min-width: 3ch;
-  text-align: right;
-}
-.instructions-coach-label {
-  color: var(--text-muted);
-}
-.instructions-coach-good {
-  border-left: 3px solid var(--accent-positive);
-}
 .run-verification-list {
   margin: var(--sp-2) 0 0;
   padding: 0;
