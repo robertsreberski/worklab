@@ -160,6 +160,40 @@ function RunDiagnosticsDisclosure({ run }) {
   );
 }
 
+function RunEconomicsPanel({ run }) {
+  const overheadTokens = Number(run?.first_turn_overhead_tokens);
+  const inputTokens = Number(run?.first_turn_input_tokens);
+  const diag = run?.diagnostics || {};
+  const truncatedCount = Number(diag.tool_results_truncated) || 0;
+  const prunedCount = Number(diag.tool_outputs_pruned) || 0;
+  const compactionCount = Number(diag.context_compactions) || 0;
+  const billed = Number(run?.log?.input_tokens) || 0;
+  const cacheRead = Number(run?.log?.cache_read_tokens) || 0;
+  const haveOverhead = Number.isFinite(overheadTokens) && overheadTokens > 0;
+  const haveInput = Number.isFinite(inputTokens) && inputTokens > 0;
+  if (!haveOverhead && !haveInput && !truncatedCount && !prunedCount && !compactionCount) return null;
+  const overheadShare = haveOverhead && haveInput ? Math.round((overheadTokens / inputTokens) * 100) : null;
+  return (
+    <details class="run-diagnostics run-economics">
+      <summary>Run economics</summary>
+      <div class="run-economics-grid">
+        {haveInput && <RunMetric label="Turn 1 input" value={`${inputTokens.toLocaleString()} tok`} />}
+        {haveOverhead && (
+          <RunMetric
+            label="Turn 1 system"
+            value={overheadShare != null ? `${overheadTokens.toLocaleString()} tok (${overheadShare}%)` : `${overheadTokens.toLocaleString()} tok`}
+          />
+        )}
+        {billed > 0 && <RunMetric label="Billed input" value={`${billed.toLocaleString()} tok`} />}
+        {cacheRead > 0 && <RunMetric label="Cache hit" value={`${cacheRead.toLocaleString()} tok`} />}
+        {truncatedCount > 0 && <RunMetric label="Truncated" value={`${truncatedCount}`} />}
+        {prunedCount > 0 && <RunMetric label="Pruned" value={`${prunedCount}`} />}
+        {compactionCount > 0 && <RunMetric label="Compactions" value={`${compactionCount}`} />}
+      </div>
+    </details>
+  );
+}
+
 function shortRunId(id) {
   return id ? String(id).slice(-6) : "";
 }
@@ -395,6 +429,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
       <RunWarningsList warnings={warnings} agents={agents} />
       <RunContinuationLinks run={run} />
       <RunFailureDetails run={run} agents={agents} />
+      <RunEconomicsPanel run={run} />
       <RunDiagnosticsDisclosure run={run} />
       <RunHistoryNotice
         eventCount={runStream.eventCount}

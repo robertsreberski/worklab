@@ -7,6 +7,7 @@ import {
   resolveModel,
 } from "../core/index.js";
 import { buildAutomationSystemPrompt } from "../agent/prompt/system-prompt.js";
+import { estimateFirstTurnInput } from "../agent/compaction.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { getAutomationById } from "../core/db/queries/automations.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
@@ -49,6 +50,17 @@ export async function runAutomation(ctx) {
   const systemPrompt = buildAutomationSystemPrompt({ agent, automation, skills, memory, journalTail, pinnedKb });
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
+  const automationMessages = [{ role: "user", content: `Run automation "${automation.title}".` }];
+  const firstTurn = estimateFirstTurnInput({ systemPrompt, messages: automationMessages });
+  emit({
+    type: "prompt_built",
+    diagnostics: {
+      first_turn_input_tokens: firstTurn.inputTokens,
+      first_turn_overhead_tokens: firstTurn.overheadTokens,
+      first_turn_input_chars: firstTurn.inputChars,
+      first_turn_overhead_chars: firstTurn.overheadChars,
+    },
+  });
   try {
     const result = await generateResponse(systemPrompt, {
       model,
@@ -56,7 +68,7 @@ export async function runAutomation(ctx) {
       db,
       dataDir: config.dataDir,
       skills,
-      messages: [{ role: "user", content: `Run automation "${automation.title}".` }],
+      messages: automationMessages,
       cwd: config.workspace,
       mcpServers,
       allowedTools,

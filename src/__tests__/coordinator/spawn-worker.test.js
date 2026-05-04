@@ -873,4 +873,64 @@ describe("spawnWorker", () => {
       message: expect.stringContaining("turns 4"),
     }));
   });
+
+  it("persists first_turn_input_tokens from a prompt_built event", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "started", runId, ts: Date.now() },
+        {
+          type: "prompt_built",
+          diagnostics: {
+            first_turn_input_tokens: 1234,
+            first_turn_overhead_tokens: 1100,
+            first_turn_input_chars: 4936,
+            first_turn_overhead_chars: 4400,
+          },
+        },
+        { type: "final", text: "ok", usage: { input_tokens: 10, output_tokens: 2 }, durationMs: 1, numTurns: 1 },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+    });
+    await handle.done;
+    const row = db.prepare(
+      "SELECT first_turn_input_tokens, first_turn_overhead_tokens, diagnostics_json FROM task_runs WHERE id = ?",
+    ).get(runId);
+    expect(row.first_turn_input_tokens).toBe(1234);
+    expect(row.first_turn_overhead_tokens).toBe(1100);
+    const diagnostics = JSON.parse(row.diagnostics_json);
+    expect(diagnostics.first_turn_input_chars).toBe(4936);
+  });
+
+  it("counts tool_context_pruned events into diagnostics.tool_outputs_pruned", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        { type: "sdk_event", event: { type: "tool_context_pruned", pruned_tool_results: 2 } },
+        { type: "sdk_event", event: { type: "tool_context_pruned", pruned_tool_results: 3 } },
+        { type: "final", text: "ok", usage: { input_tokens: 1, output_tokens: 1 }, durationMs: 1, numTurns: 1 },
+      ],
+      exitCode: 0,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+    });
+    await handle.done;
+    const row = db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId);
+    const diagnostics = JSON.parse(row.diagnostics_json);
+    expect(diagnostics.tool_outputs_pruned).toBe(5);
+  });
 });

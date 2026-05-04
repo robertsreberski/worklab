@@ -11,6 +11,7 @@ import {
   validateWorklabResultSemantics,
 } from "../ai/result/contract.js";
 import { parseWorklabResultLenient } from "../ai/result/lenient-parse.js";
+import { estimateFirstTurnInput } from "../agent/compaction.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
@@ -65,6 +66,16 @@ export async function runTask(ctx) {
   const { task, agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
+  const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
+  emit({
+    type: "prompt_built",
+    diagnostics: {
+      first_turn_input_tokens: firstTurn.inputTokens,
+      first_turn_overhead_tokens: firstTurn.overheadTokens,
+      first_turn_input_chars: firstTurn.inputChars,
+      first_turn_overhead_chars: firstTurn.overheadChars,
+    },
+  });
 
   try {
     const result = await generateResponse(systemPrompt, {
