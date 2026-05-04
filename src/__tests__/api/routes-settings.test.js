@@ -46,9 +46,9 @@ describe("settings", () => {
     expect(res.body.settings.agent_compaction_min_savings_tokens).toBe(20000);
     expect(res.body.settings.agent_tool_payload_compaction_trigger_chars).toBe(0);
     expect(res.body.settings.agent_tool_prune_trigger_tokens).toBe(40000);
-    expect(res.body.settings.agent_tool_text_limit_chars).toBe(16000);
-    expect(res.body.settings.agent_bash_output_limit_chars).toBe(20000);
-    expect(res.body.settings.agent_mcp_text_limit_chars).toBe(12000);
+    expect(res.body.settings.agent_tool_text_limit_chars).toBe(64000);
+    expect(res.body.settings.agent_bash_output_limit_chars).toBe(64000);
+    expect(res.body.settings.agent_mcp_text_limit_chars).toBe(48000);
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);

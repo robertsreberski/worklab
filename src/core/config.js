@@ -32,7 +32,11 @@ export function loadConfig(env = process.env) {
     logLevel: env.WORKLAB_LOG_LEVEL || "info",
     timezone: env.WORKLAB_TIMEZONE,
     runTimeoutMs: parseNonNegativeInt(env.WORKLAB_RUN_TIMEOUT_MS, 30 * 60 * 1000, "WORKLAB_RUN_TIMEOUT_MS"),
-    runIdleWarningMs: parseNonNegativeInt(env.WORKLAB_RUN_IDLE_WARNING_MS, 120 * 1000, "WORKLAB_RUN_IDLE_WARNING_MS"),
+    // intelligence-ramp Phase 3: bumped from 120s to 240s. Long single tool
+    // calls (browser snapshots, large file reads, expensive grep) were tripping
+    // the idle warning even though the worker was actively waiting on a tool.
+    // Matches agent_review_idle_threshold_ms from the runtime audit's R7.
+    runIdleWarningMs: parseNonNegativeInt(env.WORKLAB_RUN_IDLE_WARNING_MS, 240 * 1000, "WORKLAB_RUN_IDLE_WARNING_MS"),
     logInlineLimit: parseNonNegativeInt(env.WORKLAB_LOG_INLINE_LIMIT, 12_000, "WORKLAB_LOG_INLINE_LIMIT"),
     drainTimeoutMs: parseNonNegativeInt(env.WORKLAB_DRAIN_TIMEOUT_MS, 60_000, "WORKLAB_DRAIN_TIMEOUT_MS"),
     slackBotToken: env.WORKLAB_SLACK_BOT_TOKEN || env.SLACK_BOT_TOKEN || "",

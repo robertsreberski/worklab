@@ -41,9 +41,12 @@ export const DEFAULT_SETTINGS = {
   agent_compaction_min_savings_tokens: 20000,
   agent_tool_payload_compaction_trigger_chars: 0,
   agent_tool_prune_trigger_tokens: 40000,
-  agent_tool_text_limit_chars: 16000,
-  agent_bash_output_limit_chars: 20000,
-  agent_mcp_text_limit_chars: 12000,
+  // intelligence-ramp Phase 3: lifted from 16K/20K/12K to give the agent
+  // room to actually read the files / output it just asked for. tool_bloat.js
+  // still hard-caps at 256 KB.
+  agent_tool_text_limit_chars: 64000,
+  agent_bash_output_limit_chars: 64000,
+  agent_mcp_text_limit_chars: 48000,
   agent_search_result_limit: 100,
   agent_image_inline_max_bytes: 250000,
   agent_tool_payload_max_bytes: 262144,

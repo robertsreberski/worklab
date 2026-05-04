@@ -92,7 +92,7 @@ export function createTaskWatcher({
   dataDir,
   workspace,
   runTimeoutMs = 30 * 60 * 1000,
-  runIdleWarningMs = 120 * 1000,
+  runIdleWarningMs = 240 * 1000,
   logInlineLimit = 12_000,
   maxFailures = null,
   events,
