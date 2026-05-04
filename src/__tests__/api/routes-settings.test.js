@@ -59,6 +59,7 @@ describe("settings", () => {
     expect(res.body.settings.delegation_max_children_per_round).toBe(5);
     expect(res.body.settings.delegation_max_parallel_children).toBe(3);
     expect(res.body.settings.delegation_auto_run_children).toBe(true);
+    expect(res.body.settings).not.toHaveProperty("task_instructions_min_chars");
   });
 
   it("PATCH clears the embedding model when given empty string", async () => {
@@ -139,6 +140,7 @@ describe("settings", () => {
   it("PATCH rejects unknown keys", async () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({ bogus: 1 }).expect(400);
+    await agent.patch("/api/settings").send({ task_instructions_min_chars: 240 }).expect(400);
   });
 
   it("PATCH rejects invalid delegation settings", async () => {

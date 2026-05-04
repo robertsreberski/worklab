@@ -61,12 +61,6 @@ export const DEFAULT_SETTINGS = {
   // entirely. Soft-launch defaults to "warn" so operators can see what
   // would have been bounced before flipping to block.
   agent_verification_gate_mode: "warn",
-  // intelligence-ramp Phase 6: minimum instructions length for new tasks.
-  // 80 chars is "a sentence and a half" — enough to force the operator to
-  // describe acceptance criteria instead of dashing off "fix login". Set to
-  // 0 to disable the check (the test helper does this so existing fixtures
-  // creating bare-title tasks keep working).
-  task_instructions_min_chars: 80,
   planning_harness: DEFAULT_PLANNING_HARNESS,
   planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
   agent_learning_enabled: true,
@@ -227,8 +221,6 @@ export function validateSetting(key, value) {
       return integerInRange(key, value, { min: 0, max: 20 });
     case "agent_provider_recovery_base_delay_ms":
       return integerInRange(key, value, { min: 0, max: 300000 });
-    case "task_instructions_min_chars":
-      return integerInRange(key, value, { min: 0, max: 4000 });
     case "agent_verification_gate_mode": {
       if (typeof value !== "string") throw new Error(`${key} must be a string`);
       const trimmed = value.trim();

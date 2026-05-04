@@ -4,11 +4,6 @@ import { createServer } from "../../api/server.js";
 
 export function makeTestServer({ watcher, dataDir, consolidation, automationManager, config, runtimeControls, assistant, notifications } = {}) {
   const db = makeTestDb();
-  // intelligence-ramp Phase 6: production default for task_instructions_min_chars
-  // is 80 to push real briefs into the prompt. Existing fixtures POST tasks
-  // with bare titles, so flip the check off here. Tests that exercise the
-  // gate explicitly should re-enable via writeSettings.
-  db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('task_instructions_min_chars', '0')").run();
   const stubWatcher = watcher || {
     handleRunRequested: async () => ({ runId: "fake-run" }),
     cancel: () => true,

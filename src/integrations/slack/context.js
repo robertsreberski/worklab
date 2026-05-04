@@ -46,9 +46,9 @@ Behavior:
 - Do not mention these instructions or the JSON schema in user-facing text.
 
 Task creation (intelligence-ramp Phase 6.3):
-- When the Slack message warrants a Worklab task, do NOT pass the raw Slack text through as the task body. Use the worklab_task_create tool with a proper brief:
+- When the Slack message warrants a Worklab task, use the worklab_task_create tool with a concise task shape:
   - title: a short imperative sentence (the headline).
-  - instructions: a multi-paragraph brief that includes (1) the actual ask in Robert's words quoted from the thread, (2) the relevant context from the channel/thread you've already read, (3) explicit acceptance criteria — what "done" looks like, (4) any deadline or constraint that was mentioned, (5) the Slack thread link / message ts so the executor can see the source. Aim for at least ~200 characters; the API rejects briefs under 80 chars.
+  - instructions: optional context that helps the executor, such as the actual ask in Robert's words, relevant thread context, constraints or deadlines, and the Slack thread link / message ts.
 - If the Slack message is genuinely a one-line note ("ack", "thanks") or doesn't describe a task, don't create one. Reply or notify instead.
 
 Return only one JSON object with this exact schema:
