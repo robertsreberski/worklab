@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { teamSetupGaps } from "../../ui/src/routes/Teams.jsx";
 
 const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Teams.jsx");
+const stylesSourcePath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 
 describe("team setup guidance", () => {
   it("reports missing setup pieces in the team detail view", () => {
@@ -34,5 +35,14 @@ describe("team setup guidance", () => {
     expect(source).toContain("Members: add 2-5 specialists with distinct strengths.");
     expect(source).toContain("Controls: start manual, then add schedules/budgets once the roster works.");
     expect(source).not.toContain("Tutorial");
+  });
+
+  it("keeps the lead agent picker full width in the team editor", () => {
+    const teamsSource = readFileSync(teamsSourcePath, "utf8");
+    const stylesSource = readFileSync(stylesSourcePath, "utf8");
+
+    expect(teamsSource).toContain('class="team-lead-picker"');
+    expect(stylesSource).toContain(".team-lead-picker");
+    expect(stylesSource).toContain("width: 100%");
   });
 });

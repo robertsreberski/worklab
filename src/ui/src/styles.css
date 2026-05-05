@@ -5071,6 +5071,11 @@ html.assistant-resizing * {
 .team-member-row .input {
   min-width: 0;
 }
+.team-lead-picker {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
 .team-picker-icon {
   display: inline-flex;
   align-items: center;
