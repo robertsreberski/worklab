@@ -71,7 +71,7 @@ import {
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
 import { effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle } from "../core/teams.js";
-import { getTeamById } from "../core/db/queries/teams.js";
+import { getTeamById, getTeamRosterAgentNames } from "../core/db/queries/teams.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
   buildFallbackResult,
@@ -135,6 +135,7 @@ export function createTaskWatcher({
   // children complete in the same tick or a child finishes during a fresh
   // delegation round.
   const pendingStarts = new Set();
+  const pendingLeadCycleRequests = new Map();
   const recoveryTimers = new Set();
 
   function canAutoStart(taskId) {
@@ -276,6 +277,31 @@ export function createTaskWatcher({
     });
   }
 
+  function leadCycleRequestKey(teamId, projectId) {
+    return `${teamId || ""}::${projectId || ""}`;
+  }
+
+  function queueLeadCycleRequest({ teamId, projectId, reason }) {
+    if (!teamId || !projectId) return;
+    pendingLeadCycleRequests.set(leadCycleRequestKey(teamId, projectId), reason || "task_unassigned");
+  }
+
+  function drainQueuedLeadCycleRequest({ teamId, projectId }) {
+    if (!teamId || !projectId) return;
+    const key = leadCycleRequestKey(teamId, projectId);
+    const reason = pendingLeadCycleRequests.get(key);
+    if (!reason) return;
+    pendingLeadCycleRequests.delete(key);
+    setTimeout(() => {
+      const out = spawnLeadCycleRunInternal({ teamId, projectId, reason });
+      if (!out.ok && out.skipped === "in_flight") {
+        queueLeadCycleRequest({ teamId, projectId, reason });
+      } else if (!out.ok) {
+        logger?.warn?.({ teamId, projectId, reason, err: out.error }, "queued lead cycle skipped");
+      }
+    }, 0);
+  }
+
   // v33: spawn a lead_cycle run against the synthetic root for (team, project).
   // Runs through the same spawnTaskRun path so lifecycle events, drain
   // semantics, transcript handling, and budget reconciliation all reuse the
@@ -339,6 +365,28 @@ export function createTaskWatcher({
       spawnLeadCycleRunInternal({ teamId, projectId, reason });
     } catch (err) {
       logger?.warn?.({ err: err.message, taskId }, "maybeScheduleLeadCycle failed");
+    }
+  }
+
+  function maybeScheduleUnassignedTeamTask(taskId, reason = "task_unassigned") {
+    try {
+      const task = getTaskById(db, taskId);
+      if (!task || task.is_team_root) return { ok: false, skipped: "not_applicable" };
+      if (String(task.owner_agent || "").trim()) return { ok: false, skipped: "already_owned" };
+      const stage = taskStage(task);
+      if (stage === "done" || stage === "blocked") return { ok: false, skipped: "terminal" };
+      const teamId = effectiveTeamForTask(db, task);
+      if (!teamId) return { ok: false, skipped: "no_team" };
+      const projectId = task.project_id || null;
+      if (!projectId) return { ok: false, skipped: "no_project" };
+      const out = spawnLeadCycleRunInternal({ teamId, projectId, reason });
+      if (!out.ok && out.skipped === "in_flight") {
+        queueLeadCycleRequest({ teamId, projectId, reason });
+      }
+      return out;
+    } catch (err) {
+      logger?.warn?.({ err: err.message, taskId }, "maybeScheduleUnassignedTeamTask failed");
+      return { ok: false, error: err.message };
     }
   }
 
@@ -1345,6 +1393,81 @@ export function createTaskWatcher({
     });
   }
 
+  function applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead }) {
+    const assignments = Array.isArray(finalLead?.task_assignments) ? finalLead.task_assignments : [];
+    if (!assignments.length || !teamId || !projectId) return 0;
+
+    const roster = new Set(getTeamRosterAgentNames(db, teamId));
+    const now = Date.now();
+    const skipped = [];
+    let assigned = 0;
+
+    for (const assignment of assignments) {
+      const targetId = String(assignment?.target_task_id || "").trim();
+      const ownerAgent = String(assignment?.owner_agent || "").trim();
+      const rationale = String(assignment?.rationale || "").trim();
+      if (!targetId || !ownerAgent) continue;
+      const target = getTaskById(db, targetId);
+      if (!target) {
+        skipped.push(`${targetId}: task not found`);
+        continue;
+      }
+      if (target.is_team_root) {
+        skipped.push(`${targetId}: team root cannot be assigned`);
+        continue;
+      }
+      if ((target.project_id || null) !== projectId) {
+        skipped.push(`${targetId}: outside lead-cycle project`);
+        continue;
+      }
+      if (effectiveTeamForTask(db, target) !== teamId) {
+        skipped.push(`${targetId}: outside team scope`);
+        continue;
+      }
+      if (String(target.owner_agent || "").trim()) {
+        skipped.push(`${targetId}: already has an owner`);
+        continue;
+      }
+      const targetStage = taskStage(target);
+      if (targetStage === "done" || targetStage === "blocked") {
+        skipped.push(`${targetId}: terminal task`);
+        continue;
+      }
+      if (!roster.has(ownerAgent)) {
+        skipped.push(`${targetId}: ${ownerAgent} is not in the team roster`);
+        continue;
+      }
+      if (!enabledAgentExists(db, ownerAgent)) {
+        skipped.push(`${targetId}: ${ownerAgent} is not enabled`);
+        continue;
+      }
+
+      const result = db.prepare(`
+        UPDATE tasks
+        SET owner_agent = ?, updated_at = ?
+        WHERE id = ?
+          AND COALESCE(owner_agent, '') = ''
+          AND COALESCE(stage, 'plan') NOT IN ('done', 'blocked')
+      `).run(ownerAgent, now, targetId);
+      if (!result.changes) {
+        skipped.push(`${targetId}: no longer assignable`);
+        continue;
+      }
+      postSystemComment(
+        targetId,
+        `Team lead assigned owner ${ownerAgent}.${rationale ? ` Rationale: ${rationale}` : ""}`,
+      );
+      broker?.broadcast?.("global", { type: "task_updated", id: targetId, taskKey: target.task_key || null });
+      maybeAutoStartTask(targetId);
+      assigned += 1;
+    }
+
+    if (skipped.length) {
+      postSystemComment(taskId, `Lead cycle task_assignments skipped:\n- ${skipped.join("\n- ")}`);
+    }
+    return assigned;
+  }
+
   function handleSuccessfulExit(taskId, runId, res, task, run) {
     const stage = run.stage || taskStage(task);
     const mode = run.mode || modeForStage(stage);
@@ -1559,10 +1682,11 @@ export function createTaskWatcher({
   }
 
   // v33: lead-cycle result handling. The lead emits worklab.lead_cycle.v1; we
-  // validate semantics, fan out task_creations into createDelegatedSubtasks
-  // (anchored on the synthetic root), post advisory_notes as system comments,
-  // and update the synthetic root's goal_status. The lead cannot mutate any
-  // existing task's owner/stage — that's enforced upstream by the contract.
+  // validate semantics, apply task_assignments to ownerless in-scope tasks,
+  // fan out task_creations into createDelegatedSubtasks (anchored on the
+  // synthetic root), post advisory_notes as system comments, and update the
+  // synthetic root's goal_status. The lead cannot change task stage or
+  // reassign already-owned tasks.
   function handleLeadCycleExit(taskId, runId, res, task, run) {
     const processStatus = runProcessStatus(res);
     const teamId = run.team_id || (task ? effectiveTeamForTask(db, task) : null);
@@ -1592,8 +1716,11 @@ export function createTaskWatcher({
         run_id: runId,
         failure_kind: failureKind,
       });
+      drainQueuedLeadCycleRequest({ teamId, projectId });
       return;
     }
+
+    const tasksAssigned = applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead });
 
     // Apply task_creations as subtasks of the synthetic root. Reuse the
     // standard delegation pipeline so cycle detection, agent enablement,
@@ -1679,7 +1806,9 @@ export function createTaskWatcher({
       run_id: runId,
       goal_status: goalStatus,
       tasks_created: creations.length,
+      tasks_assigned: tasksAssigned,
     });
+    drainQueuedLeadCycleRequest({ teamId, projectId });
   }
 
   function onWorkerExit(taskId, runId, res) {
@@ -1937,6 +2066,7 @@ export function createTaskWatcher({
     sendRunMessage,
     maybeAutoStart: maybeAutoStartTask,
     maybeAutoStartDependents,
+    maybeScheduleUnassignedTeamTask,
     scheduleCoordinatorResumeContinuations,
     get coordinatorResumeBootstrap() { return coordinatorResumeBootstrapPromise; },
     // v33: lead-cycle entry points used by /api/teams/:id/run-lead, the

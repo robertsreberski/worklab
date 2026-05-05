@@ -97,7 +97,7 @@ describe("task-watcher v2 workflow", () => {
     seedAgent(db, "coder");
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("max_failure_streak", JSON.stringify(1));
     const taskId = seedTask(db, { owner: "coder" });
-    const { spawn, resolvers } = makeDeferredSpawn();
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
 
     await watcher.handleRunRequested(taskId);
@@ -1120,5 +1120,94 @@ describe("task-watcher v2 workflow", () => {
       { title: "First child", team_id: teamId },
       { title: "Second child", team_id: teamId },
     ]);
+  });
+
+  it("lead cycles assign ownerless team tasks and allow normal auto-start policy", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId, member } = seedTeamProject(db);
+    const now = Date.now();
+    const targetTaskId = newTaskId();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, root_task_id, project_id, title, instructions, stage, run_policy, created_at, updated_at)
+      VALUES (?, ?, ?, 'Needs owner', 'Pick the right teammate.', 'execute', 'auto_plan_execute', ?, ?)
+    `).run(targetTaskId, targetTaskId, projectId, now, now);
+    const broker = stubBroker();
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "task_created_unassigned" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "assigned",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Assigned the task.",
+        task_creations: [],
+        task_assignments: [{
+          target_task_id: targetTaskId,
+          owner_agent: member,
+          rationale: "Best match for implementation.",
+        }],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT owner_agent FROM tasks WHERE id = ?").get(targetTaskId)?.owner_agent === member);
+    const task = db.prepare("SELECT owner_agent FROM tasks WHERE id = ?").get(targetTaskId);
+    expect(task.owner_agent).toBe(member);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'system'").get(targetTaskId);
+    expect(comment.body).toContain(`Team lead assigned owner ${member}`);
+    await waitFor(() => spawn.mock.calls.length === 2);
+    expect(calls[1].taskId).toBe(targetTaskId);
+    expect(calls[1].args).toEqual(expect.arrayContaining(["--task", targetTaskId, "--agent", member]));
+    expect(broker.broadcasts.some(({ p }) => p.type === "task_updated" && p.id === targetTaskId)).toBe(true);
+  });
+
+  it("queues one follow-up lead cycle when an ownerless team task appears during a lead cycle", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const now = Date.now();
+    const targetTaskId = newTaskId();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, root_task_id, project_id, title, stage, run_policy, created_at, updated_at)
+      VALUES (?, ?, ?, 'Needs owner later', 'execute', 'manual', ?, ?)
+    `).run(targetTaskId, targetTaskId, projectId, now, now);
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const first = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(first.ok).toBe(true);
+    const queued = watcher.maybeScheduleUnassignedTeamTask(targetTaskId, "task_created_unassigned");
+    expect(queued).toMatchObject({ ok: false, skipped: "in_flight" });
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    db.prepare("UPDATE task_runs SET process_status = 'succeeded', status = 'complete', ended_at = ? WHERE id = ?")
+      .run(Date.now(), first.runId);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "no assignments yet",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "First cycle complete.",
+        task_creations: [],
+        task_assignments: [],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => spawn.mock.calls.length === 2);
   });
 });

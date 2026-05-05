@@ -294,6 +294,14 @@ export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch 
       watcher?.maybeAutoStartDependents?.(taskId);
     }
   }
+  const shouldCheckTeamAssignment = (
+    ("owner_agent" in patch && !String(patch.owner_agent || "").trim())
+    || "project_id" in patch
+    || "team_id" in patch
+  );
+  if (shouldCheckTeamAssignment) {
+    watcher?.maybeScheduleUnassignedTeamTask?.(taskId, "task_unassigned");
+  }
   watcher?.maybeAutoStart?.(taskId);
 
   const row = getTaskById(db, taskId);

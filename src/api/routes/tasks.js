@@ -354,6 +354,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const row = getTaskById(db, id);
     const task = enrichTask(db, rowToTask(row), config);
     broker.broadcast("global", { type: "task_created", id, taskKey: task.task_key || null });
+    if (!String(owner_agent || "").trim()) {
+      watcher?.maybeScheduleUnassignedTeamTask?.(id, "task_created_unassigned");
+    }
     watcher?.maybeAutoStart?.(id);
     res.status(201).json({ task });
   });
