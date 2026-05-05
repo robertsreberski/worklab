@@ -34,6 +34,7 @@ export const ROUTE_GROUPS = [
   {
     label: "Library",
     routes: [
+      { id: "teams", label: "Teams", icon: "users" },
       { id: "agents", label: "Agents", icon: "user" },
       { id: "skills", label: "Skills", icon: "sparkles" },
       { id: "knowledge", label: "Knowledge", icon: "book" },
@@ -57,7 +58,7 @@ const TABBAR_ROUTES = [
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "agents", label: "Agents", icon: "user", href: "#/agents" },
 ];
-const MORE_ROUTE_IDS = ["skills", "knowledge", "providers", "settings"];
+const MORE_ROUTE_IDS = ["teams", "skills", "knowledge", "providers", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
   .map((route) => ({ ...route, href: `#/${route.id}` }));
