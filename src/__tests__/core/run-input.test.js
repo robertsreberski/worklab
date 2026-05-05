@@ -83,6 +83,7 @@ describe("run input assembly", () => {
         agentName: "owner",
         runId: `preview-${now}`,
         mode: "execute",
+        now,
       });
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
@@ -104,6 +105,42 @@ describe("run input assembly", () => {
       });
       expect(preview.input.messages).toEqual(input.messages.map((message) => ({ ...message, format: "markdown" })));
       expect(preview.messages[0].content).toContain("# Work on task");
+    });
+  });
+
+  it("adds run-local date context to task messages", () => {
+    withRunInputDb(({ db, config }) => {
+      config.timezone = "Europe/Amsterdam";
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status)
+        VALUES ('run-stale', ?, 'execute', 'execute', 'owner', 1777701639188, 1777701699902, 'complete', 'succeeded')
+      `).run(task.id);
+      db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES ('log-stale', 'run-stale', ?, 'complete', ?)")
+        .run(JSON.stringify([{ type: "final", text: "Today is 2026-05-02 (Sat, CEST).", numTurns: 1, durationMs: 1000 }]), 1777701699902);
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-current",
+        mode: "execute",
+        now: 1777971098852,
+      });
+
+      const message = input.messages[0].content;
+      expect(message).toContain("## Runtime context");
+      expect(message).toContain("Run started: 2026-05-05T08:51:38.852Z");
+      expect(message).toContain("Timezone: Europe/Amsterdam");
+      expect(message).toContain("Local time: Tuesday, 2026-05-05");
+      expect(message).toContain("Today: 2026-05-05");
+      expect(message).toContain("Yesterday: 2026-05-04");
+      expect(message).toContain("Prior run and journal dates are historical context, not the current date");
+      expect(message.indexOf("Today: 2026-05-05")).toBeLessThan(message.indexOf("Task:"));
+      expect(input.systemPrompt).not.toContain("Run started: 2026-05-05T08:51:38.852Z");
     });
   });
 
@@ -371,6 +408,7 @@ describe("run input assembly", () => {
         agentName: "planner",
         runId: `preview-${now}`,
         mode: "plan",
+        now,
       });
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
@@ -740,6 +778,7 @@ Frontend skill body.
         agentName: "planner",
         runId: `preview-${now}`,
         mode: "plan",
+        now,
       });
 
       expect(preview.agent_name).toBe("planner");
@@ -833,6 +872,7 @@ Frontend skill body.
         runId: `preview-${now}`,
         mode: "review",
         priorRunId: "run-exec",
+        now,
       });
 
       expect(preview.system_prompt).toBe(input.systemPrompt);
