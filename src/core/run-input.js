@@ -94,40 +94,124 @@ export function assertAgentRunnable(db, agentName) {
   }
 }
 
-export function buildTaskRunMessages({ mode, task }) {
+function runtimeDateParts(date, timeZone) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "long",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+    timeZoneName: "short",
+  }).formatToParts(date);
+  return Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+}
+
+function isoDateFromParts(parts) {
+  if (!parts?.year || !parts?.month || !parts?.day) return "";
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+function addDaysToIsoDate(value, days) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return "";
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12, 0, 0, 0));
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function detectedRuntimeTimezone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+
+export function buildRuntimeDateContext({ now = Date.now(), timezone } = {}) {
+  const runDate = now instanceof Date
+    ? now
+    : (typeof now === "number" ? new Date(now) : new Date(Number.isFinite(Number(now)) ? Number(now) : now));
+  const safeDate = Number.isFinite(runDate.getTime()) ? runDate : new Date();
+  const timeZone = timezone || detectedRuntimeTimezone();
+  let parts;
+  let resolvedTimeZone = timeZone;
+  try {
+    parts = runtimeDateParts(safeDate, timeZone);
+  } catch {
+    resolvedTimeZone = "UTC";
+    parts = runtimeDateParts(safeDate, resolvedTimeZone);
+  }
+  const today = isoDateFromParts(parts);
+  const time = [parts.hour, parts.minute, parts.second].filter(Boolean).join(":");
+  return {
+    runStartedAt: safeDate.toISOString(),
+    timezone: parts.timeZoneName ? `${resolvedTimeZone} (${parts.timeZoneName})` : resolvedTimeZone,
+    localTime: [parts.weekday, today, time].filter(Boolean).join(", ").replace(/, ([0-9:]+)$/, " $1"),
+    today,
+    yesterday: addDaysToIsoDate(today, -1),
+  };
+}
+
+function formatRuntimeDateContext(context) {
+  if (!context?.runStartedAt) return "";
+  return [
+    "## Runtime context",
+    "",
+    `Run started: ${context.runStartedAt}`,
+    `Timezone: ${context.timezone}`,
+    `Local time: ${context.localTime}`,
+    `Today: ${context.today}`,
+    `Yesterday: ${context.yesterday}`,
+    "",
+    "Prior run and journal dates are historical context, not the current date. Resolve relative dates like today, yesterday, and previous calendar day from this runtime context unless the active task explicitly names a different target date.",
+  ].join("\n");
+}
+
+function joinMessageParts(parts) {
+  return parts.filter((part) => part !== null && part !== undefined).join("\n");
+}
+
+export function buildTaskRunMessages({ mode, task, runtimeDateContext = null }) {
+  const runtimeBlock = formatRuntimeDateContext(runtimeDateContext);
   if (mode === "review") {
     return [{
       role: "user",
-      content: [
+      content: joinMessageParts([
         "# Review task",
         "",
+        runtimeBlock || null,
+        runtimeBlock ? "" : null,
         `Task: "${task.title}"`,
         "",
         "Review this task against the instructions and respond with your verdict.",
-      ].join("\n"),
+      ]),
     }];
   }
   if (mode === "plan") {
     return [{
       role: "user",
-      content: [
+      content: joinMessageParts([
         "# Plan task",
         "",
+        runtimeBlock || null,
+        runtimeBlock ? "" : null,
         `Task: "${task.title}"`,
         "",
         "Plan this task. Clarify the work, identify risks, and decide whether to proceed directly or delegate bounded subtasks. Ask only the critical human questions needed before a useful plan can be written.",
-      ].join("\n"),
+      ]),
     }];
   }
   return [{
     role: "user",
-    content: [
+    content: joinMessageParts([
       "# Work on task",
       "",
+      runtimeBlock || null,
+      runtimeBlock ? "" : null,
       `Task: "${task.title}"`,
       "",
       "Do the task work requested by the instructions.",
-    ].join("\n"),
+    ]),
   }];
 }
 
@@ -287,6 +371,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     pinnedKb,
     settings,
     delegation,
+    runStartedAt: runSnapshot?.started_at || null,
   };
 }
 
@@ -543,7 +628,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
   });
 }
 
-export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "" }) {
+export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, priorRunId = null, contextCache = null, worklabToolSurfaceMarkdown = "", now = Date.now() }) {
   const setup = loadTaskRunSetup({ config, db, taskId, agentName, runId, mode });
   const { agent, task, skills, memory, learningMemories, learningMemoryContext, journalTail, commentRows, pinnedKb, mcpServers, delegation } = setup;
   const capabilityPolicy = applyPlanningToolPolicy({
@@ -553,7 +638,8 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     disallowedTools: setup.disallowedTools,
   });
   const { allowedTools, disallowedTools, toolPolicy } = capabilityPolicy;
-  const messages = buildTaskRunMessages({ mode, task });
+  const runtimeDateContext = buildRuntimeDateContext({ now: setup.runStartedAt || now, timezone: config?.timezone });
+  const messages = buildTaskRunMessages({ mode, task, runtimeDateContext });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
   const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
   const resolvedBlockers = loadResolvedBlockerContext(db, taskId);
@@ -593,7 +679,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       contextCacheHit: !!cached,
     };
     return {
-      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers, learningMemories,
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, priorRuns, taskArtifacts, resolvedBlockers, learningMemories, runtimeDateContext,
       allowedTools, disallowedTools, toolPolicy,
       promptDiagnostics: diagnostics,
     };
@@ -643,7 +729,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       contextCacheHit: !!cached,
     };
     return {
-      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments,
+      ...setup, mode, systemPrompt: prompt.text, messages, currentRunComments, runtimeDateContext,
       priorRun, priorEvents, execution, taskArtifacts, resolvedBlockers, learningMemories, promptDiagnostics: diagnostics,
       allowedTools, disallowedTools, toolPolicy,
     };
@@ -683,6 +769,7 @@ export function buildNextTaskRunPreview({ db, config, taskId, now = Date.now(), 
     runId: `preview-${now}`,
     mode,
     priorRunId,
+    now,
     worklabToolSurfaceMarkdown,
   });
 
