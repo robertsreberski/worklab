@@ -1151,6 +1151,17 @@ export function createTaskWatcher({
     const rootTaskId = parentTask.root_task_id || parentTask.id;
     const now = Date.now();
     const warnings = [];
+    const replaceExistingEdges = options.replaceExistingEdges !== false;
+    const childTeamId = Object.prototype.hasOwnProperty.call(options, "childTeamId")
+      ? (options.childTeamId || null)
+      : (parentTask.team_id || null);
+    const subtaskOrderOffset = replaceExistingEdges
+      ? 0
+      : Number(db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM task_edges
+        WHERE parent_task_id = ? AND edge_type = 'subtask'
+      `).get(parentTask.id)?.count || 0);
 
     // intelligence-ramp Phase 5.4: bridge parent → child context. The audit's
     // QA-execute pattern (children re-discovering work the parent already
@@ -1176,7 +1187,7 @@ export function createTaskWatcher({
     const tx = db.transaction(() => {
       // Supersede prior delegation: drop old subtask edges so
       // maybeResumeWaitingParents only tracks the current round.
-      deleteSubtaskEdgesForParent(db, parentTask.id);
+      if (replaceExistingEdges) deleteSubtaskEdgesForParent(db, parentTask.id);
 
       for (let index = 0; index < subtasks.length; index += 1) {
         const subtask = subtasks[index] || {};
@@ -1193,9 +1204,9 @@ export function createTaskWatcher({
         db.prepare(`
           INSERT INTO tasks
             (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
-             owner_agent, project_id, title, instructions, stage, run_policy, join_policy, subtask_order,
+             owner_agent, project_id, team_id, title, instructions, stage, run_policy, join_policy, subtask_order,
              required, reviewer_agent, tags, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'execute', ?, 'all_required', ?, ?, ?, ?, ?, ?)
         `).run(
           childId,
           taskKey,
@@ -1205,10 +1216,11 @@ export function createTaskWatcher({
           agentName,
           agentName,
           parentTask.project_id || null,
+          childTeamId,
           subtask.title.trim(),
           instructions,
           parentTask.run_policy || "manual",
-          index,
+          subtaskOrderOffset + index,
           required,
           parentTask.reviewer_agent || null,
           JSON.stringify(["delegated"]),
@@ -1604,6 +1616,8 @@ export function createTaskWatcher({
         } else {
           const children = createDelegatedSubtasks(task, runId, validated.subtasks, {
             parentResult: { summary: finalLead.summary, details: finalLead.goal_status_reason || "" },
+            replaceExistingEdges: false,
+            childTeamId: teamId,
           });
           maybeRunDelegatedChildren(taskId, children);
         }

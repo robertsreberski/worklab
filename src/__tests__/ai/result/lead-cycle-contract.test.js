@@ -95,6 +95,19 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(v.error).toMatch(/too many task_creations/);
   });
 
+  it("validateLeadCycleSemantics honors the runtime delegation child cap", () => {
+    const tasks = Array.from({ length: 4 }, (_, i) => ({
+      title: `t${i}`, instructions: "", suggested_agent: "lead",
+      depends_on: [], acceptance_criteria: [], expected_artifact: null, priority: "normal",
+    }));
+    const v = validateLeadCycleSemantics(
+      { ...baseResult, task_creations: tasks },
+      { rosterAgents: ["lead"], maxTaskCreations: 3 },
+    );
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/max 3/);
+  });
+
   it("parseLeadCycleResultFromText handles fenced JSON output", () => {
     const text = "```json\n" + JSON.stringify({ ...baseResult, summary: "Inside fence" }) + "\n```";
     const parsed = parseLeadCycleResultFromText(text);
