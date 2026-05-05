@@ -19,6 +19,7 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
+import { AgentPicker } from "../components/AgentPicker.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 
@@ -60,7 +61,7 @@ function relativeTime(ts) {
   return `${Math.round(ms / 86_400_000)}d ago`;
 }
 
-function MembersEditor({ members, onChange }) {
+function MembersEditor({ members, agents, onChange }) {
   function update(idx, patch) {
     const next = members.slice();
     next[idx] = { ...next[idx], ...patch };
@@ -78,11 +79,13 @@ function MembersEditor({ members, onChange }) {
         <p class="muted">No members yet. Add at least one (the lead is implicitly part of the roster).</p>
       )}
       {members.map((m, idx) => (
-        <div class="team-member-row" key={idx} style={{ display: "flex", gap: "0.5rem", marginBottom: "0.5rem" }}>
-          <Input
-            value={m.agent_name}
-            onInput={(e) => update(idx, { agent_name: e.currentTarget.value })}
-            placeholder="agent name"
+        <div class="team-member-row" key={idx}>
+          <AgentPicker
+            value={m.agent_name || ""}
+            onChange={(agentName) => update(idx, { agent_name: agentName || "" })}
+            agents={agents}
+            placeholder="Pick a member"
+            ariaLabel="Team member agent"
           />
           <Input
             value={m.role_description}
@@ -97,7 +100,7 @@ function MembersEditor({ members, onChange }) {
   );
 }
 
-function TeamEditor({ team, members, onSaved, isNew }) {
+function TeamEditor({ team, members, agents, onSaved, isNew }) {
   const [draft, setDraft] = useState(teamDraftFrom(team, members));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -121,13 +124,18 @@ function TeamEditor({ team, members, onSaved, isNew }) {
         slug: draft.slug.trim() || undefined,
         description: draft.description,
         goal: draft.goal,
-        lead_agent: draft.lead_agent.trim() || null,
+        lead_agent: String(draft.lead_agent || "").trim() || null,
         status: draft.status,
         schedule_enabled: !!draft.schedule_enabled,
         schedule_interval_minutes: draft.schedule_interval_minutes,
         daily_budget_usd: draft.daily_budget_usd,
         per_run_budget_usd: draft.per_run_budget_usd,
-        members: draft.members.filter((m) => m.agent_name.trim()),
+        members: draft.members
+          .map((m) => ({
+            ...m,
+            agent_name: String(m.agent_name || "").trim(),
+          }))
+          .filter((m) => m.agent_name),
       };
       let saved;
       if (isNew) {
@@ -155,11 +163,19 @@ function TeamEditor({ team, members, onSaved, isNew }) {
           <label>Slug<Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" /></label>
           <label>Description<Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} /></label>
           <label>Goal<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
-          <label>Lead agent<Input value={draft.lead_agent} onInput={(e) => update({ lead_agent: e.currentTarget.value })} placeholder="agent name (must be enabled)" /></label>
+          <label>Lead agent
+            <AgentPicker
+              value={draft.lead_agent || ""}
+              onChange={(agentName) => update({ lead_agent: agentName || "" })}
+              agents={agents}
+              placeholder="Pick a lead"
+              ariaLabel="Team lead agent"
+            />
+          </label>
         </div>
       </Card>
       <Card title="Members">
-        <MembersEditor members={draft.members} onChange={(m) => update({ members: m })} />
+        <MembersEditor members={draft.members} agents={agents} onChange={(m) => update({ members: m })} />
       </Card>
       <Card title="Schedule">
         <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -324,9 +340,11 @@ function emptyState() {
 
 export function Teams({ selectedId = null, mode = null }) {
   const [teams, setTeams] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
   const [detail, setDetail] = useState(null);
   const reloadRef = useRef(null);
+  const agentsReloadRef = useRef(null);
 
   const reload = useCallback(() => {
     reloadRef.current?.abort?.();
@@ -338,8 +356,21 @@ export function Teams({ selectedId = null, mode = null }) {
   }, []);
   const reloadSoon = useThrottledCallback(reload, 100);
 
+  const reloadAgents = useCallback(() => {
+    agentsReloadRef.current?.abort?.();
+    const ctrl = new AbortController();
+    agentsReloadRef.current = ctrl;
+    api.listAgents({ signal: ctrl.signal })
+      .then((r) => { if (!ctrl.signal.aborted) setAgents(r.agents || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
+  }, []);
+
   useEffect(() => { reload(); }, [reload]);
-  useEffect(() => () => reloadRef.current?.abort?.(), []);
+  useEffect(() => { reloadAgents(); }, [reloadAgents]);
+  useEffect(() => () => {
+    reloadRef.current?.abort?.();
+    agentsReloadRef.current?.abort?.();
+  }, []);
   useSSE("global", (evt) => {
     if (typeof evt?.type === "string" && (evt.type.startsWith("team_") || evt.type.startsWith("lead_cycle_"))) {
       reloadSoon();
@@ -349,6 +380,7 @@ export function Teams({ selectedId = null, mode = null }) {
     }
   });
   useAppResume(reloadSoon);
+  useAppResume(reloadAgents);
 
   const loadDetail = useCallback(() => {
     if (!selectedId || selectedId === "new") { setDetail(null); return; }
@@ -371,6 +403,7 @@ export function Teams({ selectedId = null, mode = null }) {
       <TeamEditor
         team={null}
         members={[]}
+        agents={agents}
         isNew
         onSaved={() => { reload(); }}
       />
@@ -383,6 +416,7 @@ export function Teams({ selectedId = null, mode = null }) {
         <TeamEditor
           team={detail.team}
           members={detail.members || []}
+          agents={agents}
           onSaved={() => { reload(); loadDetail(); }}
         />
       );

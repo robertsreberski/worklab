@@ -5030,6 +5030,28 @@ html.assistant-resizing * {
   gap: var(--sp-5);
   min-width: 0;
 }
+.team-members-editor {
+  display: grid;
+  gap: var(--sp-2);
+}
+.team-member-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(160px, 1fr) auto;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.team-member-row .select,
+.team-member-row .input {
+  min-width: 0;
+}
+.team-picker-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  color: var(--text-muted);
+}
 .entity-editor-rail {
   position: sticky;
   top: var(--sp-5);
@@ -10973,5 +10995,11 @@ html.assistant-resizing * {
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-launcher {
     bottom: calc(var(--mobile-action-dock-height) + var(--sp-4));
+  }
+  .team-member-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .team-member-row > button {
+    justify-self: start;
   }
 }

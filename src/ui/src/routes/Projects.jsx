@@ -23,6 +23,7 @@ import { Card } from "../components/Card.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormSection } from "../components/FormSection.jsx";
+import { TeamPicker } from "../components/TeamPicker.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
@@ -255,6 +256,7 @@ function ProjectEditor({ selectedId, onSaved }) {
   const [loading, setLoading] = useState(!isNew);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [teams, setTeams] = useState([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -279,8 +281,17 @@ function ProjectEditor({ selectedId, onSaved }) {
     return () => controller.abort();
   }, [isNew, selectedId]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    api.listTeams({ include_archived: "true" }, { signal: controller.signal })
+      .then((res) => { if (!controller.signal.aborted) setTeams(res.teams || []); })
+      .catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
+    return () => controller.abort();
+  }, []);
+
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
   useAppResume(() => {
+    api.listTeams({ include_archived: "true" }).then((res) => setTeams(res.teams || [])).catch(() => setTeams([]));
     if (isNew || isDirty) return;
     api.getProject(selectedId)
       .then((res) => {
@@ -458,11 +469,14 @@ function ProjectEditor({ selectedId, onSaved }) {
               description="Tasks in this project use the team's roster (lead + members) for delegation, and team budgets cap their cumulative spend. Manage rosters from the Teams page."
             >
               <FormGrid columns={1}>
-                <FormField label="Team id or slug" hint="Leave blank to remove the team assignment.">
-                  <Input
+                <FormField label="Team" hint="Leave blank to remove the team assignment.">
+                  <TeamPicker
                     value={draft.team_id || ""}
-                    onInput={(event) => update({ team_id: event.currentTarget.value.trim() || null })}
-                    placeholder="my-research-team"
+                    onChange={(teamId) => update({ team_id: teamId })}
+                    teams={teams}
+                    clearLabel="No team"
+                    placeholder="Pick a team"
+                    ariaLabel="Project team"
                   />
                 </FormField>
               </FormGrid>

@@ -18,6 +18,7 @@ import { CommanderRow } from "../components/CommanderRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { ErrorState } from "../components/ErrorState.jsx";
+import { teamPickerOptions } from "../components/TeamPicker.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -295,6 +296,7 @@ function BulkTaskBar({
   visibleCount,
   agents,
   projects,
+  teams,
   busy,
   onClear,
   onSelectVisible,
@@ -313,6 +315,10 @@ function BulkTaskBar({
         description: project.slug,
       })),
   ], [projects]);
+  const teamOptions = useMemo(
+    () => teamPickerOptions({ teams, value: null, clearLabel: "Project default" }),
+    [teams],
+  );
 
   return (
     <div class="commander-bulkbar" role="region" aria-label="Bulk task actions">
@@ -391,6 +397,16 @@ function BulkTaskBar({
           options={projectOptions}
           onChange={(value) => onPatch({ project_id: value === "__none__" ? null : value })}
         />
+        <Select
+          class="bulk-action-select bulk-action-select-wide"
+          variant="menu"
+          value=""
+          placeholder="Team"
+          ariaLabel="Bulk assign team"
+          disabled={busy}
+          options={teamOptions}
+          onChange={(value) => onPatch({ team_id: value === "__none__" ? null : value })}
+        />
         <Button
           size="sm"
           variant="destructive"
@@ -417,6 +433,7 @@ export function Commander({ query: routeQuery = {} }) {
   const [runtimeSummary, setRuntimeSummary] = useState(() => initialTaskListSnapshot?.summary || null);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [showCompleted, setShowCompleted] = useState(() => initialShowCompleted);
   const [groupFilter, setGroupFilter] = useState(() => initialGroupFilter);
   const [stageFilter, setStageFilter] = useState("all");
@@ -432,6 +449,7 @@ export function Commander({ query: routeQuery = {} }) {
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
   const projectsReloadAbortRef = useRef(null);
+  const teamsReloadAbortRef = useRef(null);
   const runProgressQueueRef = useRef(new Map());
   const runProgressFrameRef = useRef(null);
   const hiddenTaskReloadRef = useRef(false);
@@ -517,24 +535,36 @@ export function Commander({ query: routeQuery = {} }) {
       .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
   }, []);
   const reloadProjectsSoon = useThrottledCallback(reloadProjects, 100);
+  const reloadTeams = useCallback(() => {
+    teamsReloadAbortRef.current?.abort?.();
+    const controller = new AbortController();
+    teamsReloadAbortRef.current = controller;
+    return api.listTeams(null, { signal: controller.signal })
+      .then((r) => { if (!controller.signal.aborted) setTeams(r.teams || []); })
+      .catch((e) => { if (e?.name !== "AbortError") setTeams([]); });
+  }, []);
+  const reloadTeamsSoon = useThrottledCallback(reloadTeams, 100);
   const refreshOnResume = useCallback(() => {
     if (!pageIsVisible()) return;
     hiddenTaskReloadRef.current = false;
     hiddenProjectsReloadRef.current = false;
     reloadSoon();
     reloadProjectsSoon();
-  }, [reloadProjectsSoon, reloadSoon]);
+    reloadTeamsSoon();
+  }, [reloadProjectsSoon, reloadSoon, reloadTeamsSoon]);
 
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     const controller = new AbortController();
     api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((e) => { if (e?.name !== "AbortError") setAgents([]); });
     api.listProjects(null, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
+    api.listTeams(null, { signal: controller.signal }).then((r) => setTeams(r.teams || [])).catch((e) => { if (e?.name !== "AbortError") setTeams([]); });
     return () => controller.abort();
   }, []);
   useEffect(() => () => {
     reloadAbortRef.current?.abort?.();
     projectsReloadAbortRef.current?.abort?.();
+    teamsReloadAbortRef.current?.abort?.();
     if (runProgressFrameRef.current) {
       if (typeof cancelAnimationFrame === "function") cancelAnimationFrame(runProgressFrameRef.current);
       else clearTimeout(runProgressFrameRef.current);
@@ -563,6 +593,9 @@ export function Commander({ query: routeQuery = {} }) {
     if (evt.type?.startsWith("project_")) {
       if (visible) reloadProjectsSoon();
       else hiddenProjectsReloadRef.current = true;
+    }
+    if (evt.type?.startsWith("team_")) {
+      if (visible) reloadTeamsSoon();
     }
   });
 
@@ -785,6 +818,7 @@ export function Commander({ query: routeQuery = {} }) {
               visibleCount={visibleTaskIds.length}
               agents={agents}
               projects={projects}
+              teams={teams}
               busy={bulkBusy}
               onClear={() => setCheckedIds(new Set())}
               onSelectVisible={selectVisibleTasks}

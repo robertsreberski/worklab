@@ -18,6 +18,7 @@ import { Chip } from "../components/primitives/Chip.jsx";
 import { StageToken } from "../components/primitives/StageToken.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { TeamPicker } from "../components/TeamPicker.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
@@ -66,6 +67,7 @@ function emptyDraft() {
     stage: "plan",
     run_policy: DEFAULT_RUN_POLICY,
     project_id: null,
+    team_id: null,
     tags: [],
     blocked_by_ids: [],
   };
@@ -81,6 +83,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [baseline, setBaseline] = useState(emptyDraft());
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [teams, setTeams] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [loadedTask, setLoadedTask] = useState(null);
   const [loading, setLoading] = useState(mode === "edit");
@@ -93,6 +96,7 @@ export function TaskEdit({ mode = "create", id = null }) {
     const controller = new AbortController();
     api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
     api.listProjects({ include_archived: "true" }, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
+    api.listTeams({ include_archived: "true" }, { signal: controller.signal }).then((r) => setTeams(r.teams || [])).catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
     api.listTasks({ view: "summary" }, { signal: controller.signal }).then((r) => setTasks(r.tasks || [])).catch((err) => { if (err?.name !== "AbortError") setTasks([]); });
     return () => controller.abort();
   }, []);
@@ -117,6 +121,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           stage: data.task.stage || "plan",
           run_policy: data.task.run_policy || DEFAULT_RUN_POLICY,
           project_id: data.task.project_id || null,
+          team_id: data.task.team_id || null,
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -149,6 +154,7 @@ export function TaskEdit({ mode = "create", id = null }) {
   useAppResume(() => {
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
     api.listProjects({ include_archived: "true" }).then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
+    api.listTeams({ include_archived: "true" }).then((r) => setTeams(r.teams || [])).catch(() => setTeams([]));
     api.listTasks({ view: "summary" }).then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
     if (mode !== "edit" || !id || isDirty) return;
     api.getTask(id)
@@ -164,6 +170,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           stage: data.task.stage || "plan",
           run_policy: data.task.run_policy || DEFAULT_RUN_POLICY,
           project_id: data.task.project_id || null,
+          team_id: data.task.team_id || null,
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
         };
@@ -188,6 +195,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       stage: draft.stage || "plan",
       run_policy: draft.run_policy || DEFAULT_RUN_POLICY,
       project_id: draft.project_id || null,
+      team_id: draft.team_id || null,
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
     };
@@ -289,7 +297,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       </Button>
     </>
   );
-  const railCardCount = 7;
+  const railCardCount = 8;
 
   function renderTaskEditRail() {
     const stageOptions = taskStageOptionsForMode(mode);
@@ -369,6 +377,17 @@ export function TaskEdit({ mode = "create", id = null }) {
               )}
             </div>
           )}
+        </FormField>
+
+        <FormField label="Team" hint="Optional task override. Defaults to the project team.">
+          <TeamPicker
+            value={draft.team_id || ""}
+            onChange={(teamId) => update({ team_id: teamId })}
+            teams={teams}
+            clearLabel="Project default"
+            placeholder="Pick a team"
+            ariaLabel="Task team"
+          />
         </FormField>
 
         <FormField label="Reviewer" hint="Optional verifier.">
