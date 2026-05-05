@@ -5034,6 +5034,33 @@ html.assistant-resizing * {
   display: grid;
   gap: var(--sp-2);
 }
+.team-setup-card {
+  margin-bottom: 0;
+}
+.team-setup-intro {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.team-setup-list {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.team-setup-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-2);
+  align-items: start;
+  color: var(--text);
+  line-height: 1.4;
+}
+.team-setup-item svg {
+  margin-top: 0.15em;
+  color: var(--text-muted);
+}
 .team-member-row {
   display: grid;
   grid-template-columns: minmax(180px, 1.1fr) minmax(160px, 1fr) auto;
