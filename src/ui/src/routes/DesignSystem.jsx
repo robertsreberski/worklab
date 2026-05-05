@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { AgentLink, AgentReferenceText } from "../components/AgentLink.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { TeamPicker } from "../components/TeamPicker.jsx";
 import { AgentEventTimeline } from "../components/AgentEventTimeline.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { Banner } from "../components/Banner.jsx";
@@ -193,6 +194,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "StructuredContent", group: "component", coverage: "visible" },
   { name: "StructuredValue", group: "component", coverage: "visible" },
   { name: "SwitchField", group: "component", coverage: "visible" },
+  { name: "TeamPicker", group: "component", coverage: "visible" },
   { name: "ToastHost", group: "component", coverage: "shell-hosted" },
   { name: "ToolCallBlock", group: "component", coverage: "visible" },
 ];
@@ -219,6 +221,11 @@ const DEMO_AGENTS = [
   { name: "planner", display_name: "Planner", provider_kind: "codex", model: "gpt-5.4", effort: "medium", enabled: true },
   { name: "builder", display_name: "Builder", provider_kind: "codex", model: "gpt-5.4", effort: "high", enabled: true },
   { name: "reviewer", display_name: "Reviewer", provider_kind: "codex", model: "gpt-5.4", effort: "medium", enabled: true },
+];
+
+const DEMO_TEAMS = [
+  { id: "product-team", slug: "product-team", name: "Product Team", member_count: 3, status: "active" },
+  { id: "qa-team", slug: "qa-team", name: "QA Team", member_count: 2, status: "active" },
 ];
 
 const DEMO_EVENTS = [
@@ -299,6 +306,7 @@ export function DesignSystem() {
   const [mode, setMode] = useState("balanced");
   const [provider, setProvider] = useState("codex");
   const [agent, setAgent] = useState("builder");
+  const [team, setTeam] = useState("product-team");
   const [enabled, setEnabled] = useState(true);
   const [checked, setChecked] = useState(true);
   const [legacyChecked, setLegacyChecked] = useState(true);
@@ -665,6 +673,9 @@ export function DesignSystem() {
             </div>
             <FormField label="AgentPicker">
               <AgentPicker value={agent} onChange={setAgent} agents={DEMO_AGENTS} />
+            </FormField>
+            <FormField label="TeamPicker">
+              <TeamPicker value={team} onChange={setTeam} teams={DEMO_TEAMS} />
             </FormField>
             <KeyValueList entries={[["Owner", "builder"], ["Reviewer", "reviewer"]]} />
           </Card>
