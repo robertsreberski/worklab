@@ -38,8 +38,6 @@ export const agentCreateSchema = z.object({
   builtin_allowlist_mode: allowlistModeSchema,
   allow_self_review: z.boolean().optional(),
   browser_tools_review_only: z.boolean().optional(),
-  daily_budget_usd: z.number().nonnegative().nullable().optional(),
-  per_run_budget_usd: z.number().nonnegative().nullable().optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -130,8 +128,6 @@ export const definitions = [
         builtin_allowlist_mode: { type: "string", enum: ["all", "custom"] },
         allow_self_review: { type: "boolean" },
         browser_tools_review_only: { type: "boolean" },
-        daily_budget_usd: { type: "number", minimum: 0 },
-        per_run_budget_usd: { type: "number", minimum: 0 },
         enabled: { type: "boolean" },
       },
       required: ["display_name", "model"],
@@ -169,9 +165,9 @@ export function buildHandlers(context) {
             (name, display_name, description, sdk, model, effort, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-             browser_tools_review_only, daily_budget_usd, per_run_budget_usd,
+             browser_tools_review_only,
              execution_mode, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -188,8 +184,6 @@ export function buildHandlers(context) {
           builtinAllow.mode,
           parsed.allow_self_review === false ? 0 : 1,
           parsed.browser_tools_review_only === true ? 1 : 0,
-          parsed.daily_budget_usd ?? null,
-          parsed.per_run_budget_usd ?? null,
           executionMode,
           parsed.enabled === false ? 0 : 1,
           now,

@@ -968,30 +968,40 @@ describe("task-watcher v2 workflow", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("budget pre-flight rejects when the per-agent daily cap is hit", async () => {
+  it("budget pre-flight rejects when the team daily cap is hit", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    db.prepare("UPDATE agents SET display_name = 'Code Specialist', daily_budget_usd = 0.01 WHERE name = 'coder'").run();
-    const taskId = seedTask(db, { owner: "coder" });
     const now = Date.now();
-    db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, process_status, cost_usd)
-                VALUES ('agent-cost', ?, 'execute', 'coder', ?, 'complete', 'succeeded', 0.05)`)
+    // Seed a team with a daily cap and a task assigned to it via project.
+    db.prepare(`INSERT INTO teams (id, slug, name, lead_agent, status, schedule_enabled, daily_budget_usd, created_at, updated_at)
+                VALUES ('team-bench', 'team-bench', 'Bench', 'coder', 'active', 0, 0.01, ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO projects (id, slug, name, team_id, archived, created_at, updated_at)
+                VALUES ('p1', 'p1', 'P1', 'team-bench', 0, ?, ?)`).run(now, now);
+    const taskId = seedTask(db, { owner: "coder" });
+    db.prepare("UPDATE tasks SET project_id = 'p1' WHERE id = ?").run(taskId);
+    db.prepare(`INSERT INTO task_runs (id, task_id, mode, agent_name, team_id, started_at, status, process_status, cost_usd)
+                VALUES ('team-cost', ?, 'execute', 'coder', 'team-bench', ?, 'complete', 'succeeded', 0.05)`)
       .run(taskId, now);
     const { spawn } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake", maxFailures: 5 });
 
     await expect(watcher.handleRunRequested(taskId)).rejects.toMatchObject({
-      message: expect.stringContaining("Daily budget for Code Specialist"),
+      message: expect.stringContaining("Daily budget for team Bench"),
       code: "budget_exceeded",
     });
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("records a soft warning when a completed run exceeds the per-run budget", async () => {
+  it("records a soft warning when a completed run exceeds the team's per-run budget", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
-    db.prepare("UPDATE agents SET per_run_budget_usd = 0.01 WHERE name = 'coder'").run();
+    const now = Date.now();
+    db.prepare(`INSERT INTO teams (id, slug, name, lead_agent, status, schedule_enabled, per_run_budget_usd, created_at, updated_at)
+                VALUES ('team-cap', 'team-cap', 'Cap', 'coder', 'active', 0, 0.01, ?, ?)`).run(now, now);
+    db.prepare(`INSERT INTO projects (id, slug, name, team_id, archived, created_at, updated_at)
+                VALUES ('p2', 'p2', 'P2', 'team-cap', 0, ?, ?)`).run(now, now);
     const taskId = seedTask(db, { owner: "coder" });
+    db.prepare("UPDATE tasks SET project_id = 'p2' WHERE id = ?").run(taskId);
     const { spawn, resolvers } = makeDeferredSpawn();
     const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
 
@@ -1016,6 +1026,7 @@ describe("task-watcher v2 workflow", () => {
     expect(JSON.parse(run.diagnostics_json)).toMatchObject({
       per_run_budget_exceeded: true,
       per_run_budget_usd: 0.01,
+      per_run_budget_scope: "team",
       cost_usd: 0.05,
     });
   });

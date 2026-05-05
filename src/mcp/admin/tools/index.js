@@ -7,6 +7,7 @@
 
 import * as service from "./service.js";
 import * as projects from "./projects.js";
+import * as teams from "./teams.js";
 import * as tasks from "./tasks.js";
 import * as agents from "./agents.js";
 import * as runs from "./runs.js";
@@ -23,6 +24,7 @@ import * as apiEscape from "./api-escape.js";
 const modules = [
   service,
   projects,
+  teams,
   tasks,
   agents,
   runs,

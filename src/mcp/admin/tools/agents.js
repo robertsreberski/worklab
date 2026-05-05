@@ -29,8 +29,6 @@ const agentCreateInput = object({
   builtin_allowlist_mode: string("Built-in allowlist mode: all or custom"),
   allow_self_review: boolean("Whether the agent may review its own runs"),
   browser_tools_review_only: boolean("Whether browser tooling is disabled during execute runs and reserved for review"),
-  daily_budget_usd: number("Daily budget in USD"),
-  per_run_budget_usd: number("Per-run budget in USD"),
   enabled: boolean("Whether the agent is enabled"),
 }, ["display_name", "model"]);
 

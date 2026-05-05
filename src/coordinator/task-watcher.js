@@ -65,12 +65,13 @@ import {
 import {
   appendDelegationDoneCriteria,
   detectSubtaskCycles,
-  enforceProjectAgentAllowlist,
+  enforceTeamRoster,
   isQaChildAgent,
   looksLikePlanBody,
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
-import { loadProjectAgentAllowlist } from "../core/projects.js";
+import { effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle } from "../core/teams.js";
+import { getTeamById } from "../core/db/queries/teams.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
   buildFallbackResult,
@@ -275,6 +276,72 @@ export function createTaskWatcher({
     });
   }
 
+  // v33: spawn a lead_cycle run against the synthetic root for (team, project).
+  // Runs through the same spawnTaskRun path so lifecycle events, drain
+  // semantics, transcript handling, and budget reconciliation all reuse the
+  // existing machinery — only the result handling diverges (handleLeadCycleExit).
+  function spawnLeadCycleRunInternal({ teamId, projectId, reason = "manual" } = {}) {
+    if (!teamId || !projectId) return { ok: false, error: "teamId and projectId required" };
+    if (hasInFlightLeadCycle(db, { teamId, projectId })) {
+      return { ok: false, error: "lead cycle already in flight", skipped: "in_flight" };
+    }
+    const team = getTeamById(db, teamId);
+    if (!team) return { ok: false, error: "team not found" };
+    if (!team.lead_agent) return { ok: false, error: "team has no lead_agent" };
+    if (team.status !== "active") return { ok: false, error: "team is archived" };
+    const root = ensureTeamRootTask(db, { teamId, projectId, now: Date.now() });
+    if (!root) return { ok: false, error: "could not resolve synthetic root task" };
+    if (active.has(root.id)) return { ok: false, error: "lead cycle already running on this root" };
+    const budget = checkBudget({ db, agentName: team.lead_agent, teamId });
+    if (!budget.ok) return { ok: false, error: budget.message, scope: budget.scope };
+    try {
+      const handle = spawnRun({
+        task: root,
+        stage: "execute",
+        mode: "execute",
+        agentName: team.lead_agent,
+        kind: "lead_cycle",
+        teamId,
+        diagnosticsSeed: { lead_cycle_reason: reason, lead_cycle_team_id: teamId, lead_cycle_project_id: projectId },
+      });
+      try {
+        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(Date.now(), teamId);
+      } catch (err) {
+        logger?.warn?.({ err: err.message }, "team last_lead_cycle_at update failed");
+      }
+      broker?.broadcast?.("global", {
+        type: "lead_cycle_started",
+        team_id: teamId,
+        project_id: projectId,
+        run_id: handle.runId,
+        reason,
+      });
+      return { ok: true, runId: handle.runId, taskId: root.id };
+    } catch (err) {
+      logger?.warn?.({ err: err.message, teamId, projectId }, "lead cycle spawn failed");
+      return { ok: false, error: err.message };
+    }
+  }
+
+  // Event-trigger hook. Called from handleSuccessfulExit when a task with an
+  // effective team transitions to done/blocked. Debounced via the in-flight
+  // gate; concurrent completions on the same (team, project) collapse to one
+  // cycle. Errors are non-fatal — the task transition has already applied.
+  function maybeScheduleLeadCycle(taskId, taskStageValue) {
+    try {
+      const task = getTaskById(db, taskId);
+      if (!task || task.is_team_root) return;
+      const teamId = effectiveTeamForTask(db, task);
+      if (!teamId) return;
+      const projectId = task.project_id;
+      if (!projectId) return;
+      const reason = taskStageValue === "blocked" ? "task_blocked" : "task_completed";
+      spawnLeadCycleRunInternal({ teamId, projectId, reason });
+    } catch (err) {
+      logger?.warn?.({ err: err.message, taskId }, "maybeScheduleLeadCycle failed");
+    }
+  }
+
   async function handleRunRequested(taskId, options = {}) {
     const task = getTaskById(db, taskId);
     if (!task) throw new Error(`task ${taskId} not found`);
@@ -305,7 +372,8 @@ export function createTaskWatcher({
     }
 
     if (!options.skipBudgetCheck) {
-      const budget = checkBudget({ db, agentName, taskId });
+      const teamId = effectiveTeamForTask(db, task);
+      const budget = checkBudget({ db, agentName, teamId });
       if (!budget.ok) {
         annotateTaskFailure(taskId, {
           message: budget.message,
@@ -836,7 +904,8 @@ export function createTaskWatcher({
       });
       return null;
     }
-    const budget = checkBudget({ db, agentName, taskId });
+    const continuationTeamId = effectiveTeamForTask(db, task);
+    const budget = checkBudget({ db, agentName, teamId: continuationTeamId });
     if (!budget.ok) {
       postSystemComment(taskId, `Automatic continuation skipped: ${budget.message}`);
       return null;
@@ -1048,17 +1117,15 @@ export function createTaskWatcher({
       }
     }
 
-    // R9: per-project agent allowlist enforcement. Loaded only when the
-    // task is bound to a project — tasks without a project_id fall through
-    // to "no project scope" (back-compat). An empty allowlist also falls
-    // through inside enforceProjectAgentAllowlist.
-    const projectAllowlist = parentTask.project_id
-      ? loadProjectAgentAllowlist(db, parentTask.project_id)
-      : null;
-    const allowlistResult = enforceProjectAgentAllowlist({
+    // v33: roster enforcement runs against the parent task's effective team.
+    // Tasks with no effective team fall through (no restriction). Lead-cycle
+    // delegations always have a team and so are always checked.
+    const teamId = effectiveTeamForTask(db, parentTask);
+    const allowlistResult = enforceTeamRoster({
+      db,
+      teamId,
       subtasks: items,
       parentOwnerAgent: parentTask.owner_agent,
-      projectAllowlist,
     });
     if (!allowlistResult.ok) {
       return {
@@ -1303,8 +1370,9 @@ export function createTaskWatcher({
         return;
       }
       result.subtasks = validation.subtasks;
-      // R9: when delegation_allow_unlisted is on the project, surface a
-      // soft warning + system comment but proceed with the round.
+      // Surface any non-fatal warnings (currently none for team rosters; kept
+      // for forward compatibility with future advisory checks) as soft
+      // warnings + system comments without blocking the delegation round.
       if (Array.isArray(validation.warnings)) {
         for (const warning of validation.warnings) {
           appendRunWarning(runId, warning);
@@ -1427,6 +1495,7 @@ export function createTaskWatcher({
     }
 
     if (next.stage === "done" || next.stage === "blocked") maybeResumeWaitingParents(taskId);
+    if (next.stage === "done" || next.stage === "blocked") maybeScheduleLeadCycle(taskId, next.stage);
     if (next.stage === "done") maybeAutoStartDependents(taskId);
     if (["plan", "execute", "review"].includes(next.stage)) maybeAutoStartTask(taskId);
   }
@@ -1477,6 +1546,128 @@ export function createTaskWatcher({
     maybeResumeWaitingParents(taskId);
   }
 
+  // v33: lead-cycle result handling. The lead emits worklab.lead_cycle.v1; we
+  // validate semantics, fan out task_creations into createDelegatedSubtasks
+  // (anchored on the synthetic root), post advisory_notes as system comments,
+  // and update the synthetic root's goal_status. The lead cannot mutate any
+  // existing task's owner/stage — that's enforced upstream by the contract.
+  function handleLeadCycleExit(taskId, runId, res, task, run) {
+    const processStatus = runProcessStatus(res);
+    const teamId = run.team_id || (task ? effectiveTeamForTask(db, task) : null);
+    const projectId = run.project_id || task?.project_id || null;
+    const finalLead = res?.leadCycleResult || (() => {
+      try { return safeParseJson(run.result_json, null); } catch { return null; }
+    })();
+
+    db.prepare(
+      `UPDATE task_runs SET decision = COALESCE(decision, 'lead_cycle'), summary = COALESCE(summary, ?), details = COALESCE(details, ?) WHERE id = ?`,
+    ).run(finalLead?.summary || res.summary || null, finalLead?.goal_status_reason || null, runId);
+
+    if (res?.diagnostics && typeof res.diagnostics === "object" && !Array.isArray(res.diagnostics)) {
+      patchRunDiagnostics(runId, res.diagnostics);
+    }
+
+    if (processStatus !== "succeeded" || !finalLead || finalLead.schema !== "worklab.lead_cycle.v1") {
+      const failureKind = res.failureKind || res.failure_kind || (processStatus === "cancelled" ? "cancelled" : "lead_cycle_invalid_result");
+      db.prepare(
+        `UPDATE task_runs SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, 'execute') WHERE id = ?`,
+      ).run(failureKind, runId);
+      postSystemComment(taskId, `Lead cycle did not produce a valid worklab.lead_cycle.v1 result (${failureKind}).`);
+      broker?.broadcast?.("global", {
+        type: "lead_cycle_failed",
+        team_id: teamId,
+        project_id: projectId,
+        run_id: runId,
+        failure_kind: failureKind,
+      });
+      return;
+    }
+
+    // Apply task_creations as subtasks of the synthetic root. Reuse the
+    // standard delegation pipeline so cycle detection, agent enablement,
+    // and parent-context wiring all behave identically to a normal delegate.
+    const creations = Array.isArray(finalLead.task_creations) ? finalLead.task_creations : [];
+    if (creations.length) {
+      const subtasks = creations.map((item) => ({
+        title: String(item?.title || "").trim(),
+        instructions: String(item?.instructions || ""),
+        suggested_agent: String(item?.suggested_agent || "").trim() || null,
+        depends_on: Array.isArray(item?.depends_on) ? item.depends_on : [],
+        acceptance_criteria: Array.isArray(item?.acceptance_criteria) ? item.acceptance_criteria : [],
+        expected_artifact: item?.expected_artifact || null,
+        required: true,
+      })).filter((item) => item.title);
+      try {
+        const validated = validateDelegationRequest(task, subtasks);
+        if (!validated.ok) {
+          postSystemComment(taskId, `Lead cycle task_creations rejected: ${validated.error}`);
+        } else {
+          const children = createDelegatedSubtasks(task, runId, validated.subtasks, {
+            parentResult: { summary: finalLead.summary, details: finalLead.goal_status_reason || "" },
+          });
+          maybeRunDelegatedChildren(taskId, children);
+        }
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId }, "lead-cycle delegation failed");
+        postSystemComment(taskId, `Lead cycle delegation failed: ${err.message}`);
+      }
+    }
+
+    // Apply advisory_notes as system comments on the named target tasks.
+    const notes = Array.isArray(finalLead.advisory_notes) ? finalLead.advisory_notes : [];
+    for (const note of notes) {
+      const target = String(note?.target_task_id || "").trim();
+      if (!target) continue;
+      const targetRow = getTaskById(db, target);
+      if (!targetRow) continue;
+      // Constrain to the team's scope: target must share team_id (or its
+      // project must belong to this team). Out-of-scope notes are silently
+      // dropped — semantic validator should have caught them already.
+      const targetTeam = effectiveTeamForTask(db, targetRow);
+      if (teamId && targetTeam !== teamId) continue;
+      const prefix = note.kind === "blocker_observation" ? "Lead cycle blocker observation"
+        : note.kind === "warning" ? "Lead cycle warning"
+        : "Lead cycle suggestion";
+      postSystemComment(target, `${prefix}: ${String(note.content || "").trim()}`);
+    }
+
+    // Update synthetic-root metadata. is_team_root rows aren't part of the
+    // standard state-machine flow; goal_status / last_lead_at are leaf
+    // annotations the UI reads directly.
+    const goalStatus = finalLead.goal_status;
+    const goalReason = String(finalLead.goal_status_reason || "").trim() || null;
+    const now = Date.now();
+    db.prepare(
+      `UPDATE tasks SET goal_status = ?, goal_status_reason = ?, last_lead_at = ?, updated_at = ? WHERE id = ?`,
+    ).run(goalStatus, goalReason, now, now, taskId);
+    if (teamId) {
+      try {
+        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(now, teamId);
+      } catch (err) {
+        logger?.warn?.({ err: err.message, teamId }, "team last_lead_cycle_at write failed");
+      }
+    }
+
+    if (goalStatus === "complete") {
+      postSystemComment(taskId, `Team lead marked goal complete: ${goalReason || finalLead.summary}`);
+      broker?.broadcast?.("global", {
+        type: "team_goal_completed",
+        team_id: teamId,
+        project_id: projectId,
+        run_id: runId,
+      });
+    }
+
+    broker?.broadcast?.("global", {
+      type: "lead_cycle_completed",
+      team_id: teamId,
+      project_id: projectId,
+      run_id: runId,
+      goal_status: goalStatus,
+      tasks_created: creations.length,
+    });
+  }
+
   function onWorkerExit(taskId, runId, res) {
     const entry = active.get(taskId);
     if (entry?.runId === runId) active.delete(taskId);
@@ -1487,6 +1678,22 @@ export function createTaskWatcher({
     if (!run) return;
 
     const processStatus = runProcessStatus(res);
+
+    if (run.kind === "lead_cycle") {
+      handleLeadCycleExit(taskId, runId, res, task, run);
+      recordPerRunBudgetOverage({
+        db,
+        runId,
+        agentName: run.agent_name,
+        teamId: run.team_id || (task ? effectiveTeamForTask(db, task) : null),
+        costUsd: res.costUsd ?? res.cost_usd,
+      });
+      const endedEventLead = buildRunLifecycleEvent(db, "run_ended", runId, { taskId });
+      broker.broadcast("global", endedEventLead);
+      events?.emit?.("run:ended", endedEventLead);
+      return;
+    }
+
     try {
       const recorded = recordRunResultLearning(db, {
         task,
@@ -1505,7 +1712,13 @@ export function createTaskWatcher({
     } else {
       handleFailedExit(taskId, runId, res, task, run);
     }
-    recordPerRunBudgetOverage({ db, runId, agentName: run.agent_name, costUsd: res.costUsd ?? res.cost_usd });
+    recordPerRunBudgetOverage({
+      db,
+      runId,
+      agentName: run.agent_name,
+      teamId: run.team_id || (task ? effectiveTeamForTask(db, task) : null),
+      costUsd: res.costUsd ?? res.cost_usd,
+    });
 
     const endedEvent = buildRunLifecycleEvent(db, "run_ended", runId, { taskId });
     broker.broadcast("global", endedEvent);
@@ -1712,5 +1925,9 @@ export function createTaskWatcher({
     maybeAutoStartDependents,
     scheduleCoordinatorResumeContinuations,
     get coordinatorResumeBootstrap() { return coordinatorResumeBootstrapPromise; },
+    // v33: lead-cycle entry points used by /api/teams/:id/run-lead, the
+    // worklab_team_run_lead MCP tool, and team-lead-cron.js.
+    spawnLeadCycle: (opts) => spawnLeadCycleRunInternal(opts),
+    maybeScheduleLeadCycle,
   };
 }

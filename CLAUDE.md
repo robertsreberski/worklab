@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Worklab is a single-user, local AI agent orchestration app: an Express API + Preact UI + SQLite (better-sqlite3) backend that spawns worker processes to run agents against tasks via Claude Agent SDK, OpenAI Agents SDK, Vercel AI SDK, Claude Code CLI, and Codex CLI. It also exposes a token-protected admin MCP endpoint with full Worklab API access.
 
-The task/agent workflow is being redesigned ("v2"). The authoritative reference is `docs/audits/task-agent-logic-audit.md`. Older PRD/architecture/phase-plan docs were intentionally deleted — do **not** reintroduce behaviors from them; treat the source, tests, and that audit as the ground truth.
+The task/agent workflow is being redesigned ("v2"). The authoritative references are `src/core/state-machine.js` (the deterministic orchestrator that owns every task transition) and `src/ai/result/decisions.js` (the canonical stage/decision vocabulary that the `worklab.v2` contract enforces). The runtime audits under `docs/audits/automattic-benchmark-reset-*.md` document the implementation history, and the agentic-teams change set adds the sibling `worklab.lead_cycle.v1` contract for team-lead runs. Older PRD/architecture/phase-plan docs were intentionally deleted — do **not** reintroduce behaviors from them; treat the source, tests, and those audits as the ground truth.
 
 `AGENTS.md` and `CONTRIBUTING.md` apply in full. The notes below highlight what isn't already obvious from those.
 
@@ -83,6 +83,13 @@ Branch `runtime-audit-implementation` carries the bulk of the recommendations fr
 - `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note` (R10).
 
 All R# / A# recommendations from the audit have landed (see `docs/audits/automattic-benchmark-reset-implementation-plan.md` § Status by recommendation for the per-commit map). A few `TODO(audit-followup)` markers remain for the audit's open questions and for parts that were deliberately left out of scope (e.g. session_id reuse on providers other than pi-sdk).
+
+## Teams + lead-cycle (v33)
+
+- A team has a name, a goal, a lead agent, a roster (`team_members`), an optional schedule (`schedule_enabled` + `schedule_interval_minutes`), and team-scoped budgets (`daily_budget_usd`, `per_run_budget_usd`). Teams retire the project `allowed_agents_json` allowlist and the per-agent `daily_budget_usd` / `per_run_budget_usd` columns — those are dropped by migration v33. Per-agent live-run soft/hard tier files in `data-template/agents/<name>/budget.json` remain and govern in-flight cancellation; they are orthogonal to aggregate spend caps.
+- Projects assigned to a team (`projects.team_id`) inherit that team's roster for all delegation. Tasks may override with `tasks.team_id`; otherwise the watcher resolves the effective team via `effectiveTeamForTask` in `src/core/teams.js`. Roster enforcement lives in `enforceTeamRoster` (delegation-handler.js) and reports `delegation_agent_not_in_team` (or `delegation_team_roster_empty`) when a planner picks an off-roster agent.
+- The lead is invoked through a new run kind: `task_runs.kind = 'lead_cycle'`, anchored on a synthetic per-(team, project) root task flagged `tasks.is_team_root = 1`. The lead returns a `worklab.lead_cycle.v1` document (see `src/ai/result/lead-cycle-contract.js`), which the watcher converts into existing side-effects: `task_creations` flow through `createDelegatedSubtasks`, `advisory_notes` become system comments on the named target tasks, and `goal_status` updates the synthetic root's metadata. The lead can only create new tasks; it cannot reassign existing ones or directly mutate state.
+- Lead cycles fire on three triggers, all gated by `hasInFlightLeadCycle`: event-driven (a task with an effective team transitions to `done`/`blocked`), scheduled (`src/coordinator/team-lead-cron.js` polls every 60 s), and manual (`POST /api/teams/:id/run-lead` and `worklab_team_run_lead`). Synthetic root tasks are filtered out of default task listings (`is_team_root = 0`) — opt in with `?include_team_roots=true`.
 
 ## v2 Workflow Constraints (from CONTRIBUTING.md)
 

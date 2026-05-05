@@ -19,6 +19,7 @@ import { createTaskWatcher } from "./coordinator/task-watcher.js";
 import { spawnWorker } from "./coordinator/spawn-worker.js";
 import { createConsolidationManager } from "./coordinator/consolidation-cron.js";
 import { createAutomationManager } from "./coordinator/automation-manager.js";
+import { createTeamLeadCron } from "./coordinator/team-lead-cron.js";
 import { startSearchIndexer } from "./coordinator/search-indexer.js";
 import { createWorklabSlackService } from "./integrations/slack/service.js";
 import { createWorklabPushNotificationService } from "./integrations/push/service.js";
@@ -114,6 +115,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     runNow: (...args) => consolidationHolder.current.runNow(...args),
     isActive: (...args) => consolidationHolder.current.isActive(...args),
   };
+  const teamLeadCronHolder = { current: null };
   const automationManagerHolder = { current: null };
   const automationManagerProxy = {
     refresh: (...args) => automationManagerHolder.current.refresh(...args),
@@ -163,6 +165,10 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     logInlineLimit: config.logInlineLimit,
   });
   automationManagerHolder.current.start();
+  teamLeadCronHolder.current = createTeamLeadCron({
+    db, watcher: watcherHolder.current, logger,
+  });
+  teamLeadCronHolder.current.start();
   const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
   const eventLoopMonitor = startEventLoopMonitor(logger);
   const pushNotifications = createWorklabPushNotificationService({
@@ -231,6 +237,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
     try { await automationManagerHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "automation manager shutdown error"); }
+    try { teamLeadCronHolder.current?.stop?.(); } catch (err) { logger.warn({ err }, "team-lead cron stop error"); }
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
     try { eventLoopMonitor.shutdown(); } catch (err) { logger.warn({ err }, "event loop monitor shutdown error"); }
     try { pushNotifications.stop(); } catch (err) { logger.warn({ err }, "push notifications shutdown error"); }

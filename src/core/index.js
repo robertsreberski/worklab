@@ -115,6 +115,7 @@ export {
   newSlackDeliveryId,
   newSlackInboundEventId,
   newTaskId,
+  newTeamId,
 } from "./ids.js";
 
 export { isValidSlug, slugify, uniqueSlug } from "./slugs.js";
@@ -329,15 +330,11 @@ export {
 
 // ---------- Projects ----------
 export {
-  agentNameAllowedByPatterns,
-  agentNameMatchesPattern,
   compactProject,
-  loadProjectAgentAllowlist,
   loadRunSnapshot,
   normalizeProjectSlug,
   normalizeProjectWorkdir,
   normalizeProjectWorktreeMode,
-  parseProjectAllowedAgents,
   parseProjectTags,
   PROJECT_WORKTREE_MODES,
   projectContextHash,
@@ -348,6 +345,19 @@ export {
   resolveTaskProjectRunContext,
   uniqueProjectSlug,
 } from "./projects.js";
+
+// ---------- Teams ----------
+export {
+  TEAM_STATUSES,
+  effectiveTeamForTask,
+  enforceTeamRoster,
+  ensureTeamRootTask,
+  enqueueLeadCycle,
+  loadTeamRoster,
+  resolveEffectiveTeamForProject,
+  teamFromRow,
+  uniqueTeamSlug,
+} from "./teams.js";
 
 export {
   findRepositoryGitRoot,

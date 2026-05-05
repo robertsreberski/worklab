@@ -40,7 +40,7 @@ const PROJECT_SECTIONS = [
 const PROJECT_EDIT_SECTIONS = [
   { id: "project-edit-details", num: "01", label: "Details", meta: "Metadata" },
   { id: "project-edit-context", num: "02", label: "Context", meta: "Markdown" },
-  { id: "project-edit-allowed-agents", num: "03", label: "Allowed agents", meta: "Delegation" },
+  { id: "project-edit-team", num: "03", label: "Team", meta: "Roster" },
 ];
 
 const WORKTREE_MODE_OPTIONS = [
@@ -73,8 +73,7 @@ function projectDraftFrom(project = {}) {
     workdir: project.workdir || "",
     worktree_mode: project.worktree_mode || "off",
     tags: project.tags || [],
-    allowed_agents: Array.isArray(project.allowed_agents) ? project.allowed_agents : [],
-    delegation_allow_unlisted: !!project.delegation_allow_unlisted,
+    team_id: project.team_id || null,
     archived: !!project.archived,
   };
 }
@@ -316,8 +315,7 @@ function ProjectEditor({ selectedId, onSaved }) {
         workdir: draft.workdir.trim() || null,
         worktree_mode: draft.worktree_mode || "off",
         tags: draft.tags || [],
-        allowed_agents: draft.allowed_agents || [],
-        delegation_allow_unlisted: !!draft.delegation_allow_unlisted,
+        team_id: draft.team_id || null,
         archived: !!draft.archived,
       };
       const res = isNew
@@ -366,13 +364,7 @@ function ProjectEditor({ selectedId, onSaved }) {
             { label: "Workdir", value: draft.workdir || "Default workspace", mono: false },
             { label: "Worktrees", value: worktreeModeLabel(draft.worktree_mode), mono: false },
             { label: "Tags", value: `${(draft.tags || []).length}`, mono: false },
-            {
-              label: "Allowed agents",
-              value: (draft.allowed_agents || []).length
-                ? `${(draft.allowed_agents || []).length} pattern${(draft.allowed_agents || []).length === 1 ? "" : "s"}${draft.delegation_allow_unlisted ? " (warn only)" : ""}`
-                : "Any agent",
-              mono: false,
-            },
+            { label: "Team", value: draft.team_id ? draft.team_id : "(none)", mono: false },
             { label: "Archived", value: draft.archived ? "Yes" : "No", mono: false },
           ]} />
         </Card>
@@ -459,29 +451,18 @@ function ProjectEditor({ selectedId, onSaved }) {
               <Textarea rows={18} monospace autoGrow value={draft.context} onInput={(event) => update({ context: event.currentTarget.value })} />
             </FormSection>
 
-            <SectionMarker id="project-edit-allowed-agents" num="03" kicker="Delegation" meta="Allowlist" />
+            <SectionMarker id="project-edit-team" num="03" kicker="Team" meta="Roster" />
             <FormSection
-              kicker="Delegation"
-              title="Allowed agents"
-              description="Restrict which agents the planner can delegate to. Leave empty to allow any agent. Patterns may use a trailing wildcard, e.g. benchmark-* matches benchmark-coder, benchmark-qa, etc."
+              kicker="Team"
+              title="Assigned team"
+              description="Tasks in this project use the team's roster (lead + members) for delegation, and team budgets cap their cumulative spend. Manage rosters from the Teams page."
             >
               <FormGrid columns={1}>
-                <FormField
-                  label="Allowed agents"
-                  hint={(draft.allowed_agents || []).length ? null : "Leave empty to allow every agent (back-compat default)."}
-                >
-                  <TagInput
-                    value={draft.allowed_agents || []}
-                    onChange={(allowedAgents) => update({ allowed_agents: allowedAgents })}
-                    placeholder="Add pattern (e.g. benchmark-*)..."
-                  />
-                </FormField>
-                <FormField switchInside>
-                  <Switch
-                    checked={draft.delegation_allow_unlisted}
-                    onChange={(allow) => update({ delegation_allow_unlisted: allow })}
-                    label="Allow unlisted agents (warn only)"
-                    description="When on, delegating to an agent outside the allowlist surfaces a warning instead of failing the run."
+                <FormField label="Team id or slug" hint="Leave blank to remove the team assignment.">
+                  <Input
+                    value={draft.team_id || ""}
+                    onInput={(event) => update({ team_id: event.currentTarget.value.trim() || null })}
+                    placeholder="my-research-team"
                   />
                 </FormField>
               </FormGrid>
@@ -537,13 +518,7 @@ function ProjectDetail({ selectedId, onChanged }) {
               : null,
             { label: "Tasks", value: String(project.stats?.task_count || 0), mono: false },
             { label: "Tags", value: project.tags?.length ? project.tags.join(", ") : "None", mono: false },
-            {
-              label: "Allowed agents",
-              value: project.allowed_agents?.length
-                ? `${project.allowed_agents.join(", ")}${project.delegation_allow_unlisted ? " (warn only)" : ""}`
-                : "Any agent",
-              mono: false,
-            },
+            { label: "Team", value: project.team_id || "(none)", mono: false },
             { label: "Updated", value: formatProjectAge(project.updated_at), mono: false },
             { label: "Archived", value: project.archived ? "Yes" : "No", mono: false },
           ]} />

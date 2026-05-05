@@ -70,8 +70,6 @@ const emptyAgent = {
   builtin_allowlist_mode: "all",
   allow_self_review: true,
   browser_tools_review_only: false,
-  daily_budget_usd: null,
-  per_run_budget_usd: null,
   execution_mode: "cli",
   enabled: true,
 };
@@ -138,17 +136,6 @@ function normalizedNames(list) {
 
 function allowlistMode(mode) {
   return mode === "custom" ? "custom" : "all";
-}
-
-function budgetInputValue(value) {
-  return value == null ? "" : String(value);
-}
-
-function parseBudgetInput(value) {
-  const text = String(value ?? "").trim();
-  if (!text) return null;
-  const n = Number(text);
-  return Number.isFinite(n) && n >= 0 ? n : value;
 }
 
 function EntityChromeBridge({ chrome }) {
@@ -945,26 +932,6 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, browser_tools_review_only: next })}
                     label="Disable browser tools in execute"
                     description="Playwright MCP and Browser Use or Playwright skills stay available for review runs."
-                  />
-                </FormField>
-                <FormField label="Daily budget">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={budgetInputValue(agent.daily_budget_usd)}
-                    placeholder="No cap"
-                    onInput={(e) => setAgent({ ...agent, daily_budget_usd: parseBudgetInput(e.target.value) })}
-                  />
-                </FormField>
-                <FormField label="Per-run budget">
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={budgetInputValue(agent.per_run_budget_usd)}
-                    placeholder="No cap"
-                    onInput={(e) => setAgent({ ...agent, per_run_budget_usd: parseBudgetInput(e.target.value) })}
                   />
                 </FormField>
               </FormGrid>

@@ -37,6 +37,7 @@ import {
 import {
   insertSubtaskEdge,
 } from "../../core/db/queries/task-edges.js";
+import { resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
 import {
   deleteCommentByIdAndTaskId,
   getCommentById,
@@ -207,6 +208,16 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         }
       }
     }
+    const teamFilter = req.query.team_id || req.query.team;
+    if (teamFilter) {
+      if (teamFilter === "none" || teamFilter === "__none__") {
+        where.push("team_id IS NULL");
+      } else {
+        where.push("team_id = ?");
+        params.push(teamFilter);
+      }
+    }
+    const includeTeamRoots = req.query.include_team_roots === "true" || req.query.include_team_roots === "1";
     const view = String(req.query.view || "full");
     if (!["full", "summary"].includes(view)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid view" } });
@@ -215,7 +226,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!["all", "runtime"].includes(scope)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid scope" } });
     }
-    const rows = listFilteredTasks(db, { filters: where, params });
+    const rows = listFilteredTasks(db, { filters: where, params, includeTeamRoots });
     const baseTasks = rows.map(rowToTask);
     const tasks = scope === "runtime" || view !== "summary" ? enrichTaskList(db, baseTasks, config) : baseTasks;
     if (scope === "runtime") {
@@ -250,6 +261,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       blocked_by_ids = [],
       client_request_id = null,
       project_id = null,
+      team_id: teamIdInput = undefined,
     } = req.body || {};
     const requestId = normaliseClientRequestId(client_request_id);
     if (requestId) {
@@ -270,9 +282,19 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     }
     let dependencyIds = [];
     let projectId = null;
+    let teamId = null;
     try {
       dependencyIds = validateDependencyIds(db, null, blocked_by_ids);
       projectId = normalizeProjectPatchValue(db, project_id);
+      if (teamIdInput !== undefined) {
+        if (teamIdInput === null || teamIdInput === "") {
+          teamId = null;
+        } else {
+          const row = resolveTeamByIdOrSlug(db, teamIdInput);
+          if (!row) throw Object.assign(new Error(`team not found: ${teamIdInput}`), { status: 400, code: "validation" });
+          teamId = row.id;
+        }
+      }
     } catch (error) {
       return res.status(400).json({ error: { code: error.code || "validation", message: error.message } });
     }
@@ -285,6 +307,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           id,
           taskKey: nextTaskKey(db),
           projectId,
+          teamId,
           rootTaskId: id,
           clientRequestId: requestId,
           title,

@@ -16,9 +16,10 @@ export const FAILURE_KINDS = [
   "cancelled_shutdown",
   "cancelled_signal",
   "abandoned",
-  // R9: planner delegated to an agent outside the project's allowed_agents
-  // allowlist and the project did not enable delegation.allow_unlisted.
-  "delegation_agent_not_allowed",
+  // v33: planner delegated to an agent outside the effective team's roster
+  // (lead + members). Replaces the retired delegation_agent_not_allowed kind.
+  "delegation_agent_not_in_team",
+  "delegation_team_roster_empty",
 ];
 
 const USAGE_LIMIT_RE = /(rate limit|usage limit|max tokens|max turns|context length|too many tokens)/i;

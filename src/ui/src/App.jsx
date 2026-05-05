@@ -5,6 +5,7 @@ import { TaskDetail } from "./routes/TaskDetail.jsx";
 import { TaskEdit } from "./routes/TaskEdit.jsx";
 import { Settings } from "./routes/Settings.jsx";
 import { Agents } from "./routes/Agents.jsx";
+import { Teams } from "./routes/Teams.jsx";
 import { Skills } from "./routes/Skills.jsx";
 import { Knowledge } from "./routes/Knowledge.jsx";
 import { Providers } from "./routes/Providers.jsx";
@@ -70,6 +71,8 @@ export function App() {
     body = <Projects selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "agents") {
     body = <Agents selectedName={rest[0] || null} />;
+  } else if (route === "teams") {
+    body = <Teams selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "skills") {
     body = <Skills selectedName={rest[0] || null} />;
   } else if (route === "knowledge") {

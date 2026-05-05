@@ -13,6 +13,7 @@ import { inheritRunTodoState, serializeRunTodoState } from "../../core/run-todos
 import { prepareExecenv } from "../../core/execenv.js";
 import { newRunId } from "../../core/ids.js";
 import { resolveTaskProjectRunContext } from "../../core/projects.js";
+import { effectiveTeamForTask } from "../../core/teams.js";
 import { resolveRunArtifactDir } from "../../core/run-artifact-paths.js";
 import { buildRunLifecycleEvent } from "../../core/run-events.js";
 import { readSettings } from "../../core/settings.js";
@@ -59,6 +60,8 @@ export function spawnTaskRun({
   parentRunId = null,
   diagnosticsSeed = null,
   events,
+  kind = "task",
+  teamId = null,
 }) {
   const { providerKind } = assertAgentRunnable(db, agentName);
   const settings = readSettings(db);
@@ -114,15 +117,18 @@ export function spawnTaskRun({
     if (parentRunId) return "stage_progression";
     return null;
   })();
+  const resolvedTeamId = teamId ?? (task ? effectiveTeamForTask(db, task) : null);
   db.prepare(
     `INSERT INTO task_runs
-      (id, task_id, project_id, parent_run_id, parent_relationship, mode, stage, agent_name, provider_kind,
+      (id, task_id, project_id, team_id, kind, parent_run_id, parent_relationship, mode, stage, agent_name, provider_kind,
        started_at, status, process_status, retry_stage, workdir, workspace_mode, source_workdir, worktree_json, project_context_hash)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'running', 'running', ?, ?, ?, ?, ?, ?)`,
   ).run(
     runId,
     task.id,
     projectRunContext.project?.id || null,
+    resolvedTeamId,
+    kind,
     parentRunId,
     parentRelationship,
     mode,
@@ -192,6 +198,7 @@ export function spawnTaskRun({
   const args = ["--task", task.id, "--mode", mode, "--agent", agentName];
   const env = {
     WORKLAB_RUN_ID: runId,
+    ...(kind && kind !== "task" ? { WORKLAB_RUN_KIND: kind } : {}),
     WORKLAB_DATA_DIR: dataDir || "",
     WORKLAB_REPO_ROOT: repoRoot || "",
     WORKLAB_WORKSPACE: effectiveWorkspace,

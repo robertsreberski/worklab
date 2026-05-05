@@ -16,6 +16,7 @@ import { registerModelRoutes } from "./routes/models.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerAutomationRoutes } from "./routes/automations.js";
 import { registerProjectRoutes } from "./routes/projects.js";
+import { registerTeamRoutes } from "./routes/teams.js";
 import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
@@ -89,6 +90,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
   registerProjectRoutes(app, { db, broker, config });
+  registerTeamRoutes(app, { db, broker, watcher });
   registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });

@@ -21,8 +21,8 @@ describe("admin MCP tools", () => {
   // Snapshot-style guard: catches accidental drift after the per-domain
   // tool-module split. Tool names must be unique and the total count must
   // not change without an explicit edit to this number.
-  it("registers exactly 67 unique admin tool definitions", () => {
-    expect(adminToolDefinitions.length).toBe(67);
+  it("registers exactly 77 unique admin tool definitions", () => {
+    expect(adminToolDefinitions.length).toBe(77);
     const names = adminToolDefinitions.map((tool) => tool.name);
     expect(new Set(names).size).toBe(adminToolDefinitions.length);
   });
@@ -49,8 +49,9 @@ describe("admin MCP tools", () => {
       mcp_allowlist: { type: "array" },
       builtin_allowlist: { type: "array" },
       browser_tools_review_only: { type: "boolean" },
-      per_run_budget_usd: { type: "number" },
     });
+    expect(tool.inputSchema.properties.per_run_budget_usd).toBeUndefined();
+    expect(tool.inputSchema.properties.daily_budget_usd).toBeUndefined();
   });
 
   it("apiRequest restricts requests to /api paths", async () => {

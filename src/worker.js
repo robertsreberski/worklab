@@ -11,6 +11,7 @@ import { runConsolidate } from "./worker/consolidate-runner.js";
 import { runAutomation } from "./worker/automation-runner.js";
 import { runTask } from "./worker/task-runner.js";
 import { runReview } from "./worker/review-runner.js";
+import { runLeadCycle } from "./worker/lead-cycle-runner.js";
 import { emitFinalResult } from "./worker/result-emitter.js";
 
 function emit(obj) {
@@ -88,6 +89,7 @@ async function main() {
   });
   const { task: taskId, automation: automationId, mode, agent: agentName } = values;
   const runId = process.env.WORKLAB_RUN_ID;
+  const runKind = process.env.WORKLAB_RUN_KIND || "task";
   const config = loadConfig();
 
   if (!mode || !agentName || !runId || (!["consolidate", "automation"].includes(mode) && !taskId) || (mode === "automation" && !automationId)) {
@@ -121,11 +123,14 @@ async function main() {
     taskId,
     automationId,
     mode,
+    runKind,
     worklabToolSurfaceMarkdown: WORKLAB_TOOL_SURFACE_MARKDOWN,
   };
 
   let result;
-  if (mode === "consolidate") {
+  if (runKind === "lead_cycle") {
+    result = await runLeadCycle(ctx);
+  } else if (mode === "consolidate") {
     result = await runConsolidate(ctx);
   } else if (mode === "automation") {
     result = await runAutomation(ctx);

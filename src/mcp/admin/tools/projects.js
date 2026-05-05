@@ -25,6 +25,7 @@ export const definitions = [
     workdir: string("Optional run workdir override"),
     worktree_mode: string("Worktree mode: off, auto, or required"),
     tags: arrayOfString("Tags"),
+    team_id: string("Optional team id or slug — assigns the project to a team for rostering and lead-cycle anchoring"),
     archived: boolean("Whether the project starts archived"),
   }, ["name"])),
   tool("worklab_project_update", "Patch a project.", object({ id: projectIdSchema, patch: patchSchema }, ["id", "patch"])),

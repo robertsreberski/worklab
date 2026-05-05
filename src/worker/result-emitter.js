@@ -165,6 +165,35 @@ export function emitFinalResult(ctx, result) {
     return 0;
   }
 
+  if (result.kind === "lead_cycle") {
+    if (result.parsedResultError) {
+      emit({
+        type: "runtime_warning",
+        warning_kind: result.parsedResultWarningKind || "lead_cycle_result_validation",
+        message: result.parsedResultError,
+      });
+    }
+    if (result.parsedResultFatal || !result.leadCycleResult) {
+      emit({
+        type: "worklab_result_error",
+        message: result.parsedResultError || "Lead cycle did not return a valid worklab.lead_cycle.v1 result",
+      });
+      return 1;
+    }
+    emit({
+      type: "final",
+      text: result.text,
+      lead_cycle_result: result.leadCycleResult,
+      usage: result.usage,
+      durationMs: result.durationMs,
+      numTurns: result.numTurns,
+      model: result.model,
+      effort: result.effort,
+      ...providerSessionPayload(result),
+    });
+    return 0;
+  }
+
   emit({ type: "error", message: `unknown runner kind: ${result.kind}` });
   return 1;
 }

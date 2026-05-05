@@ -805,6 +805,16 @@ export function TaskDetail({ id, runParam = null }) {
           <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
         </a>
       )}
+      {task.team_id && (
+        <a class="chip chip-muted task-team-chip" href={`#/teams/${encodeURIComponent(task.team_id)}`} title={`Team: ${task.team_id}`}>
+          <Icon name="users" size={10} /> {task.team_id}
+        </a>
+      )}
+      {task.is_team_root && (
+        <span class="chip chip-muted">
+          <Icon name="users" size={10} /> Team root
+        </span>
+      )}
       {hasLastRunError && (
         <span class="chip chip-error">
           <Icon name="alert-triangle" size={10} /> Error

@@ -18,7 +18,7 @@
 // <dataDir>/agents/<agent>/budget.json).
 
 import { PARENT_REVIEW_POLICIES } from "../../core/state-machine.js";
-import { agentNameAllowedByPatterns } from "../../core/projects.js";
+import { enforceTeamRoster as coreEnforceTeamRoster } from "../../core/teams.js";
 
 const QA_AGENT_PATTERN = /qa|review/i;
 
@@ -56,60 +56,22 @@ export function resolveParentReviewPolicy({ requested, subtasks } = {}) {
   return "default";
 }
 
-// R9: enforce the per-project agent allowlist. The watcher resolves the
-// project's allowlist + delegation_allow_unlisted flag before calling this;
-// passing `null` (no project, or project lookup miss) means "no project
-// scope, anything goes". An empty allowlist also falls through to "any
-// agent" — that's the back-compat default for projects that haven't been
-// configured yet. When unlisted agents are present and the override is off,
-// returns `{ ok: false, failureKind: "delegation_agent_not_allowed", ... }`
-// so the caller can fail-fast. With the override on (e.g. project with
-// delegation_allow_unlisted=1 or the bundled _defaults.json), returns
-// `{ ok: true, warnings: [...] }` so the caller records a non-fatal
-// warning + continues.
-export function enforceProjectAgentAllowlist({
-  subtasks,
-  parentOwnerAgent,
-  projectAllowlist,
-} = {}) {
-  if (!projectAllowlist) return { ok: true, warnings: [] };
-  const allowed = Array.isArray(projectAllowlist.allowed_agents)
-    ? projectAllowlist.allowed_agents
-    : [];
-  if (allowed.length === 0) return { ok: true, warnings: [] };
+// v33: roster enforcement runs against the effective team (task.team_id ??
+// project.team_id). When the task has no effective team, anything goes —
+// projects without a team have no roster restriction by design. Lead-cycle
+// delegations always have an effective team and so are always checked.
+export function enforceTeamRoster({ db, teamId, subtasks, parentOwnerAgent } = {}) {
+  if (!teamId) return { ok: true, warnings: [] };
   const items = Array.isArray(subtasks) ? subtasks : [];
-  const offenders = [];
   const seen = new Set();
+  const candidates = [];
   for (const subtask of items) {
     const candidate = String(subtask?.suggested_agent || parentOwnerAgent || "").trim();
     if (!candidate || seen.has(candidate)) continue;
     seen.add(candidate);
-    if (!agentNameAllowedByPatterns(candidate, allowed)) offenders.push(candidate);
+    candidates.push(candidate);
   }
-  if (offenders.length === 0) return { ok: true, warnings: [] };
-  const allowList = allowed.map((pattern) => `"${pattern}"`).join(", ");
-  const offenderList = offenders.map((name) => `"${name}"`).join(", ");
-  const message = offenders.length === 1
-    ? `agent ${offenderList} is not in the project allowlist [${allowList}]`
-    : `agents ${offenderList} are not in the project allowlist [${allowList}]`;
-  if (projectAllowlist.delegation_allow_unlisted) {
-    return {
-      ok: true,
-      warnings: [{
-        kind: "delegation_unlisted_agent",
-        message: `Delegation outside project allowlist permitted (delegation_allow_unlisted=true): ${message}.`,
-        offenders,
-        allowed,
-      }],
-    };
-  }
-  return {
-    ok: false,
-    failureKind: "delegation_agent_not_allowed",
-    error: `delegation outside project allowlist: ${message}`,
-    offenders,
-    allowed,
-  };
+  return coreEnforceTeamRoster(db, { teamId, candidates });
 }
 
 export function looksLikePlanBody(text) {

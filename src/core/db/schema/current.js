@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 32;
+export const SCHEMA_VERSION = 33;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -25,13 +25,38 @@ CREATE TABLE IF NOT EXISTS agents (
   builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all',
   allow_self_review INTEGER NOT NULL DEFAULT 1,
   browser_tools_review_only INTEGER NOT NULL DEFAULT 0,
-  daily_budget_usd REAL,
-  per_run_budget_usd REAL,
   execution_mode TEXT NOT NULL DEFAULT 'sdk',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  slug TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  goal TEXT NOT NULL DEFAULT '',
+  lead_agent TEXT REFERENCES agents(name) ON DELETE RESTRICT,
+  status TEXT NOT NULL DEFAULT 'active',
+  schedule_enabled INTEGER NOT NULL DEFAULT 0,
+  schedule_interval_minutes INTEGER,
+  daily_budget_usd REAL,
+  per_run_budget_usd REAL,
+  last_lead_cycle_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_teams_status_updated ON teams(status, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  agent_name TEXT NOT NULL REFERENCES agents(name) ON DELETE CASCADE,
+  role_description TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (team_id, agent_name)
+);
+CREATE INDEX IF NOT EXISTS idx_team_members_agent ON team_members(agent_name);
 
 CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY,
@@ -42,18 +67,23 @@ CREATE TABLE IF NOT EXISTS projects (
   workdir TEXT,
   worktree_mode TEXT NOT NULL DEFAULT 'off',
   tags_json TEXT NOT NULL DEFAULT '[]',
-  allowed_agents_json TEXT NOT NULL DEFAULT '[]',
-  delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0,
+  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_projects_archived_updated ON projects(archived, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_projects_team ON projects(team_id) WHERE team_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS tasks (
   id TEXT PRIMARY KEY,
   task_key TEXT,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  is_team_root INTEGER NOT NULL DEFAULT 0,
+  goal_status TEXT,
+  goal_status_reason TEXT,
+  last_lead_at INTEGER,
   root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   delegated_by_run_id TEXT,
@@ -93,6 +123,8 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_team_root_unique ON tasks(team_id, project_id) WHERE is_team_root = 1;
+CREATE INDEX IF NOT EXISTS idx_tasks_team ON tasks(team_id) WHERE team_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS task_dependencies (
   task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
@@ -129,6 +161,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
   id TEXT PRIMARY KEY,
   task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE,
   project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  kind TEXT NOT NULL DEFAULT 'task',
   parent_run_id TEXT REFERENCES task_runs(id) ON DELETE SET NULL,
   parent_relationship TEXT,
   mode TEXT NOT NULL,
@@ -171,6 +205,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS agent_logs (
   id TEXT PRIMARY KEY,

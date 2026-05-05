@@ -1,30 +1,40 @@
-import {
-  getAgentBudget,
-  getAgentPerRunBudget,
-} from "../../core/db/queries/agents.js";
 import { getRunWarningsAndDiagnostics } from "../../core/db/queries/runs.js";
+import { getTeamById } from "../../core/db/queries/teams.js";
 import { readSettings } from "../../core/settings.js";
 import { safeParseJson } from "./run-handler.js";
 
-export function checkBudget({ db, agentName }) {
-  const settings = readSettings(db);
-  const agent = getAgentBudget(db, agentName);
-  const agentLabel = agent?.display_name || agent?.name || agentName;
-  const startOfDayUtc = new Date();
-  startOfDayUtc.setUTCHours(0, 0, 0, 0);
-  const since = startOfDayUtc.getTime();
-  const todayCostRow = db.prepare(`
+// v33: budget cascade is workspace -> team -> team-per-run. Per-agent caps
+// were retired in favour of team caps. Tasks/runs without an effective team
+// only see the workspace cap. Lead-cycle runs count against the team's
+// budget, which bounds runaway scheduled cycles.
+function startOfTodayUtcMs() {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function teamSpendSince(db, teamId, sinceMs) {
+  const row = db.prepare(`
     SELECT COALESCE(SUM(cost_usd), 0) AS total
     FROM task_runs
-    WHERE agent_name = ? AND started_at >= ? AND cost_usd IS NOT NULL
-  `).get(agentName, since);
-  const workspaceCostRow = db.prepare(`
+    WHERE team_id = ? AND started_at >= ? AND cost_usd IS NOT NULL
+  `).get(teamId, sinceMs);
+  return Number(row?.total || 0);
+}
+
+function workspaceSpendSince(db, sinceMs) {
+  const row = db.prepare(`
     SELECT COALESCE(SUM(cost_usd), 0) AS total
     FROM task_runs
     WHERE started_at >= ? AND cost_usd IS NOT NULL
-  `).get(since);
-  const agentSpend = Number(todayCostRow?.total || 0);
-  const workspaceSpend = Number(workspaceCostRow?.total || 0);
+  `).get(sinceMs);
+  return Number(row?.total || 0);
+}
+
+export function checkBudget({ db, agentName, teamId = null }) {
+  const settings = readSettings(db);
+  const since = startOfTodayUtcMs();
+  const workspaceSpend = workspaceSpendSince(db, since);
   const workspaceBudget = Number(settings.daily_budget_usd || 0);
   if (workspaceBudget > 0 && workspaceSpend >= workspaceBudget) {
     return {
@@ -35,24 +45,37 @@ export function checkBudget({ db, agentName }) {
       message: `Daily workspace budget reached ($${workspaceSpend.toFixed(4)} of $${workspaceBudget.toFixed(2)}).`,
     };
   }
-  const agentDailyBudget = Number(agent?.daily_budget_usd || 0);
-  if (agentDailyBudget > 0 && agentSpend >= agentDailyBudget) {
-    return {
-      ok: false,
-      scope: "agent_daily",
-      spent: agentSpend,
-      cap: agentDailyBudget,
-      message: `Daily budget for ${agentLabel} reached ($${agentSpend.toFixed(4)} of $${agentDailyBudget.toFixed(2)}).`,
-    };
+  if (teamId) {
+    const team = getTeamById(db, teamId);
+    const cap = Number(team?.daily_budget_usd || 0);
+    if (cap > 0) {
+      const spend = teamSpendSince(db, teamId, since);
+      if (spend >= cap) {
+        const label = team?.name || teamId;
+        return {
+          ok: false,
+          scope: "team_daily",
+          spent: spend,
+          cap,
+          team_id: teamId,
+          message: `Daily budget for team ${label} reached ($${spend.toFixed(4)} of $${cap.toFixed(2)}).`,
+        };
+      }
+    }
   }
-  return { ok: true, agentSpend, workspaceSpend };
+  return { ok: true, agentName, teamId, workspaceSpend };
 }
 
-export function recordPerRunBudgetOverage({ db, runId, agentName, costUsd }) {
+export function recordPerRunBudgetOverage({ db, runId, agentName, teamId = null, costUsd }) {
   const cost = Number(costUsd);
   if (!Number.isFinite(cost)) return;
-  const agent = getAgentPerRunBudget(db, agentName);
-  const cap = Number(agent?.per_run_budget_usd || 0);
+  let cap = 0;
+  let label = agentName;
+  if (teamId) {
+    const team = getTeamById(db, teamId);
+    cap = Number(team?.per_run_budget_usd || 0);
+    label = team?.name || teamId;
+  }
   if (!(cap > 0) || cost <= cap) {
     db.prepare("UPDATE task_runs SET cost_usd = COALESCE(cost_usd, ?) WHERE id = ?").run(cost, runId);
     return;
@@ -63,7 +86,7 @@ export function recordPerRunBudgetOverage({ db, runId, agentName, costUsd }) {
   const warning = {
     kind: "budget_exceeded",
     source: "budget",
-    message: `Run cost $${cost.toFixed(4)} exceeded per-run budget $${cap.toFixed(2)} for ${agentName}.`,
+    message: `Run cost $${cost.toFixed(4)} exceeded per-run budget $${cap.toFixed(2)} for team ${label}.`,
   };
   const warnings = safeParseJson(row.warnings_json, []);
   const diagnostics = safeParseJson(row.diagnostics_json, {});
@@ -81,6 +104,8 @@ export function recordPerRunBudgetOverage({ db, runId, agentName, costUsd }) {
       ...(diagnostics && typeof diagnostics === "object" && !Array.isArray(diagnostics) ? diagnostics : {}),
       per_run_budget_exceeded: true,
       per_run_budget_usd: cap,
+      per_run_budget_scope: "team",
+      per_run_budget_team_id: teamId,
       cost_usd: cost,
     }),
     runId,
