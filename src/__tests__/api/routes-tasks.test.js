@@ -1268,6 +1268,36 @@ describe("POST /api/tasks/:id/comments", () => {
     expect(watcher.handleRunRequested).toHaveBeenCalledWith(task.id);
   });
 
+  it("reopens reviewed done tasks to execute before rerunning", async () => {
+    let serverDb;
+    const stagesAtStart = [];
+    const watcher = watcherWithRun({
+      handleRunRequested: vi.fn(async (id) => {
+        stagesAtStart.push(serverDb.prepare("SELECT stage FROM tasks WHERE id = ?").get(id).stage);
+        return { runId: "r1" };
+      }),
+    });
+    const { agent, db } = makeTestServer({ watcher });
+    serverDb = db;
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+    await agent.patch(`/api/tasks/${task.id}`).send({ stage: "done" }).expect(200);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at)
+      VALUES
+        ('execute-run', ?, 'execute', 'execute', 'owner', 'complete', 'succeeded', ?, ?),
+        ('review-run', ?, 'review', 'review', 'reviewer', 'complete', 'succeeded', ?, ?)
+    `).run(task.id, now - 4000, now - 3000, task.id, now - 2000, now - 1000);
+
+    const res = await agent.post(`/api/tasks/${task.id}/comments`).send({ body: "redo this", rerun: true }).expect(201);
+
+    expect(res.body.rerun).toEqual({ requested: true, started: true, runId: "r1" });
+    const updated = db.prepare("SELECT stage, completed_at FROM tasks WHERE id = ?").get(task.id);
+    expect(updated.stage).toBe("execute");
+    expect(updated.completed_at).toBeNull();
+    expect(stagesAtStart).toEqual(["execute"]);
+  });
+
   it("keeps the comment when the requested rerun fails", async () => {
     const watcher = watcherWithRun({
       handleRunRequested: vi.fn(async () => {

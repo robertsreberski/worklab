@@ -139,7 +139,9 @@ export async function requestCommentRerun({ db, broker, watcher, logger, taskId 
     if (!["plan", "execute", "review"].includes(currentStage)) {
       const targetStage = currentStage === "awaiting_user"
         ? latestRetryStage(db, taskId, "plan")
-        : latestRetryStage(db, taskId, "execute");
+        : currentStage === "done"
+          ? "execute"
+          : latestRetryStage(db, taskId, "execute");
       const result = nextStage(currentStage, { type: "human_move", target: targetStage });
       const errorSideEffect = result.sideEffects.find((se) => se.type === "error");
       if (errorSideEffect) {
