@@ -226,6 +226,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
           <label>Goal<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
           <label>Lead agent
             <AgentPicker
+              class="team-lead-picker"
               value={draft.lead_agent || ""}
               onChange={(agentName) => update({ lead_agent: agentName || "" })}
               agents={agents}
