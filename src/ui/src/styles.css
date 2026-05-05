@@ -8531,9 +8531,9 @@ html.assistant-resizing * {
   color: var(--status-error);
   background: var(--status-error-bg-10);
 }
-/* A3: per-agent run-budget indicators on the run card summary. The hard
+/* Run-budget indicators on the run card summary. The hard
    variant reuses the error tone because the run was cancelled by the
-   aggregator; the soft variant stays in the progress / warning palette. */
+   turn guardrail; the soft variant stays in the progress / warning palette. */
 .run-warning-budget-soft {
   border-color: var(--status-progress-border);
   color: var(--status-progress);

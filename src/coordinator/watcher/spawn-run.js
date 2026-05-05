@@ -236,9 +236,6 @@ export function spawnTaskRun({
     runIdleWarningMs: effectiveIdleWarningMs,
     logInlineLimit,
     diagnosticsSeed,
-    // A3: passing the agent name lets spawn-worker resolve the per-agent
-    // budget.json (or fall back to the bundled defaults).
-    agentName,
   });
 
   setRunWorkerPid(db, runId, handle.pid);

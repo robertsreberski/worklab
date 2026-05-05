@@ -58,8 +58,6 @@ export function seedDefaultAgents({ db, templateDir, logger } = {}) {
         builtinAllowlistMode: def.builtin_allowlist_mode || "all",
         allowSelfReview: def.allow_self_review ?? 1,
         browserToolsReviewOnly: def.browser_tools_review_only ?? 0,
-        dailyBudgetUsd: def.daily_budget_usd ?? null,
-        perRunBudgetUsd: def.per_run_budget_usd ?? null,
         executionMode: def.execution_mode || "sdk",
         enabled: def.enabled ?? 1,
         createdAt: now,

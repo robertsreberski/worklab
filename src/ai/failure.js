@@ -103,9 +103,8 @@ export function classifyFailure({
     if (cancelInitiator === "stale_reconcile") return "cancelled_stale";
     if (cancelInitiator === "worker_signal") return "cancelled_signal";
     if (cancelInitiator === "user" || cancelInitiator === "api_cancel") return "cancelled_user";
-    // A3: an in-flight run cancelled by the per-agent budget aggregator.
-    // Reuses the existing budget_exceeded kind (already in FAILURE_KINDS)
-    // so dashboards / reports don't have to learn a new label.
+    // An in-flight run cancelled by the settings-backed turn guardrail reuses
+    // budget_exceeded so dashboards / reports don't have to learn a new label.
     if (cancelInitiator === "budget") return "budget_exceeded";
     return "cancelled";
   }
