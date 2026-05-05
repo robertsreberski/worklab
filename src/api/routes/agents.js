@@ -51,8 +51,6 @@ function rowToAgent(row) {
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
     allow_self_review: !!row.allow_self_review,
     browser_tools_review_only: !!row.browser_tools_review_only,
-    daily_budget_usd: row.daily_budget_usd == null ? null : Number(row.daily_budget_usd),
-    per_run_budget_usd: row.per_run_budget_usd == null ? null : Number(row.per_run_budget_usd),
     execution_mode: row.execution_mode || "sdk",
   };
 }
@@ -72,8 +70,6 @@ const PATCHABLE = [
   "builtin_allowlist_mode",
   "allow_self_review",
   "browser_tools_review_only",
-  "daily_budget_usd",
-  "per_run_budget_usd",
   "execution_mode",
   "enabled",
 ];
@@ -148,13 +144,6 @@ function normalizeBooleanField(key, value, fallback = false) {
   if (value === undefined) return fallback ? 1 : 0;
   if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
   return value ? 1 : 0;
-}
-
-function normalizeBudgetField(key, value) {
-  if (value === undefined || value === null || value === "") return null;
-  const n = Number(value);
-  if (!Number.isFinite(n) || n < 0) throw new Error(`${key} must be a non-negative number`);
-  return n;
 }
 
 function existingAllowlist(row, key) {
@@ -306,14 +295,10 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const enabled = req.body.enabled === false ? 0 : 1;
     let allowSelfReview;
     let browserToolsReviewOnly;
-    let dailyBudgetUsd;
-    let perRunBudgetUsd;
     let executionMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
-      dailyBudgetUsd = normalizeBudgetField("daily_budget_usd", req.body.daily_budget_usd);
-      perRunBudgetUsd = normalizeBudgetField("per_run_budget_usd", req.body.per_run_budget_usd);
       executionMode = normalizeExecutionMode(req.body.execution_mode, "sdk");
     } catch (err) {
       return res.status(400).json({ error: { code: "validation", message: err.message } });
@@ -350,8 +335,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       builtinAllowlistMode: builtinAllow.mode,
       allowSelfReview,
       browserToolsReviewOnly,
-      dailyBudgetUsd,
-      perRunBudgetUsd,
       executionMode,
       enabled,
       createdAt: now,
@@ -462,12 +445,6 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         } else if (k === "allow_self_review" || k === "browser_tools_review_only") {
           try {
             values.push(normalizeBooleanField(k, req.body[k], false));
-          } catch (err) {
-            return res.status(400).json({ error: { code: "validation", message: err.message } });
-          }
-        } else if (k === "daily_budget_usd" || k === "per_run_budget_usd") {
-          try {
-            values.push(normalizeBudgetField(k, req.body[k]));
           } catch (err) {
             return res.status(400).json({ error: { code: "validation", message: err.message } });
           }

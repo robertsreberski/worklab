@@ -51,7 +51,7 @@ export function getTaskHeaderForKbUsage(db, id) {
 export function countTasksByStageForProject(db, projectId) {
   return db
     .prepare(
-      "SELECT stage, COUNT(*) AS count FROM tasks WHERE project_id = ? GROUP BY stage",
+      "SELECT stage, COUNT(*) AS count FROM tasks WHERE project_id = ? AND is_team_root = 0 GROUP BY stage",
     )
     .all(projectId);
 }
@@ -77,9 +77,12 @@ export function getTaskByClientRequestId(db, requestId) {
 }
 
 // Filter clauses + bound params come from the route. Helper owns the column
-// projection and ordering.
-export function listFilteredTasks(db, { filters, params }) {
-  const where = filters.length ? ` WHERE ${filters.join(" AND ")}` : "";
+// projection and ordering. Synthetic team-root tasks are hidden by default;
+// callers that need them must explicitly opt in via includeTeamRoots: true.
+export function listFilteredTasks(db, { filters, params, includeTeamRoots = false }) {
+  const allFilters = [...(filters || [])];
+  if (!includeTeamRoots) allFilters.push("is_team_root = 0");
+  const where = allFilters.length ? ` WHERE ${allFilters.join(" AND ")}` : "";
   return db.prepare(`SELECT * FROM tasks${where} ORDER BY updated_at DESC`).all(...params);
 }
 
@@ -144,16 +147,17 @@ export function insertTask(db, {
   reviewerAgent,
   runPolicy,
   tagsJson,
+  teamId = null,
   createdAt,
   updatedAt,
 }) {
   db.prepare(`
     INSERT INTO tasks
-      (id, task_key, project_id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
+      (id, task_key, project_id, team_id, root_task_id, client_request_id, title, instructions, stage, owner_agent,
        planner_agent, reviewer_agent, run_policy, tags, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    id, taskKey, projectId, rootTaskId, clientRequestId, title, instructions, stage,
+    id, taskKey, projectId, teamId, rootTaskId, clientRequestId, title, instructions, stage,
     ownerAgent, plannerAgent, reviewerAgent, runPolicy, tagsJson, createdAt, updatedAt,
   );
 }
@@ -314,7 +318,7 @@ export function listProjectTasksWithRunSnapshots(db, projectId) {
       ORDER BY r.started_at DESC, r.rowid DESC
       LIMIT 1
     )
-    WHERE t.project_id = ?
+    WHERE t.project_id = ? AND t.is_team_root = 0
     ORDER BY t.updated_at DESC
   `).all(projectId);
 }

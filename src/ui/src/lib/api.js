@@ -32,6 +32,15 @@ export const api = {
   createProject: (data) => request("POST", "/projects", data),
   patchProject: (id, patch) => request("PATCH", `/projects/${encodeURIComponent(id)}`, patch),
   archiveProject: (id) => request("DELETE", `/projects/${encodeURIComponent(id)}`),
+  // teams
+  listTeams: (query, options) => request("GET", `/teams${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  getTeam: (id, options) => request("GET", `/teams/${encodeURIComponent(id)}`, null, options),
+  createTeam: (data) => request("POST", "/teams", data),
+  patchTeam: (id, patch) => request("PATCH", `/teams/${encodeURIComponent(id)}`, patch),
+  archiveTeam: (id) => request("DELETE", `/teams/${encodeURIComponent(id)}`),
+  setTeamMembers: (id, members) => request("PUT", `/teams/${encodeURIComponent(id)}/members`, { members }),
+  listTeamCycles: (id, query) => request("GET", `/teams/${encodeURIComponent(id)}/cycles${query ? "?" + new URLSearchParams(query) : ""}`),
+  runTeamLead: (id, body = {}) => request("POST", `/teams/${encodeURIComponent(id)}/run-lead`, body),
   // tasks
   listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getTask: (id, options) => request("GET", `/tasks/${id}`, null, options),

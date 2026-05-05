@@ -24,6 +24,7 @@ import {
   listDependsOnTaskIds,
   replaceDependenciesForTask,
 } from "../../../core/db/queries/task-dependencies.js";
+import { resolveTeamByIdOrSlug } from "../../../core/db/queries/teams.js";
 import {
   BULK_PATCHABLE,
   DEFAULT_RUN_POLICY,
@@ -181,6 +182,14 @@ export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch 
           values.push(normalizeProjectPatchValue(db, patch[k]));
         } catch (error) {
           throw routeError(error.status || 400, error.code || "validation", error.message);
+        }
+      }
+      else if (k === "team_id") {
+        if (patch[k] === null || patch[k] === "") values.push(null);
+        else {
+          const row = resolveTeamByIdOrSlug(db, patch[k]);
+          if (!row) throw routeError(400, "validation", `team not found: ${patch[k]}`);
+          values.push(row.id);
         }
       }
       else if (k === "run_policy") {

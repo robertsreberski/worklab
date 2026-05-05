@@ -189,6 +189,48 @@ function ensureWorkflowColumns(db) {
   addColumnIfMissing(db, "task_runs", "transcript_tail_json", "transcript_tail_json TEXT");
 }
 
+// v33: teams replace per-project allowlists and per-agent budgets. Drop the
+// retired columns so they can't be referenced by stale queries. SQLite
+// supports `ALTER TABLE ... DROP COLUMN` since 3.35; better-sqlite3 ships
+// with a recent enough engine. We log (once, via a process-wide stderr
+// emit) any project that had a non-empty allowed_agents_json so the
+// operator can recreate teams manually — see plan §"Migration Safety".
+function dropLegacyTeamReplacedColumns(db) {
+  const drops = [
+    ["projects", "allowed_agents_json"],
+    ["projects", "delegation_allow_unlisted"],
+    ["agents", "daily_budget_usd"],
+    ["agents", "per_run_budget_usd"],
+  ];
+  if (hasColumn(db, "projects", "allowed_agents_json")) {
+    try {
+      const rows = db.prepare(
+        "SELECT id, slug, name, allowed_agents_json FROM projects WHERE allowed_agents_json IS NOT NULL AND allowed_agents_json <> '[]' AND allowed_agents_json <> ''",
+      ).all();
+      for (const row of rows) {
+        let agents = [];
+        try { agents = JSON.parse(row.allowed_agents_json) || []; } catch { agents = []; }
+        if (Array.isArray(agents) && agents.length) {
+          console.warn(
+            `[worklab][teams-migration] project "${row.slug || row.name || row.id}" had allowed_agents=${JSON.stringify(agents)}; recreate as a team if you still need rostering.`,
+          );
+        }
+      }
+    } catch {
+      // best-effort log; never block the migration on it.
+    }
+  }
+  for (const [table, column] of drops) {
+    if (!tableExists(db, table) || !hasColumn(db, table, column)) continue;
+    try {
+      db.exec(`ALTER TABLE ${table} DROP COLUMN ${column}`);
+    } catch {
+      // SQLite versions without DROP COLUMN: leave the column in place. Code
+      // paths no longer reference it, so it becomes inert dead weight.
+    }
+  }
+}
+
 function ensureCurrentTaskRuntimeColumns(db) {
   if (!tableExists(db, "tasks")) return;
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
@@ -197,6 +239,14 @@ function ensureCurrentTaskRuntimeColumns(db) {
   addColumnIfMissing(db, "tasks", "lifetime_recovery_continuation_count", "lifetime_recovery_continuation_count INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "last_failure_kind", "last_failure_kind TEXT");
   addColumnIfMissing(db, "tasks", "parent_review_policy", "parent_review_policy TEXT NOT NULL DEFAULT 'default'");
+  // v33: rebuildTaskWorkflowTables drops team-related columns when it rebuilds
+  // legacy task tables. Re-add them here so the second SCHEMA_SQL exec can
+  // create the team_id-referencing partial indexes.
+  addColumnIfMissing(db, "tasks", "team_id", "team_id TEXT");
+  addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "goal_status", "goal_status TEXT");
+  addColumnIfMissing(db, "tasks", "goal_status_reason", "goal_status_reason TEXT");
+  addColumnIfMissing(db, "tasks", "last_lead_at", "last_lead_at INTEGER");
 }
 
 function normalizeWorkflowState(db) {
@@ -528,6 +578,20 @@ export function runMigrations(db) {
   if (tableExists(db, "automations")) {
     addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
   }
+  // v33: SCHEMA_SQL declares partial indexes that reference team_id on
+  // projects/tasks/task_runs. Legacy DBs don't have those columns yet, so add
+  // them before SCHEMA_SQL executes its CREATE INDEX ... ON ...(team_id) lines.
+  if (tableExists(db, "projects")) {
+    addColumnIfMissing(db, "projects", "team_id", "team_id TEXT");
+  }
+  if (tableExists(db, "tasks")) {
+    addColumnIfMissing(db, "tasks", "team_id", "team_id TEXT");
+    addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
+  }
+  if (tableExists(db, "task_runs")) {
+    addColumnIfMissing(db, "task_runs", "team_id", "team_id TEXT");
+    addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
+  }
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
@@ -538,6 +602,9 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "agents", "builtin_allowlist_mode", "builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all'");
   addColumnIfMissing(db, "agents", "allow_self_review", "allow_self_review INTEGER NOT NULL DEFAULT 1");
   addColumnIfMissing(db, "agents", "browser_tools_review_only", "browser_tools_review_only INTEGER NOT NULL DEFAULT 0");
+  // v33: per-agent budgets retired in favor of team budgets. Columns dropped
+  // by `dropLegacyTeamReplacedColumns`; we keep them creatable on legacy DBs
+  // so the column-drop sweep finds something to remove.
   addColumnIfMissing(db, "agents", "daily_budget_usd", "daily_budget_usd REAL");
   addColumnIfMissing(db, "agents", "per_run_budget_usd", "per_run_budget_usd REAL");
   // intelligence-ramp Phase 2: per-agent execution mode toggle. Existing rows
@@ -594,9 +661,9 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "task_runs", "artifacts_json", "artifacts_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "task_runs", "artifact_summary_json", "artifact_summary_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "task_runs", "todo_state_json", "todo_state_json TEXT NOT NULL DEFAULT '{\"todos\":[],\"updated_at\":null,\"update_count\":0}'");
-  // R9: per-project agent allowlist. Empty array means "any agent" (back-compat
-  // default). The companion `delegation_allow_unlisted` flag downgrades a
-  // delegation outside the allowlist from a hard fail to a warning.
+  // R9 (retired in v33): per-project agent allowlist replaced by teams.
+  // Columns kept creatable on legacy DBs so dropLegacyTeamReplacedColumns
+  // has something to find; new DBs never see them.
   addColumnIfMissing(db, "projects", "allowed_agents_json", "allowed_agents_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "projects", "delegation_allow_unlisted", "delegation_allow_unlisted INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "projects", "worktree_mode", "worktree_mode TEXT NOT NULL DEFAULT 'off'");
@@ -606,6 +673,24 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "custom_models", "pricing_json", "pricing_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "custom_models", "discovered_at", "discovered_at INTEGER");
   addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
+
+  // v33: teams. Add team-scoped columns to existing tables idempotently.
+  addColumnIfMissing(db, "projects", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "tasks", "goal_status", "goal_status TEXT");
+  addColumnIfMissing(db, "tasks", "goal_status_reason", "goal_status_reason TEXT");
+  addColumnIfMissing(db, "tasks", "last_lead_at", "last_lead_at INTEGER");
+  addColumnIfMissing(db, "task_runs", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_projects_team ON projects(team_id) WHERE team_id IS NOT NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_team ON tasks(team_id) WHERE team_id IS NOT NULL");
+  db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_team_root_unique ON tasks(team_id, project_id) WHERE is_team_root = 1");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC)");
+
+  dropLegacyTeamReplacedColumns(db);
+
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC)");

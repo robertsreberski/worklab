@@ -45,8 +45,7 @@ export function insertProject(db, {
   workdir,
   worktreeMode = "off",
   tagsJson,
-  allowedAgentsJson = "[]",
-  delegationAllowUnlisted = 0,
+  teamId = null,
   archived,
   createdAt,
   updatedAt,
@@ -54,12 +53,11 @@ export function insertProject(db, {
   db.prepare(`
     INSERT INTO projects
       (id, slug, name, description, context_markdown, workdir, worktree_mode, tags_json,
-       allowed_agents_json, delegation_allow_unlisted, archived, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       team_id, archived, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, slug, name, description, context, workdir, worktreeMode, tagsJson,
-    allowedAgentsJson, delegationAllowUnlisted ? 1 : 0,
-    archived, createdAt, updatedAt,
+    teamId, archived, createdAt, updatedAt,
   );
 }
 
@@ -74,37 +72,4 @@ export function listProjectsByIds(db, ids) {
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(", ");
   return db.prepare(`SELECT * FROM projects WHERE id IN (${placeholders})`).all(...ids);
-}
-
-// R9: per-project agent allowlist + delegation override flag. Returns the
-// raw JSON string for the allowlist (caller parses) and a boolean for the
-// override. `null` for either field is treated as the back-compat default.
-export function getProjectAllowedAgents(db, projectId) {
-  if (!projectId) return null;
-  const row = db.prepare(
-    "SELECT allowed_agents_json, delegation_allow_unlisted FROM projects WHERE id = ?",
-  ).get(projectId);
-  if (!row) return null;
-  return {
-    allowed_agents_json: row.allowed_agents_json || "[]",
-    delegation_allow_unlisted: row.delegation_allow_unlisted ? 1 : 0,
-  };
-}
-
-export function setProjectAllowedAgents(db, projectId, { allowedAgentsJson, delegationAllowUnlisted, updatedAt }) {
-  const sets = [];
-  const values = [];
-  if (allowedAgentsJson !== undefined) {
-    sets.push("allowed_agents_json = ?");
-    values.push(allowedAgentsJson);
-  }
-  if (delegationAllowUnlisted !== undefined) {
-    sets.push("delegation_allow_unlisted = ?");
-    values.push(delegationAllowUnlisted ? 1 : 0);
-  }
-  if (!sets.length) return;
-  sets.push("updated_at = ?");
-  values.push(updatedAt ?? Date.now());
-  values.push(projectId);
-  db.prepare(`UPDATE projects SET ${sets.join(", ")} WHERE id = ?`).run(...values);
 }

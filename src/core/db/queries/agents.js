@@ -20,16 +20,6 @@ export function listEnabledAgentNames(db) {
   return db.prepare("SELECT name FROM agents WHERE enabled = 1 ORDER BY name").all().map((row) => row.name);
 }
 
-export function getAgentBudget(db, name) {
-  return db
-    .prepare("SELECT name, display_name, daily_budget_usd, per_run_budget_usd FROM agents WHERE name = ?")
-    .get(name);
-}
-
-export function getAgentPerRunBudget(db, name) {
-  return db.prepare("SELECT per_run_budget_usd FROM agents WHERE name = ?").get(name);
-}
-
 export function getAgentSelfReviewFlag(db, name) {
   return db.prepare("SELECT allow_self_review FROM agents WHERE name = ?").get(name);
 }
@@ -85,8 +75,6 @@ export function insertAgent(db, {
   builtinAllowlistMode,
   allowSelfReview,
   browserToolsReviewOnly,
-  dailyBudgetUsd,
-  perRunBudgetUsd,
   executionMode,
   enabled,
   createdAt,
@@ -97,16 +85,14 @@ export function insertAgent(db, {
       (name, display_name, description, sdk, model, effort, instructions,
        skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
        builtin_allowlist, builtin_allowlist_mode, allow_self_review,
-       browser_tools_review_only, daily_budget_usd, per_run_budget_usd,
-       execution_mode, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       browser_tools_review_only, execution_mode, enabled, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     name, displayName, description, sdk, model, effort, instructions,
     skillsAllowlistJson, skillsAllowlistMode,
     mcpAllowlistJson, mcpAllowlistMode,
     builtinAllowlistJson, builtinAllowlistMode,
     allowSelfReview, browserToolsReviewOnly,
-    dailyBudgetUsd, perRunBudgetUsd,
     executionMode || "sdk",
     enabled, createdAt, updatedAt,
   );

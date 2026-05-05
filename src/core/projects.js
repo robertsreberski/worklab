@@ -3,8 +3,6 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { isValidSlug, uniqueSlug } from "./slugs.js";
 import {
-  getProjectAllowedAgents,
-  getProjectIdBySlug,
   resolveProjectByIdOrSlug,
 } from "./db/queries/projects.js";
 
@@ -75,57 +73,6 @@ export function uniqueProjectSlug(db, { name, slug, existingId = null }) {
   return candidate;
 }
 
-// R9: parse the persisted allowed_agents_json TEXT column into a string
-// array. Defensive: empty/missing/malformed yields an empty array, which the
-// enforcement code treats as "any agent" for back-compat.
-export function parseProjectAllowedAgents(value) {
-  if (Array.isArray(value)) {
-    return [...new Set(value.map((item) => String(item || "").trim()).filter(Boolean))];
-  }
-  if (typeof value !== "string") return [];
-  try {
-    const parsed = JSON.parse(value || "[]");
-    return parseProjectAllowedAgents(parsed);
-  } catch {
-    return [];
-  }
-}
-
-// R9: match an agent name against a single allowlist pattern. Patterns are
-// simple globs — `*` matches any run of characters (including the empty
-// string). Operators write `["benchmark-*"]` and any agent name starting
-// `benchmark-` matches. Other characters (including `?`, `.`, etc.) match
-// literally so we don't surprise operators with regex semantics.
-export function agentNameMatchesPattern(name, pattern) {
-  const agent = String(name || "");
-  const glob = String(pattern || "");
-  if (!agent || !glob) return false;
-  if (!glob.includes("*")) return agent === glob;
-  // Escape every regex metachar except `*`, then turn `*` into `.*`.
-  const re = new RegExp(`^${glob.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`);
-  return re.test(agent);
-}
-
-// R9: returns true when `agentName` is allowed by `patterns`. An empty
-// patterns list means "any agent" (the back-compat default).
-export function agentNameAllowedByPatterns(agentName, patterns) {
-  const normalized = parseProjectAllowedAgents(patterns);
-  if (!normalized.length) return true;
-  return normalized.some((pattern) => agentNameMatchesPattern(agentName, pattern));
-}
-
-// R9: load the per-project agent allowlist + override flag. Returns null
-// when the project doesn't exist or no project_id is supplied (caller treats
-// that as "no project-scoped restriction").
-export function loadProjectAgentAllowlist(db, projectId) {
-  const row = getProjectAllowedAgents(db, projectId);
-  if (!row) return null;
-  return {
-    allowed_agents: parseProjectAllowedAgents(row.allowed_agents_json),
-    delegation_allow_unlisted: !!row.delegation_allow_unlisted,
-  };
-}
-
 export function projectFromRow(row) {
   if (!row) return null;
   return {
@@ -137,8 +84,7 @@ export function projectFromRow(row) {
     workdir: row.workdir || null,
     worktree_mode: normalizeProjectWorktreeMode(row.worktree_mode, "off"),
     tags: parseProjectTags(row.tags_json),
-    allowed_agents: parseProjectAllowedAgents(row.allowed_agents_json),
-    delegation_allow_unlisted: !!row.delegation_allow_unlisted,
+    team_id: row.team_id || null,
     archived: row.archived !== 0,
     created_at: row.created_at,
     updated_at: row.updated_at,

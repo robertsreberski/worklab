@@ -3,7 +3,6 @@ import {
   newProjectId,
   normalizeProjectWorkdir,
   normalizeProjectWorktreeMode,
-  parseProjectAllowedAgents,
   parseProjectTags,
   projectFromRow,
   projectRouteError,
@@ -12,6 +11,7 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/index.js";
+import { resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
 import {
   archiveProject,
   getProjectById,
@@ -110,14 +110,12 @@ function projectStats(db, projectId) {
   };
 }
 
-// R9: validate the operator-supplied allowed_agents list. The values are
-// glob patterns that the watcher matches against agent names; we just
-// dedupe + trim here. Empty array means "any agent".
-function normalizeAllowedAgentsInput(value) {
+function resolveTeamIdOrThrow(db, value) {
   if (value === undefined) return undefined;
-  if (value === null) return [];
-  const parsed = parseProjectAllowedAgents(value);
-  return Array.isArray(parsed) ? parsed : [];
+  if (value === null || value === "") return null;
+  const row = resolveTeamByIdOrSlug(db, value);
+  if (!row) throw projectRouteError(400, "validation", `team not found: ${value}`);
+  return row.id;
 }
 
 function normalizeProjectCreate(db, body = {}) {
@@ -131,8 +129,7 @@ function normalizeProjectCreate(db, body = {}) {
     workdir: normalizeProjectWorkdir(body.workdir, null),
     worktreeMode: normalizeProjectWorktreeMode(body.worktree_mode, "off"),
     tags: parseProjectTags(body.tags),
-    allowedAgents: normalizeAllowedAgentsInput(body.allowed_agents) ?? [],
-    delegationAllowUnlisted: body.delegation_allow_unlisted === true ? 1 : 0,
+    teamId: resolveTeamIdOrThrow(db, body.team_id) ?? null,
     archived: body.archived === true ? 1 : 0,
   };
 }
@@ -179,15 +176,9 @@ function normalizeProjectPatch(db, existing, body = {}) {
     fields.push("tags_json = ?");
     values.push(JSON.stringify(parseProjectTags(body.tags)));
   }
-  if ("allowed_agents" in body) {
-    // R9: per-project agent allowlist. Empty array == "any agent" — that
-    // matches the back-compat default and is safer than rejecting empty.
-    fields.push("allowed_agents_json = ?");
-    values.push(JSON.stringify(normalizeAllowedAgentsInput(body.allowed_agents) ?? []));
-  }
-  if ("delegation_allow_unlisted" in body) {
-    fields.push("delegation_allow_unlisted = ?");
-    values.push(body.delegation_allow_unlisted === true ? 1 : 0);
+  if ("team_id" in body) {
+    fields.push("team_id = ?");
+    values.push(resolveTeamIdOrThrow(db, body.team_id));
   }
   if ("archived" in body) {
     fields.push("archived = ?");
@@ -226,8 +217,7 @@ export function registerProjectRoutes(app, { db, broker }) {
         workdir: project.workdir,
         worktreeMode: project.worktreeMode,
         tagsJson: JSON.stringify(project.tags),
-        allowedAgentsJson: JSON.stringify(project.allowedAgents || []),
-        delegationAllowUnlisted: project.delegationAllowUnlisted ? 1 : 0,
+        teamId: project.teamId ?? null,
         archived: project.archived,
         createdAt: now,
         updatedAt: now,

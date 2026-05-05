@@ -690,6 +690,7 @@ export function spawnWorker({
           }) || "spawn");
       const recoveredStructuredResult = !finalPayload?.worklab_result ? structuredOutputResult : null;
       const result = finalPayload?.worklab_result || recoveredStructuredResult || null;
+      const leadCycleResult = finalPayload?.lead_cycle_result || null;
       const recoveredFinalText = recoveredStructuredResult ? finalTextFromWorklabResult(recoveredStructuredResult) : null;
       const finalWarnings = Array.isArray(finalPayload?.warnings) ? finalPayload.warnings : [];
       const allWarnings = [...warnings, ...finalWarnings];
@@ -848,9 +849,9 @@ export function spawnWorker({
         errorMessage || resultError,
         result?.decision || null,
         failureKind,
-        result?.summary || null,
-        result?.details || null,
-        result ? JSON.stringify(result) : null,
+        result?.summary || leadCycleResult?.summary || null,
+        result?.details || leadCycleResult?.goal_status_reason || null,
+        result ? JSON.stringify(result) : leadCycleResult ? JSON.stringify(leadCycleResult) : null,
         JSON.stringify(paths),
         JSON.stringify(artifacts),
         JSON.stringify(artifactSummary),
@@ -896,6 +897,7 @@ export function spawnWorker({
         diagnostics,
         finalText: finalPayload?.text || recoveredFinalText,
         worklabResult: result,
+        leadCycleResult,
         artifacts,
         artifactSummary,
         usage: finalPayload?.usage || {},

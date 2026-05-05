@@ -22,16 +22,18 @@ const taskCreateInput = object({
   stage: string("Initial workflow stage"),
   run_policy: string("Run policy: manual or auto_plan_execute"),
   project_id: string("Optional project id or slug"),
+  team_id: string("Optional team id or slug — if omitted, inherits from project.team_id"),
   tags: arrayOfString("Tags"),
   blocked_by_ids: arrayOfString("Dependency task ids or public task keys"),
   client_request_id: string("Idempotency key"),
 }, ["title"]);
 
 export const definitions = [
-  tool("worklab_task_list", "List tasks, optionally filtered by stage, agent, or project.", object({
+  tool("worklab_task_list", "List tasks, optionally filtered by stage, agent, project, or team.", object({
     stage: string("Workflow stage filter"),
     agent: string("Owner or reviewer agent filter"),
     project: string("Project id, slug, or 'none'"),
+    team: string("Team id, slug, or 'none'"),
   })),
   tool("worklab_task_get", "Get a task with comments, runs, and graph context.", object({ id: taskIdSchema }, ["id"])),
   tool("worklab_task_create", "Create a task and return a compact task summary.", taskCreateInput),
