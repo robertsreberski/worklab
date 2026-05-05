@@ -23,6 +23,15 @@ import { AgentPicker } from "../components/AgentPicker.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 
+const GOOD_TEAM_CHECKLIST = [
+  "Goal: define the kind of work this team owns.",
+  "Lead: pick a coordinator/orchestrator who can triage and delegate.",
+  "Members: add 2-5 specialists with distinct strengths.",
+  "Roles: describe when each member should be used.",
+  "Assignment: attach the team to a project, or override per task.",
+  "Controls: start manual, then add schedules/budgets once the roster works.",
+];
+
 function teamDraftFrom(team, members = []) {
   return {
     name: team?.name || "",
@@ -59,6 +68,57 @@ function relativeTime(ts) {
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)}m ago`;
   if (ms < 86_400_000) return `${Math.round(ms / 3_600_000)}h ago`;
   return `${Math.round(ms / 86_400_000)}d ago`;
+}
+
+export function teamSetupGaps(team = {}, members = [], projects = []) {
+  const gaps = [];
+  if (!String(team?.goal || "").trim()) {
+    gaps.push("Add a goal so the lead knows what work this team owns.");
+  }
+  if (!String(team?.lead_agent || "").trim()) {
+    gaps.push("Pick a lead agent to coordinate and delegate.");
+  }
+  if (!Array.isArray(members) || members.length === 0) {
+    gaps.push("Add member agents with distinct specialties.");
+  }
+  if (!Array.isArray(projects) || projects.length === 0) {
+    gaps.push("Assign the team to a project or task when it is ready.");
+  }
+  return gaps;
+}
+
+function TeamSetupGuide() {
+  return (
+    <Card title="Good team checklist" class="team-setup-card">
+      <p class="team-setup-intro">
+        Build a small roster around a clear goal. Let the lead coordinate work; use members for specialist execution and review.
+      </p>
+      <ul class="team-setup-list">
+        {GOOD_TEAM_CHECKLIST.map((item) => (
+          <li key={item} class="team-setup-item">
+            <Icon name="check-circle" size={13} />
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+function TeamSetupGapsCard({ gaps }) {
+  if (!gaps?.length) return null;
+  return (
+    <Card title="Setup gaps" class="team-setup-card">
+      <ul class="team-setup-list">
+        {gaps.map((gap) => (
+          <li key={gap} class="team-setup-item">
+            <Icon name="alert-circle" size={13} />
+            <span>{gap}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
 }
 
 function MembersEditor({ members, agents, onChange }) {
@@ -157,6 +217,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
   return (
     <div class="entity-editor-main" style={{ padding: "1rem" }}>
       {error && <p class="error">{error}</p>}
+      <TeamSetupGuide />
       <Card title="Team">
         <div style={{ display: "grid", gap: "0.75rem" }}>
           <label>Name<Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} /></label>
@@ -241,6 +302,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
 
 function TeamDetail({ team, members, projects, cycles, onChanged }) {
   const [running, setRunning] = useState(false);
+  const setupGaps = teamSetupGaps(team, members, projects);
   async function runLeadNow() {
     setRunning(true);
     try {
@@ -270,6 +332,7 @@ function TeamDetail({ team, members, projects, cycles, onChanged }) {
       <Card title="Goal">
         <p>{team.goal || <em>(no goal set)</em>}</p>
       </Card>
+      <TeamSetupGapsCard gaps={setupGaps} />
       <Card title={`Roster (${members.length})`}>
         {members.length === 0 ? (
           <p class="muted">No members.</p>
@@ -333,7 +396,7 @@ function emptyState() {
     <EmptyState
       icon={<Icon name="users" size={20} />}
       title="No team selected"
-      body="Pick a team on the left, or create a new one."
+      body="Create a team, choose a lead, add specialist members, then assign it to a project or task."
     />
   );
 }
@@ -457,7 +520,7 @@ export function Teams({ selectedId = null, mode = null }) {
               <EmptyState
                 icon={<Icon name="users" size={20} />}
                 title="No teams"
-                body="Create your first team to roster agents and run a lead cycle."
+                body="Create a team, choose a lead, add specialist members, then assign it to a project or task."
               />
             ) : filtered.map((team) => (
               <PaneRow

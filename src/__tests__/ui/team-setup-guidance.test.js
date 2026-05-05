@@ -1,0 +1,38 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { describe, expect, it } from "vitest";
+import { teamSetupGaps } from "../../ui/src/routes/Teams.jsx";
+
+const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Teams.jsx");
+
+describe("team setup guidance", () => {
+  it("reports missing setup pieces in the team detail view", () => {
+    expect(teamSetupGaps(
+      { goal: "", lead_agent: "" },
+      [],
+      [],
+    )).toEqual([
+      "Add a goal so the lead knows what work this team owns.",
+      "Pick a lead agent to coordinate and delegate.",
+      "Add member agents with distinct specialties.",
+      "Assign the team to a project or task when it is ready.",
+    ]);
+  });
+
+  it("does not show setup gaps once the team has the core pieces", () => {
+    expect(teamSetupGaps(
+      { goal: "Ship Worklab UI improvements", lead_agent: "lead" },
+      [{ agent_name: "builder" }, { agent_name: "reviewer" }],
+      [{ id: "project-1" }],
+    )).toEqual([]);
+  });
+
+  it("keeps Teams setup guidance short and contextual", () => {
+    const source = readFileSync(teamsSourcePath, "utf8");
+
+    expect(source).toContain("Good team checklist");
+    expect(source).toContain("Members: add 2-5 specialists with distinct strengths.");
+    expect(source).toContain("Controls: start manual, then add schedules/budgets once the roster works.");
+    expect(source).not.toContain("Tutorial");
+  });
+});
