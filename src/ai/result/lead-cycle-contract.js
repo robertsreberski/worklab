@@ -125,6 +125,11 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
 
 export const LEAD_CYCLE_MAX_TASK_CREATIONS = 8;
 
+function maxTaskCreationsForContext(ctx = {}) {
+  const value = Number(ctx.maxTaskCreations);
+  return Number.isInteger(value) && value > 0 ? value : LEAD_CYCLE_MAX_TASK_CREATIONS;
+}
+
 export function normalizeLeadCycleResult(value, fallback = {}) {
   const parsed = leadCycleResultSchema.safeParse({
     task_creations: [],
@@ -153,9 +158,10 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
   }
   const creations = Array.isArray(value.task_creations) ? value.task_creations : [];
   const notes = Array.isArray(value.advisory_notes) ? value.advisory_notes : [];
+  const maxTaskCreations = maxTaskCreationsForContext(ctx);
 
-  if (creations.length > LEAD_CYCLE_MAX_TASK_CREATIONS) {
-    return { ok: false, error: `too many task_creations (max ${LEAD_CYCLE_MAX_TASK_CREATIONS})` };
+  if (creations.length > maxTaskCreations) {
+    return { ok: false, error: `too many task_creations (max ${maxTaskCreations})` };
   }
 
   if (value.goal_status === "complete" && creations.length > 0) {

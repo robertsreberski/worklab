@@ -10,6 +10,7 @@ import { loadTaskRunSetup } from "../core/run-input.js";
 import { getTeamById, getTeamRosterAgentNames, listTeamMembers, listRecentLeadCycles } from "../core/db/queries/teams.js";
 import { getProjectById } from "../core/db/queries/projects.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
+import { readSettings } from "../core/settings.js";
 import {
   WORKLAB_LEAD_CYCLE_JSON_SCHEMA,
   normalizeLeadCycleResult,
@@ -25,6 +26,7 @@ function listOpenChildTasks(db, rootTaskId) {
            t.last_failure_kind, t.updated_at
     FROM tasks t
     JOIN task_edges e ON e.child_task_id = t.id AND e.parent_task_id = ?
+      AND e.edge_type = 'subtask'
     ORDER BY t.updated_at DESC
     LIMIT 30
   `).all(rootTaskId);
@@ -59,7 +61,7 @@ function describeRecentCycles(cycles) {
   }).join("\n");
 }
 
-function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, recentCycles }) {
+function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, recentCycles, maxTaskCreations }) {
   const goalBlock = team.goal
     ? `\n## Team goal\n${team.goal}\n`
     : "\n## Team goal\n(not set — work toward broad team purpose)\n";
@@ -94,7 +96,7 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     "",
     `Constraints:`,
     `- Every suggested_agent MUST be in the team roster above.`,
-    `- task_creations max 8 per cycle.`,
+    `- task_creations max ${maxTaskCreations} per cycle.`,
     `- If goal_status="complete", task_creations MUST be empty.`,
     `- advisory_notes target_task_id must be one of the open child tasks above (or another task currently scoped to this team).`,
   ].filter(Boolean).join("\n");
@@ -126,6 +128,11 @@ export async function runLeadCycle(ctx) {
   const scopeTaskIds = children.map((c) => c.id);
   scopeTaskIds.push(root.id);
   const recentCycles = listRecentLeadCycles(db, team.id, 10);
+  const settings = readSettings(db);
+  const configuredMaxTaskCreations = Number(settings.delegation_max_children_per_round);
+  const maxTaskCreations = Number.isInteger(configuredMaxTaskCreations) && configuredMaxTaskCreations > 0
+    ? configuredMaxTaskCreations
+    : 5;
 
   // Reuse the standard task-run setup so the lead has the same MCP/skill/
   // tool surface as a regular agent run. We override the system prompt
@@ -148,6 +155,7 @@ export async function runLeadCycle(ctx) {
     members,
     children,
     recentCycles,
+    maxTaskCreations,
   });
 
   emit({ type: "prompt_built", diagnostics: { lead_cycle: true, team_id: team.id, project_id: project.id } });
@@ -205,7 +213,7 @@ export async function runLeadCycle(ctx) {
 
     let semantic = { ok: false, error: parseError || "no lead_cycle_result emitted" };
     if (parsedResult) {
-      semantic = validateLeadCycleSemantics(parsedResult, { rosterAgents, scopeTaskIds });
+      semantic = validateLeadCycleSemantics(parsedResult, { rosterAgents, scopeTaskIds, maxTaskCreations });
     }
 
     return {

@@ -33,6 +33,21 @@ function seedTask(db, { owner = null, reviewer = null, stage = "execute", runPol
   return id;
 }
 
+function seedTeamProject(db, { teamId = "team-alpha", lead = "lead", member = "engineer" } = {}) {
+  const now = Date.now();
+  seedAgent(db, lead);
+  seedAgent(db, member);
+  db.prepare(`
+    INSERT INTO teams (id, slug, name, description, goal, lead_agent, status, schedule_enabled, created_at, updated_at)
+    VALUES (?, ?, 'Alpha Team', '', 'Keep moving', ?, 'active', 0, ?, ?)
+  `).run(teamId, teamId, lead, now, now);
+  db.prepare("INSERT INTO team_members (team_id, agent_name, role_description, created_at) VALUES (?, ?, '', ?)")
+    .run(teamId, member, now);
+  db.prepare("INSERT INTO projects (id, slug, name, team_id, archived, created_at, updated_at) VALUES ('project-alpha', 'project-alpha', 'Project Alpha', ?, 0, ?, ?)")
+    .run(teamId, now, now);
+  return { teamId, projectId: "project-alpha", lead, member };
+}
+
 function makeDeferredSpawn() {
   const resolvers = [];
   const calls = [];
@@ -1029,5 +1044,81 @@ describe("task-watcher v2 workflow", () => {
       per_run_budget_scope: "team",
       cost_usd: 0.05,
     });
+  });
+
+  it("lead cycles append root subtasks without dropping prior cycle edges", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId, member } = seedTeamProject(db);
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const first = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(first.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "cycle 1",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "first cycle",
+        task_creations: [{
+          title: "First child",
+          instructions: "Do the first thing.",
+          suggested_agent: member,
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "normal",
+        }],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+    await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(first.taskId).c === 1);
+    db.prepare("UPDATE task_runs SET process_status = 'succeeded', status = 'complete', ended_at = ? WHERE id = ?")
+      .run(Date.now(), first.runId);
+
+    const second = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(second.ok).toBe(true);
+    expect(second.taskId).toBe(first.taskId);
+    resolvers[1]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "cycle 2",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "second cycle",
+        task_creations: [{
+          title: "Second child",
+          instructions: "Do the second thing.",
+          suggested_agent: member,
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "normal",
+        }],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+    await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(first.taskId).c === 2);
+
+    const children = db.prepare(`
+      SELECT t.title, t.team_id
+      FROM task_edges e
+      JOIN tasks t ON t.id = e.child_task_id
+      WHERE e.parent_task_id = ?
+      ORDER BY t.title ASC
+    `).all(first.taskId);
+    expect(children).toEqual([
+      { title: "First child", team_id: teamId },
+      { title: "Second child", team_id: teamId },
+    ]);
   });
 });
