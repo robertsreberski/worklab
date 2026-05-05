@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
+import { ensureTeamRootTask } from "../../core/teams.js";
 
 const cleanupDirs = [];
 
@@ -229,5 +230,24 @@ describe("project API", () => {
         summary: "worker failed",
       },
     });
+  });
+
+  it("excludes synthetic team roots from project task counts", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Count Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Count Project",
+      team_id: team.id,
+    }).expect(201);
+
+    ensureTeamRootTask(db, { teamId: team.id, projectId: project.id });
+
+    const list = await agent.get("/api/projects").expect(200);
+    const row = list.body.projects.find((item) => item.id === project.id);
+    expect(row.task_count).toBe(0);
+    expect(row.active_task_count).toBe(0);
+
+    const detail = await agent.get(`/api/projects/${project.id}`).expect(200);
+    expect(detail.body.project.stats).toMatchObject({ task_count: 0, by_stage: {} });
   });
 });

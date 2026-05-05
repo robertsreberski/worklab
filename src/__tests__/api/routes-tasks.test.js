@@ -230,6 +230,37 @@ describe("POST /api/tasks", () => {
     expect(unassigned.body.tasks.map((row) => row.id)).not.toContain(task.id);
   });
 
+  it("filters tasks by effective team id or slug, including project-inherited teams", async () => {
+    const { agent } = makeTestServer();
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Routing Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Team Project",
+      team_id: team.slug,
+    }).expect(201);
+    const { body: { task: inherited } } = await agent.post("/api/tasks").send({
+      title: "Inherited team",
+      project_id: project.slug,
+    }).expect(201);
+    const { body: { task: explicit } } = await agent.post("/api/tasks").send({
+      title: "Explicit team",
+      team_id: team.slug,
+    }).expect(201);
+    const { body: { task: unassigned } } = await agent.post("/api/tasks").send({
+      title: "No team",
+    }).expect(201);
+
+    const bySlug = await agent.get(`/api/tasks?team=${team.slug}`).expect(200);
+    expect(bySlug.body.tasks.map((row) => row.id).sort()).toEqual([explicit.id, inherited.id].sort());
+
+    const byId = await agent.get(`/api/tasks?team_id=${team.id}`).expect(200);
+    expect(byId.body.tasks.map((row) => row.id).sort()).toEqual([explicit.id, inherited.id].sort());
+
+    const none = await agent.get("/api/tasks?team=none").expect(200);
+    expect(none.body.tasks.map((row) => row.id)).toContain(unassigned.id);
+    expect(none.body.tasks.map((row) => row.id)).not.toContain(inherited.id);
+    expect(none.body.tasks.map((row) => row.id)).not.toContain(explicit.id);
+  });
+
   it("deduplicates create retries with the same client request id", async () => {
     const { agent, db } = makeTestServer();
     const body = { title: "a", client_request_id: "create-once" };

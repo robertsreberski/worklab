@@ -24,10 +24,10 @@ export function listProjectsWithTaskCounts(db, { filters, params, limit }) {
   const sql = `
     SELECT
       p.*,
-      COUNT(t.id) AS task_count,
-      SUM(CASE WHEN t.stage <> 'done' THEN 1 ELSE 0 END) AS active_task_count
+      COALESCE(COUNT(t.id), 0) AS task_count,
+      COALESCE(SUM(CASE WHEN t.stage <> 'done' THEN 1 ELSE 0 END), 0) AS active_task_count
     FROM projects p
-    LEFT JOIN tasks t ON t.project_id = p.id
+    LEFT JOIN tasks t ON t.project_id = p.id AND t.is_team_root = 0
     ${where}
     GROUP BY p.id
     ORDER BY p.archived ASC, p.updated_at DESC, p.name ASC

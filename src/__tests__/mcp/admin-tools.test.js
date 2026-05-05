@@ -101,6 +101,17 @@ describe("admin MCP tools", () => {
     expect(deletedComment.url).toBe("http://localhost:7878/api/tasks/task_1/comments/comment_1");
     expect(deletedComment.method).toBe("DELETE");
     expect(deletedComment.body).toBeNull();
+
+    const members = [{ agent_name: "eng", role_description: "Build" }];
+    const roster = await handlers.worklab_team_members_set({ id: "team_1", members });
+    expect(roster.url).toBe("http://localhost:7878/api/teams/team_1/members");
+    expect(roster.method).toBe("PUT");
+    expect(roster.body).toEqual({ members });
+
+    const taskList = await handlers.worklab_task_list({ team: "team-alpha" });
+    expect(taskList.url).toBe("http://localhost:7878/api/tasks?team=team-alpha");
+    expect(taskList.method).toBe("GET");
+    expect(taskList.body).toBeNull();
   });
 
   it("returns compact filtered agent summaries without full instructions", async () => {

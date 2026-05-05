@@ -211,10 +211,31 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const teamFilter = req.query.team_id || req.query.team;
     if (teamFilter) {
       if (teamFilter === "none" || teamFilter === "__none__") {
-        where.push("team_id IS NULL");
+        where.push(`(
+          tasks.team_id IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM projects team_filter_project
+            WHERE team_filter_project.id = tasks.project_id
+              AND team_filter_project.team_id IS NOT NULL
+          )
+        )`);
       } else {
-        where.push("team_id = ?");
-        params.push(teamFilter);
+        const team = resolveTeamByIdOrSlug(db, teamFilter);
+        if (!team) {
+          return res.status(400).json({ error: { code: "validation", message: `team not found: ${teamFilter}` } });
+        }
+        where.push(`(
+          tasks.team_id = ?
+          OR (
+            tasks.team_id IS NULL
+            AND EXISTS (
+              SELECT 1 FROM projects team_filter_project
+              WHERE team_filter_project.id = tasks.project_id
+                AND team_filter_project.team_id = ?
+            )
+          )
+        )`);
+        params.push(team.id, team.id);
       }
     }
     const includeTeamRoots = req.query.include_team_roots === "true" || req.query.include_team_roots === "1";

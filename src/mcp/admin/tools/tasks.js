@@ -67,7 +67,7 @@ export const definitions = [
 // Wrapper specs for the simple pass-through tools. Tools that need extra
 // reshaping (compact summaries, bulk fan-out) override the default below.
 const specs = [
-  ["worklab_task_list", "GET", "/api/tasks", ["stage", "agent", "project"]],
+  ["worklab_task_list", "GET", "/api/tasks", ["stage", "agent", "project", "team", "team_id"]],
   ["worklab_task_get", "GET", "/api/tasks/:id"],
   ["worklab_task_update", "PATCH", "/api/tasks/:id", [], "patch"],
   ["worklab_task_delete", "DELETE", "/api/tasks/:id"],
