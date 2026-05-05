@@ -14,6 +14,7 @@ export function makeTestServer({ watcher, dataDir, consolidation, automationMana
     sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
     maybeAutoStart: () => {},
     maybeAutoStartDependents: () => {},
+    maybeScheduleUnassignedTeamTask: () => {},
   };
   const { app, broker, assistant: serverAssistant } = createServer({
     db,

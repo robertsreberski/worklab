@@ -261,6 +261,91 @@ describe("POST /api/tasks", () => {
     expect(none.body.tasks.map((row) => row.id)).not.toContain(explicit.id);
   });
 
+  it("asks the team lead to assign ownerless tasks created in team projects", async () => {
+    const maybeScheduleUnassignedTeamTask = vi.fn();
+    const { agent } = makeTestServer({ watcher: {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      isRunActive: () => false,
+      getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+      sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+      maybeScheduleUnassignedTeamTask,
+    } });
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Routing Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Team Project",
+      team_id: team.slug,
+    }).expect(201);
+
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Needs owner",
+      project_id: project.slug,
+    }).expect(201);
+
+    expect(maybeScheduleUnassignedTeamTask).toHaveBeenCalledWith(task.id, "task_created_unassigned");
+  });
+
+  it("does not ask the team lead when a created team task already has an owner", async () => {
+    const maybeScheduleUnassignedTeamTask = vi.fn();
+    const { agent, db } = makeTestServer({ watcher: {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      isRunActive: () => false,
+      getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+      sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+      maybeScheduleUnassignedTeamTask,
+    } });
+    seedAgent(db, "owner");
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Routing Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Team Project",
+      team_id: team.slug,
+    }).expect(201);
+
+    await agent.post("/api/tasks").send({
+      title: "Already owned",
+      project_id: project.slug,
+      owner_agent: "owner",
+    }).expect(201);
+
+    expect(maybeScheduleUnassignedTeamTask).not.toHaveBeenCalled();
+  });
+
+  it("asks the team lead when an ownerless task is patched into team scope", async () => {
+    const maybeScheduleUnassignedTeamTask = vi.fn();
+    const { agent } = makeTestServer({ watcher: {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      isRunActive: () => false,
+      getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+      sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
+      maybeAutoStart: () => {},
+      maybeAutoStartDependents: () => {},
+      maybeScheduleUnassignedTeamTask,
+    } });
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "Needs team" }).expect(201);
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Routing Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Team Project",
+      team_id: team.slug,
+    }).expect(201);
+    maybeScheduleUnassignedTeamTask.mockClear();
+
+    await agent.patch(`/api/tasks/${task.id}`).send({ project_id: project.slug }).expect(200);
+
+    expect(maybeScheduleUnassignedTeamTask).toHaveBeenCalledWith(task.id, "task_unassigned");
+  });
+
   it("deduplicates create retries with the same client request id", async () => {
     const { agent, db } = makeTestServer();
     const body = { title: "a", client_request_id: "create-once" };
