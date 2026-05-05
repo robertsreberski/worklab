@@ -7,15 +7,6 @@
 // allowlist enforcement.
 //
 // The watcher's main loop owns the actual task creation + edge insertion.
-//
-// A3 — per-agent run-budget warnings — shipped: see src/core/agent-budgets.js
-// (evaluateBudget + loadAgentBudget) wired through src/coordinator/spawn-worker.js
-// (budget aggregator runs on every tool_result event; soft → runtime_warning
-// + system comment, hard → cancel with cancel_initiator="budget" so
-// classifyFailure maps to budget_exceeded). Per-agent thresholds live in
-// data-template/agents/_defaults/budget.json (or a per-agent override
-// under data-template/agents/<agent>/budget.json or
-// <dataDir>/agents/<agent>/budget.json).
 
 import { PARENT_REVIEW_POLICIES } from "../../core/state-machine.js";
 import { enforceTeamRoster as coreEnforceTeamRoster } from "../../core/teams.js";

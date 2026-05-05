@@ -1,6 +1,6 @@
-// A3: integration coverage for the per-agent run-budget aggregator wired
+// Integration coverage for the settings-backed run-turn budget guardrail wired
 // into spawn-worker. We synthesise a runaway run (many tool_results emitted
-// quickly) with a tight budget and assert:
+// quickly) with tight settings and assert:
 //
 //   - the watcher emits a budget_soft warning + posts a system comment
 //     when the soft threshold is crossed;
@@ -9,9 +9,6 @@
 //     is crossed;
 //   - the warning + diagnostics survive into task_runs.diagnostics_json.
 //
-// We pass `agentBudget` directly (skipping the disk lookup) so the test
-// stays isolated from the repo's data-template contents.
-
 import { describe, it, expect } from "vitest";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -64,14 +61,16 @@ function makeToolResultEvent(toolUseId) {
   };
 }
 
-describe("spawn-worker budget aggregator (A3)", () => {
+describe("spawn-worker run-turn budget guardrail", () => {
   it("cancels a runaway run at the hard num_turns threshold and persists budget_exceeded", async () => {
     const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_soft_turns", JSON.stringify(2));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_hard_turns", JSON.stringify(3));
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
 
     const events = [];
-    // Hard num_turns = 3 → fourth tool_result triggers the cancel. We push
+    // Hard num_turns = 3 catches the runaway almost immediately. We push
     // many more in case the cancel takes a moment to propagate; the worker
     // will SIGTERM-exit on its own once cancel() lands.
     for (let i = 0; i < 20; i += 1) {
@@ -88,11 +87,6 @@ describe("spawn-worker budget aggregator (A3)", () => {
       runIdleWarningMs: 0,
       cancelGraceMs: 200,
       agentName: "runtime-engineer",
-      // Tiny budget so the runaway gets caught after a couple of events.
-      agentBudget: {
-        soft: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 2 },
-        hard: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 3 },
-      },
     });
     const result = await handle.done;
 
@@ -134,6 +128,8 @@ describe("spawn-worker budget aggregator (A3)", () => {
 
   it("emits only the soft warning when stats stay under the hard threshold", async () => {
     const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_soft_turns", JSON.stringify(2));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_hard_turns", JSON.stringify(100));
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
 
@@ -154,10 +150,6 @@ describe("spawn-worker budget aggregator (A3)", () => {
       runId, taskId, broker, db,
       runIdleWarningMs: 0,
       agentName: "runtime-engineer",
-      agentBudget: {
-        soft: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 2 },
-        hard: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 100 },
-      },
     });
     const result = await handle.done;
 
@@ -177,6 +169,8 @@ describe("spawn-worker budget aggregator (A3)", () => {
 
   it("does not warn when no thresholds are crossed", async () => {
     const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_soft_turns", JSON.stringify(100));
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("agent_budget_hard_turns", JSON.stringify(200));
     const broker = stubBroker();
     const { taskId, runId } = seedTaskAndRun(db);
 
@@ -195,10 +189,6 @@ describe("spawn-worker budget aggregator (A3)", () => {
       runId, taskId, broker, db,
       runIdleWarningMs: 0,
       agentName: "runtime-engineer",
-      agentBudget: {
-        soft: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 100 },
-        hard: { cost_usd: 1000, duration_ms: 1000 * 60 * 60, num_turns: 200 },
-      },
     });
     const result = await handle.done;
     expect(result.processStatus).toBe("succeeded");

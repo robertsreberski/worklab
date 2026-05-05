@@ -14,9 +14,9 @@ const PROCESS_TO_LEGACY_STATUS = {
 };
 import { normalizeLiveInputBody } from "../core/live-input.js";
 import { classifyFailure, createStderrTail, retryableProviderFailureInfo } from "../ai/failure.js";
-import { evaluateBudget, loadAgentBudget } from "../core/agent-budgets.js";
 import { insertSystemComment } from "../core/db/queries/comments.js";
 import { newCommentId } from "../core/ids.js";
+import { evaluateRunTurnBudget, loadRunTurnBudget } from "../core/run-turn-budget.js";
 import { readSettings } from "../core/settings.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
 import { runTodoStateSummary } from "../core/run-todos.js";
@@ -74,8 +74,6 @@ export function spawnWorker({
   exitCloseGraceMs = 1000,
   stderrTailLimit = 8 * 1024,
   diagnosticsSeed = null,
-  agentName = null,
-  agentBudget = null,
 }) {
   const startedAt = Date.now();
   const workspaceArtifactSnapshot = env.WORKLAB_WORKSPACE
@@ -134,27 +132,14 @@ export function spawnWorker({
     largestToolEvents: [],
     broadScanEvents: [],
   };
-  // A3 — per-agent run-budget aggregator. Loads soft + hard thresholds once
-  // at spawn time (from <dataDir>/agents/<agent>/budget.json or the bundled
-  // defaults under data-template/agents/_defaults/budget.json) and tracks
-  // the live runStats we can derive while the worker streams. cost_usd is
-  // not reliably available until the worker emits its `final` event, so
-  // during streaming we gate primarily on duration_ms and on a num_turns
-  // proxy: the count of tool_result blocks the worker has emitted. The
-  // aggregator runs alongside recordContextPayload so the budget and
-  // context-bloat checks share the single content-block walk per event.
-  //
-  // Tests pass `agentBudget` directly to skip the disk lookup; production
-  // spawn uses the loader so operators can override per agent without code.
-  const budgetThresholds = (agentBudget && typeof agentBudget === "object")
-    ? agentBudget
-    : loadAgentBudget({ agent: agentName, dataDir, settings: readSettingsSafe(db) }).thresholds;
+  // Settings-backed turn guardrail. Team/workspace cost budgets run in the
+  // watcher budget cascade; this local guard only cancels runaway tool loops
+  // by counting tool_result events against explicit runtime settings.
+  const budgetThresholds = loadRunTurnBudget(readSettingsSafe(db));
   const budgetState = {
     toolResultsSeen: 0,
-    streamedCostUsd: 0,
     softWarningEmitted: false,
     hardCancelTriggered: false,
-    lastEvaluation: null,
   };
   // Trailing-edge debounce window for the in-flight events JSON. Long-running
   // agents emit hundreds of events; rewriting the whole JSON each line is
@@ -207,8 +192,6 @@ export function spawnWorker({
       { ...parsed, _event_seq: parsed._event_seq ?? events.length + 1 },
       { limit: RAW_RESULT_STORAGE_LIMIT },
     );
-    const eventCostUsd = costUsdFromPayload(rawEvent);
-    if (eventCostUsd !== null) budgetState.streamedCostUsd = eventCostUsd;
     rawEvents.push(rawEvent);
     const contextWarning = recordContextPayload(rawEvent);
     appendRawEvent(rawEvent);
@@ -234,10 +217,9 @@ export function spawnWorker({
     });
     resetIdleTimer();
     if (contextWarning) emitEvent(contextWarning);
-    // A3: evaluate the per-agent run budget after the event has been
-    // recorded. The check is cheap (numeric comparisons against a frozen
-    // thresholds object) and idempotent — soft/hard warnings are gated on
-    // their own one-shot flags so we never spam the timeline. Hard-tier
+    // Evaluate the run-turn guardrail after the event has been recorded. The
+    // check is cheap and idempotent — soft/hard warnings are gated on their
+    // own one-shot flags so we never spam the timeline. Hard-tier
     // crossings call terminateChild() inside evaluateBudgetForEvent.
     if (rawEvent.type !== "runtime_warning") {
       const budgetWarning = evaluateBudgetForEvent();
@@ -294,7 +276,7 @@ export function spawnWorker({
         const payloadChars = jsonCharLength(block.content ?? block.output ?? block.result ?? "")
           + jsonCharLength(block.raw_result || {});
         contextBloat.totalToolPayloadChars += payloadChars;
-        // A3: each tool_result counts as one "turn" for the budget check.
+        // Each tool_result counts as one turn for the runtime turn guardrail.
         // Real turns include thinking + tool_use + tool_result; we use the
         // result count as a proxy because it's the only signal that survives
         // the SDK → spawn-worker boundary intact across providers.
@@ -345,8 +327,8 @@ export function spawnWorker({
     }
   }
 
-  // A3: invoked after every event so the budget check sees the latest
-  // tool_result count + clock. Returns a runtime_warning event when a
+  // Invoked after every event so the guardrail sees the latest tool_result
+  // count. Returns a runtime_warning event when a
   // threshold is newly crossed, or null when nothing changed. The watcher's
   // emitEvent loop folds the returned event back through itself so the
   // warning appears in the run timeline alongside the event that tripped it.
@@ -356,12 +338,9 @@ export function spawnWorker({
   function evaluateBudgetForEvent() {
     if (budgetState.hardCancelTriggered) return null;
     const stats = {
-      cost_usd: budgetState.streamedCostUsd,
-      duration_ms: Date.now() - startedAt,
       num_turns: budgetState.toolResultsSeen,
     };
-    const evaluation = evaluateBudget(budgetThresholds, stats);
-    budgetState.lastEvaluation = evaluation;
+    const evaluation = evaluateRunTurnBudget(budgetThresholds, stats);
     if (!evaluation.soft_warn && !evaluation.hard_pause) return null;
 
     if (evaluation.hard_pause) {
@@ -991,13 +970,4 @@ function numberOrNull(value) {
   if (value === null || value === undefined) return null;
   const n = Number(value);
   return Number.isFinite(n) ? n : null;
-}
-
-function costUsdFromPayload(value) {
-  return numberOrNull(
-    value?.cost_usd
-      ?? value?.costUsd
-      ?? value?.usage?.cost_usd
-      ?? value?.usage?.costUsd,
-  );
 }
