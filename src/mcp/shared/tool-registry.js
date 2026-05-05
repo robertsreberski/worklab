@@ -40,6 +40,7 @@ export function bodyFor(kind, input) {
   if (kind === "patch") return input.patch || {};
   if (kind === "mcpServers") return { mcpServers: input.mcpServers || {} };
   if (kind === "comment") return { body: input.body };
+  if (kind === "members") return { members: input.members || [] };
   if (kind === "subtask") {
     const { id: _id, ...body } = input;
     return body;
