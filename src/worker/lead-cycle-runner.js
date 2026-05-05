@@ -2,8 +2,7 @@
 // synthetic root task and returns a worklab.lead_cycle.v1 result. The
 // runner is invoked when task_runs.kind = 'lead_cycle'; the watcher's
 // handleLeadCycleExit converts the structured output into existing
-// side-effects (createDelegatedSubtasks + system comments) — no direct
-// state mutation flows from the lead.
+// side-effects (task assignments + createDelegatedSubtasks + system comments).
 
 import { generateResponse, resolveModel } from "../core/index.js";
 import { loadTaskRunSetup } from "../core/run-input.js";
@@ -32,6 +31,20 @@ function listOpenChildTasks(db, rootTaskId) {
   `).all(rootTaskId);
 }
 
+function listUnassignedTeamTasks(db, { teamId, projectId }) {
+  return db.prepare(`
+    SELECT id, task_key, title, stage, instructions, updated_at
+    FROM tasks
+    WHERE COALESCE(is_team_root, 0) = 0
+      AND project_id = ?
+      AND (team_id = ? OR team_id IS NULL)
+      AND COALESCE(owner_agent, '') = ''
+      AND COALESCE(stage, 'plan') NOT IN ('done', 'blocked')
+    ORDER BY updated_at DESC
+    LIMIT 30
+  `).all(projectId, teamId);
+}
+
 function describeMembers(members) {
   if (!members.length) return "(no members configured)";
   return members.map((m) => {
@@ -51,6 +64,16 @@ function describeChildren(children) {
   }).join("\n");
 }
 
+function describeUnassignedTasks(tasks) {
+  if (!tasks.length) return "(no unassigned team tasks)";
+  return tasks.map((task) => {
+    const key = task.task_key ? ` ${task.task_key}` : "";
+    const instructions = String(task.instructions || "").trim();
+    const summary = instructions ? ` — ${instructions.slice(0, 180)}` : "";
+    return `- [${task.id}]${key} ${task.title} (stage: ${task.stage})${summary}`;
+  }).join("\n");
+}
+
 function describeRecentCycles(cycles) {
   if (!cycles.length) return "(no prior cycles)";
   return cycles.slice(0, 8).map((r) => {
@@ -61,7 +84,7 @@ function describeRecentCycles(cycles) {
   }).join("\n");
 }
 
-function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, recentCycles, maxTaskCreations }) {
+function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, unassignedTasks, recentCycles, maxTaskCreations }) {
   const goalBlock = team.goal
     ? `\n## Team goal\n${team.goal}\n`
     : "\n## Team goal\n(not set — work toward broad team purpose)\n";
@@ -71,8 +94,8 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
   return [
     `You are the team lead for "${team.name}" working on project "${project.name}".`,
     `Your role is to reason about the team's progress toward its goal and produce a structured lead-cycle decision.`,
-    `You DO NOT execute tasks yourself; team members do. You coordinate by creating new tasks for them and observing existing tasks.`,
-    `You CANNOT reassign existing tasks or change their state. You can only create new tasks (assigned to roster members) and post advisory notes on existing tasks in this team's scope.`,
+    `You DO NOT execute tasks yourself by default; team members do. You coordinate by assigning unowned tasks, creating new tasks for roster members, and observing existing tasks.`,
+    `You may assign owner_agent for tasks in the unassigned queue below. You CANNOT change task state or reassign tasks that already have an owner.`,
     "",
     `## Team roster (the only agents you may target via suggested_agent)`,
     describeMembers(members),
@@ -81,6 +104,9 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     goalStatusBlock,
     `## Open child tasks under the team root`,
     describeChildren(children),
+    "",
+    `## Unassigned task queue`,
+    describeUnassignedTasks(unassignedTasks),
     "",
     `## Recent lead cycles (most recent first)`,
     describeRecentCycles(recentCycles),
@@ -91,11 +117,14 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `- goal_status_reason: short string (required when not in_progress)`,
     `- summary: short narrative of what you decided this cycle`,
     `- task_creations: array of { title, instructions, suggested_agent, depends_on, acceptance_criteria, expected_artifact, priority }`,
+    `- task_assignments: array of { target_task_id, owner_agent, rationale }`,
     `- advisory_notes: array of { target_task_id, kind ("warning"|"suggestion"|"blocker_observation"), content }`,
     `- next_review_hint: { after_minutes?, after_event? } | null`,
     "",
     `Constraints:`,
     `- Every suggested_agent MUST be in the team roster above.`,
+    `- Every task_assignments owner_agent MUST be in the team roster above, including yourself if you choose to own it.`,
+    `- Every task_assignments target_task_id MUST be one of the unassigned tasks above.`,
     `- task_creations max ${maxTaskCreations} per cycle.`,
     `- If goal_status="complete", task_creations MUST be empty.`,
     `- advisory_notes target_task_id must be one of the open child tasks above (or another task currently scoped to this team).`,
@@ -125,8 +154,11 @@ export async function runLeadCycle(ctx) {
   const members = listTeamMembers(db, team.id);
   const rosterAgents = getTeamRosterAgentNames(db, team.id);
   const children = listOpenChildTasks(db, root.id);
+  const unassignedTasks = listUnassignedTeamTasks(db, { teamId: team.id, projectId: project.id });
   const scopeTaskIds = children.map((c) => c.id);
+  for (const task of unassignedTasks) scopeTaskIds.push(task.id);
   scopeTaskIds.push(root.id);
+  const assignableTaskIds = unassignedTasks.map((task) => task.id);
   const recentCycles = listRecentLeadCycles(db, team.id, 10);
   const settings = readSettings(db);
   const configuredMaxTaskCreations = Number(settings.delegation_max_children_per_round);
@@ -154,6 +186,7 @@ export async function runLeadCycle(ctx) {
     root,
     members,
     children,
+    unassignedTasks,
     recentCycles,
     maxTaskCreations,
   });
@@ -213,7 +246,12 @@ export async function runLeadCycle(ctx) {
 
     let semantic = { ok: false, error: parseError || "no lead_cycle_result emitted" };
     if (parsedResult) {
-      semantic = validateLeadCycleSemantics(parsedResult, { rosterAgents, scopeTaskIds, maxTaskCreations });
+      semantic = validateLeadCycleSemantics(parsedResult, {
+        rosterAgents,
+        scopeTaskIds,
+        assignableTaskIds,
+        maxTaskCreations,
+      });
     }
 
     return {

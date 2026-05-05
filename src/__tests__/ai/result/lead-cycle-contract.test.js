@@ -32,6 +32,7 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(result.ok).toBe(true);
     expect(result.result.goal_status).toBe("in_progress");
     expect(result.result.task_creations).toEqual([]);
+    expect(result.result.task_assignments).toEqual([]);
   });
 
   it("rejects missing schema marker", () => {
@@ -74,6 +75,24 @@ describe("worklab.lead_cycle.v1 contract", () => {
     }, { rosterAgents: ["lead", "engineer"] });
     expect(v.ok).toBe(false);
     expect(v.error).toMatch(/rogue/);
+  });
+
+  it("validateLeadCycleSemantics rejects assignment owners outside the roster", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      task_assignments: [{ target_task_id: "task-1", owner_agent: "rogue", rationale: "Needs backend work." }],
+    }, { rosterAgents: ["lead", "engineer"], assignableTaskIds: ["task-1"] });
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/rogue/);
+  });
+
+  it("validateLeadCycleSemantics rejects assignment targets outside the assignable queue", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      task_assignments: [{ target_task_id: "outside", owner_agent: "lead", rationale: "I can own this." }],
+    }, { rosterAgents: ["lead", "engineer"], assignableTaskIds: ["task-1"] });
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/outside assignable task queue/);
   });
 
   it("validateLeadCycleSemantics rejects advisory_notes outside scopeTaskIds", () => {

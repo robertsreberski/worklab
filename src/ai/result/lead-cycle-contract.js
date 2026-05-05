@@ -1,10 +1,10 @@
 // Sibling contract to worklab.v2: structured output produced by a team
 // lead's lead_cycle run. The watcher converts a successful lead-cycle
-// result into existing side-effects: task_creations[] become subtasks of
-// the synthetic root via createDelegatedSubtasks; advisory_notes[] become
-// system comments on the named tasks; goal_status flips the synthetic
-// root's goal_status / last_lead_at metadata. The lead can NOT mutate
-// existing tasks' owner/state — see plan §"Lead powers".
+// result into existing side-effects: task_assignments[] assign owner_agent on
+// existing unowned team tasks; task_creations[] become subtasks of the
+// synthetic root via createDelegatedSubtasks; advisory_notes[] become system
+// comments on the named tasks; goal_status flips the synthetic root's
+// goal_status / last_lead_at metadata.
 
 import { z } from "zod";
 
@@ -37,6 +37,12 @@ export const leadAdvisoryNoteSchema = z.object({
   content: z.string().trim().min(1),
 }).passthrough();
 
+export const leadTaskAssignmentSchema = z.object({
+  target_task_id: z.string().trim().min(1),
+  owner_agent: z.string().trim().min(1),
+  rationale: z.string().default(""),
+}).passthrough();
+
 const reviewHintSchema = z.object({
   after_minutes: z.number().int().positive().optional().nullable(),
   after_event: z.enum(LEAD_REVIEW_AFTER_EVENTS).optional().nullable(),
@@ -48,6 +54,7 @@ export const leadCycleResultSchema = z.object({
   goal_status_reason: z.string().default(""),
   summary: z.string().trim().min(1),
   task_creations: z.array(leadTaskCreationSchema).default([]),
+  task_assignments: z.array(leadTaskAssignmentSchema).default([]),
   advisory_notes: z.array(leadAdvisoryNoteSchema).default([]),
   next_review_hint: reviewHintSchema,
 }).passthrough();
@@ -61,6 +68,7 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     "goal_status_reason",
     "summary",
     "task_creations",
+    "task_assignments",
     "advisory_notes",
     "next_review_hint",
   ],
@@ -91,6 +99,19 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
           acceptance_criteria: { type: "array", items: { type: "string" } },
           expected_artifact: { type: ["string", "null"] },
           priority: { type: "string", enum: LEAD_TASK_PRIORITIES },
+        },
+      },
+    },
+    task_assignments: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["target_task_id", "owner_agent", "rationale"],
+        properties: {
+          target_task_id: { type: "string" },
+          owner_agent: { type: "string" },
+          rationale: { type: "string" },
         },
       },
     },
@@ -133,6 +154,7 @@ function maxTaskCreationsForContext(ctx = {}) {
 export function normalizeLeadCycleResult(value, fallback = {}) {
   const parsed = leadCycleResultSchema.safeParse({
     task_creations: [],
+    task_assignments: [],
     advisory_notes: [],
     next_review_hint: null,
     ...fallback,
@@ -157,6 +179,7 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
     return { ok: false, error: "missing lead_cycle_result" };
   }
   const creations = Array.isArray(value.task_creations) ? value.task_creations : [];
+  const assignments = Array.isArray(value.task_assignments) ? value.task_assignments : [];
   const notes = Array.isArray(value.advisory_notes) ? value.advisory_notes : [];
   const maxTaskCreations = maxTaskCreationsForContext(ctx);
 
@@ -174,13 +197,37 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
 
   if (Array.isArray(ctx.rosterAgents) && ctx.rosterAgents.length) {
     const roster = new Set(ctx.rosterAgents);
-    const offenders = creations
+    const creationOffenders = creations
       .map((item) => String(item?.suggested_agent || "").trim())
       .filter((name) => name && !roster.has(name));
+    if (creationOffenders.length) {
+      return {
+        ok: false,
+        error: `suggested_agent outside team roster: ${creationOffenders.map((n) => `"${n}"`).join(", ")}`,
+        offenders: creationOffenders,
+      };
+    }
+    const assignmentOffenders = assignments
+      .map((item) => String(item?.owner_agent || "").trim())
+      .filter((name) => name && !roster.has(name));
+    if (assignmentOffenders.length) {
+      return {
+        ok: false,
+        error: `owner_agent outside team roster: ${assignmentOffenders.map((n) => `"${n}"`).join(", ")}`,
+        offenders: assignmentOffenders,
+      };
+    }
+  }
+
+  if (Array.isArray(ctx.assignableTaskIds)) {
+    const assignable = new Set(ctx.assignableTaskIds);
+    const offenders = assignments
+      .map((assignment) => String(assignment?.target_task_id || "").trim())
+      .filter((id) => id && !assignable.has(id));
     if (offenders.length) {
       return {
         ok: false,
-        error: `suggested_agent outside team roster: ${offenders.map((n) => `"${n}"`).join(", ")}`,
+        error: `task_assignments target tasks outside assignable task queue: ${offenders.join(", ")}`,
         offenders,
       };
     }
@@ -230,6 +277,7 @@ export function synthesizeLeadCycleFailure({ summary = "Lead cycle failed", reas
     goal_status_reason: reason || summary,
     summary,
     task_creations: [],
+    task_assignments: [],
     advisory_notes: [],
     next_review_hint: null,
   };
