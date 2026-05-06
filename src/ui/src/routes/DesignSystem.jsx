@@ -183,6 +183,8 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "LoadingState", group: "component", coverage: "visible" },
   { name: "MarkdownContent", group: "component", coverage: "visible" },
   { name: "Metric", group: "component", coverage: "visible" },
+  { name: "MobileConfigSheet", group: "component", coverage: "shell-hosted" },
+  { name: "MobileConfigTrigger", group: "component", coverage: "shell-hosted" },
   { name: "MobilePillRow", group: "component", coverage: "visible" },
   { name: "MobileTopbar", group: "component", coverage: "visible" },
   { name: "Modal", group: "component", coverage: "visible" },

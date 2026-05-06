@@ -2207,6 +2207,67 @@ test("mobile topbar owns the status safe-area background", async ({ page }) => {
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
+test("mobile task list keeps search visible and moves configuration into a bottom sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  await expect(page.locator(".commander-filter .search-field")).toBeVisible();
+  await expect(page.locator(".commander-mobile-config-trigger")).toBeVisible();
+  await expect(page.locator(".commander-filter .tabs")).toBeHidden();
+  await expect(page.locator(".commander-stage-filter")).toBeHidden();
+  await expect(page.locator(".commander-project-filter")).toBeHidden();
+
+  await page.locator(".commander-mobile-config-trigger").click();
+  const sheet = page.getByRole("dialog", { name: "Task list configuration" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator(".tabs")).toBeVisible();
+  await expect(sheet.locator(".commander-stage-filter")).toBeVisible();
+  await expect(sheet.locator(".commander-project-filter")).toBeVisible();
+  await sheet.getByRole("tab", { name: /Running/ }).click();
+  await expect(sheet.getByRole("tab", { name: /Running/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("mobile resource list filters are available from the shared configuration sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const route of [
+    { hash: "#/agents", label: "Agents" },
+    { hash: "#/projects", label: "Projects" },
+    { hash: "#/knowledge", label: "Knowledge" },
+    { hash: "#/skills", label: "Skills" },
+    { hash: "#/teams", label: "Teams" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".resource-toolbar .search-field")).toBeVisible();
+    await expect(page.locator(".resource-mobile-config-trigger")).toBeVisible();
+    await expect(page.locator(".resource-toolbar-filters")).toBeHidden();
+
+    await page.locator(".resource-mobile-config-trigger").click();
+    const sheet = page.getByRole("dialog", { name: `${route.label} configuration` });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator(".resource-toolbar-filters")).toBeVisible();
+    await expect(sheet.locator(".tabs, .resource-filter-select").first()).toBeVisible();
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await expect(sheet).toBeHidden();
+  }
+});
+
+test("mobile Activity filters collapse into a configuration sheet", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/activity`);
+  await expect(page.locator(".activity-filter-card")).toBeVisible();
+
+  await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
+  await expect(page.locator(".activity-filter-card .activity-filter-panel")).toBeHidden();
+  await page.locator(".activity-mobile-config-trigger").click();
+
+  const sheet = page.getByRole("dialog", { name: "Activity configuration" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator(".activity-filter-field", { hasText: "Agent" })).toBeVisible();
+  await expect(sheet.locator(".activity-filter-field", { hasText: "Status" })).toBeVisible();
+  await expect(sheet.locator(".activity-filter-date")).toBeVisible();
+});
+
 test("commander stage and project filters share selector sizing", async ({ page }) => {
   for (const viewport of [
     { width: 390, height: 844 },
@@ -2215,6 +2276,10 @@ test("commander stage and project filters share selector sizing", async ({ page 
     await page.setViewportSize(viewport);
     await page.goto(`${baseUrl}/#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
+    if (viewport.width <= 860) {
+      await page.locator(".commander-mobile-config-trigger").click();
+      await expect(page.getByRole("dialog", { name: "Task list configuration" })).toBeVisible();
+    }
 
     const metrics = await page.evaluate(() => {
       function selectorMetrics(selector) {
@@ -2277,6 +2342,7 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const filter = document.querySelector(".commander-filter");
     const search = document.querySelector(".commander-filter .search-field");
     const tabs = document.querySelector(".commander-filter .tabs");
+    const trigger = document.querySelector(".commander-mobile-config-trigger");
     const pill = row?.querySelector(".status-pill");
     const inlineNewTask = document.querySelector(".commander-new-task-inline");
     const fab = document.querySelector(".commander-new-task-fab");
@@ -2297,18 +2363,29 @@ test("mobile commander uses deliberate row density without exposing task ids", a
     const liveNameRect = liveName?.getBoundingClientRect();
     const liveArgRect = liveArg?.getBoundingClientRect();
     const liveTokenRect = liveToken?.getBoundingClientRect();
+    const searchRect = search?.getBoundingClientRect();
+    const tabsRect = tabs?.getBoundingClientRect();
+    const triggerRect = trigger?.getBoundingClientRect();
+    const triggerStyles = trigger ? getComputedStyle(trigger) : null;
     const liveNameStyles = liveName ? getComputedStyle(liveName) : null;
     const liveArgStyles = liveArg ? getComputedStyle(liveArg) : null;
     const navWidths = [...document.querySelectorAll(".app-tabbar a")]
       .map((entry) => Math.round(entry.getBoundingClientRect().width));
-    const tabHeights = [...document.querySelectorAll(".commander-filter .tab")]
-      .map((entry) => Math.round(entry.getBoundingClientRect().height));
     return {
       rowHeight: densityRow ? Math.round(densityRow.getBoundingClientRect().height) : 0,
       filterHeight: filter ? Math.round(filter.getBoundingClientRect().height) : 0,
-      searchWidth: search ? Math.round(search.getBoundingClientRect().width) : 0,
-      searchTop: search ? Math.round(search.getBoundingClientRect().top) : 0,
-      tabsTop: tabs ? Math.round(tabs.getBoundingClientRect().top) : 0,
+      searchWidth: searchRect ? Math.round(searchRect.width) : 0,
+      searchTop: searchRect ? Math.round(searchRect.top) : 0,
+      configTriggerDisplay: triggerStyles?.display || "",
+      configTriggerWidth: triggerRect ? Math.round(triggerRect.width) : 0,
+      configTriggerHeight: triggerRect ? Math.round(triggerRect.height) : 0,
+      configTriggerSameRow: searchRect && triggerRect
+        ? Math.abs(Math.round(searchRect.top) - Math.round(triggerRect.top)) <= 2
+        : false,
+      configTriggerAfterSearch: searchRect && triggerRect
+        ? Math.round(triggerRect.left) >= Math.round(searchRect.right)
+        : false,
+      filtersCollapsed: tabsRect ? Math.round(tabsRect.height) === 0 : true,
       idDisplay: id ? getComputedStyle(id).display : "",
       stateDisplay: state ? getComputedStyle(state).display : "",
       pillVisible: pill ? getComputedStyle(pill).display !== "none" : false,
@@ -2321,7 +2398,6 @@ test("mobile commander uses deliberate row density without exposing task ids", a
       navOverflowX: navStyles?.overflowX || "",
       activeNavBeforeDisplay: activeNavBefore?.display || "",
       activeNavBeforeContent: activeNavBefore?.content || "",
-      tabMinHeight: Math.min(...tabHeights),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
       viewportMeta,
       bodyTouchAction: bodyStyles.touchAction,
@@ -2360,9 +2436,14 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.pillVisible).toBe(true);
   expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
   expect(metrics.rowHeight).toBeLessThanOrEqual(120);
-  expect(metrics.filterHeight).toBeLessThanOrEqual(164);
-  expect(metrics.searchWidth).toBeGreaterThanOrEqual(340);
-  expect(metrics.tabsTop).toBeGreaterThan(metrics.searchTop);
+  expect(metrics.filterHeight).toBeLessThanOrEqual(80);
+  expect(metrics.searchWidth).toBeGreaterThanOrEqual(280);
+  expect(["flex", "inline-flex"]).toContain(metrics.configTriggerDisplay);
+  expect(metrics.configTriggerWidth).toBeGreaterThanOrEqual(32);
+  expect(metrics.configTriggerHeight).toBeGreaterThanOrEqual(32);
+  expect(metrics.configTriggerSameRow).toBe(true);
+  expect(metrics.configTriggerAfterSearch).toBe(true);
+  expect(metrics.filtersCollapsed).toBe(true);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
   expect(metrics.navOverflow).toBeLessThanOrEqual(0);
@@ -2382,7 +2463,6 @@ test("mobile commander uses deliberate row density without exposing task ids", a
   expect(metrics.liveToolInline).toBe(true);
   expect(metrics.liveToolNameSingleLine).toBe(true);
   expect(metrics.liveToolTokenSingleLine).toBe(true);
-  expect(metrics.tabMinHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.inlineNewTaskDisplay).toBe("none");
   expect(metrics.selectedBorderLeftWidth).toBe(2);
   expect(metrics.selectedBorderTopColor).toBe("rgba(0, 0, 0, 0)");

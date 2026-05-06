@@ -20,6 +20,7 @@ import { LoadingState } from "../components/LoadingState.jsx";
 import { ErrorState } from "../components/ErrorState.jsx";
 import { teamPickerOptions } from "../components/TeamPicker.jsx";
 import { Modal } from "../components/Modal.jsx";
+import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
@@ -444,6 +445,7 @@ export function Commander({ query: routeQuery = {} }) {
   const [checkedIds, setCheckedIds] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const [listOwnsFocus, setListOwnsFocus] = useState(false);
   const [runProgressEventsByRunId, setRunProgressEventsByRunId] = useState(() => new Map());
   const searchRef = useRef(null);
@@ -714,6 +716,7 @@ export function Commander({ query: routeQuery = {} }) {
   const hasFilter = groupFilter !== "all" || stageFilter !== "all" || projectFilter !== "all" || !!query.trim();
 
   const taskCountLabel = tasks ? `${filtered.length || 0} shown` : null;
+  const activeConfigCount = [groupFilter !== "all", stageFilter !== "all", projectFilter !== "all"].filter(Boolean).length;
   const hiddenDoneCount = !showCompleted ? Number(runtimeSummary?.hidden_done_count || 0) : 0;
   const showCompletedCount = !query.trim() && projectFilter === "all" && stageFilter === "all";
   const completedTotal = Number(runtimeSummary?.groups?.completed || 0);
@@ -780,37 +783,54 @@ export function Commander({ query: routeQuery = {} }) {
               inputRef={searchRef}
             />
             <div class="filter-divider" />
-            <Tabs
-              ariaLabel="Filter by runtime state"
-              value={groupFilter}
-              onChange={updateGroupFilter}
-              tabs={tabsWithCounts}
-              class="tabs-pills"
+            <MobileConfigTrigger
+              class="commander-mobile-config-trigger"
+              label="Task list configuration"
+              controls="commander-config-sheet"
+              expanded={configOpen}
+              activeCount={activeConfigCount}
+              onClick={() => setConfigOpen(true)}
             />
-            <Select
-              class="commander-stage-filter"
-              variant="menu"
-              value={stageFilter}
-              onChange={setStageFilter}
-              options={STAGE_FILTER_OPTIONS}
-              ariaLabel="Filter by exact stage"
-            />
-            <Select
-              class="commander-project-filter"
-              variant="menu"
-              value={projectFilter}
-              onChange={setProjectFilter}
-              options={projectOptions}
-              placeholder="Project"
-              ariaLabel="Filter by project"
-            />
-            <div class="commander-filter-actions">
-              <DailyCostChip />
-              {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
-              <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
-                New task
-              </Button>
-            </div>
+            <MobileConfigSheet
+              id="commander-config-sheet"
+              title="Task list configuration"
+              open={configOpen}
+              onClose={() => setConfigOpen(false)}
+              class="commander-config-sheet"
+              bodyClass="commander-config-body"
+            >
+              <Tabs
+                ariaLabel="Filter by runtime state"
+                value={groupFilter}
+                onChange={updateGroupFilter}
+                tabs={tabsWithCounts}
+                class="tabs-pills"
+              />
+              <Select
+                class="commander-stage-filter"
+                variant="menu"
+                value={stageFilter}
+                onChange={setStageFilter}
+                options={STAGE_FILTER_OPTIONS}
+                ariaLabel="Filter by exact stage"
+              />
+              <Select
+                class="commander-project-filter"
+                variant="menu"
+                value={projectFilter}
+                onChange={setProjectFilter}
+                options={projectOptions}
+                placeholder="Project"
+                ariaLabel="Filter by project"
+              />
+              <div class="commander-filter-actions">
+                <DailyCostChip />
+                {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
+                <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
+                  New task
+                </Button>
+              </div>
+            </MobileConfigSheet>
           </div>
           {checkedTaskIds.length > 0 && (
             <BulkTaskBar

@@ -146,6 +146,8 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
       countLabel={`${filtered.length} shown`}
       actionLabel="New entry"
       onAction={() => { navigateHash("#/knowledge/new"); }}
+      configTitle="Knowledge configuration"
+      activeConfigCount={[surface !== "canonical", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
       <Select class="resource-filter-select" value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />

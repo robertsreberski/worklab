@@ -119,6 +119,8 @@ export function Skills({ selectedName = null }) {
       countLabel={`${filtered.length} shown`}
       actionLabel="New skill"
       onAction={() => { navigateHash("#/skills/new"); }}
+      configTitle="Skills configuration"
+      activeConfigCount={[stateFilter !== "all", priorityFilter !== "all", usageFilter !== "all"].filter(Boolean).length}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter skills by enabled state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={priorityFilter} onChange={setPriorityFilter} options={priorityOptions} ariaLabel="Filter skills by priority" />
