@@ -15,15 +15,15 @@ import { consumeAllowedHash, getNavigationGuard, navigateHash, normalizeHash } f
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
-  const [pathPart, queryPart = ""] = h.split("?");
+  const queryIndex = h.indexOf("?");
+  const pathPart = queryIndex === -1 ? h : h.slice(0, queryIndex);
+  const queryPart = queryIndex === -1 ? "" : h.slice(queryIndex + 1);
   const segments = pathPart.split("/").filter(Boolean);
   const route = segments[0] || "tasks";
   const rest = segments.slice(1);
   const query = {};
-  for (const pair of queryPart.split("&")) {
-    if (!pair) continue;
-    const [k, v = ""] = pair.split("=");
-    query[decodeURIComponent(k)] = decodeURIComponent(v);
+  for (const [key, value] of new URLSearchParams(queryPart)) {
+    query[key] = value;
   }
   return { route, rest, query };
 }
@@ -76,7 +76,7 @@ export function App() {
   } else if (route === "skills") {
     body = <Skills selectedName={rest[0] || null} />;
   } else if (route === "knowledge") {
-    body = <Knowledge selectedSlug={rest[0] || null} mode={rest[1] || null} />;
+    body = <Knowledge selectedSlug={rest[0] || null} mode={rest[1] || null} query={query} />;
   } else if (route === "providers") {
     body = <Providers selectedId={rest[0] || null} />;
   } else if (route === "activity") {

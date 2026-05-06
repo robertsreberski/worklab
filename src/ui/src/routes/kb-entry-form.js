@@ -5,9 +5,21 @@ export const EMPTY_KB_FORM_ENTRY = {
   subcategory: "",
   project_id: "",
   tags: [],
+  source_task_id: "",
+  source_task_key: "",
+  source_run_id: "",
+  source_agent: "",
+  related_slugs: [],
+  supersedes_slugs: [],
+  canonical_slug: "",
   pinned: false,
   body: "",
 };
+
+function normalizeSlugList(value) {
+  if (Array.isArray(value)) return value.map((slug) => String(slug || "").trim()).filter(Boolean);
+  return String(value || "").split(",").map((slug) => slug.trim()).filter(Boolean);
+}
 
 export function normalizeKbEntry(entry) {
   const source = entry?.meta && typeof entry.meta === "object"
@@ -27,6 +39,13 @@ export function normalizeKbEntry(entry) {
     project: source.project || null,
     tags,
     pinned: !!source.pinned,
+    source_task_id: source.source_task_id || "",
+    source_task_key: source.source_task_key || "",
+    source_run_id: source.source_run_id || "",
+    source_agent: source.source_agent || "",
+    related_slugs: normalizeSlugList(source.related_slugs),
+    supersedes_slugs: normalizeSlugList(source.supersedes_slugs),
+    canonical_slug: source.canonical_slug || "",
     body: source.body || "",
     author: source.author || "",
     created_at: source.created_at || null,
@@ -45,7 +64,34 @@ export function normalizeKbFormEntry(entry) {
     subcategory: normalized.subcategory,
     project_id: normalized.project_id,
     pinned: normalized.pinned,
+    source_task_id: normalized.source_task_id,
+    source_task_key: normalized.source_task_key,
+    source_run_id: normalized.source_run_id,
+    source_agent: normalized.source_agent,
+    related_slugs: normalized.related_slugs,
+    supersedes_slugs: normalized.supersedes_slugs,
+    canonical_slug: normalized.canonical_slug,
     body: normalized.body,
     tags: normalized.tags,
   };
+}
+
+export function kbFormEntryFromQuery(query = {}) {
+  const entry = {
+    ...EMPTY_KB_FORM_ENTRY,
+    title: query.title || "",
+    category: query.category || "",
+    subcategory: query.subcategory || "",
+    project_id: query.project_id || "",
+    source_task_id: query.source_task_id || "",
+    source_task_key: query.source_task_key || "",
+    source_run_id: query.source_run_id || "",
+    source_agent: query.source_agent || "",
+    related_slugs: normalizeSlugList(query.related_slugs),
+    supersedes_slugs: normalizeSlugList(query.supersedes_slugs),
+    canonical_slug: query.canonical_slug || "",
+    tags: normalizeSlugList(query.tags),
+    body: query.body || "",
+  };
+  return entry;
 }
