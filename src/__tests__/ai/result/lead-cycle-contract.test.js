@@ -18,6 +18,20 @@ const baseResult = {
   next_review_hint: null,
 };
 
+function collectObjectSchemas(schema) {
+  const found = [];
+  function visit(node) {
+    if (!node || typeof node !== "object") return;
+    const types = Array.isArray(node.type) ? node.type : [node.type];
+    if (types.includes("object")) found.push(node);
+    for (const property of Object.values(node.properties || {})) visit(property);
+    if (node.items) visit(node.items);
+    for (const option of node.anyOf || []) visit(option);
+  }
+  visit(schema);
+  return found;
+}
+
 describe("worklab.lead_cycle.v1 contract", () => {
   it("exposes a JSON Schema with required fields and bounded enums", () => {
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.additionalProperties).toBe(false);
@@ -25,6 +39,15 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("summary");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.schema.enum).toEqual([LEAD_CYCLE_SCHEMA]);
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.goal_status.enum).toEqual(["in_progress", "complete", "blocked"]);
+  });
+
+  it("exports a strict structured-output schema accepted by response-format validators", () => {
+    for (const objectSchema of collectObjectSchemas(WORKLAB_LEAD_CYCLE_JSON_SCHEMA)) {
+      expect(objectSchema.additionalProperties).toBe(false);
+      if (objectSchema.properties) {
+        expect(objectSchema.required).toEqual(Object.keys(objectSchema.properties));
+      }
+    }
   });
 
   it("normalizes a minimal valid result", () => {
@@ -132,6 +155,55 @@ describe("worklab.lead_cycle.v1 contract", () => {
     const parsed = parseLeadCycleResultFromText(text);
     expect(parsed.ok).toBe(true);
     expect(parsed.result.summary).toBe("Inside fence");
+  });
+
+  it("parseLeadCycleResultFromText recovers valid lead-cycle JSON from worklab.v2 final_text", () => {
+    const wrapped = {
+      schema: "worklab.v2",
+      stage: "done",
+      decision: "approve",
+      summary: "Lead cycle completed.",
+      details: "",
+      final_text: JSON.stringify({ ...baseResult, summary: "Recovered from final_text" }),
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const parsed = parseLeadCycleResultFromText(JSON.stringify(wrapped));
+    expect(parsed.ok).toBe(true);
+    expect(parsed.result.schema).toBe(LEAD_CYCLE_SCHEMA);
+    expect(parsed.result.summary).toBe("Recovered from final_text");
+  });
+
+  it("parseLeadCycleResultFromText rejects wrapped lead-cycle JSON with invalid enum values", () => {
+    const wrapped = {
+      schema: "worklab.v2",
+      stage: "done",
+      decision: "approve",
+      summary: "Lead cycle completed.",
+      details: "",
+      final_text: JSON.stringify({
+        ...baseResult,
+        task_creations: [{
+          title: "Bad priority",
+          instructions: "",
+          suggested_agent: "lead",
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "medium",
+        }],
+        next_review_hint: { after_minutes: 30, after_event: "when a task finishes" },
+      }),
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    const parsed = parseLeadCycleResultFromText(JSON.stringify(wrapped));
+    expect(parsed.ok).toBe(false);
+    expect(parsed.error).toMatch(/Invalid option/);
   });
 
   it("synthesizeLeadCycleFailure returns a blocked result", () => {

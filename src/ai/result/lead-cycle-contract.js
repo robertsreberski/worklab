@@ -131,6 +131,7 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     next_review_hint: {
       type: ["object", "null"],
       additionalProperties: false,
+      required: ["after_minutes", "after_event"],
       properties: {
         after_minutes: { type: ["integer", "null"] },
         after_event: {
@@ -250,19 +251,31 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
   return { ok: true, error: null };
 }
 
+function normalizeLeadCycleCandidate(value, fallback) {
+  const normalized = normalizeLeadCycleResult(value, fallback);
+  if (normalized.ok) return normalized;
+  if (value?.schema === "worklab.v2" && typeof value.final_text === "string" && value.final_text.trim()) {
+    try {
+      return normalizeLeadCycleResult(JSON.parse(value.final_text), fallback);
+    } catch {
+      return normalized;
+    }
+  }
+  return normalized;
+}
+
 export function parseLeadCycleResultFromText(text, fallback = {}) {
   const raw = String(text || "").trim();
   if (!raw) return { ok: false, error: "empty final text", result: null };
   try {
-    const parsed = JSON.parse(raw);
-    return normalizeLeadCycleResult(parsed, fallback);
+    return normalizeLeadCycleCandidate(JSON.parse(raw), fallback);
   } catch {
     // Fall through to fenced/embedded JSON extraction.
   }
   const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fenced) {
     try {
-      return normalizeLeadCycleResult(JSON.parse(fenced[1]), fallback);
+      return normalizeLeadCycleCandidate(JSON.parse(fenced[1]), fallback);
     } catch {
       // ignore
     }
