@@ -9,21 +9,23 @@ import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Button } from "../components/primitives/Button.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { AgentEdit } from "./AgentEdit.jsx";
 import { humanizeSlug, modelDisplayName } from "../lib/display.js";
+import { agentIsRecent, buildAgentResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 function agentIsActive(agent) {
-  if (!agent.lastRunAt) return false;
-  return Date.now() - Number(agent.lastRunAt) < 10 * 60_000;
+  return agentIsRecent(agent);
 }
 
 function formatAvgDuration(value) {
@@ -37,6 +39,10 @@ function formatAvgDuration(value) {
 export function Agents({ selectedName = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [activityFilter, setActivityFilter] = useState("all");
+  const [modelFilter, setModelFilter] = useState("all");
+  const [effortFilter, setEffortFilter] = useState("all");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -62,32 +68,59 @@ export function Agents({ selectedName = null }) {
     },
   });
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return agents;
-    return agents.filter((a) => (
-      a.name?.toLowerCase().includes(q) ||
-      a.display_name?.toLowerCase().includes(q) ||
-      a.description?.toLowerCase().includes(q) ||
-      a.model?.toLowerCase().includes(q)
-    ));
-  }, [agents, query]);
+  const groups = useMemo(() => buildAgentResourceGroups(agents, {
+    query,
+    state: stateFilter,
+    activity: activityFilter,
+    model: modelFilter,
+    effort: effortFilter,
+  }), [activityFilter, agents, effortFilter, modelFilter, query, stateFilter]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const hasFilter = query.trim() || stateFilter !== "all" || activityFilter !== "all" || modelFilter !== "all" || effortFilter !== "all";
+  const stateTabs = useMemo(() => [
+    { value: "all", label: "All", count: agents.length },
+    { value: "enabled", label: "Enabled", count: agents.filter((agent) => agent.enabled !== false).length },
+    { value: "disabled", label: "Disabled", count: agents.filter((agent) => agent.enabled === false).length },
+  ], [agents]);
+  const modelOptions = useMemo(() => [
+    { value: "all", label: "All models" },
+    ...[...new Set(agents.map((agent) => agent.model).filter(Boolean))]
+      .sort((a, b) => modelDisplayName(a).localeCompare(modelDisplayName(b)))
+      .map((model) => ({ value: model, label: modelDisplayName(model), description: model })),
+  ], [agents]);
+  const effortOptions = useMemo(() => [
+    { value: "all", label: "All efforts" },
+    ...[...new Set(agents.map((agent) => agent.effort).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((effort) => ({ value: effort, label: `${effort} effort` })),
+  ], [agents]);
+  const activityOptions = [
+    { value: "all", label: "All activity" },
+    { value: "recent", label: "Recent" },
+    { value: "idle", label: "Idle" },
+  ];
 
   const listHeader = (
-    <PaneListHeader
+    <ResourceListToolbar
       searchValue={query}
       onSearch={setQuery}
       searchPlaceholder="Search agents…"
       searchAriaLabel="Search agents"
       searchRef={searchRef}
+      countLabel={`${filtered.length} shown`}
       actionLabel="New agent"
       onAction={() => { navigateHash("#/agents/new"); }}
-    />
+    >
+      <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter agents by enabled state" class="tabs-pills" />
+      <Select class="resource-filter-select" variant="menu" value={activityFilter} onChange={setActivityFilter} options={activityOptions} ariaLabel="Filter agents by activity" />
+      <Select class="resource-filter-select" variant="menu" value={modelFilter} onChange={setModelFilter} options={modelOptions} ariaLabel="Filter agents by model" />
+      <Select class="resource-filter-select" variant="menu" value={effortFilter} onChange={setEffortFilter} options={effortOptions} ariaLabel="Filter agents by effort" />
+    </ResourceListToolbar>
   );
 
   const listBody = filtered.length === 0 ? (
-    query ? (
-      <EmptyStateFiltered body="No agents match." onClearFilters={() => setQuery("")} />
+    hasFilter ? (
+      <EmptyStateFiltered body="No agents match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setActivityFilter("all"); setModelFilter("all"); setEffortFilter("all"); }} />
     ) : (
       <EmptyState
         title="No agents yet"
@@ -96,54 +129,50 @@ export function Agents({ selectedName = null }) {
       />
     )
   ) : (
-    filtered.map((a) => {
-      const isActive = agentIsActive(a);
-      const description = (a.description || "").trim();
-      const trailing = (
-        <span class="pane-row-summary pane-row-summary-metrics">
-          {isActive
-            ? <LivePulse size={8} color="var(--status-done)" />
-            : <StatusDot status={a.enabled ? "enabled" : "disabled"} size={8} />}
-          <span>{a.run_count_30d || 0} runs</span>
-          <span>{formatAvgDuration(a.avg_run_duration_ms)}</span>
-        </span>
-      );
-      return (
-        <PaneRow
-          key={a.name}
-          href={`#/agents/${a.name}`}
-          active={a.name === selectedName}
-          class="agent-pane-row"
-          onClick={(event) => {
-            event?.preventDefault?.();
-            navigateHash(`#/agents/${a.name}`);
-          }}
-          leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
-          title={a.display_name || humanizeSlug(a.name)}
-          sub={(
-            <span class="pane-row-substack">
-              {description && <span class="pane-row-description">{description}</span>}
-              <span class="pane-row-subline">
-                <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
-                {a.effort && (
-                  <>
-                    <span class="pane-row-dot">·</span>
-                    <span>{a.effort} effort</span>
-                  </>
-                )}
-                {!a.enabled && (
-                  <>
-                    <span class="pane-row-dot">·</span>
-                    <span>disabled</span>
-                  </>
-                )}
+    <div class="resource-list">
+      {groups.map((group) => (
+        <ResourceGroup key={group.key} group={group}>
+          {group.items.map((a) => {
+            const isActive = agentIsActive(a);
+            const description = (a.description || "").trim();
+            const trailing = (
+              <span class="pane-row-summary pane-row-summary-metrics">
+                {isActive
+                  ? <LivePulse size={8} color="var(--status-done)" />
+                  : <StatusDot status={a.enabled !== false ? "enabled" : "disabled"} size={8} />}
+                <span>{a.run_count_30d || 0} runs</span>
+                <span>{formatAvgDuration(a.avg_run_duration_ms)}</span>
               </span>
-            </span>
-          )}
-          trailing={trailing}
-        />
-      );
-    })
+            );
+            return (
+              <PaneRow
+                key={a.name}
+                href={`#/agents/${a.name}`}
+                active={a.name === selectedName}
+                class="agent-pane-row"
+                onClick={(event) => {
+                  event?.preventDefault?.();
+                  navigateHash(`#/agents/${a.name}`);
+                }}
+                leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
+                title={a.display_name || humanizeSlug(a.name)}
+                sub={(
+                  <span class="pane-row-substack">
+                    {description && <span class="pane-row-description">{description}</span>}
+                    <span class="resource-row-tags">
+                      <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
+                      {a.effort && <span class="resource-row-chip">{a.effort} effort</span>}
+                      {a.enabled === false && <span class="resource-row-chip">disabled</span>}
+                    </span>
+                  </span>
+                )}
+                trailing={trailing}
+              />
+            );
+          })}
+        </ResourceGroup>
+      ))}
+    </div>
   );
 
   const detail = selectedName ? (
@@ -176,6 +205,8 @@ export function Agents({ selectedName = null }) {
         detail={detail}
         hasSelection={!!selectedName}
         detailOwnsMobileBack={!!selectedName}
+        listFirst
+        class="resource-list-layout"
         onBack={() => navigateHash("#/agents")}
         backLabel="All agents"
       />

@@ -13,6 +13,7 @@ export function PaneLayout({
   onBack,
   backLabel = "Back",
   detailOwnsMobileBack = false,
+  listFirst = false,
   class: className = "",
 }) {
   const [compactView, setCompactView] = useState(
@@ -53,6 +54,17 @@ export function PaneLayout({
             <div class="pane-list-body wl-scrollbar">{listBody}</div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  if (listFirst && !hasSelection) {
+    return (
+      <div class={`two-pane two-pane-list-first ${className}`.trim()}>
+        <section class="pane-list pane-list-full">
+          {listHeader && <div class="pane-list-head">{listHeader}</div>}
+          <div class="pane-list-body wl-scrollbar">{listBody}</div>
+        </section>
       </div>
     );
   }

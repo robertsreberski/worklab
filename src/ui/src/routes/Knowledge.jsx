@@ -6,14 +6,16 @@ import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { KbEdit } from "./KbEdit.jsx";
 import { KbDetail } from "./KbDetail.jsx";
+import { buildKnowledgeResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
@@ -99,33 +101,16 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
     },
   });
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    let list = entries;
-    if (projectId !== "all") list = list.filter((e) => (e.project_id || "") === projectId);
-    if (category !== "all") list = list.filter((e) => (e.category || "") === category);
-    if (subcategory !== "all") list = list.filter((e) => (e.subcategory || "") === subcategory);
-    if (tag !== "all") list = list.filter((e) => (e.tags || []).includes(tag));
-    if (pinned === "pinned") list = list.filter((e) => e.pinned);
-    else if (pinned === "unpinned") list = list.filter((e) => !e.pinned);
-    if (surface === "canonical") list = list.filter((e) => !e.auto_promoted);
-    else if (surface === "run_outputs") list = list.filter((e) => e.auto_promoted);
-    if (q) {
-      list = list.filter((e) =>
-        e.title?.toLowerCase().includes(q) ||
-        e.slug?.toLowerCase().includes(q) ||
-        e.project?.name?.toLowerCase().includes(q) ||
-        e.project?.slug?.toLowerCase().includes(q) ||
-        e.category?.toLowerCase().includes(q) ||
-        e.subcategory?.toLowerCase().includes(q) ||
-        (e.tags || []).some((t) => t.toLowerCase().includes(q))
-      );
-    }
-    return [...list].sort((a, b) => {
-      if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
-      return (knowledgeTimestamp(b.updated_at) || 0) - (knowledgeTimestamp(a.updated_at) || 0);
-    });
-  }, [entries, query, projectId, category, subcategory, tag, pinned, surface]);
+  const groups = useMemo(() => buildKnowledgeResourceGroups(entries, {
+    query,
+    projectId,
+    category,
+    subcategory,
+    tag,
+    pinned,
+    surface,
+  }), [category, entries, pinned, projectId, query, subcategory, surface, tag]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
 
   const projectOptions = useMemo(() => [
     { value: "all", label: "All projects" },
@@ -144,32 +129,31 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
     { value: "pinned", label: "Pinned" },
     { value: "unpinned", label: "Unpinned" },
   ];
-  const surfaceOptions = [
-    { value: "canonical", label: "Canonical" },
-    { value: "run_outputs", label: "Run outputs" },
-    { value: "all", label: "All entries" },
+  const surfaceTabs = [
+    { value: "canonical", label: "Canonical", count: entries.filter((entry) => !entry.auto_promoted).length },
+    { value: "run_outputs", label: "Run outputs", count: entries.filter((entry) => entry.auto_promoted).length },
+    { value: "all", label: "All", count: entries.length },
   ];
   const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all" || surface !== "canonical";
 
   const listHeader = (
-    <PaneListHeader
+    <ResourceListToolbar
       searchValue={query}
       onSearch={setQuery}
       searchPlaceholder="Search knowledge…"
       searchAriaLabel="Search knowledge"
       searchRef={searchRef}
+      countLabel={`${filtered.length} shown`}
       actionLabel="New entry"
       onAction={() => { navigateHash("#/knowledge/new"); }}
     >
-      <div class="knowledge-filter-row">
-        <Select value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />
-        <Select value={category} options={categoryOptions} onChange={setCategory} ariaLabel="Filter knowledge by category" />
-        <Select value={subcategory} options={subcategoryOptions} onChange={setSubcategory} ariaLabel="Filter knowledge by subcategory" />
-        <Select value={tag} options={tagOptions} onChange={setTag} ariaLabel="Filter knowledge by tag" />
-        <Select value={pinned} options={pinnedOptions} onChange={setPinned} ariaLabel="Filter knowledge by pin state" />
-        <Select value={surface} options={surfaceOptions} onChange={setSurface} ariaLabel="Filter generated run outputs" />
-      </div>
-    </PaneListHeader>
+      <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
+      <Select class="resource-filter-select" value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />
+      <Select class="resource-filter-select" value={category} options={categoryOptions} onChange={setCategory} ariaLabel="Filter knowledge by category" />
+      <Select class="resource-filter-select" value={subcategory} options={subcategoryOptions} onChange={setSubcategory} ariaLabel="Filter knowledge by subcategory" />
+      <Select class="resource-filter-select" value={tag} options={tagOptions} onChange={setTag} ariaLabel="Filter knowledge by tag" />
+      <Select class="resource-filter-select" value={pinned} options={pinnedOptions} onChange={setPinned} ariaLabel="Filter knowledge by pin state" />
+    </ResourceListToolbar>
   );
 
   const listBody = filtered.length === 0 ? (
@@ -183,41 +167,49 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
       />
     )
   ) : (
-    filtered.map((e) => {
-      const cat = tokenForBadge(e.category);
-      return (
-        <PaneRow
-          key={e.slug}
-          href={`#/knowledge/${e.slug}`}
-          active={e.slug === selectedSlug}
-          class="knowledge-pane-row"
-          onClick={(event) => {
-            event?.preventDefault?.();
-            navigateHash(`#/knowledge/${e.slug}`);
-          }}
-          leading={(
-            <span class={`knowledge-row-leading ${e.pinned ? "pinned" : ""}`.trim()}>
-              <Icon name={e.pinned ? "pin" : "book"} size={12} />
-            </span>
-          )}
-          title={e.title}
-          sub={(
-            <span class="knowledge-row-sub">
-              {e.project?.slug && <span class="pane-row-mono">{e.project.slug}</span>}
-              {e.auto_promoted && <span class="kb-category-badge" data-category="run-results">run output</span>}
-              {e.category && <span class="kb-category-badge" data-category={cat}>{e.category}</span>}
-              {e.subcategory && <span class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</span>}
-              <span class="pane-row-mono">{e.slug}</span>
-            </span>
-          )}
-          trailing={(
-            <span class="pane-row-summary pane-row-summary-metrics">
-              <span>{formatKnowledgeAge(e.updated_at)}</span>
-            </span>
-          )}
-        />
-      );
-    })
+    <div class="resource-list">
+      {groups.map((group) => (
+        <ResourceGroup key={group.key} group={group}>
+          {group.items.map((e) => {
+            const cat = tokenForBadge(e.category);
+            return (
+              <PaneRow
+                key={e.slug}
+                href={`#/knowledge/${e.slug}`}
+                active={e.slug === selectedSlug}
+                class="knowledge-pane-row"
+                onClick={(event) => {
+                  event?.preventDefault?.();
+                  navigateHash(`#/knowledge/${e.slug}`);
+                }}
+                leading={(
+                  <span class={`knowledge-row-leading ${e.pinned ? "pinned" : ""}`.trim()}>
+                    <Icon name={e.pinned ? "pin" : "book"} size={12} />
+                  </span>
+                )}
+                title={e.title}
+                sub={(
+                  <span class="resource-row-tags">
+                    {e.project?.slug && <span class="pane-row-mono">{e.project.slug}</span>}
+                    {e.auto_promoted && <span class="kb-category-badge" data-category="run-results">run output</span>}
+                    {e.category && <span class="kb-category-badge" data-category={cat}>{e.category}</span>}
+                    {e.subcategory && <span class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</span>}
+                    {e.pinned && <span class="resource-row-chip">pinned</span>}
+                    {e.related_slugs?.length ? <span class="resource-row-chip">{e.related_slugs.length} related</span> : null}
+                    <span class="pane-row-mono">{e.slug}</span>
+                  </span>
+                )}
+                trailing={(
+                  <span class="pane-row-summary pane-row-summary-metrics">
+                    <span>{formatKnowledgeAge(e.updated_at)}</span>
+                  </span>
+                )}
+              />
+            );
+          })}
+        </ResourceGroup>
+      ))}
+    </div>
   );
 
   const isEditing = selectedSlug === "new" || mode === "edit";
@@ -250,6 +242,8 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
         detail={detail}
         hasSelection={!!selectedSlug}
         detailOwnsMobileBack={!!selectedSlug}
+        listFirst
+        class="resource-list-layout"
         onBack={() => navigateHash("#/knowledge")}
         backLabel="All entries"
       />

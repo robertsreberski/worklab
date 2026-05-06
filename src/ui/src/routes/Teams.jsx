@@ -9,11 +9,13 @@ import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Button } from "../components/primitives/Button.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { PaneListHeader } from "../components/layout/index.js";
-import { EmptyState } from "../components/EmptyState.jsx";
+import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
@@ -23,6 +25,8 @@ import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
+import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
+import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 const GOOD_TEAM_CHECKLIST = [
   "Goal: define the kind of work this team owns.",
@@ -439,7 +443,11 @@ export function Teams({ selectedId = null, mode = null }) {
   const [teams, setTeams] = useState([]);
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [scheduleFilter, setScheduleFilter] = useState("all");
+  const [leadFilter, setLeadFilter] = useState("all");
   const [detail, setDetail] = useState(null);
+  const searchRef = useRef(null);
   const reloadRef = useRef(null);
   const agentsReloadRef = useRef(null);
 
@@ -447,7 +455,7 @@ export function Teams({ selectedId = null, mode = null }) {
     reloadRef.current?.abort?.();
     const ctrl = new AbortController();
     reloadRef.current = ctrl;
-    api.listTeams(undefined, { signal: ctrl.signal })
+    api.listTeams({ include_archived: "true" }, { signal: ctrl.signal })
       .then((r) => { if (!ctrl.signal.aborted) setTeams(r.teams || []); })
       .catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
   }, []);
@@ -478,6 +486,13 @@ export function Teams({ selectedId = null, mode = null }) {
   });
   useAppResume(reloadSoon);
   useAppResume(reloadAgents);
+  useGlobalShortcuts({
+    "/": (event) => {
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select?.();
+    },
+  });
 
   const loadDetail = useCallback(() => {
     if (!selectedId || selectedId === "new") { setDetail(null); return; }
@@ -485,11 +500,29 @@ export function Teams({ selectedId = null, mode = null }) {
   }, [selectedId]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return teams;
-    return teams.filter((t) => (t.name + " " + t.slug + " " + (t.goal || "")).toLowerCase().includes(q));
-  }, [teams, query]);
+  const groups = useMemo(() => buildTeamResourceGroups(teams, {
+    query,
+    status: statusFilter,
+    schedule: scheduleFilter,
+    lead: leadFilter,
+  }), [leadFilter, query, scheduleFilter, statusFilter, teams]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const hasFilter = query.trim() || statusFilter !== "active" || scheduleFilter !== "all" || leadFilter !== "all";
+  const statusTabs = useMemo(() => [
+    { value: "active", label: "Active", count: teams.filter((team) => team.status !== "archived").length },
+    { value: "archived", label: "Archived", count: teams.filter((team) => team.status === "archived").length },
+    { value: "all", label: "All", count: teams.length },
+  ], [teams]);
+  const scheduleOptions = [
+    { value: "all", label: "All schedules" },
+    { value: "scheduled", label: "Scheduled" },
+    { value: "manual", label: "Manual" },
+  ];
+  const leadOptions = [
+    { value: "all", label: "All leads" },
+    { value: "with_lead", label: "Has lead" },
+    { value: "no_lead", label: "No lead" },
+  ];
 
   const isNew = selectedId === "new";
   const isEditing = mode === "edit" || isNew;
@@ -539,41 +572,71 @@ export function Teams({ selectedId = null, mode = null }) {
         onBack={() => navigateHash("#/teams")}
         backLabel="Teams"
         listHeader={(
-          <PaneListHeader
+          <ResourceListToolbar
             searchValue={query}
             onSearch={setQuery}
             searchPlaceholder="Search teams..."
             searchAriaLabel="Search teams"
+            searchRef={searchRef}
+            countLabel={`${filtered.length} shown`}
             actionLabel="New team"
             onAction={() => navigateHash("#/teams/new")}
-          />
+          >
+            <Tabs value={statusFilter} onChange={setStatusFilter} tabs={statusTabs} ariaLabel="Filter teams by status" class="tabs-pills" />
+            <Select class="resource-filter-select" variant="menu" value={scheduleFilter} onChange={setScheduleFilter} options={scheduleOptions} ariaLabel="Filter teams by schedule" />
+            <Select class="resource-filter-select" variant="menu" value={leadFilter} onChange={setLeadFilter} options={leadOptions} ariaLabel="Filter teams by lead" />
+          </ResourceListToolbar>
         )}
         listBody={(
-          <div class="pane-list">
+          <div class="resource-list">
             {filtered.length === 0 ? (
-              <EmptyState
-                icon={<Icon name="users" size={20} />}
-                title="No teams"
-                body="Create a team, choose a lead, add specialist members, then assign it to a project or task."
-              />
-            ) : filtered.map((team) => (
-              <PaneRow
-                key={team.id}
-                active={team.id === selectedId || team.slug === selectedId}
-                href={`#/teams/${encodeURIComponent(team.slug)}`}
-                leading={<span class="team-row-leading"><Icon name="users" size={12} /></span>}
-                title={team.name}
-                sub={<><span>{team.slug}</span> · <span>{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</span></>}
-                trailing={(
-                  <span class="team-list-status" title={team.status} aria-label={`Team status: ${team.status}`}>
-                    <StatusDot status={teamListStatus(team.status)} size={8} />
-                  </span>
-                )}
-              />
+              hasFilter ? (
+                <EmptyStateFiltered body="No teams match." onClearFilters={() => { setQuery(""); setStatusFilter("active"); setScheduleFilter("all"); setLeadFilter("all"); }} />
+              ) : (
+                <EmptyState
+                  icon={<Icon name="users" size={20} />}
+                  title="No teams"
+                  body="Create a team, choose a lead, add specialist members, then assign it to a project or task."
+                />
+              )
+            ) : groups.map((group) => (
+              <ResourceGroup key={group.key} group={group}>
+                {group.items.map((team) => (
+                  <PaneRow
+                    key={team.id}
+                    active={team.id === selectedId || team.slug === selectedId}
+                    href={`#/teams/${encodeURIComponent(team.slug)}`}
+                    leading={<span class="team-row-leading"><Icon name="users" size={12} /></span>}
+                    title={team.name}
+                    sub={(
+                      <span class="pane-row-substack">
+                        {(team.goal || team.description) && <span class="pane-row-description">{team.goal || team.description}</span>}
+                        <span class="resource-row-tags">
+                          <span class="pane-row-mono">{team.slug}</span>
+                          {team.lead_agent && <span class="resource-row-chip">lead {team.lead_agent}</span>}
+                          {team.schedule_enabled && <span class="resource-row-chip">scheduled</span>}
+                          <span class="resource-row-chip">{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</span>
+                          {Number(team.project_count || 0) > 0 && <span class="resource-row-chip">{team.project_count} project{team.project_count === 1 ? "" : "s"}</span>}
+                        </span>
+                      </span>
+                    )}
+                    trailing={(
+                      <span class="pane-row-summary pane-row-summary-metrics">
+                        <span class="team-list-status" title={team.status} aria-label={`Team status: ${team.status}`}>
+                          <StatusDot status={teamListStatus(team.status)} size={8} />
+                        </span>
+                        <span>{team.status || "active"}</span>
+                      </span>
+                    )}
+                  />
+                ))}
+              </ResourceGroup>
             ))}
           </div>
         )}
         detail={body}
+        listFirst
+        class="resource-list-layout"
       />
     </AppShell>
   );
