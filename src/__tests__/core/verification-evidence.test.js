@@ -4,6 +4,7 @@ import {
   crossCheckVerificationEvidenceWithAdjudicator,
 } from "../../core/verification-evidence.js";
 import { makeTestDb } from "../helpers/test-db.js";
+import { createProvider, upsertModel } from "../../core/providers.js";
 
 function seedRunWithEvents(db, runId, events) {
   const now = Date.now();
@@ -11,6 +12,29 @@ function seedRunWithEvents(db, runId, events) {
     .run(runId, now);
   db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
     .run(`log-${runId}`, runId, JSON.stringify(events), now);
+}
+
+function seedAdjudicatorModel(db, {
+  providerType = "ollama",
+  baseUrl = "http://127.0.0.1:11434",
+  modelName = "gpt-oss-safeguard:20b",
+} = {}) {
+  const provider = createProvider({
+    db,
+    name: `${providerType}-adjudicator`,
+    provider_type: providerType,
+    base_url: baseUrl,
+    trust_public_url: /^https:\/\//.test(baseUrl),
+  });
+  upsertModel({
+    db,
+    providerId: provider.id,
+    modelName,
+    displayName: modelName,
+    capabilities: { chat: true, json_mode: true },
+    enabled: true,
+  });
+  return { provider, modelRef: `vercel:${provider.id}:${modelName}` };
 }
 
 describe("crossCheckVerificationEvidence", () => {
@@ -126,8 +150,9 @@ describe("crossCheckVerificationEvidence", () => {
     });
   });
 
-  it("uses the Ollama adjudicator to rescue deterministic misses against actual tool calls", async () => {
+  it("uses the configured verification adjudicator to rescue deterministic misses against actual tool calls", async () => {
     const db = makeTestDb();
+    const { modelRef } = seedAdjudicatorModel(db);
     seedRunWithEvents(db, "review-1", []);
     seedRunWithEvents(db, "exec-1", [
       {
@@ -156,9 +181,8 @@ describe("crossCheckVerificationEvidence", () => {
         { kind: "test", command_or_url: "focused verification-evidence vitest run" },
       ],
       adjudicator: {
-        mode: "ollama",
-        model: "gpt-oss-safeguard:20b",
-        baseUrl: "http://127.0.0.1:11434",
+        mode: "on",
+        model: modelRef,
         timeoutMs: 1000,
       },
       fetchImpl,
@@ -171,7 +195,7 @@ describe("crossCheckVerificationEvidence", () => {
     });
     expect(result.matchedRows[0]).toMatchObject({
       evidence_index: 0,
-      match_source: "ollama",
+      match_source: "adjudicator",
       matched_tool_call: "exec-1:0",
       confidence: 0.91,
     });
@@ -186,6 +210,7 @@ describe("crossCheckVerificationEvidence", () => {
 
   it("fails closed when the adjudicator returns malformed output", async () => {
     const db = makeTestDb();
+    const { modelRef } = seedAdjudicatorModel(db);
     seedRunWithEvents(db, "review-1", []);
     seedRunWithEvents(db, "exec-1", [
       {
@@ -204,7 +229,7 @@ describe("crossCheckVerificationEvidence", () => {
       evidence: [
         { kind: "test", command_or_url: "test run summary" },
       ],
-      adjudicator: { mode: "ollama", model: "gpt-oss-safeguard:20b", baseUrl: "http://127.0.0.1:11434", timeoutMs: 1000 },
+      adjudicator: { mode: "on", model: modelRef, timeoutMs: 1000 },
       fetchImpl,
     });
 
@@ -222,6 +247,7 @@ describe("crossCheckVerificationEvidence", () => {
 
   it("fails closed when the adjudicator references a tool call id that was not provided", async () => {
     const db = makeTestDb();
+    const { modelRef } = seedAdjudicatorModel(db);
     seedRunWithEvents(db, "review-1", []);
     seedRunWithEvents(db, "exec-1", [
       {
@@ -249,12 +275,62 @@ describe("crossCheckVerificationEvidence", () => {
       evidence: [
         { kind: "test", command_or_url: "test run summary" },
       ],
-      adjudicator: { mode: "ollama", model: "gpt-oss-safeguard:20b", baseUrl: "http://127.0.0.1:11434", timeoutMs: 1000 },
+      adjudicator: { mode: "on", model: modelRef, timeoutMs: 1000 },
       fetchImpl,
     });
 
     expect(result.unmatchedCount).toBe(1);
     expect(result.unmatchedRows[0].reason).toMatch(/unknown tool call id/i);
+  });
+
+  it("calls OpenAI-compatible provider endpoints for non-Ollama adjudicator models", async () => {
+    const db = makeTestDb();
+    const { modelRef } = seedAdjudicatorModel(db, {
+      providerType: "openai_compat",
+      baseUrl: "http://127.0.0.1:12345",
+      modelName: "local-safeguard",
+    });
+    seedRunWithEvents(db, "review-1", []);
+    seedRunWithEvents(db, "exec-1", [
+      {
+        type: "assistant",
+        content: [{ type: "tool_use", name: "Bash", input: { command: "npm run build:ui" } }],
+      },
+    ]);
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [{
+          message: {
+            content: JSON.stringify({
+              decision: "match",
+              matched_tool_call_id: "exec-1:0",
+              reason: "The evidence summarizes the logged UI build.",
+              confidence: 0.88,
+            }),
+          },
+        }],
+      }),
+    }));
+
+    const result = await crossCheckVerificationEvidenceWithAdjudicator(db, {
+      reviewRunId: "review-1",
+      parentRunId: "exec-1",
+      evidence: [
+        { kind: "build", command_or_url: "UI production build completed" },
+      ],
+      adjudicator: { mode: "on", model: modelRef, timeoutMs: 1000 },
+      fetchImpl,
+    });
+
+    expect(result.matchedCount).toBe(1);
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe("http://127.0.0.1:12345/v1/chat/completions");
+    expect(JSON.parse(init.body)).toMatchObject({
+      model: "local-safeguard",
+      response_format: { type: "json_object" },
+    });
   });
 
   it("reports all unmatched when the run has no tool calls at all", () => {

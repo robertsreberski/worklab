@@ -1,5 +1,12 @@
-export const DEFAULT_VERIFICATION_ADJUDICATOR_MODEL = "gpt-oss-safeguard:20b";
-export const DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL = "http://127.0.0.1:11434";
+import {
+  buildModelCapabilities,
+  getModelByProviderAndName,
+  getProvider,
+  isOpenAICompatibleProviderType,
+  listProviders,
+} from "./providers.js";
+
+export const DEFAULT_VERIFICATION_ADJUDICATOR_MODEL = "";
 export const DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS = 30000;
 
 const MIN_MATCH_CONFIDENCE = 0.7;
@@ -22,8 +29,106 @@ function trimText(value, max = 1200) {
   return `${text.slice(0, max - 3)}...`;
 }
 
+function cleanPart(value, message) {
+  if (!value || typeof value !== "string" || value.trim() !== value) throw new Error(message);
+  return value;
+}
+
+export function parseVerificationAdjudicatorModelReference(value) {
+  if (!value || typeof value !== "string") throw new Error("verification adjudicator model reference required");
+  const text = value.trim();
+  if (!text) throw new Error("verification adjudicator model reference required");
+  const i = text.indexOf(":");
+  if (i > 0) {
+    const kind = text.slice(0, i);
+    const rest = text.slice(i + 1);
+    if (kind === "vercel" || kind === "provider") {
+      const j = rest.indexOf(":");
+      if (j <= 0 || j === rest.length - 1) {
+        throw new Error("invalid verification adjudicator model reference; expected vercel:<providerId>:<model>");
+      }
+      const providerId = cleanPart(rest.slice(0, j), "provider id required");
+      const model = cleanPart(rest.slice(j + 1), "verification adjudicator model id required");
+      return { kind: "vercel", providerId, model, reference: `vercel:${providerId}:${model}`, rawReference: text };
+    }
+  }
+  return { kind: "legacy", model: text, reference: text };
+}
+
 function rootUrl(baseUrl) {
-  return String(baseUrl || DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL).replace(/\/+$/, "");
+  return String(baseUrl || "").replace(/\/+$/, "").replace(/\/(api|v1)$/, "");
+}
+
+function v1Url(baseUrl) {
+  const trimmed = String(baseUrl || "").replace(/\/+$/, "");
+  return /\/v\d+$/.test(trimmed) ? trimmed : `${trimmed}/v1`;
+}
+
+function authHeaders(provider) {
+  return provider?.api_key ? { authorization: `Bearer ${provider.api_key}` } : {};
+}
+
+function providerSupportsAdjudication(provider) {
+  return provider?.provider_type === "ollama" || isOpenAICompatibleProviderType(provider?.provider_type);
+}
+
+function runnableCapabilities(provider, modelName, modelRow = null) {
+  const capabilities = buildModelCapabilities(provider.provider_type, modelName, modelRow?.capabilities || {});
+  if (!capabilities.runnable_for_agent) {
+    throw new Error(capabilities.unavailable_reason || "adjudicator model is not runnable for chat");
+  }
+  return capabilities;
+}
+
+function targetFromProvider({ provider, modelName, modelRow = null }) {
+  if (!provider) throw new Error("verification adjudicator provider not found");
+  if (!provider.enabled) throw new Error(`verification adjudicator provider is disabled: ${provider.id}`);
+  if (!providerSupportsAdjudication(provider)) {
+    throw new Error(`verification adjudicator provider type is unsupported: ${provider.provider_type}`);
+  }
+  if (modelRow && !modelRow.enabled) throw new Error(`verification adjudicator model is disabled: ${modelName}`);
+  const capabilities = runnableCapabilities(provider, modelName, modelRow);
+  return {
+    provider,
+    modelName,
+    modelRow,
+    capabilities,
+    reference: `vercel:${provider.id}:${modelName}`,
+  };
+}
+
+export function resolveVerificationAdjudicatorTarget({ db, dataDir, modelRef }) {
+  if (!db) throw new Error("verification adjudicator database is unavailable");
+  const parsed = parseVerificationAdjudicatorModelReference(modelRef);
+  if (parsed.kind === "vercel") {
+    const provider = getProvider({ db, dataDir, id: parsed.providerId, includeKey: true });
+    if (!provider) throw new Error(`verification adjudicator provider not found: ${parsed.providerId}`);
+    const modelRow = getModelByProviderAndName({ db, providerId: parsed.providerId, modelName: parsed.model });
+    return targetFromProvider({ provider, modelName: parsed.model, modelRow });
+  }
+
+  const providers = listProviders({ db, dataDir, enabledOnly: true, includeKeys: true })
+    .filter(providerSupportsAdjudication);
+  const exactMatches = [];
+  for (const provider of providers) {
+    const modelRow = getModelByProviderAndName({ db, providerId: provider.id, modelName: parsed.model });
+    if (!modelRow || !modelRow.enabled) continue;
+    try {
+      exactMatches.push(targetFromProvider({ provider, modelName: parsed.model, modelRow }));
+    } catch {
+      // Keep looking; a legacy bare model can exist as a disabled or non-chat row.
+    }
+  }
+  if (exactMatches.length === 1) return exactMatches[0];
+  if (exactMatches.length > 1) {
+    throw new Error(`verification adjudicator model is ambiguous across providers: ${parsed.model}`);
+  }
+
+  const ollamaProviders = providers.filter((provider) => provider.provider_type === "ollama");
+  if (ollamaProviders.length === 1) {
+    return targetFromProvider({ provider: ollamaProviders[0], modelName: parsed.model, modelRow: null });
+  }
+  throw new Error(`verification adjudicator model was not found in enabled providers: ${parsed.model}`);
 }
 
 function parseJsonObject(text) {
@@ -41,6 +146,7 @@ function parseJsonObject(text) {
 
 function responseContent(payload) {
   if (payload?.message?.content !== undefined) return payload.message.content;
+  if (payload?.choices?.[0]?.message?.content !== undefined) return payload.choices[0].message.content;
   if (payload?.response !== undefined) return payload.response;
   return payload;
 }
@@ -164,10 +270,11 @@ function normalizeDecision(value, signalsById) {
 }
 
 export async function adjudicateVerificationEvidenceRow({
+  db,
+  dataDir,
   row,
   signals,
-  model = DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
-  baseUrl = DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL,
+  modelRef = DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
   timeoutMs = DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
   fetchImpl = globalThis.fetch,
 } = {}) {
@@ -182,21 +289,36 @@ export async function adjudicateVerificationEvidenceRow({
   if (typeof fetchImpl !== "function") {
     return { decision: "no_match", matched_tool_call_id: null, reason: "Adjudicator fetch is unavailable.", confidence: 0 };
   }
+  if (!modelRef) {
+    return { decision: "no_match", matched_tool_call_id: null, reason: "No verification adjudicator model is configured.", confidence: 0 };
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Number(timeoutMs) || DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS);
   try {
-    const response = await fetchImpl(`${rootUrl(baseUrl)}/api/chat`, {
+    const target = resolveVerificationAdjudicatorTarget({ db, dataDir, modelRef });
+    const messages = buildMessages({ row, signals: candidates });
+    const isOllama = target.provider.provider_type === "ollama";
+    const response = await fetchImpl(isOllama
+      ? `${rootUrl(target.provider.base_url)}/api/chat`
+      : `${v1Url(target.provider.base_url)}/chat/completions`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "content-type": "application/json", ...authHeaders(target.provider) },
       signal: controller.signal,
-      body: JSON.stringify({
-        model: model || DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
-        stream: false,
-        format: RESPONSE_SCHEMA,
-        options: { temperature: 0 },
-        messages: buildMessages({ row, signals: candidates }),
-      }),
+      body: JSON.stringify(isOllama
+        ? {
+          model: target.modelName,
+          stream: false,
+          format: RESPONSE_SCHEMA,
+          options: { temperature: 0 },
+          messages,
+        }
+        : {
+          model: target.modelName,
+          temperature: 0,
+          response_format: { type: "json_object" },
+          messages,
+        }),
     });
     if (!response?.ok) {
       return {

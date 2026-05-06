@@ -138,6 +138,7 @@ export function Settings() {
   const [runtimeError, setRuntimeError] = useState(null);
   const [indexStatus, setIndexStatus] = useState(null);
   const [embeddingGroups, setEmbeddingGroups] = useState([]);
+  const [verificationAdjudicatorGroups, setVerificationAdjudicatorGroups] = useState([]);
   const [modelGroups, setModelGroups] = useState([]);
   const [agents, setAgents] = useState([]);
   const [mcpStatus, setMcpStatus] = useState(null);
@@ -216,6 +217,7 @@ export function Settings() {
     loadRuntime();
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
+    api.listVerificationAdjudicatorModels().then((r) => setVerificationAdjudicatorGroups(r.groups || [])).catch(() => setVerificationAdjudicatorGroups([]));
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => {
       if (err?.name !== "AbortError") setAgents([]);
@@ -233,6 +235,7 @@ export function Settings() {
   useAppResume(() => {
     api.searchStatus().then((r) => setIndexStatus(r.status)).catch(() => setIndexStatus(null));
     api.listEmbeddingModels().then((r) => setEmbeddingGroups(r.groups || [])).catch(() => setEmbeddingGroups([]));
+    api.listVerificationAdjudicatorModels().then((r) => setVerificationAdjudicatorGroups(r.groups || [])).catch(() => setVerificationAdjudicatorGroups([]));
     api.listAvailableModels().then((r) => setModelGroups(r.groups || [])).catch(() => setModelGroups([]));
     api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
     loadSlackStatus().catch(() => setSlackStatus(null));
@@ -272,8 +275,13 @@ export function Settings() {
   const allEmbeddingValues = embeddingGroups.flatMap((g) => (g.models || []).map((m) => m.value));
   const currentSlackModel = settings?.slack_model || "pi:openai-codex:gpt-5.5";
   const currentAssistantModel = settings?.assistant_model || "pi:openai-codex:gpt-5.5";
+  const currentAdjudicatorModel = settings?.agent_verification_adjudicator_model || "";
   const slackModelOptions = modelSelectOptions(modelGroups, currentSlackModel);
   const assistantModelOptions = modelSelectOptions(modelGroups, currentAssistantModel);
+  const adjudicatorModelOptions = [
+    { label: "", options: [{ value: "", label: "(select a provider model)" }] },
+    ...modelSelectOptions(verificationAdjudicatorGroups, currentAdjudicatorModel),
+  ];
   const embeddingOptions = [
     { label: "", options: [{ value: "", label: "(disabled - no embeddings)" }] },
     ...(currentEmbedding && !allEmbeddingValues.includes(currentEmbedding)
@@ -767,7 +775,7 @@ export function Settings() {
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={24}>
+                <AdvancedSettings summary="Budgets and recovery" count={23}>
                   <FormGrid columns={3}>
                     <FormField label="Delegation depth">
                       <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
@@ -833,10 +841,13 @@ export function Settings() {
                       <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />
                     </FormField>
                     <FormField label="Adjudicator model">
-                      <Input value={settings.agent_verification_adjudicator_model || "gpt-oss-safeguard:20b"} onInput={(event) => setSettings({ ...settings, agent_verification_adjudicator_model: event.target.value })} aria-label="Verification adjudicator model" />
-                    </FormField>
-                    <FormField label="Adjudicator URL">
-                      <Input value={settings.agent_verification_adjudicator_base_url || "http://127.0.0.1:11434"} onInput={(event) => setSettings({ ...settings, agent_verification_adjudicator_base_url: event.target.value })} aria-label="Verification adjudicator base URL" />
+                      <Select
+                        value={currentAdjudicatorModel}
+                        options={adjudicatorModelOptions}
+                        onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_model: value })}
+                        placeholder="Select provider model"
+                        ariaLabel="Verification adjudicator model"
+                      />
                     </FormField>
                     <FormField label="Adjudicator timeout">
                       <DurationInput unit="seconds" value={settings.agent_verification_adjudicator_timeout_ms ?? 30000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_timeout_ms: value })} ariaLabel="Verification adjudicator timeout" />

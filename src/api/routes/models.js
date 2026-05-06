@@ -141,4 +141,42 @@ export function registerModelRoutes(app, { db, dataDir }) {
 
     res.json({ groups });
   });
+
+  app.get("/api/models/verification-adjudicators", (_req, res) => {
+    const groups = [];
+    for (const provider of listProviders({ db, dataDir, enabledOnly: true })) {
+      if (!isValidProviderType(provider.provider_type)) continue;
+      const models = listModels({ db, providerId: provider.id }).flatMap((model) => {
+        const capabilities = buildModelCapabilities(provider.provider_type, model.model_name, model.capabilities);
+        if (!capabilities.runnable_for_agent) return [];
+        return [{
+          value: `vercel:${provider.id}:${model.model_name}`,
+          label: model.display_name || model.model_name,
+          description: model.enabled
+            ? `${provider.name} / ${model.model_name}`
+            : "Enable this model in Providers to select it.",
+          provider_id: provider.id,
+          provider_name: provider.name,
+          provider_type: provider.provider_type,
+          model_name: model.model_name,
+          capabilities,
+          available: !!model.enabled,
+          disabled: !model.enabled,
+          unavailable_reason: model.enabled ? null : "Model is disabled in Providers.",
+        }];
+      });
+      if (!models.length) continue;
+      groups.push({
+        id: provider.id,
+        label: provider.name,
+        provider_type: provider.provider_type,
+        available: true,
+        disabled: false,
+        unavailable_reason: null,
+        models,
+      });
+    }
+
+    res.json({ groups });
+  });
 }

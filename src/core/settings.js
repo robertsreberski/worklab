@@ -8,9 +8,9 @@ import {
 import { normalizeRuntimeModelReference } from "../ai/runtime/model-refs.js";
 import { listSettings, upsertSetting } from "./db/queries/settings.js";
 import {
-  DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL,
   DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
   DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
+  parseVerificationAdjudicatorModelReference,
 } from "./verification-adjudicator.js";
 
 export const DEFAULT_SETTINGS = {
@@ -68,7 +68,6 @@ export const DEFAULT_SETTINGS = {
   agent_verification_gate_mode: "warn",
   agent_verification_adjudicator_mode: "off",
   agent_verification_adjudicator_model: DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
-  agent_verification_adjudicator_base_url: DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL,
   agent_verification_adjudicator_timeout_ms: DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
   planning_harness: DEFAULT_PLANNING_HARNESS,
   planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
@@ -92,7 +91,11 @@ export function readSettings(db) {
   const rows = listSettings(db);
   const out = { ...DEFAULT_SETTINGS };
   for (const row of rows) {
-    if (row.key in DEFAULT_SETTINGS) out[row.key] = coerceStored(row.value);
+    if (!(row.key in DEFAULT_SETTINGS)) continue;
+    const value = coerceStored(row.value);
+    out[row.key] = row.key === "agent_verification_adjudicator_mode"
+      ? verificationAdjudicatorMode(row.key, value)
+      : value;
   }
   return out;
 }
@@ -108,20 +111,6 @@ function integerInRange(key, value, { min = -Infinity, max = Infinity } = {}) {
 function stringValue(key, value, { required = false } = {}) {
   const text = String(value ?? "").trim();
   if (required && !text) throw new Error(`${key} is required`);
-  return text;
-}
-
-function httpUrlValue(key, value) {
-  const text = stringValue(key, value, { required: true }).replace(/\/+$/, "");
-  let parsed;
-  try {
-    parsed = new URL(text);
-  } catch {
-    throw new Error(`${key} must be an http(s) URL`);
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`${key} must be an http(s) URL`);
-  }
   return text;
 }
 
@@ -150,6 +139,25 @@ function agentRuntimeModelReference(key, value) {
     return normalized.reference;
   } catch {
     throw new Error(`${key} must be a valid model reference`);
+  }
+}
+
+function verificationAdjudicatorMode(key, value) {
+  if (typeof value !== "string") throw new Error(`${key} must be a string`);
+  const trimmed = value.trim();
+  if (trimmed === "ollama") return "on";
+  if (!["off", "on"].includes(trimmed)) {
+    throw new Error(`${key} must be one of: off, on`);
+  }
+  return trimmed;
+}
+
+function verificationAdjudicatorModelReference(key, value) {
+  if (value == null || value === "") return "";
+  try {
+    return parseVerificationAdjudicatorModelReference(value).reference;
+  } catch {
+    throw new Error(`${key} must be a valid provider-backed model reference`);
   }
 }
 
@@ -257,17 +265,10 @@ export function validateSetting(key, value) {
       return trimmed;
     }
     case "agent_verification_adjudicator_mode": {
-      if (typeof value !== "string") throw new Error(`${key} must be a string`);
-      const trimmed = value.trim();
-      if (!["off", "ollama"].includes(trimmed)) {
-        throw new Error(`${key} must be one of: off, ollama`);
-      }
-      return trimmed;
+      return verificationAdjudicatorMode(key, value);
     }
     case "agent_verification_adjudicator_model":
-      return stringValue(key, value, { required: true });
-    case "agent_verification_adjudicator_base_url":
-      return httpUrlValue(key, value);
+      return verificationAdjudicatorModelReference(key, value);
     case "agent_verification_adjudicator_timeout_ms":
       return integerInRange(key, value, { min: 1000, max: 300000 });
     case "planning_harness":
@@ -300,6 +301,9 @@ export function validateSettingsPatch(patch = {}, baseSettings = DEFAULT_SETTING
   const merged = { ...DEFAULT_SETTINGS, ...(baseSettings || {}), ...out };
   if (Number(merged.agent_budget_soft_turns) > Number(merged.agent_budget_hard_turns)) {
     throw new Error("agent_budget_soft_turns must be less than or equal to agent_budget_hard_turns");
+  }
+  if (merged.agent_verification_adjudicator_mode === "on" && !merged.agent_verification_adjudicator_model) {
+    throw new Error("agent_verification_adjudicator_model is required when adjudicator mode is on");
   }
   return out;
 }

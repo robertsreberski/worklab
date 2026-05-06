@@ -92,6 +92,50 @@ describe("provider routes", () => {
     expect(openai?.models.map((m) => m.value)).toContain("openai:text-embedding-3-small");
   });
 
+  it("lists provider-backed chat models for verification adjudicator settings", async () => {
+    const { agent, db } = makeTestServer({ dataDir: tmpDataDir() });
+    const p = await agent.post("/api/providers").send({
+      name: "local-ollama",
+      provider_type: "ollama",
+      base_url: "http://localhost:11434",
+    }).expect(201);
+    upsertModel({
+      db,
+      providerId: p.body.provider.id,
+      modelName: "gpt-oss-safeguard:20b",
+      displayName: "gpt-oss-safeguard:20b",
+      capabilities: { chat: true, json_mode: true },
+      enabled: true,
+    });
+    upsertModel({
+      db,
+      providerId: p.body.provider.id,
+      modelName: "disabled-chat",
+      displayName: "disabled-chat",
+      capabilities: { chat: true },
+      enabled: false,
+    });
+    upsertModel({
+      db,
+      providerId: p.body.provider.id,
+      modelName: "nomic-embed-text:v1.5",
+      displayName: "nomic-embed-text:v1.5",
+      capabilities: { advertised_capabilities: ["embedding"], embedding: true, chat: false },
+      enabled: true,
+    });
+
+    const res = await agent.get("/api/models/verification-adjudicators").expect(200);
+    const options = res.body.groups.flatMap((group) => group.models);
+    expect(options.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:gpt-oss-safeguard:20b`);
+    expect(options.map((m) => m.value)).toContain(`vercel:${p.body.provider.id}:disabled-chat`);
+    expect(options.map((m) => m.value)).not.toContain(`vercel:${p.body.provider.id}:nomic-embed-text:v1.5`);
+    expect(options.find((m) => m.value === `vercel:${p.body.provider.id}:disabled-chat`)).toMatchObject({
+      available: false,
+      disabled: true,
+      unavailable_reason: "Model is disabled in Providers.",
+    });
+  });
+
   it("does not advertise reserved runtime prefixes for agent models", async () => {
     const { agent } = makeTestServer({ dataDir: tmpDataDir() });
     const res = await agent.get("/api/models/available").expect(200);
