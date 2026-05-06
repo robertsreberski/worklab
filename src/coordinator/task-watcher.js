@@ -21,7 +21,7 @@ import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { reconcileRunWorktree } from "../core/worktrees.js";
 import { loadTaskArtifacts } from "../core/run-artifacts.js";
-import { crossCheckVerificationEvidence } from "../core/verification-evidence.js";
+import { crossCheckVerificationEvidenceWithAdjudicator } from "../core/verification-evidence.js";
 import { getTaskById, setTaskParentReviewPolicy } from "../core/db/queries/tasks.js";
 import {
   getRunById,
@@ -1468,7 +1468,7 @@ export function createTaskWatcher({
     return assigned;
   }
 
-  function handleSuccessfulExit(taskId, runId, res, task, run) {
+  async function handleSuccessfulExit(taskId, runId, res, task, run) {
     const stage = run.stage || taskStage(task);
     const mode = run.mode || modeForStage(stage);
     const agentName = run.agent_name;
@@ -1562,7 +1562,8 @@ export function createTaskWatcher({
     let hasArtifacts = false;
     let evidenceCrossCheck = null;
     if (stage === "review") {
-      verificationMode = readSettings(db)?.agent_verification_gate_mode || "warn";
+      const settings = readSettings(db);
+      verificationMode = settings?.agent_verification_gate_mode || "warn";
       if (verificationMode !== "off") {
         try {
           const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId, fallbackToLogs: false });
@@ -1571,12 +1572,23 @@ export function createTaskWatcher({
           hasArtifacts = false;
         }
         try {
-          evidenceCrossCheck = crossCheckVerificationEvidence(db, {
+          evidenceCrossCheck = await crossCheckVerificationEvidenceWithAdjudicator(db, {
             reviewRunId: runId,
             parentRunId: run.parent_run_id || null,
             evidence: result?.verification_evidence,
+            adjudicator: {
+              mode: settings?.agent_verification_adjudicator_mode || "off",
+              model: settings?.agent_verification_adjudicator_model || null,
+              baseUrl: settings?.agent_verification_adjudicator_base_url || null,
+              timeoutMs: settings?.agent_verification_adjudicator_timeout_ms || null,
+            },
+            logger,
           });
-        } catch {
+          if (evidenceCrossCheck?.totalChecked) {
+            patchRunDiagnostics(runId, { verification_cross_check: evidenceCrossCheck });
+          }
+        } catch (err) {
+          logger?.warn?.({ err: err?.message || String(err), runId }, "verification evidence cross-check failed");
           evidenceCrossCheck = null;
         }
       }
@@ -1811,7 +1823,7 @@ export function createTaskWatcher({
     drainQueuedLeadCycleRequest({ teamId, projectId });
   }
 
-  function onWorkerExit(taskId, runId, res) {
+  async function onWorkerExit(taskId, runId, res) {
     const entry = active.get(taskId);
     if (entry?.runId === runId) active.delete(taskId);
     activeByRunId.delete(runId);
@@ -1851,7 +1863,7 @@ export function createTaskWatcher({
       logger?.warn?.({ err: err.message, runId }, "failed to record agent learning memory");
     }
     if (processStatus === "succeeded" || res.status === "complete") {
-      handleSuccessfulExit(taskId, runId, res, task, run);
+      await handleSuccessfulExit(taskId, runId, res, task, run);
     } else {
       handleFailedExit(taskId, runId, res, task, run);
     }

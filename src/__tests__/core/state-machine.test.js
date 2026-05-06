@@ -407,11 +407,42 @@ describe("workflow stage reducer", () => {
         },
         hasArtifacts: true,
         verificationMode: "block",
-        evidenceCrossCheck: { totalChecked: 1, matchedCount: 0, unmatchedCount: 1 },
+        evidenceCrossCheck: {
+          totalChecked: 1,
+          matchedCount: 0,
+          unmatchedCount: 1,
+          unmatchedRows: [
+            {
+              evidence_index: 0,
+              command_or_url: "npm test foo",
+              reason: "No matching logged tool call.",
+            },
+          ],
+        },
       });
       expect(r.stage).toBe("review");
       expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "review_unverified" });
       expect(r.sideEffects.find((s) => s.type === "set_stage_reason")?.reason).toMatch(/did not match/);
+      expect(r.sideEffects.find((s) => s.type === "post_review_comment")?.notes).toMatch(/npm test foo/);
+    });
+
+    it("block mode treats only n_a rows as missing evidence when artifacts exist", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "n_a", reason: "no verification needed" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "block",
+        evidenceCrossCheck: { totalChecked: 0, matchedCount: 0, unmatchedCount: 0 },
+      });
+      expect(r.stage).toBe("review");
+      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "review_unverified" });
     });
 
     it("warn mode notes how many evidence rows were unmatched", () => {

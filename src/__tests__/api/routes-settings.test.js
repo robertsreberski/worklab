@@ -52,6 +52,10 @@ describe("settings", () => {
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);
+    expect(res.body.settings.agent_verification_adjudicator_mode).toBe("off");
+    expect(res.body.settings.agent_verification_adjudicator_model).toBe("gpt-oss-safeguard:20b");
+    expect(res.body.settings.agent_verification_adjudicator_base_url).toBe("http://127.0.0.1:11434");
+    expect(res.body.settings.agent_verification_adjudicator_timeout_ms).toBe(30000);
     expect(res.body.settings.planning_harness).toBe("balanced_polished");
     expect(res.body.settings.planning_tool_policy).toBe("read_only_shell_allowlist");
     expect(res.body.settings.delegation_enabled).toBe(true);
@@ -94,6 +98,10 @@ describe("settings", () => {
       agent_budget_hard_turns: 800,
       agent_provider_recovery_enabled: false,
       agent_provider_recovery_base_delay_ms: 1000,
+      agent_verification_adjudicator_mode: "ollama",
+      agent_verification_adjudicator_model: "gpt-oss-safeguard:20b",
+      agent_verification_adjudicator_base_url: "http://localhost:11434",
+      agent_verification_adjudicator_timeout_ms: 45000,
       planning_harness: "execplan_deep",
       planning_tool_policy: "read_only_no_shell",
       delegation_enabled: false,
@@ -117,6 +125,10 @@ describe("settings", () => {
     expect(res.body.settings.agent_budget_hard_turns).toBe(800);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(false);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(1000);
+    expect(res.body.settings.agent_verification_adjudicator_mode).toBe("ollama");
+    expect(res.body.settings.agent_verification_adjudicator_model).toBe("gpt-oss-safeguard:20b");
+    expect(res.body.settings.agent_verification_adjudicator_base_url).toBe("http://localhost:11434");
+    expect(res.body.settings.agent_verification_adjudicator_timeout_ms).toBe(45000);
     expect(res.body.settings.planning_harness).toBe("execplan_deep");
     expect(res.body.settings.planning_tool_policy).toBe("read_only_no_shell");
     expect(res.body.settings.delegation_enabled).toBe(false);
@@ -158,6 +170,14 @@ describe("settings", () => {
     const { agent } = makeTestServer();
     await agent.patch("/api/settings").send({ planning_harness: "verbose_magic" }).expect(400);
     await agent.patch("/api/settings").send({ planning_tool_policy: "full_access" }).expect(400);
+  });
+
+  it("PATCH rejects invalid verification adjudicator settings", async () => {
+    const { agent } = makeTestServer();
+    await agent.patch("/api/settings").send({ agent_verification_adjudicator_mode: "always" }).expect(400);
+    await agent.patch("/api/settings").send({ agent_verification_adjudicator_model: "" }).expect(400);
+    await agent.patch("/api/settings").send({ agent_verification_adjudicator_base_url: "localhost:11434" }).expect(400);
+    await agent.patch("/api/settings").send({ agent_verification_adjudicator_timeout_ms: 200 }).expect(400);
   });
 
   it("PATCH rejects invalid agent turn budget settings", async () => {

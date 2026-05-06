@@ -249,7 +249,7 @@ export function spawnTaskRun({
     .then((result) => onWorkerExit(task.id, runId, result))
     .catch((err) => {
       logger?.error?.({ err, taskId: task.id, runId }, "worker promise rejected");
-      onWorkerExit(task.id, runId, {
+      return onWorkerExit(task.id, runId, {
         exitCode: 1,
         status: "error",
         processStatus: "failed",
