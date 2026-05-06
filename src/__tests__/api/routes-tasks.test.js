@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
+import { ensureTeamRootTask } from "../../core/teams.js";
 
 async function withPreviewServer(fn) {
   const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-preview-"));
@@ -927,6 +928,42 @@ describe("PATCH /api/tasks/:id", () => {
     const manual = await agent.patch(`/api/tasks/${task.id}`).send({ run_policy: "manual" }).expect(200);
     expect(manual.body.task.run_policy).toBe("manual");
     await agent.patch(`/api/tasks/${task.id}`).send({ run_policy: "always" }).expect(400);
+  });
+
+  it("runs synthetic team-root tasks through the lead-cycle watcher path", async () => {
+    const spawnLeadCycle = vi.fn(({ teamId, projectId }) => ({ ok: true, runId: "lead-run-1", taskId: `root-${teamId}-${projectId}` }));
+    const watcher = {
+      handleRunRequested: vi.fn(async () => ({ runId: "normal-run" })),
+      spawnLeadCycle,
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+    };
+    const { agent, db } = makeTestServer({ watcher });
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at) VALUES ('lead', 'Lead', 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)").run(now, now);
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Root Team", lead_agent: "lead" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Root Project", team_id: team.id }).expect(201);
+    const root = ensureTeamRootTask(db, { teamId: team.id, projectId: project.id, now });
+
+    const res = await agent.post(`/api/tasks/${root.id}/run`).send({}).expect(200);
+
+    expect(res.body).toMatchObject({ ok: true, runId: "lead-run-1" });
+    expect(spawnLeadCycle).toHaveBeenCalledWith({ teamId: team.id, projectId: project.id, reason: "manual" });
+    expect(watcher.handleRunRequested).not.toHaveBeenCalled();
+  });
+
+  it("does not build normal run previews for synthetic team-root tasks", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at) VALUES ('lead', 'Lead', 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)").run(now, now);
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Preview Team", lead_agent: "lead" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Preview Project", team_id: team.id }).expect(201);
+    const root = ensureTeamRootTask(db, { teamId: team.id, projectId: project.id, now });
+
+    const res = await agent.get(`/api/tasks/${root.id}/run-preview`).expect(400);
+    expect(res.body.error.code).toBe("invalid_state");
+    expect(res.body.error.message).toMatch(/lead-cycle/i);
   });
 
   it("rejects legacy status and executor fields", async () => {

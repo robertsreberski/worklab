@@ -149,6 +149,23 @@ function formatQuestionAnswerComment(questions, answers) {
 
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
+  function startTaskRun(taskRow, { reason = "manual" } = {}) {
+    if (taskRow?.is_team_root) {
+      if (typeof watcher?.spawnLeadCycle !== "function") {
+        throw routeError(501, "not_configured", "lead-cycle watcher not wired");
+      }
+      if (!taskRow.team_id || !taskRow.project_id) {
+        throw routeError(400, "invalid_state", "team root task is missing team_id or project_id");
+      }
+      const out = watcher.spawnLeadCycle({ teamId: taskRow.team_id, projectId: taskRow.project_id, reason });
+      if (!out?.ok) {
+        throw routeError(400, out?.skipped || "invalid_state", out?.error || "lead cycle could not start");
+      }
+      return out;
+    }
+    return watcher.handleRunRequested(taskRow.id);
+  }
+
   app.get("/api/runs/cost-summary", (req, res) => {
     const todayStart = new Date();
     todayStart.setUTCHours(0, 0, 0, 0);
@@ -638,6 +655,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   app.get("/api/tasks/:id/run-preview", (req, res) => {
     try {
       const taskRow = taskOr404(db, req.params.id);
+      if (taskRow.is_team_root) {
+        throw routeError(400, "invalid_state", "team root tasks use lead-cycle runs; normal run input preview is not available");
+      }
       const preview = buildNextTaskRunPreview({
         db,
         taskId: taskRow.id,
@@ -668,7 +688,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           applyRouteSideEffects(db, broker, logger, taskRow.id, transition.sideEffects, currentStage, transition.stage);
         }
       }
-      const result = await watcher.handleRunRequested(taskRow.id);
+      const result = await startTaskRun(taskRow);
       res.json(result);
     } catch (err) {
       res.status(err.status || 400).json({ error: { code: err.code || "invalid_state", message: err.message } });
@@ -691,7 +711,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       } else if (!["plan", "execute", "review"].includes(currentStage)) {
         return res.status(400).json({ error: { code: "invalid_state", message: `cannot retry from ${currentStage}` } });
       }
-      const result = await watcher.handleRunRequested(taskRow.id);
+      const result = await startTaskRun(taskRow, { reason: "manual_retry" });
       res.json(result);
     } catch (err) {
       res.status(err.status || 400).json({ error: { code: err.code || "invalid_state", message: err.message } });
