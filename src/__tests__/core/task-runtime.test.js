@@ -64,6 +64,28 @@ describe("runtime task grouping", () => {
     expect(runtimeTaskGroupKey(task)).toBe("waiting");
   });
 
+  it("keeps reviewer verification failures visible after a successful review run", () => {
+    const task = {
+      stage: "review",
+      owner_agent: "owner",
+      failure_count: 0,
+      last_failure_kind: "review_unverified",
+      last_run: {
+        status: "complete",
+        process_status: "succeeded",
+        decision: "approve",
+        failure_kind: null,
+      },
+    };
+
+    expect(runtimeTaskAttentionItems(task)).toContainEqual({
+      key: "failure_kind",
+      label: "Failure: review_unverified",
+      tone: "warn",
+    });
+    expect(runtimeTaskGroupKey(task)).toBe("attention");
+  });
+
   it("limits visible completed tasks and reports hidden completed count", () => {
     const tasks = [
       { id: "running", title: "Running", stage: "execute", running_run_id: "run-1", updated_at: 1 },

@@ -149,11 +149,11 @@ export function nextStage(currentStage, event) {
             const reason = evidenceFabricated
               ? `${cross.unmatchedCount} of ${cross.totalChecked} verification_evidence rows did not match any tool call in the run logs`
               : "review approved without verification_evidence";
-            return change("execute", [
+            return change("review", [
               { type: "clear_completed_at" },
               { type: "clear_error_text" },
               ...RESET_USER_ARRAYS,
-              { type: "set_last_failure_kind", kind: "unverified_completion" },
+              { type: "set_last_failure_kind", kind: "review_unverified" },
               { type: "set_stage_reason", reason },
               {
                 type: "post_review_comment",

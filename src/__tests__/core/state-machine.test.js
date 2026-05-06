@@ -357,7 +357,7 @@ describe("workflow stage reducer", () => {
       expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
     });
 
-    it("block mode bounces approve back to execute with unverified_completion", () => {
+    it("block mode keeps approve in review with review_unverified", () => {
       const r = nextStage("review", {
         type: "run_succeeded",
         stage: "review",
@@ -365,8 +365,8 @@ describe("workflow stage reducer", () => {
         hasArtifacts: true,
         verificationMode: "block",
       });
-      expect(r.stage).toBe("execute");
-      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "unverified_completion" });
+      expect(r.stage).toBe("review");
+      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "review_unverified" });
       expect(r.sideEffects.find((s) => s.type === "post_review_comment")?.notes).toMatch(/verification/i);
     });
 
@@ -409,8 +409,8 @@ describe("workflow stage reducer", () => {
         verificationMode: "block",
         evidenceCrossCheck: { totalChecked: 1, matchedCount: 0, unmatchedCount: 1 },
       });
-      expect(r.stage).toBe("execute");
-      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "unverified_completion" });
+      expect(r.stage).toBe("review");
+      expect(r.sideEffects).toContainEqual({ type: "set_last_failure_kind", kind: "review_unverified" });
       expect(r.sideEffects.find((s) => s.type === "set_stage_reason")?.reason).toMatch(/did not match/);
     });
 
