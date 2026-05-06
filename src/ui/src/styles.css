@@ -9666,7 +9666,7 @@ html.assistant-resizing * {
     display: none;
   }
   .commander-list {
-    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--mobile-tabbar-height) + 56px + var(--sp-6));
   }
   .commander-new-task-inline {
     display: none;
@@ -9674,7 +9674,7 @@ html.assistant-resizing * {
   .commander .commander-new-task-fab.button {
     position: fixed;
     right: max(var(--sp-4), env(safe-area-inset-right));
-    bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 32;
     display: inline-flex;
     width: 56px;
@@ -10648,7 +10648,7 @@ html.assistant-resizing * {
   grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow-x: clip;
   border-top: 1px solid var(--border);
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  background: var(--surface);
   backdrop-filter: blur(12px);
 }
 .app-tabbar a,
@@ -11034,6 +11034,17 @@ html.assistant-resizing * {
   .app.responsive.has-mobile-topbar .app-body {
     padding-top: 0;
   }
+  .app.responsive[data-route="tasks"] .app-body {
+    padding-top: 0;
+  }
+  .app.responsive[data-route="tasks"] .commander-topbar {
+    padding-top: var(--mobile-safe-top);
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+  .app.responsive[data-route="tasks"] .commander-filter {
+    background: transparent;
+  }
   .app.responsive.has-dock .app-body {
     padding-bottom: var(--mobile-action-dock-height);
   }
@@ -11249,7 +11260,7 @@ html.assistant-resizing * {
   .commander .commander-new-task-fab.button {
     position: fixed;
     right: max(var(--sp-4), env(safe-area-inset-right));
-    bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 32;
     display: inline-flex;
     width: 56px;
@@ -11330,14 +11341,14 @@ html.assistant-resizing * {
   .assistant-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), env(safe-area-inset-bottom));
+    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), var(--mobile-safe-bottom));
   }
   .assistant-launcher {
-    bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 72;
   }
   .app.responsive:has(.commander-new-task-fab) .assistant-launcher {
-    bottom: calc(112px + var(--sp-4) + var(--sp-3) + env(safe-area-inset-bottom));
+    bottom: calc(var(--mobile-tabbar-height) + 56px + var(--sp-4) + var(--sp-3));
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-launcher {
     bottom: calc(var(--mobile-action-dock-height) + var(--sp-4));

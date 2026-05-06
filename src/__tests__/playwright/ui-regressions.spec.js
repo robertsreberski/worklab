@@ -2073,6 +2073,76 @@ test("mobile tabbar does not create document scroll space below content", async 
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
 });
 
+test("mobile tasks header owns the opening route status safe area", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+  await page.addStyleTag({
+    content: `
+      :root {
+        --worklab-safe-area-top: 31px;
+        --worklab-safe-area-bottom: 11px;
+      }
+    `,
+  });
+  await page.waitForTimeout(50);
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await page.waitForTimeout(50);
+
+  const metrics = await page.evaluate(() => {
+    const app = document.querySelector(".app");
+    const appBody = document.querySelector(".app-body");
+    const topbar = document.querySelector(".commander-topbar");
+    const filter = document.querySelector(".commander-filter");
+    const tabbar = document.querySelector(".app-tabbar");
+    const fab = document.querySelector(".commander-new-task-fab");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const topbarRect = topbar?.getBoundingClientRect();
+    const filterRect = filter?.getBoundingClientRect();
+    const tabbarRect = tabbar?.getBoundingClientRect();
+    const fabRect = fab?.getBoundingClientRect();
+    const assistantRect = assistantLauncher?.getBoundingClientRect();
+    const bodyStyles = appBody ? getComputedStyle(appBody) : null;
+    const topbarStyles = topbar ? getComputedStyle(topbar) : null;
+    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    const safeAreaElement = document.elementFromPoint(12, 12);
+    return {
+      route: app?.getAttribute("data-route") || "",
+      bodyPaddingTop: bodyStyles ? parsePx(bodyStyles.paddingTop) : -1,
+      bodyPaddingBottom: bodyStyles ? parsePx(bodyStyles.paddingBottom) : -1,
+      topbarTop: topbarRect ? Math.round(topbarRect.top) : -1,
+      topbarPaddingTop: topbarStyles ? parsePx(topbarStyles.paddingTop) : -1,
+      topbarBackground: topbarStyles?.backgroundColor || "",
+      filterTop: filterRect ? Math.round(filterRect.top) : -1,
+      safeAreaOwnedByHeader: !!safeAreaElement?.closest?.(".commander-topbar"),
+      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
+      tabbarBackground: tabbarStyles?.backgroundColor || "",
+      fabBottomBeforeNav: fabRect && tabbarRect ? Math.round(fabRect.bottom) <= Math.round(tabbarRect.top) + 1 : false,
+      assistantBottomBeforeFab: assistantRect && fabRect ? Math.round(assistantRect.bottom) <= Math.round(fabRect.top) - 1 : false,
+      viewportHeight: window.innerHeight,
+      windowScrollY: Math.round(window.scrollY),
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(metrics.route).toBe("tasks");
+  expect(metrics.bodyPaddingTop).toBe(0);
+  expect(metrics.topbarTop).toBe(0);
+  expect(metrics.topbarPaddingTop).toBe(31);
+  expect(metrics.filterTop).toBeGreaterThanOrEqual(31);
+  expect(metrics.topbarBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(metrics.safeAreaOwnedByHeader).toBe(true);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
+  expect(metrics.tabbarBackground).not.toBe("rgba(0, 0, 0, 0)");
+  expect(metrics.fabBottomBeforeNav).toBe(true);
+  expect(metrics.assistantBottomBeforeFab).toBe(true);
+  expect(metrics.windowScrollY).toBe(0);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
 test("mobile topbar owns the status safe-area background", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
