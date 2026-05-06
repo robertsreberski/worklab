@@ -188,6 +188,8 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "Modal", group: "component", coverage: "visible" },
   { name: "PaneLayout", group: "component", coverage: "visible" },
   { name: "PaneRow", group: "component", coverage: "visible" },
+  { name: "ResourceGroup", group: "component", coverage: "visible" },
+  { name: "ResourceListToolbar", group: "component", coverage: "visible" },
   { name: "RunHistoryNotice", group: "component", coverage: "visible" },
   { name: "RunTodoPanel", group: "component", coverage: "visible" },
   { name: "StatusMenu", group: "component", coverage: "visible" },

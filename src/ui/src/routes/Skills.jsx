@@ -3,15 +3,18 @@ import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Button } from "../components/primitives/Button.jsx";
+import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { PaneListHeader } from "../components/layout/index.js";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { SkillEdit } from "./SkillEdit.jsx";
 import { skillDisplayName } from "../lib/display.js";
+import { buildSkillResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { pushToast } from "../lib/toast.js";
@@ -28,6 +31,9 @@ function hasFileDrag(event) {
 export function Skills({ selectedName = null }) {
   const [skills, setSkills] = useState([]);
   const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [usageFilter, setUsageFilter] = useState("all");
   const [importing, setImporting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const searchRef = useRef(null);
@@ -79,26 +85,44 @@ export function Skills({ selectedName = null }) {
     },
   });
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return skills;
-    return skills.filter((s) => (
-      s.name?.toLowerCase().includes(q) ||
-      s.display_name?.toLowerCase().includes(q) ||
-      s.trigger?.toLowerCase().includes(q)
-    ));
-  }, [skills, query]);
+  const groups = useMemo(() => buildSkillResourceGroups(skills, {
+    query,
+    state: stateFilter,
+    priority: priorityFilter,
+    usage: usageFilter,
+  }), [priorityFilter, query, skills, stateFilter, usageFilter]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const hasFilter = query.trim() || stateFilter !== "all" || priorityFilter !== "all" || usageFilter !== "all";
+  const stateTabs = useMemo(() => [
+    { value: "all", label: "All", count: skills.length },
+    { value: "enabled", label: "Enabled", count: skills.filter((skill) => skill.enabled !== false).length },
+    { value: "disabled", label: "Disabled", count: skills.filter((skill) => skill.enabled === false).length },
+  ], [skills]);
+  const priorityOptions = [
+    { value: "all", label: "All priorities" },
+    { value: "always", label: "Always" },
+    { value: "normal", label: "Normal" },
+  ];
+  const usageOptions = [
+    { value: "all", label: "All usage" },
+    { value: "used", label: "Used" },
+    { value: "unused", label: "Unused" },
+  ];
 
   const listHeader = (
-    <PaneListHeader
+    <ResourceListToolbar
       searchValue={query}
       onSearch={setQuery}
       searchPlaceholder="Search skills…"
       searchAriaLabel="Search skills"
       searchRef={searchRef}
+      countLabel={`${filtered.length} shown`}
       actionLabel="New skill"
       onAction={() => { navigateHash("#/skills/new"); }}
     >
+      <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter skills by enabled state" class="tabs-pills" />
+      <Select class="resource-filter-select" variant="menu" value={priorityFilter} onChange={setPriorityFilter} options={priorityOptions} ariaLabel="Filter skills by priority" />
+      <Select class="resource-filter-select" variant="menu" value={usageFilter} onChange={setUsageFilter} options={usageOptions} ariaLabel="Filter skills by usage" />
       <input
         ref={fileInputRef}
         class="sr-only"
@@ -119,12 +143,12 @@ export function Skills({ selectedName = null }) {
       >
         Import ZIP
       </Button>
-    </PaneListHeader>
+    </ResourceListToolbar>
   );
 
   const listBody = filtered.length === 0 ? (
-    query ? (
-      <EmptyStateFiltered body="No skills match." onClearFilters={() => setQuery("")} />
+    hasFilter ? (
+      <EmptyStateFiltered body="No skills match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setPriorityFilter("all"); setUsageFilter("all"); }} />
     ) : (
       <EmptyState
         title="No skills yet"
@@ -133,44 +157,45 @@ export function Skills({ selectedName = null }) {
       />
     )
   ) : (
-    filtered.map((s) => {
-      const always = s.priority === "always";
-      const enabled = s.enabled !== false;
-      return (
-        <PaneRow
-          key={s.name}
-          href={`#/skills/${s.name}`}
-          active={s.name === selectedName}
-          class="skill-pane-row"
-          onClick={(event) => {
-            event?.preventDefault?.();
-            navigateHash(`#/skills/${s.name}`);
-          }}
-          leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
-          title={skillDisplayName(s)}
-          sub={(
-            <span class="pane-row-substack">
-              <span class="pane-row-description">{s.trigger || "No trigger defined"}</span>
-              <span class="pane-row-subline">
-                <span class="pane-row-mono">{s.name}</span>
-                {!enabled && (
-                  <>
-                    <span class="pane-row-dot">·</span>
-                    <span>disabled</span>
-                  </>
+    <div class="resource-list">
+      {groups.map((group) => (
+        <ResourceGroup key={group.key} group={group}>
+          {group.items.map((s) => {
+            const always = s.priority === "always";
+            const enabled = s.enabled !== false;
+            return (
+              <PaneRow
+                key={s.name}
+                href={`#/skills/${s.name}`}
+                active={s.name === selectedName}
+                class="skill-pane-row"
+                onClick={(event) => {
+                  event?.preventDefault?.();
+                  navigateHash(`#/skills/${s.name}`);
+                }}
+                leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
+                title={skillDisplayName(s)}
+                sub={(
+                  <span class="pane-row-substack">
+                    <span class="pane-row-description">{s.trigger || "No trigger defined"}</span>
+                    <span class="resource-row-tags">
+                      <span class="pane-row-mono">{s.name}</span>
+                      {!enabled && <span class="resource-row-chip">disabled</span>}
+                    </span>
+                  </span>
                 )}
-              </span>
-            </span>
-          )}
-          trailing={(
-            <span class="pane-row-summary pane-row-summary-metrics">
-              {always && <Chip variant="trigger">always</Chip>}
-              <span>used by {s.used_by_count || 0}</span>
-            </span>
-          )}
-        />
-      );
-    })
+                trailing={(
+                  <span class="pane-row-summary pane-row-summary-metrics">
+                    {always && <Chip variant="trigger">always</Chip>}
+                    <span>used by {s.used_by_count || 0}</span>
+                  </span>
+                )}
+              />
+            );
+          })}
+        </ResourceGroup>
+      ))}
+    </div>
   );
 
   const detail = selectedName ? (
@@ -230,6 +255,8 @@ export function Skills({ selectedName = null }) {
           detail={detail}
           hasSelection={!!selectedName}
           detailOwnsMobileBack={!!selectedName}
+          listFirst
+          class="resource-list-layout"
           onBack={() => navigateHash("#/skills")}
           backLabel="All skills"
         />

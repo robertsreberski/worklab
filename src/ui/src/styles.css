@@ -4742,6 +4742,22 @@ html.assistant-resizing * {
     repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px),
     var(--bg);
 }
+.two-pane-list-first {
+  grid-template-columns: minmax(0, 1fr);
+}
+.resource-list-layout.two-pane-list-first .pane-list {
+  border-right: 0;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 63px, var(--paper-line) 63px 64px),
+    var(--bg);
+}
+.resource-list-layout.two-pane-list-first .pane-list-head {
+  padding: 0;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+.resource-list-layout.two-pane-list-first .pane-list-body {
+  padding: 0;
+}
 .pane-list {
   display: flex;
   flex-direction: column;
@@ -4771,6 +4787,111 @@ html.assistant-resizing * {
   overflow: auto;
   padding: var(--sp-1) 0;
   scrollbar-gutter: stable;
+}
+.resource-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: 10px var(--sp-6);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
+  background: color-mix(in srgb, var(--surface) 18%, transparent);
+}
+.resource-toolbar .search-field {
+  flex: 0 0 min(240px, 34vw);
+}
+.resource-toolbar-filters {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.resource-toolbar-filters .tabs {
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.resource-toolbar-filters .tabs::-webkit-scrollbar {
+  display: none;
+}
+.resource-filter-select {
+  width: 160px;
+  flex: 0 0 160px;
+}
+.resource-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  flex: 0 0 auto;
+  min-width: 0;
+  margin-left: auto;
+}
+.resource-toolbar-count {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+.resource-list {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+.resource-group {
+  display: flex;
+  flex-direction: column;
+}
+.resource-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px var(--sp-6) 6px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.resource-group-count {
+  margin-left: auto;
+  color: var(--text-subtle);
+  font-weight: 500;
+}
+.resource-list-layout.two-pane-list-first .pane-row {
+  grid-template-columns: minmax(28px, auto) minmax(0, 1fr) minmax(168px, auto);
+  min-height: 58px;
+  padding: 9px var(--sp-6);
+  background: transparent;
+}
+.resource-list-layout.two-pane-list-first .pane-row:hover,
+.resource-list-layout.two-pane-list-first .pane-row:active {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 4%, transparent), transparent 58%),
+    color-mix(in srgb, var(--surface-elevated) 24%, transparent);
+}
+.resource-row-tags {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 0;
+}
+.resource-row-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--surface-elevated) 64%, transparent);
+  font-size: var(--text-xs);
+  line-height: 1;
+  white-space: nowrap;
 }
 
 /* §4.6 PaneRow */
@@ -9153,6 +9274,35 @@ html.assistant-resizing * {
   .pane-list-head > .button { width: 100%; }
   .pane-list-head .tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; gap: var(--sp-3); }
   .pane-list-head .tabs::-webkit-scrollbar { display: none; }
+  .resource-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+  }
+  .resource-toolbar .search-field,
+  .resource-filter-select {
+    width: 100%;
+    flex-basis: auto;
+  }
+  .resource-toolbar-filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .resource-toolbar-filters .tabs {
+    grid-column: 1 / -1;
+  }
+  .resource-toolbar-actions {
+    justify-content: space-between;
+    margin-left: 0;
+  }
+  .resource-toolbar-actions .button {
+    min-height: 44px;
+  }
+  .resource-group-header {
+    padding: var(--sp-2) var(--sp-4);
+  }
   .knowledge-filter-row { grid-template-columns: 1fr; }
   .task-edit-body { padding: var(--sp-4) var(--sp-3); }
   .task-detail { padding: var(--sp-4); grid-template-columns: 1fr; }
