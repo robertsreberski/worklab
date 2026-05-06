@@ -1530,10 +1530,10 @@ export function createTaskWatcher({
             reviewRunId: runId,
             parentRunId: run.parent_run_id || null,
             evidence: result?.verification_evidence,
+            dataDir,
             adjudicator: {
               mode: settings?.agent_verification_adjudicator_mode || "off",
               model: settings?.agent_verification_adjudicator_model || null,
-              baseUrl: settings?.agent_verification_adjudicator_base_url || null,
               timeoutMs: settings?.agent_verification_adjudicator_timeout_ms || null,
             },
             logger,

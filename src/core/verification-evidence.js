@@ -247,30 +247,31 @@ export function crossCheckVerificationEvidence(db, { reviewRunId, parentRunId, e
 
 export async function crossCheckVerificationEvidenceWithAdjudicator(
   db,
-  { reviewRunId, parentRunId, evidence, adjudicator = {}, fetchImpl = globalThis.fetch, logger = null } = {},
+  { reviewRunId, parentRunId, evidence, adjudicator = {}, dataDir, fetchImpl = globalThis.fetch, logger = null } = {},
 ) {
   if (!db || !Array.isArray(evidence) || evidence.length === 0) {
     return { totalChecked: 0, matchedCount: 0, unmatchedCount: 0 };
   }
   const signals = collectToolSignals(db, [reviewRunId, parentRunId]);
   const base = crossCheckRowsFromSignals(evidence, signals);
-  if (!base.unmatchedRows?.length || adjudicator?.mode !== "ollama") return base;
+  if (!base.unmatchedRows?.length || adjudicator?.mode !== "on") return base;
 
   const signalIds = new Set(signals.map((signal) => signal.id));
   const rows = base.rows.map((row) => ({ ...row }));
   for (const unmatched of base.unmatchedRows) {
     const decision = await adjudicateVerificationEvidenceRow({
+      db,
+      dataDir,
       row: unmatched,
       signals,
-      model: adjudicator.model,
-      baseUrl: adjudicator.baseUrl,
+      modelRef: adjudicator.model,
       timeoutMs: adjudicator.timeoutMs,
       fetchImpl,
     });
     const row = rows.find((candidate) => candidate.evidence_index === unmatched.evidence_index);
     if (!row) continue;
     if (decision?.decision === "match" && signalIds.has(decision.matched_tool_call_id)) {
-      row.match_source = "ollama";
+      row.match_source = "adjudicator";
       row.matched_tool_call = decision.matched_tool_call_id;
       row.reason = decision.reason || "Adjudicator matched this row to a logged tool call.";
       row.confidence = decision.confidence;
@@ -289,7 +290,7 @@ export async function crossCheckVerificationEvidenceWithAdjudicator(
   return resultFromRows(rows, {
     toolCallCount: signals.length,
     adjudicator: {
-      mode: "ollama",
+      mode: "on",
       model: adjudicator.model || null,
     },
   });

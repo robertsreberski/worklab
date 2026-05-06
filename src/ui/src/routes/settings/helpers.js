@@ -12,7 +12,7 @@ export const PLANNING_HARNESS_SELECT_OPTIONS = PLANNING_HARNESS_OPTIONS.map(({ v
 export const PLANNING_TOOL_POLICY_SELECT_OPTIONS = PLANNING_TOOL_POLICY_OPTIONS.map(({ value, label, description }) => ({ value, label, description }));
 export const VERIFICATION_ADJUDICATOR_MODE_OPTIONS = [
   { value: "off", label: "Off" },
-  { value: "ollama", label: "Ollama" },
+  { value: "on", label: "On" },
 ];
 export const MCP_TRANSPORT_OPTIONS = [
   { value: "stdio", label: "stdio" },
@@ -188,8 +188,7 @@ export function settingsPayload(settings = {}) {
     agent_provider_recovery_enabled: settings.agent_provider_recovery_enabled !== false,
     agent_provider_recovery_base_delay_ms: Number(settings.agent_provider_recovery_base_delay_ms ?? 30000),
     agent_verification_adjudicator_mode: settings.agent_verification_adjudicator_mode || "off",
-    agent_verification_adjudicator_model: settings.agent_verification_adjudicator_model || "gpt-oss-safeguard:20b",
-    agent_verification_adjudicator_base_url: settings.agent_verification_adjudicator_base_url || "http://127.0.0.1:11434",
+    agent_verification_adjudicator_model: settings.agent_verification_adjudicator_model || "",
     agent_verification_adjudicator_timeout_ms: Number(settings.agent_verification_adjudicator_timeout_ms ?? 30000),
     planning_harness: settings.planning_harness || DEFAULT_PLANNING_HARNESS,
     planning_tool_policy: settings.planning_tool_policy || DEFAULT_PLANNING_TOOL_POLICY,

@@ -8,6 +8,7 @@ import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
 import { writeSettings } from "../../core/settings.js";
+import { createProvider, upsertModel } from "../../core/providers.js";
 import { kbList, kbRead } from "../../core/kb.js";
 import { slugify } from "../../core/slugs.js";
 
@@ -242,15 +243,28 @@ describe("task-watcher", () => {
     expect(lifecycleEvents[1]).toMatchObject({ type: "run_ended", runId: startEvent.runId, taskId });
   });
 
-  it("awaits the Ollama verification adjudicator before approving a review run", async () => {
+  it("awaits the verification adjudicator before approving a review run", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
     seedAgent(db, "checker");
+    const adjudicatorProvider = createProvider({
+      db,
+      name: "local-ollama",
+      provider_type: "ollama",
+      base_url: "http://127.0.0.1:11434",
+    });
+    upsertModel({
+      db,
+      providerId: adjudicatorProvider.id,
+      modelName: "gpt-oss-safeguard:20b",
+      displayName: "gpt-oss-safeguard:20b",
+      capabilities: { chat: true, json_mode: true },
+      enabled: true,
+    });
     writeSettings(db, {
       agent_verification_gate_mode: "block",
-      agent_verification_adjudicator_mode: "ollama",
-      agent_verification_adjudicator_model: "gpt-oss-safeguard:20b",
-      agent_verification_adjudicator_base_url: "http://127.0.0.1:11434",
+      agent_verification_adjudicator_mode: "on",
+      agent_verification_adjudicator_model: `vercel:${adjudicatorProvider.id}:gpt-oss-safeguard:20b`,
       agent_verification_adjudicator_timeout_ms: 1000,
     });
     const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
@@ -316,7 +330,7 @@ describe("task-watcher", () => {
     expect(diagnostics.verification_cross_check).toMatchObject({
       matchedCount: 1,
       unmatchedCount: 0,
-      matchedRows: [expect.objectContaining({ match_source: "ollama", matched_tool_call: `${executeRunId}:0` })],
+      matchedRows: [expect.objectContaining({ match_source: "adjudicator", matched_tool_call: `${executeRunId}:0` })],
     });
   });
 

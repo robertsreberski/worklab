@@ -135,6 +135,7 @@ export const api = {
   patchProviderModel: (providerId, modelId, patch) => request("PATCH", `/providers/${providerId}/models/${modelId}`, patch),
   listAvailableModels: () => request("GET", "/models/available"),
   listEmbeddingModels: () => request("GET", "/models/embeddings"),
+  listVerificationAdjudicatorModels: () => request("GET", "/models/verification-adjudicators"),
   // automations
   listAutomations: () => request("GET", "/automations"),
   getAutomation: (id) => request("GET", `/automations/${id}`),

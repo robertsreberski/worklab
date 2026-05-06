@@ -91,9 +91,8 @@ describe("settings UI duration conversions", () => {
       agent_recovery_continuation_limit: 4,
       agent_provider_recovery_enabled: true,
       agent_provider_recovery_base_delay_ms: secondsToMs("45"),
-      agent_verification_adjudicator_mode: "ollama",
-      agent_verification_adjudicator_model: "gpt-oss-safeguard:20b",
-      agent_verification_adjudicator_base_url: "http://127.0.0.1:11434",
+      agent_verification_adjudicator_mode: "on",
+      agent_verification_adjudicator_model: "vercel:ollama-local:gpt-oss-safeguard:20b",
       agent_verification_adjudicator_timeout_ms: secondsToMs("45"),
       planning_harness: "execplan_deep",
       planning_tool_policy: "read_only_no_shell",
@@ -124,9 +123,9 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_recovery_continuation_limit).toBe(4);
     expect(payload.agent_provider_recovery_enabled).toBe(true);
     expect(payload.agent_provider_recovery_base_delay_ms).toBe(45000);
-    expect(payload.agent_verification_adjudicator_mode).toBe("ollama");
-    expect(payload.agent_verification_adjudicator_model).toBe("gpt-oss-safeguard:20b");
-    expect(payload.agent_verification_adjudicator_base_url).toBe("http://127.0.0.1:11434");
+    expect(payload.agent_verification_adjudicator_mode).toBe("on");
+    expect(payload.agent_verification_adjudicator_model).toBe("vercel:ollama-local:gpt-oss-safeguard:20b");
+    expect(payload).not.toHaveProperty("agent_verification_adjudicator_base_url");
     expect(payload.agent_verification_adjudicator_timeout_ms).toBe(45000);
     expect(payload.planning_harness).toBe("execplan_deep");
     expect(payload.planning_tool_policy).toBe("read_only_no_shell");
