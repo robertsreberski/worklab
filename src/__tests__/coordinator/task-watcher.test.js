@@ -158,6 +158,38 @@ const advanceResult = {
   subtasks: [],
 };
 
+const approveWithEvidence = {
+  schema: "worklab.v2",
+  stage: "review",
+  decision: "approve",
+  summary: "approved",
+  details: "",
+  artifacts: {},
+  blocking_issues: [],
+  pending_actions: [],
+  subtasks: [],
+  verification_evidence: [
+    {
+      kind: "test",
+      command_or_url: "focused verification evidence unit test",
+      exit_code_or_status: "0",
+      snippet: "9 tests passed",
+    },
+  ],
+};
+
+function upsertRunEvents(db, runId, events) {
+  const now = Date.now();
+  const existing = db.prepare("SELECT id FROM agent_logs WHERE task_run_id = ?").get(runId);
+  if (existing) {
+    db.prepare("UPDATE agent_logs SET events = ?, status = 'complete' WHERE task_run_id = ?")
+      .run(JSON.stringify(events), runId);
+    return;
+  }
+  db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+    .run(`log-${runId}`, runId, JSON.stringify(events), now);
+}
+
 describe("task-watcher", () => {
   it("handleRunRequested on execute task with owner and reviewer spawns work, then waits at review", async () => {
     const db = makeTestDb();
@@ -208,6 +240,84 @@ describe("task-watcher", () => {
       processStatus: "succeeded",
     });
     expect(lifecycleEvents[1]).toMatchObject({ type: "run_ended", runId: startEvent.runId, taskId });
+  });
+
+  it("awaits the Ollama verification adjudicator before approving a review run", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    seedAgent(db, "checker");
+    writeSettings(db, {
+      agent_verification_gate_mode: "block",
+      agent_verification_adjudicator_mode: "ollama",
+      agent_verification_adjudicator_model: "gpt-oss-safeguard:20b",
+      agent_verification_adjudicator_base_url: "http://127.0.0.1:11434",
+      agent_verification_adjudicator_timeout_ms: 1000,
+    });
+    const taskId = seedTask(db, { owner: "coder", reviewer: "checker" });
+    const broker = stubBroker();
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: 12345, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+
+    await watcher.handleRunRequested(taskId);
+    const executeRunId = broker.broadcasts.find((event) => event.p?.type === "run_started")?.p.runId;
+    db.prepare(`
+      UPDATE task_runs
+      SET status = 'complete', process_status = 'succeeded', ended_at = ?,
+          artifacts_json = ?
+      WHERE id = ?
+    `).run(Date.now(), JSON.stringify([{ path: "src/example.js", kind: "change" }]), executeRunId);
+    upsertRunEvents(db, executeRunId, [
+      {
+        type: "assistant",
+        content: [{ type: "tool_use", name: "Bash", input: { command: "npx vitest run src/__tests__/core/verification-evidence.test.js" } }],
+      },
+    ]);
+    resolvers[0]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "implemented", worklabResult: advanceResult });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId).stage).toBe("review");
+
+    await watcher.handleRunRequested(taskId);
+    const reviewRunId = broker.broadcasts.filter((event) => event.p?.type === "run_started").at(-1).p.runId;
+    upsertRunEvents(db, reviewRunId, []);
+    db.prepare("UPDATE task_runs SET status = 'complete', process_status = 'succeeded', ended_at = ? WHERE id = ?")
+      .run(Date.now(), reviewRunId);
+    const previousFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        message: {
+          content: JSON.stringify({
+            decision: "match",
+            matched_tool_call_id: `${executeRunId}:0`,
+            reason: "The evidence names the focused verification test run in prose.",
+            confidence: 0.9,
+          }),
+        },
+      }),
+    }));
+    try {
+      resolvers[1]({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "approved", worklabResult: approveWithEvidence });
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } finally {
+      globalThis.fetch = previousFetch;
+    }
+
+    const task = db.prepare("SELECT stage, last_failure_kind FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("done");
+    expect(task.last_failure_kind).toBeNull();
+    const diagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(reviewRunId).diagnostics_json);
+    expect(diagnostics.verification_cross_check).toMatchObject({
+      matchedCount: 1,
+      unmatchedCount: 0,
+      matchedRows: [expect.objectContaining({ match_source: "ollama", matched_tool_call: `${executeRunId}:0` })],
+    });
   });
 
   it("broadcasts task_updated only after the new run row exists", async () => {

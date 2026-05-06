@@ -7,6 +7,11 @@ import {
 } from "./planning-harness.js";
 import { normalizeRuntimeModelReference } from "../ai/runtime/model-refs.js";
 import { listSettings, upsertSetting } from "./db/queries/settings.js";
+import {
+  DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL,
+  DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
+  DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
+} from "./verification-adjudicator.js";
 
 export const DEFAULT_SETTINGS = {
   consolidation_hour: 3,
@@ -61,6 +66,10 @@ export const DEFAULT_SETTINGS = {
   // entirely. Soft-launch defaults to "warn" so operators can see what
   // would have been bounced before flipping to block.
   agent_verification_gate_mode: "warn",
+  agent_verification_adjudicator_mode: "off",
+  agent_verification_adjudicator_model: DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
+  agent_verification_adjudicator_base_url: DEFAULT_VERIFICATION_ADJUDICATOR_BASE_URL,
+  agent_verification_adjudicator_timeout_ms: DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
   planning_harness: DEFAULT_PLANNING_HARNESS,
   planning_tool_policy: DEFAULT_PLANNING_TOOL_POLICY,
   agent_learning_enabled: true,
@@ -99,6 +108,20 @@ function integerInRange(key, value, { min = -Infinity, max = Infinity } = {}) {
 function stringValue(key, value, { required = false } = {}) {
   const text = String(value ?? "").trim();
   if (required && !text) throw new Error(`${key} is required`);
+  return text;
+}
+
+function httpUrlValue(key, value) {
+  const text = stringValue(key, value, { required: true }).replace(/\/+$/, "");
+  let parsed;
+  try {
+    parsed = new URL(text);
+  } catch {
+    throw new Error(`${key} must be an http(s) URL`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`${key} must be an http(s) URL`);
+  }
   return text;
 }
 
@@ -233,6 +256,20 @@ export function validateSetting(key, value) {
       }
       return trimmed;
     }
+    case "agent_verification_adjudicator_mode": {
+      if (typeof value !== "string") throw new Error(`${key} must be a string`);
+      const trimmed = value.trim();
+      if (!["off", "ollama"].includes(trimmed)) {
+        throw new Error(`${key} must be one of: off, ollama`);
+      }
+      return trimmed;
+    }
+    case "agent_verification_adjudicator_model":
+      return stringValue(key, value, { required: true });
+    case "agent_verification_adjudicator_base_url":
+      return httpUrlValue(key, value);
+    case "agent_verification_adjudicator_timeout_ms":
+      return integerInRange(key, value, { min: 1000, max: 300000 });
     case "planning_harness":
       return validatePlanningHarnessSetting(key, value);
     case "planning_tool_policy":

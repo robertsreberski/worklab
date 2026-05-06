@@ -180,25 +180,33 @@ function looksLikeFailure(status) {
 function RunVerificationPanel({ run }) {
   if (run?.mode !== "review") return null;
   const evidence = Array.isArray(run?.result?.verification_evidence)
-    ? run.result.verification_evidence.filter(Boolean)
+    ? run.result.verification_evidence.map((row, index) => ({ row, index })).filter((entry) => entry.row)
     : [];
   if (evidence.length === 0) return null;
+  const crossCheckRows = Array.isArray(run?.diagnostics?.verification_cross_check?.rows)
+    ? run.diagnostics.verification_cross_check.rows
+    : [];
+  const crossCheckByIndex = new Map(crossCheckRows.map((row) => [row.evidence_index, row]));
   return (
     <details class="run-diagnostics run-verification" open>
       <summary>Verification ({evidence.length})</summary>
       <ul class="run-verification-list">
-        {evidence.map((row, index) => {
+        {evidence.map(({ row, index }) => {
+          const check = crossCheckByIndex.get(index);
           const failed = looksLikeFailure(row.exit_code_or_status);
-          const tone = failed ? "verification-fail" : (VERIFICATION_KIND_TONES[row.kind] || "verification-pass");
+          const unmatched = check && !check.match_source;
+          const tone = failed || unmatched ? "verification-fail" : (VERIFICATION_KIND_TONES[row.kind] || "verification-pass");
           return (
             <li key={index} class={`run-verification-item ${tone}`}>
               <div class="run-verification-head">
                 <span class="run-verification-kind">{row.kind}</span>
                 {row.command_or_url && <code class="run-verification-cmd">{row.command_or_url}</code>}
                 {row.exit_code_or_status && <span class="run-verification-status">{row.exit_code_or_status}</span>}
+                {check?.match_source && <span class="run-verification-status">{check.match_source}</span>}
               </div>
               {row.snippet && <pre class="run-verification-snippet">{row.snippet}</pre>}
               {row.reason && <div class="run-verification-reason">{row.reason}</div>}
+              {check && <div class="run-verification-reason">{check.match_source ? `Matched ${check.matched_tool_call || ""}: ${check.reason || check.match_source}` : `Unmatched: ${check.reason || "No matching logged tool call."}`}</div>}
             </li>
           );
         })}

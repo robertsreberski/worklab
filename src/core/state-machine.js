@@ -41,6 +41,18 @@ export const DEFAULT_MAX_FAILURES = 3;
 // can be diagnosed without poisoning execute-side failure budgets.
 export const DEFAULT_MAX_REJECTIONS = 3;
 
+function verificationFailureDetails(cross) {
+  const rows = Array.isArray(cross?.unmatchedRows) ? cross.unmatchedRows : [];
+  if (!rows.length) return "";
+  const lines = rows.slice(0, 8).map((row) => {
+    const label = row.command_or_url || "(missing command_or_url)";
+    const reason = row.reason ? ` - ${row.reason}` : "";
+    return `- row ${Number(row.evidence_index) + 1}: ${label}${reason}`;
+  });
+  if (rows.length > lines.length) lines.push(`- ...and ${rows.length - lines.length} more unmatched rows.`);
+  return `\n\nUnmatched verification_evidence rows:\n${lines.join("\n")}`;
+}
+
 // R6: parent_review_policy values. `default` spawns parent.review when the
 // parent's execute advances; `skip_when_qa_child` skips review when the
 // parent's delegated children include at least one QA/review-style agent;
@@ -138,9 +150,10 @@ export function nextStage(currentStage, event) {
             ? result.verification_evidence.filter(Boolean)
             : [];
           const cross = event.evidenceCrossCheck || null;
-          const validEvidenceCount = evidence.length === 0
-            ? 0
-            : evidence.length - (cross?.unmatchedCount || 0);
+          const checkableEvidenceCount = evidence.filter((row) => row?.kind && row.kind !== "n_a").length;
+          const validEvidenceCount = cross
+            ? (cross.matchedCount || 0)
+            : checkableEvidenceCount;
           const evidenceMissing = event.hasArtifacts && validEvidenceCount === 0;
           const evidenceFabricated = event.hasArtifacts && evidence.length > 0 && (cross?.unmatchedCount || 0) > 0;
           const gateApplies = (evidenceMissing || evidenceFabricated) && gateMode !== "off";
@@ -157,7 +170,7 @@ export function nextStage(currentStage, event) {
               { type: "set_stage_reason", reason },
               {
                 type: "post_review_comment",
-                notes: `The reviewer approved the work but ${reason}. Re-run the verification (tests, build, manual checks) and emit verification_evidence rows that name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.`,
+                notes: `The reviewer approved the work but ${reason}. Re-run the verification (tests, build, manual checks) and emit verification_evidence rows that name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.${verificationFailureDetails(cross)}`,
               },
             ]);
           }

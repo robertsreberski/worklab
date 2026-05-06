@@ -37,6 +37,7 @@ import {
   PLANNING_HARNESS_SELECT_OPTIONS,
   PLANNING_TOOL_POLICY_SELECT_OPTIONS,
   SLACK_EFFORT_OPTIONS,
+  VERIFICATION_ADJUDICATOR_MODE_OPTIONS,
   jsonEqual,
   mcpAvailabilitySummary,
   mcpRowsFromServers,
@@ -766,7 +767,7 @@ export function Settings() {
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={20}>
+                <AdvancedSettings summary="Budgets and recovery" count={24}>
                   <FormGrid columns={3}>
                     <FormField label="Delegation depth">
                       <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
@@ -827,6 +828,18 @@ export function Settings() {
                     </FormField>
                     <FormField label="Provider retry delay">
                       <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
+                    </FormField>
+                    <FormField label="Verification adjudicator">
+                      <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />
+                    </FormField>
+                    <FormField label="Adjudicator model">
+                      <Input value={settings.agent_verification_adjudicator_model || "gpt-oss-safeguard:20b"} onInput={(event) => setSettings({ ...settings, agent_verification_adjudicator_model: event.target.value })} aria-label="Verification adjudicator model" />
+                    </FormField>
+                    <FormField label="Adjudicator URL">
+                      <Input value={settings.agent_verification_adjudicator_base_url || "http://127.0.0.1:11434"} onInput={(event) => setSettings({ ...settings, agent_verification_adjudicator_base_url: event.target.value })} aria-label="Verification adjudicator base URL" />
+                    </FormField>
+                    <FormField label="Adjudicator timeout">
+                      <DurationInput unit="seconds" value={settings.agent_verification_adjudicator_timeout_ms ?? 30000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_timeout_ms: value })} ariaLabel="Verification adjudicator timeout" />
                     </FormField>
                   </FormGrid>
                 </AdvancedSettings>
