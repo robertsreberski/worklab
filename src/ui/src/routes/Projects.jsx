@@ -11,10 +11,12 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { PaneListHeader, DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
@@ -31,6 +33,7 @@ import { LoadingState } from "../components/LoadingState.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { Icon } from "../components/Icon.jsx";
+import { buildProjectResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
 import { pushToast } from "../lib/toast.js";
 
 const PROJECT_SECTIONS = [
@@ -82,6 +85,10 @@ function projectDraftFrom(project = {}) {
 
 function worktreeModeLabel(value) {
   return WORKTREE_MODE_OPTIONS.find((option) => option.value === value)?.label || "Off";
+}
+
+function projectTeamLabel(project) {
+  return project?.team?.name || project?.team_name || project?.team_slug || project?.team_id || "";
 }
 
 function formatProjectAge(value) {
@@ -761,7 +768,9 @@ function ProjectDetail({ selectedId, onChanged }) {
 export function Projects({ selectedId = null, mode = null }) {
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
-  const [includeArchived, setIncludeArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [worktreeFilter, setWorktreeFilter] = useState("all");
+  const [teamFilter, setTeamFilter] = useState("all");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -769,10 +778,10 @@ export function Projects({ selectedId = null, mode = null }) {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
-    api.listProjects({ include_archived: includeArchived ? "true" : "" }, { signal: controller.signal })
+    api.listProjects({ include_archived: "true" }, { signal: controller.signal })
       .then((res) => { if (!controller.signal.aborted) setProjects(res.projects || []); })
       .catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
-  }, [includeArchived]);
+  }, []);
   const reloadSoon = useThrottledCallback(reload, 100);
   const reloadEventually = useThrottledCallback(reload, 1500);
 
@@ -791,43 +800,63 @@ export function Projects({ selectedId = null, mode = null }) {
     },
   });
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return projects;
-    return projects.filter((project) =>
-      project.name?.toLowerCase().includes(q) ||
-      project.slug?.toLowerCase().includes(q) ||
-      project.description?.toLowerCase().includes(q) ||
-      project.context?.toLowerCase().includes(q) ||
-      (project.tags || []).some((tag) => tag.toLowerCase().includes(q))
-    );
-  }, [projects, query]);
+  const groups = useMemo(() => buildProjectResourceGroups(projects, {
+    query,
+    status: statusFilter,
+    worktree: worktreeFilter,
+    team: teamFilter,
+  }), [projects, query, statusFilter, teamFilter, worktreeFilter]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const hasFilter = query.trim() || statusFilter !== "active" || worktreeFilter !== "all" || teamFilter !== "all";
+  const statusTabs = useMemo(() => [
+    { value: "active", label: "Active", count: projects.filter((project) => !project.archived).length },
+    { value: "archived", label: "Archived", count: projects.filter((project) => project.archived).length },
+    { value: "all", label: "All", count: projects.length },
+  ], [projects]);
+  const worktreeOptions = useMemo(() => [
+    { value: "all", label: "All worktrees" },
+    ...WORKTREE_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label, description: option.description })),
+  ], []);
+  const teamOptions = useMemo(() => {
+    const teams = new Map();
+    for (const project of projects) {
+      if (project.team_id) teams.set(project.team_id, projectTeamLabel(project) || project.team_id);
+    }
+    return [
+      { value: "all", label: "All teams" },
+      { value: "no_team", label: "No team" },
+      ...[...teams.entries()]
+        .sort((left, right) => left[1].localeCompare(right[1], undefined, { sensitivity: "base" }))
+        .map(([value, label]) => ({ value, label })),
+    ];
+  }, [projects]);
+  const resetFilters = () => {
+    setQuery("");
+    setStatusFilter("active");
+    setWorktreeFilter("all");
+    setTeamFilter("all");
+  };
 
   const listHeader = (
-    <PaneListHeader
+    <ResourceListToolbar
       searchValue={query}
       onSearch={setQuery}
-      searchPlaceholder="Search projects..."
+      searchPlaceholder="Search projects…"
       searchAriaLabel="Search projects"
       searchRef={searchRef}
+      countLabel={`${filtered.length} shown`}
       actionLabel="New project"
       onAction={() => navigateHash("#/projects/new")}
     >
-      <label class="project-archive-toggle">
-        <input
-          type="checkbox"
-          checked={includeArchived}
-          onChange={(event) => setIncludeArchived(event.currentTarget.checked)}
-          aria-label="Show archived projects"
-        />
-        <span>Show archived</span>
-      </label>
-    </PaneListHeader>
+      <Tabs value={statusFilter} onChange={setStatusFilter} tabs={statusTabs} ariaLabel="Filter projects by archive state" class="tabs-pills" />
+      <Select class="resource-filter-select" variant="menu" value={worktreeFilter} onChange={setWorktreeFilter} options={worktreeOptions} ariaLabel="Filter projects by worktree mode" />
+      <Select class="resource-filter-select" variant="menu" value={teamFilter} onChange={setTeamFilter} options={teamOptions} ariaLabel="Filter projects by team" />
+    </ResourceListToolbar>
   );
 
   const listBody = filtered.length === 0 ? (
-    query.trim() ? (
-      <EmptyStateFiltered body="No projects match." onClearFilters={() => setQuery("")} />
+    hasFilter ? (
+      <EmptyStateFiltered body="No projects match." onClearFilters={resetFilters} />
     ) : (
       <EmptyState
         icon={<Icon name="folder" size={48} />}
@@ -837,36 +866,56 @@ export function Projects({ selectedId = null, mode = null }) {
       />
     )
   ) : (
-    filtered.map((project) => (
-      <PaneRow
-        key={project.id}
-        href={`#/projects/${projectRouteId(project)}`}
-        active={project.slug === selectedId || project.id === selectedId}
-        onClick={(event) => {
-          event?.preventDefault?.();
-          navigateHash(`#/projects/${projectRouteId(project)}`);
-        }}
-        leading={<span class="knowledge-row-leading"><Icon name="folder" size={12} /></span>}
-        title={project.name}
-        sub={(
-          <span class="knowledge-row-sub">
-            <span class="pane-row-mono">{project.slug}</span>
-            {project.archived && <span class="kb-category-badge">archived</span>}
-            {project.worktree_mode && project.worktree_mode !== "off" && (
-              <span class="kb-category-badge">worktrees {project.worktree_mode}</span>
-            )}
-          </span>
-        )}
-        trailing={(
-          <span class="pane-row-summary pane-row-summary-metrics">
-            <span title={`${project.active_task_count || 0} active of ${project.task_count || 0} total`}>
-              {project.active_task_count || 0}/{project.task_count || 0} task{project.task_count === 1 ? "" : "s"}
-            </span>
-            <span>{formatProjectAge(project.updated_at)}</span>
-          </span>
-        )}
-      />
-    ))
+    <div class="resource-list">
+      {groups.map((group) => (
+        <ResourceGroup key={group.key} group={group}>
+          {group.items.map((project) => {
+            const teamLabel = projectTeamLabel(project);
+            const taskCount = project.task_count ?? project.stats?.task_count ?? 0;
+            const activeTaskCount = project.active_task_count ?? project.stats?.active_task_count ?? 0;
+            const tags = Array.isArray(project.tags) ? project.tags : [];
+            return (
+              <PaneRow
+                key={project.id || project.slug}
+                href={`#/projects/${projectRouteId(project)}`}
+                active={project.slug === selectedId || project.id === selectedId}
+                class="project-pane-row"
+                onClick={(event) => {
+                  event?.preventDefault?.();
+                  navigateHash(`#/projects/${projectRouteId(project)}`);
+                }}
+                leading={<span class="project-row-leading"><Icon name="folder" size={12} /></span>}
+                title={project.name}
+                sub={(
+                  <span class="pane-row-substack">
+                    {project.description && <span class="pane-row-description">{project.description}</span>}
+                    <span class="resource-row-tags">
+                      <span class="pane-row-mono">{project.slug}</span>
+                      {project.workdir && <span class="resource-row-chip project-row-workdir-chip" title={project.workdir}>{project.workdir}</span>}
+                      {project.worktree_mode && project.worktree_mode !== "off" && (
+                        <span class="resource-row-chip">worktrees {project.worktree_mode}</span>
+                      )}
+                      {teamLabel && <span class="resource-row-chip">team {teamLabel}</span>}
+                      {tags.slice(0, 3).map((tag) => <span key={tag} class="resource-row-chip">{tag}</span>)}
+                      {tags.length > 3 && <span class="resource-row-chip">+{tags.length - 3}</span>}
+                      {project.archived && <span class="resource-row-chip">archived</span>}
+                    </span>
+                  </span>
+                )}
+                trailing={(
+                  <span class="pane-row-summary pane-row-summary-metrics">
+                    <span title={`${activeTaskCount} active of ${taskCount} total`}>
+                      {activeTaskCount}/{taskCount} task{taskCount === 1 ? "" : "s"}
+                    </span>
+                    <span>{formatProjectAge(project.updated_at)}</span>
+                  </span>
+                )}
+              />
+            );
+          })}
+        </ResourceGroup>
+      ))}
+    </div>
   );
 
   const isEditing = selectedId === "new" || mode === "edit";
@@ -893,6 +942,8 @@ export function Projects({ selectedId = null, mode = null }) {
         detail={detail}
         hasSelection={!!selectedId}
         detailOwnsMobileBack={!!selectedId}
+        listFirst
+        class="resource-list-layout"
         onBack={() => navigateHash("#/projects")}
         backLabel="All projects"
       />
