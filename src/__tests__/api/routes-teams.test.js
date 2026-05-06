@@ -1,5 +1,6 @@
-import { describe, it, expect, afterAll } from "vitest";
+import { describe, it, expect, afterAll, vi } from "vitest";
 import { makeTestServer } from "../helpers/test-server.js";
+import { createWatcherProxy } from "../../coordinator.js";
 
 describe("/api/teams", () => {
   it("GET /api/teams returns []", async () => {
@@ -80,5 +81,45 @@ describe("/api/teams", () => {
     const created = await agent.post("/api/teams").send({ name: "Idle", lead_agent: "lead" }).expect(201);
     const res = await agent.post(`/api/teams/${created.body.team.id}/run-lead`).send({}).expect(400);
     expect(res.body.error.code).toBe("no_projects");
+  });
+
+  it("POST /api/teams/:id/run-lead returns not_configured when the watcher cannot spawn lead cycles", async () => {
+    const { agent, db } = makeTestServer({ watcher: { maybeAutoStart: () => {} } });
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at) VALUES ('lead', 'Lead', 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)").run(now, now);
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Needs Watcher", lead_agent: "lead" }).expect(201);
+    await agent.post("/api/projects").send({ name: "Lead Project", team_id: team.id }).expect(201);
+
+    const res = await agent.post(`/api/teams/${team.id}/run-lead`).send({}).expect(501);
+    expect(res.body.error.code).toBe("not_configured");
+  });
+
+  it("POST /api/teams/:id/run-lead spawns a lead cycle through the coordinator watcher proxy", async () => {
+    const spawnLeadCycle = vi.fn(({ projectId }) => ({ ok: true, runId: `run-${projectId}`, taskId: `task-${projectId}` }));
+    const watcherHolder = {
+      current: {
+        handleRunRequested: vi.fn(),
+        cancel: vi.fn(),
+        shutdown: vi.fn(),
+        isActive: vi.fn(),
+        getRunLiveInputState: vi.fn(),
+        sendRunMessage: vi.fn(),
+        maybeAutoStart: vi.fn(),
+        maybeAutoStartDependents: vi.fn(),
+        maybeScheduleUnassignedTeamTask: vi.fn(),
+        spawnLeadCycle,
+      },
+    };
+    const { agent, db } = makeTestServer({ watcher: createWatcherProxy(watcherHolder) });
+    const now = Date.now();
+    db.prepare("INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at) VALUES ('lead', 'Lead', 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)").run(now, now);
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Proxy Team", lead_agent: "lead" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({ name: "Proxy Project", team_id: team.id }).expect(201);
+
+    const res = await agent.post(`/api/teams/${team.id}/run-lead`).send({ reason: "manual" }).expect(202);
+    expect(res.body.results).toEqual([
+      expect.objectContaining({ ok: true, project_id: project.id, runId: `run-${project.id}`, taskId: `task-${project.id}` }),
+    ]);
+    expect(spawnLeadCycle).toHaveBeenCalledWith({ teamId: team.id, projectId: project.id, reason: "manual" });
   });
 });

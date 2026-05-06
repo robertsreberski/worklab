@@ -68,6 +68,8 @@ export function createWatcherProxy(watcherHolder) {
     sendRunMessage: (...args) => watcherHolder.current.sendRunMessage(...args),
     maybeAutoStart: (...args) => watcherHolder.current.maybeAutoStart(...args),
     maybeAutoStartDependents: (...args) => watcherHolder.current.maybeAutoStartDependents(...args),
+    maybeScheduleUnassignedTeamTask: (...args) => watcherHolder.current.maybeScheduleUnassignedTeamTask(...args),
+    spawnLeadCycle: (...args) => watcherHolder.current.spawnLeadCycle(...args),
   };
 }
 

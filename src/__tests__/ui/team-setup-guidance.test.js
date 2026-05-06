@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { teamSetupGaps } from "../../ui/src/routes/Teams.jsx";
+import { formatTeamLeadRunToast, teamSetupGaps } from "../../ui/src/routes/Teams.jsx";
 
 const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Teams.jsx");
 const stylesSourcePath = resolve(import.meta.dirname, "../../ui/src/styles.css");
@@ -26,6 +26,21 @@ describe("team setup guidance", () => {
       [{ agent_name: "builder" }, { agent_name: "reviewer" }],
       [{ id: "project-1" }],
     )).toEqual([]);
+  });
+
+  it("formats manual lead-run toasts with skipped/error reasons", () => {
+    expect(formatTeamLeadRunToast([{ ok: true }, { ok: true }])).toEqual({
+      message: "Queued 2 lead cycles",
+      variant: "success",
+    });
+    expect(formatTeamLeadRunToast([{ ok: true }, { ok: false, error: "lead cycle already in flight" }])).toEqual({
+      message: "Queued 1 lead cycle; skipped 1: lead cycle already in flight",
+      variant: "warning",
+    });
+    expect(formatTeamLeadRunToast([{ ok: false, error: "watcher unavailable" }])).toEqual({
+      message: "No lead cycles queued: watcher unavailable",
+      variant: "warning",
+    });
   });
 
   it("keeps Teams setup guidance short and contextual", () => {
