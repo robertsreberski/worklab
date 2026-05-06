@@ -5197,6 +5197,60 @@ html.assistant-resizing * {
   width: 100%;
   min-width: 0;
 }
+.team-cycle-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.team-cycle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.team-cycle-row:first-child {
+  padding-top: 0;
+}
+.team-cycle-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.team-cycle-main {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+.team-cycle-meta,
+.team-cycle-actions,
+.team-cycle-link {
+  display: inline-flex;
+  align-items: center;
+}
+.team-cycle-meta {
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.team-cycle-summary {
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.team-cycle-actions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  font-size: var(--text-sm);
+}
+.team-cycle-link {
+  gap: 4px;
+  white-space: nowrap;
+}
 .team-row-leading,
 .team-list-status {
   display: inline-flex;

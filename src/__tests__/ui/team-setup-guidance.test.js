@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { formatTeamLeadRunToast, teamSetupGaps } from "../../ui/src/routes/Teams.jsx";
+import {
+  formatTeamLeadRunToast,
+  leadCycleRawLogHref,
+  leadCycleTaskHref,
+  teamSetupGaps,
+} from "../../ui/src/routes/Teams.jsx";
 
 const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Teams.jsx");
 const stylesSourcePath = resolve(import.meta.dirname, "../../ui/src/styles.css");
@@ -41,6 +46,19 @@ describe("team setup guidance", () => {
       message: "No lead cycles queued: watcher unavailable",
       variant: "warning",
     });
+  });
+
+  it("builds encoded lead-cycle task and raw-log links", () => {
+    const cycle = { task_id: "task 1", id: "run/1" };
+
+    expect(leadCycleTaskHref(cycle)).toBe("#/tasks/task%201?run=run%2F1");
+    expect(leadCycleRawLogHref(cycle)).toBe("/api/runs/run%2F1/raw-log");
+  });
+
+  it("does not build broken lead-cycle links when ids are missing", () => {
+    expect(leadCycleTaskHref({ task_id: "task 1" })).toBe(null);
+    expect(leadCycleTaskHref({ id: "run/1" })).toBe(null);
+    expect(leadCycleRawLogHref({})).toBe(null);
   });
 
   it("keeps Teams setup guidance short and contextual", () => {
