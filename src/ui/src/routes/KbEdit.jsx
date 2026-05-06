@@ -24,7 +24,7 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
-import { EMPTY_KB_FORM_ENTRY, normalizeKbFormEntry } from "./kb-entry-form.js";
+import { EMPTY_KB_FORM_ENTRY, kbFormEntryFromQuery, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
@@ -53,10 +53,16 @@ function EntityChromeBridge({ chrome }) {
   return null;
 }
 
-export function KbEdit({ slug, onSaved, onDeleted }) {
+function cleanList(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
   const isNew = slug === "new";
-  const [entry, setEntry] = useState(isNew ? EMPTY_KB_FORM_ENTRY : null);
-  const [baseline, setBaseline] = useState(null);
+  const newEntry = useMemo(() => isNew ? kbFormEntryFromQuery(prefill || {}) : EMPTY_KB_FORM_ENTRY, [isNew, prefill]);
+  const [entry, setEntry] = useState(isNew ? newEntry : null);
+  const [baseline, setBaseline] = useState(isNew ? newEntry : null);
   const [projects, setProjects] = useState([]);
   const [usage, setUsage] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -65,8 +71,8 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     let cancelled = false;
     setUsage(null);
     if (isNew) {
-      setEntry(EMPTY_KB_FORM_ENTRY);
-      setBaseline(EMPTY_KB_FORM_ENTRY);
+      setEntry(newEntry);
+      setBaseline(newEntry);
       return () => { cancelled = true; };
     }
     setEntry(null);
@@ -75,7 +81,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
       .catch(() => { if (!cancelled) setEntry({ notFound: true }); });
     api.kbUsage(slug).then((r) => { if (!cancelled) setUsage(r); }).catch(() => {});
     return () => { cancelled = true; };
-  }, [slug, isNew]);
+  }, [slug, isNew, newEntry]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,6 +100,13 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
       category: entry.category.trim() || null,
       subcategory: entry.subcategory.trim() || null,
       project_id: entry.project_id || null,
+      source_task_id: entry.source_task_id.trim() || null,
+      source_task_key: entry.source_task_key.trim() || null,
+      source_run_id: entry.source_run_id.trim() || null,
+      source_agent: entry.source_agent.trim() || null,
+      related_slugs: cleanList(entry.related_slugs),
+      supersedes_slugs: cleanList(entry.supersedes_slugs),
+      canonical_slug: entry.canonical_slug.trim() || null,
       pinned: !!entry.pinned,
     };
     if (isNew) {
@@ -180,6 +193,12 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
     { label: "Category", value: entry.category || "Uncategorized", mono: false },
     { label: "Subcategory", value: entry.subcategory || "None", mono: false },
     { label: "Tags", value: `${tagCount}`, mono: false },
+    { label: "Source task", value: entry.source_task_key || entry.source_task_id, mono: false },
+    { label: "Source run", value: entry.source_run_id, mono: true },
+    { label: "Source agent", value: entry.source_agent, mono: false },
+    { label: "Related", value: cleanList(entry.related_slugs).length ? cleanList(entry.related_slugs).join(", ") : "", mono: false },
+    { label: "Supersedes", value: cleanList(entry.supersedes_slugs).length ? cleanList(entry.supersedes_slugs).join(", ") : "", mono: false },
+    { label: "Canonical", value: entry.canonical_slug, mono: true },
     { label: "Pinned", value: entry.pinned ? "Yes" : "No", mono: false },
     !isNew ? { label: "Used by tasks", value: `${usageTaskCount}`, mono: false } : null,
     !isNew ? { label: "Used by agents", value: `${usageAgentCount}`, mono: false } : null,
@@ -316,10 +335,35 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
               <Textarea rows={22} monospace autoGrow value={entry.body} onInput={(e) => setEntry({ ...entry, body: e.target.value })} />
             </FormSection>
 
+            <SectionMarker id="kb-edit-references" num="03" kicker="References" meta="Source" />
+            <FormSection kicker="References" title="Source and relationships">
+              <FormGrid columns={2}>
+                <FormField label="Source task key">
+                  <Input value={entry.source_task_key} onInput={(e) => setEntry({ ...entry, source_task_key: e.target.value })} placeholder="T-123" />
+                </FormField>
+                <FormField label="Source task id">
+                  <Input value={entry.source_task_id} onInput={(e) => setEntry({ ...entry, source_task_id: e.target.value })} placeholder="task_..." />
+                </FormField>
+                <FormField label="Source run id">
+                  <Input value={entry.source_run_id} onInput={(e) => setEntry({ ...entry, source_run_id: e.target.value })} placeholder="run-..." />
+                </FormField>
+                <FormField label="Source agent">
+                  <Input value={entry.source_agent} onInput={(e) => setEntry({ ...entry, source_agent: e.target.value })} placeholder="agent name" />
+                </FormField>
+                <FormField label="Related entries">
+                  <TagInput value={entry.related_slugs || []} onChange={(related_slugs) => setEntry({ ...entry, related_slugs })} placeholder="knowledge-slug" />
+                </FormField>
+                <FormField label="Supersedes entries">
+                  <TagInput value={entry.supersedes_slugs || []} onChange={(supersedes_slugs) => setEntry({ ...entry, supersedes_slugs })} placeholder="older-slug" />
+                </FormField>
+                <FormField label="Canonical entry">
+                  <Input value={entry.canonical_slug} onInput={(e) => setEntry({ ...entry, canonical_slug: e.target.value })} placeholder="canonical-slug" />
+                </FormField>
+              </FormGrid>
+            </FormSection>
+
             {!isNew && usage && (usage.tasks?.length || usage.agents?.length) > 0 && (
-              <>
-                <SectionMarker id="kb-edit-references" num="03" kicker="References" meta="Usage" />
-                <FormSection kicker="References" title="Used by">
+              <FormSection kicker="Usage" title="Used by">
                   {usage.tasks?.length > 0 && (
                     <FormField label={`Tasks (${usage.tasks.length})`}>
                       <ul class="usage-list">
@@ -343,8 +387,7 @@ export function KbEdit({ slug, onSaved, onDeleted }) {
                       </ul>
                     </FormField>
                   )}
-                </FormSection>
-              </>
+              </FormSection>
             )}
           </main>
 

@@ -3,6 +3,7 @@ import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { buildProjectTaskProgress } from "../lib/projectTaskProgress.js";
+import { buildKnowledgePromotionHash, groupProjectKnowledgeEntries, recentProjectTaskOutputs } from "../lib/projectKnowledge.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
@@ -541,9 +542,13 @@ function ProjectDetail({ selectedId, onChanged }) {
     );
   }, [project]);
   const taskProgress = useMemo(() => buildProjectTaskProgress(project?.tasks || []), [project?.tasks]);
+  const knowledgeGroups = useMemo(() => groupProjectKnowledgeEntries(knowledgeEntries), [knowledgeEntries]);
+  const taskOutputs = useMemo(() => recentProjectTaskOutputs(project?.tasks || []), [project?.tasks]);
+  const canonicalKnowledgeCount = knowledgeGroups.reduce((sum, group) => sum + group.entries.length, 0);
   const taskSectionMeta = taskProgress.child_total > 0
     ? `${taskProgress.total} top-level + ${taskProgress.child_total} child${taskProgress.child_total === 1 ? "" : "ren"}`
     : `${taskProgress.total} linked`;
+  const knowledgeSectionMeta = `${canonicalKnowledgeCount} canonical · ${taskOutputs.length} output${taskOutputs.length === 1 ? "" : "s"}`;
 
   if (error) {
     return (
@@ -681,21 +686,68 @@ function ProjectDetail({ selectedId, onChanged }) {
             </section>
 
             <section class="knowledge-read-section" aria-labelledby="project-knowledge">
-              <SectionMarker id="project-knowledge" num="03" kicker="Knowledge" meta={`${knowledgeEntries.length} linked`} />
-              {knowledgeEntries.length ? (
-                <div class="project-knowledge-list">
-                  {knowledgeEntries.slice(0, 12).map((entry) => (
-                    <a key={entry.slug} href={`#/knowledge/${entry.slug}`} class="project-knowledge-row">
-                      <span class="project-knowledge-title">{entry.title || entry.slug}</span>
-                      <span class="project-knowledge-meta">
-                        {entry.category || "uncategorized"}
-                        {entry.subcategory ? ` · ${entry.subcategory}` : ""}
-                      </span>
-                    </a>
-                  ))}
+              <SectionMarker id="project-knowledge" num="03" kicker="Knowledge" meta={knowledgeSectionMeta} />
+              {canonicalKnowledgeCount || taskOutputs.length ? (
+                <div class="project-knowledge-workspace">
+                  {canonicalKnowledgeCount > 0 && (
+                    <div class="project-knowledge-groups">
+                      {knowledgeGroups.map((group) => (
+                        <div key={group.key} class="project-knowledge-group">
+                          <div class="project-knowledge-group-title">
+                            <span>{group.label}</span>
+                            <span>{group.entries.length}</span>
+                          </div>
+                          <div class="project-knowledge-list">
+                            {group.entries.map((entry) => (
+                              <a key={entry.slug} href={`#/knowledge/${entry.slug}`} class="project-knowledge-row">
+                                <span class="project-knowledge-title">{entry.title || entry.slug}</span>
+                                <span class="project-knowledge-meta">
+                                  {entry.subcategory || entry.category || "uncategorized"}
+                                  {entry.related_slugs?.length ? ` · ${entry.related_slugs.length} related` : ""}
+                                  {entry.supersedes_slugs?.length ? ` · supersedes ${entry.supersedes_slugs.length}` : ""}
+                                </span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {taskOutputs.length > 0 && (
+                    <div class="project-task-output-lane">
+                      <div class="project-task-output-lane-head">
+                        <span>Recent task outputs</span>
+                        <span>{taskOutputs.length}</span>
+                      </div>
+                      <div class="project-output-list">
+                        {taskOutputs.map((output) => (
+                          <div key={`${output.task_id}:${output.run_id}`} class="project-output-row">
+                            <a class="project-output-copy" href={`#/tasks/${taskRouteId({ id: output.task_id, task_key: output.task_key })}`}>
+                              <span class="project-output-title">{output.title}</span>
+                              <span class="project-output-meta">
+                                {output.task_key || output.task_id}
+                                {output.agent_name ? ` · ${output.agent_name}` : ""}
+                                {output.artifact_label ? ` · ${output.artifact_label}` : ""}
+                              </span>
+                              {output.summary && <span class="project-output-summary">{output.summary}</span>}
+                            </a>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              iconLeft={<Icon name="upload" size={12} />}
+                              onClick={() => navigateHash(buildKnowledgePromotionHash({ project, taskOutput: output }))}
+                            >
+                              Promote
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div class="task-plan-empty">No knowledge entries are linked to this project.</div>
+                <div class="task-plan-empty">No canonical knowledge or task outputs yet.</div>
               )}
             </section>
           </main>

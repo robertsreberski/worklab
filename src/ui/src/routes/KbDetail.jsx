@@ -82,6 +82,23 @@ function UsageList({ usage }) {
   );
 }
 
+function RelationSlugList({ label, slugs = [] }) {
+  const visible = Array.isArray(slugs) ? slugs.filter(Boolean) : [];
+  if (!visible.length) return null;
+  return (
+    <div class="knowledge-usage-group">
+      <div class="form-section-kicker">{label} ({visible.length})</div>
+      <ul class="usage-list knowledge-read-usage-list">
+        {visible.map((relationSlug) => (
+          <li key={relationSlug}>
+            <a href={`#/knowledge/${encodeURIComponent(relationSlug)}`}>{relationSlug}</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function KbDetail({ slug }) {
   const [entry, setEntry] = useState(null);
   const [usage, setUsage] = useState(null);
@@ -114,7 +131,9 @@ export function KbDetail({ slug }) {
   const categoryAttr = categoryToken(entry?.category);
   const tagCount = entry?.tags?.length || 0;
   const projectLabel = entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
+  const sourceTaskLabel = entry?.source_task_key || entry?.source_task_id || "";
   const usageCount = (usage?.tasks?.length || 0) + (usage?.agents?.length || 0);
+  const relationCount = (entry?.related_slugs?.length || 0) + (entry?.supersedes_slugs?.length || 0) + (entry?.canonical_slug ? 1 : 0);
   const rail = useMemo(() => {
     if (!entry || entry.notFound) return null;
     return (
@@ -127,6 +146,10 @@ export function KbDetail({ slug }) {
               { label: "Category", value: entry.category || "Uncategorized", mono: false },
               { label: "Subcategory", value: entry.subcategory || "None", mono: false },
               { label: "Tags", value: tagCount ? entry.tags.join(", ") : "None", mono: false },
+              { label: "Source task", value: sourceTaskLabel, mono: false },
+              { label: "Source run", value: entry.source_run_id || "", mono: true },
+              { label: "Source agent", value: entry.source_agent || "", mono: false },
+              { label: "Canonical", value: entry.canonical_slug || "", mono: true },
               { label: "Pinned", value: entry.pinned ? "Yes" : "No", mono: false },
               { label: "Author", value: entry.author || "", mono: false },
               { label: "Created", value: formatDateTime(entry.created_at), mono: false },
@@ -135,11 +158,18 @@ export function KbDetail({ slug }) {
           />
         </Card>
         <Card variant="spacious" title="References" class="entity-rail-card knowledge-read-usage-card">
+          <div class="knowledge-usage-groups">
+            {entry.canonical_slug && (
+              <RelationSlugList label="Canonical entry" slugs={[entry.canonical_slug]} />
+            )}
+            <RelationSlugList label="Related entries" slugs={entry.related_slugs} />
+            <RelationSlugList label="Supersedes" slugs={entry.supersedes_slugs} />
+          </div>
           <UsageList usage={usage} />
         </Card>
       </div>
     );
-  }, [entry, projectLabel, slug, tagCount, usage]);
+  }, [entry, projectLabel, slug, sourceTaskLabel, tagCount, usage]);
 
   if (!entry) return <LoadingState caption="Loading entry..." />;
 
@@ -206,6 +236,12 @@ export function KbDetail({ slug }) {
               <>
                 <span class="pane-row-dot">·</span>
                 <span>{usageCount} reference{usageCount === 1 ? "" : "s"}</span>
+              </>
+            )}
+            {relationCount > 0 && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>{relationCount} linked</span>
               </>
             )}
           </>

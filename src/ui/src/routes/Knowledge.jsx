@@ -57,7 +57,7 @@ export function knowledgeTimestamp(value) {
   return Date.parse(value);
 }
 
-export function Knowledge({ selectedSlug = null, mode = null }) {
+export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery = {} }) {
   const [entries, setEntries] = useState([]);
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
@@ -66,6 +66,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
   const [subcategory, setSubcategory] = useState("all");
   const [tag, setTag] = useState("all");
   const [pinned, setPinned] = useState("all");
+  const [surface, setSurface] = useState("canonical");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -107,6 +108,8 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
     if (tag !== "all") list = list.filter((e) => (e.tags || []).includes(tag));
     if (pinned === "pinned") list = list.filter((e) => e.pinned);
     else if (pinned === "unpinned") list = list.filter((e) => !e.pinned);
+    if (surface === "canonical") list = list.filter((e) => !e.auto_promoted);
+    else if (surface === "run_outputs") list = list.filter((e) => e.auto_promoted);
     if (q) {
       list = list.filter((e) =>
         e.title?.toLowerCase().includes(q) ||
@@ -122,7 +125,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
       if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
       return (knowledgeTimestamp(b.updated_at) || 0) - (knowledgeTimestamp(a.updated_at) || 0);
     });
-  }, [entries, query, projectId, category, subcategory, tag, pinned]);
+  }, [entries, query, projectId, category, subcategory, tag, pinned, surface]);
 
   const projectOptions = useMemo(() => [
     { value: "all", label: "All projects" },
@@ -141,7 +144,12 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
     { value: "pinned", label: "Pinned" },
     { value: "unpinned", label: "Unpinned" },
   ];
-  const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all";
+  const surfaceOptions = [
+    { value: "canonical", label: "Canonical" },
+    { value: "run_outputs", label: "Run outputs" },
+    { value: "all", label: "All entries" },
+  ];
+  const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all" || surface !== "canonical";
 
   const listHeader = (
     <PaneListHeader
@@ -159,13 +167,14 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
         <Select value={subcategory} options={subcategoryOptions} onChange={setSubcategory} ariaLabel="Filter knowledge by subcategory" />
         <Select value={tag} options={tagOptions} onChange={setTag} ariaLabel="Filter knowledge by tag" />
         <Select value={pinned} options={pinnedOptions} onChange={setPinned} ariaLabel="Filter knowledge by pin state" />
+        <Select value={surface} options={surfaceOptions} onChange={setSurface} ariaLabel="Filter generated run outputs" />
       </div>
     </PaneListHeader>
   );
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); }} />
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("canonical"); }} />
     ) : (
       <EmptyState
         title="No entries yet"
@@ -195,6 +204,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
           sub={(
             <span class="knowledge-row-sub">
               {e.project?.slug && <span class="pane-row-mono">{e.project.slug}</span>}
+              {e.auto_promoted && <span class="kb-category-badge" data-category="run-results">run output</span>}
               {e.category && <span class="kb-category-badge" data-category={cat}>{e.category}</span>}
               {e.subcategory && <span class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</span>}
               <span class="pane-row-mono">{e.slug}</span>
@@ -218,6 +228,7 @@ export function Knowledge({ selectedSlug = null, mode = null }) {
         slug={selectedSlug}
         onSaved={() => { reload(); }}
         onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
+        prefill={isEditing && selectedSlug === "new" ? routeQuery : null}
       />
     ) : (
       <KbDetail key={selectedSlug} slug={selectedSlug} />
