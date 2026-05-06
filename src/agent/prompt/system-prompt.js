@@ -375,8 +375,9 @@ function formatRepositoryInstructions(repositoryInstructions) {
   ].filter(Boolean).join("\n");
 }
 
-function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, mode } = {}) {
+function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, mode, workspaceMode = "direct" } = {}) {
   if (!repositoryInstructions && !repositoryGitRoot) return "";
+  const usesWorktree = workspaceMode === "worktree";
   const lines = [
     repositoryGitRoot
       ? `Before editing files, inspect the repository state with \`git status --short\` from \`${repositoryGitRoot}\`.`
@@ -389,12 +390,21 @@ function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, m
       : "If this workdir is not a Git repository, report changed paths and verification instead of forcing Git commits.",
   ];
   if (mode === "review") {
-    lines.push("When commits are required, verify the owner made granular commits and reject bundled or uncommitted task work.");
+    if (usesWorktree) {
+      lines.push("For worktree-mode runs, keep the isolated AI branch strict: verify the owner made granular commits on that branch and reject if the worktree branch includes unrelated work, uncommitted task work, or hidden dirty state.");
+    } else {
+      lines.push("When commits are required, judge commit hygiene by task-owned changes. Do not reject only because unrelated commits already exist in shared branch history.");
+      lines.push("Reject if the owner introduced unrelated changes, left task-owned changes bundled or uncommitted, hid dirty state, or misreported which commits belong to the task.");
+    }
   } else if (mode === "plan") {
     lines.push("When commits are required, make commit boundaries explicit in the plan and in delegated subtasks.");
   } else {
     lines.push("When commits are required, create granular commits before returning the final result.");
-    lines.push("In final_text, report commit hash(es), verification commands, and any remaining dirty worktree state.");
+    if (usesWorktree) {
+      lines.push("In final_text, report commit hash(es), verification commands, and any remaining dirty worktree state.");
+    } else {
+      lines.push("In direct workspace mode, preserve unrelated shared-checkout history; report task-specific commits and any remaining task-owned dirty state instead of rewriting history to manufacture a task-only branch.");
+    }
   }
   return lines.join("\n");
 }
@@ -436,6 +446,7 @@ function renderCapabilitiesBlock({ allowedTools = [], disallowedTools = [], mcpS
 
 function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode = "direct", sourceWorkdir = null, worktree = null } = {}) {
   if (!effectiveWorkdir) return "";
+  const usesWorktree = workspaceMode === "worktree";
   const lines = [
     `Tool working directory: \`${effectiveWorkdir}\`.`,
     `Workspace mode: \`${workspaceMode || "direct"}\`.`,
@@ -444,11 +455,14 @@ function formatWorkspaceGuidance(effectiveWorkdir, qaOutputDir, { workspaceMode 
     "Check that Git is available before using Git-only workflows.",
     "If you create temporary scripts that import project files, put them under this directory, such as `.worklab-tmp/`, rather than `/tmp`.",
   ];
-  if (workspaceMode === "worktree") {
+  if (usesWorktree) {
     if (sourceWorkdir) lines.push(`Source checkout: \`${sourceWorkdir}\`.`);
     if (worktree?.branch) lines.push(`AI worktree branch: \`${worktree.branch}\`.`);
     lines.push("Do not edit the source checkout directly. Make task changes in the tool working directory and commit them on the AI worktree branch before returning the final result.");
     lines.push("Worklab merges the AI worktree back only after verifying the source checkout is still clean; if current source changes conflict, treat the source checkout as the authority.");
+  } else {
+    lines.push("Direct workspace mode uses the shared project checkout, not an isolated per-task branch.");
+    lines.push("Preserve unrelated shared-checkout work and history; scope your changes, verification, and reporting to the current task's files and commits.");
   }
   if (qaOutputDir) {
     lines.push(`Temporary QA artifact directory: \`${qaOutputDir}\`.`);
@@ -619,6 +633,7 @@ export function buildSystemPrompt(input, mode) {
       repositoryInstructions: input.repositoryInstructions,
       repositoryGitRoot: input.repositoryGitRoot,
       mode,
+      workspaceMode: input.workspaceMode,
     })));
     if (input.repositoryInstructions || input.repositoryGitRoot) sectionNames.push("Repository workflow");
     parts.push(section("Project", buildProjectBody(input.project, input.effectiveWorkdir)));

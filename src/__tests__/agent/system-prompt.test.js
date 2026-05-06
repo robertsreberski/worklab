@@ -668,6 +668,73 @@ describe("buildReviewSystemPrompt", () => {
     expect(p.trim().endsWith('Use decision "approve" when the work satisfies the task and "reject" when changes are required.')).toBe(true);
   });
 
+  it("tells direct-workspace reviewers to judge task-owned changes instead of full shared branch history", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: baseExecution,
+      effectiveWorkdir: "/repo",
+      repositoryGitRoot: "/repo",
+      workspaceMode: "direct",
+    });
+
+    expect(p).toContain("Workspace mode: `direct`");
+    expect(p).toContain("Direct workspace mode uses the shared project checkout, not an isolated per-task branch.");
+    expect(p).toContain("judge commit hygiene by task-owned changes");
+    expect(p).toContain("Do not reject only because unrelated commits already exist in shared branch history");
+    expect(p).toContain("Reject if the owner introduced unrelated changes");
+  });
+
+  it("keeps worktree-mode reviewers strict about the isolated AI branch", () => {
+    const p = buildReviewSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      execution: baseExecution,
+      effectiveWorkdir: "/worktree",
+      repositoryGitRoot: "/source",
+      workspaceMode: "worktree",
+      sourceWorkdir: "/source",
+      worktree: {
+        branch: "worklab/run/run-1",
+        runtime_workdir: "/worktree",
+      },
+    });
+
+    expect(p).toContain("Workspace mode: `worktree`");
+    expect(p).toContain("AI worktree branch: `worklab/run/run-1`");
+    expect(p).toContain("For worktree-mode runs, keep the isolated AI branch strict");
+    expect(p).toContain("reject if the worktree branch includes unrelated work");
+  });
+
+  it("tells direct-workspace executors to preserve unrelated shared-checkout history", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: { name: "coder", instructions: "you are a coder" },
+      task: { id: "t1", title: "demo", stage: "execute", instructions: "do things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      effectiveWorkdir: "/repo",
+      repositoryGitRoot: "/repo",
+      workspaceMode: "direct",
+    });
+
+    expect(p).toContain("Direct workspace mode uses the shared project checkout, not an isolated per-task branch.");
+    expect(p).toContain("In direct workspace mode, preserve unrelated shared-checkout history");
+    expect(p).toContain("report task-specific commits and any remaining task-owned dirty state");
+  });
+
   it("does NOT contain the CADENCE instruction", () => {
     const p = buildReviewSystemPrompt({
       agent: baseAgent,
