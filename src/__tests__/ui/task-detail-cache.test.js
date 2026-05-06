@@ -5,7 +5,7 @@ import {
   taskDetailDataFromTaskSummary,
   writeTaskDetailCache,
   writeTaskDetailSummaryCache,
-} from "../../ui/src/routes/TaskDetail.jsx";
+} from "../../ui/src/routes/task-detail/summaryCache.js";
 
 describe("task detail cache", () => {
   beforeEach(() => {

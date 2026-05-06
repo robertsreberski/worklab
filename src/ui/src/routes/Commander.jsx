@@ -24,7 +24,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
 import { pushToast } from "../lib/toast.js";
-import { writeTaskDetailSummaryCache } from "./TaskDetail.jsx";
+import { writeTaskDetailSummaryCache } from "./task-detail/summaryCache.js";
 import {
   compareRuntimeTasks,
   runtimeTaskGroupKey,
