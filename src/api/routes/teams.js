@@ -369,13 +369,16 @@ export function registerTeamRoutes(app, { db, broker, watcher }) {
       if (!targets.length) {
         return res.status(400).json({ error: { code: "validation", message: `project not assigned to team: ${projectIdInput}` } });
       }
+      if (typeof watcher?.spawnLeadCycle !== "function") {
+        return res.status(501).json({ error: { code: "not_configured", message: "watcher not wired" } });
+      }
       const results = [];
       for (const project of targets) {
         // Pre-create the synthetic root so an empty-roster team still gets a
         // visible anchor row in the UI even if the spawn is skipped.
         try { ensureTeamRootTask(db, { teamId: existing.id, projectId: project.id, now: Date.now() }); }
         catch { /* best-effort */ }
-        const out = watcher?.spawnLeadCycle?.({ teamId: existing.id, projectId: project.id, reason });
+        const out = watcher.spawnLeadCycle({ teamId: existing.id, projectId: project.id, reason });
         results.push({ project_id: project.id, ...(out || { ok: false, error: "watcher unavailable" }) });
       }
       res.status(202).json({ results });

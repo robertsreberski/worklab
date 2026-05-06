@@ -87,6 +87,34 @@ export function teamSetupGaps(team = {}, members = [], projects = []) {
   return gaps;
 }
 
+function leadRunFailureReason(result) {
+  return String(result?.error || result?.message || result?.skipped || "unknown reason");
+}
+
+export function formatTeamLeadRunToast(results = []) {
+  const rows = Array.isArray(results) ? results : [];
+  const okCount = rows.filter((r) => r?.ok).length;
+  const skippedCount = Math.max(0, rows.length - okCount);
+  if (okCount === rows.length && okCount > 0) {
+    return {
+      message: `Queued ${okCount} lead cycle${okCount === 1 ? "" : "s"}`,
+      variant: "success",
+    };
+  }
+  const firstFailure = rows.find((r) => !r?.ok);
+  const reason = leadRunFailureReason(firstFailure);
+  if (okCount > 0) {
+    return {
+      message: `Queued ${okCount} lead cycle${okCount === 1 ? "" : "s"}; skipped ${skippedCount}: ${reason}`,
+      variant: "warning",
+    };
+  }
+  return {
+    message: `No lead cycles queued: ${reason}`,
+    variant: "warning",
+  };
+}
+
 function TeamSetupGuide() {
   return (
     <Card title="Good team checklist" class="team-setup-card">
@@ -308,8 +336,8 @@ function TeamDetail({ team, members, projects, cycles, onChanged }) {
     setRunning(true);
     try {
       const res = await api.runTeamLead(team.id, { reason: "manual" });
-      const okCount = (res.results || []).filter((r) => r.ok).length;
-      pushToast(`Queued ${okCount} lead cycle${okCount === 1 ? "" : "s"}`, { variant: okCount ? "success" : "warning" });
+      const toast = formatTeamLeadRunToast(res.results || []);
+      pushToast(toast.message, { variant: toast.variant });
       onChanged?.();
     } catch (err) {
       pushToast(`Run-lead failed: ${err.message}`, { variant: "error" });
