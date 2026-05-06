@@ -4,6 +4,22 @@ import { describe, expect, it } from "vitest";
 import { ROUTE_GROUPS, ROUTES } from "../../ui/src/components/AppShell.jsx";
 
 const appShellPath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
+const appPath = resolve(import.meta.dirname, "../../ui/src/App.jsx");
+const commanderPath = resolve(import.meta.dirname, "../../ui/src/routes/Commander.jsx");
+const primitiveIndexPath = resolve(import.meta.dirname, "../../ui/src/components/primitives/index.js");
+const lazyRouteModules = [
+  "Activity",
+  "Agents",
+  "DesignSystem",
+  "Knowledge",
+  "Projects",
+  "Providers",
+  "Settings",
+  "Skills",
+  "TaskDetail",
+  "TaskEdit",
+  "Teams",
+];
 
 function moreRouteIds() {
   const source = readFileSync(appShellPath, "utf8");
@@ -30,5 +46,30 @@ describe("app shell routes", () => {
 
     expect(ids).toContain("teams");
     expect(ids.indexOf("teams")).toBeLessThan(ids.indexOf("skills"));
+  });
+
+  it("keeps secondary routes behind dynamic imports", () => {
+    const source = readFileSync(appPath, "utf8");
+
+    expect(source).toContain('import { Commander } from "./routes/Commander.jsx";');
+    expect(source).toContain("Suspense");
+    for (const routeModule of lazyRouteModules) {
+      expect(source).not.toContain(`import { ${routeModule} } from "./routes/${routeModule}.jsx";`);
+      expect(source).toContain(`import("./routes/${routeModule}.jsx")`);
+    }
+  });
+
+  it("keeps the task detail route out of the eager commander chunk", () => {
+    const source = readFileSync(commanderPath, "utf8");
+
+    expect(source).not.toContain('from "./TaskDetail.jsx"');
+    expect(source).toContain('from "./task-detail/summaryCache.js"');
+  });
+
+  it("exports StatusDot directly from its primitive module", () => {
+    const source = readFileSync(primitiveIndexPath, "utf8");
+
+    expect(source).toContain('export { StatusDot } from "./StatusDot.jsx";');
+    expect(source).not.toContain('export { StatusPill, StatusDot, statusMeta } from "./StatusPill.jsx";');
   });
 });

@@ -1,17 +1,24 @@
+import { lazy, Suspense } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
+import { LoadingState } from "./components/LoadingState.jsx";
 import { Commander } from "./routes/Commander.jsx";
-import { Projects } from "./routes/Projects.jsx";
-import { TaskDetail } from "./routes/TaskDetail.jsx";
-import { TaskEdit } from "./routes/TaskEdit.jsx";
-import { Settings } from "./routes/Settings.jsx";
-import { Agents } from "./routes/Agents.jsx";
-import { Teams } from "./routes/Teams.jsx";
-import { Skills } from "./routes/Skills.jsx";
-import { Knowledge } from "./routes/Knowledge.jsx";
-import { Providers } from "./routes/Providers.jsx";
-import { Activity } from "./routes/Activity.jsx";
-import { DesignSystem } from "./routes/DesignSystem.jsx";
 import { consumeAllowedHash, getNavigationGuard, navigateHash, normalizeHash } from "./lib/navigation.js";
+
+function lazyNamed(loader, exportName) {
+  return lazy(() => loader().then((module) => ({ default: module[exportName] })));
+}
+
+const Activity = lazyNamed(() => import("./routes/Activity.jsx"), "Activity");
+const Agents = lazyNamed(() => import("./routes/Agents.jsx"), "Agents");
+const DesignSystem = lazyNamed(() => import("./routes/DesignSystem.jsx"), "DesignSystem");
+const Knowledge = lazyNamed(() => import("./routes/Knowledge.jsx"), "Knowledge");
+const Projects = lazyNamed(() => import("./routes/Projects.jsx"), "Projects");
+const Providers = lazyNamed(() => import("./routes/Providers.jsx"), "Providers");
+const Settings = lazyNamed(() => import("./routes/Settings.jsx"), "Settings");
+const Skills = lazyNamed(() => import("./routes/Skills.jsx"), "Skills");
+const TaskDetail = lazyNamed(() => import("./routes/TaskDetail.jsx"), "TaskDetail");
+const TaskEdit = lazyNamed(() => import("./routes/TaskEdit.jsx"), "TaskEdit");
+const Teams = lazyNamed(() => import("./routes/Teams.jsx"), "Teams");
 
 function parseHash() {
   const h = window.location.hash.replace(/^#\/?/, "");
@@ -26,6 +33,10 @@ function parseHash() {
     query[key] = value;
   }
   return { route, rest, query };
+}
+
+function RouteFallback() {
+  return <LoadingState caption="Loading route..." />;
 }
 
 export function App() {
@@ -91,5 +102,5 @@ export function App() {
     body = <Commander />;
   }
 
-  return <>{body}</>;
+  return <Suspense fallback={<RouteFallback />}>{body}</Suspense>;
 }
