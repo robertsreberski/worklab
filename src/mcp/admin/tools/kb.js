@@ -30,6 +30,13 @@ export const definitions = [
     category: string("Category"),
     subcategory: string("Subcategory"),
     project_id: string("Project id or slug"),
+    source_task_id: string("Source task id"),
+    source_task_key: string("Source task key"),
+    source_run_id: string("Source run id"),
+    source_agent: string("Source agent name"),
+    related_slugs: arrayOfString("Related Knowledge Base slugs"),
+    supersedes_slugs: arrayOfString("Superseded Knowledge Base slugs"),
+    canonical_slug: string("Canonical Knowledge Base slug"),
     pinned: boolean("Pinned"),
   }, ["title"]), { annotations: { readOnlyHint: false, destructiveHint: false } }),
   tool("worklab_kb_update", "Patch a Worklab Knowledge Base entry.", object({ slug: slugSchema, patch: patchSchema }, ["slug", "patch"]), { annotations: { readOnlyHint: false, destructiveHint: false } }),
@@ -37,6 +44,9 @@ export const definitions = [
   tool("worklab_kb_organize", "Preview or apply conservative Knowledge Base project/category/subcategory metadata backfill. Defaults to dry-run unless apply is true.", object({
     apply: boolean("Apply proposed metadata changes. Defaults to false for dry-run."),
   }), { annotations: { readOnlyHint: false, destructiveHint: false } }),
+  tool("worklab_kb_cleanup_auto_promoted", "Preview or delete generated auto-promoted run-result Knowledge Base assets. Defaults to dry-run unless apply is true.", object({
+    apply: boolean("Delete candidate entries. Defaults to false for dry-run."),
+  }), { annotations: { readOnlyHint: false, destructiveHint: true } }),
   tool("worklab_search", "Search the Worklab Knowledge Base, journals, and memories.", object({
     query: string("Search query"),
     kind: string("all, kb, journal, or memory"),
@@ -56,6 +66,7 @@ const specs = [
   ["worklab_kb_update", "PATCH", "/api/kb/:slug", [], "patch"],
   ["worklab_kb_delete", "DELETE", "/api/kb/:slug"],
   ["worklab_kb_organize", "POST", "/api/kb/organize", [], "input"],
+  ["worklab_kb_cleanup_auto_promoted", "POST", "/api/kb/cleanup-auto-promoted", [], "input"],
 ];
 
 export function buildHandlers(client) {

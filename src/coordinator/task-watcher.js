@@ -15,8 +15,6 @@ import { recordRunResultLearning } from "../core/agent-learning.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
-import { kbCreate, kbRead, kbUpdate } from "../core/kb.js";
-import { slugify } from "../core/slugs.js";
 import { retryableProviderFailureInfo } from "../ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { reconcileRunWorktree } from "../core/worktrees.js";
@@ -47,19 +45,13 @@ import {
 import {
   agentCommentBody,
   assistantTextsFromEvents,
-  conciseCommentForLinkedAnswer,
   firstMeaningfulParagraph,
-  richFinalAnswerFromRun,
   sanitizeAgentText,
   structuredFinalText,
 } from "./watcher/final-text.js";
 import {
   appendKbLink,
   firstKnowledgeSlugFromText,
-  runResultKbBody,
-  runResultKbSlug,
-  runResultKbTags,
-  runResultKbTitle,
   successfulKbWriteFromEvents,
 } from "./watcher/kb-publisher.js";
 import {
@@ -459,50 +451,12 @@ export function createTaskWatcher({
     return { ok: true };
   }
 
-  function persistRunResultKnowledge({ task, runId, stage, agentName, result, finalText, events, commentBody }) {
-    if (!dataDir || stage !== "execute" || result?.decision !== "advance") return null;
-    const richText = richFinalAnswerFromRun({ finalText, events, commentBody });
-    if (!richText) return null;
-    const slug = runResultKbSlug(runId);
-    const title = runResultKbTitle({ task, agentName });
-    const body = runResultKbBody({ task, runId, stage, agentName, richText });
-    const patch = {
-      title,
-      body,
-      tags: runResultKbTags({ task, stage, agentName }),
-      category: "run-results",
-      project_id: task?.project_id || null,
-      pinned: false,
-    };
-    try {
-      if (kbRead({ dataDir, slug })) {
-        kbUpdate({ dataDir, slug, patch });
-      } else {
-        kbCreate({ dataDir, slug, author: agentName || "agent", ...patch });
-      }
-      broker?.broadcast?.("global", { type: "kb_updated", slug });
-      return { slug, title, richText };
-    } catch (err) {
-      logger?.warn?.({ err: err?.message || String(err), runId, slug }, "failed to persist rich final answer");
-      return null;
-    }
-  }
-
   function postAgentFinalComment(taskId, agentName, result, finalText, options = {}) {
     let body = agentCommentBody(result, finalText);
     const linkedSlug = firstKnowledgeSlugFromText(body) || firstKnowledgeSlugFromText(finalText);
     const kbWrite = linkedSlug ? { wrote: true, slug: linkedSlug } : successfulKbWriteFromEvents(options.events);
     if (kbWrite.wrote) {
       if (kbWrite.slug) body = appendKbLink(body, kbWrite.slug);
-    } else {
-      const kbEntry = persistRunResultKnowledge({
-        ...options,
-        agentName,
-        result,
-        finalText,
-        commentBody: body,
-      });
-      if (kbEntry) body = appendKbLink(conciseCommentForLinkedAnswer(result, kbEntry.richText) || body, kbEntry.slug);
     }
     if (!body) return;
     db.prepare(

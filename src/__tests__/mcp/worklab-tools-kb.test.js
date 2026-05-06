@@ -73,6 +73,34 @@ describe("worklab-tools KB handlers", () => {
     expect(read.meta.subcategory).toBe("ui-audit");
   });
 
+  it("kb_create stores source and relationship metadata", async () => {
+    const c = ctx("alice", { projectId: "project-1" });
+    const h = createToolHandlers(c);
+    await h.kb_create({
+      slug: "linked-note",
+      title: "Linked Note",
+      body: "body",
+      source_task_id: "task-1",
+      source_task_key: "T-1",
+      source_run_id: "run-1",
+      source_agent: "alice",
+      related_slugs: ["runbook", "decision"],
+      supersedes_slugs: ["old-note"],
+      canonical_slug: "linked-note",
+    });
+    const read = await h.kb_read({ slug: "linked-note" });
+    expect(read.meta).toMatchObject({
+      project_id: "project-1",
+      source_task_id: "task-1",
+      source_task_key: "T-1",
+      source_run_id: "run-1",
+      source_agent: "alice",
+      related_slugs: ["runbook", "decision"],
+      supersedes_slugs: ["old-note"],
+      canonical_slug: "linked-note",
+    });
+  });
+
   it("kb_create rejects invalid slug", async () => {
     const c = ctx();
     const h = createToolHandlers(c);
@@ -267,7 +295,8 @@ describe("worklab-tools KB handlers", () => {
     for (const name of kbTools) {
       expect(names).toContain(name);
     }
-    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve substantial task deliverables");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve durable, reusable deliverables");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.inputSchema.properties).toHaveProperty("related_slugs");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("Knowledge Base, not kilobytes");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.outputSchema?.required).toContain("slug");
     expect(toolDefinitions.find((t) => t.name === "kb_read")?.annotations).toMatchObject({ readOnlyHint: true });

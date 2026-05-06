@@ -23,6 +23,13 @@ const FRONTMATTER_ORDER = [
   "category",
   "subcategory",
   "project_id",
+  "source_task_id",
+  "source_task_key",
+  "source_run_id",
+  "source_agent",
+  "related_slugs",
+  "supersedes_slugs",
+  "canonical_slug",
   "pinned",
   "author",
   "created_at",
@@ -261,6 +268,7 @@ function renderFrontmatter(meta) {
     if (!(key in meta)) continue;
     const v = meta[key];
     if (v === null || v === undefined) continue; // omit when null
+    if ((key === "related_slugs" || key === "supersedes_slugs") && Array.isArray(v) && v.length === 0) continue;
     lines.push(`${key}: ${renderValue(v)}`);
   }
   // Include any extra keys not in the canonical order (preserves unknown
@@ -327,6 +335,13 @@ function normalizeTags(tags) {
   return [...new Set(tags.map((tag) => String(tag || "").trim()).filter(Boolean))];
 }
 
+function normalizeSlugList(slugs) {
+  if (!Array.isArray(slugs)) return [];
+  return [...new Set(slugs
+    .map((slug) => String(slug || "").trim())
+    .filter((slug) => slug && SLUG_RE.test(slug)))];
+}
+
 function normalizeNullableString(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
@@ -343,6 +358,13 @@ function normalizeMetaForList(meta) {
     category: meta.category ?? null,
     subcategory: meta.subcategory ?? null,
     project_id: meta.project_id ?? null,
+    source_task_id: meta.source_task_id ?? null,
+    source_task_key: meta.source_task_key ?? null,
+    source_run_id: meta.source_run_id ?? null,
+    source_agent: meta.source_agent ?? null,
+    related_slugs: normalizeSlugList(meta.related_slugs),
+    supersedes_slugs: normalizeSlugList(meta.supersedes_slugs),
+    canonical_slug: meta.canonical_slug ?? null,
     pinned: meta.pinned === true,
     author: meta.author ?? null,
     created_at: meta.created_at ?? null,
@@ -385,6 +407,13 @@ export function kbRead({ dataDir, slug }) {
     category: meta.category ?? null,
     subcategory: meta.subcategory ?? null,
     project_id: meta.project_id ?? null,
+    source_task_id: meta.source_task_id ?? null,
+    source_task_key: meta.source_task_key ?? null,
+    source_run_id: meta.source_run_id ?? null,
+    source_agent: meta.source_agent ?? null,
+    related_slugs: normalizeSlugList(meta.related_slugs),
+    supersedes_slugs: normalizeSlugList(meta.supersedes_slugs),
+    canonical_slug: meta.canonical_slug ?? null,
     pinned: meta.pinned === true,
   };
   return { meta: normalized, body };
@@ -399,6 +428,13 @@ export function kbCreate({
   category = null,
   subcategory = null,
   project_id = null,
+  source_task_id = null,
+  source_task_key = null,
+  source_run_id = null,
+  source_agent = null,
+  related_slugs = [],
+  supersedes_slugs = [],
+  canonical_slug = null,
   pinned = false,
   author,
   now = new Date(),
@@ -417,6 +453,13 @@ export function kbCreate({
     category: normalizeNullableString(category),
     subcategory: normalizeNullableString(subcategory),
     project_id: normalizeNullableString(project_id),
+    source_task_id: normalizeNullableString(source_task_id),
+    source_task_key: normalizeNullableString(source_task_key),
+    source_run_id: normalizeNullableString(source_run_id),
+    source_agent: normalizeNullableString(source_agent),
+    related_slugs: normalizeSlugList(related_slugs),
+    supersedes_slugs: normalizeSlugList(supersedes_slugs),
+    canonical_slug: normalizeNullableString(canonical_slug),
     pinned: pinned === true,
     author: author ?? null,
     created_at: ts,
@@ -450,6 +493,13 @@ export function kbUpdate({ dataDir, slug, patch = {}, now = new Date() }) {
   merged.category = normalizeNullableString(merged.category);
   merged.subcategory = normalizeNullableString(merged.subcategory);
   merged.project_id = normalizeNullableString(merged.project_id);
+  merged.source_task_id = normalizeNullableString(merged.source_task_id);
+  merged.source_task_key = normalizeNullableString(merged.source_task_key);
+  merged.source_run_id = normalizeNullableString(merged.source_run_id);
+  merged.source_agent = normalizeNullableString(merged.source_agent);
+  merged.related_slugs = normalizeSlugList(merged.related_slugs);
+  merged.supersedes_slugs = normalizeSlugList(merged.supersedes_slugs);
+  merged.canonical_slug = normalizeNullableString(merged.canonical_slug);
   merged.pinned = merged.pinned === true;
 
   const newBody = "body" in patch ? patch.body : existingBody;
@@ -540,4 +590,42 @@ export function kbList({ dataDir, tag, category, subcategory, project_id, pinned
     return au < bu ? 1 : -1;
   });
   return out;
+}
+
+function safeDecode(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
+export function autoPromotedRunResultInfo(entry = {}) {
+  const meta = entry.meta && typeof entry.meta === "object" ? entry.meta : entry;
+  const body = String(entry.body || "");
+  const tags = normalizeTags(meta.tags);
+  const runMatch = /Source run:\s*\[[^\]]*]\(\/api\/runs\/([^)]+?)\/raw-log\)/i.exec(body);
+  const taskMatch = /Source task:\s*\[[^\]]*]\(#\/tasks\/([^)]+)\)/i.exec(body);
+  const stageMatch = /^Stage:\s*(.+)$/im.exec(body);
+  const agentMatch = /^Agent:\s*(.+)$/im.exec(body);
+  const sourceRunId = safeDecode(meta.source_run_id || runMatch?.[1]);
+  const sourceTaskRef = safeDecode(meta.source_task_key || meta.source_task_id || taskMatch?.[1]);
+  const sourceAgent = normalizeNullableString(meta.source_agent || agentMatch?.[1]);
+  const slug = String(meta.slug || "").trim();
+  const generatedShape = SLUG_RE.test(slug)
+    && slug.startsWith("run-")
+    && meta.category === "run-results"
+    && tags.includes("run-result")
+    && !!sourceRunId
+    && !!sourceTaskRef
+    && /\n---\r?\n/.test(body);
+  return {
+    auto_promoted: generatedShape,
+    source_run_id: sourceRunId,
+    source_task_ref: sourceTaskRef,
+    source_agent: sourceAgent,
+    stage: normalizeNullableString(stageMatch?.[1]),
+  };
 }

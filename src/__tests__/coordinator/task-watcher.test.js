@@ -1811,7 +1811,7 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe("Done. Created `/tmp/test.txt`.");
   });
 
-  it("stores substantial final prose in knowledge and links it from the agent comment", async () => {
+  it("does not auto-promote substantial final prose into knowledge", async () => {
     const db = makeTestDb();
     const dataDir = tempDataDir();
     seedAgent(db, "coder");
@@ -1855,20 +1855,15 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const slug = slugify(`run-${runId}`, "run-result");
-    const entry = kbRead({ dataDir, slug });
-    expect(entry.meta.category).toBe("run-results");
-    expect(entry.meta.tags).toEqual(expect.arrayContaining(["run-result", "execute", "agent-coder"]));
-    expect(entry.body).toContain("# Complete Restaurant Research");
-    expect(entry.body).toContain(`/api/runs/${runId}/raw-log`);
-    expect(entry.body).not.toContain('"schema": "worklab.v2"');
+    expect(kbRead({ dataDir, slug })).toBeNull();
 
     const agentComment = db
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
-    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+    expect(agentComment.body).toBe("Research complete. Iharada is the top pick.");
   });
 
-  it("stores fallback knowledge under the task project", async () => {
+  it("does not create fallback knowledge under the task project", async () => {
     const db = makeTestDb();
     const dataDir = tempDataDir();
     seedAgent(db, "coder");
@@ -1913,10 +1908,10 @@ describe("task-watcher", () => {
 
     const slug = slugify(`run-${runId}`, "run-result");
     const entry = kbRead({ dataDir, slug });
-    expect(entry.meta.project_id).toBe(project.id);
+    expect(entry).toBeNull();
   });
 
-  it("stores Codex-style assistant prose in knowledge when finalText is only the structured comment", async () => {
+  it("does not auto-promote Codex-style assistant prose when finalText is only the structured comment", async () => {
     const db = makeTestDb();
     const dataDir = tempDataDir();
     seedAgent(db, "coder");
@@ -1970,12 +1965,11 @@ describe("task-watcher", () => {
 
     const slug = slugify(`run-${runId}`, "run-result");
     const entry = kbRead({ dataDir, slug });
-    expect(entry.body).toContain("# Complete Restaurant Research");
-    expect(entry.body).toContain("Source run:");
+    expect(entry).toBeNull();
     const agentComment = db
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
-    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+    expect(agentComment.body).toBe("Research complete. Iharada is the top pick.");
   });
 
   it("does not create fallback knowledge when final text already links a knowledge entry", async () => {
@@ -2082,7 +2076,7 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${explicitSlug})`);
   });
 
-  it("creates fallback knowledge when the explicit KB write failed", async () => {
+  it("does not create fallback knowledge when the explicit KB write failed", async () => {
     const db = makeTestDb();
     const dataDir = tempDataDir();
     seedAgent(db, "coder");
@@ -2127,11 +2121,11 @@ describe("task-watcher", () => {
     await new Promise((r) => setTimeout(r, 20));
 
     const slug = slugify(`run-${runId}`, "run-result");
-    expect(kbRead({ dataDir, slug })?.body).toContain("# Complete Restaurant Research");
+    expect(kbRead({ dataDir, slug })).toBeNull();
     const agentComment = db
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
-    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${slug})`);
+    expect(agentComment.body).toBe("Research complete. Iharada is the top pick.");
   });
 
   it("does not create knowledge entries for short final comments", async () => {

@@ -284,6 +284,7 @@ export { enrichCommentRows } from "./comments.js";
 
 // ---------- Knowledge base ----------
 export {
+  autoPromotedRunResultInfo,
   kbCreate,
   kbDelete,
   kbList,
