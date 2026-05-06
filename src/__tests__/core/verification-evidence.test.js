@@ -92,6 +92,113 @@ describe("crossCheckVerificationEvidence", () => {
     ]);
   });
 
+  it("matches MCP tool evidence written as tool name plus key=value arguments", () => {
+    const db = makeTestDb();
+    seedRunWithEvents(db, "review-1", [
+      {
+        type: "assistant",
+        content: [{
+          type: "tool_use",
+          name: "mcp__worklab__run_log_read",
+          input: {
+            run_id: "sSys0u6XiEjxs8swopAsP",
+            mode: "summary",
+            limit_bytes: 60000,
+          },
+        }],
+      },
+    ]);
+
+    const result = crossCheckVerificationEvidence(db, {
+      reviewRunId: "review-1",
+      evidence: [
+        {
+          kind: "manual_check",
+          command_or_url: "mcp__worklab__run_log_read run_id=sSys0u6XiEjxs8swopAsP mode=summary limit_bytes=60000",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      totalChecked: 1,
+      matchedCount: 1,
+      unmatchedCount: 0,
+    });
+    expect(result.matchedRows[0]).toMatchObject({
+      evidence_index: 0,
+      match_source: "deterministic",
+      matched_tool_call: "review-1:0",
+    });
+  });
+
+  it("matches generic tool key=value evidence against structured JSON input", () => {
+    const db = makeTestDb();
+    seedRunWithEvents(db, "review-1", [
+      {
+        type: "assistant",
+        content: [{
+          type: "tool_use",
+          name: "mcp__external_mcp__external_mcp_execute_tool",
+          input: {
+            provider: "linear",
+            tool: "get_issue",
+            params: { id: "T-252" },
+          },
+        }],
+      },
+    ]);
+
+    const result = crossCheckVerificationEvidence(db, {
+      reviewRunId: "review-1",
+      evidence: [
+        {
+          kind: "manual_check",
+          command_or_url: "mcp__external_mcp__external_mcp_execute_tool provider=linear tool=get_issue id=T-252",
+        },
+      ],
+    });
+
+    expect(result.matchedCount).toBe(1);
+    expect(result.matchedRows[0]).toMatchObject({
+      match_source: "deterministic",
+      matched_tool_call: "review-1:0",
+    });
+  });
+
+  it("does not match tool key=value evidence when any argument differs", () => {
+    const db = makeTestDb();
+    seedRunWithEvents(db, "review-1", [
+      {
+        type: "assistant",
+        content: [{
+          type: "tool_use",
+          name: "mcp__worklab__run_log_read",
+          input: {
+            run_id: "sSys0u6XiEjxs8swopAsP",
+            mode: "summary",
+            limit_bytes: 60000,
+          },
+        }],
+      },
+    ]);
+
+    const result = crossCheckVerificationEvidence(db, {
+      reviewRunId: "review-1",
+      evidence: [
+        {
+          kind: "manual_check",
+          command_or_url: "mcp__worklab__run_log_read run_id=sSys0u6XiEjxs8swopAsP mode=summary limit_bytes=50000",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      totalChecked: 1,
+      matchedCount: 0,
+      unmatchedCount: 1,
+    });
+  });
+
   it("matches grouped shell evidence when every command segment appears in logged tool calls", () => {
     const db = makeTestDb();
     seedRunWithEvents(db, "review-1", []);
