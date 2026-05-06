@@ -9,6 +9,8 @@ export const RUNTIME_TASK_GROUPS = [
 
 export const RUNTIME_TASK_GROUP_KEYS = RUNTIME_TASK_GROUPS.map((group) => group.key);
 
+const REVIEW_SIDE_FAILURE_KINDS = new Set(["review_rejected", "review_unverified"]);
+
 export function taskHasRunningRun(task = {}) {
   if (task.running_run_id) return true;
   if ((task.running_run?.process_status || task.running_run?.status) === "running") return true;
@@ -32,7 +34,7 @@ export function taskHasRunError(task = {}) {
 }
 
 function taskHasStaleResolvedFailureKind(task = {}) {
-  if (!task.last_failure_kind || task.last_failure_kind === "review_rejected") return false;
+  if (!task.last_failure_kind || REVIEW_SIDE_FAILURE_KINDS.has(task.last_failure_kind)) return false;
   if (Number(task.failure_count || 0) > 0 || task.error_text) return false;
   const status = task.last_run?.process_status || task.last_run?.status || null;
   return status === "succeeded" || status === "complete";

@@ -7,6 +7,7 @@ export const PROJECT_TASK_GROUPS = [
 ];
 
 const GROUP_ORDER = Object.fromEntries(PROJECT_TASK_GROUPS.map((group, index) => [group.key, index]));
+const REVIEW_SIDE_FAILURE_KINDS = new Set(["review_rejected", "review_unverified"]);
 
 function emptyGroupCounts() {
   return Object.fromEntries(PROJECT_TASK_GROUPS.map((group) => [group.key, 0]));
@@ -24,7 +25,7 @@ export function isProjectChildTask(task = {}) {
 }
 
 function hasStaleResolvedFailureKind(task = {}) {
-  if (!task.last_failure_kind || task.last_failure_kind === "review_rejected") return false;
+  if (!task.last_failure_kind || REVIEW_SIDE_FAILURE_KINDS.has(task.last_failure_kind)) return false;
   if (Number(task.failure_count || 0) > 0 || task.error_text) return false;
   const status = task.last_run?.process_status || task.last_run?.status || null;
   return status === "succeeded" || status === "complete";

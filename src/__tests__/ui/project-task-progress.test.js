@@ -67,6 +67,28 @@ describe("project task progress helpers", () => {
     expect(projectTaskGroupKey(task)).toBe("in_progress");
   });
 
+  it("keeps reviewer verification failures visible after a successful review run", () => {
+    const task = {
+      stage: "review",
+      owner_agent: "owner",
+      failure_count: 0,
+      last_failure_kind: "review_unverified",
+      last_run: {
+        status: "complete",
+        process_status: "succeeded",
+        decision: "approve",
+        failure_kind: null,
+      },
+    };
+
+    expect(projectTaskAttentionItems(task)).toContainEqual({
+      key: "failure_kind",
+      label: "Failure: review_unverified",
+      tone: "warn",
+    });
+    expect(projectTaskGroupKey(task)).toBe("in_progress");
+  });
+
   it("surfaces active recovery as a secondary attention badge", () => {
     const items = projectTaskAttentionItems({
       stage: "review",
