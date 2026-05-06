@@ -53,6 +53,27 @@ function verificationFailureDetails(cross) {
   return `\n\nUnmatched verification_evidence rows:\n${lines.join("\n")}`;
 }
 
+function verificationCrossCheckTimedOut(cross) {
+  const rows = Array.isArray(cross?.unmatchedRows) ? cross.unmatchedRows : [];
+  return rows.some((row) => /adjudicator.*request timed out|adjudicator.*timed out|request timed out/i.test(row?.reason || ""));
+}
+
+function verificationFabricationReason(cross) {
+  const count = cross?.unmatchedCount || 0;
+  const total = cross?.totalChecked || 0;
+  if (verificationCrossCheckTimedOut(cross)) {
+    return `${count} of ${total} verification_evidence rows could not be confirmed because the verification evidence cross-check timed out`;
+  }
+  return `${count} of ${total} verification_evidence rows did not match any tool call in the run logs`;
+}
+
+function verificationBlockNotes(reason, cross) {
+  if (verificationCrossCheckTimedOut(cross)) {
+    return `The reviewer approved the work but ${reason}. The verification evidence cross-check timed out before all rows could be confirmed; re-run the verification/cross-check and ensure verification_evidence rows name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.${verificationFailureDetails(cross)}`;
+  }
+  return `The reviewer approved the work but ${reason}. Re-run the verification (tests, build, manual checks) and emit verification_evidence rows that name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.${verificationFailureDetails(cross)}`;
+}
+
 // R6: parent_review_policy values. `default` spawns parent.review when the
 // parent's execute advances; `skip_when_qa_child` skips review when the
 // parent's delegated children include at least one QA/review-style agent;
@@ -160,7 +181,7 @@ export function nextStage(currentStage, event) {
 
           if (gateApplies && gateMode === "block") {
             const reason = evidenceFabricated
-              ? `${cross.unmatchedCount} of ${cross.totalChecked} verification_evidence rows did not match any tool call in the run logs`
+              ? verificationFabricationReason(cross)
               : "review approved without verification_evidence";
             return change("review", [
               { type: "clear_completed_at" },
@@ -170,7 +191,7 @@ export function nextStage(currentStage, event) {
               { type: "set_stage_reason", reason },
               {
                 type: "post_review_comment",
-                notes: `The reviewer approved the work but ${reason}. Re-run the verification (tests, build, manual checks) and emit verification_evidence rows that name the actual command_or_url executed, with the exit code or status and a short snippet, before approving again.${verificationFailureDetails(cross)}`,
+                notes: verificationBlockNotes(reason, cross),
               },
             ]);
           }

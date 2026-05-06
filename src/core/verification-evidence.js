@@ -54,6 +54,36 @@ function flattenStrings(value, out = []) {
   return out;
 }
 
+function addArgumentValue(map, key, value) {
+  if (!key) return;
+  const normalized = normalizeText(value);
+  if (!normalized) return;
+  const normalizedKey = String(key).toLowerCase();
+  if (!map.has(normalizedKey)) map.set(normalizedKey, new Set());
+  map.get(normalizedKey).add(normalized);
+}
+
+function flattenArgumentValues(value, out = new Map(), path = []) {
+  if (value == null) return out;
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    const fullPath = path.join(".");
+    const leaf = path[path.length - 1];
+    addArgumentValue(out, fullPath, value);
+    if (leaf && leaf !== fullPath) addArgumentValue(out, leaf, value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => flattenArgumentValues(item, out, [...path, String(index)]));
+    return out;
+  }
+  if (typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      flattenArgumentValues(item, out, [...path, key]);
+    }
+  }
+  return out;
+}
+
 function firstStringByKey(value, keys) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return "";
   for (const key of keys) {
@@ -82,6 +112,37 @@ function commandSegments(value) {
   return parts.length > 1 ? parts : [];
 }
 
+function parseStructuredToolClaim(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const match = text.match(/^([A-Za-z0-9_.:@/-]+)(?:\s+|$)([\s\S]*)$/);
+  if (!match) return null;
+  const name = match[1];
+  const rest = match[2] || "";
+  const args = [];
+  const re = /(?:^|\s)([A-Za-z_][A-Za-z0-9_.-]*)=(?:"([^"]*)"|'([^']*)'|`([^`]*)`|([^\s]+))/g;
+  let argMatch;
+  while ((argMatch = re.exec(rest))) {
+    const raw = argMatch[2] ?? argMatch[3] ?? argMatch[4] ?? argMatch[5] ?? "";
+    const cleaned = String(raw).replace(/[.,;]+$/, "");
+    args.push({ key: argMatch[1].toLowerCase(), value: normalizeText(cleaned) });
+  }
+  if (!args.length) return null;
+  return { name: name.toLowerCase(), args };
+}
+
+function structuredToolClaimMatch(claim, signal) {
+  const parsed = parseStructuredToolClaim(claim);
+  if (!parsed || !signal?.name || parsed.name !== String(signal.name).trim().toLowerCase()) return null;
+  const valuesByKey = flattenArgumentValues(signal.args);
+  for (const { key, value } of parsed.args) {
+    if (!value) return null;
+    const values = valuesByKey.get(key);
+    if (!values?.has(value)) return null;
+  }
+  return { signal, reason: "Evidence tool name and arguments matched a logged tool call." };
+}
+
 // Walk a single event blob and yield every tool-call's name + a flattened
 // string of its arguments / command for matching.
 function* iterToolCallSignals(events) {
@@ -106,6 +167,7 @@ function* iterToolCallSignals(events) {
       const textValues = flattenStrings(args);
       yield {
         name,
+        args,
         serialized,
         command,
         url,
@@ -147,6 +209,8 @@ function singleSignalMatch(claim, signals) {
     }
   }
   for (const sig of signals) {
+    const structured = structuredToolClaimMatch(claim, sig);
+    if (structured) return structured;
     const haystack = signalHaystack(sig);
     if (haystack && haystack.includes(normalizedClaim)) {
       return { signal: sig, reason: "Evidence command_or_url matched logged tool-call arguments." };

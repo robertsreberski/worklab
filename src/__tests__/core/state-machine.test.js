@@ -426,6 +426,40 @@ describe("workflow stage reducer", () => {
       expect(r.sideEffects.find((s) => s.type === "post_review_comment")?.notes).toMatch(/npm test foo/);
     });
 
+    it("block mode reports adjudicator timeouts as cross-check infrastructure failures", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "manual_check", command_or_url: "mcp__worklab__run_log_read run_id=run-1", exit_code_or_status: "ok", snippet: "" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "block",
+        evidenceCrossCheck: {
+          totalChecked: 1,
+          matchedCount: 0,
+          unmatchedCount: 1,
+          unmatchedRows: [
+            {
+              evidence_index: 0,
+              command_or_url: "mcp__worklab__run_log_read run_id=run-1",
+              reason: "Adjudicator no_match: Adjudicator failed: request timed out",
+            },
+          ],
+        },
+      });
+
+      expect(r.stage).toBe("review");
+      expect(r.sideEffects.find((s) => s.type === "set_stage_reason")?.reason).toMatch(/cross-check timed out/);
+      const comment = r.sideEffects.find((s) => s.type === "post_review_comment")?.notes || "";
+      expect(comment).toMatch(/verification evidence cross-check timed out/i);
+      expect(comment).toMatch(/mcp__worklab__run_log_read/);
+    });
+
     it("block mode treats only n_a rows as missing evidence when artifacts exist", () => {
       const r = nextStage("review", {
         type: "run_succeeded",
