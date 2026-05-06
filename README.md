@@ -1,84 +1,125 @@
 # Worklab
 
-Worklab is a local, single-user AI agent orchestration workspace with a web UI,
-host service controls, and a built-in admin MCP server.
+![Worklab local AI agent workspace](docs/assets/worklab-featured.png)
 
-The task and agent workflow is being redesigned around a code-derived audit:
+Worklab is a local, single-user workspace for coordinating AI agents across
+projects, tasks, knowledge, providers, and runtime controls. It runs on your
+machine, keeps its working data under your local data directory, and gives you a
+browser UI for managing agent work without turning every run into a terminal
+session.
 
-- [Task and agent logic audit](docs/audits/task-agent-logic-audit.md)
+## Start Worklab
 
-Older architecture, PRD, phase-plan, and setup docs were removed because the
-code has moved faster than those documents and they were no longer reliable.
-Use the source and tests as the operational truth until new implementation
-docs are generated from the v2 workflow.
+Requirements: Node.js 20 or newer.
 
-## Development
+From this checkout:
 
 ```bash
 npm install
-npm test
+npm run install:worklab
+worklab start
 ```
 
-Build the UI and run Worklab in the foreground:
+Open `http://127.0.0.1:7878`.
+
+`worklab start` builds the UI, installs or refreshes the per-user service, and
+starts Worklab in the background. After the first install, your normal startup
+command is just:
+
+```bash
+worklab start
+```
+
+Useful service commands:
+
+```bash
+worklab status
+worklab restart
+worklab stop
+```
+
+## First Setup
+
+Start in the UI, not in config files:
+
+1. Open **Providers** and confirm the models Worklab can use. Built-in CLI
+   models and custom OpenAI-compatible providers can be managed there.
+2. Open **Agents** and review the default planner, executor, and reviewer.
+   Create additional agents only when you need a distinct role.
+3. Open **Projects** and add the repositories or work directories you want
+   Worklab to operate on. If a repo has `AGENTS.md`, Worklab treats it as
+   repository instructions for agent prompts.
+4. Open **Tasks** and create the work you want the agents to plan, execute, and
+   review.
+5. Use **Knowledge** for durable notes that agents should reuse, and **Settings**
+   for runtime, search, Slack, MCP, notification, and assistant controls.
+
+Runtime data defaults to `~/.worklab`; task workspaces default to
+`~/worklab-workspace`.
+
+## Daily Use
+
+- Use **Tasks** as the active work queue.
+- Use **Activity** to inspect completed runs and historical output.
+- Use **Projects** to keep repo context, allowed agents, task progress, and
+  project knowledge together.
+- Use the assistant dock in the UI for quick questions against the current
+  Worklab view.
+
+Agents that need stdio MCP access to Worklab can run:
+
+```bash
+worklab mcp
+```
+
+## Configuration
+
+Worklab loads `.env` from the active data directory, while shell environment
+variables and CLI flags take precedence.
+
+Common overrides:
+
+```bash
+WORKLAB_PORT=9000
+WORKLAB_HOST=127.0.0.1
+WORKLAB_DATA_DIR=/tmp/worklab-dev
+WORKLAB_WORKSPACE=/tmp/worklab-workspace
+WORKLAB_LOG_LEVEL=info
+```
+
+CLI flags are passed after the command:
+
+```bash
+worklab start --port 9000
+worklab restart --port 9000
+worklab serve --port 9000 --data-dir /tmp/worklab-dev
+```
+
+`worklab start` and `worklab restart` regenerate the host service definition
+with the effective host, port, data directory, workspace, and log level.
+
+## Development
+
+For a foreground API/static server from this checkout:
 
 ```bash
 npm start
 ```
 
-Open `http://127.0.0.1:7878`.
-
-For UI hot reload, run the API/static server and Vite dev server separately:
+For UI hot reload, run the API and Vite UI in separate terminals:
 
 ```bash
 npm run dev:api
 npm run dev:ui
 ```
 
-Open the Vite URL, normally `http://127.0.0.1:5173`. `worklab serve` and
-`npm run dev:api` do not hot reload UI code; they serve the built bundle from
-`src/ui/dist`. The Vite server hot reloads `src/ui` changes and proxies `/api`
-to the Worklab API.
-
-## Configuration
-
-Runtime data defaults to `~/.worklab`. Worklab loads `~/.worklab/.env` on
-startup, while shell environment variables and CLI flags take precedence.
-
-Common settings:
-
-```bash
-WORKLAB_PORT=7878
-WORKLAB_HOST=127.0.0.1
-WORKLAB_DATA_DIR=/home/me/.worklab
-WORKLAB_WORKSPACE=/home/me/worklab-workspace
-WORKLAB_LOG_LEVEL=info
-```
-
-The port and host can also be set per command:
-
-```bash
-worklab serve --port 9000
-worklab start --port 9000 --host 0.0.0.0
-worklab restart --port 9000
-worklab status --port 9000
-```
-
-When using Vite hot reload with a non-default API port, pass the same port to
-both processes:
-
-```bash
-npm run dev:api -- --port 9000
-WORKLAB_PORT=9000 npm run dev:ui
-```
-
-`worklab start` and `worklab restart` regenerate the host service definition
-with the effective host, port, data directory, workspace, and log level.
+Open the Vite URL, normally `http://127.0.0.1:5173`. `worklab serve`,
+`npm start`, and `npm run dev:api` serve the built UI from `src/ui/dist`; Vite
+is the hot-reload path for `src/ui`.
 
 ## Tailnet Access
 
-By default Worklab binds to `127.0.0.1`, so it is healthy on the host but is not
-reachable through the raw Tailscale IP. Prefer Tailscale Serve for tailnet-only
-access without exposing Worklab on every host interface:
+Keep Worklab bound to localhost and use Tailscale Serve for tailnet-only access:
 
 ```bash
 worklab start
@@ -86,9 +127,8 @@ tailscale serve --bg --yes --http 7878 7878
 tailscale serve status
 ```
 
-Use the MagicDNS URL shown by `tailscale serve status`, for example
-`http://claude-paradise.tail8a9beb.ts.net:7878/`. The raw Tailscale IP may
-return a Tailscale Serve 404 because Serve routes by hostname.
+Use the MagicDNS URL shown by `tailscale serve status`. Raw Tailscale IP
+requests can return a Serve 404 because Serve routes by hostname.
 
 Disable the proxy with:
 
@@ -96,63 +136,31 @@ Disable the proxy with:
 tailscale serve --http=7878 off
 ```
 
-## CLI Service
-
-Install the local `worklab` command from this checkout:
-
-```bash
-npm run install:worklab
-```
-
-Then manage the per-user service:
-
-```bash
-worklab start
-worklab restart
-worklab status
-worklab stop
-```
-
-`start` and `restart` rebuild the UI before starting the service. Use
-`--no-build` only when you intentionally want to keep the existing built UI.
-
-Worklab exposes a token-protected local admin MCP endpoint with full Worklab API
-access. Agents that need stdio MCP can run:
-
-```bash
-worklab mcp
-```
-
 ## Testing
 
-Run the full unit and integration suite:
+Run the full suite:
 
 ```bash
 npm test
 ```
 
-Check source boundaries and file-size drift:
+Useful focused checks:
 
 ```bash
+npm run build:ui
 npm run lint
 npm run lint:size
 ./scripts/guard-imports.sh
 ```
 
-Build the UI before validating service/static serving behavior:
-
-```bash
-npm run build:ui
-```
-
-Browser regressions use Playwright and should run against a freshly built UI:
+Browser regressions use Playwright against a freshly built UI:
 
 ```bash
 npm run test:e2e:ollama
 ```
 
-See [AGENTS.md](AGENTS.md) for future agent development and testing guidance.
+See [AGENTS.md](AGENTS.md) for repository instructions and testing expectations.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GPLv3. See [LICENSE](LICENSE).
