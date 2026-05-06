@@ -16,6 +16,7 @@ import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Page } from "../components/layout/index.js";
+import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
 
@@ -125,6 +126,7 @@ export function Activity() {
   const [agentFilter, setAgentFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [dateRange, setDateRange] = useState({ from: "", to: "" });
+  const [configOpen, setConfigOpen] = useState(false);
   const loadAbortRef = useRef(null);
 
   const load = useCallback(async ({ append = false, cursor = null } = {}) => {
@@ -264,12 +266,29 @@ export function Activity() {
           title="Filters"
           class="activity-filter-card"
           headerRight={(
-            <span class={`activity-filter-count ${activeFilterCount ? "active" : ""}`.trim()}>
-              {activeFilterCount ? `${activeFilterCount} active` : "All activity"}
-            </span>
+            <div class="activity-filter-card-actions">
+              <span class={`activity-filter-count ${activeFilterCount ? "active" : ""}`.trim()}>
+                {activeFilterCount ? `${activeFilterCount} active` : "All activity"}
+              </span>
+              <MobileConfigTrigger
+                class="activity-mobile-config-trigger"
+                label="Activity configuration"
+                controls="activity-config-sheet"
+                expanded={configOpen}
+                activeCount={activeFilterCount}
+                onClick={() => setConfigOpen(true)}
+              />
+            </div>
           )}
         >
-          <div class="activity-filter-panel activity-filters">
+          <MobileConfigSheet
+            id="activity-config-sheet"
+            title="Activity configuration"
+            open={configOpen}
+            onClose={() => setConfigOpen(false)}
+            class="activity-config-sheet"
+            bodyClass="activity-filter-panel activity-filters"
+          >
             <div class="activity-filter-field">
               <span>Agent</span>
               <Select
@@ -318,7 +337,7 @@ export function Activity() {
                 </Button>
               )}
             </div>
-          </div>
+          </MobileConfigSheet>
         </Card>
 
         {items === null && <LoadingState caption="Loading activity…" />}

@@ -110,6 +110,8 @@ export function Agents({ selectedName = null }) {
       countLabel={`${filtered.length} shown`}
       actionLabel="New agent"
       onAction={() => { navigateHash("#/agents/new"); }}
+      configTitle="Agents configuration"
+      activeConfigCount={[stateFilter !== "all", activityFilter !== "all", modelFilter !== "all", effortFilter !== "all"].filter(Boolean).length}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter agents by enabled state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={activityFilter} onChange={setActivityFilter} options={activityOptions} ariaLabel="Filter agents by activity" />

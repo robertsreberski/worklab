@@ -623,6 +623,8 @@ export function Teams({ selectedId = null, mode = null }) {
             countLabel={`${filtered.length} shown`}
             actionLabel="New team"
             onAction={() => navigateHash("#/teams/new")}
+            configTitle="Teams configuration"
+            activeConfigCount={[statusFilter !== "active", scheduleFilter !== "all", leadFilter !== "all"].filter(Boolean).length}
           >
             <Tabs value={statusFilter} onChange={setStatusFilter} tabs={statusTabs} ariaLabel="Filter teams by status" class="tabs-pills" />
             <Select class="resource-filter-select" variant="menu" value={scheduleFilter} onChange={setScheduleFilter} options={scheduleOptions} ariaLabel="Filter teams by schedule" />

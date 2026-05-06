@@ -9340,24 +9340,21 @@ html.assistant-resizing * {
   .pane-list-head .tabs::-webkit-scrollbar { display: none; }
   .resource-toolbar {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--sp-2);
     padding: var(--sp-3);
   }
-  .resource-toolbar .search-field,
-  .resource-filter-select {
+  .resource-toolbar .search-field {
+    grid-column: 1;
     width: 100%;
     flex-basis: auto;
   }
-  .resource-toolbar-filters {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    align-items: stretch;
-  }
-  .resource-toolbar-filters .tabs {
-    grid-column: 1 / -1;
+  .resource-mobile-config-trigger {
+    grid-column: 2;
+    align-self: stretch;
   }
   .resource-toolbar-actions {
+    grid-column: 1 / -1;
     justify-content: space-between;
     margin-left: 0;
   }
@@ -10848,6 +10845,49 @@ html.assistant-resizing * {
   font-size: var(--text-xs);
 }
 
+.mobile-config-trigger {
+  display: none;
+  position: relative;
+  flex: 0 0 auto;
+}
+.mobile-config-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--surface);
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+.activity-filter-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mobile-config-sheet {
+  display: contents;
+}
+.mobile-config-sheet-scrim,
+.mobile-config-sheet-grabber,
+.mobile-config-sheet-head {
+  display: none;
+}
+.mobile-config-sheet-panel {
+  display: contents;
+}
+.commander-config-body {
+  display: contents;
+}
+
 .editor-shell {
   min-height: 100%;
   background: var(--surface);
@@ -11082,6 +11122,144 @@ html.assistant-resizing * {
     min-height: 44px;
     min-width: 0;
   }
+  .mobile-config-trigger {
+    display: inline-flex;
+  }
+  .mobile-config-sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 82;
+    display: none;
+    pointer-events: none;
+  }
+  .mobile-config-sheet.open {
+    display: block;
+    pointer-events: auto;
+  }
+  .mobile-config-sheet-scrim {
+    position: absolute;
+    inset: 0;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.52);
+  }
+  .mobile-config-sheet-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    box-sizing: border-box;
+    height: min(76dvh, 640px);
+    max-height: calc(100dvh - var(--mobile-safe-top));
+    flex-direction: column;
+    overflow: hidden;
+    padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+    background: var(--surface);
+    box-shadow: var(--elev-float);
+    transform: translateY(100%);
+    transition: transform var(--dur-std) var(--ease-snap);
+  }
+  .mobile-config-sheet.open .mobile-config-sheet-panel {
+    transform: translateY(0);
+  }
+  .mobile-config-sheet-grabber {
+    display: block;
+    width: 42px;
+    height: 4px;
+    margin: 0 auto var(--sp-3);
+    border-radius: var(--radius-pill);
+    background: var(--border-strong);
+  }
+  .mobile-config-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    padding-bottom: var(--sp-3);
+    border-bottom: 1px solid var(--border);
+  }
+  .mobile-config-sheet-head h2 {
+    margin: 0;
+    color: var(--text);
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 400;
+  }
+  .mobile-config-sheet-close {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-sunken);
+    color: var(--text-muted);
+  }
+  .mobile-config-sheet-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding-top: var(--sp-3);
+  }
+  .mobile-config-sheet-body .select,
+  .mobile-config-sheet-body .select-trigger,
+  .mobile-config-sheet-body .date-range-picker,
+  .mobile-config-sheet-body .date-range-fields,
+  .mobile-config-sheet-body .date-picker {
+    width: 100%;
+    max-width: none;
+  }
+  .mobile-config-sheet-body.resource-toolbar-filters,
+  .mobile-config-sheet-body.commander-config-body {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .mobile-config-sheet-body.resource-toolbar-filters .tabs,
+  .mobile-config-sheet-body.commander-config-body .tabs,
+  .mobile-config-sheet-body.commander-config-body .commander-filter-actions {
+    grid-column: 1 / -1;
+  }
+  .mobile-config-sheet-body.commander-config-body .tabs {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+    gap: var(--sp-2);
+    padding-right: var(--sp-6);
+    -webkit-mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+            mask-image: linear-gradient(to right, black calc(100% - 28px), transparent);
+  }
+  .mobile-config-sheet-body.commander-config-body .tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .mobile-config-sheet-body.commander-config-body .tab {
+    flex: 0 0 auto;
+    min-height: 44px;
+    padding: 0 var(--sp-3);
+  }
+  .mobile-config-sheet-body.commander-config-body .commander-stage-filter,
+  .mobile-config-sheet-body.commander-config-body .commander-project-filter {
+    width: 100%;
+    min-width: 0;
+  }
+  .mobile-config-sheet-body.commander-config-body .commander-filter-actions {
+    display: flex;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+  .mobile-config-sheet-body.activity-filter-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
   .app.responsive .task-mobile-action-dock.review-idle {
     display: grid;
     grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -11242,17 +11420,18 @@ html.assistant-resizing * {
   }
   .commander-filter {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--sp-3);
   }
   .commander-filter .search-field {
-    grid-column: 1 / -1;
+    grid-column: 1;
     width: 100%;
     max-width: none;
     flex: 1 1 auto;
   }
-  .commander-filter .tabs {
-    grid-column: 1 / -1;
+  .commander-mobile-config-trigger {
+    grid-column: 2;
+    align-self: stretch;
   }
   .commander-new-task-inline {
     display: none;

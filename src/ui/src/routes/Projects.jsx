@@ -847,6 +847,8 @@ export function Projects({ selectedId = null, mode = null }) {
       countLabel={`${filtered.length} shown`}
       actionLabel="New project"
       onAction={() => navigateHash("#/projects/new")}
+      configTitle="Projects configuration"
+      activeConfigCount={[statusFilter !== "active", worktreeFilter !== "all", teamFilter !== "all"].filter(Boolean).length}
     >
       <Tabs value={statusFilter} onChange={setStatusFilter} tabs={statusTabs} ariaLabel="Filter projects by archive state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={worktreeFilter} onChange={setWorktreeFilter} options={worktreeOptions} ariaLabel="Filter projects by worktree mode" />

@@ -1,5 +1,7 @@
+import { useState } from "preact/hooks";
 import { Button, SearchField } from "./primitives/index.js";
 import { Icon } from "./Icon.jsx";
+import { MobileConfigSheet, MobileConfigTrigger } from "./MobileConfigSheet.jsx";
 
 export function ResourceListToolbar({
   searchValue,
@@ -11,8 +13,13 @@ export function ResourceListToolbar({
   actionLabel,
   onAction,
   actionIcon = "plus",
+  configTitle = "List configuration",
+  activeConfigCount = 0,
   children,
 }) {
+  const [configOpen, setConfigOpen] = useState(false);
+  const configId = `resource-config-${configTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list"}`;
+
   return (
     <div class="resource-toolbar">
       <SearchField
@@ -23,7 +30,28 @@ export function ResourceListToolbar({
         shortcut="/"
         inputRef={searchRef}
       />
-      {children && <div class="resource-toolbar-filters">{children}</div>}
+      {children && (
+        <>
+          <MobileConfigTrigger
+            class="resource-mobile-config-trigger"
+            label={configTitle}
+            controls={configId}
+            expanded={configOpen}
+            activeCount={activeConfigCount}
+            onClick={() => setConfigOpen(true)}
+          />
+          <MobileConfigSheet
+            id={configId}
+            title={configTitle}
+            open={configOpen}
+            onClose={() => setConfigOpen(false)}
+            class="resource-toolbar-config"
+            bodyClass="resource-toolbar-filters"
+          >
+            {children}
+          </MobileConfigSheet>
+        </>
+      )}
       <div class="resource-toolbar-actions">
         {countLabel && <span class="resource-toolbar-count">{countLabel}</span>}
         {actionLabel && (
