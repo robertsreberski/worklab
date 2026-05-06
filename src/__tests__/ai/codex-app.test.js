@@ -98,6 +98,41 @@ function expectedLiveGuidance(text) {
 }
 
 describe("generateCodexAppResponse", () => {
+  it("passes a caller-supplied output schema to Codex app-server turns", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    const customSchema = {
+      type: "object",
+      additionalProperties: false,
+      required: ["schema", "status"],
+      properties: {
+        schema: { type: "string", enum: ["custom.schema.v1"] },
+        status: { type: "string" },
+      },
+    };
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "low",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "complete_immediately" },
+        outputSchema: customSchema,
+      });
+      const requests = readRequests(logPath);
+      const turnStart = requests.find((request) => request.method === "turn/start");
+
+      expect(result.error).toBeNull();
+      expect(turnStart.params.outputSchema).toEqual(customSchema);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("starts a Codex app-server turn and steers the active turn with live input", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
     const logPath = join(dir, "requests.jsonl");

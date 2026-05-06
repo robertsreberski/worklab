@@ -511,7 +511,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       serviceTier: "fast",
       effort: normalizedEffort,
       summary: normalizedEffort && normalizedEffort !== "none" ? "auto" : "none",
-      outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
+      outputSchema: options.outputSchema || WORKLAB_RESULT_JSON_SCHEMA,
     });
     setActiveTurnId(turn?.turn?.id);
 
