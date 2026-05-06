@@ -201,6 +201,86 @@ describe("kb REST routes", () => {
     expect(after.body.entry.meta.subcategory).toBe("runtime");
   });
 
+  it("POST /api/kb/cleanup-auto-promoted previews and removes only generated run-result assets", async () => {
+    const { agent, db, broker } = mkServer();
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, title, instructions, stage, run_policy, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'done', 'manual', ?, ?)
+    `).run("task-1", "T-1", "task-1", "Generated task", "", now, now);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at)
+      VALUES (?, ?, 'execute', 'execute', 'coder', 'succeeded', 'succeeded', ?, ?)
+    `).run("RunABC", "task-1", now, now);
+
+    const generatedBody = [
+      "Source task: [T-1 - Generated task](#/tasks/T-1)",
+      "Source run: [RunABC](/api/runs/RunABC/raw-log)",
+      "Stage: execute",
+      "Agent: coder",
+      "",
+      "---",
+      "",
+      "Auto-promoted final answer.",
+    ].join("\n");
+    await agent
+      .post("/api/kb")
+      .send({
+        slug: "run-runabc",
+        title: "T-1 final answer from coder",
+        body: generatedBody,
+        category: "run-results",
+        tags: ["run-result", "execute", "agent-coder"],
+      })
+      .expect(201);
+    await agent
+      .post("/api/kb")
+      .send({
+        slug: "pinned-run",
+        title: "Pinned generated run",
+        body: generatedBody,
+        category: "run-results",
+        tags: ["run-result"],
+        pinned: true,
+      })
+      .expect(201);
+    await agent
+      .post("/api/kb")
+      .send({
+        slug: "daily-digest",
+        title: "Daily Digest",
+        body: "# Daily Digest\n\nCurated and reusable.",
+        category: "run-results",
+        tags: ["daily-catchup"],
+      })
+      .expect(201);
+
+    const preview = await agent.post("/api/kb/cleanup-auto-promoted").send({ apply: false }).expect(200);
+    expect(preview.body).toMatchObject({ ok: true, apply: false, proposed: 1, deleted: 0 });
+    expect(preview.body.candidates).toEqual([
+      expect.objectContaining({
+        slug: "run-runabc",
+        source_run_id: "RunABC",
+        source_task_ref: "T-1",
+        source_run_exists: true,
+      }),
+    ]);
+    await agent.get("/api/kb/run-runabc").expect(200);
+
+    broker.broadcast.mockClear();
+    const applied = await agent.post("/api/kb/cleanup-auto-promoted").send({ apply: true }).expect(200);
+    expect(applied.body).toMatchObject({ ok: true, apply: true, proposed: 1, deleted: 1 });
+    await agent.get("/api/kb/run-runabc").expect(404);
+    await agent.get("/api/kb/pinned-run").expect(200);
+    await agent.get("/api/kb/daily-digest").expect(200);
+    expect(broker.broadcast).toHaveBeenCalledWith("global", {
+      type: "kb_updated",
+      slug: "run-runabc",
+    });
+  });
+
   // ── POST /api/kb ────────────────────────────────────────────────────────────
 
   it("POST /api/kb creates an entry and returns 201", async () => {

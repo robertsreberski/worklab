@@ -23,6 +23,13 @@ export const kbCreateSchema = z.object({
   category: z.string().nullable().optional(),
   subcategory: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
+  source_task_id: z.string().nullable().optional(),
+  source_task_key: z.string().nullable().optional(),
+  source_run_id: z.string().nullable().optional(),
+  source_agent: z.string().nullable().optional(),
+  related_slugs: z.array(z.string()).optional(),
+  supersedes_slugs: z.array(z.string()).optional(),
+  canonical_slug: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 });
 
@@ -35,6 +42,13 @@ export const kbPatchSchema = z
     category: z.string().nullable().optional(),
     subcategory: z.string().nullable().optional(),
     project_id: z.string().nullable().optional(),
+    source_task_id: z.string().nullable().optional(),
+    source_task_key: z.string().nullable().optional(),
+    source_run_id: z.string().nullable().optional(),
+    source_agent: z.string().nullable().optional(),
+    related_slugs: z.array(z.string()).optional(),
+    supersedes_slugs: z.array(z.string()).optional(),
+    canonical_slug: z.string().nullable().optional(),
     pinned: z.boolean().optional(),
   })
   .strict();
@@ -98,7 +112,7 @@ export const definitions = [
   {
     name: "kb_create",
     description:
-      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve substantial task deliverables, research reports, runbooks, decisions, and reusable analysis. The author is set automatically from the calling agent context.",
+      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables such as research reports, runbooks, decisions, and canonical analysis. Do not create entries for routine run results or one-off status updates. Prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -124,6 +138,41 @@ export const definitions = [
           nullable: true,
           description: "Optional Worklab project id. Omit to inherit the current task project; use null for global knowledge.",
         },
+        source_task_id: {
+          type: "string",
+          nullable: true,
+          description: "Optional source task id for promoted task output.",
+        },
+        source_task_key: {
+          type: "string",
+          nullable: true,
+          description: "Optional human task key such as T-123 for promoted task output.",
+        },
+        source_run_id: {
+          type: "string",
+          nullable: true,
+          description: "Optional source run id for promoted run output.",
+        },
+        source_agent: {
+          type: "string",
+          nullable: true,
+          description: "Optional source agent name.",
+        },
+        related_slugs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional related Knowledge Base slugs.",
+        },
+        supersedes_slugs: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional older Knowledge Base slugs superseded by this entry.",
+        },
+        canonical_slug: {
+          type: "string",
+          nullable: true,
+          description: "Optional canonical Knowledge Base slug when this entry points to or updates a canonical page.",
+        },
         pinned: { type: "boolean", description: "Whether the entry is pinned (default false)" },
       },
       required: ["slug", "title", "body"],
@@ -141,7 +190,7 @@ export const definitions = [
         slug: { type: "string", description: "Slug of the entry to update" },
         patch: {
           type: "object",
-          description: "Fields to update. Allowed keys: title, body, tags, category, subcategory, project_id, pinned.",
+          description: "Fields to update. Allowed keys: title, body, tags, category, subcategory, project_id, source metadata, relationships, and pinned.",
           properties: {
             title: { type: "string" },
             body: { type: "string" },
@@ -149,6 +198,13 @@ export const definitions = [
             category: { type: "string", nullable: true },
             subcategory: { type: "string", nullable: true },
             project_id: { type: "string", nullable: true },
+            source_task_id: { type: "string", nullable: true },
+            source_task_key: { type: "string", nullable: true },
+            source_run_id: { type: "string", nullable: true },
+            source_agent: { type: "string", nullable: true },
+            related_slugs: { type: "array", items: { type: "string" } },
+            supersedes_slugs: { type: "array", items: { type: "string" } },
+            canonical_slug: { type: "string", nullable: true },
             pinned: { type: "boolean" },
           },
           additionalProperties: false,
@@ -224,12 +280,45 @@ export function buildHandlers(context) {
   const { dataDir, agent, projectId } = context;
   return {
     async kb_create(input) {
-      const { slug, title, body, tags, category, subcategory, pinned } = kbCreateSchema.parse(input);
+      const {
+        slug,
+        title,
+        body,
+        tags,
+        category,
+        subcategory,
+        pinned,
+        source_task_id,
+        source_task_key,
+        source_run_id,
+        source_agent,
+        related_slugs,
+        supersedes_slugs,
+        canonical_slug,
+      } = kbCreateSchema.parse(input);
       const project_id = Object.prototype.hasOwnProperty.call(input || {}, "project_id")
         ? input.project_id
         : (projectId || null);
       // author is always sourced from context.agent — never from caller input
-      kbCreate({ dataDir, slug, title, body, tags, category, subcategory, project_id, pinned, author: agent });
+      kbCreate({
+        dataDir,
+        slug,
+        title,
+        body,
+        tags,
+        category,
+        subcategory,
+        project_id,
+        source_task_id,
+        source_task_key,
+        source_run_id,
+        source_agent,
+        related_slugs,
+        supersedes_slugs,
+        canonical_slug,
+        pinned,
+        author: agent,
+      });
       await bestEffortIndexKb(dataDir, slug);
       return { ok: true, slug };
     },

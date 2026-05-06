@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   compactProject,
+  autoPromotedRunResultInfo,
   kbCreate,
   kbDelete,
   kbList,
@@ -24,6 +25,13 @@ const CreateSchema = z.object({
   category: z.string().nullable().optional(),
   subcategory: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
+  source_task_id: z.string().nullable().optional(),
+  source_task_key: z.string().nullable().optional(),
+  source_run_id: z.string().nullable().optional(),
+  source_agent: z.string().nullable().optional(),
+  related_slugs: z.array(z.string()).optional(),
+  supersedes_slugs: z.array(z.string()).optional(),
+  canonical_slug: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 });
 
@@ -34,10 +42,21 @@ const PatchSchema = z.object({
   category: z.string().nullable().optional(),
   subcategory: z.string().nullable().optional(),
   project_id: z.string().nullable().optional(),
+  source_task_id: z.string().nullable().optional(),
+  source_task_key: z.string().nullable().optional(),
+  source_run_id: z.string().nullable().optional(),
+  source_agent: z.string().nullable().optional(),
+  related_slugs: z.array(z.string()).optional(),
+  supersedes_slugs: z.array(z.string()).optional(),
+  canonical_slug: z.string().nullable().optional(),
   pinned: z.boolean().optional(),
 });
 
 const OrganizeSchema = z.object({
+  apply: z.boolean().optional().default(false),
+});
+
+const CleanupAutoPromotedSchema = z.object({
   apply: z.boolean().optional().default(false),
 });
 
@@ -149,6 +168,57 @@ function attachProjects(db, entries) {
     return { ...entry, project: projectId ? projects.get(projectId) || null : null };
   };
   return Array.isArray(entries) ? entries.map(attach) : attach(entries);
+}
+
+function attachAutoPromotedInfo(dataDir, entries) {
+  const rows = Array.isArray(entries) ? entries : [entries].filter(Boolean);
+  const attach = (entry) => {
+    if (!entry) return entry;
+    const slug = entry.slug || entry.meta?.slug;
+    if (!slug) return { ...entry, auto_promoted: false };
+    try {
+      const full = entry.body !== undefined && entry.meta ? entry : kbRead({ dataDir, slug });
+      const info = autoPromotedRunResultInfo(full || entry);
+      if (entry.meta) {
+        return {
+          ...entry,
+          meta: { ...entry.meta, ...info },
+          auto_promoted: info.auto_promoted,
+        };
+      }
+      return { ...entry, ...info };
+    } catch {
+      return { ...entry, auto_promoted: false };
+    }
+  };
+  return Array.isArray(entries) ? rows.map(attach) : attach(entries);
+}
+
+function sourceRunExists(db, runId) {
+  if (!db || !runId) return false;
+  return !!db.prepare("SELECT id FROM task_runs WHERE id = ?").get(runId);
+}
+
+function autoPromotedCleanupCandidates({ dataDir, db }) {
+  return kbList({ dataDir })
+    .map((meta) => {
+      const entry = kbRead({ dataDir, slug: meta.slug });
+      if (!entry) return null;
+      const info = autoPromotedRunResultInfo(entry);
+      const exists = sourceRunExists(db, info.source_run_id);
+      if (!info.auto_promoted || entry.meta.pinned || !exists) return null;
+      return {
+        slug: entry.meta.slug,
+        title: entry.meta.title || entry.meta.slug,
+        project_id: entry.meta.project_id || null,
+        source_run_id: info.source_run_id,
+        source_task_ref: info.source_task_ref,
+        source_agent: info.source_agent,
+        source_run_exists: exists,
+        updated_at: entry.meta.updated_at || null,
+      };
+    })
+    .filter(Boolean);
 }
 
 function taskUsageProjectId(db, entry) {
@@ -292,7 +362,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
       return sendRouteError(res, error);
     }
 
-    const entries = kbList({ dataDir, ...filter });
+    const entries = attachAutoPromotedInfo(dataDir, kbList({ dataDir, ...filter }));
     res.json({ entries: attachProjects(db, entries) });
   });
 
@@ -327,6 +397,35 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     });
   });
 
+  // POST /api/kb/cleanup-auto-promoted
+  app.post("/api/kb/cleanup-auto-promoted", (req, res) => {
+    const parsed = CleanupAutoPromotedSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({
+        error: { code: "validation", message: parsed.error.issues[0]?.message ?? "invalid request body" },
+      });
+    }
+    const apply = parsed.data.apply === true;
+    const candidates = autoPromotedCleanupCandidates({ dataDir, db });
+    let deleted = 0;
+    if (apply) {
+      for (const candidate of candidates) {
+        if (kbDelete({ dataDir, slug: candidate.slug })) {
+          broker?.broadcast?.("global", { type: "kb_updated", slug: candidate.slug });
+          deleted += 1;
+        }
+      }
+    }
+    res.json({
+      ok: true,
+      apply,
+      count: kbList({ dataDir }).length + deleted,
+      proposed: candidates.length,
+      deleted,
+      candidates: attachProjects(db, candidates),
+    });
+  });
+
   // GET /api/kb/:slug
   app.get("/api/kb/:slug", (req, res) => {
     let entry;
@@ -341,7 +440,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     if (!entry) {
       return res.status(404).json({ error: { code: "not_found", message: "kb entry not found" } });
     }
-    res.json({ entry: attachProjects(db, entry) });
+    res.json({ entry: attachProjects(db, attachAutoPromotedInfo(dataDir, entry)) });
   });
 
   // POST /api/kb
@@ -359,7 +458,21 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     } catch (error) {
       return sendRouteError(res, error);
     }
-    const { title, body, tags, category, subcategory, pinned } = parsed.data;
+    const {
+      title,
+      body,
+      tags,
+      category,
+      subcategory,
+      pinned,
+      source_task_id,
+      source_task_key,
+      source_run_id,
+      source_agent,
+      related_slugs,
+      supersedes_slugs,
+      canonical_slug,
+    } = parsed.data;
     const slug = parsed.data.slug || uniqueSlug(title, (candidate) => Boolean(kbRead({ dataDir, slug: candidate })), {
       fallback: "entry",
     });
@@ -374,6 +487,13 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
         category,
         subcategory,
         project_id: projectId,
+        source_task_id,
+        source_task_key,
+        source_run_id,
+        source_agent,
+        related_slugs,
+        supersedes_slugs,
+        canonical_slug,
         pinned,
         author: "human",
       });
@@ -388,7 +508,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     }
 
     broker.broadcast("global", { type: "kb_updated", slug });
-    res.status(201).json({ entry: attachProjects(db, entry) });
+    res.status(201).json({ entry: attachProjects(db, attachAutoPromotedInfo(dataDir, entry)) });
   });
 
   // PATCH /api/kb/:slug
@@ -422,7 +542,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     }
 
     broker.broadcast("global", { type: "kb_updated", slug: req.params.slug });
-    res.json({ entry: attachProjects(db, entry) });
+    res.json({ entry: attachProjects(db, attachAutoPromotedInfo(dataDir, entry)) });
   });
 
   // DELETE /api/kb/:slug

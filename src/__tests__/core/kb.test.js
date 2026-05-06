@@ -2,7 +2,16 @@ import { describe, it, expect, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { kbPath, kbList, kbRead, kbCreate, kbUpdate, kbDelete, kbListPinned } from "../../core/kb.js";
+import {
+  autoPromotedRunResultInfo,
+  kbPath,
+  kbList,
+  kbRead,
+  kbCreate,
+  kbUpdate,
+  kbDelete,
+  kbListPinned,
+} from "../../core/kb.js";
 
 const dirs = [];
 afterEach(() => {
@@ -67,6 +76,47 @@ describe("kbCreate + kbRead (round trip)", () => {
     expect(out.meta.project_id).toBe("project-1");
     expect(out.meta.subcategory).toBe("ui-audit");
     expect(out.meta.tags).toEqual(["alpha", "beta"]);
+  });
+
+  it("round-trips source and relationship metadata", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "canonical-runbook",
+      title: "Canonical Runbook",
+      body: "body",
+      tags: ["runbook"],
+      category: "runbook",
+      project_id: "project-1",
+      source_task_id: "task-1",
+      source_task_key: "T-1",
+      source_run_id: "run-1",
+      source_agent: "agent-one",
+      related_slugs: ["first-note", "second-note", "first-note"],
+      supersedes_slugs: ["old-note"],
+      canonical_slug: "canonical-runbook",
+      author: "human",
+    });
+
+    const out = kbRead({ dataDir: d, slug: "canonical-runbook" });
+    expect(out.meta).toMatchObject({
+      source_task_id: "task-1",
+      source_task_key: "T-1",
+      source_run_id: "run-1",
+      source_agent: "agent-one",
+      related_slugs: ["first-note", "second-note"],
+      supersedes_slugs: ["old-note"],
+      canonical_slug: "canonical-runbook",
+    });
+    expect(kbList({ dataDir: d })[0]).toMatchObject({
+      source_task_id: "task-1",
+      source_task_key: "T-1",
+      source_run_id: "run-1",
+      source_agent: "agent-one",
+      related_slugs: ["first-note", "second-note"],
+      supersedes_slugs: ["old-note"],
+      canonical_slug: "canonical-runbook",
+    });
   });
 
   it("parses block-form (indented) tag lists on read", () => {
@@ -431,6 +481,51 @@ describe("kbList", () => {
     kbCreate({ dataDir: d, slug: "nc", title: "T", body: "b", author: "human" });
     const list = kbList({ dataDir: d });
     expect(list[0].category).toBeNull();
+  });
+});
+
+describe("autoPromotedRunResultInfo", () => {
+  it("detects generated fallback run-result entries and extracts source refs", () => {
+    const entry = {
+      meta: {
+        slug: "run-abc123",
+        title: "T-1 final answer from coder",
+        category: "run-results",
+        tags: ["run-result", "execute", "agent-coder"],
+        pinned: false,
+      },
+      body: [
+        "Source task: [T-1 - Build thing](#/tasks/T-1)",
+        "Source run: [RunABC](/api/runs/RunABC/raw-log)",
+        "Stage: execute",
+        "Agent: coder",
+        "",
+        "---",
+        "",
+        "Long final answer.",
+      ].join("\n"),
+    };
+
+    expect(autoPromotedRunResultInfo(entry)).toMatchObject({
+      auto_promoted: true,
+      source_run_id: "RunABC",
+      source_task_ref: "T-1",
+      source_agent: "coder",
+    });
+  });
+
+  it("does not classify deliberate run-results as auto-promoted assets", () => {
+    const entry = {
+      meta: {
+        slug: "triforce-daily-2026-05-05",
+        title: "Triforce daily catch-up",
+        category: "run-results",
+        tags: ["triforce", "daily-catchup"],
+      },
+      body: "# Triforce daily catch-up\n\nReusable digest.",
+    };
+
+    expect(autoPromotedRunResultInfo(entry).auto_promoted).toBe(false);
   });
 });
 
