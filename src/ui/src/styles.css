@@ -3549,16 +3549,18 @@ html.assistant-resizing * {
 
 /* §6.3 — parent breadcrumb plus workflow metadata on TaskDetail. */
 .task-parent-reference {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  align-self: flex-start;
   gap: var(--sp-2);
-  max-width: 100%;
+  width: 100%;
   min-width: 0;
-  padding: var(--sp-1) var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-6);
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 46%),
+    color-mix(in srgb, var(--surface-sunken) 78%, transparent);
   color: var(--text-muted);
   font-size: var(--text-sm);
   line-height: 1.25;
@@ -3567,7 +3569,9 @@ html.assistant-resizing * {
   overflow: hidden;
 }
 .task-parent-reference:hover {
-  border-color: var(--border-strong);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 52%),
+    color-mix(in srgb, var(--surface-elevated) 54%, transparent);
   color: var(--text);
 }
 .task-parent-reference-icon,
@@ -3583,6 +3587,7 @@ html.assistant-resizing * {
   color: var(--text-subtle);
 }
 .task-parent-reference-title {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5042,6 +5047,24 @@ html.assistant-resizing * {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.project-row-leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.project-row-workdir-chip {
+  max-width: min(42ch, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  justify-content: flex-start;
 }
 
 .skill-import-surface {
@@ -8372,19 +8395,6 @@ html.assistant-resizing * {
   .project-output-row .button {
     justify-content: center;
   }
-}
-.project-archive-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  min-height: 30px;
-  padding: 0 var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  white-space: nowrap;
-}
-.project-archive-toggle input {
-  margin: 0;
 }
 .project-description {
   max-width: 72ch;

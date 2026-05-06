@@ -109,6 +109,49 @@ export function buildTeamResourceGroups(teams = [], {
   ], (team) => team.status === "archived" ? "archived" : "active");
 }
 
+function projectTeamLabel(project) {
+  return project?.team?.name || project?.team_name || project?.team_slug || project?.team_id || "";
+}
+
+export function buildProjectResourceGroups(projects = [], {
+  query = "",
+  status = "active",
+  worktree = "all",
+  team = "all",
+} = {}) {
+  const items = (projects || [])
+    .filter((project) => {
+      const archived = !!project?.archived;
+      const worktreeMode = project?.worktree_mode || "off";
+      const teamId = project?.team_id || "";
+      if (status === "active" && archived) return false;
+      if (status === "archived" && !archived) return false;
+      if (worktree !== "all" && worktreeMode !== worktree) return false;
+      if (team === "no_team" && teamId) return false;
+      if (team !== "all" && team !== "no_team" && teamId !== team) return false;
+      return matchesQuery([
+        project?.name,
+        project?.slug,
+        project?.description,
+        project?.context,
+        project?.workdir,
+        projectTeamLabel(project),
+        ...(project?.tags || []),
+      ], query);
+    })
+    .sort((left, right) => {
+      if (!!left.archived !== !!right.archived) return left.archived ? 1 : -1;
+      const updated = timestamp(right.updated_at) - timestamp(left.updated_at);
+      if (updated !== 0) return updated;
+      return compareByLabel(left, right, (project) => project.name || project.slug);
+    });
+
+  return groupFrom(items, [
+    { key: "active", label: "Active" },
+    { key: "archived", label: "Archived" },
+  ], (project) => project.archived ? "archived" : "active");
+}
+
 function knowledgeProjectLabel(entry) {
   return entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
 }

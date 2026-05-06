@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildAgentResourceGroups,
   buildKnowledgeResourceGroups,
+  buildProjectResourceGroups,
   buildSkillResourceGroups,
   buildTeamResourceGroups,
 } from "../../ui/src/lib/resourceLists.js";
@@ -82,13 +83,74 @@ describe("resource list helpers", () => {
     ]);
   });
 
+  it("keeps projects searchable and grouped for the full-width resource list", () => {
+    const projects = [
+      {
+        slug: "alpha-app",
+        name: "Alpha App",
+        description: "Retail checkout",
+        context: "Mobile ordering context",
+        workdir: "/repos/alpha",
+        worktree_mode: "auto",
+        team_id: "team-a",
+        tags: ["frontend"],
+        archived: false,
+        updated_at: 1000,
+      },
+      {
+        slug: "docs-hub",
+        name: "Docs Hub",
+        description: "Knowledge workflows",
+        workdir: "/repos/docs",
+        worktree_mode: "off",
+        team_id: "",
+        tags: ["kb"],
+        archived: false,
+        updated_at: 3000,
+      },
+      {
+        slug: "legacy",
+        name: "Legacy",
+        description: "Old automation",
+        workdir: "/repos/legacy",
+        worktree_mode: "required",
+        team_id: "team-a",
+        tags: ["archive"],
+        archived: true,
+        updated_at: 2000,
+      },
+    ];
+
+    expect(buildProjectResourceGroups(projects).map((group) => [group.key, group.items.map((project) => project.slug)])).toEqual([
+      ["active", ["docs-hub", "alpha-app"]],
+    ]);
+    expect(buildProjectResourceGroups(projects, { status: "all", worktree: "required", team: "team-a" }).map((group) => [group.key, group.items.map((project) => project.slug)])).toEqual([
+      ["archived", ["legacy"]],
+    ]);
+    expect(buildProjectResourceGroups(projects, { query: "ordering", team: "no_team" })).toEqual([]);
+    expect(buildProjectResourceGroups(projects, { query: "ordering", worktree: "auto" }).map((group) => group.items.map((project) => project.slug))).toEqual([
+      ["alpha-app"],
+    ]);
+  });
+
   it("wires resource routes through the list-first layout and shared toolbar", () => {
     expect(source("src/ui/src/components/PaneLayout.jsx")).toContain("listFirst && !hasSelection");
-    for (const route of ["Agents.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx"]) {
+    for (const route of ["Agents.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx"]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceListToolbar");
       expect(contents).toContain("listFirst");
       expect(contents).toContain("resource-list-layout");
     }
+  });
+
+  it("styles child task parent references as a full-width contextual strip", () => {
+    const styles = source("src/ui/src/styles.css");
+    const parentRule = styles.match(/\.task-parent-reference \{(?<body>[^}]+)\}/)?.groups?.body || "";
+    const titleRule = styles.match(/\.task-parent-reference-title \{(?<body>[^}]+)\}/)?.groups?.body || "";
+
+    expect(parentRule).toContain("display: flex");
+    expect(parentRule).toContain("width: 100%");
+    expect(parentRule).toContain("box-sizing: border-box");
+    expect(titleRule).toContain("flex: 1 1 auto");
   });
 });
