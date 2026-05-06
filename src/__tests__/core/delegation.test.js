@@ -25,12 +25,14 @@ function seedTask(db, id, patch = {}) {
   const now = Date.now();
   db.prepare(`
     INSERT INTO tasks
-      (id, root_task_id, parent_task_id, title, instructions, stage, owner_agent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, root_task_id, parent_task_id, project_id, team_id, title, instructions, stage, owner_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     patch.root_task_id || id,
     patch.parent_task_id || null,
+    patch.project_id || null,
+    patch.team_id || null,
     patch.title || id,
     patch.instructions || "",
     patch.stage || "execute",
@@ -38,6 +40,25 @@ function seedTask(db, id, patch = {}) {
     now,
     now,
   );
+}
+
+function seedTeamProject(db, { teamId = "team-1", projectId = "project-1", lead = "lead", members = [] } = {}) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO teams (id, slug, name, lead_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(teamId, teamId, teamId, lead, now, now);
+  for (const member of members) {
+    db.prepare(`
+      INSERT INTO team_members (team_id, agent_name, role_description, created_at)
+      VALUES (?, ?, '', ?)
+    `).run(teamId, member, now);
+  }
+  db.prepare(`
+    INSERT INTO projects (id, slug, name, team_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(projectId, projectId, projectId, teamId, now, now);
+  return { teamId, projectId };
 }
 
 function linkChild(db, parentId, childId, required = 1) {
@@ -107,6 +128,31 @@ describe("delegation context", () => {
       },
     });
     expect(loadChildTaskSummaries(db, "parent")).toHaveLength(1);
+  });
+
+  it("limits available delegation agents to the effective team roster", () => {
+    const db = makeTestDb();
+    seedAgent(db, "lead");
+    seedAgent(db, "member");
+    seedAgent(db, "executor");
+    const { projectId } = seedTeamProject(db, { lead: "lead", members: ["member"] });
+    seedTask(db, "parent", { owner_agent: "lead", project_id: projectId });
+
+    const task = db.prepare("SELECT * FROM tasks WHERE id = ?").get("parent");
+    const context = buildDelegationContext({
+      db,
+      task,
+      settings: {
+        delegation_enabled: true,
+        delegation_max_depth: 1,
+        delegation_max_children_per_round: 5,
+        delegation_max_parallel_children: 3,
+        delegation_auto_run_children: true,
+      },
+    });
+
+    expect(context.availableAgents.map((agent) => agent.name).sort()).toEqual(["lead", "member"]);
+    expect(context.availableAgents.map((agent) => agent.name)).not.toContain("executor");
   });
 
   it("disables delegation when the task reaches max depth", () => {

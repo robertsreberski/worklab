@@ -1,3 +1,6 @@
+import { effectiveTeamForTask } from "./teams.js";
+import { getTeamRosterAgentNames } from "./db/queries/teams.js";
+
 function safeParseJson(value, fallback = null) {
   if (value === null || value === undefined) return fallback;
   if (typeof value !== "string") return value;
@@ -106,6 +109,9 @@ export function buildDelegationContext({ db, task, settings }) {
   const childTasks = loadChildTaskSummaries(db, task?.id);
   const activeChildCount = childTasks.filter((child) => !["done", "blocked"].includes(child.stage)).length;
   const canDelegate = enabled && depth < maxDepth;
+  const teamId = effectiveTeamForTask(db, task);
+  const teamRoster = teamId ? new Set(getTeamRosterAgentNames(db, teamId)) : null;
+  const availableAgents = enabledDelegationAgents(db).filter((agent) => !teamRoster || teamRoster.has(agent.name));
   const disabledReason = !enabled
     ? "delegation disabled by settings"
     : depth >= maxDepth
@@ -122,7 +128,8 @@ export function buildDelegationContext({ db, task, settings }) {
     maxParallelChildren,
     autoRunChildren,
     activeChildCount,
-    availableAgents: enabledDelegationAgents(db),
+    teamId,
+    availableAgents,
     childTasks,
   };
 }

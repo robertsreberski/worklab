@@ -327,6 +327,7 @@ export function TaskDetail({ id, runParam = null }) {
   const operationTaskId = task?.id || id;
   const currentTaskRouteId = task ? taskRouteId(task) : encodeURIComponent(id);
   const taskKeyLabel = taskDisplayKey(task || id);
+  const isTeamRoot = Boolean(task?.is_team_root);
   const runs = data?.runs || [];
   const comments = data?.comments || [];
   const stage = task?.stage || "plan";
@@ -649,7 +650,11 @@ export function TaskDetail({ id, runParam = null }) {
     : stage === "plan"
       ? (task?.planner_agent || task?.owner_agent)
       : task?.owner_agent;
-  const runCopy = {
+  const runCopy = isTeamRoot ? {
+    label: "Run lead cycle",
+    title: "Lead cycle runs coordinate the team roster and create or assign project work.",
+    missing: "Assign a team lead to run the lead cycle",
+  } : {
     plan: {
       label: "Run plan",
       title: "Planner plans the task, falling back to owner when no planner is assigned.",
@@ -667,7 +672,7 @@ export function TaskDetail({ id, runParam = null }) {
     },
   }[stage];
   const canRun = !runStarting && selectedAgent && runnableStages.includes(stage) && unresolvedBlockedBy.length === 0;
-  const canPreviewRunInput = task && runnableStages.includes(stage) && !runningRun;
+  const canPreviewRunInput = task && !task?.is_team_root && runnableStages.includes(stage) && !runningRun;
   const runDisabledReason = runStarting
     ? "Run is starting"
     : !selectedAgent

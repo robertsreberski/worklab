@@ -41,12 +41,34 @@ function seedTask(db, patch = {}) {
     planner_agent: patch.planner_agent || null,
     reviewer_agent: patch.reviewer_agent || null,
     project_id: patch.project_id || null,
+    team_id: patch.team_id || null,
   };
   db.prepare(`
     INSERT INTO tasks
-      (id, task_key, root_task_id, project_id, title, instructions, stage, owner_agent, planner_agent, reviewer_agent, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(row.id, row.task_key, row.id, row.project_id, row.title, row.instructions, row.stage, row.owner_agent, row.planner_agent, row.reviewer_agent, now, now);
+      (id, task_key, root_task_id, project_id, team_id, title, instructions, stage, owner_agent, planner_agent, reviewer_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.task_key, row.id, row.project_id, row.team_id, row.title, row.instructions, row.stage, row.owner_agent, row.planner_agent, row.reviewer_agent, now, now);
+  return row;
+}
+
+function seedTeam(db, patch = {}) {
+  const now = Date.now();
+  const row = {
+    id: patch.id || "team-run-input",
+    slug: patch.slug || "run-input-team",
+    name: patch.name || "Run Input Team",
+    lead_agent: patch.lead_agent || "owner",
+  };
+  db.prepare(`
+    INSERT INTO teams (id, slug, name, lead_agent, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.slug, row.name, row.lead_agent, now, now);
+  for (const member of patch.members || []) {
+    db.prepare(`
+      INSERT INTO team_members (team_id, agent_name, role_description, created_at)
+      VALUES (?, ?, '', ?)
+    `).run(row.id, member, now);
+  }
   return row;
 }
 
@@ -59,12 +81,13 @@ function seedProject(db, patch = {}) {
     description: patch.description || "Project description.",
     context: patch.context || "Project context for every run.",
     workdir: patch.workdir || "/tmp/worklab-project-run-input",
+    team_id: patch.team_id || null,
   };
   db.prepare(`
     INSERT INTO projects
-      (id, slug, name, description, context_markdown, workdir, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(row.id, row.slug, row.name, row.description, row.context, row.workdir, now, now);
+      (id, slug, name, description, context_markdown, workdir, team_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(row.id, row.slug, row.name, row.description, row.context, row.workdir, row.team_id, now, now);
   return row;
 }
 
@@ -164,6 +187,30 @@ describe("run input assembly", () => {
       expect(input.systemPrompt).toContain("## Available agents");
       expect(input.systemPrompt).toContain("`helper`");
       expect(input.delegation.canDelegate).toBe(true);
+    });
+  });
+
+  it("limits prompt delegation candidates to the effective team roster", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Lead the team.");
+      seedAgent(db, "helper", "Help with rostered work.");
+      seedAgent(db, "executor", "Global executor.");
+      const team = seedTeam(db, { lead_agent: "owner", members: ["helper"] });
+      const project = seedProject(db, { team_id: team.id });
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner", project_id: project.id });
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-current",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("Every delegated subtask's suggested_agent must be one of the agents listed in Available agents");
+      expect(input.systemPrompt).toContain("`helper`");
+      expect(input.systemPrompt).not.toContain("`executor`");
     });
   });
 

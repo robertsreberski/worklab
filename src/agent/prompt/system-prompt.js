@@ -470,6 +470,7 @@ function formatDelegationPolicy(context) {
     : "Delegated children are created but do not auto-run.");
   lines.push("Return decision \"delegate\" when the work naturally splits into independent investigation, implementation, research, drafting, QA, or specialist review tracks that can run in parallel or with clear dependencies.");
   lines.push("Proceed with decision \"advance\" instead when the task is small, tightly coupled, already decomposed into children, or when delegation would create coordination overhead without reducing risk or time.");
+  lines.push("Every delegated subtask's suggested_agent must be one of the agents listed in Available agents for this run.");
   lines.push("Use at most the configured child limit, prefer required children for work the parent must synthesize, and use optional children only for helpful extra validation.");
   return lines.join("\n");
 }
