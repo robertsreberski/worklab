@@ -4,6 +4,7 @@
   "description": "Local AI agent orchestration tool",
   "type": "module",
   "private": true,
+  "license": "GPL-3.0-only",
   "bin": {
     "worklab": "./src/cli/index.js"
   },
