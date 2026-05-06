@@ -19,6 +19,7 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
+import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
@@ -58,6 +59,10 @@ function intervalDisplay(value) {
 
 function statusTone(status) {
   return status === "archived" ? "muted" : "primary";
+}
+
+function teamListStatus(status) {
+  return status === "archived" ? "disabled" : "enabled";
 }
 
 function relativeTime(ts) {
@@ -556,9 +561,14 @@ export function Teams({ selectedId = null, mode = null }) {
                 key={team.id}
                 active={team.id === selectedId || team.slug === selectedId}
                 href={`#/teams/${encodeURIComponent(team.slug)}`}
+                leading={<span class="team-row-leading"><Icon name="users" size={12} /></span>}
                 title={team.name}
                 sub={<><span>{team.slug}</span> · <span>{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</span></>}
-                trailing={<Badge variant={statusTone(team.status)}>{team.status}</Badge>}
+                trailing={(
+                  <span class="team-list-status" title={team.status} aria-label={`Team status: ${team.status}`}>
+                    <StatusDot status={teamListStatus(team.status)} size={8} />
+                  </span>
+                )}
               />
             ))}
           </div>

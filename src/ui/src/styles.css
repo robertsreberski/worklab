@@ -5076,6 +5076,24 @@ html.assistant-resizing * {
   width: 100%;
   min-width: 0;
 }
+.team-row-leading,
+.team-list-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+}
+.team-row-leading {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.team-list-status {
+  color: var(--text-muted);
+}
 .team-picker-icon {
   display: inline-flex;
   align-items: center;

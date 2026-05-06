@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   mcpAvailabilitySummary,
@@ -18,7 +20,18 @@ import {
   slackUserMatchesBot,
 } from "../../ui/src/routes/settings/helpers.js";
 
+const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
+
 describe("settings UI duration conversions", () => {
+  it("keeps Run limits labels compact because the controls already show units", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+
+    expect(source).toContain('label="Worker timeout"');
+    expect(source).toContain('label="Cancel grace"');
+    expect(source).not.toContain('label="Worker timeout (minutes)"');
+    expect(source).not.toContain('label="Cancel grace (seconds)"');
+  });
+
   it("formats millisecond timeout values as minutes", () => {
     expect(minutesValue(30 * 60 * 1000)).toBe("30");
     expect(minutesValue(120 * 1000)).toBe("2");

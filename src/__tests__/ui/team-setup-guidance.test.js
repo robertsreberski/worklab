@@ -60,4 +60,15 @@ describe("team setup guidance", () => {
     expect(stylesSource).toContain(".team-lead-picker");
     expect(stylesSource).toContain("width: 100%");
   });
+
+  it("uses compact team-list status treatment instead of a cramped badge", () => {
+    const teamsSource = readFileSync(teamsSourcePath, "utf8");
+    const stylesSource = readFileSync(stylesSourcePath, "utf8");
+
+    expect(teamsSource).toContain('class="team-row-leading"');
+    expect(teamsSource).toContain('class="team-list-status"');
+    expect(teamsSource).toContain("<StatusDot");
+    expect(teamsSource).not.toContain("trailing={<Badge variant={statusTone(team.status)}>{team.status}</Badge>}");
+    expect(stylesSource).toContain(".team-list-status");
+  });
 });
