@@ -79,6 +79,19 @@ function relativeTime(ts) {
   return `${Math.round(ms / 86_400_000)}d ago`;
 }
 
+export function leadCycleTaskHref(cycle = {}) {
+  const taskId = String(cycle?.task_id ?? "").trim();
+  const runId = String(cycle?.id ?? "").trim();
+  if (!taskId || !runId) return null;
+  return `#/tasks/${encodeURIComponent(taskId)}?run=${encodeURIComponent(runId)}`;
+}
+
+export function leadCycleRawLogHref(cycle = {}) {
+  const runId = String(cycle?.id ?? "").trim();
+  if (!runId) return null;
+  return `/api/runs/${encodeURIComponent(runId)}/raw-log`;
+}
+
 export function teamSetupGaps(team = {}, members = [], projects = []) {
   const gaps = [];
   if (!String(team?.goal || "").trim()) {
@@ -338,6 +351,42 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
   );
 }
 
+function LeadCycleRow({ cycle }) {
+  const taskHref = leadCycleTaskHref(cycle);
+  const rawLogHref = leadCycleRawLogHref(cycle);
+  const status = cycle?.process_status || cycle?.status || "unknown";
+  const statusVariant = cycle?.process_status === "succeeded" ? "primary" : cycle?.process_status === "failed" ? "warn" : "muted";
+
+  return (
+    <li class="team-cycle-row">
+      <div class="team-cycle-main">
+        <div class="team-cycle-meta">
+          <span>{relativeTime(cycle?.started_at)}</span>
+          <Badge variant={statusVariant}>{status}</Badge>
+          {cycle?.cost_usd ? <span class="muted">${Number(cycle.cost_usd).toFixed(4)}</span> : null}
+        </div>
+        {cycle?.summary ? <div class="team-cycle-summary">{cycle.summary}</div> : null}
+      </div>
+      {(taskHref || rawLogHref) && (
+        <div class="team-cycle-actions">
+          {taskHref && (
+            <a class="team-cycle-link" href={taskHref}>
+              <Icon name="arrow-right" size={13} />
+              <span>Task</span>
+            </a>
+          )}
+          {rawLogHref && (
+            <a class="team-cycle-link" href={rawLogHref} target="_blank" rel="noreferrer">
+              <Icon name="terminal" size={13} />
+              <span>Raw log</span>
+            </a>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
 function TeamDetail({ team, members, projects, cycles, onChanged }) {
   const [running, setRunning] = useState(false);
   const setupGaps = teamSetupGaps(team, members, projects);
@@ -405,16 +454,9 @@ function TeamDetail({ team, members, projects, cycles, onChanged }) {
         {cycles.length === 0 ? (
           <p class="muted">No cycles yet.</p>
         ) : (
-          <ul>
+          <ul class="team-cycle-list">
             {cycles.map((c) => (
-              <li key={c.id}>
-                <span>{relativeTime(c.started_at)}</span>{" "}
-                <Badge variant={c.process_status === "succeeded" ? "primary" : c.process_status === "failed" ? "warn" : "muted"}>
-                  {c.process_status || c.status}
-                </Badge>
-                {c.summary ? `: ${c.summary}` : ""}
-                {c.cost_usd ? <span class="muted"> ${Number(c.cost_usd).toFixed(4)}</span> : null}
-              </li>
+              <LeadCycleRow key={c.id || `${c.task_id}-${c.started_at}`} cycle={c} />
             ))}
           </ul>
         )}
