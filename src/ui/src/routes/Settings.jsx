@@ -611,10 +611,10 @@ export function Settings() {
             <div class="settings-panel-grid">
               <SettingPanel icon="clock" title="Run limits" meta="Global timeout behavior for spawned workers.">
                 <FormGrid columns={2}>
-                  <FormField label="Worker timeout (minutes)">
+                  <FormField label="Worker timeout">
                     <DurationInput value={settings.worker_timeout_ms} min={0.02} step={0.25} onChange={(value) => setSettings({ ...settings, worker_timeout_ms: value })} ariaLabel="Worker timeout" />
                   </FormField>
-                  <FormField label="Cancel grace (seconds)">
+                  <FormField label="Cancel grace">
                     <DurationInput unit="seconds" value={settings.cancel_grace_ms} min={0} step={1} onChange={(value) => setSettings({ ...settings, cancel_grace_ms: value })} ariaLabel="Cancel grace" />
                   </FormField>
                 </FormGrid>
