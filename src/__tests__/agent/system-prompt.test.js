@@ -200,7 +200,8 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("Journal as you work");
     expect(p).toContain("keep a short run-local checklist with `todo_write`");
     expect(p).toContain("`kb_` = Knowledge Base, not kilobytes");
-    expect(p).toContain("save the complete body via `kb_create` or `kb_update`");
+    expect(p).toContain("preserve the complete body via `kb_create` or `kb_update`");
+    expect(p).toContain("Do not create Knowledge entries for routine run results");
     expect(p).toContain("reference the slug in `final_text`");
     expect(p).toContain("End each completed run with one `worklab.v2` JSON object");
     expect(p).toContain("Put the human-facing comment in `final_text`");
