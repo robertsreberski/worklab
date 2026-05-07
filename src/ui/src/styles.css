@@ -11544,6 +11544,34 @@ html.assistant-resizing * {
   .app.responsive.assistant-open {
     grid-template-columns: minmax(0, 1fr);
   }
+  .app.responsive:has(.pane-list-head) .app-body,
+  .app.responsive:has(.page-wrap > .ds-page-head:first-child) .app-body {
+    padding-top: 0;
+  }
+  .app.responsive .app-main {
+    scrollbar-gutter: auto;
+  }
+  .app.responsive .pane-list-head {
+    padding-top: calc(var(--sp-2) + var(--mobile-safe-top));
+    background: var(--surface);
+    backdrop-filter: none;
+  }
+  .app.responsive .page-wrap {
+    --mobile-page-inline: var(--sp-4);
+    padding: 0 var(--mobile-page-inline) var(--sp-4);
+  }
+  .app.responsive .page-wrap > .ds-page-head:first-child {
+    margin: 0 calc(-1 * var(--mobile-page-inline)) var(--sp-5);
+    padding-top: calc(var(--sp-4) + var(--mobile-safe-top));
+    padding-right: var(--mobile-page-inline);
+    padding-bottom: var(--sp-4);
+    padding-left: var(--mobile-page-inline);
+    border-top: 0;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+    background: var(--surface);
+  }
   .assistant-dock {
     position: fixed;
     top: 0;

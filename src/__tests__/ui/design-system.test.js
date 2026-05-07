@@ -136,6 +136,14 @@ describe("design system stylesheet", () => {
     expect(css).toMatch(/--mobile-action-dock-height:\s*calc\(44px \+ var\(--sp-3\) \+ max\(var\(--sp-3\), var\(--mobile-safe-bottom\)\) \+ 1px\);/);
   });
 
+  it("keeps top safe area inside mobile route headers when present", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    expect(css).toContain(".app.responsive:has(.pane-list-head) .app-body");
+    expect(css).toContain(".app.responsive:has(.page-wrap > .ds-page-head:first-child) .app-body");
+    expect(css).toMatch(/\.app\.responsive\s+\.pane-list-head\s*\{[^}]*padding-top:\s*calc\(var\(--sp-2\) \+ var\(--mobile-safe-top\)\)/);
+    expect(css).toMatch(/\.app\.responsive\s+\.page-wrap\s*>\s*\.ds-page-head:first-child\s*\{[^}]*padding-top:\s*calc\(var\(--sp-4\) \+ var\(--mobile-safe-top\)\)/);
+  });
+
   it("keeps focused mobile text-entry controls at iOS-safe font sizes", () => {
     const css = readFileSync(stylesPath, "utf8");
     const mobileBlock = css.match(/\/\* iOS Safari zooms[\s\S]*?\.search-field-input \{ font-size: 16px; \}/)?.[0] || "";

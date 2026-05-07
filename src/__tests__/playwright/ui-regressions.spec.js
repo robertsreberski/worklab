@@ -2296,6 +2296,75 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
+test("mobile list and page headers own the status safe-area background", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(({ cacheKey }) => {
+    try {
+      Object.defineProperty(window.navigator, "standalone", {
+        configurable: true,
+        get: () => true,
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11 }));
+  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
+
+  const routes = [
+    {
+      hash: "#/agents",
+      readySelector: ".pane-list-head",
+      headerSelector: ".pane-list-head",
+      label: "agents list",
+    },
+    {
+      hash: "#/activity",
+      readySelector: ".ds-page-head",
+      headerSelector: ".ds-page-head",
+      label: "activity page",
+    },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(route.readySelector).first()).toBeVisible();
+
+    const metrics = await page.evaluate(({ headerSelector }) => {
+      const rootStyles = getComputedStyle(document.documentElement);
+      const appBody = document.querySelector(".app-body");
+      const header = document.querySelector(headerSelector);
+      const headerRect = header?.getBoundingClientRect();
+      const bodyStyles = appBody ? getComputedStyle(appBody) : null;
+      const headerStyles = header ? getComputedStyle(header) : null;
+      const parsePx = (value) => Math.round(parseFloat(value) || 0);
+      const safeAreaElement = document.elementFromPoint(12, 12);
+      return {
+        safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
+        bodyPaddingTop: bodyStyles ? parsePx(bodyStyles.paddingTop) : -1,
+        headerTop: headerRect ? Math.round(headerRect.top) : -1,
+        headerLeft: headerRect ? Math.round(headerRect.left) : -1,
+        headerRight: headerRect ? Math.round(headerRect.right) : -1,
+        headerPaddingTop: headerStyles ? parsePx(headerStyles.paddingTop) : -1,
+        headerBackground: headerStyles?.backgroundColor || "",
+        safeAreaOwnedByHeader: !!safeAreaElement?.closest?.(headerSelector),
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        windowScrollY: Math.round(window.scrollY),
+        documentScrollHeight: document.documentElement.scrollHeight,
+      };
+    }, { headerSelector: route.headerSelector });
+
+    expect(metrics.safeTopVar, `${route.label} safe-area variable`).toBe("31px");
+    expect(metrics.bodyPaddingTop, `${route.label} body top padding`).toBe(0);
+    expect(metrics.headerTop, `${route.label} header top`).toBe(0);
+    expect(metrics.headerLeft, `${route.label} header left`).toBeLessThanOrEqual(1);
+    expect(metrics.headerRight, `${route.label} header right`).toBeGreaterThanOrEqual(metrics.viewportWidth - 1);
+    expect(metrics.headerPaddingTop, `${route.label} header safe-area padding`).toBeGreaterThanOrEqual(31);
+    expect(metrics.headerBackground, `${route.label} header background`).not.toBe("rgba(0, 0, 0, 0)");
+    expect(metrics.safeAreaOwnedByHeader, `${route.label} safe-area owner`).toBe(true);
+    expect(metrics.windowScrollY, `${route.label} window scroll`).toBe(0);
+    expect(metrics.documentScrollHeight, `${route.label} document height`).toBeLessThanOrEqual(metrics.viewportHeight);
+  }
+});
+
 test("mobile topbar owns the status safe-area background", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
