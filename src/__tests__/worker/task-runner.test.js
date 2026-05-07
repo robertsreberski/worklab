@@ -110,4 +110,109 @@ describe("task runner result parsing", () => {
 
     expect(result.providerSessionId).toBe("provider-session-1");
   });
+
+  it("uses provider structuredResult when present, marking the run structured", async () => {
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Done.",
+      details: "Implemented feature.",
+      final_text: "Implemented.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    mocks.generateResponse.mockResolvedValue({
+      text: "noisy text the host should ignore",
+      structuredResult: structured,
+      structuredResultSource: "structured_output",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(false);
+    expect(result.worklabResult).toMatchObject({
+      decision: "advance",
+      summary: "Done.",
+      details: "Implemented feature.",
+    });
+  });
+
+  it("treats a malformed structuredResult as fatal without falling back to text", async () => {
+    const malformed = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "delegate",
+      summary: "split",
+      details: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [{
+        title: "child",
+        instructions: "do it",
+        acceptance_criteria: { invalid: true },
+      }],
+    };
+    mocks.generateResponse.mockResolvedValue({
+      text: "Plain final answer that would normally synthesize.",
+      structuredResult: malformed,
+      structuredResultSource: "structured_output",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(true);
+    expect(result.worklabResult).toBeNull();
+  });
+
+  it("scans response.events for an embedded worklab_result when no structuredResult is set", async () => {
+    const structured = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "From events.",
+      details: "Recovered from event scan.",
+      final_text: "Recovered.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    mocks.generateResponse.mockResolvedValue({
+      text: "ignored prose",
+      events: [
+        { type: "assistant", message: { content: [{ type: "text", text: "thinking..." }] } },
+        {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", name: "StructuredOutput", input: structured }] },
+        },
+      ],
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(false);
+    expect(result.worklabResult).toMatchObject({
+      summary: "From events.",
+      details: "Recovered from event scan.",
+    });
+  });
 });
