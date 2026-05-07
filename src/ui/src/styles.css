@@ -10693,8 +10693,8 @@ html.assistant-resizing * {
   right: 0;
   bottom: 0;
   z-index: 30;
-  height: 56px;
-  padding-bottom: 0;
+  height: calc(56px + var(--mobile-safe-bottom));
+  padding-bottom: var(--mobile-safe-bottom);
   grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow-x: clip;
   border-top: 1px solid var(--border);
@@ -10817,7 +10817,7 @@ html.assistant-resizing * {
   right: 0;
   bottom: 0;
   max-height: min(72vh, calc(var(--shell-height) - var(--mobile-safe-top)));
-  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
   border-top: 1px solid var(--border);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--surface);
@@ -11105,13 +11105,13 @@ html.assistant-resizing * {
 
 @media (max-width: 860px) {
   .app.responsive {
-    --mobile-tabbar-height: 56px;
-    --mobile-action-dock-height: calc(44px + var(--sp-6) + 1px);
+    --mobile-tabbar-height: calc(56px + var(--mobile-safe-bottom));
+    --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
     grid-template-columns: minmax(0, 1fr);
     padding-bottom: 0;
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) {
-    --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-6) + 1px);
+    --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
   }
   .app.responsive.has-dock {
     padding-bottom: 0;
@@ -11168,7 +11168,7 @@ html.assistant-resizing * {
     display: flex;
     align-items: center;
     gap: var(--sp-2);
-    padding: var(--sp-3) var(--sp-4);
+    padding: var(--sp-3) var(--sp-4) max(var(--sp-3), var(--mobile-safe-bottom));
     border-top: 1px solid var(--border);
     background: linear-gradient(180deg, transparent, var(--surface) 30%);
   }
@@ -11211,7 +11211,7 @@ html.assistant-resizing * {
     max-height: calc(var(--shell-height) - var(--mobile-safe-top));
     flex-direction: column;
     overflow: hidden;
-    padding: var(--sp-3) var(--sp-4) var(--sp-4);
+    padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
     border-top: 1px solid var(--border);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
     background: var(--surface);
@@ -11581,7 +11581,7 @@ html.assistant-resizing * {
   .assistant-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), var(--mobile-safe-bottom));
   }
   .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));

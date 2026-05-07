@@ -2143,14 +2143,14 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
   expect(metrics.viewportVar).toBe("844px");
   expect(metrics.safeTopVar).toBe("31px");
   expect(metrics.safeBottomVar).toBe("11px");
-  expect(metrics.tabbarHeight).toBe(56);
+  expect(metrics.tabbarHeight).toBe(67);
   expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
   expect(metrics.tabbarPosition).toBe("fixed");
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
-test("mobile PWA bottom chrome does not grow by the home indicator inset", async ({ page }) => {
+test("mobile PWA bottom safe area belongs to the bottom chrome", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(({ cacheKey }) => {
     try {
@@ -2179,15 +2179,19 @@ test("mobile PWA bottom chrome does not grow by the home indicator inset", async
       tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
       tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
       tabbarPaddingBottom: tabbarStyles ? parsePx(tabbarStyles.paddingBottom) : -1,
+      bottomOwner: document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 4)
+        ?.closest?.(".app-tabbar")
+        ?.className || "",
       documentScrollHeight: document.documentElement.scrollHeight,
     };
   });
 
   expect(tabbarMetrics.safeBottomVar).toBe("34px");
-  expect(tabbarMetrics.tabbarHeight).toBe(56);
-  expect(tabbarMetrics.tabbarPaddingBottom).toBe(0);
-  expect(tabbarMetrics.bodyPaddingBottom).toBe(56);
+  expect(tabbarMetrics.tabbarHeight).toBe(90);
+  expect(tabbarMetrics.tabbarPaddingBottom).toBe(34);
+  expect(tabbarMetrics.bodyPaddingBottom).toBe(90);
   expect(tabbarMetrics.tabbarBottom).toBe(tabbarMetrics.viewportHeight);
+  expect(tabbarMetrics.bottomOwner).toContain("app-tabbar");
   expect(tabbarMetrics.documentScrollHeight).toBeLessThanOrEqual(tabbarMetrics.viewportHeight);
 
   await page.goto(`${baseUrl}/#/tasks/new`);
@@ -2208,15 +2212,19 @@ test("mobile PWA bottom chrome does not grow by the home indicator inset", async
       dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
       dockPaddingBottom: dock ? parsePx(getComputedStyle(dock).paddingBottom) : -1,
       tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      bottomOwner: document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 4)
+        ?.closest?.(".app-mobile-action-dock")
+        ?.className || "",
       documentScrollHeight: document.documentElement.scrollHeight,
     };
   });
 
   expect(dockMetrics.dockDisplay).toBe("flex");
-  expect(dockMetrics.dockHeight).toBe(69);
-  expect(dockMetrics.dockPaddingBottom).toBe(12);
+  expect(dockMetrics.dockHeight).toBe(91);
+  expect(dockMetrics.dockPaddingBottom).toBe(34);
   expect(dockMetrics.bodyPaddingBottom).toBe(dockMetrics.dockHeight);
   expect(dockMetrics.dockBottom).toBe(dockMetrics.viewportHeight);
+  expect(dockMetrics.bottomOwner).toContain("app-mobile-action-dock");
   expect(dockMetrics.tabbarDisplay).toBe("none");
   expect(dockMetrics.documentScrollHeight).toBeLessThanOrEqual(dockMetrics.viewportHeight);
 });
