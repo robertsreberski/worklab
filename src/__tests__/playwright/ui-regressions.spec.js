@@ -2143,11 +2143,82 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
   expect(metrics.viewportVar).toBe("844px");
   expect(metrics.safeTopVar).toBe("31px");
   expect(metrics.safeBottomVar).toBe("11px");
-  expect(metrics.tabbarHeight).toBe(67);
+  expect(metrics.tabbarHeight).toBe(56);
   expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
   expect(metrics.tabbarPosition).toBe("fixed");
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
+test("mobile PWA bottom chrome does not grow by the home indicator inset", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(({ cacheKey }) => {
+    try {
+      Object.defineProperty(window.navigator, "standalone", {
+        configurable: true,
+        get: () => true,
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 47, bottom: 34 }));
+  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  const tabbarMetrics = await page.evaluate(() => {
+    const rootStyles = getComputedStyle(document.documentElement);
+    const body = document.querySelector(".app-body");
+    const tabbar = document.querySelector(".app-tabbar");
+    const tabbarRect = tabbar?.getBoundingClientRect();
+    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      viewportHeight: window.innerHeight,
+      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
+      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
+      tabbarPaddingBottom: tabbarStyles ? parsePx(tabbarStyles.paddingBottom) : -1,
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(tabbarMetrics.safeBottomVar).toBe("34px");
+  expect(tabbarMetrics.tabbarHeight).toBe(56);
+  expect(tabbarMetrics.tabbarPaddingBottom).toBe(0);
+  expect(tabbarMetrics.bodyPaddingBottom).toBe(56);
+  expect(tabbarMetrics.tabbarBottom).toBe(tabbarMetrics.viewportHeight);
+  expect(tabbarMetrics.documentScrollHeight).toBeLessThanOrEqual(tabbarMetrics.viewportHeight);
+
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button").first()).toBeVisible();
+
+  const dockMetrics = await page.evaluate(() => {
+    const body = document.querySelector(".app-body");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const tabbar = document.querySelector(".app-tabbar");
+    const dockRect = dock?.getBoundingClientRect();
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      viewportHeight: window.innerHeight,
+      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
+      dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
+      dockPaddingBottom: dock ? parsePx(getComputedStyle(dock).paddingBottom) : -1,
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(dockMetrics.dockDisplay).toBe("flex");
+  expect(dockMetrics.dockHeight).toBe(69);
+  expect(dockMetrics.dockPaddingBottom).toBe(12);
+  expect(dockMetrics.bodyPaddingBottom).toBe(dockMetrics.dockHeight);
+  expect(dockMetrics.dockBottom).toBe(dockMetrics.viewportHeight);
+  expect(dockMetrics.tabbarDisplay).toBe("none");
+  expect(dockMetrics.documentScrollHeight).toBeLessThanOrEqual(dockMetrics.viewportHeight);
 });
 
 test("mobile tasks header owns the opening route status safe area", async ({ page }) => {

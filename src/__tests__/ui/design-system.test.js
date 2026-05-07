@@ -127,6 +127,16 @@ describe("design system stylesheet", () => {
     expect(css).not.toMatch(/:has\(input:focus/);
   });
 
+  it("keeps mobile bottom chrome compact instead of adding bottom safe-area height", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const tabbarRule = css.match(/\.app-tabbar\s*\{[^}]*\}/)?.[0] || "";
+    expect(tabbarRule).toMatch(/height:\s*56px\b/);
+    expect(tabbarRule).toMatch(/padding-bottom:\s*0\b/);
+    expect(tabbarRule).not.toContain("--mobile-safe-bottom");
+    expect(css).toMatch(/--mobile-tabbar-height:\s*56px;/);
+    expect(css).toMatch(/--mobile-action-dock-height:\s*calc\(44px \+ var\(--sp-6\) \+ 1px\);/);
+  });
+
   it("keeps focused mobile text-entry controls at iOS-safe font sizes", () => {
     const css = readFileSync(stylesPath, "utf8");
     const mobileBlock = css.match(/\/\* iOS Safari zooms[\s\S]*?\.search-field-input \{ font-size: 16px; \}/)?.[0] || "";
