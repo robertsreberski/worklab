@@ -66,6 +66,29 @@ function completeStream(text, { onDone } = {}) {
   };
 }
 
+function toolCallStream(name, args) {
+  return (model) => {
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      const toolCall = { type: "toolCall", id: `${name}-1`, name, arguments: args };
+      const message = {
+        role: "assistant",
+        content: [toolCall],
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        usage: EMPTY_USAGE,
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+      };
+      stream.push({ type: "start", partial: { ...message, content: [] } });
+      stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: message });
+      stream.push({ type: "done", reason: "toolUse", message });
+    });
+    return stream;
+  };
+}
+
 describe("generatePiResponse cancellation handling", () => {
   afterEach(() => {
     delete process.env.WORKLAB_PROVIDER_SESSION_ID;
@@ -300,6 +323,63 @@ describe("generatePiResponse live input", () => {
       }),
     ]));
     expect(result.text).toBe("Guided answer");
+  });
+});
+
+describe("generatePiResponse native subagents", () => {
+  it("exposes AskAgent and runs a nested Pi agent for the selected teammate", async () => {
+    const contexts = [];
+    let parentTurns = 0;
+    const streamFn = (model, context) => {
+      contexts.push(context);
+      if (context.systemPrompt.includes("You are helper.")) {
+        return completeStream("helper inspected the router")(model, context);
+      }
+      parentTurns += 1;
+      if (parentTurns === 1) {
+        return toolCallStream("AskAgent", { agent: "helper", prompt: "Inspect the router." })(model, context);
+      }
+      return completeStream("parent finished")(model, context);
+    };
+
+    const result = await generatePiResponse("parent sys", {
+      model: resolveModel("pi:openai:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      nativeSubagents: {
+        provider: "pi",
+        mode: "advisory",
+        maxParallelChildren: 1,
+        teammates: [{
+          name: "helper",
+          description: "Reads focused code paths.",
+          helperSystemPrompt: "You are helper.",
+          model: resolveModel("pi:openai:gpt-5.4-mini"),
+          effort: "medium",
+          allowedTools: [],
+          skills: [],
+          skillDirs: [],
+          mcpServers: {},
+          toolPolicy: { bashReadOnly: true },
+        }],
+      },
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.text).toBe("parent finished");
+    expect(parentTurns).toBe(2);
+    expect(contexts.some((context) => context.systemPrompt === "You are helper.")).toBe(true);
+    expect(result.events).toContainEqual({
+      type: "assistant",
+      message: { content: [{ type: "tool_use", id: "AskAgent-1", name: "AskAgent", input: { agent: "helper", prompt: "Inspect the router." } }] },
+    });
+    const toolResult = result.events.find((event) => event?.message?.content?.[0]?.tool_use_id === "AskAgent-1");
+    expect(toolResult?.message.content[0].content).toContain("helper inspected the router");
+    expect(result.diagnostics.pi_subagents).toMatchObject({ count: 1, errors: 0 });
   });
 });
 

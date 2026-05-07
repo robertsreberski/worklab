@@ -80,7 +80,7 @@ export async function runTask(ctx) {
   } catch (err) {
     return { kind: "task", error: err.message || String(err) };
   }
-  const { task, agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages } = input;
+  const { task, agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, systemPrompt, messages, nativeSubagents } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
   const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
@@ -109,6 +109,7 @@ export async function runTask(ctx) {
       allowedTools,
       disallowedTools,
       toolPolicy,
+      nativeSubagents,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
       outputSchema: WORKLAB_RESULT_JSON_SCHEMA,

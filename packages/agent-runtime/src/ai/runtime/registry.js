@@ -7,6 +7,7 @@ const COMMON_CAPABILITIES = {
   supports_skills: true,
   supports_builtin_tools: true,
   supports_live_input: true,
+  supports_native_subagents: true,
 };
 
 export const RUNTIME_CAPABILITIES = {

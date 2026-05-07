@@ -21,6 +21,7 @@ const CODEX_APP_CAPABILITIES = {
   supports_skills: true,
   supports_builtin_tools: true,
   supports_live_input: true,
+  supports_native_subagents: true,
 };
 
 function promptFromMessages(messages) {
@@ -95,6 +96,36 @@ function isActiveTurnNotSteerable(error) {
 
 function isNoActiveTurnToSteer(error) {
   return /no active turn to steer/i.test(codexErrorMessage(error));
+}
+
+function codexNativeTeammates(nativeSubagents) {
+  if (nativeSubagents?.provider !== "codex" || !Array.isArray(nativeSubagents.teammates)) return [];
+  return nativeSubagents.teammates.map((agent) => {
+    const name = String(agent?.name || "").trim();
+    if (!name) return null;
+    return {
+      name,
+      displayName: agent.displayName || name,
+      description: agent.description || "",
+      model: agent.model?.model || agent.modelRef || null,
+      reasoningEffort: agent.effort || null,
+      instructions: agent.helperSystemPrompt || agent.instructions || "",
+    };
+  }).filter(Boolean);
+}
+
+function codexCollaborationModePayload(nativeSubagents, { model, effort, systemPrompt }) {
+  const teammates = codexNativeTeammates(nativeSubagents);
+  if (!teammates.length) return null;
+  return {
+    mode: "default",
+    teammates,
+    settings: {
+      model,
+      reasoningEffort: effort || null,
+      developerInstructions: systemPrompt,
+    },
+  };
 }
 
 export function createCodexAppServerClient({
@@ -236,6 +267,43 @@ function mapThreadItem(method, item) {
         result: item.result,
         error: item.error,
         status: item.status,
+      },
+    };
+  }
+  if (item.type === "collabAgentToolCall") {
+    const name = `codex_${item.tool || "subagent"}`;
+    if (method.endsWith("started")) {
+      return {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: item.id,
+            name,
+            input: {
+              prompt: item.prompt,
+              model: item.model,
+              reasoningEffort: item.reasoningEffort,
+              receiverThreadIds: item.receiverThreadIds || [],
+            },
+          }],
+        },
+      };
+    }
+    return {
+      type: "user",
+      message: {
+        content: [{
+          type: "tool_result",
+          tool_use_id: item.id,
+          content: {
+            status: item.status,
+            receiverThreadIds: item.receiverThreadIds || [],
+            agentsStates: item.agentsStates || [],
+            ...(item.error ? { error: item.error } : {}),
+          },
+          is_error: item.status === "failed" || Boolean(item.error),
+        }],
       },
     };
   }
@@ -432,6 +500,23 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       clientInfo: { name: "worklab", title: "Worklab", version: "0" },
       capabilities: { experimentalApi: true },
     });
+    let collaborationMode = codexCollaborationModePayload(options.nativeSubagents, {
+      model: resolved.model,
+      effort: normalizedEffort,
+      systemPrompt,
+    });
+    if (collaborationMode) {
+      try {
+        await client.request("collaborationMode/list", {}, { timeoutMs: 5_000 });
+      } catch (err) {
+        emitEvent({
+          type: "runtime_warning",
+          warning_kind: "codex_collaboration_mode_unavailable",
+          message: codexErrorMessage(err?.responseError || err),
+        });
+        collaborationMode = null;
+      }
+    }
     const mcpServers = codexMcpConfig(options.mcpServers);
     const config = {
       service_tier: "fast",
@@ -474,7 +559,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
         message: err?.message || String(err),
       });
     });
-    const turn = await client.request("turn/start", {
+    const turnParams = {
       threadId,
       input: userTextInput(prompt),
       cwd: options.cwd || process.cwd(),
@@ -485,7 +570,22 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       effort: normalizedEffort,
       summary: normalizedEffort && normalizedEffort !== "none" ? "auto" : "none",
       outputSchema: options.outputSchema,
-    });
+      ...(collaborationMode ? { collaborationMode } : {}),
+    };
+    let turn;
+    try {
+      turn = await client.request("turn/start", turnParams);
+    } catch (err) {
+      if (!collaborationMode) throw err;
+      emitEvent({
+        type: "runtime_warning",
+        warning_kind: "codex_collaboration_mode_rejected",
+        message: codexErrorMessage(err?.responseError || err),
+      });
+      const fallbackParams = { ...turnParams };
+      delete fallbackParams.collaborationMode;
+      turn = await client.request("turn/start", fallbackParams);
+    }
     setActiveTurnId(turn?.turn?.id);
 
     let prematureClose = false;

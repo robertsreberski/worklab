@@ -84,7 +84,7 @@ function describeRecentCycles(cycles) {
   }).join("\n");
 }
 
-function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, unassignedTasks, recentCycles, maxTaskCreations }) {
+function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, unassignedTasks, recentCycles, maxTaskCreations, nativeSubagents }) {
   const goalBlock = team.goal
     ? `\n## Team goal\n${team.goal}\n`
     : "\n## Team goal\n(not set — work toward broad team purpose)\n";
@@ -100,6 +100,7 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `## Team roster (the only agents you may target via suggested_agent)`,
     describeMembers(members),
     leadAgent ? `(Lead: ${leadAgent.name})` : "",
+    nativeSubagents?.promptMarkdown ? `## Native teammate subagents\n${nativeSubagents.promptMarkdown}` : "",
     goalBlock,
     goalStatusBlock,
     `## Open child tasks under the team root`,
@@ -178,7 +179,7 @@ export async function runLeadCycle(ctx) {
   } catch (err) {
     return { kind: "lead_cycle", error: err.message || String(err) };
   }
-  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, qaOutputDir } = setup;
+  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, toolPolicy, qaOutputDir, nativeSubagents } = setup;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
 
@@ -192,6 +193,7 @@ export async function runLeadCycle(ctx) {
     unassignedTasks,
     recentCycles,
     maxTaskCreations,
+    nativeSubagents,
   });
 
   emit({ type: "prompt_built", diagnostics: { lead_cycle: true, team_id: team.id, project_id: project.id } });
@@ -214,6 +216,7 @@ export async function runLeadCycle(ctx) {
       allowedTools,
       disallowedTools,
       toolPolicy,
+      nativeSubagents,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 16),
       outputSchema: WORKLAB_LEAD_CYCLE_JSON_SCHEMA,

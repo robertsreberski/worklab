@@ -27,6 +27,7 @@
  * @property {AbortSignal} [abortSignal]
  * @property {Object} [liveInput]
  * @property {Object} [settings]
+ * @property {Object} [nativeSubagents] Same-runtime teammate helpers exposed through native provider subagent surfaces.
  * @property {(event: RuntimeEvent) => void} [onEvent]
  */
 

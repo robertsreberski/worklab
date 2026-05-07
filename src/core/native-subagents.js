@@ -91,6 +91,7 @@ export function buildNativeSubagentContext({
   runId,
   mode,
   settings = {},
+  env = {},
   loadCapabilities,
 } = {}) {
   const subagentMode = normalizeSubagentMode(parentAgent?.subagent_mode || "advisory");
@@ -144,6 +145,7 @@ export function buildNativeSubagentContext({
       env: {
         WORKLAB_TASK_ID: task?.id || "",
         WORKLAB_TASK_TITLE: task?.title || "",
+        ...env,
       },
     });
     const shaped = shapeTeammateCapabilities({ capabilities: rawCapabilities, mode: subagentMode });

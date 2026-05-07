@@ -13,6 +13,10 @@ import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
+import {
+  claudeNativeAgentDefinitions,
+  claudeToolsWithNativeSubagents,
+} from "./claude-subagents.js";
 
 function thinkingForEffort(effort) {
   if (effort === "low") return { thinking: { type: "disabled" } };
@@ -479,15 +483,17 @@ export async function generateClaudeResponse(systemPrompt, options) {
     toolResultsSeen += 1;
   }
 
+  const nativeAgents = claudeNativeAgentDefinitions(options.nativeSubagents);
   const queryOptions = {
     systemPrompt,
     model: model.model,
     cwd,
     permissionMode,
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),
-    allowedTools,
+    allowedTools: claudeToolsWithNativeSubagents(allowedTools, options.nativeSubagents),
     disallowedTools,
     mcpServers,
+    ...(nativeAgents ? { agents: nativeAgents } : {}),
     hooks: mergeHookMatchers(hooks, createClaudeRuntimeHooks({
       cwd,
       emitEvent,

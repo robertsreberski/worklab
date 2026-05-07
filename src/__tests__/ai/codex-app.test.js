@@ -31,6 +31,10 @@ function resultText(detail) {
   });
 }
 function complete(detail) {
+  if (mode === "collab_event") {
+    send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "collabAgentToolCall", id: "collab1", tool: "spawnAgent", status: "inProgress", prompt: "Inspect the router.", model: "gpt-5.4", reasoningEffort: "medium", receiverThreadIds: [] } } });
+    send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "collabAgentToolCall", id: "collab1", tool: "spawnAgent", status: "completed", prompt: "Inspect the router.", model: "gpt-5.4", reasoningEffort: "medium", receiverThreadIds: ["thread-helper"], agentsStates: [{ agentId: "helper", status: "completed" }] } } });
+  }
   send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "commandExecution", id: "cmd1", command: "pwd", cwd: "/repo", processId: null, source: "exec", status: "inProgress", commandActions: [], aggregatedOutput: "", exitCode: null, durationMs: null } } });
   send({ method: "item/completed", params: { threadId: "thread1", turnId: "turn1", item: { type: "commandExecution", id: "cmd1", command: "pwd", cwd: "/repo", processId: null, source: "exec", status: "completed", commandActions: [], aggregatedOutput: "/repo\\n", exitCode: 0, durationMs: 3 } } });
   send({ method: "item/started", params: { threadId: "thread1", turnId: "turn1", item: { type: "mcpToolCall", id: "mcp1", server: "worklab", tool: "journal_append", status: "inProgress", arguments: { bullet: "checked pwd" }, result: null, error: null, durationMs: null } } });
@@ -55,13 +59,15 @@ rl.on("line", (line) => {
   record(request);
   if (request.method === "initialize") {
     send({ id: request.id, result: { userAgent: "fake", codexHome: "/tmp/codex", platformFamily: "unix", platformOs: "linux" } });
+  } else if (request.method === "collaborationMode/list") {
+    send({ id: request.id, result: { modes: [{ id: "default", label: "Default" }] } });
   } else if (request.method === "thread/start") {
     send({ id: request.id, result: { thread: { id: "thread1", forkedFromId: null, preview: "", ephemeral: true, modelProvider: "openai", createdAt: 1, updatedAt: 1, status: { type: "idle" }, path: null, cwd: request.params.cwd, cliVersion: "fake", source: "codex app-server", agentNickname: null, agentRole: null, gitInfo: null, name: null, turns: [] }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd, instructionSources: [], approvalPolicy: request.params.approvalPolicy, approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, permissionProfile: null, reasoningEffort: request.params.config?.model_reasoning_effort || null } });
   } else if (request.method === "turn/start") {
     send({ id: request.id, result: { turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
     if (mode === "delayed_turn_started") setTimeout(turnStarted, 100);
     else turnStarted();
-    if (mode === "complete_immediately") setTimeout(() => complete("Initial"), 10);
+    if (mode === "complete_immediately" || mode === "collab_event") setTimeout(() => complete("Initial"), 10);
   } else if (request.method === "turn/steer") {
     if (mode === "delayed_turn_started" && !startedSent) {
       send({ id: request.id, error: { code: -32000, message: "no active turn to steer" } });
@@ -129,6 +135,84 @@ describe("generateCodexAppResponse", () => {
 
       expect(result.error).toBeNull();
       expect(turnStart.params.outputSchema).toEqual(customSchema);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("enables Codex collaboration mode for native teammate subagents", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    const events = [];
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "collab_event" },
+        nativeSubagents: {
+          provider: "codex",
+          mode: "advisory",
+          teammates: [{
+            name: "helper",
+            displayName: "Helper",
+            description: "Reads focused code paths.",
+            helperSystemPrompt: "You are the helper.",
+            model: { model: "gpt-5.4-mini" },
+            effort: "low",
+          }],
+        },
+        onEvent: (event) => events.push(event),
+      });
+      const requests = readRequests(logPath);
+      const turnStart = requests.find((request) => request.method === "turn/start");
+
+      expect(result.error).toBeNull();
+      expect(requests.some((request) => request.method === "collaborationMode/list")).toBe(true);
+      expect(turnStart.params.collaborationMode).toMatchObject({
+        mode: "default",
+        teammates: [{
+          name: "helper",
+          model: "gpt-5.4-mini",
+          reasoningEffort: "low",
+        }],
+      });
+      expect(events).toContainEqual({
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "collab1",
+            name: "codex_spawnAgent",
+            input: {
+              prompt: "Inspect the router.",
+              model: "gpt-5.4",
+              reasoningEffort: "medium",
+              receiverThreadIds: [],
+            },
+          }],
+        },
+      });
+      expect(events).toContainEqual({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "collab1",
+            content: {
+              status: "completed",
+              receiverThreadIds: ["thread-helper"],
+              agentsStates: [{ agentId: "helper", status: "completed" }],
+            },
+            is_error: false,
+          }],
+        },
+      });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

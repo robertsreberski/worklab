@@ -49,6 +49,36 @@ function usageFromMessages(messages = []) {
   return usage;
 }
 
+function objectSchema(properties, required = []) {
+  return { type: "object", properties, required, additionalProperties: false };
+}
+
+function textToolResult(text, details = {}) {
+  return {
+    content: [{ type: "text", text: String(text ?? "") }],
+    details,
+  };
+}
+
+function usageFromRuntimeResult(result) {
+  const usage = result?.usage || {};
+  return {
+    input: Number(usage.input_tokens ?? usage.input) || 0,
+    output: Number(usage.output_tokens ?? usage.output) || 0,
+    cacheRead: Number(usage.cache_read_tokens ?? usage.cacheRead) || 0,
+    cacheWrite: Number(usage.cache_creation_tokens ?? usage.cache_write_tokens ?? usage.cacheWrite) || 0,
+    cost: Number(usage.cost_usd ?? usage.cost?.total ?? usage.cost) || 0,
+  };
+}
+
+function addUsage(target, addition) {
+  target.input += Number(addition.input) || 0;
+  target.output += Number(addition.output) || 0;
+  target.cacheRead += Number(addition.cacheRead) || 0;
+  target.cacheWrite += Number(addition.cacheWrite) || 0;
+  target.cost += Number(addition.cost) || 0;
+}
+
 function thinkingLevelForEffort(effort, capabilities) {
   if (!capabilities?.reasoning || capabilities.reasoning_mode === "none") return "off";
   if (effort === "none") return "off";
@@ -201,6 +231,101 @@ function resolvePiTransport(model, runtimeWarnings, requested) {
   return "sse";
 }
 
+function piNativeTeammates(nativeSubagents) {
+  if (nativeSubagents?.provider !== "pi" || !Array.isArray(nativeSubagents.teammates)) return [];
+  return nativeSubagents.teammates.filter((agent) => agent?.name && agent?.helperSystemPrompt);
+}
+
+function createPiSubagentTool(nativeSubagents, parentOptions, recordResult) {
+  const teammates = piNativeTeammates(nativeSubagents);
+  if (!teammates.length) return null;
+  const byName = new Map(teammates.map((agent) => [agent.name, agent]));
+  const maxTasks = Math.max(1, Number(nativeSubagents.maxChildrenPerRound) || 1);
+  const maxParallel = Math.max(1, Number(nativeSubagents.maxParallelChildren) || 1);
+
+  async function runTask(task, signal, onUpdate) {
+    const agentName = String(task?.agent || "").trim();
+    const prompt = String(task?.prompt || "").trim();
+    if (!agentName) throw new Error("AskAgent requires an agent name.");
+    if (!prompt) throw new Error("AskAgent requires a prompt.");
+    const target = byName.get(agentName);
+    if (!target) throw new Error(`AskAgent target ${agentName} is not an available native teammate.`);
+    onUpdate?.(textToolResult(`Asking ${agentName}...`, { agent: agentName, status: "running" }));
+    const child = await generatePiResponse(target.helperSystemPrompt, {
+      ...parentOptions,
+      model: target.model || parentOptions.model,
+      effort: target.effort || parentOptions.effort,
+      messages: [{ role: "user", content: prompt }],
+      skills: Array.isArray(target.skills) ? target.skills : [],
+      skillDirs: Array.isArray(target.skillDirs) ? target.skillDirs : [],
+      mcpServers: target.mcpServers || {},
+      allowedTools: Array.isArray(target.allowedTools) ? target.allowedTools : [],
+      disallowedTools: Array.isArray(target.disallowedTools) ? target.disallowedTools : [],
+      toolPolicy: target.toolPolicy || {},
+      nativeSubagents: null,
+      outputSchema: null,
+      liveInput: null,
+      onEvent: null,
+      providerSessionId: null,
+      sessionId: `${parentOptions.runId || "pi"}:subagent:${agentName}:${randomUUID()}`,
+      abortSignal: signal || parentOptions.abortSignal,
+    });
+    const summary = {
+      agent: agentName,
+      prompt,
+      text: child.text || "",
+      error: child.error || null,
+      usage: child.usage || {},
+      durationMs: child.durationMs || 0,
+      numTurns: child.numTurns || 0,
+    };
+    recordResult(summary);
+    if (child.cancelled) throw new Error(`AskAgent target ${agentName} was cancelled.`);
+    if (child.error) throw new Error(`AskAgent target ${agentName} failed: ${child.error}`);
+    return summary;
+  }
+
+  return {
+    name: "AskAgent",
+    label: "Ask Agent",
+    description: `Ask one of these native teammate agents for bounded help: ${teammates.map((agent) => agent.name).join(", ")}.`,
+    executionMode: nativeSubagents.mode === "workspace" ? "parallel" : "sequential",
+    parameters: objectSchema({
+      agent: { type: "string", enum: teammates.map((agent) => agent.name) },
+      prompt: { type: "string", description: "A bounded request for the teammate agent." },
+      tasks: {
+        type: "array",
+        maxItems: maxTasks,
+        items: objectSchema({
+          agent: { type: "string", enum: teammates.map((agent) => agent.name) },
+          prompt: { type: "string" },
+        }, ["agent", "prompt"]),
+      },
+    }),
+    async execute(toolCallId, params, signal, onUpdate) {
+      const requestedTasks = Array.isArray(params?.tasks) && params.tasks.length
+        ? params.tasks
+        : [{ agent: params?.agent, prompt: params?.prompt }];
+      if (requestedTasks.length > maxTasks) {
+        throw new Error(`AskAgent received ${requestedTasks.length} tasks, above the configured limit of ${maxTasks}.`);
+      }
+      const results = [];
+      for (let i = 0; i < requestedTasks.length; i += maxParallel) {
+        const batch = requestedTasks.slice(i, i + maxParallel);
+        results.push(...await Promise.all(batch.map((task) => runTask(task, signal, onUpdate))));
+      }
+      const body = results.map((result) => [
+        `### ${result.agent}`,
+        result.text || "(no text returned)",
+      ].join("\n\n")).join("\n\n");
+      return textToolResult(body, {
+        mode: nativeSubagents.mode || "advisory",
+        tasks: results,
+      });
+    },
+  };
+}
+
 export async function generatePiResponse(systemPrompt, options = {}) {
   const resolved = options.model;
   const start = Date.now();
@@ -221,6 +346,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let toolResultsSeen = 0;
   let lastToolName = null;
   let piTransport = "auto";
+  const subagentResults = [];
   const providerSessionId = options.sessionId
     || options.providerSessionId
     || options.runId
@@ -274,7 +400,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const structuredTool = createStructuredOutputTool(options.outputSchema, (value) => {
       structuredResult = value;
     });
+    const subagentTool = capabilities.tool_use === false
+      ? null
+      : createPiSubagentTool(options.nativeSubagents, options, (result) => subagentResults.push(result));
     const reservedNames = new Set(builtIns.map((toolDef) => toolDef.name));
+    if (subagentTool) reservedNames.add(subagentTool.name);
     if (structuredTool) reservedNames.add(structuredTool.name);
     const mcpInit = capabilities.tool_use === false
       ? { clients: [], tools: [], warnings: [] }
@@ -291,6 +421,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
 
     const tools = [
       ...builtIns,
+      ...(subagentTool ? [subagentTool] : []),
       ...mcpInit.tools,
       ...(structuredTool ? [structuredTool] : []),
     ];
@@ -462,6 +593,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const finalThinking = thinkingFromContent(lastAssistant?.content) || assistantThinking.join("");
     const text = finalText;
     const usage = usageFromMessages(transcript);
+    for (const child of subagentResults) addUsage(usage, usageFromRuntimeResult(child));
     const stopReason = lastAssistant?.stopReason || null;
     externalAbort ||= !!options.abortSignal?.aborted;
     const estimatedCost = estimateCost({
@@ -515,6 +647,13 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
       ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
       ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
+      ...(subagentResults.length ? {
+        pi_subagents: {
+          count: subagentResults.length,
+          errors: subagentResults.filter((child) => child.error).length,
+          agents: subagentResults.map((child) => child.agent),
+        },
+      } : {}),
       ...(compaction?.diagnostics?.() || {}),
     };
 

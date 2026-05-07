@@ -8,6 +8,10 @@ import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
+import {
+  claudeNativeAgentDefinitions,
+  claudeToolsWithNativeSubagents,
+} from "./claude-subagents.js";
 
 const DORMANT_CLI_CAPABILITIES = {
   streaming: true,
@@ -21,6 +25,7 @@ const DORMANT_CLI_CAPABILITIES = {
   supports_skills: true,
   supports_builtin_tools: true,
   supports_live_input: true,
+  supports_native_subagents: true,
 };
 
 function promptFromMessages(messages) {
@@ -249,12 +254,15 @@ export function buildCliCommand({
   maxTurns,
   skillDirs,
   resumeSessionId,
+  nativeSubagents,
 }) {
   // Effort is expected to be pre-normalized by core/ai.js#generateResponse
   // before reaching this provider. Direct callers of buildCliCommand must
   // pass an already-normalized reasoning level (low/medium/high/xhigh/none).
   const normalizedEffort = typeof effort === "string" && effort.trim() ? effort : null;
   if (sdk === "claude-code") {
+    const nativeAgents = claudeNativeAgentDefinitions(nativeSubagents);
+    const cliAllowedTools = claudeToolsWithNativeSubagents(allowedTools, nativeSubagents);
     // intelligence-ramp Phase 5.1: when the coordinator hands us a parent
     // session id (recovery continuation, R12), pass --resume so the host
     // CLI can keep its own conversation cache warm. Otherwise stay
@@ -277,11 +285,12 @@ export function buildCliCommand({
     if (Array.isArray(skillDirs) && skillDirs.length) {
       args.push("--add-dir", ...skillDirs);
     }
-    if (Array.isArray(allowedTools) && allowedTools.length) {
-      args.push("--tools", allowedTools.join(","));
+    if (nativeAgents) args.push("--agents", JSON.stringify(nativeAgents));
+    if (Array.isArray(cliAllowedTools) && cliAllowedTools.length) {
+      args.push("--tools", cliAllowedTools.join(","));
     }
     const autoAllowed = [
-      ...(Array.isArray(allowedTools) ? allowedTools : []),
+      ...(Array.isArray(cliAllowedTools) ? cliAllowedTools : []),
       ...Object.keys(mcpServers || {}).map((name) => `mcp__${name}__*`),
     ];
     if (autoAllowed.length) args.push("--allowedTools", shellList(autoAllowed));
@@ -349,6 +358,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       ? options.skillDirs
       : getSkillAccessDirs(options.skills || []),
     resumeSessionId: reusableSessionId,
+    nativeSubagents: options.nativeSubagents,
   });
 
   const events = [];
