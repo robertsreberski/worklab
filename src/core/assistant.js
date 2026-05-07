@@ -10,6 +10,7 @@ import {
   ASSISTANT_RESULT_JSON_SCHEMA,
   fallbackAssistantResult,
   parseAssistantResult,
+  parseAssistantStructuredResult,
 } from "./assistant/result.js";
 import {
   abortSignalWithTimeout,
@@ -472,9 +473,20 @@ Return only one JSON object with this exact schema:
       if (!this.isRunRunning(runId)) return null;
 
       let result;
+      let resultSource = "text";
+      let structuredResultSource = null;
       try {
-        result = parseAssistantResult(response.text);
+        if (response.structuredResult !== undefined && response.structuredResult !== null) {
+          result = parseAssistantStructuredResult(response.structuredResult);
+          resultSource = "structured";
+          structuredResultSource = response.structuredResultSource || "structured";
+        } else {
+          result = parseAssistantResult(response.text);
+        }
       } catch (err) {
+        if (response.structuredResult !== undefined && response.structuredResult !== null) {
+          throw Object.assign(err, { failureKind: "invalid_result" });
+        }
         result = fallbackAssistantResult(response.text, err);
         recordEvent({
           type: "runtime_warning",
@@ -488,6 +500,8 @@ Return only one JSON object with this exact schema:
         type: "final",
         text: result.reply_text,
         result,
+        result_source: resultSource,
+        ...(structuredResultSource ? { structured_result_source: structuredResultSource } : {}),
         usage: response.usage || {},
         durationMs: response.durationMs,
         numTurns: response.numTurns,
@@ -495,7 +509,7 @@ Return only one JSON object with this exact schema:
         effort: response.effort,
       });
       finalizeLog("succeeded");
-      this.finishSucceeded({ runId, threadId, assistantMessageId, response, result, events });
+      this.finishSucceeded({ runId, threadId, assistantMessageId, response, result, events, resultSource, structuredResultSource });
       return result;
     } catch (err) {
       const message = err?.message || String(err);
@@ -566,12 +580,14 @@ Return only one JSON object with this exact schema:
     this.broker?.broadcast?.("global", { type: "assistant_run_ended", thread_id: threadId || run?.thread_id, run_id: runId, status });
   }
 
-  finishSucceeded({ runId, threadId, assistantMessageId, response, result, events }) {
+  finishSucceeded({ runId, threadId, assistantMessageId, response, result, events, resultSource = "text", structuredResultSource = null }) {
     const warnings = warningRows(events);
     const diagnostics = {
       sdk: response.sdk || null,
       model: response.model || null,
       effort: response.effort || null,
+      result_source: resultSource,
+      ...(structuredResultSource ? { structured_result_source: structuredResultSource } : {}),
       warning_count: warnings.length,
     };
     const updated = this.db.prepare(`

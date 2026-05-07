@@ -203,6 +203,99 @@ describe("assistant routes", () => {
     expect(readFileSync(memoryPath, "utf8")).toContain("in-app assistant");
   });
 
+  it("uses provider structuredResult when assistant text is empty", async () => {
+    const structured = {
+      schema: "worklab.assistant.v1",
+      reply_text: "Added the skill to the Journey agents.",
+      summary: "Updated Journey agents with the ios-pwa skill.",
+      journal_bullets: ["Added ios-pwa to the Journey project agents."],
+      memory_facts: [],
+      action_items: [],
+    };
+    const runAgent = vi.fn(async (_systemPrompt, options) => {
+      options.onEvent?.({
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "structured-1",
+            name: "StructuredOutput",
+            input: structured,
+          }],
+        },
+      });
+      options.onEvent?.({
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "structured-1",
+            content: "Structured output received.",
+          }],
+        },
+      });
+      return {
+        text: "",
+        structuredResult: structured,
+        structuredResultSource: "StructuredOutput",
+        events: [],
+        usage: { input_tokens: 12, output_tokens: 7 },
+        durationMs: 5,
+        numTurns: 1,
+        model: "pi:openai-codex:gpt-5.5",
+        effort: "high",
+      };
+    });
+    const { agent, assistant } = setup({ runAgent });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Add ios-pwa to Journey agents." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("succeeded");
+    expect(run.body.run.final).toMatchObject(structured);
+    expect(run.body.run.final).not.toHaveProperty("parse_error");
+    expect(run.body.run.warnings).toEqual([]);
+    expect(run.body.run.diagnostics).toMatchObject({
+      result_source: "structured",
+      structured_result_source: "StructuredOutput",
+    });
+    const thread = await agent.get("/api/assistant").expect(200);
+    expect(thread.body.messages.at(-1).body).toBe("Added the skill to the Journey agents.");
+  });
+
+  it("fails malformed provider structuredResult instead of falling back to text", async () => {
+    const runAgent = vi.fn(async () => ({
+      text: assistantJson({ reply_text: "Fallback should not be used.", summary: "Fallback should not be used." }),
+      structuredResult: {
+        schema: "worklab.assistant.v1",
+        reply_text: "Missing summary.",
+        journal_bullets: [],
+        memory_facts: [],
+        action_items: [],
+      },
+      structuredResultSource: "StructuredOutput",
+      events: [],
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "high",
+    }));
+    const { agent, assistant } = setup({ runAgent });
+
+    const started = await agent.post("/api/assistant/messages").send({ body: "Return malformed structured output." }).expect(202);
+    await assistant.waitIdle();
+
+    const run = await agent.get(`/api/assistant/runs/${started.body.run.id}`).expect(200);
+    expect(run.body.run.status).toBe("failed");
+    expect(run.body.run.failure_kind).toBe("invalid_result");
+    expect(run.body.run.error_text).toMatch(/structured result/i);
+    const thread = await agent.get("/api/assistant").expect(200);
+    expect(thread.body.messages.at(-1).body).toMatch(/Assistant failed:/);
+    expect(thread.body.messages.at(-1).body).not.toContain("Fallback should not be used.");
+  });
+
   it("includes trusted current task view context in the assistant prompt", async () => {
     let capturedPrompt = "";
     const runAgent = vi.fn(async (systemPrompt) => {
