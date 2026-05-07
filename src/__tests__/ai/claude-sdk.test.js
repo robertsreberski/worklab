@@ -10,6 +10,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 const { generateClaudeResponse } = await import("@worklab/agent-runtime/ai/providers/claude-sdk.js");
 const { createLiveInputQueue, formatLiveInputGuidance } = await import("../../core/live-input.js");
+const { createToolOutputSink } = await import("../../core/tool-artifacts.js");
 
 function mockStream(events) {
   return {
@@ -770,7 +771,7 @@ describe("generateClaudeResponse", () => {
         model: { sdk: "claude", model: "claude-sonnet-4-6" },
         effort: "medium",
         cwd: dir,
-        runArtifactDir: runDir,
+        persistArtifact: createToolOutputSink(runDir),
         toolPayloadMaxBytes: 64,
         onEvent: (event) => events.push(event),
       });

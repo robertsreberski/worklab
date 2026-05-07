@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -16,6 +16,20 @@ const TEST_TOOL = "mcp__playwright__browser_take_screenshot";
 
 function makeRunDir() {
   return mkdtempSync(join(tmpdir(), "wl-tool-bloat-"));
+}
+
+// Mirrors worklab's createToolOutputSink (src/core/tool-artifacts.js): writes
+// every persisted block to {runDir}/tool-output/{filename}. Tests against this
+// sink so they continue to assert on disk paths.
+function makeSink(runDir) {
+  return ({ filename, buffer }) => {
+    if (!runDir) return null;
+    const dir = join(runDir, "tool-output");
+    mkdirSync(dir, { recursive: true });
+    const target = join(dir, filename);
+    writeFileSync(target, buffer);
+    return target;
+  };
 }
 
 describe("tool-bloat constants", () => {
@@ -38,7 +52,7 @@ describe("summarisePayload", () => {
 
   it("passes payloads under the limit through unchanged", () => {
     const blocks = [{ type: "text", text: "hello world" }];
-    const result = summarisePayload("Bash", blocks, runDir, { maxBytes: 1024 });
+    const result = summarisePayload("Bash", blocks, makeSink(runDir), { maxBytes: 1024 });
     expect(result.truncated).toBe(false);
     expect(result.savedPaths).toEqual([]);
     expect(result.originalBytes).toBe(11);
@@ -48,7 +62,7 @@ describe("summarisePayload", () => {
   it("preserves payloads exactly at the limit", () => {
     const text = "x".repeat(64);
     const blocks = [{ type: "text", text }];
-    const result = summarisePayload("Bash", blocks, runDir, { maxBytes: 64 });
+    const result = summarisePayload("Bash", blocks, makeSink(runDir), { maxBytes: 64 });
     expect(result.truncated).toBe(false);
     expect(result.rewrittenBlocks[0].text).toBe(text);
   });
@@ -56,7 +70,7 @@ describe("summarisePayload", () => {
   it("truncates oversized text payloads and persists the original", () => {
     const text = "abcdefghij".repeat(120);
     const blocks = [{ type: "text", text }];
-    const result = summarisePayload("Bash", blocks, runDir, {
+    const result = summarisePayload("Bash", blocks, makeSink(runDir), {
       maxBytes: 256,
       toolUseId: "tool_abc",
     });
@@ -77,7 +91,7 @@ describe("summarisePayload", () => {
     const filler = Buffer.alloc(2048, 0xff);
     const data = Buffer.concat([png, filler]).toString("base64");
     const blocks = [{ type: "image", data, mimeType: "image/png" }];
-    const result = summarisePayload(TEST_TOOL, blocks, runDir, {
+    const result = summarisePayload(TEST_TOOL, blocks, makeSink(runDir), {
       maxBytes: 256,
       toolUseId: "tool_img_1",
     });
@@ -111,7 +125,7 @@ describe("applyToolBloatGuard", () => {
       details: { tool: "Bash" },
     };
     const result = await applyToolBloatGuard("Bash", Promise.resolve(original), {
-      runDir,
+      persistArtifact: makeSink(runDir),
       maxBytes: 1024,
     });
     expect(result).toBe(original);
@@ -125,7 +139,7 @@ describe("applyToolBloatGuard", () => {
     };
     const truncations = [];
     const result = await applyToolBloatGuard("Bash", Promise.resolve(original), {
-      runDir,
+      persistArtifact: makeSink(runDir),
       maxBytes: 256,
       toolUseId: "call_1",
       onTruncate: (event) => truncations.push(event),
@@ -170,7 +184,7 @@ describe("wrapToolsWithBloatGuard", () => {
       },
     ];
     const wrapped = wrapToolsWithBloatGuard(tools, {
-      runDir,
+      persistArtifact: makeSink(runDir),
       maxBytes: 256,
       onTruncate: (e) => events.push(e),
     });

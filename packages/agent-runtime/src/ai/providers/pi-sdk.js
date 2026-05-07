@@ -7,7 +7,6 @@ import {
   createAgentCompactionManager,
   isLikelyContextTermination,
 } from "../../agent/compaction.js";
-import { resolvePiApiKey } from "../pi-oauth.js";
 import {
   closePiMcpClients,
   createStructuredOutputTool,
@@ -72,10 +71,11 @@ function appendStructuredOutputInstruction(systemPrompt, outputSchema) {
   ].join("\n");
 }
 
-async function resolveApiKey(provider, { apiKeys, dataDir, runtimeWarnings }) {
+async function resolveApiKey(provider, { apiKeys, resolvePiApiKey, runtimeWarnings }) {
   if (apiKeys?.has(provider)) return apiKeys.get(provider);
+  if (typeof resolvePiApiKey !== "function") return undefined;
   try {
-    return await resolvePiApiKey(provider, { dataDir });
+    return await resolvePiApiKey(provider);
   } catch (err) {
     runtimeWarnings.push({
       warning_kind: "pi_auth_failed",
@@ -269,7 +269,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         });
       } catch { /* best-effort */ }
     };
-    const runArtifactDir = options.runArtifactDir || null;
+    const persistArtifact = options.persistArtifact || null;
+    const qaOutputDir = options.qaOutputDir || options.runArtifactDir || null;
     const toolPayloadMaxBytes = compaction.policy?.toolPayloadMaxBytes;
     const builtIns = capabilities.tool_use === false
       ? []
@@ -279,7 +280,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         cwd: options.cwd,
         onEvent,
         toolLimits: compaction.policy,
-        runArtifactDir,
+        persistArtifact,
         toolPayloadMaxBytes,
         onTruncate,
         toolPolicy: options.toolPolicy,
@@ -295,7 +296,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       : await initPiMcpTools(options.mcpServers || {}, reservedNames, {
         limits: compaction.policy,
         cwd: options.cwd,
-        runArtifactDir,
+        persistArtifact,
+        qaOutputDir,
         toolPayloadMaxBytes,
         onTruncate,
       });
@@ -325,7 +327,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       toolExecution: "sequential",
       getApiKey: (provider) => resolveApiKey(provider, {
         apiKeys: runtime.apiKeys,
-        dataDir: options.dataDir,
+        resolvePiApiKey: options.resolvePiApiKey,
         runtimeWarnings,
       }),
       maxRetryDelayMs: options.maxRetryDelayMs || 60_000,

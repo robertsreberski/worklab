@@ -314,7 +314,7 @@ export function getPiBuiltinTools(allowedTools, {
   cwd,
   onEvent,
   toolLimits,
-  runArtifactDir = null,
+  persistArtifact = null,
   onTruncate = null,
   toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
   toolPolicy = null,
@@ -387,7 +387,7 @@ export function getPiBuiltinTools(allowedTools, {
   const skillTool = readSkillTool(skillNames, dataDir);
   if (skillTool) tools.push(skillTool);
   return wrapToolsWithBloatGuard(tools, {
-    runDir: runArtifactDir,
+    persistArtifact,
     maxBytes: toolPayloadMaxBytes,
     onTruncate,
   });
@@ -425,7 +425,7 @@ async function connectMcpClient(name, cfg, { cwd } = {}) {
 export function coerceMcpContent(out, {
   textLimit = MCP_TEXT_RESULT_LIMIT,
   imageInlineMaxBytes = MCP_IMAGE_INLINE_MAX_BYTES,
-  runArtifactDir = null,
+  persistArtifact = null,
   toolName = "mcp",
   toolUseId = null,
   onTruncate = null,
@@ -440,7 +440,7 @@ export function coerceMcpContent(out, {
             type: "image",
             data: part.data,
             mimeType: part.mimeType || part.mime_type || "image/png",
-          }], runArtifactDir, { maxBytes: imageInlineMaxBytes, toolUseId });
+          }], persistArtifact, { maxBytes: imageInlineMaxBytes, toolUseId });
           if (summary.truncated && typeof onTruncate === "function") {
             try {
               onTruncate({
@@ -498,7 +498,8 @@ function withTimeout(promise, timeoutMs, signal, label) {
 export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
   limits = {},
   cwd = null,
-  runArtifactDir = null,
+  persistArtifact = null,
+  qaOutputDir = null,
   onTruncate = null,
   toolPayloadMaxBytes = MAX_TOOL_RESULT_BYTES,
 } = {}) {
@@ -549,7 +550,7 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
           if (signal?.aborted) throw new Error("tool execution aborted");
           const textLimit = limits.mcpTextLimitChars || MCP_TEXT_RESULT_LIMIT;
           const imageInlineMaxBytes = limits.imageInlineMaxBytes ?? MCP_IMAGE_INLINE_MAX_BYTES;
-          const normalizedParams = normalizeMcpToolParams(serverName, sourceTool.name, params || {}, { qaOutputDir: runArtifactDir });
+          const normalizedParams = normalizeMcpToolParams(serverName, sourceTool.name, params || {}, { qaOutputDir });
           const out = await withTimeout(
             connected.client.callTool({ name: sourceTool.name, arguments: normalizedParams || {} }),
             limits.mcpCallTimeoutMs || 120000,
@@ -561,7 +562,7 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
             content: coerceMcpContent(out, {
               textLimit,
               imageInlineMaxBytes,
-              runArtifactDir,
+              persistArtifact,
               toolName: name,
               toolUseId: toolCallId,
               onTruncate: (event) => {
@@ -588,7 +589,7 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
   return {
     clients,
     tools: wrapToolsWithBloatGuard(tools, {
-      runDir: runArtifactDir,
+      persistArtifact,
       maxBytes: toolPayloadMaxBytes,
       onTruncate,
     }),
