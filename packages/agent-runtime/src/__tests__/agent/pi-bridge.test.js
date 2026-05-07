@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   coerceMcpContent,
@@ -8,6 +8,16 @@ import {
   normalizePiBuiltinToolParams,
   resolveMcpStdioCwd,
 } from "../../agent/tools/pi-bridge.js";
+
+function makeSink(runDir) {
+  return ({ filename, buffer }) => {
+    const dir = join(runDir, "tool-output");
+    mkdirSync(dir, { recursive: true });
+    const target = join(dir, filename);
+    writeFileSync(target, buffer);
+    return target;
+  };
+}
 
 const tempDirs = [];
 
@@ -48,7 +58,7 @@ describe("pi MCP tool helpers", () => {
       { content: [{ type: "image", data: imageBytes.toString("base64"), mimeType: "image/png" }] },
       {
         imageInlineMaxBytes: 10,
-        runArtifactDir,
+        persistArtifact: makeSink(runArtifactDir),
         toolName: "mcp__playwright__browser_take_screenshot",
         toolUseId: "shot-1",
         onTruncate: (event) => truncations.push(event),

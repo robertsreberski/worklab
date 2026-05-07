@@ -7,7 +7,9 @@ import {
 } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { resolveRuntimeBridge } from "@worklab/agent-runtime/ai/runtime/registry.js";
 import { customPricingResolverFor } from "./custom-pricing.js";
+import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
+import { createToolOutputSink } from "./tool-artifacts.js";
 import { readSettings } from "./settings.js";
 import {
   buildModelCapabilities,
@@ -526,6 +528,10 @@ export async function generateResponse(systemPrompt, options) {
     runId: options.runId || process.env.WORKLAB_RUN_ID || null,
     providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
     runArtifactDir: options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null,
+    persistArtifact: options.persistArtifact
+      || createToolOutputSink(options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null),
+    resolvePiApiKey: options.resolvePiApiKey
+      || ((provider) => resolvePiApiKey(provider, { dataDir: options.dataDir })),
     piCodexTransport: options.piCodexTransport || process.env.WORKLAB_PI_CODEX_TRANSPORT || null,
     ...(options.codexAppServerCommand
       ? {

@@ -369,7 +369,7 @@ function createClaudeFileEditHooks({ cwd, emitEvent }) {
 function createClaudeRuntimeHooks({
   cwd,
   emitEvent,
-  runArtifactDir,
+  persistArtifact,
   qaOutputDir,
   toolPayloadMaxBytes,
   onToolUse,
@@ -399,7 +399,7 @@ function createClaudeRuntimeHooks({
         onToolResult?.(toolName);
         const blocks = claudeToolResponseBlocks(input?.tool_response);
         if (!blocks.length) return {};
-        const summary = summarisePayload(toolName, blocks, runArtifactDir, {
+        const summary = summarisePayload(toolName, blocks, persistArtifact, {
           maxBytes: toolPayloadMaxBytes,
           toolUseId: toolUseID || input?.tool_use_id || input?.toolUseID || null,
         });
@@ -482,8 +482,8 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const capturedEvents = [];
   const assistantTextFragments = [];
   const reusableProviderSessionId = pickSessionId(options.sessionId, options.providerSessionId);
-  const runArtifactDir = options.runArtifactDir || null;
-  const qaOutputDir = options.qaOutputDir || runArtifactDir;
+  const persistArtifact = options.persistArtifact || null;
+  const qaOutputDir = options.qaOutputDir || options.runArtifactDir || null;
   const toolPayloadMaxBytes = toolPayloadLimit(options);
   let providerSessionId = reusableProviderSessionId;
   let lastToolName = null;
@@ -516,7 +516,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
     hooks: mergeHookMatchers(hooks, createClaudeRuntimeHooks({
       cwd,
       emitEvent,
-      runArtifactDir,
+      persistArtifact,
       qaOutputDir,
       toolPayloadMaxBytes,
       onToolUse: noteToolUse,

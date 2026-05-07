@@ -3,12 +3,13 @@
 // The runtime audit (docs/audits/automattic-benchmark-reset-runtime-audit.md)
 // found that 28% of runs trip the context_bloat warning, with single
 // tool_result payloads reaching 1.44 MB. This module caps tool_result
-// payloads before they reach the model, persists the original bytes to disk,
-// and substitutes a compact reference text so the agent can still cite the
-// artifact.
-
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+// payloads before they reach the model and substitutes a compact reference
+// text so the agent can still cite the artifact.
+//
+// Persistence is delegated to the host via a `persistArtifact({ filename, buffer,
+// toolName, toolUseId }) -> path | null` callback. Worklab's createToolOutputSink
+// in src/core/tool-artifacts.js writes to {runArtifactDir}/tool-output/<file>.
+// Hosts that don't care can pass null and the truncated payload is dropped.
 
 export const MAX_TOOL_RESULT_BYTES = 262144;
 
@@ -48,23 +49,12 @@ function imageExtension(block) {
   return m ? `.${m[1].toLowerCase()}` : ".bin";
 }
 
-function ensureToolOutputDir(runDir) {
-  if (!runDir) return null;
-  const dir = join(runDir, "tool-output");
-  try {
-    mkdirSync(dir, { recursive: true });
-    return dir;
-  } catch {
-    return null;
-  }
-}
-
-function persistBlock(toolName, block, idx, idTag, dir) {
-  if (!dir || !block || typeof block !== "object") return null;
-  let target;
+function persistBlock(toolName, block, idx, idTag, persistArtifact) {
+  if (typeof persistArtifact !== "function" || !block || typeof block !== "object") return null;
+  let filename;
   let buffer;
   if (block.type === "image") {
-    target = join(dir, `${safeBasename(toolName)}__${idTag}__${idx}${imageExtension(block)}`);
+    filename = `${safeBasename(toolName)}__${idTag}__${idx}${imageExtension(block)}`;
     const data = String(block.data || "");
     const clean = data.includes(",") ? data.slice(data.indexOf(",") + 1) : data;
     buffer = Buffer.from(clean, "base64");
@@ -74,12 +64,12 @@ function persistBlock(toolName, block, idx, idTag, dir) {
       : (() => {
           try { return JSON.stringify(block, null, 2); } catch { return String(block); }
         })();
-    target = join(dir, `${safeBasename(toolName)}__${idTag}__${idx}.txt`);
+    filename = `${safeBasename(toolName)}__${idTag}__${idx}.txt`;
     buffer = Buffer.from(text, "utf8");
   }
   try {
-    writeFileSync(target, buffer);
-    return target;
+    const path = persistArtifact({ filename, buffer, toolName, toolUseId: idTag });
+    return typeof path === "string" && path.length ? path : null;
   } catch {
     return null;
   }
@@ -96,7 +86,7 @@ function summaryText(toolName, originalBytes, maxBytes, savedPaths) {
   return `${parts.join("; ")}]`;
 }
 
-export function summarisePayload(toolName, contentBlocks, runDir, options = {}) {
+export function summarisePayload(toolName, contentBlocks, persistArtifact, options = {}) {
   const {
     maxBytes = MAX_TOOL_RESULT_BYTES,
     toolUseId = null,
@@ -108,12 +98,11 @@ export function summarisePayload(toolName, contentBlocks, runDir, options = {}) 
     return { rewrittenBlocks: blocks, savedPaths: [], originalBytes, truncated: false };
   }
 
-  const dir = ensureToolOutputDir(runDir);
   const stamp = String(now()).slice(-10);
   const idTag = toolUseId ? safeBasename(toolUseId) : `payload-${stamp}`;
   const savedPaths = [];
   blocks.forEach((block, idx) => {
-    const path = persistBlock(toolName, block, idx, idTag, dir);
+    const path = persistBlock(toolName, block, idx, idTag, persistArtifact);
     if (path) savedPaths.push(path);
   });
   return {
@@ -126,14 +115,14 @@ export function summarisePayload(toolName, contentBlocks, runDir, options = {}) 
 
 export async function applyToolBloatGuard(toolName, executePromise, options = {}) {
   const {
-    runDir = null,
+    persistArtifact = null,
     toolUseId = null,
     maxBytes = MAX_TOOL_RESULT_BYTES,
     onTruncate = null,
   } = options;
   const result = await executePromise;
   if (!result || typeof result !== "object" || !Array.isArray(result.content)) return result;
-  const summary = summarisePayload(toolName, result.content, runDir, { maxBytes, toolUseId });
+  const summary = summarisePayload(toolName, result.content, persistArtifact, { maxBytes, toolUseId });
   if (!summary.truncated) return result;
   if (typeof onTruncate === "function") {
     try {

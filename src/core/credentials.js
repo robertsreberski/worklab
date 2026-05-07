@@ -1,6 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { delimiter, join } from "node:path";
-import { hasPiOAuthCredentials } from "@worklab/agent-runtime/ai/pi-oauth.js";
+import { hasPiOAuthCredentials } from "./pi-oauth.js";
 
 export function commandOnPath(command, pathValue = process.env.PATH || "") {
   const path = pathValue || "";
