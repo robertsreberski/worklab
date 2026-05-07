@@ -1,7 +1,14 @@
 import { isAbsolute, resolve } from "node:path";
+import { readToolRuntime } from "./runtime-context.js";
+
+function configured() {
+  const { workspace, repoRoot } = readToolRuntime();
+  return { workspace, repoRoot };
+}
 
 export function workspaceRoot(workdir) {
-  return resolve(workdir || process.env.WORKLAB_WORKSPACE || process.env.WORKLAB_REPO_ROOT || process.cwd());
+  const { workspace, repoRoot } = configured();
+  return resolve(workdir || workspace || repoRoot || process.cwd());
 }
 
 export function resolveToolPath(path, workdir) {
@@ -10,10 +17,11 @@ export function resolveToolPath(path, workdir) {
 }
 
 function roots(workdir) {
+  const { workspace, repoRoot } = configured();
   return [...new Set([
     workdir,
-    process.env.WORKLAB_WORKSPACE,
-    process.env.WORKLAB_REPO_ROOT,
+    workspace,
+    repoRoot,
     process.cwd(),
     "/tmp",
   ].filter(Boolean).map((p) => resolve(p)))];
@@ -25,9 +33,10 @@ export function isPathAllowed(path, workdir) {
 }
 
 function envRoots() {
+  const { workspace, repoRoot } = configured();
   return [...new Set([
-    process.env.WORKLAB_WORKSPACE,
-    process.env.WORKLAB_REPO_ROOT,
+    workspace,
+    repoRoot,
     process.cwd(),
     "/tmp",
   ].filter(Boolean).map((p) => resolve(p)))];

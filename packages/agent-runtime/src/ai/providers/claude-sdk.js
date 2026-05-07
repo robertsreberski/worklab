@@ -481,12 +481,9 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const runtimeWarnings = [];
   const capturedEvents = [];
   const assistantTextFragments = [];
-  const reusableProviderSessionId = pickSessionId(options.sessionId, process.env.WORKLAB_PROVIDER_SESSION_ID);
-  const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
-  const qaOutputDir = options.qaOutputDir
-    || process.env.PLAYWRIGHT_MCP_OUTPUT_DIR
-    || process.env.WORKLAB_QA_OUTPUT_DIR
-    || runArtifactDir;
+  const reusableProviderSessionId = pickSessionId(options.sessionId, options.providerSessionId);
+  const runArtifactDir = options.runArtifactDir || null;
+  const qaOutputDir = options.qaOutputDir || runArtifactDir;
   const toolPayloadMaxBytes = toolPayloadLimit(options);
   let providerSessionId = reusableProviderSessionId;
   let lastToolName = null;

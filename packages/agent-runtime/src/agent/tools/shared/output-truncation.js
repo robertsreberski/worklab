@@ -3,17 +3,18 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DEFAULT_MAX_TOOL_OUTPUT_CHARS } from "./constants.js";
 import { boundedInt } from "./dedup.js";
+import { readToolRuntime } from "./runtime-context.js";
 
 function sanitizeName(value) {
   return String(value || "tool").replace(/[^A-Za-z0-9_.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "tool";
 }
 
 export function writeToolArtifact(label, text) {
-  const dataDir = process.env.WORKLAB_DATA_DIR;
-  if (!dataDir) return null;
+  const { toolArtifactDir, runId } = readToolRuntime();
+  if (!toolArtifactDir) return null;
   try {
-    const runId = sanitizeName(process.env.WORKLAB_RUN_ID || "manual");
-    const dir = resolve(dataDir, "tool-output", runId);
+    const safeRunId = sanitizeName(runId || "manual");
+    const dir = resolve(toolArtifactDir, "tool-output", safeRunId);
     mkdirSync(dir, { recursive: true });
     const path = join(dir, `${Date.now()}-${sanitizeName(label)}-${randomUUID()}.txt`);
     writeFileSync(path, String(text || ""), "utf8");

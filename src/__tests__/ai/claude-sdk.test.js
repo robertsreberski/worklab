@@ -231,7 +231,6 @@ describe("generateClaudeResponse", () => {
   });
 
   it("uses a prior provider session to resume Claude and returns the current session id", async () => {
-    process.env.WORKLAB_PROVIDER_SESSION_ID = "claude-session-prev";
     mockQuery.mockReturnValue(mockStream([
       {
         type: "result",
@@ -248,6 +247,7 @@ describe("generateClaudeResponse", () => {
       messages: [{ role: "user", content: "continue" }],
       model: { sdk: "claude", model: "claude-sonnet-4-6" },
       effort: "medium",
+      providerSessionId: "claude-session-prev",
       onEvent: () => {},
     });
 
@@ -719,7 +719,6 @@ describe("generateClaudeResponse", () => {
   it("routes Playwright MCP artifact filenames into the run artifact directory", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-claude-mcp-file-"));
     const runDir = join(dir, "artifacts");
-    process.env.WORKLAB_QA_OUTPUT_DIR = runDir;
     mockQueryWithHookedStream(async (options) => {
       const outputs = await runSdkHooks(options, "PreToolUse", hookInput("PreToolUse", dir, "mcp__playwright__browser_take_screenshot", {
         filename: "screens/home.png",
@@ -741,6 +740,7 @@ describe("generateClaudeResponse", () => {
         model: { sdk: "claude", model: "claude-sonnet-4-6" },
         effort: "medium",
         cwd: dir,
+        runArtifactDir: runDir,
         onEvent: () => {},
       });
 

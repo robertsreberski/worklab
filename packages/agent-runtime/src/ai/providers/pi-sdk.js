@@ -202,15 +202,15 @@ function readRuntimeSettings(explicitSettings) {
 
 const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
 
-function resolvePiTransport(model, runtimeWarnings) {
+function resolvePiTransport(model, runtimeWarnings, requested) {
   if (model?.api !== "openai-codex-responses") return "auto";
-  const raw = process.env.WORKLAB_PI_CODEX_TRANSPORT?.trim();
+  const raw = typeof requested === "string" ? requested.trim() : "";
   if (!raw) return "sse";
   const transport = raw.toLowerCase();
   if (PI_CODEX_TRANSPORTS.has(transport)) return transport;
   runtimeWarnings.push({
     warning_kind: "invalid_pi_codex_transport",
-    message: "Ignoring invalid WORKLAB_PI_CODEX_TRANSPORT; expected sse, auto, websocket, or websocket-cached.",
+    message: "Ignoring invalid piCodexTransport; expected sse, auto, websocket, or websocket-cached.",
     value: raw,
   });
   return "sse";
@@ -237,22 +237,21 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let lastToolName = null;
   let piTransport = "auto";
   const providerSessionId = options.sessionId
-    || process.env.WORKLAB_PROVIDER_SESSION_ID
+    || options.providerSessionId
     || options.runId
-    || process.env.WORKLAB_RUN_ID
     || randomUUID();
 
   const onEvent = (event) => emitCaptured(events, options.onEvent, event);
 
   try {
     const runtime = resolvePiRuntimeModel(resolved, options);
-    piTransport = resolvePiTransport(runtime.model, runtimeWarnings);
+    piTransport = resolvePiTransport(runtime.model, runtimeWarnings, options.piCodexTransport);
     const capabilities = runtime.capabilities || {};
     const settings = readRuntimeSettings(options.settings);
     const reference = resolved.reference
       || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
     compaction = createAgentCompactionManager({
-      runId: options.runId || process.env.WORKLAB_RUN_ID || null,
+      runId: options.runId || null,
       providerKind: resolved.sdk,
       modelReference: reference,
       model: runtime.model,
@@ -270,7 +269,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         });
       } catch { /* best-effort */ }
     };
-    const runArtifactDir = options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null;
+    const runArtifactDir = options.runArtifactDir || null;
     const toolPayloadMaxBytes = compaction.policy?.toolPayloadMaxBytes;
     const builtIns = capabilities.tool_use === false
       ? []

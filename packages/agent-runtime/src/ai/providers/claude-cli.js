@@ -359,7 +359,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     : null;
   if (mcpConfigPath) writeFileSync(mcpConfigPath, JSON.stringify({ mcpServers }, null, 2));
   const reusableSessionId = (typeof options.sessionId === "string" && options.sessionId.trim())
-    || (typeof process.env.WORKLAB_PROVIDER_SESSION_ID === "string" && process.env.WORKLAB_PROVIDER_SESSION_ID.trim())
+    || (typeof options.providerSessionId === "string" && options.providerSessionId.trim())
     || null;
   let providerSessionId = reusableSessionId || null;
   const commandSpec = buildCliCommand({
