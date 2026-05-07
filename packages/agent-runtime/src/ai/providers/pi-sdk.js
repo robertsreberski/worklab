@@ -252,13 +252,13 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const reference = resolved.reference
       || (resolved.sdk === "pi" ? `pi:${resolved.provider}:${resolved.model}` : `${resolved.sdk}:${resolved.model}`);
     compaction = createAgentCompactionManager({
-      db: options.db,
       runId: options.runId || process.env.WORKLAB_RUN_ID || null,
       providerKind: resolved.sdk,
       modelReference: reference,
       model: runtime.model,
       settings,
       onEvent,
+      onCompactionRecorded: options.onCompactionRecorded,
     });
     const onTruncate = (info) => {
       try {
@@ -485,7 +485,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const stopReason = lastAssistant?.stopReason || null;
     externalAbort ||= !!options.abortSignal?.aborted;
     const estimatedCost = estimateCost({
-      db: options.db,
+      resolveCustomPricing: options.resolveCustomPricing,
       model: reference,
       inputTokens: usage.input,
       outputTokens: usage.output,

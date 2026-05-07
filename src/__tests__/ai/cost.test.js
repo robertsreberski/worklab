@@ -3,12 +3,13 @@ import { estimateCost, resolvePricing } from "@worklab/agent-runtime/ai/cost.js"
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
+import { customPricingResolverFor } from "../../core/custom-pricing.js";
 
 function withDb(fn) {
   const db = openDb(":memory:");
   runMigrations(db);
   try {
-    return fn(db);
+    return fn(db, customPricingResolverFor(db));
   } finally {
     db.close();
   }
@@ -53,7 +54,7 @@ describe("cost estimation", () => {
     })).toBeCloseTo(31.3);
   });
 
-  it("uses custom provider pricing and returns null for unknown hosted pricing", () => withDb((db) => {
+  it("uses custom provider pricing and returns null for unknown hosted pricing", () => withDb((db, resolveCustomPricing) => {
     const provider = createProvider({
       db,
       name: "hosted",
@@ -79,7 +80,7 @@ describe("cost estimation", () => {
     });
 
     expect(estimateCost({
-      db,
+      resolveCustomPricing,
       model: `pi:${provider.id}:priced`,
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
@@ -88,18 +89,18 @@ describe("cost estimation", () => {
     })).toBeCloseTo(10.52);
 
     expect(estimateCost({
-      db,
+      resolveCustomPricing,
       model: `pi:${provider.id}:unknown`,
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,
     })).toBeNull();
-    expect(resolvePricing({ db, model: `pi:${provider.id}:unknown` })).toMatchObject({
+    expect(resolvePricing({ resolveCustomPricing, model: `pi:${provider.id}:unknown` })).toMatchObject({
       source: "unknown",
       priced: false,
     });
   }));
 
-  it("does not undercount hosted custom models when a used rate is missing", () => withDb((db) => {
+  it("does not undercount hosted custom models when a used rate is missing", () => withDb((db, resolveCustomPricing) => {
     const provider = createProvider({
       db,
       name: "hosted",
@@ -117,20 +118,20 @@ describe("cost estimation", () => {
     });
 
     expect(estimateCost({
-      db,
+      resolveCustomPricing,
       model: `pi:${provider.id}:partial`,
       inputTokens: 1_000_000,
       outputTokens: 0,
     })).toBeCloseTo(2);
     expect(estimateCost({
-      db,
+      resolveCustomPricing,
       model: `pi:${provider.id}:partial`,
       inputTokens: 1_000_000,
       outputTokens: 1,
     })).toBeNull();
   }));
 
-  it("treats private/local custom providers as explicit zero marginal cost unless pricing is entered", () => withDb((db) => {
+  it("treats private/local custom providers as explicit zero marginal cost unless pricing is entered", () => withDb((db, resolveCustomPricing) => {
     const provider = createProvider({
       db,
       name: "local",
@@ -140,7 +141,7 @@ describe("cost estimation", () => {
     upsertModel({ db, providerId: provider.id, modelName: "llama3" });
 
     expect(estimateCost({
-      db,
+      resolveCustomPricing,
       model: `pi:${provider.id}:llama3`,
       inputTokens: 1_000_000,
       outputTokens: 1_000_000,

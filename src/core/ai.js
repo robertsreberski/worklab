@@ -6,6 +6,8 @@ import {
   parseRuntimeModelReference,
 } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { resolveRuntimeBridge } from "@worklab/agent-runtime/ai/runtime/registry.js";
+import { customPricingResolverFor } from "./custom-pricing.js";
+import { compactionRecorderFor } from "./run-compactions.js";
 import { readSettings } from "./settings.js";
 import {
   buildModelCapabilities,
@@ -519,6 +521,8 @@ export async function generateResponse(systemPrompt, options) {
     model: resolved,
     skillDirs,
     settings,
+    resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
+    onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
     ...(customContext || {}),
   };
   const nextOptions = {

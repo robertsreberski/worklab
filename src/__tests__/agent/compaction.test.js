@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
+import { compactionRecorderFor } from "../../core/run-compactions.js";
 import {
   COMPACTED_CONTEXT_MARKER,
   compactToolResultForContext,
@@ -37,7 +38,7 @@ describe("agent compaction", () => {
       timestamp: index + 1,
     }));
     const manager = createAgentCompactionManager({
-      db,
+      onCompactionRecorded: compactionRecorderFor(db),
       runId: "run_1",
       providerKind: "pi",
       modelReference: "pi:openai-codex:gpt-test",
@@ -281,7 +282,7 @@ describe("agent compaction", () => {
     runMigrations(db);
     seedRun(db);
     const manager = createAgentCompactionManager({
-      db,
+      onCompactionRecorded: compactionRecorderFor(db),
       runId: "run_1",
       providerKind: "pi",
       modelReference: "pi:openai-codex:gpt-test",

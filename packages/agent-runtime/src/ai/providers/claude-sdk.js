@@ -705,7 +705,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const cachedTokens = usage?.cache_read_input_tokens ?? usage?.cache_read_tokens ?? 0;
   const cacheCreationTokens = usage?.cache_creation_input_tokens ?? usage?.cache_creation_tokens ?? 0;
   const costUsd = estimateCost({
-    db: options.db,
+    resolveCustomPricing: options.resolveCustomPricing,
     model: reference,
     inputTokens,
     outputTokens,
