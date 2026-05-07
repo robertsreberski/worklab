@@ -51,6 +51,7 @@ describe("agents CRUD", () => {
     expect(res.body.agent.effort).toBe("medium");
     expect(res.body.agent.allow_self_review).toBe(true);
     expect(res.body.agent.browser_tools_review_only).toBe(false);
+    expect(res.body.agent.subagent_mode).toBe("advisory");
     expect(res.body.agent.daily_budget_usd).toBeUndefined();
     expect(res.body.agent.per_run_budget_usd).toBeUndefined();
   });
@@ -146,12 +147,14 @@ describe("agents CRUD", () => {
       model: "claude:claude-sonnet-4-6",
       allow_self_review: false,
       browser_tools_review_only: true,
+      subagent_mode: "workspace",
     }).expect(201);
 
     expect(res.body.agent.allow_self_review).toBe(false);
     expect(res.body.agent.browser_tools_review_only).toBe(true);
-    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only FROM agents WHERE name = ?").get("reviewer");
-    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1 });
+    expect(res.body.agent.subagent_mode).toBe("workspace");
+    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only, subagent_mode FROM agents WHERE name = ?").get("reviewer");
+    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1, subagent_mode: "workspace" });
   });
 
   it("POST /api/agents generates a unique slug from display_name when name is omitted", async () => {
@@ -283,12 +286,14 @@ describe("agents CRUD", () => {
     const res = await agent.patch("/api/agents/coder").send({
       allow_self_review: false,
       browser_tools_review_only: true,
+      subagent_mode: "disabled",
     }).expect(200);
 
     expect(res.body.agent.allow_self_review).toBe(false);
     expect(res.body.agent.browser_tools_review_only).toBe(true);
-    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only FROM agents WHERE name = ?").get("coder");
-    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1 });
+    expect(res.body.agent.subagent_mode).toBe("disabled");
+    const row = db.prepare("SELECT allow_self_review, browser_tools_review_only, subagent_mode FROM agents WHERE name = ?").get("coder");
+    expect(row).toEqual({ allow_self_review: 0, browser_tools_review_only: 1, subagent_mode: "disabled" });
   });
 
   it("rejects invalid policy fields", async () => {
@@ -305,6 +310,13 @@ describe("agents CRUD", () => {
       display_name: "Bad Browser Bool",
       model: "claude:claude-sonnet-4-6",
       browser_tools_review_only: "yes",
+    }).expect(400);
+
+    await agent.post("/api/agents").send({
+      name: "bad-subagent-mode",
+      display_name: "Bad Subagent Mode",
+      model: "claude:claude-sonnet-4-6",
+      subagent_mode: "always",
     }).expect(400);
   });
 
