@@ -203,7 +203,9 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("preserve the complete body via `kb_create` or `kb_update`");
     expect(p).toContain("Do not create Knowledge entries for routine run results");
     expect(p).toContain("reference the slug in `final_text`");
-    expect(p).toContain("End each completed run with one `worklab.v2` JSON object");
+    expect(p).toContain("End each completed run with one terminal `worklab.v2` JSON object");
+    expect(p).toContain("Never emit `worklab.v2` JSON for progress or status updates.");
+    expect(p).not.toContain("Earlier structured-looking text is treated as progress");
     expect(p).toContain("Put the human-facing comment in `final_text`");
     expect(p).toContain("For plan-stage runs, put the complete implementation plan");
     expect(p).toContain("plan-stage pauses needing human input");
@@ -489,6 +491,7 @@ describe("buildPlanSystemPrompt", () => {
     expect(p).toContain("Do not do implementation work during planning.");
     expect(p).toContain('"details": "Complete implementation plan."');
     expect(p).toContain('"final_text": "Short human-facing plan status."');
+    expect(p).toContain("Do not emit this JSON object for interim planning progress");
     expect(p).toContain('Use decision "advance" when the plan is ready');
     expect(p).not.toContain("Preserve durable deliverables in Knowledge");
   });

@@ -10,7 +10,8 @@ const TODO_CADENCE = `For multi-step work, keep a short run-local checklist with
 const DELIVERABLE_PERSISTENCE = `When the run produces a durable, reusable deliverable (research report, guide, runbook, decision record, canonical analysis), preserve the complete body via \`kb_create\` or \`kb_update\` (\`kb_\` = Knowledge Base, not kilobytes) before returning. Do not create Knowledge entries for routine run results, one-off status updates, raw execution output, or short final comments; those belong in task comments, run logs, and artifacts. Before writing Knowledge, search/read existing project entries and prefer \`kb_update\` for the canonical entry. Use a readable slug, useful tags, an appropriate category (\`research\` / \`runbook\` / \`decision\` / \`reference\`), source metadata when available, and reference the slug in \`final_text\`. Don't squeeze long deliverables into \`final_text\`.`;
 
 const RESULT_FIELD_RULES = `Structured result rules:
-- End each completed run with one \`worklab.v2\` JSON object. Earlier structured-looking text is treated as progress; only the final object counts.
+- End each completed run with one terminal \`worklab.v2\` JSON object after all tool calls and verification are finished.
+- Never emit \`worklab.v2\` JSON for progress or status updates. Use normal assistant text, thinking, or available progress tools instead; reserve \`worklab.v2\` for the final answer only.
 - Put the human-facing comment in \`final_text\`. Keep \`summary\` and \`details\` as structured metadata for Worklab.
 - For plan-stage runs, put the complete implementation plan in \`details\` / the plan body; \`final_text\` is the short status note.
 - \`pending_actions\` requires decision "pause" (exact actions the human must take). \`subtasks\` requires decision "delegate". \`questions\` is for plan-stage pauses needing human input — prefer 2–4 concrete options per question, recommended one first. Keep all three empty for "advance", "approve", "reject".
@@ -307,7 +308,7 @@ function formatWorklabBaseGuardrails({ mode, delegation } = {}) {
   }
   sections.push([
     "### worklab-final-result",
-    "Return exactly one final `worklab.v2` JSON object when you finish. Put user-facing prose in `final_text`, not around the JSON.",
+    "Return exactly one final `worklab.v2` JSON object when you finish. Do not emit `worklab.v2` JSON for interim progress. Put user-facing prose in `final_text`, not around the JSON.",
     "Do not include XML, invoke tags, or tool-call syntax inside JSON string fields; those belong to model/tool protocol, not result data.",
   ].join("\n\n"));
   sections.push([

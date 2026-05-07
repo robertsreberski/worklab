@@ -184,6 +184,8 @@ Return a structured Worklab result as JSON when you finish:
 
 ${planJsonContract()}
 
+Do not emit this JSON object for interim planning progress or status updates. Use normal progress text, journal notes, todos, or tool calls until the final result is ready.
+
 Use decision "advance" when the plan is ready and the task should move to work, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 }
 
