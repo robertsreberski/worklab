@@ -2519,6 +2519,101 @@ test("mobile resource list filters are available from the shared configuration s
   }
 });
 
+test("mobile resource list create actions move to a floating FAB", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routes = [
+    { hash: "#/agents", label: "New agent", target: /#\/agents\/new/, toolbar: "resource" },
+    { hash: "#/projects", label: "New project", target: /#\/projects\/new/, toolbar: "resource" },
+    { hash: "#/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
+    { hash: "#/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
+    { hash: "#/teams", label: "New team", target: /#\/teams\/new/, toolbar: "resource" },
+    { hash: "#/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "pane" },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-list-head").first()).toBeVisible();
+    const fabButton = page.getByRole("button", { name: route.label }).and(page.locator(".resource-list-fab"));
+    await expect(fabButton).toBeVisible();
+
+    const metrics = await page.evaluate(({ toolbar }) => {
+      const toolbarRoot = toolbar === "resource"
+        ? document.querySelector(".resource-toolbar")
+        : document.querySelector(".pane-list-head");
+      const search = toolbarRoot?.querySelector(".search-field");
+      const configTrigger = toolbarRoot?.querySelector(".resource-mobile-config-trigger");
+      const actions = toolbarRoot?.querySelector(".resource-toolbar-actions");
+      const inlineButtons = [...(toolbarRoot?.querySelectorAll(":scope > .button:not(.resource-list-fab)") || [])];
+      const count = toolbarRoot?.querySelector(".resource-toolbar-count");
+      const fab = document.querySelector(".resource-list-fab");
+      const assistantLauncher = document.querySelector(".assistant-launcher");
+      const nav = document.querySelector(".app-tabbar");
+      const list = document.querySelector(".pane-list-body");
+      const toolbarRect = toolbarRoot?.getBoundingClientRect();
+      const searchRect = search?.getBoundingClientRect();
+      const triggerRect = configTrigger?.getBoundingClientRect();
+      const fabRect = fab?.getBoundingClientRect();
+      const assistantRect = assistantLauncher?.getBoundingClientRect();
+      const navRect = nav?.getBoundingClientRect();
+      const actionStyles = actions ? getComputedStyle(actions) : null;
+      const countStyles = count ? getComputedStyle(count) : null;
+      const fabStyles = fab ? getComputedStyle(fab) : null;
+      const listStyles = list ? getComputedStyle(list) : null;
+      return {
+        toolbarHeight: toolbarRect ? Math.round(toolbarRect.height) : 0,
+        searchWidth: searchRect ? Math.round(searchRect.width) : 0,
+        configTriggerDisplay: configTrigger ? getComputedStyle(configTrigger).display : "",
+        searchAndTriggerSameRow: searchRect && triggerRect
+          ? Math.round(triggerRect.top) < Math.round(searchRect.bottom)
+            && Math.round(searchRect.top) < Math.round(triggerRect.bottom)
+          : true,
+        actionsDisplay: actionStyles?.display || "",
+        countDisplay: countStyles?.display || "",
+        visibleInlineButtonCount: inlineButtons
+          .filter((button) => getComputedStyle(button).display !== "none")
+          .length,
+        fabDisplay: fabStyles?.display || "",
+        fabWidth: fabRect ? Math.round(fabRect.width) : 0,
+        fabHeight: fabRect ? Math.round(fabRect.height) : 0,
+        fabRadius: fabStyles ? Math.round(parseFloat(fabStyles.borderRadius)) : 0,
+        fabBottomBeforeNav: fabRect && navRect ? Math.round(fabRect.bottom) <= Math.round(navRect.top) + 1 : false,
+        assistantAboveFab: assistantRect && fabRect
+          ? Math.round(assistantRect.bottom) <= Math.round(fabRect.top) - 1
+          : false,
+        assistantRightAligned: assistantRect && fabRect
+          ? Math.abs(Math.round(assistantRect.right) - Math.round(fabRect.right)) <= 1
+          : false,
+        listPaddingBottom: listStyles ? Math.round(parseFloat(listStyles.paddingBottom) || 0) : 0,
+        documentScrollHeight: document.documentElement.scrollHeight,
+        viewportHeight: window.innerHeight,
+      };
+    }, { toolbar: route.toolbar });
+
+    expect(metrics.toolbarHeight, `${route.hash} compact header`).toBeLessThanOrEqual(96);
+    expect(metrics.searchWidth, `${route.hash} search width`).toBeGreaterThanOrEqual(route.toolbar === "resource" ? 280 : 320);
+    if (route.toolbar === "resource") {
+      expect(["flex", "inline-flex"]).toContain(metrics.configTriggerDisplay);
+      expect(metrics.searchAndTriggerSameRow, `${route.hash} search/config row`).toBe(true);
+      expect(metrics.actionsDisplay, `${route.hash} action row hidden`).toBe("none");
+      expect(metrics.countDisplay, `${route.hash} count hidden`).toBe("none");
+    }
+    expect(metrics.visibleInlineButtonCount, `${route.hash} inline create hidden`).toBe(0);
+    expect(metrics.fabDisplay, `${route.hash} FAB visible`).toBe("flex");
+    expect(metrics.fabWidth, `${route.hash} FAB width`).toBe(56);
+    expect(metrics.fabHeight, `${route.hash} FAB height`).toBe(56);
+    expect(metrics.fabRadius, `${route.hash} FAB radius`).toBeGreaterThanOrEqual(28);
+    expect(metrics.fabBottomBeforeNav, `${route.hash} FAB above nav`).toBe(true);
+    expect(metrics.assistantAboveFab, `${route.hash} assistant above FAB`).toBe(true);
+    expect(metrics.assistantRightAligned, `${route.hash} assistant alignment`).toBe(true);
+    expect(metrics.listPaddingBottom, `${route.hash} list bottom padding`).toBeGreaterThanOrEqual(72);
+    expect(metrics.listPaddingBottom, `${route.hash} list bottom padding`).toBeLessThanOrEqual(96);
+    expect(metrics.documentScrollHeight, `${route.hash} document height`).toBeLessThanOrEqual(metrics.viewportHeight);
+
+    await fabButton.click();
+    await expect(page).toHaveURL(route.target);
+  }
+});
+
 test("mobile Activity filters collapse into a configuration sheet", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/activity`);

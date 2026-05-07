@@ -2986,7 +2986,8 @@ html.assistant-resizing * {
   white-space: nowrap;
   cursor: help;
 }
-.commander-new-task-fab {
+.commander-new-task-fab,
+.resource-list-fab {
   display: none;
 }
 .commander-bulkbar {
@@ -9382,12 +9383,27 @@ html.assistant-resizing * {
     align-self: stretch;
   }
   .resource-toolbar-actions {
-    grid-column: 1 / -1;
-    justify-content: space-between;
-    margin-left: 0;
+    display: none;
   }
-  .resource-toolbar-actions .button {
-    min-height: 44px;
+  .resource-toolbar-count,
+  .pane-list-head > .button:not(.resource-list-fab) {
+    display: none;
+  }
+  .app.responsive:has(.resource-list-fab) .pane-list-body {
+    padding-bottom: calc(56px + var(--sp-5));
+  }
+  .app.responsive .resource-list-fab.button {
+    position: fixed;
+    right: max(var(--sp-4), var(--mobile-safe-right));
+    bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
+    z-index: 32;
+    display: inline-flex;
+    width: 56px;
+    min-width: 56px;
+    height: 56px;
+    min-height: 56px;
+    padding: 0;
+    border-radius: 999px;
   }
   .resource-group-header {
     padding: var(--sp-2) var(--sp-4);
@@ -11615,7 +11631,8 @@ html.assistant-resizing * {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 72;
   }
-  .app.responsive:has(.commander-new-task-fab) .assistant-launcher {
+  .app.responsive:has(.commander-new-task-fab) .assistant-launcher,
+  .app.responsive:has(.resource-list-fab) .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + 56px + var(--sp-4) + var(--sp-3));
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-launcher {

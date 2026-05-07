@@ -32,6 +32,16 @@ export function PaneListHeader({
           {actionLabel}
         </Button>
       )}
+      {actionLabel && (
+        <Button
+          class="resource-list-fab"
+          variant="primary"
+          iconLeft={<Icon name={actionIcon} size={22} />}
+          aria-label={actionLabel}
+          title={actionLabel}
+          onClick={onAction}
+        />
+      )}
     </>
   );
 }

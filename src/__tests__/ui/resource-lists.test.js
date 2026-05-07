@@ -143,6 +143,18 @@ describe("resource list helpers", () => {
     }
   });
 
+  it("keeps mobile list create actions in a shared floating FAB", () => {
+    const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
+    const paneHeader = source("src/ui/src/components/layout/PaneListHeader.jsx");
+    const styles = source("src/ui/src/styles.css");
+
+    expect(toolbar).toContain("resource-list-fab");
+    expect(paneHeader).toContain("resource-list-fab");
+    expect(styles).toContain(".resource-list-fab");
+    expect(styles).toContain(".app.responsive:has(.resource-list-fab) .assistant-launcher");
+    expect(styles).toMatch(/\.resource-toolbar-actions\s*\{[^}]*display:\s*none/);
+  });
+
   it("styles child task parent references as a full-width contextual strip", () => {
     const styles = source("src/ui/src/styles.css");
     const parentRule = styles.match(/\.task-parent-reference \{(?<body>[^}]+)\}/)?.groups?.body || "";
