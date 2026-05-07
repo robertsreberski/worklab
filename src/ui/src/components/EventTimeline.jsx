@@ -92,6 +92,24 @@ function structuredWorklabResult(value) {
   return candidate?.schema === "worklab.v2" ? candidate : null;
 }
 
+function standaloneWorklabResultText(text) {
+  const raw = String(text || "").trim();
+  if (!raw || raw[0] !== "{") return null;
+  try {
+    return structuredWorklabResult(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function isStandaloneWorklabResultTextEvent(ev) {
+  if (ev?.type !== "assistant" && ev?.type !== "message") return false;
+  const content = ev?.message?.content || ev?.content;
+  return Array.isArray(content)
+    && content.length > 0
+    && content.every((block) => block?.type === "text" && standaloneWorklabResultText(block.text));
+}
+
 function normalizeStructuredOutputEvent(ev, source = "StructuredOutput") {
   const value = ev.value ?? ev.structured_output ?? ev.result;
   const worklabResult = ev.worklab_result || structuredWorklabResult(value);
@@ -181,6 +199,7 @@ function normalizeWorklabEvent(ev, { compactFinal = false } = {}) {
   }
   if (ev.type === "worklab_result_candidate") return null;
   if (ev.type === "worklab_result_error") return { type: "error", message: ev.message || "Invalid worklab_result" };
+  if (isStandaloneWorklabResultTextEvent(ev)) return null;
   if (ev.type === "worktree_reconcile") return normalizeWorktreeReconcileEvent(ev);
   if (ev.type === "structured_output") {
     return normalizeStructuredOutputEvent(ev);
@@ -255,6 +274,7 @@ export function normalizeWorklabEvents(events = []) {
     const normalized = normalizeWorklabEvent(event, {
       compactFinal,
     });
+    if (!normalized) return null;
     const visibleText = normalizeCommentText(visibleTextFromEvent(event));
     if (visibleText) {
       visibleTextTail = isVisibleTextEvent(event)

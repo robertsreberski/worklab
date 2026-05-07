@@ -387,6 +387,72 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("hides standalone worklab result assistant text before the terminal final event", () => {
+    const progress = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Repo structure found; now checking current rails.",
+      details: "This is only progress, not the final plan.",
+      final_text: "",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+    };
+    const done = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "Plan ready.",
+      details: "Final plan body.",
+      final_text: "Plan ready.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+    };
+
+    const events = normalizeWorklabEvents([
+      { type: "started" },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: JSON.stringify(progress) }] },
+        },
+      },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "tool_use", id: "cmd-1", name: "command_execution", input: { command: "git status --short" } }] },
+        },
+      },
+      {
+        type: "final",
+        text: JSON.stringify(done),
+        worklab_result: done,
+        usage: {},
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "started" },
+      {
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "cmd-1", name: "command_execution", input: { command: "git status --short" } }] },
+      },
+      {
+        type: "final",
+        text: "Plan ready.",
+        structured: done,
+      },
+    ]);
+  });
+
   it("keeps normalized structured output events visible", () => {
     const worklabResult = {
       schema: "worklab.v2",
