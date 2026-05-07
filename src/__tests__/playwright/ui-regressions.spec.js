@@ -188,6 +188,32 @@ async function modalLayoutMetrics(page) {
   });
 }
 
+async function mobileConfigSheetMetrics(page, sheetSelector = ".mobile-config-sheet.open") {
+  return await page.evaluate((selector) => {
+    const sheet = document.querySelector(selector);
+    const panel = sheet?.querySelector(".mobile-config-sheet-panel");
+    const body = sheet?.querySelector(".mobile-config-sheet-body");
+    const panelRect = panel?.getBoundingClientRect();
+    const bodyRect = body?.getBoundingClientRect();
+    const childRects = body
+      ? [...body.children]
+        .map((child) => child.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+      : [];
+    const lastChildBottom = childRects.length ? Math.max(...childRects.map((rect) => rect.bottom)) : 0;
+    return {
+      viewportHeight: window.innerHeight,
+      previousFixedHeight: Math.round(window.innerHeight * 0.76),
+      panelHeight: panelRect ? Math.round(panelRect.height) : 0,
+      panelBottom: panelRect ? Math.round(window.innerHeight - panelRect.bottom) : 0,
+      bodyHeight: bodyRect ? Math.round(bodyRect.height) : 0,
+      bodyScrollHeight: body ? Math.round(body.scrollHeight) : 0,
+      bodyBottomGap: bodyRect && lastChildBottom ? Math.round(bodyRect.bottom - lastChildBottom) : 0,
+      visibleChildren: childRects.length,
+    };
+  }, sheetSelector);
+}
+
 test.beforeAll(async () => {
   dataDir = mkdtempSync(join(tmpdir(), "worklab-ui-data-"));
   workspaceDir = mkdtempSync(join(tmpdir(), "worklab-ui-workspace-"));
@@ -2224,6 +2250,11 @@ test("mobile task list keeps search visible and moves configuration into a botto
   await expect(sheet.locator(".tabs")).toBeVisible();
   await expect(sheet.locator(".commander-stage-filter")).toBeVisible();
   await expect(sheet.locator(".commander-project-filter")).toBeVisible();
+  const metrics = await mobileConfigSheetMetrics(page);
+  expect(metrics.panelHeight).toBeLessThan(metrics.previousFixedHeight - 80);
+  expect(metrics.panelBottom).toBeLessThanOrEqual(1);
+  expect(metrics.bodyBottomGap).toBeLessThanOrEqual(16);
+  expect(metrics.visibleChildren).toBeGreaterThanOrEqual(4);
   await sheet.getByRole("tab", { name: /Running/ }).click();
   await expect(sheet.getByRole("tab", { name: /Running/ })).toHaveAttribute("aria-selected", "true");
 });
@@ -2247,6 +2278,11 @@ test("mobile resource list filters are available from the shared configuration s
     await expect(sheet).toBeVisible();
     await expect(sheet.locator(".resource-toolbar-filters")).toBeVisible();
     await expect(sheet.locator(".tabs, .resource-filter-select").first()).toBeVisible();
+    const metrics = await mobileConfigSheetMetrics(page);
+    expect(metrics.panelHeight, `${route.label} sheet height`).toBeLessThan(metrics.previousFixedHeight - 80);
+    expect(metrics.panelBottom, `${route.label} sheet bottom alignment`).toBeLessThanOrEqual(1);
+    expect(metrics.bodyBottomGap, `${route.label} sheet content gap`).toBeLessThanOrEqual(16);
+    expect(metrics.visibleChildren, `${route.label} sheet controls`).toBeGreaterThanOrEqual(1);
     await sheet.getByRole("button", { name: "Close" }).click();
     await expect(sheet).toBeHidden();
   }
@@ -2266,6 +2302,11 @@ test("mobile Activity filters collapse into a configuration sheet", async ({ pag
   await expect(sheet.locator(".activity-filter-field", { hasText: "Agent" })).toBeVisible();
   await expect(sheet.locator(".activity-filter-field", { hasText: "Status" })).toBeVisible();
   await expect(sheet.locator(".activity-filter-date")).toBeVisible();
+  const metrics = await mobileConfigSheetMetrics(page);
+  expect(metrics.panelHeight).toBeLessThan(metrics.previousFixedHeight - 80);
+  expect(metrics.panelBottom).toBeLessThanOrEqual(1);
+  expect(metrics.bodyBottomGap).toBeLessThanOrEqual(16);
+  expect(metrics.visibleChildren).toBeGreaterThanOrEqual(3);
 });
 
 test("commander stage and project filters share selector sizing", async ({ page }) => {
