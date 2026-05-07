@@ -65,6 +65,16 @@ export function ResourceListToolbar({
           </Button>
         )}
       </div>
+      {actionLabel && (
+        <Button
+          class="resource-list-fab"
+          variant="primary"
+          iconLeft={<Icon name={actionIcon} size={22} />}
+          aria-label={actionLabel}
+          title={actionLabel}
+          onClick={onAction}
+        />
+      )}
     </div>
   );
 }
