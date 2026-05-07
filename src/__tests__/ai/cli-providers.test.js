@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { buildCliCommand, generateCliResponse } from "@worklab/agent-runtime/ai/providers/claude-cli.js";
 import { parseModelReference, canonicalizeLegacyModelReference } from "../../core/ai.js";
-import { WORKLAB_RESULT_JSON_SCHEMA } from "@worklab/agent-runtime/ai/result/contract.js";
+import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result/contract.js";
 import { buildExecuteSystemPrompt } from "../../core/prompts/system-prompt.js";
 import { loadSkills } from "../../core/skills.js";
 
@@ -16,12 +16,12 @@ describe("CLI provider adapters", () => {
     expect(parseModelReference("codex:gpt-5.5")).toMatchObject({ sdk: "codex", model: "gpt-5.5" });
   });
 
-  it("generates Claude Code stream-json command with inline schema, system prompt, and prompt separator", () => {
+  it("generates Claude Code stream-json command with caller-supplied schema, system prompt, and prompt separator", () => {
     const cmd = buildCliCommand({
       sdk: "claude-code",
       model: "claude-sonnet-4-6",
       cwd: "/repo",
-      schemaPath: "/tmp/schema.json",
+      outputSchema: WORKLAB_RESULT_JSON_SCHEMA,
       systemPrompt: "system",
       prompt: "do work",
     });
@@ -38,8 +38,18 @@ describe("CLI provider adapters", () => {
     const schemaIndex = cmd.args.indexOf("--json-schema");
     expect(schemaIndex).toBeGreaterThanOrEqual(0);
     expect(JSON.parse(cmd.args[schemaIndex + 1])).toEqual(WORKLAB_RESULT_JSON_SCHEMA);
-    expect(cmd.args[schemaIndex + 1]).not.toBe("/tmp/schema.json");
     expect(cmd.args.slice(-2)).toEqual(["--", "do work"]);
+  });
+
+  it("omits --json-schema when no outputSchema is supplied", () => {
+    const cmd = buildCliCommand({
+      sdk: "claude-code",
+      model: "claude-sonnet-4-6",
+      cwd: "/repo",
+      systemPrompt: "system",
+      prompt: "do work",
+    });
+    expect(cmd.args).not.toContain("--json-schema");
   });
 
   it("passes --resume <session_id> when a parent session is available, replacing --no-session-persistence", () => {
@@ -277,7 +287,7 @@ exit 0
     }
   });
 
-  it("formats structured result objects from CLI result events", async () => {
+  it("preserves structured result objects from CLI result events on result.events for host extraction", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-fake-cli-"));
     const fakeClaude = join(dir, "claude");
     const originalPath = process.env.PATH;
@@ -303,7 +313,7 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.text).toBe("ok");
+      expect(result.events.find((event) => event.type === "result")?.result).toEqual(structured);
       expect(result.numTurns).toBe(1);
     } finally {
       process.env.PATH = originalPath;
@@ -340,11 +350,15 @@ exit 0
         messages: [{ role: "user", content: "do work" }],
         cwd: process.cwd(),
       });
-      expect(result.error).toBeNull();
-      expect(result.text).toBe("structured ok");
-      expect(result.worklabResult).toMatchObject(structured);
-      expect(result.structuredResultSource).toBe("StructuredOutput");
-      expect(result.numTurns).toBe(1);
+      // Without a final text event the CLI provider surfaces an empty-output
+      // error; the host (worker) recovers the StructuredOutput tool input from
+      // result.events when it sees this kind of failure.
+      expect(result.failureKind).toBe("provider_unavailable");
+      const toolUseEvent = result.events.find((entry) =>
+        entry.type === "assistant"
+        && entry.message?.content?.some((part) => part.type === "tool_use" && part.name === "StructuredOutput")
+      );
+      expect(toolUseEvent?.message?.content?.[0]?.input).toEqual(structured);
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
@@ -669,12 +683,14 @@ exit 0
           }],
         },
       });
+      // After Phase 5 the package no longer detects worklab_result candidates
+      // in agent_message events. The host inspects result.events / result.text
+      // and runs extractWorklabResult itself.
       expect(result.events[2]).toMatchObject({
-        type: "worklab_result_candidate",
-        source: "agent_message",
-        worklab_result: structured,
+        type: "assistant",
+        message: { content: [{ type: "text", text: JSON.stringify(structured) }] },
       });
-      expect(result.text).toBe("ok");
+      expect(result.text).toBe(JSON.stringify(structured));
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
@@ -897,9 +913,14 @@ exit 0
             content: [expect.objectContaining({ type: "tool_result", tool_use_id: "cmd_1", is_error: false })],
           },
         }),
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(structured) }),
+        // Final agent_message becomes a plain assistant text event after Phase 5;
+        // worklab_result extraction is host-side now.
+        expect.objectContaining({
+          type: "assistant",
+          message: { content: [{ type: "text", text: JSON.stringify(structured) }] },
+        }),
       ]);
-      expect(result.text).toBe("ok\n\ndone");
+      expect(result.text).toBe(JSON.stringify(structured));
       expect(result.text).not.toContain("Inspecting the task");
       expect(result.text).not.toContain("hidden raw");
     } finally {
@@ -946,13 +967,19 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toMatchObject(late);
-      expect(result.structuredResultSource).toBe("agent_message");
-      expect(result.text).toBe("final summary\n\nfinal details");
-      expect(result.text).not.toContain("\"schema\"");
+      // After Phase 5 the package returns the raw last agent_message text; the
+      // host runs extractWorklabResult on result.events / result.text to pick
+      // the latest valid worklab_result candidate.
+      expect(result.text).toBe(JSON.stringify(late));
       expect(result.events).toEqual([
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(early) }),
-        expect.objectContaining({ type: "worklab_result_candidate", worklab_result: expect.objectContaining(late) }),
+        expect.objectContaining({
+          type: "assistant",
+          message: { content: [{ type: "text", text: JSON.stringify(early) }] },
+        }),
+        expect.objectContaining({
+          type: "assistant",
+          message: { content: [{ type: "text", text: JSON.stringify(late) }] },
+        }),
       ]);
     } finally {
       process.env.PATH = originalPath;
@@ -993,11 +1020,9 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toEqual({ ...structured, memory_candidates: [], verification_evidence: [] });
-      expect(result.structuredResultSource).toBe("agent_message");
-      expect(result.text).toBe("Human-facing final comment.");
-      expect(result.text).not.toContain("technical justification");
-      expect(result.text).not.toContain("metadata summary");
+      // Provider returns the raw agent_message text; the host strips JSON and
+      // extracts worklab_result.
+      expect(result.text).toBe(JSON.stringify(structured));
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });
@@ -1045,9 +1070,9 @@ exit 0
         cwd: process.cwd(),
       });
       expect(result.error).toBeNull();
-      expect(result.worklabResult).toMatchObject(structured);
-      expect(result.text).toBe("# Delivered Report\n\nUseful final answer.");
-      expect(result.text).not.toContain("\"schema\"");
+      // Last delivered text is the prose-with-fenced-JSON; host runs
+      // stripWorklabResultJson + extractWorklabResult on its end.
+      expect(result.text).toBe(delivered);
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });

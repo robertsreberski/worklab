@@ -38,8 +38,8 @@
 /**
  * @typedef {Object} RuntimeResult
  * @property {string|null} [text]
- * @property {Object} [worklabResult]
- * @property {string} [structuredResultSource]
+ * @property {*} [structuredResult]
+ * @property {string|null} [structuredResultSource]
  * @property {Array<RuntimeEvent>} [events]
  * @property {Object} [usage]
  * @property {number} [durationMs]

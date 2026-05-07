@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { generateCodexAppResponse } from "@worklab/agent-runtime/ai/providers/codex-app.js";
 import { createLiveInputQueue } from "../../core/live-input.js";
+import { extractWorklabResult } from "../../core/worklab-result/contract.js";
 
 function writeFakeCodexAppServer(dir) {
   const script = join(dir, "fake-codex-app-server.cjs");
@@ -172,7 +173,9 @@ describe("generateCodexAppResponse", () => {
         sandbox: "danger-full-access",
       });
       expect(turnStart.params.input[0].text).toBe("do work");
-      expect(turnStart.params.outputSchema.type).toBe("object");
+      // outputSchema is only forwarded when the caller supplies one; this test
+      // exercises the no-schema path.
+      expect(turnStart.params.outputSchema).toBeUndefined();
       expect(steer.params).toMatchObject({
         threadId: "thread1",
         expectedTurnId: "turn1",
@@ -180,8 +183,10 @@ describe("generateCodexAppResponse", () => {
       const expectedGuidance = expectedLiveGuidance("Please narrow the scope.");
       expect(steer.params.input).toEqual([{ type: "text", text: expectedGuidance, text_elements: [] }]);
       expect(result.error).toBeNull();
-      expect(result.worklabResult.summary).toBe("Done");
-      expect(result.worklabResult.details).toBe(`Guided: ${expectedGuidance}`);
+      const extracted = extractWorklabResult(result.events);
+      expect(extracted.ok).toBe(true);
+      expect(extracted.result.summary).toBe("Done");
+      expect(extracted.result.details).toBe(`Guided: ${expectedGuidance}`);
       expect(result.usage).toMatchObject({ input_tokens: 5, output_tokens: 3, cache_read_tokens: 1 });
       expect(events).toContainEqual({
         type: "assistant",
@@ -266,7 +271,9 @@ describe("generateCodexAppResponse", () => {
       expect(steers).toHaveLength(1);
       expect(steers[0].params.input).toEqual([{ type: "text", text: expectedGuidance, text_elements: [] }]);
       expect(result.error).toBeNull();
-      expect(result.worklabResult.details).toBe(`Guided: ${expectedGuidance}`);
+      const extracted = extractWorklabResult(result.events);
+      expect(extracted.ok).toBe(true);
+      expect(extracted.result.details).toBe(`Guided: ${expectedGuidance}`);
       expect(events).not.toContainEqual(expect.objectContaining({
         type: "runtime_warning",
         warning_kind: "live_input_rejected",

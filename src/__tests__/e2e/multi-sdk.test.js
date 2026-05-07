@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { estimateCost } from "@worklab/agent-runtime/ai/cost.js";
+import { extractWorklabResult } from "../../core/worklab-result/contract.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { generateResponse, resolveModel } from "../../core/ai.js";
@@ -337,8 +338,10 @@ describe("generateResponse pi-backed dispatch", () => {
       streamFn: structuredOutputStream(worklabResult),
     });
 
-    expect(result.text).toBe("Implemented.");
-    expect(result.worklabResult).toMatchObject(worklabResult);
+    expect(result.structuredResult).toMatchObject(worklabResult);
+    const extracted = extractWorklabResult(result.structuredResult ?? result.events);
+    expect(extracted.ok).toBe(true);
+    expect(extracted.result).toMatchObject(worklabResult);
     expect(result.events.some((event) => event.type === "assistant" && event.message?.content?.[0]?.name === "StructuredOutput")).toBe(true);
     expect(result.events.some((event) => event.type === "structured_output")).toBe(false);
   });

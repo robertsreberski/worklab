@@ -10,7 +10,7 @@
 //                            an "advance" only when the run produced text)
 
 import { parseVerdict } from "../../core/review.js";
-import { synthesizeWorklabResult } from "@worklab/agent-runtime/ai/result/contract.js";
+import { synthesizeWorklabResult } from "../../core/worklab-result/contract.js";
 
 export function runProcessStatus(runOrResult) {
   return runOrResult?.processStatus || runOrResult?.process_status || "running";

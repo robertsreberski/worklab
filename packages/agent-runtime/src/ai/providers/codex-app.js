@@ -1,11 +1,5 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
-import {
-  WORKLAB_RESULT_JSON_SCHEMA,
-  extractWorklabResult,
-  formatWorklabResultText,
-  stripWorklabResultJson,
-} from "../result/contract.js";
 import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
@@ -40,11 +34,6 @@ function pushUniqueText(texts, text) {
   if (!value) return;
   if (texts.some((existing) => existing.trim() === value)) return;
   texts.push(value);
-}
-
-function finalTextFromOutput(worklabResult, texts) {
-  const delivered = stripWorklabResultJson(texts[texts.length - 1] || "");
-  return delivered || formatWorklabResultText(worklabResult);
 }
 
 function userTextInput(text) {
@@ -284,8 +273,6 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   let errorMessage = null;
   let failureKind = null;
   let usage = {};
-  let worklabResult = null;
-  let structuredResultSource = null;
   let resolveTurn;
   let resolveTurnReady;
   let turnReadyResolved = false;
@@ -313,20 +300,8 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     options.onEvent?.(event);
   }
 
-  function handleAgentText(text, source = "agent_message") {
+  function handleAgentText(text) {
     pushUniqueText(texts, text);
-    const structured = extractWorklabResult({ type: source, text });
-    if (structured.ok) {
-      worklabResult = structured.result;
-      structuredResultSource = source;
-      emitEvent({
-        type: "worklab_result_candidate",
-        source,
-        text,
-        worklab_result: structured.result,
-      });
-      return;
-    }
     emitEvent({ type: "assistant", message: { content: [{ type: "text", text }] } });
   }
 
@@ -509,7 +484,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       serviceTier: "fast",
       effort: normalizedEffort,
       summary: normalizedEffort && normalizedEffort !== "none" ? "auto" : "none",
-      outputSchema: options.outputSchema || WORKLAB_RESULT_JSON_SCHEMA,
+      outputSchema: options.outputSchema,
     });
     setActiveTurnId(turn?.turn?.id);
 
@@ -536,9 +511,9 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     turnCompleted = true;
     await Promise.race([steerTask, Promise.resolve()]);
 
-    const text = finalTextFromOutput(worklabResult, texts);
+    const text = texts[texts.length - 1] || "";
     let codexErrorCode = prematureClose ? "codex_app_server_closed" : null;
-    if (!errorMessage && !text.trim() && !worklabResult) {
+    if (!errorMessage && !text.trim()) {
       errorMessage = "codex app-server completed without final output";
       failureKind = "provider_unavailable";
       codexErrorCode = codexErrorCode || "codex_app_server_no_output";
@@ -568,8 +543,8 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     };
     return {
       text,
-      worklabResult,
-      structuredResultSource,
+      structuredResult: undefined,
+      structuredResultSource: null,
       events,
       usage: enrichedUsage,
       durationMs: Date.now() - start,
@@ -591,9 +566,9 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     return {
-      text: finalTextFromOutput(worklabResult, texts) || null,
-      worklabResult,
-      structuredResultSource,
+      text: texts[texts.length - 1] || null,
+      structuredResult: undefined,
+      structuredResultSource: null,
       events,
       usage,
       durationMs: Date.now() - start,

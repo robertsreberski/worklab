@@ -15,7 +15,7 @@ import {
   normalizeLeadCycleResult,
   parseLeadCycleResultFromText,
   validateLeadCycleSemantics,
-} from "@worklab/agent-runtime/ai/result/lead-cycle-contract.js";
+} from "../core/worklab-result/lead-cycle-contract.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 
@@ -237,8 +237,9 @@ export async function runLeadCycle(ctx) {
 
     let parsedResult = null;
     let parseError = null;
-    if (result.worklabResult && result.worklabResult.schema === "worklab.lead_cycle.v1") {
-      const norm = normalizeLeadCycleResult(result.worklabResult);
+    const structured = result.structuredResult;
+    if (structured && typeof structured === "object" && structured.schema === "worklab.lead_cycle.v1") {
+      const norm = normalizeLeadCycleResult(structured);
       if (norm.ok) parsedResult = norm.result; else parseError = norm.error;
     }
     if (!parsedResult) {

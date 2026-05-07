@@ -137,7 +137,7 @@ describe("generateClaudeResponse", () => {
     expect(r.text).toBe("# Report\n\nFinal delivered answer.");
   });
 
-  it("extracts worklab_result from SDK result text and strips schema from final text", async () => {
+  it("returns raw assistant text and the result-event content without worklab-specific parsing", async () => {
     const structured = {
       schema: "worklab.v2",
       stage: "review",
@@ -150,11 +150,12 @@ describe("generateClaudeResponse", () => {
       pending_actions: [],
       subtasks: [],
     };
+    const fenced = `\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``;
     mockQuery.mockReturnValue(mockStream([
       { type: "assistant", message: { content: [{ type: "text", text: "Reviewing." }] } },
       {
         type: "result",
-        result: `\`\`\`json\n${JSON.stringify(structured, null, 2)}\n\`\`\``,
+        result: fenced,
         usage: { input_tokens: 10, output_tokens: 5 },
         duration_ms: 100,
         num_turns: 2,
@@ -168,10 +169,9 @@ describe("generateClaudeResponse", () => {
       onEvent: () => {},
     });
 
-    expect(r.worklabResult).toMatchObject(structured);
-    expect(r.structuredResultSource).toBe("result");
-    expect(r.text).toBe("Approved for release.");
-    expect(r.text).not.toContain('"schema"');
+    expect(r.structuredResult).toBeUndefined();
+    expect(r.text).toBe(fenced);
+    expect(r.events.some((event) => event.type === "result" && event.result === fenced)).toBe(true);
   });
 
   it("passes structured output schemas through Claude outputFormat and reads structured_output", async () => {
@@ -219,15 +219,13 @@ describe("generateClaudeResponse", () => {
       type: "json_schema",
       schema,
     });
-    expect(r.worklabResult).toMatchObject(structured);
+    expect(r.structuredResult).toEqual(structured);
     expect(r.structuredResultSource).toBe("structured_output");
-    expect(r.text).toBe("Implemented successfully.");
     expect(r.providerSessionId).toBe("claude-session-structured");
     expect(events).toContainEqual({
       type: "structured_output",
       source: "claude_sdk_output_format",
       value: structured,
-      worklab_result: { ...structured, memory_candidates: [], verification_evidence: [] },
     });
   });
 
@@ -408,19 +406,16 @@ describe("generateClaudeResponse", () => {
       onEvent: () => {},
     });
 
-    expect(r.error).toBeNull();
-    expect(r.failureKind).toBeNull();
-    expect(r.worklabResult).toMatchObject({
-      summary: "Delivered UI audit.",
-      details: "Scope and findings.",
-      final_text: "Audit complete.",
-      artifacts: { kb_slug: "ui-audit-activity-workspace" },
-    });
-    expect(r.structuredResultSource).toBe("message");
-    expect(r.text).toBe("Audit complete.");
-    expect(r.runtimeWarnings).toContainEqual(expect.objectContaining({
-      warning_kind: "claude_post_success_error",
-    }));
+    // The package no longer recovers worklab_result from rejected StructuredOutput
+    // tool_use blocks — that's now the host's job (see resultFromResponseOrFallback
+    // in src/worker/task-runner.js, which scans response.events). The provider
+    // surfaces the error and preserves the events so the host can recover.
+    expect(r.error).toBe("Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts");
+    expect(r.failureKind).toBe("invalid_result");
+    expect(r.events.some((event) =>
+      event.type === "assistant"
+      && event.message?.content?.some((part) => part.type === "tool_use" && part.name === "StructuredOutput")
+    )).toBe(true);
   });
 
   it("classifies unrecoverable Claude structured-output retry exhaustion as invalid_result", async () => {

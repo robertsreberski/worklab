@@ -26,7 +26,7 @@ import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
-import { formatWorklabResultText } from "@worklab/agent-runtime/ai/result/contract.js";
+import { formatWorklabResultText } from "./worklab-result/contract.js";
 import { renderResumeSnapshot } from "@worklab/agent-runtime/agent/transcript.js";
 
 function runInputError(status, code, message) {

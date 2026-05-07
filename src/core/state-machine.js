@@ -2,7 +2,7 @@
 // (src/ai/result/decisions.js) — that's the source of truth for the
 // worklab_result contract; the workflow re-exports them so existing
 // importers don't have to chase the new path until Phase 7.
-import { DECISIONS, STAGES } from "@worklab/agent-runtime/ai/result/decisions.js";
+import { DECISIONS, STAGES } from "./worklab-result/decisions.js";
 
 export { DECISIONS, STAGES };
 

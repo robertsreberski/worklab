@@ -13,7 +13,6 @@ import {
   getPiBuiltinTools,
   initPiMcpTools,
 } from "../../agent/tools/pi-bridge.js";
-import { extractWorklabResult, formatWorklabResultText } from "../result/contract.js";
 import { resolvePiRuntimeModel } from "./pi-models.js";
 import {
   promptTextFromMessages,
@@ -84,20 +83,6 @@ async function resolveApiKey(provider, { apiKeys, resolvePiApiKey, runtimeWarnin
     });
     return undefined;
   }
-}
-
-function worklabResultFromStructuredOrMessages({ structuredResult, messages, text }) {
-  const source = structuredResult
-    ? { type: "tool_use", name: "StructuredOutput", input: structuredResult }
-    : { messages, text };
-  const extracted = extractWorklabResult(source);
-  return extracted.ok ? extracted.result : null;
-}
-
-function finalTextFromStructured(structuredResult, worklabResult) {
-  if (worklabResult) return formatWorklabResultText(worklabResult) || JSON.stringify(worklabResult);
-  if (structuredResult) return JSON.stringify(structuredResult);
-  return null;
 }
 
 function tryParseJson(text) {
@@ -475,13 +460,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const lastAssistant = assistantMessages[assistantMessages.length - 1] || null;
     const finalText = textFromContent(lastAssistant?.content) || assistantTexts.join("");
     const finalThinking = thinkingFromContent(lastAssistant?.content) || assistantThinking.join("");
-    const worklabResult = worklabResultFromStructuredOrMessages({
-      structuredResult,
-      messages: transcript,
-      text: finalText,
-    });
-    const structuredText = finalTextFromStructured(structuredResult, worklabResult);
-    const text = structuredText ?? finalText;
+    const text = finalText;
     const usage = usageFromMessages(transcript);
     const stopReason = lastAssistant?.stopReason || null;
     externalAbort ||= !!options.abortSignal?.aborted;
@@ -563,7 +542,9 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       providerSessionId,
       runtimeWarnings,
       diagnostics,
-      ...(worklabResult ? { worklabResult, structuredResultSource: structuredResult ? "StructuredOutput" : "message" } : {}),
+      ...(structuredResult !== null && structuredResult !== undefined
+        ? { structuredResult, structuredResultSource: "StructuredOutput" }
+        : { structuredResult: undefined, structuredResultSource: null }),
     };
   } catch (err) {
     externalAbort ||= !!options.abortSignal?.aborted;
