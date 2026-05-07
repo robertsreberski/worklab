@@ -25,6 +25,7 @@ import {
 } from "../../ai/file-change-stats.js";
 import { formatSkillBodyWithPathNote } from "../prompt/skill-index.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload, wrapToolsWithBloatGuard } from "../tool-bloat.js";
+import { readToolRuntime } from "./shared/runtime-context.js";
 
 function textResult(text, details = {}) {
   return {
@@ -77,17 +78,18 @@ function artifactFilename(filename, outputDir) {
   return target;
 }
 
-export function normalizeMcpToolParams(_serverName, toolName, params, { qaOutputDir = process.env.WORKLAB_QA_OUTPUT_DIR } = {}) {
+export function normalizeMcpToolParams(_serverName, toolName, params, { qaOutputDir } = {}) {
   if (!params || typeof params !== "object" || Array.isArray(params)) return params;
   if (!PLAYWRIGHT_FILENAME_TOOLS.has(toolName) || !params.filename || isAbsolute(String(params.filename))) return params;
+  const dir = qaOutputDir ?? readToolRuntime().qaOutputDir;
   return {
     ...params,
-    filename: artifactFilename(params.filename, qaOutputDir),
+    filename: artifactFilename(params.filename, dir),
   };
 }
 
 function normalizeWorkdir(value, cwd) {
-  const base = resolve(cwd || process.env.WORKLAB_WORKSPACE || process.cwd());
+  const base = resolve(cwd || readToolRuntime().workspace || process.cwd());
   const resolved = value ? resolve(absolutizePath(value, base)) : base;
   return isInsidePath(base, resolved) ? resolved : base;
 }
@@ -547,7 +549,7 @@ export async function initPiMcpTools(mcpConfig, reservedNames = new Set(), {
           if (signal?.aborted) throw new Error("tool execution aborted");
           const textLimit = limits.mcpTextLimitChars || MCP_TEXT_RESULT_LIMIT;
           const imageInlineMaxBytes = limits.imageInlineMaxBytes ?? MCP_IMAGE_INLINE_MAX_BYTES;
-          const normalizedParams = normalizeMcpToolParams(serverName, sourceTool.name, params || {});
+          const normalizedParams = normalizeMcpToolParams(serverName, sourceTool.name, params || {}, { qaOutputDir: runArtifactDir });
           const out = await withTimeout(
             connected.client.callTool({ name: sourceTool.name, arguments: normalizedParams || {} }),
             limits.mcpCallTimeoutMs || 120000,

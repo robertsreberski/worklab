@@ -4,6 +4,7 @@ import { createInterface } from "node:readline";
 
 import { createLiveInputQueue, loadConfig, normalizeLiveInputBody, openDb } from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools/index.js";
+import { configureToolRuntime } from "@worklab/agent-runtime/agent/tools/shared/runtime-context.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 
@@ -100,6 +101,15 @@ async function main() {
     emit({ type: "error", message: `mode ${mode} not implemented` });
     process.exit(1);
   }
+
+  configureToolRuntime({
+    workspace: config.workspace,
+    repoRoot: config.repoRoot || process.env.WORKLAB_REPO_ROOT || null,
+    runId,
+    toolArtifactDir: config.dataDir,
+    ripgrepPath: process.env.WORKLAB_RIPGREP_PATH || null,
+    qaOutputDir: process.env.WORKLAB_QA_OUTPUT_DIR || null,
+  });
 
   emit({ type: "started", runId, ts: Date.now() });
 

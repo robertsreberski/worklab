@@ -109,10 +109,8 @@ function isNoActiveTurnToSteer(error) {
 }
 
 export function createCodexAppServerClient({
-  command = process.env.WORKLAB_CODEX_APP_SERVER_COMMAND || "codex",
-  args = process.env.WORKLAB_CODEX_APP_SERVER_COMMAND
-    ? []
-    : ["app-server", "--listen", "stdio://"],
+  command = "codex",
+  args = ["app-server", "--listen", "stdio://"],
   cwd,
   env = {},
   onNotification = () => {},

@@ -12,18 +12,18 @@ import {
   resolveRgPath,
   writeToolImpl,
 } from "../../agent/tools/index.js";
+import {
+  configureToolRuntime,
+  resetToolRuntime,
+} from "../../agent/tools/shared/runtime-context.js";
 
 const tempDirs = [];
-let previousWorkspace = process.env.WORKLAB_WORKSPACE;
-let previousDataDir = process.env.WORKLAB_DATA_DIR;
-let previousRunId = process.env.WORKLAB_RUN_ID;
-let previousRgPath = process.env.WORKLAB_RIPGREP_PATH;
 let previousPath = process.env.PATH;
 
 function tempWorkspace() {
   const dir = mkdtempSync(resolve("/tmp", "worklab-ai-tools-"));
   tempDirs.push(dir);
-  process.env.WORKLAB_WORKSPACE = dir;
+  configureToolRuntime({ workspace: dir });
   return dir;
 }
 
@@ -33,16 +33,9 @@ function writeFile(path, content = "") {
 }
 
 afterEach(() => {
-  if (previousWorkspace === undefined) delete process.env.WORKLAB_WORKSPACE;
-  else process.env.WORKLAB_WORKSPACE = previousWorkspace;
-  if (previousDataDir === undefined) delete process.env.WORKLAB_DATA_DIR;
-  else process.env.WORKLAB_DATA_DIR = previousDataDir;
-  if (previousRunId === undefined) delete process.env.WORKLAB_RUN_ID;
-  else process.env.WORKLAB_RUN_ID = previousRunId;
-  if (previousRgPath === undefined) delete process.env.WORKLAB_RIPGREP_PATH;
-  else process.env.WORKLAB_RIPGREP_PATH = previousRgPath;
   if (previousPath === undefined) delete process.env.PATH;
   else process.env.PATH = previousPath;
+  resetToolRuntime();
   resolveRgPath({ refresh: true });
   while (tempDirs.length) rmSync(tempDirs.pop(), { recursive: true, force: true });
 });
@@ -163,8 +156,7 @@ describe("ai tool helpers", () => {
     const root = tempWorkspace();
     const dataDir = mkdtempSync(resolve("/tmp", "worklab-tool-artifacts-"));
     tempDirs.push(dataDir);
-    process.env.WORKLAB_DATA_DIR = dataDir;
-    process.env.WORKLAB_RUN_ID = "run-tools";
+    configureToolRuntime({ toolArtifactDir: dataDir, runId: "run-tools" });
 
     const result = await bashToolImpl({
       command: "printf 'HEAD'; printf '%04000d' 0; printf 'TAIL'",
@@ -195,7 +187,7 @@ describe("ai tool helpers", () => {
 
   it("returns a clean error when ripgrep is unavailable", async () => {
     const root = tempWorkspace();
-    process.env.WORKLAB_RIPGREP_PATH = join(root, "missing-rg");
+    configureToolRuntime({ workspace: root, ripgrepPath: join(root, "missing-rg") });
     process.env.PATH = "";
     resolveRgPath({ refresh: true });
 

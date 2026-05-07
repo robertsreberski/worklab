@@ -9,11 +9,12 @@ import {
 } from "./constants.js";
 import { boundedInt } from "./dedup.js";
 import { writeToolArtifact } from "./output-truncation.js";
+import { readToolRuntime } from "./runtime-context.js";
 
 const requireFromHere = createRequire(import.meta.url);
 
 export const RIPGREP_MISSING_MESSAGE =
-  "Error: ripgrep (rg) is not available. Set WORKLAB_RIPGREP_PATH or install ripgrep on PATH; run `worklab doctor` for details.";
+  "Error: ripgrep (rg) is not available. Configure ripgrepPath via configureToolRuntime() or install ripgrep on PATH; run `worklab doctor` for details.";
 
 // Mutable cache of the resolved ripgrep binary path. Stored on an object so
 // callers can read the latest value without re-importing the module.
@@ -49,8 +50,9 @@ function rgFromPath() {
 
 export function resolveRgPath({ refresh = false } = {}) {
   if (!refresh && cachedRgPath.value !== undefined) return cachedRgPath.value;
-  if (process.env.WORKLAB_RIPGREP_PATH) {
-    cachedRgPath.value = existsSync(process.env.WORKLAB_RIPGREP_PATH) ? process.env.WORKLAB_RIPGREP_PATH : null;
+  const { ripgrepPath } = readToolRuntime();
+  if (ripgrepPath) {
+    cachedRgPath.value = existsSync(ripgrepPath) ? ripgrepPath : null;
   } else {
     cachedRgPath.value = vendoredRgPath() || rgFromPath() || null;
   }

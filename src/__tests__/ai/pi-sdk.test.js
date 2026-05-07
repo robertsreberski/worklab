@@ -173,8 +173,6 @@ describe("generatePiResponse cancellation handling", () => {
   });
 
   it("returns the reusable provider session id used by the Pi agent", async () => {
-    process.env.WORKLAB_PROVIDER_SESSION_ID = "pi-session-prev";
-
     const result = await generatePiResponse("sys", {
       model: resolveModel("pi:openai-codex:gpt-5.5"),
       effort: "low",
@@ -183,6 +181,7 @@ describe("generatePiResponse cancellation handling", () => {
       allowedTools: [],
       skills: [],
       mcpServers: {},
+      providerSessionId: "pi-session-prev",
     });
 
     expect(result.providerSessionId).toBe("pi-session-prev");
@@ -240,7 +239,6 @@ describe("generatePiResponse Codex transport", () => {
   });
 
   it("allows an explicit Codex transport override for debugging", async () => {
-    process.env.WORKLAB_PI_CODEX_TRANSPORT = "websocket-cached";
     let streamOptions = null;
     const streamFn = (model, context, options) => {
       streamOptions = options;
@@ -255,6 +253,7 @@ describe("generatePiResponse Codex transport", () => {
       allowedTools: [],
       skills: [],
       mcpServers: {},
+      piCodexTransport: "websocket-cached",
     });
 
     expect(result.error).toBeNull();

@@ -523,6 +523,21 @@ export async function generateResponse(systemPrompt, options) {
     settings,
     resolveCustomPricing: options.resolveCustomPricing || customPricingResolverFor(options.db),
     onCompactionRecorded: options.onCompactionRecorded || compactionRecorderFor(options.db),
+    runId: options.runId || process.env.WORKLAB_RUN_ID || null,
+    providerSessionId: options.providerSessionId || process.env.WORKLAB_PROVIDER_SESSION_ID || null,
+    runArtifactDir: options.runArtifactDir || process.env.WORKLAB_QA_OUTPUT_DIR || null,
+    piCodexTransport: options.piCodexTransport || process.env.WORKLAB_PI_CODEX_TRANSPORT || null,
+    ...(options.codexAppServerCommand
+      ? {
+        codexAppServerCommand: options.codexAppServerCommand,
+        codexAppServerArgs: options.codexAppServerArgs,
+      }
+      : process.env.WORKLAB_CODEX_APP_SERVER_COMMAND
+        ? {
+          codexAppServerCommand: process.env.WORKLAB_CODEX_APP_SERVER_COMMAND,
+          codexAppServerArgs: [],
+        }
+        : {}),
     ...(customContext || {}),
   };
   const nextOptions = {
