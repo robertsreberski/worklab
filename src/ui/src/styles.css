@@ -150,11 +150,20 @@
   --shell-rail-collapsed: 64px;
   --assistant-w: 320px;
   --content-max: 1560px;
-  --worklab-viewport-height: 100dvh;
+  --worklab-viewport-height: 100vh;
+  --app-height: var(--worklab-viewport-height);
+  --shell-height: var(--app-height, var(--worklab-viewport-height, 100vh));
+  --vv-height: var(--shell-height);
+  --vv-offset: 0px;
+  --worklab-keyboard-height: 0px;
   --worklab-safe-area-top: env(safe-area-inset-top, 0px);
   --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --worklab-safe-area-left: env(safe-area-inset-left, 0px);
+  --worklab-safe-area-right: env(safe-area-inset-right, 0px);
   --mobile-safe-top: var(--worklab-safe-area-top);
   --mobile-safe-bottom: var(--worklab-safe-area-bottom);
+  --mobile-safe-left: var(--worklab-safe-area-left);
+  --mobile-safe-right: var(--worklab-safe-area-right);
 
   /* §3.7 / §3.19 component tokens (named magic numbers) */
   --switch-thumb-x: 12px;
@@ -230,23 +239,38 @@
 /* 3. Base / reset --------------------------------------------- */
 * { box-sizing: border-box; }
 
-html, body, #app {
-  min-height: 100%;
+html,
+body,
+#app {
+  height: var(--shell-height);
+  min-height: var(--shell-height);
+  overflow: hidden;
+  overscroll-behavior: none;
   touch-action: manipulation;
+}
+
+html {
+  min-height: var(--shell-height);
+  background-color: var(--bg);
+  background-image:
+    repeating-linear-gradient(0deg, transparent 0 2px, var(--scanline) 2px 3px),
+    repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px);
 }
 
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background:
+  background-color: var(--bg);
+  background-image:
     repeating-linear-gradient(0deg, transparent 0 2px, var(--scanline) 2px 3px),
-    repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px),
-    var(--bg);
+    repeating-linear-gradient(90deg, transparent 0 47px, var(--paper-line) 47px 48px);
   color: var(--text);
   font-size: var(--text-base);
   line-height: 1.45;
   text-rendering: optimizeLegibility;
+  -webkit-text-size-adjust: 100%;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
 a { color: var(--accent); text-decoration: none; }
@@ -1761,7 +1785,7 @@ select,
   border-bottom: 1px solid var(--border);
 }
 .modal-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; }
-.modal-body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); }
+.modal-body { padding: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-3); overscroll-behavior: contain; }
 .modal-foot {
   padding: var(--sp-3) var(--sp-5);
   border-top: 1px solid var(--border);
@@ -1799,7 +1823,7 @@ select,
   gap: var(--sp-4);
 }
 .drawer-head h2 { margin: 0; font-size: var(--text-lg); font-weight: 600; color: var(--text); }
-.drawer-body { padding: var(--sp-5); overflow: auto; flex: 1; }
+.drawer-body { padding: var(--sp-5); overflow: auto; overscroll-behavior: contain; flex: 1; }
 
 /* §4.12–4.14 EmptyState / LoadingState / ErrorState */
 .empty-state,
@@ -2380,7 +2404,7 @@ select,
 .app {
   position: relative;
   isolation: isolate;
-  min-height: var(--worklab-viewport-height, 100dvh);
+  min-height: var(--shell-height);
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
   background:
@@ -2407,7 +2431,7 @@ select,
 .app-rail {
   position: sticky;
   top: 0;
-  height: var(--worklab-viewport-height, 100dvh);
+  height: var(--shell-height);
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
@@ -2540,7 +2564,7 @@ select,
   position: sticky;
   top: 0;
   z-index: 2;
-  height: var(--worklab-viewport-height, 100dvh);
+  height: var(--shell-height);
   min-width: 0;
   min-height: 0;
   display: none;
@@ -2667,7 +2691,6 @@ html.assistant-resizing * {
   overflow-x: hidden;
   overscroll-behavior: contain;
   touch-action: pan-y;
-  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
@@ -2855,8 +2878,8 @@ html.assistant-resizing * {
 }
 .assistant-launcher {
   position: fixed;
-  right: max(var(--sp-4), env(safe-area-inset-right));
-  bottom: max(var(--sp-4), env(safe-area-inset-bottom));
+  right: max(var(--sp-4), var(--mobile-safe-right));
+  bottom: max(var(--sp-4), var(--mobile-safe-bottom));
   z-index: 70;
   width: 44px;
   height: 44px;
@@ -3296,10 +3319,11 @@ html.assistant-resizing * {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: var(--sp-6);
-  padding: var(--sp-6) var(--sp-6) calc(var(--sp-8) + env(safe-area-inset-bottom));
+  padding: var(--sp-6) var(--sp-6) calc(var(--sp-8) + var(--mobile-safe-bottom));
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   font-family: var(--font-sans);
   background:
     linear-gradient(180deg, transparent, color-mix(in srgb, var(--surface-sunken) 40%, transparent)),
@@ -4791,6 +4815,7 @@ html.assistant-resizing * {
 .pane-list-body {
   flex: 1;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--sp-1) 0;
   scrollbar-gutter: stable;
 }
@@ -5103,6 +5128,7 @@ html.assistant-resizing * {
   flex-direction: column;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   background:
     radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 34%),
     var(--bg);
@@ -5681,7 +5707,8 @@ html.assistant-resizing * {
 .task-edit-body {
   flex: 1;
   overflow: auto;
-  padding: var(--sp-6) var(--sp-6) calc(var(--sp-8) + env(safe-area-inset-bottom));
+  overscroll-behavior: contain;
+  padding: var(--sp-6) var(--sp-6) calc(var(--sp-8) + var(--mobile-safe-bottom));
 }
 .task-edit-toolbar {
   display: inline-flex;
@@ -9189,10 +9216,10 @@ html.assistant-resizing * {
   .task-detail-rail { order: 2; }
   .app {
     grid-template-columns: minmax(0, 1fr);
-    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+    padding-bottom: calc(56px + var(--mobile-safe-bottom));
   }
   .app.has-mobile-action-dock {
-    padding-bottom: calc(112px + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--mobile-safe-bottom));
   }
   .app-rail {
     position: fixed;
@@ -9200,11 +9227,11 @@ html.assistant-resizing * {
     right: 0;
     bottom: 0;
     top: auto;
-    height: calc(56px + env(safe-area-inset-bottom));
+    height: calc(56px + var(--mobile-safe-bottom));
     flex-direction: row;
     align-items: flex-start;
     justify-content: center;
-    padding: 0 var(--sp-2) env(safe-area-inset-bottom);
+    padding: 0 var(--sp-2) var(--mobile-safe-bottom);
     gap: 0;
     border-right: 0;
     border-top: 1px solid var(--border);
@@ -9258,7 +9285,7 @@ html.assistant-resizing * {
     white-space: nowrap;
   }
   .rail-footer { display: none; }
-  .app-body { min-height: calc(var(--worklab-viewport-height, 100dvh) - 56px - env(safe-area-inset-bottom)); }
+  .app-body { min-height: calc(var(--shell-height) - 56px - var(--mobile-safe-bottom)); }
   .app.has-mobile-action-dock .task-hero-actions {
     display: none;
   }
@@ -9266,7 +9293,7 @@ html.assistant-resizing * {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(56px + env(safe-area-inset-bottom));
+    bottom: calc(56px + var(--mobile-safe-bottom));
     z-index: 31;
     display: flex;
     align-items: center;
@@ -9296,7 +9323,7 @@ html.assistant-resizing * {
     position: static;
   }
   .pane-list { border-right: 0; border-bottom: 1px solid var(--border); }
-  .pane-list-body { padding-bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom)); }
+  .pane-list-body { padding-bottom: calc(56px + var(--sp-4) + var(--mobile-safe-bottom)); }
   .pane-row {
     grid-template-columns: minmax(24px, auto) minmax(0, 1fr);
     align-items: flex-start;
@@ -9370,7 +9397,7 @@ html.assistant-resizing * {
   .task-detail { padding: var(--sp-4); grid-template-columns: 1fr; }
   .app.has-mobile-action-dock .task-detail,
   .app.has-mobile-action-dock .task-edit-body {
-    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-6) + var(--mobile-safe-bottom));
   }
   .task-detail-rail { order: 2; }
   .task-detail-main {
@@ -9671,7 +9698,7 @@ html.assistant-resizing * {
   }
   .commander .commander-new-task-fab.button {
     position: fixed;
-    right: max(var(--sp-4), env(safe-area-inset-right));
+    right: max(var(--sp-4), var(--mobile-safe-right));
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 32;
     display: inline-flex;
@@ -9838,7 +9865,7 @@ html.assistant-resizing * {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: calc(56px + env(safe-area-inset-bottom));
+    bottom: calc(56px + var(--mobile-safe-bottom));
     z-index: 31;
     display: flex;
     align-items: center;
@@ -9855,7 +9882,7 @@ html.assistant-resizing * {
     min-height: 44px;
   }
   .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body {
-    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-6) + var(--mobile-safe-bottom));
   }
   .status-grid-btn {
     min-height: 44px;
@@ -9884,7 +9911,7 @@ html.assistant-resizing * {
     width: 100%;
   }
   .modal-foot {
-    padding-bottom: calc(var(--sp-3) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--sp-3) + var(--mobile-safe-bottom));
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
     align-items: stretch;
@@ -9897,7 +9924,7 @@ html.assistant-resizing * {
     width: 100%;
   }
   .drawer-body {
-    padding-bottom: calc(var(--sp-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(var(--sp-5) + var(--mobile-safe-bottom));
   }
   .form-actions {
     display: grid;
@@ -9908,16 +9935,39 @@ html.assistant-resizing * {
     width: 100%;
   }
 
-  .app:has(input:focus, textarea:focus, select:focus) {
-    padding-bottom: env(safe-area-inset-bottom);
+  html.keyboard-open body,
+  html.keyboard-open #app {
+    height: var(--vv-height);
+    min-height: var(--vv-height);
   }
-  .app:has(input:focus, textarea:focus, select:focus) .app-rail {
-    transform: translateY(100%);
+  html.keyboard-open .app {
+    min-height: var(--vv-height);
+    padding-bottom: var(--mobile-safe-bottom);
+  }
+  html.keyboard-open .app.responsive {
+    min-height: var(--vv-height);
+    padding-bottom: 0;
+  }
+  html.keyboard-open .app.responsive .app-body {
+    height: var(--vv-height);
+    padding-bottom: 0;
+  }
+  html.keyboard-open .app.responsive.has-dock .app-body {
+    padding-bottom: 0;
+  }
+  html.keyboard-open .app-rail,
+  html.keyboard-open .app-tabbar,
+  html.keyboard-open .app-mobile-action-dock,
+  html.keyboard-open .app.responsive .app-mobile-action-dock,
+  html.keyboard-open .app.responsive .task-mobile-action-dock,
+  html.keyboard-open .entity-edit-mobile-dock,
+  html.keyboard-open .app.responsive .entity-edit-mobile-dock,
+  html.keyboard-open .assistant-launcher {
+    display: none;
     pointer-events: none;
   }
-  .app:has(input:focus, textarea:focus, select:focus) .app-mobile-action-dock {
-    transform: translateY(calc(100% + 56px));
-    pointer-events: none;
+  html.keyboard-open .assistant-dock {
+    height: var(--vv-height);
   }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual
@@ -9931,14 +9981,14 @@ html.assistant-resizing * {
     font-size: 16px;
   }
   .input.sm { height: 36px; font-size: 16px; }
-  .textarea.mono { font-size: 14px; }
+  .textarea.mono { font-size: 16px; }
   .search-field { height: 40px; }
   .search-field-input { font-size: 16px; }
 
   .toast-host {
     left: var(--sp-3);
     right: var(--sp-3);
-    bottom: calc(56px + var(--sp-3) + env(safe-area-inset-bottom));
+    bottom: calc(56px + var(--sp-3) + var(--mobile-safe-bottom));
   }
   .toast {
     min-width: 0;
@@ -9985,7 +10035,7 @@ html.assistant-resizing * {
   .task-detail { padding: var(--sp-3); }
   .task-detail-shell .task-detail {
     padding: var(--sp-8) var(--sp-3) var(--sp-3);
-    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-5) + var(--mobile-safe-bottom));
   }
   .commander-header { padding: var(--sp-3) var(--sp-3) var(--sp-2); }
   .commander-filter {
@@ -10013,7 +10063,7 @@ html.assistant-resizing * {
     padding: var(--sp-4) var(--sp-3);
   }
   .commander-list {
-    padding-bottom: calc(112px + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-6) + var(--mobile-safe-bottom));
   }
   .commander-row {
     margin: 0 var(--sp-2);
@@ -10124,24 +10174,24 @@ html.assistant-resizing * {
   .task-detail,
   .pane-detail-body,
   .task-edit-body {
-    padding-bottom: calc(56px + var(--sp-6) + env(safe-area-inset-bottom));
+    padding-bottom: calc(56px + var(--sp-6) + var(--mobile-safe-bottom));
   }
   .task-detail {
-    padding-bottom: calc(56px + var(--sp-4) + env(safe-area-inset-bottom));
+    padding-bottom: calc(56px + var(--sp-4) + var(--mobile-safe-bottom));
   }
   .app.has-mobile-action-dock .task-detail,
   .app.has-mobile-action-dock .task-edit-body {
-    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-5) + var(--mobile-safe-bottom));
   }
   .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body {
-    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-5) + var(--mobile-safe-bottom));
   }
   .entity-edit-mobile-dock {
     padding: var(--sp-2) var(--sp-3);
   }
   .modal-head { padding: var(--sp-3) var(--sp-4) var(--sp-2); }
   .modal-body { padding: var(--sp-4); }
-  .modal-foot { padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom)); }
+  .modal-foot { padding: var(--sp-2) var(--sp-4) calc(var(--sp-3) + var(--mobile-safe-bottom)); }
   .drawer-head { padding: var(--sp-3) var(--sp-4); }
   .drawer-body { padding: var(--sp-4); }
 }
@@ -10156,20 +10206,22 @@ html.assistant-resizing * {
   container-type: inline-size;
   container-name: app;
   grid-template-columns: var(--shell-rail-w) minmax(0, 1fr);
-  min-height: var(--worklab-viewport-height, 100dvh);
+  min-height: var(--shell-height);
   padding-bottom: 0;
   background:
     repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-line) 27px 28px),
     var(--bg);
 }
 .app.responsive .app-body {
-  height: var(--worklab-viewport-height, 100dvh);
+  height: var(--shell-height);
   min-height: 0;
   overflow: hidden;
 }
 .app.responsive .app-main {
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-bottom: 0;
 }
 .app.responsive .app-rail {
   width: auto;
@@ -10755,6 +10807,7 @@ html.assistant-resizing * {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: var(--sp-4);
 }
 .app-section-sheet-panel,
@@ -10763,8 +10816,8 @@ html.assistant-resizing * {
   left: 0;
   right: 0;
   bottom: 0;
-  max-height: 72vh;
-  padding: var(--sp-3) var(--sp-4) max(var(--sp-4), env(safe-area-inset-bottom));
+  max-height: min(72vh, calc(var(--shell-height) - var(--mobile-safe-top)));
+  padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
   border-top: 1px solid var(--border);
   border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: var(--surface);
@@ -11067,7 +11120,7 @@ html.assistant-resizing * {
     display: none;
   }
   .app.responsive .app-body {
-    height: var(--worklab-viewport-height, 100dvh);
+    height: var(--shell-height);
     min-height: 0;
     padding-top: var(--mobile-safe-top);
     padding-bottom: var(--mobile-tabbar-height);
@@ -11088,6 +11141,9 @@ html.assistant-resizing * {
   }
   .app.responsive.has-dock .app-body {
     padding-bottom: var(--mobile-action-dock-height);
+  }
+  .app.responsive .pane-list-body {
+    padding-bottom: var(--sp-3);
   }
   .mobile-topbar {
     display: flex;
@@ -11152,7 +11208,7 @@ html.assistant-resizing * {
     display: flex;
     box-sizing: border-box;
     height: auto;
-    max-height: calc(var(--worklab-viewport-height, 100dvh) - var(--mobile-safe-top));
+    max-height: calc(var(--shell-height) - var(--mobile-safe-top));
     flex-direction: column;
     overflow: hidden;
     padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
@@ -11206,6 +11262,7 @@ html.assistant-resizing * {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
     flex-direction: column;
     gap: var(--sp-3);
     padding-top: var(--sp-3);
@@ -11358,7 +11415,7 @@ html.assistant-resizing * {
   }
   .task-detail-shell .task-detail {
     padding: var(--sp-8) var(--sp-4) var(--sp-4);
-    padding-bottom: calc(112px + var(--sp-5) + env(safe-area-inset-bottom));
+    padding-bottom: calc(112px + var(--sp-5) + var(--mobile-safe-bottom));
   }
   .editor-main,
   .editor-rail {
@@ -11442,7 +11499,7 @@ html.assistant-resizing * {
   }
   .commander .commander-new-task-fab.button {
     position: fixed;
-    right: max(var(--sp-4), env(safe-area-inset-right));
+    right: max(var(--sp-4), var(--mobile-safe-right));
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 32;
     display: inline-flex;
@@ -11495,7 +11552,7 @@ html.assistant-resizing * {
     left: 0;
     z-index: 90;
     width: auto;
-    height: var(--worklab-viewport-height, 100dvh);
+    height: var(--shell-height);
     transform: translateX(100%);
     transition: transform var(--dur-std) var(--ease-snap);
   }
@@ -11506,9 +11563,9 @@ html.assistant-resizing * {
     display: none;
   }
   .assistant-dock-head {
-    min-height: calc(52px + env(safe-area-inset-top, 0px));
+    min-height: calc(52px + var(--mobile-safe-top));
     padding:
-      calc(var(--sp-3) + env(safe-area-inset-top, 0px))
+      calc(var(--sp-3) + var(--mobile-safe-top))
       var(--sp-4)
       var(--sp-3);
   }

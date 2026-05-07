@@ -1924,7 +1924,8 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
         const parsed = parseFloat(value);
         return Number.isFinite(parsed) ? parsed : 0;
       };
-      const target = document.querySelector(targetSelector);
+      const targets = Array.from(document.querySelectorAll(targetSelector));
+      const target = targets.at(-1) || null;
       const chrome = Array.from(document.querySelectorAll(".app-mobile-action-dock, .app-tabbar"))
         .find((element) => getComputedStyle(element).display !== "none");
       const appBody = document.querySelector(".app-body");
@@ -2083,6 +2084,7 @@ test("mobile tabbar does not create document scroll space below content", async 
       bodyPaddingBottom: bodyStyles ? parsePx(bodyStyles.paddingBottom) : 0,
       mainOverflowY: appMain ? getComputedStyle(appMain).overflowY : "",
       tabbarDisplay: tabbarStyles?.display || "",
+      tabbarPosition: tabbarStyles?.position || "",
       tabbarOverflowX: tabbarStyles?.overflowX || "",
       tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
       tabbarBottom: tabbar ? Math.round(tabbar.getBoundingClientRect().bottom) : 0,
@@ -2096,6 +2098,7 @@ test("mobile tabbar does not create document scroll space below content", async 
   expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
   expect(metrics.mainOverflowY).toBe("auto");
   expect(metrics.tabbarDisplay).toBe("grid");
+  expect(metrics.tabbarPosition).toBe("fixed");
   expect(["clip", "hidden"]).toContain(metrics.tabbarOverflowX);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
 });
@@ -2120,25 +2123,30 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
     const body = document.querySelector(".app-body");
     const tabbar = document.querySelector(".app-tabbar");
     const tabbarRect = tabbar?.getBoundingClientRect();
+    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
     const parsePx = (value) => Math.round(parseFloat(value) || 0);
     return {
       viewportHeight: window.innerHeight,
+      appHeightVar: rootStyles.getPropertyValue("--app-height").trim(),
       viewportVar: rootStyles.getPropertyValue("--worklab-viewport-height").trim(),
       safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
       safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
       bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
       tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
       tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
+      tabbarPosition: tabbarStyles?.position || "",
       documentScrollHeight: document.documentElement.scrollHeight,
     };
   });
 
+  expect(metrics.appHeightVar).toBe("844px");
   expect(metrics.viewportVar).toBe("844px");
   expect(metrics.safeTopVar).toBe("31px");
   expect(metrics.safeBottomVar).toBe("11px");
   expect(metrics.tabbarHeight).toBe(67);
   expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
+  expect(metrics.tabbarPosition).toBe("fixed");
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
@@ -2146,6 +2154,7 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
+  await page.waitForTimeout(420);
   await page.evaluate(() => {
     document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
     document.documentElement.style.setProperty("--worklab-safe-area-bottom", "11px");
@@ -2213,6 +2222,7 @@ test("mobile topbar owns the status safe-area background", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".mobile-topbar")).toBeVisible();
   await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
+  await page.waitForTimeout(420);
   await page.evaluate(() => {
     document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
     document.documentElement.style.setProperty("--worklab-safe-area-bottom", "11px");
@@ -2776,16 +2786,23 @@ test("mobile task detail keeps activity first with a compact premium composer", 
     const input = document.querySelector(".activity-composer-input");
     const tabbar = document.querySelector(".app-tabbar");
     const dock = document.querySelector(".app-mobile-action-dock");
+    const dockRect = dock?.getBoundingClientRect();
     return {
       inputHeight: input ? Math.round(input.getBoundingClientRect().height) : 0,
+      keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
       tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
       dockTransform: dock ? getComputedStyle(dock).transform : "",
+      dockBottomBeforeNav: dockRect ? Math.round(dockRect.bottom) <= window.innerHeight + 1 : false,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(afterFocus.inputHeight).toBeGreaterThanOrEqual(84);
+  expect(afterFocus.keyboardOpen).toBe(false);
   expect(afterFocus.tabbarDisplay).toBe("none");
-  expect(afterFocus.dockTransform).not.toBe("none");
+  expect(afterFocus.dockDisplay).toBe("flex");
+  expect(afterFocus.dockTransform).toBe("none");
+  expect(afterFocus.dockBottomBeforeNav).toBe(true);
   expect(afterFocus.overflow).toBeLessThanOrEqual(0);
 });
 
@@ -2862,6 +2879,47 @@ test("mobile task detail omits redundant header labels", async ({ page }) => {
   expect(metrics.titleWidth).toBeLessThanOrEqual(metrics.headWidth);
   expect(metrics.statusInsideHeader).toBe(true);
   expect(metrics.overflow).toBeLessThanOrEqual(0);
+});
+
+test("mobile new task dock stays anchored when autofocus does not open the keyboard", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const appBody = document.querySelector(".app-body");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const tabbar = document.querySelector(".app-tabbar");
+    const active = document.activeElement;
+    const dockRect = dock?.getBoundingClientRect();
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      activeTag: active?.tagName || "",
+      keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
+      bodyPaddingBottom: appBody ? parsePx(getComputedStyle(appBody).paddingBottom) : 0,
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      dockTransform: dock ? getComputedStyle(dock).transform : "",
+      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
+      dockTop: dockRect ? Math.round(dockRect.top) : -1,
+      dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      documentScrollHeight: document.documentElement.scrollHeight,
+      viewportHeight: window.innerHeight,
+    };
+  });
+
+  expect(["INPUT", "TEXTAREA"]).toContain(metrics.activeTag);
+  expect(metrics.keyboardOpen).toBe(false);
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.dockTransform).toBe("none");
+  expect(metrics.dockTop).toBeGreaterThanOrEqual(0);
+  expect(metrics.dockBottom).toBeLessThanOrEqual(metrics.viewportHeight + 1);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.dockHeight);
+  expect(metrics.tabbarDisplay).toBe("none");
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {

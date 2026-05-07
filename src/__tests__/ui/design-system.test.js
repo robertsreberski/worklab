@@ -106,6 +106,35 @@ describe("design system stylesheet", () => {
     expect(missing).toEqual([]);
   });
 
+  it("declares the iOS PWA viewport and safe-area contract", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const rootRule = css.match(/:root\s*\{[\s\S]*?\n\}/)?.[0] || "";
+    for (const token of [
+      "--app-height",
+      "--shell-height",
+      "--vv-height",
+      "--vv-offset",
+      "--worklab-keyboard-height",
+      "--worklab-safe-area-top",
+      "--worklab-safe-area-bottom",
+      "--worklab-safe-area-left",
+      "--worklab-safe-area-right",
+    ]) {
+      expect(rootRule).toContain(`${token}:`);
+    }
+    expect(css).not.toMatch(/100dvh/);
+    expect(css).not.toMatch(/-webkit-overflow-scrolling/);
+    expect(css).not.toMatch(/:has\(input:focus/);
+  });
+
+  it("keeps focused mobile text-entry controls at iOS-safe font sizes", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const mobileBlock = css.match(/\/\* iOS Safari zooms[\s\S]*?\.search-field-input \{ font-size: 16px; \}/)?.[0] || "";
+    expect(mobileBlock).toContain(".textarea");
+    expect(mobileBlock).toMatch(/\.textarea\.mono\s*\{\s*font-size:\s*16px;\s*\}/);
+    expect(mobileBlock).not.toMatch(/font-size:\s*(?:1[0-5](?:\.\d+)?px|var\(--text-(?:xs|sm|base|md)\))/);
+  });
+
   it("keeps typography responsive through tokens instead of viewport scaling", () => {
     const css = readFileSync(stylesPath, "utf8");
     expect(css).not.toMatch(/font-size:\s*clamp\(/);
