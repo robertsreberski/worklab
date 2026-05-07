@@ -16,7 +16,7 @@ import {
   uniqueSlug,
   WORKLAB_BUILTIN_TOOLS,
 } from "../../../core/index.js";
-import { executionModeIncompatibilityReason } from "../../../ai/runtime/model-refs.js";
+import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();

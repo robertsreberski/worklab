@@ -1,11 +1,11 @@
 import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@mariozechner/pi-ai";
-import { getSkillAccessDirs } from "../agent/prompt/skill-index.js";
+import { getSkillAccessDirs } from "@worklab/agent-runtime/agent/prompt/skill-index.js";
 import {
   canonicalizeLegacyModelReference,
   normalizeRuntimeModelReference,
   parseRuntimeModelReference,
-} from "../ai/runtime/model-refs.js";
-import { resolveRuntimeBridge } from "../ai/runtime/registry.js";
+} from "@worklab/agent-runtime/ai/runtime/model-refs.js";
+import { resolveRuntimeBridge } from "@worklab/agent-runtime/ai/runtime/registry.js";
 import { readSettings } from "./settings.js";
 import {
   buildModelCapabilities,

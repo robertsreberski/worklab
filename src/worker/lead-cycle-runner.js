@@ -15,7 +15,7 @@ import {
   normalizeLeadCycleResult,
   parseLeadCycleResultFromText,
   validateLeadCycleSemantics,
-} from "../ai/result/lead-cycle-contract.js";
+} from "@worklab/agent-runtime/ai/result/lead-cycle-contract.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 

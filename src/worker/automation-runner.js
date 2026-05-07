@@ -6,8 +6,8 @@ import {
   readSettings,
   resolveModel,
 } from "../core/index.js";
-import { buildAutomationSystemPrompt } from "../agent/prompt/system-prompt.js";
-import { estimateFirstTurnInput } from "../agent/compaction.js";
+import { buildAutomationSystemPrompt } from "../core/prompts/system-prompt.js";
+import { estimateFirstTurnInput } from "@worklab/agent-runtime/agent/compaction.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
 import { getAutomationById } from "../core/db/queries/automations.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";

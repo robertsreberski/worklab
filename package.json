@@ -5,6 +5,9 @@
   "type": "module",
   "private": true,
   "license": "GPL-3.0-only",
+  "workspaces": [
+    "packages/*"
+  ],
   "bin": {
     "worklab": "./src/cli/index.js"
   },
@@ -19,19 +22,16 @@
     "test:e2e:ollama": "npm run build:ui && playwright test --config playwright.config.js",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "lint": "eslint src",
-    "lint:boundaries": "eslint src --rule '{\"no-restricted-imports\":\"warn\"}'",
+    "lint": "eslint src packages",
+    "lint:boundaries": "eslint src packages --rule '{\"no-restricted-imports\":\"warn\"}'",
     "lint:size": "node scripts/guard-file-size.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
-    "@mariozechner/pi-agent-core": "^0.72.1",
-    "@mariozechner/pi-ai": "^0.72.1",
-    "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
+    "@worklab/agent-runtime": "*",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
     "cors": "^2.8.5",

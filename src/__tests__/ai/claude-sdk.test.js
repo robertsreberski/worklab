@@ -8,7 +8,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
   query: (...args) => mockQuery(...args),
 }));
 
-const { generateClaudeResponse } = await import("../../ai/providers/claude-sdk.js");
+const { generateClaudeResponse } = await import("@worklab/agent-runtime/ai/providers/claude-sdk.js");
 const { createLiveInputQueue, formatLiveInputGuidance } = await import("../../core/live-input.js");
 
 function mockStream(events) {

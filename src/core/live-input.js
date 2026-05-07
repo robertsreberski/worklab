@@ -25,7 +25,7 @@ export function normalizeLiveInputBody(value, { limit = LIVE_INPUT_MAX_BODY_LENG
 // are the only consumers and that location keeps the kernel/edge layer free
 // of the prompt-string concern. Re-exported here so any straggling callers
 // keep working.
-export { formatLiveInputGuidance } from "../ai/live-input-prompt.js";
+export { formatLiveInputGuidance } from "@worklab/agent-runtime/ai/live-input-prompt.js";
 
 export function createLiveInputQueue() {
   const items = [];

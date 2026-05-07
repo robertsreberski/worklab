@@ -6,7 +6,7 @@ import {
 import { appendFileSync } from "node:fs";
 import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
-import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../ai/result/contract.js";
+import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "@worklab/agent-runtime/ai/result/contract.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
@@ -15,7 +15,7 @@ import { recordRunResultLearning } from "../core/agent-learning.js";
 import { supportsLiveInputProvider } from "../core/live-input.js";
 import { buildRunLifecycleEvent } from "../core/run-events.js";
 import { agentForTaskStage, missingAgentMessageForTaskStage } from "../core/task-agents.js";
-import { retryableProviderFailureInfo } from "../ai/failure.js";
+import { retryableProviderFailureInfo } from "@worklab/agent-runtime/ai/failure.js";
 import { delegationDepth } from "../core/delegation.js";
 import { reconcileRunWorktree } from "../core/worktrees.js";
 import { loadTaskArtifacts } from "../core/run-artifacts.js";

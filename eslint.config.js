@@ -4,13 +4,11 @@
 // violations in src/api/**, PR-13..PR-15 + the PR-14 follow-on cleared every
 // cross-layer back-import, and PR-9 added the FORBID_DEEP_CORE rule that
 // requires edge layers to consume domain helpers via the public core barrel
-// (src/core/index.js). Canonical src/agent and src/ai imports are allowed
-// where the concern belongs to those layers. The carve-outs are documented
-// inline below.
+// (src/core/index.js). The carve-outs are documented inline below.
 //
-// Layout the rules target (some directories don't exist yet — rules activate as we create them):
-//   src/ai/        provider layer; no DB, no domain layers
-//   src/agent/     agent kernel; may use src/ai/ only
+// Layout the rules target:
+//   packages/agent-runtime/src/ai/       provider layer; no DB, no Worklab domain
+//   packages/agent-runtime/src/agent/    agent kernel; may use ai/ only
 //   src/core/      domain; no edge-layer imports; DB only inside src/core/db/**
 //   src/api/       HTTP edge; no direct DB
 //   src/mcp/       MCP edge; no direct DB; no api/integrations/cli imports
@@ -141,6 +139,7 @@ export default [
   {
     ignores: [
       "node_modules/**",
+      "**/node_modules/**",
       "src/ui/dist/**",
       "test-results/**",
       "data-template/**",
@@ -155,16 +154,22 @@ export default [
     },
   },
 
-  // src/ai/ — provider layer
+  // packages/agent-runtime — provider layer + agent kernel.
+  // Phase 1 of the runtime extraction lifted these out of src/ai and src/agent;
+  // the same module-boundary invariants still apply.
   {
-    files: ["src/ai/**/*.js"],
+    files: ["packages/agent-runtime/src/ai/**/*.js"],
     rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
   },
-
-  // src/agent/ — kernel
   {
-    files: ["src/agent/**/*.js"],
+    files: ["packages/agent-runtime/src/agent/**/*.js"],
     rules: restricted(FORBID_DB, FORBID_DOMAIN_LAYERS, FORBID_REMOVED_SHIMS),
+  },
+  // The package's own tests are exempt from boundary rules but not from
+  // the deleted-shim guard.
+  {
+    files: ["packages/agent-runtime/src/__tests__/**/*.js"],
+    rules: { "no-restricted-imports": "off" },
   },
 
   // src/core/ — domain (DB allowed inside src/core/db/**)

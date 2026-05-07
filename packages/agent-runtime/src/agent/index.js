@@ -27,15 +27,6 @@ export {
 } from "./allowlists.js";
 
 export {
-  buildAutomationSystemPrompt,
-  buildConsolidationSystemPrompt,
-  buildExecuteSystemPrompt,
-  buildPlanSystemPrompt,
-  buildReviewSystemPrompt,
-  buildSystemPrompt,
-} from "./prompt/system-prompt.js";
-
-export {
   BINARY_BLOAT_TOOLS,
   DEFAULT_TOOL_BLOAT_CONFIG,
   MAX_TOOL_RESULT_BYTES,

@@ -1,6 +1,6 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { backendCapabilities, backendUsesExecenvConfig } from "../ai/backend.js";
+import { backendCapabilities, backendUsesExecenvConfig } from "@worklab/agent-runtime/ai/backend.js";
 
 // Per-task isolated artifact directory. Mirrors multica's `execenv`:
 // every run gets its own `runs/{runId}` directory with `workdir`,

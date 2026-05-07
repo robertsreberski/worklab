@@ -13,7 +13,7 @@ import {
 // initialization calls promisify(execFile); pulling it through the core
 // barrel breaks tests that mock node:child_process partially. Keep this
 // import deep so doctor.js is the only loader of that module path.
-import { resolveRgPath } from "../agent/tools/index.js";
+import { resolveRgPath } from "@worklab/agent-runtime/agent/tools/index.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 

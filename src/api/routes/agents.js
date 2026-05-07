@@ -15,7 +15,7 @@ import {
   updateAgentMemory,
   uniqueSlug,
 } from "../../core/index.js";
-import { executionModeIncompatibilityReason } from "../../ai/runtime/model-refs.js";
+import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
@@ -23,7 +23,7 @@ import {
   normalizeList,
   parseStoredAllowlist,
   storedAllowlistMode,
-} from "../../agent/allowlists.js";
+} from "@worklab/agent-runtime/agent/allowlists.js";
 import {
   agentExists,
   deleteAgentByName,
