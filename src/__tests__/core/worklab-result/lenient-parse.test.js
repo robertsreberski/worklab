@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseWorklabResultLenient } from "../../../ai/result/lenient-parse.js";
+import { parseWorklabResultLenient } from "../../../core/worklab-result/lenient-parse.js";
 
 describe("parseWorklabResultLenient", () => {
   it("returns null on empty input", () => {

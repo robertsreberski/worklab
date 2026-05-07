@@ -6,7 +6,7 @@ import {
 import { appendFileSync } from "node:fs";
 import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
-import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "@worklab/agent-runtime/ai/result/contract.js";
+import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result/contract.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import { resumeWaitingParents } from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";

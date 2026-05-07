@@ -1,4 +1,4 @@
-import { formatWorklabResultText, stripWorklabResultJson } from "@worklab/agent-runtime/ai/result/contract.js";
+import { formatWorklabResultText, stripWorklabResultJson } from "./worklab-result/contract.js";
 
 /**
  * Pure helpers for extracting execution metadata from a prior run's agent_log events.

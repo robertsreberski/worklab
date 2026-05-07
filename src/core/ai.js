@@ -5,7 +5,7 @@ import {
   normalizeRuntimeModelReference,
   parseRuntimeModelReference,
 } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
-import { resolveRuntimeBridge } from "@worklab/agent-runtime/ai/runtime/registry.js";
+import { createRuntime } from "@worklab/agent-runtime";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";
@@ -549,13 +549,14 @@ export async function generateResponse(systemPrompt, options) {
   const nextOptions = {
     ...baseOptions,
     effort: normalizeReasoningEffortForModel(resolved, options.effort || "medium", customContext?.modelCapabilities),
+    executionMode: typeof options.executionMode === "string" ? options.executionMode : "sdk",
   };
-  const executionMode = typeof options.executionMode === "string" ? options.executionMode : "sdk";
-  const backend = await resolveRuntimeBridge(resolved, {
-    liveInput: !!options.liveInput,
-    executionMode,
-  });
-  return backend.execute(systemPrompt, { ...nextOptions, executionMode });
+  // The package's createRuntime resolves the bridge from options.model and
+  // forwards everything we computed above. Worklab keeps the heavy lifting
+  // (settings, custom-provider context, env-var bridging) so the package
+  // stays generic.
+  const runtime = createRuntime();
+  return runtime.run(systemPrompt, nextOptions);
 }
 
 export { canonicalizeLegacyModelReference };

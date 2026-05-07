@@ -9,12 +9,12 @@ import {
 import { parseVerdict } from "../core/review.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
-  normalizeWorklabResult,
+  extractWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
-} from "@worklab/agent-runtime/ai/result/contract.js";
-import { parseWorklabResultLenient } from "@worklab/agent-runtime/ai/result/lenient-parse.js";
+} from "../core/worklab-result/contract.js";
+import { parseWorklabResultLenient } from "../core/worklab-result/lenient-parse.js";
 import { estimateFirstTurnInput } from "@worklab/agent-runtime/agent/compaction.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
@@ -73,10 +73,10 @@ function reviewResultFromText(text) {
 }
 
 function reviewResultFromResponse(response) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, { stage: "review" });
-    if (normalized.ok) {
-      const result = normalized.result;
+  if (response?.structuredResult !== undefined && response?.structuredResult !== null) {
+    const extracted = extractWorklabResult(response.structuredResult, { stage: "review" });
+    if (extracted.ok) {
+      const result = extracted.result;
       return {
         ...validateRuntimeResult(result),
         verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
@@ -84,7 +84,23 @@ function reviewResultFromResponse(response) {
         source: response.structuredResultSource || "structured",
       };
     }
-    return { result: null, verdict: null, notes: "", error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
+    return {
+      result: null, verdict: null, notes: "",
+      error: extracted.error, fatal: true,
+      source: response.structuredResultSource || "structured",
+    };
+  }
+  if (Array.isArray(response?.events) && response.events.length > 0) {
+    const extracted = extractWorklabResult(response.events, { stage: "review" });
+    if (extracted.ok) {
+      const result = extracted.result;
+      return {
+        ...validateRuntimeResult(result),
+        verdict: result.decision === "approve" ? "APPROVE" : result.decision === "reject" ? "REJECT" : null,
+        notes: result.details || result.summary || "",
+        source: "event_scan",
+      };
+    }
   }
   return reviewResultFromText(response?.text || "");
 }

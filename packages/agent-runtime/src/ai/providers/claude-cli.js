@@ -4,13 +4,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { getSkillAccessDirs } from "../../agent/prompt/skill-index.js";
-import {
-  WORKLAB_RESULT_JSON_SCHEMA,
-  extractWorklabResult,
-  formatWorklabResultText,
-  parseStandaloneWorklabResultText,
-  stripWorklabResultJson,
-} from "../result/contract.js";
 import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../cost.js";
@@ -92,15 +85,6 @@ function normalizeCliEvent(raw, context = {}) {
   if (raw.type === "assistant" || raw.type === "user" || raw.type === "result" || raw.type === "error") return raw;
   if (raw.type === "message" && raw.message) return { type: "assistant", message: raw.message };
   if (raw.type === "item.completed" && raw.item?.type === "agent_message" && typeof raw.item.text === "string") {
-    const result = parseStandaloneWorklabResultText(raw.item.text);
-    if (result) {
-      return {
-        type: "worklab_result_candidate",
-        source: "agent_message",
-        text: raw.item.text,
-        worklab_result: result,
-      };
-    }
     return { type: "assistant", message: { content: [{ type: "text", text: raw.item.text }] } };
   }
   const codexItem = normalizeCodexItemEvent(raw, {
@@ -133,18 +117,6 @@ function textFromEvent(raw) {
     return raw.message.content.filter((part) => part?.type === "text").map((part) => part.text).join("");
   }
   return "";
-}
-
-function inferStructuredResultSource(raw) {
-  if (raw?.type === "result" && raw.result != null) return "result";
-  if (raw?.final_output != null) return "final_output";
-  const blocks = raw?.message?.content || raw?.content;
-  if (Array.isArray(blocks) && blocks.some((block) => block?.type === "tool_use" && block?.name === "StructuredOutput")) {
-    return "StructuredOutput";
-  }
-  if (raw?.type === "tool_call" && raw.name === "StructuredOutput") return "StructuredOutput";
-  if (raw?.item?.type === "agent_message") return "agent_message";
-  return "event";
 }
 
 function stringifyError(value) {
@@ -182,11 +154,6 @@ function pushUniqueText(texts, text) {
   if (!value) return;
   if (texts.some((existing) => existing.trim() === value)) return;
   texts.push(value);
-}
-
-function finalTextFromCliOutput(worklabResult, texts) {
-  const delivered = stripWorklabResultJson(texts[texts.length - 1] || "");
-  return delivered || formatWorklabResultText(worklabResult);
 }
 
 function parseJsonError(text) {
@@ -271,6 +238,7 @@ export function buildCliCommand({
   effort,
   cwd,
   schemaPath,
+  outputSchema,
   systemPrompt,
   prompt,
   mcpConfigPath,
@@ -298,7 +266,7 @@ export function buildCliCommand({
       "-p",
       "--output-format", "stream-json",
       "--verbose",
-      "--json-schema", JSON.stringify(WORKLAB_RESULT_JSON_SCHEMA),
+      ...(outputSchema ? ["--json-schema", JSON.stringify(outputSchema)] : []),
       "--model", model,
       "--append-system-prompt", systemPrompt,
       ...resumeFlag,
@@ -328,7 +296,7 @@ export function buildCliCommand({
   const args = [
     "exec",
     "--json",
-    "--output-schema", schemaPath,
+    ...(schemaPath ? ["--output-schema", schemaPath] : []),
     "--model", model,
     "--cd", cwd,
     "--ephemeral",
@@ -351,8 +319,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const resolved = options.model;
   const prompt = promptFromMessages(options.messages);
   const dir = mkdtempSync(join(tmpdir(), "worklab-cli-"));
-  const schemaPath = join(dir, "worklab-result.schema.json");
-  writeFileSync(schemaPath, JSON.stringify(options.outputSchema || WORKLAB_RESULT_JSON_SCHEMA));
+  const schemaPath = options.outputSchema ? join(dir, "output-schema.json") : null;
+  if (schemaPath) writeFileSync(schemaPath, JSON.stringify(options.outputSchema));
   const mcpServers = options.mcpServers || {};
   const mcpConfigPath = hasEntries(mcpServers) && resolved.sdk === "claude-code"
     ? join(dir, "mcp.json")
@@ -368,6 +336,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     effort: options.effort,
     cwd: options.cwd || process.cwd(),
     schemaPath,
+    outputSchema: options.outputSchema,
     systemPrompt,
     prompt,
     mcpConfigPath,
@@ -386,8 +355,6 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   const texts = [];
   let errorMessage = null;
   let failureKind = null;
-  let worklabResult = null;
-  let structuredResultSource = null;
   let usage = {};
   const cliEventContext = {
     cwd: commandSpec.cwd,
@@ -421,14 +388,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
         events.push(ev);
         options.onEvent?.(ev);
       }
-      for (const candidate of ev ? [raw, ev] : [raw]) {
-        const structured = extractWorklabResult(candidate);
-        if (structured.ok) {
-          worklabResult = structured.result;
-          structuredResultSource = inferStructuredResultSource(raw);
-        }
-      }
-      if (ev?.type !== "worklab_result_candidate" && !isCodexReasoningEvent(raw)) {
+      if (!isCodexReasoningEvent(raw)) {
         const text = textFromEvent(raw);
         pushUniqueText(texts, text);
       }
@@ -462,9 +422,9 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     const stderrText = stderrTail.toString().trim();
     let cliErrorCode = null;
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
-    const text = finalTextFromCliOutput(worklabResult, texts);
+    const text = texts[texts.length - 1] || "";
     const hadPartialProgress = events.length > 0 || texts.length > 0;
-    if (exitCode === 0 && !errorMessage && !text.trim() && !worklabResult) {
+    if (exitCode === 0 && !errorMessage && !text.trim()) {
       errorMessage = `${commandSpec.command} completed without final output`;
       failureKind = failureKind || "provider_unavailable";
       cliErrorCode = "cli_stream_terminated";
@@ -492,8 +452,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     };
     return {
       text,
-      worklabResult,
-      structuredResultSource,
+      structuredResult: undefined,
+      structuredResultSource: null,
       events,
       usage: enrichedUsage,
       durationMs: Date.now() - start,
@@ -516,9 +476,9 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     return {
-      text: finalTextFromCliOutput(worklabResult, texts) || null,
-      worklabResult,
-      structuredResultSource,
+      text: texts[texts.length - 1] || null,
+      structuredResult: undefined,
+      structuredResultSource: null,
       events,
       usage: {},
       durationMs: Date.now() - start,

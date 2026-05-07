@@ -5,12 +5,12 @@ import {
 } from "../core/index.js";
 import {
   WORKLAB_RESULT_JSON_SCHEMA,
-  normalizeWorklabResult,
+  extractWorklabResult,
   parseWorklabResultFromText,
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
-} from "@worklab/agent-runtime/ai/result/contract.js";
-import { parseWorklabResultLenient } from "@worklab/agent-runtime/ai/result/lenient-parse.js";
+} from "../core/worklab-result/contract.js";
+import { parseWorklabResultLenient } from "../core/worklab-result/lenient-parse.js";
 import { estimateFirstTurnInput } from "@worklab/agent-runtime/agent/compaction.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
@@ -41,15 +41,32 @@ function resultFromTextOrFallback(text, fallback) {
 }
 
 function resultFromResponseOrFallback(response, fallback) {
-  if (response?.worklabResult) {
-    const normalized = normalizeWorklabResult(response.worklabResult, fallback);
-    if (normalized.ok) {
+  // Try the provider's structured output first; then scan the event stream
+  // (handles CLI providers that surface JSON via assistant messages); finally
+  // fall back to parsing the text.
+  if (response?.structuredResult !== undefined && response?.structuredResult !== null) {
+    const extracted = extractWorklabResult(response.structuredResult, fallback);
+    if (extracted.ok) {
       return {
-        ...validateRuntimeResult(normalized.result),
+        ...validateRuntimeResult(extracted.result),
         source: response.structuredResultSource || "structured",
       };
     }
-    return { result: null, error: normalized.error, fatal: true, source: response.structuredResultSource || "structured" };
+    return {
+      result: null,
+      error: extracted.error,
+      fatal: true,
+      source: response.structuredResultSource || "structured",
+    };
+  }
+  if (Array.isArray(response?.events) && response.events.length > 0) {
+    const extracted = extractWorklabResult(response.events, fallback);
+    if (extracted.ok) {
+      return {
+        ...validateRuntimeResult(extracted.result),
+        source: "event_scan",
+      };
+    }
   }
   return resultFromTextOrFallback(response?.text || "", fallback);
 }

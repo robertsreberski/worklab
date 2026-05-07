@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
-import { synthesizeWorklabResult } from "@worklab/agent-runtime/ai/result/contract.js";
+import { synthesizeWorklabResult } from "../../core/worklab-result/contract.js";
 
 function stubBroker() {
   const broadcasts = [];

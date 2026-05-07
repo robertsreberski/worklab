@@ -8,11 +8,6 @@ import {
   readFileChangeSnapshot,
   statsForCompletedChange,
 } from "../file-change-stats.js";
-import {
-  extractWorklabResult,
-  formatWorklabResultText,
-  stripWorklabResultJson,
-} from "../result/contract.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
@@ -89,14 +84,6 @@ function makeRuntimeWarning(message, warningKind = "claude_post_success_error") 
   };
 }
 
-function structuredSourceFromEvent(event) {
-  if (event?.type === "result" && Object.prototype.hasOwnProperty.call(event, "structured_output")) return "structured_output";
-  if (event?.type === "result" && event.result != null) return "result";
-  if (event?.type === "result" && event.final_output != null) return "final_output";
-  if (event?.type === "assistant") return "message";
-  return "event";
-}
-
 function extractStructuredOutput(event) {
   if (event?.type === "result" && Object.prototype.hasOwnProperty.call(event, "structured_output")) {
     return event.structured_output;
@@ -104,24 +91,12 @@ function extractStructuredOutput(event) {
   return undefined;
 }
 
-function structuredOutputEvent(value, parsedWorklabResult) {
+function structuredOutputEvent(value) {
   return {
     type: "structured_output",
     source: "claude_sdk_output_format",
     value,
-    ...(parsedWorklabResult?.ok ? { worklab_result: parsedWorklabResult.result } : {}),
   };
-}
-
-function finalTextFromStructuredOutput(worklabResult, text, structuredResult) {
-  const delivered = stripWorklabResultJson(text);
-  if (delivered) return delivered;
-  const formatted = formatWorklabResultText(worklabResult);
-  if (formatted) return formatted;
-  if (structuredResult !== undefined) {
-    try { return JSON.stringify(structuredResult); } catch { return String(structuredResult); }
-  }
-  return text;
 }
 
 function pickSessionId(...values) {
@@ -552,21 +527,19 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let failureKind = null;
   let successfulResultSeen = false;
   let postSuccessErrorSeen = false;
-  let worklabResult = null;
   let structuredResultSource = null;
   let structuredResult = undefined;
   let errorDetails = null;
   let lastStructuredOutputRejection = null;
 
   const rawFinalText = () => resultText || text;
-  const finalText = () => finalTextFromStructuredOutput(worklabResult, rawFinalText(), structuredResult);
 
   function hasUsableFinalOutput() {
-    return Boolean(worklabResult) || String(finalText() || "").trim().length > 0;
+    return structuredResult !== undefined || String(rawFinalText() || "").trim().length > 0;
   }
 
   function hasPreservableFinalOutput() {
-    return successfulResultSeen ? hasUsableFinalOutput() : Boolean(worklabResult);
+    return successfulResultSeen ? hasUsableFinalOutput() : structuredResult !== undefined;
   }
 
   function preservePostSuccessError(message) {
@@ -592,20 +565,11 @@ export async function generateClaudeResponse(systemPrompt, options) {
       if (event?.type === "tool_progress" && event.tool_name) noteToolUse(event.tool_name);
       const structuredOutputRejection = structuredOutputRejectionFromEvent(event);
       if (structuredOutputRejection) lastStructuredOutputRejection = structuredOutputRejection;
-      const structured = extractWorklabResult(event);
-      if (structured.ok) {
-        worklabResult = structured.result;
-        structuredResultSource = structuredSourceFromEvent(event);
-      }
       const eventStructuredOutput = extractStructuredOutput(event);
       if (eventStructuredOutput !== undefined) {
         structuredResult = eventStructuredOutput;
-        const structuredWorklab = extractWorklabResult(eventStructuredOutput);
-        if (structuredWorklab.ok) {
-          worklabResult = structuredWorklab.result;
-          structuredResultSource = "structured_output";
-        }
-        emitEvent(structuredOutputEvent(eventStructuredOutput, structuredWorklab));
+        structuredResultSource = "structured_output";
+        emitEvent(structuredOutputEvent(eventStructuredOutput));
       }
       if (event.type === "assistant") {
         const delta = extractText(event);
@@ -719,8 +683,8 @@ export async function generateClaudeResponse(systemPrompt, options) {
   };
 
   return {
-    text: finalText(),
-    worklabResult,
+    text: rawFinalText(),
+    structuredResult,
     structuredResultSource,
     events: capturedEvents,
     usage: enrichedUsage,

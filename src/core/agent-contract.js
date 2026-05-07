@@ -1,4 +1,4 @@
-import { normalizeWorklabResult, validateWorklabResultSemantics } from "@worklab/agent-runtime/ai/result/contract.js";
+import { normalizeWorklabResult, validateWorklabResultSemantics } from "./worklab-result/contract.js";
 
 export const RUN_STATUSES = [
   "running",

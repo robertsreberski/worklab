@@ -7,7 +7,7 @@ import {
   parseWorklabResultFromText,
   synthesizeWorklabResult,
   validateWorklabResultSemantics,
-} from "../../../ai/result/contract.js";
+} from "../../../core/worklab-result/contract.js";
 
 function collectObjectSchemas(schema) {
   const found = [];

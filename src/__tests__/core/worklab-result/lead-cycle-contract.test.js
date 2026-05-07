@@ -6,7 +6,7 @@ import {
   parseLeadCycleResultFromText,
   validateLeadCycleSemantics,
   synthesizeLeadCycleFailure,
-} from "../../../ai/result/lead-cycle-contract.js";
+} from "../../../core/worklab-result/lead-cycle-contract.js";
 
 const baseResult = {
   schema: LEAD_CYCLE_SCHEMA,
