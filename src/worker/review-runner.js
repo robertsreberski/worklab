@@ -123,7 +123,7 @@ export async function runReview(ctx) {
   } catch (err) {
     return { kind: "review", error: err.message || String(err) };
   }
-  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, systemPrompt, messages } = input;
+  const { agent, skills, skillDirs, mcpServers, allowedTools, disallowedTools, systemPrompt, messages, nativeSubagents } = input;
   const model = resolveModel(agent.model);
   const sdkEvents = createSdkEventCoalescer((event) => emit({ type: "sdk_event", event }));
   const firstTurn = estimateFirstTurnInput({ systemPrompt, messages });
@@ -151,6 +151,7 @@ export async function runReview(ctx) {
       mcpServers,
       allowedTools,
       disallowedTools,
+      nativeSubagents,
       permissionMode: "bypassPermissions",
       maxTurns: maxTurnsForModel(model, 30),
       outputSchema: WORKLAB_RESULT_JSON_SCHEMA,

@@ -105,6 +105,7 @@ function runtimeMetadata({
     supports_mcp: !!supportsMcp,
     supports_skills: !!supportsSkills,
     supports_worklab_tools: !!supportsWorklabTools,
+    supports_native_subagents: true,
     native_tools_note: nativeToolsNote || null,
     mcp_mode: mcpMode || null,
     skills_mode: skillsMode,

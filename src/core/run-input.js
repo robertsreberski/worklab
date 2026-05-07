@@ -320,26 +320,27 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     })
     : [];
   const learningMemoryContext = formatAgentLearningContext(learningMemories);
+  const runEnv = {
+    WORKLAB_TASK_ID: taskId,
+    WORKLAB_TASK_TITLE: task.title,
+    WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir,
+    ...(qaOutputDir ? {
+      WORKLAB_QA_OUTPUT_DIR: qaOutputDir,
+      PLAYWRIGHT_MCP_OUTPUT_DIR: qaOutputDir,
+    } : {}),
+    ...(projectRunContext.project ? {
+      WORKLAB_PROJECT_ID: projectRunContext.project.id,
+      WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
+      WORKLAB_PROJECT_NAME: projectRunContext.project.name,
+    } : {}),
+  };
   const { skills, mcpServers, allowedTools, disallowedTools, skillDirs, capabilityRestrictions } = loadAgentCapabilities({
     config,
     agent,
     agentName,
     runId,
     mode,
-    env: {
-      WORKLAB_TASK_ID: taskId,
-      WORKLAB_TASK_TITLE: task.title,
-      WORKLAB_WORKSPACE: projectRunContext.effectiveWorkdir,
-      ...(qaOutputDir ? {
-        WORKLAB_QA_OUTPUT_DIR: qaOutputDir,
-        PLAYWRIGHT_MCP_OUTPUT_DIR: qaOutputDir,
-      } : {}),
-      ...(projectRunContext.project ? {
-        WORKLAB_PROJECT_ID: projectRunContext.project.id,
-        WORKLAB_PROJECT_SLUG: projectRunContext.project.slug,
-        WORKLAB_PROJECT_NAME: projectRunContext.project.name,
-      } : {}),
-    },
+    env: runEnv,
   });
 
   const pinnedKb = kbListPinned({ dataDir: config.dataDir, limit: settings.kb_pinned_limit });
@@ -353,6 +354,7 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
     runId,
     mode,
     settings,
+    env: runEnv,
     loadCapabilities: loadAgentCapabilities,
   });
 

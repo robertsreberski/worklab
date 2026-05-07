@@ -229,6 +229,45 @@ describe("generateClaudeResponse", () => {
     });
   });
 
+  it("passes native teammate subagents to the Claude SDK Task surface", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      { type: "result", subtype: "success", result: "done", usage: {}, duration_ms: 1, num_turns: 1 },
+    ]));
+
+    await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-sonnet-4-6" },
+      effort: "medium",
+      allowedTools: ["Read"],
+      nativeSubagents: {
+        provider: "claude",
+        teammates: [{
+          name: "helper",
+          description: "Reads focused code paths.",
+          helperSystemPrompt: "You are the helper.",
+          allowedTools: ["Read", "Grep"],
+          disallowedTools: ["Edit"],
+          modelRef: "claude:claude-opus-4-7",
+          mcpServers: { mock: { command: "node", args: ["mock.js"] } },
+        }],
+      },
+      onEvent: () => {},
+    });
+
+    const options = mockQuery.mock.calls[0][0].options;
+    expect(options.allowedTools).toEqual(["Read", "Task"]);
+    expect(options.agents).toEqual({
+      helper: {
+        description: "Reads focused code paths.",
+        prompt: "You are the helper.",
+        tools: ["Read", "Grep"],
+        disallowedTools: ["Edit"],
+        model: "opus",
+        mcpServers: [{ mock: { command: "node", args: ["mock.js"] } }],
+      },
+    });
+  });
+
   it("uses a prior provider session to resume Claude and returns the current session id", async () => {
     mockQuery.mockReturnValue(mockStream([
       {
