@@ -365,7 +365,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   try {
     const child = spawn(commandSpec.command, commandSpec.args, {
       cwd: commandSpec.cwd,
-      env: { ...process.env, WORKLAB_WORKSPACE: commandSpec.cwd },
+      env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
