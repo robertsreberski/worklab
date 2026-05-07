@@ -36,14 +36,15 @@ function safeStorage(env) {
 function readCachedInsets(env) {
   try {
     const raw = safeStorage(env)?.getItem?.(MOBILE_VIEWPORT_CACHE_KEY);
-    if (!raw) return { top: 0, bottom: 0 };
+    if (!raw) return { top: 0, bottom: 0, maxBottom: 0 };
     const parsed = JSON.parse(raw);
     return {
       top: parsePx(parsed?.top),
       bottom: parsePx(parsed?.bottom),
+      maxBottom: parsePx(parsed?.maxBottom),
     };
   } catch {
-    return { top: 0, bottom: 0 };
+    return { top: 0, bottom: 0, maxBottom: 0 };
   }
 }
 
@@ -52,6 +53,7 @@ function writeCachedInsets(env, insets) {
     safeStorage(env)?.setItem?.(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify({
       top: parsePx(insets?.top),
       bottom: parsePx(insets?.bottom),
+      maxBottom: parsePx(insets?.maxBottom),
     }));
   } catch {}
 }
@@ -84,7 +86,7 @@ export function measureSafeAreaInsets(env = globalThis) {
   const doc = documentForEnv(env);
   const win = windowForEnv(env);
   if (!doc?.body?.appendChild || !doc?.createElement || !win?.getComputedStyle) {
-    return { top: 0, bottom: 0 };
+    return { top: 0, bottom: 0, maxBottom: 0 };
   }
 
   const probe = doc.createElement("div");
@@ -99,29 +101,43 @@ export function measureSafeAreaInsets(env = globalThis) {
     "pointer-events: none",
     "padding-top: env(safe-area-inset-top, 0px)",
     "padding-bottom: env(safe-area-inset-bottom, 0px)",
+    "margin-bottom: env(safe-area-max-inset-bottom, 0px)",
   ].join(";");
   doc.body.appendChild(probe);
   const styles = win.getComputedStyle(probe);
   const insets = {
     top: parsePx(styles?.paddingTop),
     bottom: parsePx(styles?.paddingBottom),
+    maxBottom: parsePx(styles?.marginBottom),
   };
   probe.remove?.();
   return insets;
 }
 
 function effectiveSafeAreaInsets(env, measured) {
-  if (!isStandalonePwa(env)) return measured;
-
   const cached = readCachedInsets(env);
+  const standalone = isStandalonePwa(env);
+  const stableBottom = Math.max(
+    measured.bottom,
+    measured.maxBottom,
+    standalone ? cached.bottom : 0,
+    standalone ? cached.maxBottom : 0,
+  );
+
+  if (!standalone) {
+    return { top: measured.top, bottom: stableBottom, maxBottom: measured.maxBottom };
+  }
+
   const effective = {
     top: measured.top > 0 ? measured.top : cached.top,
-    bottom: measured.bottom > 0 ? measured.bottom : cached.bottom,
+    bottom: stableBottom,
+    maxBottom: measured.maxBottom > 0 ? measured.maxBottom : cached.maxBottom,
   };
-  if (measured.top > 0 || measured.bottom > 0) {
+  if (measured.top > 0 || measured.bottom > 0 || measured.maxBottom > 0) {
     writeCachedInsets(env, {
       top: measured.top > 0 ? measured.top : cached.top,
       bottom: measured.bottom > 0 ? measured.bottom : cached.bottom,
+      maxBottom: measured.maxBottom > 0 ? measured.maxBottom : cached.maxBottom,
     });
   }
   return effective;
@@ -145,6 +161,7 @@ export function applyMobileViewportMetrics(env = globalThis) {
     safeAreaBottom: safeArea.bottom,
     measuredSafeAreaTop: measured.top,
     measuredSafeAreaBottom: measured.bottom,
+    measuredSafeAreaMaxBottom: measured.maxBottom,
     standalone: isStandalonePwa(env),
   };
 }
