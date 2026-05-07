@@ -45,8 +45,8 @@ function cleanArray(values) {
   return (values || []).map((value) => String(value || "").trim()).filter(Boolean);
 }
 
-export function parseAssistantResult(text) {
-  const parsed = assistantResultSchema.parse(extractJson(text));
+function normalizeAssistantResult(value) {
+  const parsed = assistantResultSchema.parse(value);
   const summary = parsed.summary.trim();
   return {
     ...parsed,
@@ -56,6 +56,18 @@ export function parseAssistantResult(text) {
     memory_facts: cleanArray(parsed.memory_facts),
     action_items: cleanArray(parsed.action_items),
   };
+}
+
+export function parseAssistantResult(text) {
+  return normalizeAssistantResult(extractJson(text));
+}
+
+export function parseAssistantStructuredResult(value) {
+  try {
+    return normalizeAssistantResult(value);
+  } catch (err) {
+    throw new Error(`Assistant structured result is invalid: ${err?.message || String(err)}`);
+  }
 }
 
 export function fallbackAssistantResult(text, error) {
