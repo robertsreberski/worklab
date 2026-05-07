@@ -9,7 +9,7 @@
 // Pure functions; pulled out of task-watcher.js so the watcher's main
 // orchestration reads as DB transitions and event broadcasts.
 
-import { formatWorklabResultText, stripWorklabResultJson } from "../../ai/result/contract.js";
+import { formatWorklabResultText, stripWorklabResultJson } from "@worklab/agent-runtime/ai/result/contract.js";
 
 const RICH_FINAL_MIN_CHARS = 800;
 

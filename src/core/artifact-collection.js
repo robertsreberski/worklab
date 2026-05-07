@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
-import { readFileChangeSnapshot, statsForCompletedChange } from "../ai/file-change-stats.js";
+import { readFileChangeSnapshot, statsForCompletedChange } from "@worklab/agent-runtime/ai/file-change-stats.js";
 import { artifactTypeForPath, normalizeArtifactPath, normalizeStoredArtifacts } from "./run-artifacts.js";
 
 const DEFAULT_MAX_FILES = 20_000;

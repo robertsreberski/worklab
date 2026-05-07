@@ -19,7 +19,7 @@ vi.mock("../../core/db/queries/agents.js", () => ({
   getAgentByName: mocks.getAgentByName,
 }));
 
-vi.mock("../../agent/prompt/system-prompt.js", () => ({
+vi.mock("../../core/prompts/system-prompt.js", () => ({
   buildConsolidationSystemPrompt: mocks.buildConsolidationSystemPrompt,
 }));
 

@@ -29,7 +29,7 @@ import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
-import { executionModeIncompatibilityReason } from "../../../ai/runtime/model-refs.js";
+import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 

@@ -5,7 +5,7 @@ import {
   validatePlanningHarnessSetting,
   validatePlanningToolPolicySetting,
 } from "./planning-harness.js";
-import { normalizeRuntimeModelReference } from "../ai/runtime/model-refs.js";
+import { normalizeRuntimeModelReference } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { listSettings, upsertSetting } from "./db/queries/settings.js";
 import {
   DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,

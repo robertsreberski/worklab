@@ -3,7 +3,7 @@ import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { estimateCost } from "../../ai/cost.js";
+import { estimateCost } from "@worklab/agent-runtime/ai/cost.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { generateResponse, resolveModel } from "../../core/ai.js";

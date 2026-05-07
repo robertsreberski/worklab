@@ -3,11 +3,11 @@ import { loadSkills } from "./skills.js";
 import { enrichCommentRows } from "./comments.js";
 import { getAvailableMcpServers } from "./mcp-config.js";
 import { readAgentMemoryContext } from "./memory.js";
-import { buildSystemPrompt } from "../agent/prompt/system-prompt.js";
+import { buildSystemPrompt } from "./prompts/system-prompt.js";
 import { WORKLAB_BUILTIN_TOOLS, resolveModel } from "./ai.js";
 import { extractExecutionFromEvents } from "./review-exec.js";
 import { kbListPinned } from "./kb.js";
-import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "../agent/allowlists.js";
+import { parseStoredAllowlist, resolveAllowlist, resolveAllowlistMap, storedAllowlistMode } from "@worklab/agent-runtime/agent/allowlists.js";
 import { readSettings } from "./settings.js";
 import { applyPlanningToolPolicy } from "./planning-harness.js";
 import { nextStage } from "./state-machine.js";
@@ -26,8 +26,8 @@ import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
 import { buildDelegationContext } from "./delegation.js";
-import { formatWorklabResultText } from "../ai/result/contract.js";
-import { renderResumeSnapshot } from "../agent/transcript.js";
+import { formatWorklabResultText } from "@worklab/agent-runtime/ai/result/contract.js";
+import { renderResumeSnapshot } from "@worklab/agent-runtime/agent/transcript.js";
 
 function runInputError(status, code, message) {
   return Object.assign(new Error(message), { status, code });

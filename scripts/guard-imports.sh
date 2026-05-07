@@ -11,7 +11,7 @@ if ! npx --no-install eslint --version >/dev/null 2>&1; then
   exit 2
 fi
 
-output=$(npx --no-install eslint src --rule '{"no-restricted-imports":"error"}' 2>&1 || true)
+output=$(npx --no-install eslint src packages --rule '{"no-restricted-imports":"error"}' 2>&1 || true)
 echo "$output"
 echo
 errors=$(printf '%s\n' "$output" | grep -E "^✖ [0-9]+ problems" | head -1 || true)
