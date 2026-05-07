@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS agents (
   builtin_allowlist_mode TEXT NOT NULL DEFAULT 'all',
   allow_self_review INTEGER NOT NULL DEFAULT 1,
   browser_tools_review_only INTEGER NOT NULL DEFAULT 0,
+  subagent_mode TEXT NOT NULL DEFAULT 'advisory',
   execution_mode TEXT NOT NULL DEFAULT 'sdk',
   enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL,
