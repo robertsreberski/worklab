@@ -6,7 +6,8 @@
   "private": true,
   "license": "GPL-3.0-only",
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "bin": {
     "worklab": "./src/cli/index.js"
