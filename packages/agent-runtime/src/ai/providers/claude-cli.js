@@ -356,6 +356,20 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   let errorMessage = null;
   let failureKind = null;
   let usage = {};
+  // Claude Code returns structured output via a `StructuredOutput` tool_use
+  // block. We capture the latest one we see during the run; if `outputSchema`
+  // was supplied the bridge surfaces it as `structuredResult` so the host's
+  // result parser can validate it without re-walking the event stream.
+  let structuredResult;
+  function captureStructuredOutputFromRaw(raw) {
+    const blocks = raw?.message?.content || raw?.content;
+    if (!Array.isArray(blocks)) return;
+    for (const block of blocks) {
+      if (block?.type === "tool_use" && block?.name === "StructuredOutput" && block?.input !== undefined) {
+        structuredResult = block.input;
+      }
+    }
+  }
   const cliEventContext = {
     cwd: commandSpec.cwd,
     fileChangeSnapshots: new Map(),
@@ -392,6 +406,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
         const text = textFromEvent(raw);
         pushUniqueText(texts, text);
       }
+      captureStructuredOutputFromRaw(raw);
       if (raw.usage) usage = raw.usage;
       // intelligence-ramp Phase 5.1: capture session_id from CLI events so the
       // coordinator can chain it on the next continuation. Claude Code emits
@@ -424,7 +439,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     if (exitCode !== 0 && !errorMessage) errorMessage = stderrText || `${commandSpec.command} exited ${exitCode}`;
     const text = texts[texts.length - 1] || "";
     const hadPartialProgress = events.length > 0 || texts.length > 0;
-    if (exitCode === 0 && !errorMessage && !text.trim()) {
+    if (exitCode === 0 && !errorMessage && !text.trim() && structuredResult === undefined) {
       errorMessage = `${commandSpec.command} completed without final output`;
       failureKind = failureKind || "provider_unavailable";
       cliErrorCode = "cli_stream_terminated";
@@ -452,8 +467,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
     };
     return {
       text,
-      structuredResult: undefined,
-      structuredResultSource: null,
+      structuredResult,
+      structuredResultSource: structuredResult === undefined ? null : "StructuredOutput",
       events,
       usage: enrichedUsage,
       durationMs: Date.now() - start,
@@ -477,8 +492,8 @@ export async function generateCliResponse(systemPrompt, options = {}) {
   } catch (err) {
     return {
       text: texts[texts.length - 1] || null,
-      structuredResult: undefined,
-      structuredResultSource: null,
+      structuredResult,
+      structuredResultSource: structuredResult === undefined ? null : "StructuredOutput",
       events,
       usage: {},
       durationMs: Date.now() - start,
