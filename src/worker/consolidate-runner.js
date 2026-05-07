@@ -42,6 +42,7 @@ export async function runConsolidate(ctx) {
     const result = await generateResponse(systemPrompt, {
       model,
       effort: agent.effort || "medium",
+      executionMode: agent.execution_mode || "sdk",
       db,
       dataDir: config.dataDir,
       skills: [],
