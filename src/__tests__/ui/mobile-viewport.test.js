@@ -29,7 +29,6 @@ function createEnv({
   standalone = false,
   safeTop = 0,
   safeBottom = 0,
-  safeMaxBottom = 0,
   cachedInsets,
 } = {}) {
   const listeners = new Map();
@@ -88,7 +87,6 @@ function createEnv({
       return {
         paddingTop: `${safeTop}px`,
         paddingBottom: `${safeBottom}px`,
-        marginBottom: `${safeMaxBottom}px`,
       };
     },
     addEventListener(type, listener) {
@@ -135,7 +133,7 @@ describe("mobile viewport metrics", () => {
       innerHeight: 844,
       safeTop: 0,
       safeBottom: 0,
-      cachedInsets: { top: 31, bottom: 11, maxBottom: 21 },
+      cachedInsets: { top: 31, bottom: 11 },
     });
 
     const metrics = applyMobileViewportMetrics(env);
@@ -143,15 +141,14 @@ describe("mobile viewport metrics", () => {
     expect(metrics).toMatchObject({
       viewportHeight: 844,
       safeAreaTop: 31,
-      safeAreaBottom: 21,
+      safeAreaBottom: 11,
       measuredSafeAreaTop: 0,
       measuredSafeAreaBottom: 0,
-      measuredSafeAreaMaxBottom: 0,
       standalone: true,
     });
     expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("844px");
     expect(env.rootStyle.values[SAFE_AREA_TOP_VAR]).toBe("31px");
-    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("21px");
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("11px");
   });
 
   it("stores measured non-zero safe-area values for future PWA reloads", () => {
@@ -160,42 +157,11 @@ describe("mobile viewport metrics", () => {
       innerHeight: 844,
       safeTop: 31,
       safeBottom: 11,
-      safeMaxBottom: 21,
     });
 
     applyMobileViewportMetrics(env);
 
-    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 11, maxBottom: 21 });
-  });
-
-  it("uses max safe-area bottom when the dynamic inset is smaller", () => {
-    const env = createEnv({
-      innerHeight: 844,
-      safeTop: 31,
-      safeBottom: 4,
-      safeMaxBottom: 21,
-    });
-
-    const metrics = applyMobileViewportMetrics(env);
-
-    expect(metrics).toMatchObject({
-      safeAreaBottom: 21,
-      measuredSafeAreaBottom: 4,
-      measuredSafeAreaMaxBottom: 21,
-    });
-    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("21px");
-  });
-
-  it("falls back to dynamic safe-area bottom when max inset is unavailable", () => {
-    const env = createEnv({
-      innerHeight: 844,
-      safeBottom: 11,
-      safeMaxBottom: 0,
-    });
-
-    applyMobileViewportMetrics(env);
-
-    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("11px");
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 11 });
   });
 
   it("batches viewport refreshes from resize events", () => {
