@@ -553,7 +553,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     const cacheCreationTokens = usage?.cache_creation_tokens ?? usage?.cacheCreationTokens ?? 0;
     const billableInputTokens = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
     const costUsd = estimateCost({
-      db: options.db,
+      resolveCustomPricing: options.resolveCustomPricing,
       model: reference,
       inputTokens: billableInputTokens,
       outputTokens,

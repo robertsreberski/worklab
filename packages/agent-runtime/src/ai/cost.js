@@ -97,29 +97,6 @@ function pricingHasRates(pricing = {}) {
   ].some((value) => finiteOrNull(value) != null);
 }
 
-function customProviderPricing(db, parsed) {
-  if (!db || !parsed?.provider || !parsed?.model) return null;
-  try {
-    const row = db.prepare(`
-      SELECT m.pricing_json, p.provider_type, p.base_url
-      FROM custom_models m
-      JOIN custom_providers p ON p.id = m.provider_id
-      WHERE m.provider_id = ? AND m.model_name = ?
-    `).get(parsed.provider, parsed.model);
-    if (!row) return null;
-    const pricing = row.pricing_json ? JSON.parse(row.pricing_json) : {};
-    if (pricingHasRates(pricing)) {
-      return normalizePricing(pricing, { source: "custom", missing: null });
-    }
-    if (["ollama", "lmstudio", "vllm"].includes(row.provider_type) || isPrivateHost(row.base_url)) {
-      return zeroPricing("custom-local");
-    }
-    return unknownPricing();
-  } catch {
-    return unknownPricing();
-  }
-}
-
 function piCatalogPricing(parsed) {
   if (parsed?.sdk !== "pi" || !parsed.provider || !parsed.model) return null;
   try {
@@ -135,17 +112,28 @@ function claudePricing(parsed) {
   return normalizePricing(CLAUDE_PRICING[parsed.model], { source: "claude-table" });
 }
 
-export function resolvePricing({ db, model } = {}) {
+// `resolveCustomPricing(parsed) -> NormalizedPricing | null` lets a host plug
+// in user-defined pricing tables. Worklab queries `custom_models`/`custom_providers`
+// in src/core/custom-pricing.js and passes the closure in via `generateResponse`.
+// The pricing helpers below (`normalizePricing`, `zeroPricing`, `unknownPricing`,
+// `pricingHasRates`, `isPrivateHost`, `parseReference`) are exported so hosts
+// can build their own resolvers without re-implementing the row-shape conversion.
+export function resolvePricing({ resolveCustomPricing, model } = {}) {
   const parsed = parseReference(model);
   if (!parsed) return unknownPricing();
-  return customProviderPricing(db, parsed)
+  const custom = typeof resolveCustomPricing === "function"
+    ? resolveCustomPricing(parsed)
+    : null;
+  return custom
     || piCatalogPricing(parsed)
     || claudePricing(parsed)
     || unknownPricing();
 }
 
+export { normalizePricing, zeroPricing, unknownPricing, pricingHasRates, isPrivateHost, parseReference };
+
 export function estimateCost({
-  db,
+  resolveCustomPricing,
   model,
   inputTokens = 0,
   outputTokens = 0,
@@ -153,7 +141,7 @@ export function estimateCost({
   cacheWriteTokens = 0,
   cacheCreationTokens = 0,
 } = {}) {
-  const pricing = resolvePricing({ db, model });
+  const pricing = resolvePricing({ resolveCustomPricing, model });
   if (!pricing?.priced) return null;
   const cacheRead = Math.max(0, Number(cachedTokens) || 0);
   const cacheWrite = Math.max(0, Number(cacheWriteTokens ?? cacheCreationTokens) || 0);

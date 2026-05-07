@@ -462,13 +462,13 @@ export function isLikelyContextTermination(message, diagnostics = {}) {
 }
 
 export function createAgentCompactionManager({
-  db,
   runId,
   providerKind,
   modelReference,
   model,
   settings = {},
   onEvent,
+  onCompactionRecorded,
 } = {}) {
   const policy = resolveAgentCompactionPolicy(settings, model);
   let compactionCount = 0;
@@ -487,32 +487,31 @@ export function createAgentCompactionManager({
     onEvent?.(event);
   }
 
+  // The host (worklab worker) owns persistence: it receives the structured
+  // record below and writes it into `run_compactions`. The kernel emits a
+  // runtime_warning if the host's callback throws.
   function record(row) {
-    if (!db || !runId) return;
+    if (!onCompactionRecorded || !runId) return;
+    const persisted = {
+      id: row.id,
+      task_run_id: runId,
+      seq: row.seq,
+      trigger: row.trigger,
+      provider_kind: providerKind || null,
+      model: modelReference || model?.id || null,
+      tokens_before: row.tokensBefore || null,
+      tokens_after: row.tokensAfter || null,
+      chars_before: row.charsBefore || null,
+      chars_after: row.charsAfter || null,
+      first_kept_index: row.firstKeptIndex ?? null,
+      summary: row.summary || "",
+      metadata_json: JSON.stringify(row.metadata || {}),
+      status: row.status || "succeeded",
+      error_text: row.errorText || null,
+      created_at: Date.now(),
+    };
     try {
-      db.prepare(`
-        INSERT INTO run_compactions
-          (id, task_run_id, seq, trigger, provider_kind, model, tokens_before, tokens_after,
-           chars_before, chars_after, first_kept_index, summary, metadata_json, status, error_text, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        row.id,
-        runId,
-        row.seq,
-        row.trigger,
-        providerKind || null,
-        modelReference || model?.id || null,
-        row.tokensBefore || null,
-        row.tokensAfter || null,
-        row.charsBefore || null,
-        row.charsAfter || null,
-        row.firstKeptIndex ?? null,
-        row.summary || "",
-        JSON.stringify(row.metadata || {}),
-        row.status || "succeeded",
-        row.errorText || null,
-        Date.now(),
-      );
+      onCompactionRecorded(persisted);
     } catch (err) {
       lastError = err?.message || String(err);
       emit({
