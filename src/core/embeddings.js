@@ -504,9 +504,10 @@ export async function search({
       const idList = ftsIds.map(() => "?").join(",");
       const vecRows = db.prepare(`
         SELECT id, vector FROM embeddings
-        WHERE id IN (${idList})
+        WHERE id IN (${idList}) AND vector IS NOT NULL
       `).all(...ftsIds);
       for (const row of vecRows) {
+        if (!row.vector) continue;
         const sim = cosineSimilarity(queryEmbedding.vector, bufferToFloatArray(row.vector));
         if (sim <= 0) continue;
         const existing = scores.get(row.id) || { row: db.prepare(`

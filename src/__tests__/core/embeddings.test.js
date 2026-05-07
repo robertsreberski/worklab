@@ -105,6 +105,38 @@ describe("embedding index", () => {
     expect(status.byKind.kb).toBe(1);
   });
 
+  it("keeps FTS results when vector reranking sees null candidate vectors", async () => {
+    const { db, dataDir } = fixture();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")
+      .run("default_embedding_model", JSON.stringify("ollama:nomic-embed-text"));
+
+    await indexSource({
+      db,
+      dataDir,
+      allowVector: false,
+      source: {
+        kind: "kb",
+        source_ref: "knowledge/release-freeze.md",
+        title: "Release Freeze",
+        body: "During release freeze, only ship incident rollback fixes.",
+      },
+    });
+
+    const results = await search({
+      db,
+      dataDir,
+      kind: "kb",
+      query: "incident rollback",
+      fetchImpl: async () => ({ ok: true, json: async () => ({ embeddings: [[1, 0]] }) }),
+    });
+
+    expect(results[0]).toMatchObject({
+      kind: "kb",
+      slug: "release-freeze",
+      title: "Release Freeze",
+    });
+  });
+
   it("uses vectors when embeddings are available", async () => {
     const { db, dataDir } = fixture();
     const fetchImpl = async (_url, options) => {
