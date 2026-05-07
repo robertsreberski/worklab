@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import Database from "better-sqlite3";
+import { MOBILE_VIEWPORT_CACHE_KEY } from "../../ui/src/lib/mobileViewport.js";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 
@@ -2099,17 +2100,55 @@ test("mobile tabbar does not create document scroll space below content", async 
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
 });
 
+test("mobile PWA tabbar starts with cached safe-area metrics on reload", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(({ cacheKey }) => {
+    try {
+      Object.defineProperty(window.navigator, "standalone", {
+        configurable: true,
+        get: () => true,
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11 }));
+  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const rootStyles = getComputedStyle(document.documentElement);
+    const body = document.querySelector(".app-body");
+    const tabbar = document.querySelector(".app-tabbar");
+    const tabbarRect = tabbar?.getBoundingClientRect();
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      viewportHeight: window.innerHeight,
+      viewportVar: rootStyles.getPropertyValue("--worklab-viewport-height").trim(),
+      safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
+      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
+      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(metrics.viewportVar).toBe("844px");
+  expect(metrics.safeTopVar).toBe("31px");
+  expect(metrics.safeBottomVar).toBe("11px");
+  expect(metrics.tabbarHeight).toBe(67);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
 test("mobile tasks header owns the opening route status safe area", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
-  await page.addStyleTag({
-    content: `
-      :root {
-        --worklab-safe-area-top: 31px;
-        --worklab-safe-area-bottom: 11px;
-      }
-    `,
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
+    document.documentElement.style.setProperty("--worklab-safe-area-bottom", "11px");
   });
   await page.waitForTimeout(50);
   await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
@@ -2174,13 +2213,9 @@ test("mobile topbar owns the status safe-area background", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   await expect(page.locator(".mobile-topbar")).toBeVisible();
   await expect(page.locator(".task-hero-title", { hasText: "UI regression task" })).toBeVisible();
-  await page.addStyleTag({
-    content: `
-      :root {
-        --worklab-safe-area-top: 31px;
-        --worklab-safe-area-bottom: 11px;
-      }
-    `,
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
+    document.documentElement.style.setProperty("--worklab-safe-area-bottom", "11px");
   });
   await page.waitForTimeout(50);
 
@@ -2228,6 +2263,44 @@ test("mobile topbar owns the status safe-area background", async ({ page }) => {
   expect(metrics.backTop).toBeGreaterThanOrEqual(31);
   expect(metrics.backTop + metrics.backHeight).toBeLessThanOrEqual(metrics.topbarHeight);
   expect(metrics.mainTop).toBe(metrics.topbarHeight);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.dockHeight);
+  expect(metrics.dockBottom).toBe(metrics.viewportHeight);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
+test("mobile registered chrome owns bottom navigation before project detail settles", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/projects/${projectSlug}`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
+  await expect(page.locator(".mobile-topbar")).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const app = document.querySelector(".app");
+    const body = document.querySelector(".app-body");
+    const tabbar = document.querySelector(".app-tabbar");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const topbar = document.querySelector(".mobile-topbar");
+    const dockRect = dock?.getBoundingClientRect();
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      hasDockClass: app?.classList.contains("has-dock") || false,
+      hasTopbarClass: app?.classList.contains("has-mobile-topbar") || false,
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
+      dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
+      topbarDisplay: topbar ? getComputedStyle(topbar).display : "",
+      viewportHeight: window.innerHeight,
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(metrics.hasDockClass).toBe(true);
+  expect(metrics.hasTopbarClass).toBe(true);
+  expect(metrics.tabbarDisplay).toBe("none");
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.topbarDisplay).toBe("flex");
   expect(metrics.bodyPaddingBottom).toBe(metrics.dockHeight);
   expect(metrics.dockBottom).toBe(metrics.viewportHeight);
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);

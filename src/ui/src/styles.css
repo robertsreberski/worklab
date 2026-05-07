@@ -150,6 +150,7 @@
   --shell-rail-collapsed: 64px;
   --assistant-w: 320px;
   --content-max: 1560px;
+  --worklab-viewport-height: 100dvh;
   --worklab-safe-area-top: env(safe-area-inset-top, 0px);
   --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --mobile-safe-top: var(--worklab-safe-area-top);
@@ -2379,7 +2380,7 @@ select,
 .app {
   position: relative;
   isolation: isolate;
-  min-height: 100dvh;
+  min-height: var(--worklab-viewport-height, 100dvh);
   display: grid;
   grid-template-columns: var(--rail-width) minmax(0, 1fr);
   background:
@@ -2406,7 +2407,7 @@ select,
 .app-rail {
   position: sticky;
   top: 0;
-  height: 100dvh;
+  height: var(--worklab-viewport-height, 100dvh);
   display: flex;
   flex-direction: column;
   gap: var(--sp-5);
@@ -2539,7 +2540,7 @@ select,
   position: sticky;
   top: 0;
   z-index: 2;
-  height: 100dvh;
+  height: var(--worklab-viewport-height, 100dvh);
   min-width: 0;
   min-height: 0;
   display: none;
@@ -9257,7 +9258,7 @@ html.assistant-resizing * {
     white-space: nowrap;
   }
   .rail-footer { display: none; }
-  .app-body { min-height: calc(100dvh - 56px - env(safe-area-inset-bottom)); }
+  .app-body { min-height: calc(var(--worklab-viewport-height, 100dvh) - 56px - env(safe-area-inset-bottom)); }
   .app.has-mobile-action-dock .task-hero-actions {
     display: none;
   }
@@ -10155,14 +10156,14 @@ html.assistant-resizing * {
   container-type: inline-size;
   container-name: app;
   grid-template-columns: var(--shell-rail-w) minmax(0, 1fr);
-  min-height: 100dvh;
+  min-height: var(--worklab-viewport-height, 100dvh);
   padding-bottom: 0;
   background:
     repeating-linear-gradient(to bottom, transparent 0 27px, var(--paper-line) 27px 28px),
     var(--bg);
 }
 .app.responsive .app-body {
-  height: 100dvh;
+  height: var(--worklab-viewport-height, 100dvh);
   min-height: 0;
   overflow: hidden;
 }
@@ -11066,7 +11067,7 @@ html.assistant-resizing * {
     display: none;
   }
   .app.responsive .app-body {
-    height: 100dvh;
+    height: var(--worklab-viewport-height, 100dvh);
     min-height: 0;
     padding-top: var(--mobile-safe-top);
     padding-bottom: var(--mobile-tabbar-height);
@@ -11151,7 +11152,7 @@ html.assistant-resizing * {
     display: flex;
     box-sizing: border-box;
     height: auto;
-    max-height: calc(100dvh - var(--mobile-safe-top));
+    max-height: calc(var(--worklab-viewport-height, 100dvh) - var(--mobile-safe-top));
     flex-direction: column;
     overflow: hidden;
     padding: var(--sp-3) var(--sp-4) max(var(--sp-4), var(--mobile-safe-bottom));
@@ -11494,7 +11495,7 @@ html.assistant-resizing * {
     left: 0;
     z-index: 90;
     width: auto;
-    height: 100dvh;
+    height: var(--worklab-viewport-height, 100dvh);
     transform: translateX(100%);
     transition: transform var(--dur-std) var(--ease-snap);
   }

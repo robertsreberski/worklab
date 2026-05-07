@@ -4,7 +4,7 @@
 // ? opens the keyboard-help drawer globally.
 
 import { createContext } from "preact";
-import { useContext, useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
@@ -75,7 +75,7 @@ function assistantInitialOpen() {
 
 export function useAppChrome(chrome, deps = []) {
   const context = useContext(AppChromeContext);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!context) return undefined;
     context.setChrome(chrome || {});
     return () => context.setChrome({});
