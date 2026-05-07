@@ -350,15 +350,13 @@ exit 0
         messages: [{ role: "user", content: "do work" }],
         cwd: process.cwd(),
       });
-      // Without a final text event the CLI provider surfaces an empty-output
-      // error; the host (worker) recovers the StructuredOutput tool input from
-      // result.events when it sees this kind of failure.
-      expect(result.failureKind).toBe("provider_unavailable");
-      const toolUseEvent = result.events.find((entry) =>
-        entry.type === "assistant"
-        && entry.message?.content?.some((part) => part.type === "tool_use" && part.name === "StructuredOutput")
-      );
-      expect(toolUseEvent?.message?.content?.[0]?.input).toEqual(structured);
+      // The CLI provider captures StructuredOutput tool_use input as
+      // structuredResult; an empty trailing text is no longer treated as a
+      // run failure when a structured payload was emitted.
+      expect(result.error).toBeNull();
+      expect(result.failureKind).toBeNull();
+      expect(result.structuredResult).toEqual(structured);
+      expect(result.structuredResultSource).toBe("StructuredOutput");
     } finally {
       process.env.PATH = originalPath;
       rmSync(dir, { recursive: true, force: true });

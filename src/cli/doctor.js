@@ -14,6 +14,7 @@ import {
 // barrel breaks tests that mock node:child_process partially. Keep this
 // import deep so doctor.js is the only loader of that module path.
 import { resolveRgPath } from "@worklab/agent-runtime/agent/tools/index.js";
+import { configureToolRuntime } from "@worklab/agent-runtime/agent/tools/shared/runtime-context.js";
 import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
@@ -28,6 +29,12 @@ export async function doctor(args = []) {
 
   const serviceRuntime = inspectServiceRuntime(config);
   for (const problem of serviceRuntimeProblems(serviceRuntime)) problems.push(problem);
+
+  // Bridge WORKLAB_RIPGREP_PATH into the package's tool runtime before probing.
+  // The package no longer reads worklab-specific env vars (Phase 3 of the
+  // extraction), so doctor — which runs outside the worker — has to wire the
+  // env through the same way src/worker.js does at boot.
+  configureToolRuntime({ ripgrepPath: process.env.WORKLAB_RIPGREP_PATH || null });
 
   const rgPath = resolveRgPath({ refresh: true });
   if (!rgPath) problems.push("ripgrep (rg) not found: install ripgrep on PATH or set WORKLAB_RIPGREP_PATH; agent Glob/Grep tools will fail without it");
