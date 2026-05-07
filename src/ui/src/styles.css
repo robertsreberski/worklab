@@ -152,7 +152,7 @@
   --content-max: 1560px;
   --worklab-viewport-height: 100dvh;
   --worklab-safe-area-top: env(safe-area-inset-top, 0px);
-  --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --worklab-safe-area-bottom: max(env(safe-area-inset-bottom, 0px), env(safe-area-max-inset-bottom, 0px));
   --mobile-safe-top: var(--worklab-safe-area-top);
   --mobile-safe-bottom: var(--worklab-safe-area-bottom);
 
@@ -10636,10 +10636,8 @@ html.assistant-resizing * {
 
 .app-tabbar {
   display: none;
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  position: relative;
+  width: 100%;
   z-index: 30;
   height: calc(56px + var(--mobile-safe-bottom));
   padding-bottom: var(--mobile-safe-bottom);
@@ -11055,7 +11053,10 @@ html.assistant-resizing * {
     --mobile-tabbar-height: calc(56px + var(--mobile-safe-bottom));
     --mobile-action-dock-height: calc(44px + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    height: var(--worklab-viewport-height, 100dvh);
     padding-bottom: 0;
+    overflow: hidden;
   }
   .app.responsive:has(.task-mobile-action-dock.review-idle) {
     --mobile-action-dock-height: calc(88px + var(--sp-2) + var(--sp-3) + max(var(--sp-3), var(--mobile-safe-bottom)) + 1px);
@@ -11067,10 +11068,20 @@ html.assistant-resizing * {
     display: none;
   }
   .app.responsive .app-body {
-    height: var(--worklab-viewport-height, 100dvh);
+    grid-row: 1;
+    height: auto;
     min-height: 0;
     padding-top: var(--mobile-safe-top);
-    padding-bottom: var(--mobile-tabbar-height);
+    padding-bottom: 0;
+  }
+  .app.responsive .pane-list-body {
+    padding-bottom: var(--sp-3);
+  }
+  .app.responsive .page-wrap,
+  .app.responsive .task-detail,
+  .app.responsive .pane-detail-body,
+  .app.responsive .task-edit-body {
+    padding-bottom: var(--sp-4);
   }
   .app.responsive.has-mobile-topbar .app-body {
     padding-top: 0;
@@ -11099,6 +11110,8 @@ html.assistant-resizing * {
   }
   .app-tabbar {
     display: grid;
+    grid-row: 2;
+    align-self: end;
   }
   .app.responsive.has-dock .app-tabbar {
     display: none;

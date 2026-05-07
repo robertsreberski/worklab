@@ -1924,7 +1924,8 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
         const parsed = parseFloat(value);
         return Number.isFinite(parsed) ? parsed : 0;
       };
-      const target = document.querySelector(targetSelector);
+      const targets = Array.from(document.querySelectorAll(targetSelector));
+      const target = targets.at(-1);
       const chrome = Array.from(document.querySelectorAll(".app-mobile-action-dock, .app-tabbar"))
         .find((element) => getComputedStyle(element).display !== "none");
       const appBody = document.querySelector(".app-body");
@@ -1936,8 +1937,10 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
       const mainStyles = appMain ? getComputedStyle(appMain) : null;
       return {
         targetBottom: targetRect ? Math.round(targetRect.bottom) : 0,
+        chromeClass: chrome?.className || "",
         chromeTop: chromeRect ? Math.round(chromeRect.top) : window.innerHeight,
         chromeHeight: chromeRect ? Math.round(chromeRect.height) : 0,
+        chromePosition: chrome ? getComputedStyle(chrome).position : "",
         gapToChrome: targetRect && chromeRect ? Math.round(chromeRect.top - targetRect.bottom) : 0,
         bodyPaddingBottom: bodyStyles ? Math.round(parsePx(bodyStyles.paddingBottom)) : 0,
         mainPaddingBottom: mainStyles ? Math.round(parsePx(mainStyles.paddingBottom)) : 0,
@@ -1946,8 +1949,13 @@ test("mobile scroll containers keep final content above bottom chrome", async ({
       };
     }, { targetSelector: route.target, scrollerSelector: route.scroller });
 
-    expect(metrics.bodyPaddingBottom, `${route.hash} body padding`).toBeGreaterThanOrEqual(metrics.chromeHeight - 1);
-    expect(metrics.bodyPaddingBottom, `${route.hash} body padding`).toBeLessThanOrEqual(metrics.chromeHeight + 2);
+    if (String(metrics.chromeClass).includes("app-tabbar")) {
+      expect(metrics.chromePosition, `${route.hash} tabbar position`).toBe("relative");
+      expect(metrics.bodyPaddingBottom, `${route.hash} tabbar body padding`).toBeLessThanOrEqual(1);
+    } else {
+      expect(metrics.bodyPaddingBottom, `${route.hash} dock body padding`).toBeGreaterThanOrEqual(metrics.chromeHeight - 1);
+      expect(metrics.bodyPaddingBottom, `${route.hash} dock body padding`).toBeLessThanOrEqual(metrics.chromeHeight + 2);
+    }
     expect(metrics.mainPaddingBottom, `${route.hash} main padding`).toBeLessThanOrEqual(1);
     expect(metrics.mainScrollPaddingBottom, `${route.hash} main scroll padding`).toBeLessThanOrEqual(1);
     expect(metrics.targetBottom, `${route.hash} target below chrome`).toBeLessThanOrEqual(metrics.chromeTop);
@@ -2083,8 +2091,10 @@ test("mobile tabbar does not create document scroll space below content", async 
       bodyPaddingBottom: bodyStyles ? parsePx(bodyStyles.paddingBottom) : 0,
       mainOverflowY: appMain ? getComputedStyle(appMain).overflowY : "",
       tabbarDisplay: tabbarStyles?.display || "",
+      tabbarPosition: tabbarStyles?.position || "",
       tabbarOverflowX: tabbarStyles?.overflowX || "",
       tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
+      tabbarTop: tabbar ? Math.round(tabbar.getBoundingClientRect().top) : 0,
       tabbarBottom: tabbar ? Math.round(tabbar.getBoundingClientRect().bottom) : 0,
     };
   });
@@ -2093,10 +2103,12 @@ test("mobile tabbar does not create document scroll space below content", async 
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
   expect(metrics.bodyScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
   expect(metrics.appPaddingBottom).toBe(0);
-  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.bodyPaddingBottom).toBe(0);
   expect(metrics.mainOverflowY).toBe("auto");
   expect(metrics.tabbarDisplay).toBe("grid");
+  expect(metrics.tabbarPosition).toBe("relative");
   expect(["clip", "hidden"]).toContain(metrics.tabbarOverflowX);
+  expect(metrics.tabbarTop).toBe(metrics.viewportHeight - metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
 });
 
@@ -2109,7 +2121,7 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
         get: () => true,
       });
     } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11 }));
+    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11, maxBottom: 21 }));
   }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
 
   await page.goto(`${baseUrl}/#/tasks`);
@@ -2127,7 +2139,9 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
       safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
       safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
       bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      tabbarPosition: tabbar ? getComputedStyle(tabbar).position : "",
       tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarTop: tabbarRect ? Math.round(tabbarRect.top) : 0,
       tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
       documentScrollHeight: document.documentElement.scrollHeight,
     };
@@ -2135,9 +2149,11 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
 
   expect(metrics.viewportVar).toBe("844px");
   expect(metrics.safeTopVar).toBe("31px");
-  expect(metrics.safeBottomVar).toBe("11px");
-  expect(metrics.tabbarHeight).toBe(67);
-  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.safeBottomVar).toBe("21px");
+  expect(metrics.tabbarHeight).toBe(77);
+  expect(metrics.bodyPaddingBottom).toBe(0);
+  expect(metrics.tabbarPosition).toBe("relative");
+  expect(metrics.tabbarTop).toBe(metrics.viewportHeight - metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
@@ -2182,6 +2198,7 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
       filterTop: filterRect ? Math.round(filterRect.top) : -1,
       safeAreaOwnedByHeader: !!safeAreaElement?.closest?.(".commander-topbar"),
       tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarTop: tabbarRect ? Math.round(tabbarRect.top) : 0,
       tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
       tabbarBackground: tabbarStyles?.backgroundColor || "",
       fabBottomBeforeNav: fabRect && tabbarRect ? Math.round(fabRect.bottom) <= Math.round(tabbarRect.top) + 1 : false,
@@ -2199,7 +2216,8 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
   expect(metrics.filterTop).toBeGreaterThanOrEqual(31);
   expect(metrics.topbarBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(metrics.safeAreaOwnedByHeader).toBe(true);
-  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.bodyPaddingBottom).toBe(0);
+  expect(metrics.tabbarTop).toBe(metrics.viewportHeight - metrics.tabbarHeight);
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
   expect(metrics.tabbarBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(metrics.fabBottomBeforeNav).toBe(true);
