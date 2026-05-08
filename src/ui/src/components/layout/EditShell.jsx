@@ -1,8 +1,8 @@
 import { Icon } from "../Icon.jsx";
 import { Breadcrumb } from "../primitives/Breadcrumb.jsx";
-import { Button } from "../primitives/Button.jsx";
 import { IconButton } from "../primitives/IconButton.jsx";
 import { Kbd } from "../primitives/Kbd.jsx";
+import { Toolbar } from "./Page.jsx";
 
 export function EditHeader({
   ariaLabel,
@@ -52,14 +52,14 @@ export function EditHeader({
         </div>
       </div>
       {actions && (
-        <div class="toolbar task-edit-toolbar edit-shell-toolbar">
+        <Toolbar class="task-edit-toolbar edit-shell-toolbar">
           {shortcut && (
             <span class="task-edit-shortcut" aria-hidden="true">
               <Kbd>⌘</Kbd><Kbd>S</Kbd> save
             </span>
           )}
           {actions}
-        </div>
+        </Toolbar>
       )}
     </header>
   );
