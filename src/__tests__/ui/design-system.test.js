@@ -8,6 +8,7 @@ const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
+const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
@@ -110,6 +111,15 @@ describe("design system stylesheet", () => {
     const confirmButtonSource = readFileSync(confirmButtonPath, "utf8");
     expect(confirmButtonSource).toMatch(/import\s+\{\s*Button\s*\}/);
     expect(confirmButtonSource).not.toMatch(/<button\b/);
+  });
+
+  it("builds mobile config icon actions on the shared IconButton primitive", () => {
+    const mobileConfigSource = readFileSync(mobileConfigSheetPath, "utf8");
+    expect(mobileConfigSource).toMatch(/import\s+\{\s*IconButton\s*\}/);
+    expect(mobileConfigSource).toMatch(/<IconButton[\s\S]*mobile-config-trigger/);
+    expect(mobileConfigSource).toMatch(/<IconButton[\s\S]*mobile-config-sheet-close/);
+    expect(mobileConfigSource).not.toMatch(/class=\{`icon-button/);
+    expect(mobileConfigSource).not.toMatch(/<button[^>]+class="mobile-config-sheet-close"/);
   });
 
   it("bounds shared component text surfaces", () => {
