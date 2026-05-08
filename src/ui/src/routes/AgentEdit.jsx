@@ -28,7 +28,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
@@ -307,14 +307,14 @@ function CapabilityGroup({
           <div class="capability-panel-title">{title}</div>
           {hint && <div class="capability-panel-hint">{hint}</div>}
         </div>
-        <div class="capability-panel-actions">
+        <Toolbar class="capability-panel-actions">
           <span class={`capability-mode ${!explicit ? "default" : explicit ? "explicit" : ""}`.trim()}>{summary}</span>
           {explicit && (
             <Button variant="ghost" size="sm" class="link-button capability-reset" onClick={() => onChange([], "all")}>
               Reset to all
             </Button>
           )}
-        </div>
+        </Toolbar>
       </div>
 
       {items.length === 0 ? (
@@ -708,7 +708,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               value={memoryState?.content || ""}
               placeholder={memoryContentPlaceholder(memoryState)}
             />
-            <div class="agent-memory-actions">
+            <Toolbar class="agent-memory-actions">
               <Button
                 variant="secondary"
                 iconLeft={<Icon name="refresh-cw" size={13} />}
@@ -718,7 +718,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
               >
                 Consolidate memory
               </Button>
-            </div>
+            </Toolbar>
           </Card>
         )}
 
@@ -754,7 +754,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                         })}
                       />
                       {memory.evidence && <div class="agent-learning-evidence">{memory.evidence}</div>}
-                      <div class="agent-learning-actions">
+                      <Toolbar class="agent-learning-actions">
                         <Button
                           variant="secondary"
                           size="sm"
@@ -783,7 +783,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                         >
                           Archive
                         </Button>
-                      </div>
+                      </Toolbar>
                     </div>
                   );
                 })}

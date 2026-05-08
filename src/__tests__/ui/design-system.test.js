@@ -276,9 +276,16 @@ describe("design system stylesheet", () => {
     const agentEditSource = readFileSync(agentEditPath, "utf8");
     expect(agentEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(agentEditSource).toMatch(/import\s+\{\s*Button\s*\}/);
+    expect(agentEditSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
     expect(agentEditSource).toMatch(/<FormSection\s+class="capability-panel"/);
+    expect(agentEditSource).toMatch(/<Toolbar\s+class="capability-panel-actions"/);
+    expect(agentEditSource).toMatch(/<Toolbar\s+class="agent-memory-actions"/);
+    expect(agentEditSource).toMatch(/<Toolbar\s+class="agent-learning-actions"/);
     expect(agentEditSource).toMatch(/<Button\s+variant="ghost"\s+size="sm"\s+class="link-button capability-reset"/);
     expect(agentEditSource).not.toMatch(/<section\s+class="capability-panel"/);
+    expect(agentEditSource).not.toMatch(/<div\s+class="capability-panel-actions"/);
+    expect(agentEditSource).not.toMatch(/<div\s+class="agent-memory-actions"/);
+    expect(agentEditSource).not.toMatch(/<div\s+class="agent-learning-actions"/);
     expect(agentEditSource).not.toMatch(/<button[^>]+class="link-button capability-reset"/);
   });
 
