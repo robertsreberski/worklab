@@ -28,6 +28,7 @@ import {
   updateTeamFields,
 } from "../../core/db/queries/teams.js";
 import { getEnabledAgentByName, agentExists } from "../../core/db/queries/agents.js";
+import { withMentions } from "../lib/with-mentions.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -210,7 +211,7 @@ function applyTeamMembers(db, teamId, members, now) {
   }
 }
 
-export function registerTeamRoutes(app, { db, broker, watcher }) {
+export function registerTeamRoutes(app, { db, broker, watcher, dataDir }) {
   app.get("/api/teams", (req, res) => {
     try {
       const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
@@ -314,7 +315,11 @@ export function registerTeamRoutes(app, { db, broker, watcher }) {
       const projects = listProjectsForTeam(db, row.id);
       const cycles = listRecentLeadCycles(db, row.id, 50).map(leadCycleOut);
       const goals = listTeamProjectGoals(db, row.id, { includeArchived: true, now: Date.now() });
-      res.json({ team, members, projects, recent_cycles: cycles, goals });
+      res.json(withMentions(
+        { db, dataDir },
+        { team, members, projects, recent_cycles: cycles, goals },
+        [team.goal, team.description, goals.map((g) => g?.goal)],
+      ));
     } catch (error) {
       return sendRouteError(res, error);
     }

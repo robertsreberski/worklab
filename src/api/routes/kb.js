@@ -16,6 +16,7 @@ import {
 } from "../../core/db/queries/tasks.js";
 import { listAllCommentBodiesForKbUsage } from "../../core/db/queries/comments.js";
 import { listAgentInstructionsForKbUsage } from "../../core/db/queries/agents.js";
+import { withMentions } from "../lib/with-mentions.js";
 
 const CreateSchema = z.object({
   slug: z.string().optional(),
@@ -440,7 +441,12 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     if (!entry) {
       return res.status(404).json({ error: { code: "not_found", message: "kb entry not found" } });
     }
-    res.json({ entry: attachProjects(db, attachAutoPromotedInfo(dataDir, entry)) });
+    const enriched = attachProjects(db, attachAutoPromotedInfo(dataDir, entry));
+    res.json(withMentions(
+      { db, dataDir },
+      { entry: enriched },
+      [enriched.body, enriched.meta?.title],
+    ));
   });
 
   // POST /api/kb

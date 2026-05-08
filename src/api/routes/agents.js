@@ -42,6 +42,7 @@ import {
   listRecentAgentRuns,
 } from "../../core/db/queries/runs.js";
 import { join } from "node:path";
+import { withMentions } from "../lib/with-mentions.js";
 
 function rowToAgent(row) {
   if (!row) return null;
@@ -408,7 +409,12 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
   app.get("/api/agents/:name", (req, res) => {
     const row = getAgentByName(db, req.params.name);
     if (!row) return res.status(404).json({ error: { code: "not_found", message: "agent not found" } });
-    res.json({ agent: rowToAgent(row) });
+    const agent = rowToAgent(row);
+    res.json(withMentions(
+      { db, dataDir },
+      { agent },
+      [agent.instructions, agent.description],
+    ));
   });
 
   app.get("/api/agents/:name/memory", (req, res) => {
