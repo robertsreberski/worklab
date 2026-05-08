@@ -1730,6 +1730,51 @@ test("multi-line selection controls center against their copy", async ({ page })
   expect(deltas.checkbox).toBeLessThanOrEqual(1);
 });
 
+test("settings overview cards, section nav, and sections stay connected", async ({ page }) => {
+  const labels = ["Service", "Agent runs", "Notifications", "Assistant", "Slack", "Search", "MCP tools"];
+
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await expect(page.locator(".settings-overview-card")).toHaveCount(labels.length);
+  await expect(page.locator(".settings-section-nav button")).toHaveCount(labels.length);
+  for (const label of labels) {
+    await expect(page.locator(".settings-overview-card", { hasText: label })).toBeVisible();
+    await expect(page.locator(".settings-section-nav button", { hasText: label })).toBeVisible();
+  }
+
+  await page.locator(".settings-overview-card", { hasText: "MCP tools" }).click();
+  await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("MCP tools");
+  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("MCP tools");
+  await page.waitForFunction((id) => {
+    const section = document.getElementById(id);
+    if (!section) return false;
+    const rect = section.getBoundingClientRect();
+    return rect.top < window.innerHeight && rect.bottom > 0;
+  }, "settings-tools");
+
+  await page.locator(".settings-section-nav button", { hasText: "Agent runs" }).click();
+  await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Agent runs");
+  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("Agent runs");
+  await page.waitForFunction((id) => {
+    const section = document.getElementById(id);
+    if (!section) return false;
+    const rect = section.getBoundingClientRect();
+    return rect.top < window.innerHeight && rect.bottom > 0;
+  }, "settings-execution");
+  await expectNoHorizontalOverflow(page, "settings connected nav desktop");
+
+  const collapseAssistant = page.getByRole("button", { name: "Collapse assistant" });
+  if (await collapseAssistant.count()) await collapseAssistant.first().click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await expect(page.locator(".settings-overview-card")).toHaveCount(labels.length);
+  await page.locator(".settings-overview-card", { hasText: "Search" }).click();
+  await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Search");
+  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("Search");
+  await expectNoHorizontalOverflow(page, "settings connected nav mobile");
+});
+
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/agents/regression-agent",

@@ -10,9 +10,19 @@ export function FieldNote({ label, value, mono = false }) {
   );
 }
 
-export function SettingsOverviewCard({ icon, title, value, detail, status, statusLabel }) {
-  return (
-    <div class="settings-overview-card">
+export function SettingsOverviewCard({
+  icon,
+  title,
+  value,
+  detail,
+  status,
+  statusLabel,
+  targetId,
+  active = false,
+  onSelect,
+}) {
+  const content = (
+    <>
       <div class="settings-overview-icon"><Icon name={icon} size={18} /></div>
       <div class="settings-overview-copy">
         <span>{title}</span>
@@ -20,7 +30,22 @@ export function SettingsOverviewCard({ icon, title, value, detail, status, statu
         {detail && <small>{detail}</small>}
       </div>
       {status && <StatusPill status={status} label={statusLabel} size="sm" />}
-    </div>
+    </>
+  );
+  if (targetId || onSelect) {
+    return (
+      <button
+        type="button"
+        class={`settings-overview-card ${active ? "is-active" : ""}`.trim()}
+        aria-current={active ? "location" : undefined}
+        onClick={() => onSelect?.(targetId)}
+      >
+        {content}
+      </button>
+    );
+  }
+  return (
+    <div class={`settings-overview-card ${active ? "is-active" : ""}`.trim()}>{content}</div>
   );
 }
 

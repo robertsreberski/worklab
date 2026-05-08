@@ -63,6 +63,16 @@ import {
 
 const MCP_HEALTH_ALL_KEY = "__all";
 
+const SETTINGS_SECTION_LINKS = [
+  { id: "settings-runtime", label: "Service", icon: "settings" },
+  { id: "settings-execution", label: "Agent runs", icon: "clock" },
+  { id: "settings-notifications", label: "Notifications", icon: "message-circle" },
+  { id: "settings-assistant", label: "Assistant", icon: "sparkles" },
+  { id: "settings-slack", label: "Slack", icon: "message-square" },
+  { id: "settings-search", label: "Search", icon: "database" },
+  { id: "settings-tools", label: "MCP tools", icon: "terminal" },
+];
+
 function mcpHealthRowKey(id) {
   return `row:${id}`;
 }
@@ -151,6 +161,7 @@ export function Settings() {
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => notificationSettings());
   const [notificationServerStatus, setNotificationServerStatus] = useState(null);
   const [notificationBusy, setNotificationBusy] = useState(false);
+  const [activeSectionId, setActiveSectionId] = useState(SETTINGS_SECTION_LINKS[0].id);
 
   const loadSettings = useCallback(async (options = {}) => {
     const response = await api.getSettings(options);
@@ -247,6 +258,44 @@ export function Settings() {
       loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
     }
   });
+
+  const settingsReady = !!settings && !!runtimeDraft;
+  const selectSettingsSection = useCallback((id) => {
+    if (!id) return;
+    setActiveSectionId(id);
+    scrollToSettingsSection(id);
+  }, []);
+
+  useEffect(() => {
+    if (!settingsReady || typeof window === "undefined") return;
+    const sections = SETTINGS_SECTION_LINKS
+      .map((item) => document.getElementById(item.id))
+      .filter(Boolean);
+    if (!sections.length) return;
+    let frame = null;
+    const updateActiveSection = () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => {
+        const marker = 128;
+        const sectionAtMarker = sections.find((section) => {
+          const rect = section.getBoundingClientRect();
+          return rect.top <= marker && rect.bottom > marker;
+        });
+        const nearestSection = sectionAtMarker || sections
+          .map((section) => ({ section, distance: Math.abs(section.getBoundingClientRect().top - marker) }))
+          .sort((a, b) => a.distance - b.distance)[0]?.section;
+        if (nearestSection?.id) setActiveSectionId(nearestSection.id);
+      });
+    };
+    updateActiveSection();
+    window.addEventListener("scroll", updateActiveSection, { passive: true });
+    window.addEventListener("resize", updateActiveSection);
+    return () => {
+      if (frame) window.cancelAnimationFrame(frame);
+      window.removeEventListener("scroll", updateActiveSection);
+      window.removeEventListener("resize", updateActiveSection);
+    };
+  }, [settingsReady]);
 
   const formSave = useFormSave(async () => {
     if (settingsDirty) {
@@ -472,14 +521,70 @@ export function Settings() {
   const endpointLabel = runtimeDraft.host || runtimeDraft.port
     ? `${runtimeDraft.host || "-"}:${runtimeDraft.port || "-"}`
     : "-";
-  const sectionLinks = [
-    { id: "settings-runtime", label: "Runtime", icon: "settings" },
-    { id: "settings-execution", label: "Execution", icon: "clock" },
-    { id: "settings-notifications", label: "Notifications", icon: "message-circle" },
-    { id: "settings-assistant", label: "Assistant", icon: "sparkles" },
-    { id: "settings-slack", label: "Slack", icon: "message-square" },
-    { id: "settings-search", label: "Search", icon: "database" },
-    { id: "settings-tools", label: "Tools", icon: "terminal" },
+  const overviewCards = [
+    {
+      targetId: "settings-runtime",
+      icon: "settings",
+      title: "Service",
+      value: serviceMeta.label,
+      detail: endpointLabel,
+      status: serviceMeta.status,
+      statusLabel: serviceMeta.label,
+    },
+    {
+      targetId: "settings-execution",
+      icon: "clock",
+      title: "Agent runs",
+      value: `${minutesValue(settings.worker_timeout_ms) || "-"} min timeout`,
+      detail: settings.consolidation_enabled ? `Memory at ${settings.consolidation_hour}:00` : "Memory refresh off",
+      status: settings.consolidation_enabled ? "enabled" : "disabled",
+      statusLabel: settings.consolidation_enabled ? "Memory on" : "Memory off",
+    },
+    {
+      targetId: "settings-notifications",
+      icon: "message-circle",
+      title: "Notifications",
+      value: `${notificationSettingsState?.mode === "pwa" ? "PWA" : "Browser"} ${notificationMeta.label.toLowerCase()}`,
+      detail: notificationModeDetail,
+      status: notificationMeta.status,
+      statusLabel: notificationMeta.label,
+    },
+    {
+      targetId: "settings-assistant",
+      icon: "sparkles",
+      title: "Assistant",
+      value: currentAssistantModel,
+      detail: `Memory ${settings.slack_agent_name || "mickey"}`,
+      status: "enabled",
+      statusLabel: "Available",
+    },
+    {
+      targetId: "settings-slack",
+      icon: "message-square",
+      title: "Slack",
+      value: slackMeta.label,
+      detail: slackStatus?.bot_user_id ? `Bot ${slackStatus.bot_user_id}` : "Socket Mode bot",
+      status: slackMeta.status,
+      statusLabel: slackMeta.label,
+    },
+    {
+      targetId: "settings-search",
+      icon: "database",
+      title: "Search",
+      value: searchMeta.label,
+      detail: indexStatus ? `${indexStatus.vectorized || 0}/${indexStatus.total || 0} vectorized` : "Index status unknown",
+      status: searchMeta.status,
+      statusLabel: searchMeta.label,
+    },
+    {
+      targetId: "settings-tools",
+      icon: "terminal",
+      title: "MCP tools",
+      value: mcpSummary.label,
+      detail: `${mcpSummary.builtin} built-in / ${mcpSummary.user} external`,
+      status: mcpSummary.status,
+      statusLabel: mcpSummary.label,
+    },
   ];
 
   return (
@@ -488,7 +593,7 @@ export function Settings() {
         class="settings-page"
         kicker="Settings"
         title="Settings"
-        description="Service, workers, integrations, search, and MCP tools."
+        description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
         actions={pageActions}
       >
         {formSave.error && (
@@ -511,59 +616,25 @@ export function Settings() {
         )}
 
         <div class="settings-overview-grid">
-          <SettingsOverviewCard
-            icon="settings"
-            title="Service"
-            value={serviceMeta.label}
-            detail={endpointLabel}
-            status={serviceMeta.status}
-            statusLabel={serviceMeta.label}
-          />
-          <SettingsOverviewCard
-            icon="clock"
-            title="Execution"
-            value={`${minutesValue(settings.worker_timeout_ms) || "-"} min timeout`}
-            detail={settings.consolidation_enabled ? `Memory at ${settings.consolidation_hour}:00` : "Memory refresh off"}
-            status={settings.consolidation_enabled ? "enabled" : "disabled"}
-            statusLabel={settings.consolidation_enabled ? "Memory on" : "Memory off"}
-          />
-          <SettingsOverviewCard
-            icon="message-circle"
-            title="Notifications"
-            value={`${notificationSettingsState?.mode === "pwa" ? "PWA" : "Browser"} ${notificationMeta.label.toLowerCase()}`}
-            detail={`Slack ${slackMeta.label.toLowerCase()}`}
-            status={notificationMeta.status === "error" || slackMeta.status === "error" ? "error" : slackMeta.status}
-            statusLabel={slackMeta.label}
-          />
-          <SettingsOverviewCard
-            icon="sparkles"
-            title="Assistant"
-            value={currentAssistantModel}
-            detail={`Memory ${settings.slack_agent_name || "mickey"}`}
-            status="enabled"
-            statusLabel="Available"
-          />
-          <SettingsOverviewCard
-            icon="database"
-            title="Search"
-            value={searchMeta.label}
-            detail={indexStatus ? `${indexStatus.vectorized || 0}/${indexStatus.total || 0} vectorized` : "Index status unknown"}
-            status={searchMeta.status}
-            statusLabel={searchMeta.label}
-          />
-          <SettingsOverviewCard
-            icon="terminal"
-            title="MCP"
-            value={mcpSummary.label}
-            detail={`${mcpSummary.builtin} built-in / ${mcpSummary.user} external`}
-            status={mcpSummary.status}
-            statusLabel={mcpSummary.label}
-          />
+          {overviewCards.map((card) => (
+            <SettingsOverviewCard
+              key={card.targetId}
+              {...card}
+              active={activeSectionId === card.targetId}
+              onSelect={selectSettingsSection}
+            />
+          ))}
         </div>
 
         <nav class="settings-section-nav" aria-label="Settings sections">
-          {sectionLinks.map((item) => (
-            <button type="button" key={item.id} onClick={() => scrollToSettingsSection(item.id)}>
+          {SETTINGS_SECTION_LINKS.map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              class={activeSectionId === item.id ? "is-active" : ""}
+              aria-current={activeSectionId === item.id ? "location" : undefined}
+              onClick={() => selectSettingsSection(item.id)}
+            >
               <Icon name={item.icon} size={14} />
               <span>{item.label}</span>
             </button>
@@ -573,7 +644,7 @@ export function Settings() {
         <div class="settings-sections">
           <SettingsSection
             id="settings-runtime"
-            kicker="Runtime"
+            kicker="Service"
             title="Service runtime"
             description="Service boot values are written to the Worklab data-dir .env file."
             aside={<StatusPill status={serviceMeta.status} label={serviceMeta.label} />}
@@ -612,9 +683,9 @@ export function Settings() {
 
           <SettingsSection
             id="settings-execution"
-            kicker="Execution"
-            title="Workers and memory"
-            description="Run limits and context controls used by new agent runs."
+            kicker="Agent runs"
+            title="Workers, planning, and memory"
+            description="Run limits, memory refresh, planning harness, and log context for new agent runs."
             aside={<StatusPill status={settings.consolidation_enabled ? "enabled" : "disabled"} label={settings.consolidation_enabled ? "Memory on" : "Memory off"} />}
           >
             <div class="settings-panel-grid">
@@ -694,7 +765,7 @@ export function Settings() {
             id="settings-notifications"
             kicker={notificationSettingsState?.mode === "pwa" ? "Web Push" : "Browser"}
             title="Notifications"
-            description="Notification preference for this Worklab origin."
+            description="Browser or PWA notifications for Worklab activity."
             aside={<StatusPill status={notificationMeta.status} label={notificationMeta.label} />}
           >
             <SettingPanel icon="message-circle" title="Notifications" meta={notificationModeDetail} status={notificationMeta.status} statusLabel={notificationMeta.label}>
@@ -714,8 +785,8 @@ export function Settings() {
           <SettingsSection
             id="settings-assistant"
             kicker="Assistant"
-            title="Personal chat"
-            description="In-app assistant model and run behavior."
+            title="Assistant chat"
+            description="Personal assistant model, memory identity, and agent robustness defaults."
             aside={<StatusPill status="enabled" label="Available" />}
           >
             <div class="settings-panel-grid">
@@ -861,7 +932,7 @@ export function Settings() {
           <SettingsSection
             id="settings-slack"
             kicker="Slack"
-            title="Bot integration"
+            title="Slack bot"
             description="Socket Mode bot for Slack triage and Worklab task notifications."
             aside={(
               <div class="settings-section-status">
@@ -958,7 +1029,7 @@ export function Settings() {
           <SettingsSection
             id="settings-search"
             kicker="Search"
-            title="Embeddings"
+            title="Knowledge search"
             description="Embedding model selection and index health."
             aside={<StatusPill status={searchMeta.status} label={searchMeta.label} />}
           >
@@ -987,7 +1058,7 @@ export function Settings() {
 
           <SettingsSection
             id="settings-tools"
-            kicker="Tools"
+            kicker="MCP tools"
             title="MCP servers"
             description="Built-in servers are read-only. User servers are saved to the MCP config file."
             aside={<StatusPill status={mcpSummary.status} label={mcpSummary.label} />}

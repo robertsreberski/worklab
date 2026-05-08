@@ -32,6 +32,25 @@ describe("settings UI duration conversions", () => {
     expect(source).not.toContain('label="Cancel grace (seconds)"');
   });
 
+  it("drives settings overview cards and section nav from the same section map", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    const sectionIds = [...source.matchAll(/id: "(settings-[^"]+)"/g)].map((match) => match[1]);
+
+    expect(sectionIds).toEqual([
+      "settings-runtime",
+      "settings-execution",
+      "settings-notifications",
+      "settings-assistant",
+      "settings-slack",
+      "settings-search",
+      "settings-tools",
+    ]);
+    expect(source).toContain("overviewCards.map");
+    expect(source).toContain("SETTINGS_SECTION_LINKS.map");
+    expect(source).toContain("active={activeSectionId === card.targetId}");
+    expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
+  });
+
   it("formats millisecond timeout values as minutes", () => {
     expect(minutesValue(30 * 60 * 1000)).toBe("30");
     expect(minutesValue(120 * 1000)).toBe("2");
