@@ -5,6 +5,7 @@ import { DESIGN_SYSTEM_COMPONENT_COVERAGE } from "../../ui/src/routes/DesignSyst
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
+const activityPath = resolve(repoRoot, "src/ui/src/routes/Activity.jsx");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
@@ -181,6 +182,13 @@ describe("design system stylesheet", () => {
     const providerSource = readFileSync(providersPath, "utf8");
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);
     expect(providerSource).not.toMatch(/<label\s+class="provider-model-price-field"/);
+  });
+
+  it("builds activity stats on the shared SummaryGrid layout", () => {
+    const activitySource = readFileSync(activityPath, "utf8");
+    expect(activitySource).toMatch(/import\s+\{\s*Page,\s*SummaryGrid\s*\}/);
+    expect(activitySource).toMatch(/<SummaryGrid[^>]+as="section"[^>]+class="activity-stats"/);
+    expect(activitySource).not.toMatch(/<section\s+class="activity-stats"/);
   });
 
   it("bounds shared component text surfaces", () => {

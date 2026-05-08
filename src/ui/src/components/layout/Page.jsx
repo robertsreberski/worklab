@@ -48,10 +48,10 @@ export function Page({
   );
 }
 
-export function SummaryGrid({ children, class: className = "" }) {
-  return <div class={`summary-tiles ds-summary-grid ${className}`.trim()}>{children}</div>;
+export function SummaryGrid({ children, class: className = "", as: Component = "div", ...props }) {
+  return <Component {...props} class={`summary-tiles ds-summary-grid ${className}`.trim()}>{children}</Component>;
 }
 
-export function PanelGrid({ children, class: className = "" }) {
-  return <div class={`ds-panel-grid ${className}`.trim()}>{children}</div>;
+export function PanelGrid({ children, class: className = "", ...props }) {
+  return <div {...props} class={`ds-panel-grid ${className}`.trim()}>{children}</div>;
 }
