@@ -80,6 +80,7 @@ export const api = {
   // activity/search
   listActivity: (query, options) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),
+  searchMentions: (query, options) => request("GET", `/mentions/search?${new URLSearchParams(query)}`, null, options),
   searchStatus: () => request("GET", "/search/status"),
   // settings
   getSettings: (options) => request("GET", "/settings", null, options),
