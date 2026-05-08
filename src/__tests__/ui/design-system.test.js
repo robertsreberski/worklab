@@ -327,12 +327,16 @@ describe("design system stylesheet", () => {
 
   it("builds settings panel groups on the shared PanelGrid layout", () => {
     const settingsSource = readFileSync(settingsPath, "utf8");
-    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*Page[^}]*PanelGrid[^}]*\}/);
+    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*Page[^}]*PanelGrid[^}]*Toolbar[^}]*\}/);
     expect(settingsSource).toMatch(/<Button[\s\S]*class=\{activeSectionId === item\.id \? "is-active" : ""\}/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
     expect(settingsSource).toMatch(/<ControlGroupStack>/);
     expect(settingsSource).toMatch(/<ControlGroup\s+title="Delegation"/);
+    expect(settingsSource).toMatch(/<Toolbar\s+class="settings-list-actions"/);
+    expect(settingsSource).toMatch(/<Toolbar\s+class="settings-row-actions"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-list-actions"/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-row-actions"/);
     expect(settingsSource).not.toMatch(/SettingsControlGroup/);
     expect(settingsSource).not.toMatch(/<button[\s\S]*key=\{item\.id\}/);
   });
