@@ -637,6 +637,127 @@ export function createTaskWatcher({
     };
   }
 
+  function worktreeConflictRetryAlreadyUsed(run) {
+    if (run?.parent_relationship === "worktree_conflict_retry") return true;
+    const diagnostics = safeParseJson(run?.diagnostics_json, {});
+    return diagnostics?.worktree_conflict_retry === true
+      || diagnostics?.worktree_conflict_retry_of_run_id
+      || diagnostics?.worktree_conflict_retry?.retry_run_id;
+  }
+
+  function patchWorktreeConflictRetryDiagnostics(runId, patch) {
+    const row = getRunDiagnostics(db, runId);
+    const existing = safeParseJson(row?.diagnostics_json, {});
+    const previous = existing?.worktree_conflict_retry && typeof existing.worktree_conflict_retry === "object"
+      ? existing.worktree_conflict_retry
+      : {};
+    patchRunDiagnostics(runId, {
+      worktree_conflict_retry: {
+        ...previous,
+        ...patch,
+      },
+    });
+  }
+
+  function worktreeConflictRetrySeed({ runId, audit }) {
+    return {
+      worktree_conflict_retry: true,
+      worktree_conflict_retry_of_run_id: runId,
+      source_workdir: audit.source_workdir || null,
+      source_git_root: audit.source_git_root || null,
+      source_head: audit.source_head_before || null,
+      previous_branch: audit.branch || null,
+      previous_branch_head: audit.branch_head || null,
+      previous_worktree_root: audit.worktree_root || null,
+      conflict_paths: audit.conflict_paths || [],
+      guidance: [
+        "The previous AI worktree conflicted with the current source checkout during merge-back.",
+        "Treat the source checkout as authoritative. Use the previous AI branch only as reference.",
+        "Reapply only the current task's intended changes and commit them on this fresh AI worktree branch.",
+      ].join(" "),
+    };
+  }
+
+  function worktreeConflictRetryComment({ audit, retryRunId }) {
+    const branchHead = shortSha(audit.branch_head);
+    const sourceHead = shortSha(audit.source_head_before);
+    const conflicts = (audit.conflict_paths || []).map((path) => `\`${path}\``).join(", ") || "unknown paths";
+    return [
+      "Automatic worktree conflict retry started.",
+      `Retry run: \`${retryRunId}\`.`,
+      audit.branch ? `Previous AI branch: \`${audit.branch}\`${branchHead ? ` at ${branchHead}` : ""}.` : "",
+      sourceHead ? `Source checkout head: ${sourceHead}.` : "",
+      `Conflict paths: ${conflicts}.`,
+      "The source checkout is authoritative; the retry starts from a fresh worktree based on current source truth and should use the previous AI branch only as reference.",
+    ].filter(Boolean).join("\n");
+  }
+
+  function maybeStartWorktreeConflictRetry({ taskId, runId, run, task, stage, audit }) {
+    if (stage !== "execute" || audit?.status !== "merge_conflict") return { started: false, reason: "not_retryable" };
+    if (worktreeConflictRetryAlreadyUsed(run)) {
+      patchWorktreeConflictRetryDiagnostics(runId, {
+        skipped: true,
+        skip_reason: "already_retried",
+        conflict_paths: audit.conflict_paths || [],
+        previous_branch: audit.branch || null,
+        previous_branch_head: audit.branch_head || null,
+        source_head: audit.source_head_before || null,
+      });
+      return { started: false, reason: "already_retried" };
+    }
+
+    const agentName = run?.agent_name || agentForTaskStage(task, "execute");
+    if (!agentName) return { started: false, reason: "missing_agent" };
+    const teamId = effectiveTeamForTask(db, task);
+    const budget = checkBudget({ db, agentName, teamId });
+    if (!budget.ok) {
+      patchWorktreeConflictRetryDiagnostics(runId, {
+        skipped: true,
+        skip_reason: "budget_exceeded",
+        message: budget.message,
+      });
+      return { started: false, reason: "budget_exceeded", message: budget.message };
+    }
+
+    const diagnosticsSeed = worktreeConflictRetrySeed({ runId, audit });
+    try {
+      const retry = spawnRun({
+        task: { ...task, stage: "execute" },
+        stage: "execute",
+        mode: run?.mode || "execute",
+        agentName,
+        parentRunId: runId,
+        diagnosticsSeed,
+      });
+      patchWorktreeConflictRetryDiagnostics(runId, {
+        scheduled: true,
+        retry_run_id: retry.runId,
+        conflict_paths: audit.conflict_paths || [],
+        previous_branch: audit.branch || null,
+        previous_branch_head: audit.branch_head || null,
+        previous_worktree_root: audit.worktree_root || null,
+        source_head: audit.source_head_before || null,
+      });
+      postSystemComment(taskId, worktreeConflictRetryComment({ audit, retryRunId: retry.runId }));
+      applySideEffects(taskId, [
+        { type: "clear_error_text" },
+        { type: "set_stage_reason", reason: "retrying after worktree merge conflict" },
+        { type: "clear_pending_actions" },
+        { type: "clear_pending_questions" },
+        { type: "clear_blocking_issues" },
+      ], taskStage(getTaskById(db, taskId)), "execute", { running: true });
+      return { started: true, runId: retry.runId };
+    } catch (err) {
+      patchWorktreeConflictRetryDiagnostics(runId, {
+        skipped: true,
+        skip_reason: "spawn_failed",
+        message: err?.message || String(err),
+      });
+      postSystemComment(taskId, `Automatic worktree conflict retry failed to start: ${err?.message || String(err)}`);
+      return { started: false, reason: "spawn_failed", message: err?.message || String(err) };
+    }
+  }
+
   function appendCoordinatorRunEvent(runId, event) {
     const row = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
     const log = db.prepare("SELECT id, events FROM agent_logs WHERE task_run_id = ?").get(runId);
@@ -693,6 +814,9 @@ export function createTaskWatcher({
     patchRunDiagnostics(runId, { worktree: audit });
     appendCoordinatorRunEvent(runId, worktreeAuditEvent(audit));
     if (reconcile.ok) return { ...reconcile, audit };
+
+    const retry = maybeStartWorktreeConflictRetry({ taskId, runId, run, task: getTaskById(db, taskId), stage, audit });
+    if (retry?.started) return { ...reconcile, audit, autoRetry: retry };
 
     postSystemComment(taskId, audit.message);
     applySideEffects(taskId, [

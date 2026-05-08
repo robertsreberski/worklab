@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
-import { buildNextTaskRunPreview, buildTaskRunInput } from "../../core/run-input.js";
+import { buildNextTaskRunPreview, buildTaskRunInput, loadPriorRunSummaries } from "../../core/run-input.js";
 import { createContextCache } from "../../core/context-cache.js";
 import { appendJournalEntry, writeMemory } from "../../core/journal.js";
 import { writeSettings } from "../../core/settings.js";
@@ -869,6 +869,89 @@ Frontend skill body.
       expect(input.systemPrompt).toContain("Workspace mode: `worktree`");
       expect(input.systemPrompt).toContain("Source checkout: `/tmp/source-project`");
       expect(input.systemPrompt).toContain("AI worktree branch: `worklab/run/run-worktree`");
+    });
+  });
+
+  it("loads prior worktree conflict metadata for retry prompts", () => {
+    withRunInputDb(({ db }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status,
+           worktree_json, diagnostics_json)
+        VALUES ('run-conflict', ?, 'execute', 'execute', 'owner', 1000, 2000, 'complete', 'succeeded', ?, ?)
+      `).run(
+        task.id,
+        JSON.stringify({
+          status: "merge_conflict",
+          branch: "worklab/run/run-conflict",
+          branch_head: "aaa111122223333",
+        }),
+        JSON.stringify({
+          worktree: {
+            status: "merge_conflict",
+            conflict_paths: ["src/screens/JournalDetailScreen.tsx"],
+            branch_head: "aaa111122223333",
+            source_head_before: "bbb222233334444",
+          },
+          worktree_conflict_retry: {
+            retry_run_id: "run-retry",
+          },
+        }),
+      );
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('run-current', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running')
+      `).run(task.id);
+
+      const priorRuns = loadPriorRunSummaries(db, task.id, "run-current", 4);
+
+      expect(priorRuns[0].worktree).toMatchObject({
+        status: "merge_conflict",
+        branch: "worklab/run/run-conflict",
+        branchHead: "aaa111122223333",
+        sourceHead: "bbb222233334444",
+        conflictPaths: ["src/screens/JournalDetailScreen.tsx"],
+        retryRunId: "run-retry",
+      });
+    });
+  });
+
+  it("injects worktree conflict retry diagnostics into the retry run prompt", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status, diagnostics_json)
+        VALUES ('run-retry', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running', ?)
+      `).run(task.id, JSON.stringify({
+        worktree_conflict_retry: true,
+        worktree_conflict_retry_of_run_id: "run-conflict",
+        previous_branch: "worklab/run/run-conflict",
+        previous_branch_head: "aaa111122223333",
+        source_head: "bbb222233334444",
+        conflict_paths: ["src/screens/JournalDetailScreen.tsx"],
+        guidance: "Treat the source checkout as authoritative and reapply only task-owned intent.",
+      }));
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-retry",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Resume context");
+      expect(input.systemPrompt).toContain("Worktree conflict retry");
+      expect(input.systemPrompt).toContain("Previous run: `run-conflict`");
+      expect(input.systemPrompt).toContain("Previous AI branch: `worklab/run/run-conflict`");
+      expect(input.systemPrompt).toContain("Conflict paths: `src/screens/JournalDetailScreen.tsx`");
+      expect(input.systemPrompt).toContain("source checkout as authoritative");
     });
   });
 

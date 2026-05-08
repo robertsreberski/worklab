@@ -702,6 +702,178 @@ describe("task-watcher", () => {
     expect(readFileSync(rawLogPath, "utf8")).toContain("\"status\":\"blocked_dirty_source\"");
   });
 
+  it("auto-retries a worktree merge conflict once from the authoritative source checkout", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    seedRunLog(db, runId, dataDir);
+    const firstRuntimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
+    writeFileSync(join(source, "README.md"), "Current source truth\n");
+    git(source, ["add", "README.md"]);
+    git(source, ["commit", "-m", "source update"]);
+    const sourceHead = git(source, ["rev-parse", "HEAD"]);
+    writeFileSync(join(firstRuntimeWorkdir, "README.md"), "AI branch update\n");
+    git(firstRuntimeWorkdir, ["add", "README.md"]);
+    git(firstRuntimeWorkdir, ["commit", "-m", "ai update"]);
+    const branchHead = git(firstRuntimeWorkdir, ["rev-parse", "HEAD"]);
+
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(readFileSync(join(source, "README.md"), "utf8")).toBe("Current source truth\n");
+    const task = db.prepare("SELECT stage, stage_reason, pending_actions_json FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.stage_reason).toBe("retrying after worktree merge conflict");
+    expect(task.pending_actions_json).toBe("[]");
+    const retryRun = db.prepare("SELECT * FROM task_runs WHERE parent_run_id = ?").get(runId);
+    expect(retryRun).toMatchObject({
+      mode: "execute",
+      stage: "execute",
+      parent_relationship: "worktree_conflict_retry",
+      workspace_mode: "worktree",
+      source_workdir: source,
+    });
+    const retryDiagnostics = JSON.parse(retryRun.diagnostics_json);
+    expect(retryDiagnostics).toMatchObject({
+      worktree_conflict_retry: true,
+      worktree_conflict_retry_of_run_id: runId,
+      conflict_paths: ["README.md"],
+      previous_branch_head: branchHead,
+      source_head: sourceHead,
+    });
+    const retryRuntimeWorkdir = spawn.mock.calls[1][0].env.WORKLAB_WORKSPACE;
+    expect(readFileSync(join(retryRuntimeWorkdir, "README.md"), "utf8")).toBe("Current source truth\n");
+
+    const originalDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
+    expect(originalDiagnostics.worktree).toMatchObject({
+      status: "merge_conflict",
+      conflict_paths: ["README.md"],
+      branch_head: branchHead,
+    });
+    expect(originalDiagnostics.worktree_conflict_retry).toMatchObject({
+      scheduled: true,
+      retry_run_id: retryRun.id,
+      conflict_paths: ["README.md"],
+      previous_branch_head: branchHead,
+      source_head: sourceHead,
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Automatic worktree conflict retry%'").get(taskId);
+    expect(comment.body).toContain("source checkout is authoritative");
+    expect(comment.body).toContain("README.md");
+    expect(comment.body).toContain(branchHead.slice(0, 7));
+  });
+
+  it("pauses instead of looping when the automatic worktree conflict retry conflicts again", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    const resolvers = [];
+    const spawn = vi.fn(() => {
+      let resolveDone;
+      const done = new Promise((resolve) => { resolveDone = resolve; });
+      resolvers.push(resolveDone);
+      return { pid: resolvers.length, done, cancel: vi.fn() };
+    });
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    seedRunLog(db, runId, dataDir);
+    const firstRuntimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
+    writeFileSync(join(source, "README.md"), "Current source truth\n");
+    git(source, ["add", "README.md"]);
+    git(source, ["commit", "-m", "source update"]);
+    writeFileSync(join(firstRuntimeWorkdir, "README.md"), "AI branch update\n");
+    git(firstRuntimeWorkdir, ["add", "README.md"]);
+    git(firstRuntimeWorkdir, ["commit", "-m", "ai update"]);
+
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(spawn).toHaveBeenCalledTimes(2);
+
+    const retryRunId = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ?").get(runId).id;
+    seedRunLog(db, retryRunId, dataDir);
+    const retryRuntimeWorkdir = spawn.mock.calls[1][0].env.WORKLAB_WORKSPACE;
+    writeFileSync(join(source, "README.md"), "Second source truth\n");
+    git(source, ["add", "README.md"]);
+    git(source, ["commit", "-m", "second source update"]);
+    writeFileSync(join(retryRuntimeWorkdir, "README.md"), "Second AI update\n");
+    git(retryRuntimeWorkdir, ["add", "README.md"]);
+    git(retryRuntimeWorkdir, ["commit", "-m", "second ai update"]);
+
+    resolvers[1]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done again",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(readFileSync(join(source, "README.md"), "utf8")).toBe("Second source truth\n");
+    const task = db.prepare("SELECT stage, stage_reason, pending_actions_json FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("awaiting_user");
+    expect(task.stage_reason).toContain("current source changes conflict with AI work");
+    expect(JSON.parse(task.pending_actions_json)[0]).toContain("README.md");
+    const retryDiagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(retryRunId).diagnostics_json);
+    expect(retryDiagnostics.worktree).toMatchObject({
+      status: "merge_conflict",
+      conflict_paths: ["README.md"],
+    });
+    expect(retryDiagnostics.worktree_conflict_retry).toMatchObject({
+      skipped: true,
+      skip_reason: "already_retried",
+    });
+  });
+
   it("delegated subtasks inherit the parent project", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

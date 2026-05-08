@@ -55,6 +55,21 @@ function safeParseJson(value, fallback = null) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
+function renderWorktreeConflictRetryContext(diagnostics = {}) {
+  if (!diagnostics?.worktree_conflict_retry) return "";
+  const conflictPaths = Array.isArray(diagnostics.conflict_paths) ? diagnostics.conflict_paths : [];
+  const lines = [
+    "### Worktree conflict retry",
+    diagnostics.worktree_conflict_retry_of_run_id ? `Previous run: \`${diagnostics.worktree_conflict_retry_of_run_id}\`` : "",
+    diagnostics.previous_branch ? `Previous AI branch: \`${diagnostics.previous_branch}\`` : "",
+    diagnostics.previous_branch_head ? `Previous branch head: ${String(diagnostics.previous_branch_head).slice(0, 7)}` : "",
+    diagnostics.source_head ? `Source head: ${String(diagnostics.source_head).slice(0, 7)}` : "",
+    conflictPaths.length ? `Conflict paths: ${conflictPaths.map((path) => `\`${path}\``).join(", ")}` : "",
+    diagnostics.guidance || "",
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
 export function modeForTaskStage(stage) {
   if (stage === "plan") return "plan";
   if (stage === "review") return "review";
@@ -286,7 +301,10 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
   const workspaceMode = runSnapshot?.workspace_mode || "direct";
   const sourceWorkdir = runSnapshot?.source_workdir || null;
   const worktree = safeParseJson(runSnapshot?.worktree_json, null);
-  const resumeContext = renderResumeSnapshot(runDiagnostics?.resume_snapshot);
+  const resumeContext = [
+    renderResumeSnapshot(runDiagnostics?.resume_snapshot),
+    renderWorktreeConflictRetryContext(runDiagnostics),
+  ].filter(Boolean).join("\n\n");
   const projectRunContext = resolveTaskProjectRunContext({ db, config, task, runSnapshot });
   const repositoryInstructions = loadRepositoryInstructions(projectRunContext.effectiveWorkdir);
   const repositoryGitRoot = findRepositoryGitRoot(projectRunContext.effectiveWorkdir);
@@ -402,6 +420,37 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
     const logRow = getAgentLogByRunId(db, run.id);
     const priorEvents = logRow ? parseEvents(logRow.events) : [];
     const execution = extractExecutionFromEvents(priorEvents, run);
+    const diagnostics = safeParseJson(run.diagnostics_json, {});
+    const diagnosticWorktree = diagnostics?.worktree && typeof diagnostics.worktree === "object"
+      ? diagnostics.worktree
+      : {};
+    const parsedWorktree = safeParseJson(run.worktree_json, {});
+    const worktree = parsedWorktree && typeof parsedWorktree === "object"
+      ? parsedWorktree
+      : {};
+    const retry = diagnostics?.worktree_conflict_retry && typeof diagnostics.worktree_conflict_retry === "object"
+      ? diagnostics.worktree_conflict_retry
+      : {};
+    const worktreeSummary = (() => {
+      const status = diagnosticWorktree.status
+        || worktree.last_reconcile_status
+        || worktree.status
+        || null;
+      const branch = diagnosticWorktree.branch || worktree.branch || null;
+      const conflictPaths = diagnosticWorktree.conflict_paths || worktree.conflict_paths || [];
+      if (!status && !branch && !conflictPaths.length) return null;
+      return {
+        status,
+        branch,
+        branchHead: diagnosticWorktree.branch_head || worktree.branch_head || null,
+        sourceHead: diagnosticWorktree.source_head
+          || diagnosticWorktree.source_head_before
+          || worktree.source_head
+          || null,
+        conflictPaths,
+        retryRunId: retry.retry_run_id || null,
+      };
+    })();
     return {
       id: run.id,
       mode: run.mode,
@@ -413,6 +462,7 @@ export function loadPriorRunSummaries(db, taskId, currentRunId, limit = 4) {
       finalText: execution.finalText,
       numTurns: execution.numTurns,
       durationMs: execution.durationMs,
+      worktree: worktreeSummary,
     };
   });
 }
