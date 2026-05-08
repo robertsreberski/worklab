@@ -1,3 +1,5 @@
+import { Toolbar } from "./Page.jsx";
+
 export function DetailHeader({
   icon,
   kicker,
@@ -22,7 +24,7 @@ export function DetailHeader({
           {meta && <div class="pane-detail-subline">{meta}</div>}
         </div>
       </div>
-      {actions && <div class="toolbar ds-toolbar ds-toolbar-end">{actions}</div>}
+      {actions && <Toolbar>{actions}</Toolbar>}
     </header>
   );
 }
