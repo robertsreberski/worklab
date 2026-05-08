@@ -39,6 +39,17 @@ describe("project task progress helpers", () => {
     expect(items[0]).toMatchObject({ label: "Failed: spawn", tone: "error" });
   });
 
+  it("does not mark completed tasks with stale failed runs as attention", () => {
+    const task = {
+      stage: "done",
+      owner_agent: "owner",
+      last_run: { status: "error", process_status: "failed", failure_kind: "spawn" },
+    };
+
+    expect(projectTaskAttentionItems(task)).toEqual([]);
+    expect(projectTaskGroupKey(task)).toBe("done");
+  });
+
   it("does not mark dependency-only queued tasks as attention", () => {
     const items = projectTaskAttentionItems({
       stage: "execute",
