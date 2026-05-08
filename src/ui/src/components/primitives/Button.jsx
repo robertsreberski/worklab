@@ -30,7 +30,9 @@ export function Button({
       ) : (
         <>
           {iconLeft}
-          {children}
+          {children != null && children !== false ? (
+            <span class="button-label">{children}</span>
+          ) : null}
           {iconRight}
         </>
       )}
