@@ -5,9 +5,10 @@ export function FormSection({
   description,
   class: className = "",
   children,
+  ...props
 }) {
   return (
-    <section class={`form-section ${className}`.trim()}>
+    <section {...props} class={`form-section ${className}`.trim()}>
       {(kicker || title || description) && (
         <header class="form-section-header">
           {kicker && <span class="form-section-kicker">{kicker}</span>}
