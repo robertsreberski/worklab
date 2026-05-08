@@ -7985,8 +7985,7 @@ button.settings-overview-card:focus-visible,
 }
 
 .toolbar { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.provider-model-grid {
-  display: grid;
+.ds-panel-grid.provider-model-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
   gap: var(--sp-3);
 }
@@ -8632,9 +8631,7 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-1);
   min-width: 0;
 }
-.task-context-list {
-  display: flex;
-  flex-direction: column;
+.ds-section-stack.task-context-list {
   gap: 0;
 }
 .task-context-row {
@@ -9452,8 +9449,7 @@ button.settings-overview-card:focus-visible,
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.provider-model-pricing-grid {
-  display: grid;
+.form-grid.provider-model-pricing-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 86px), 1fr));
   gap: var(--sp-2);
 }
@@ -9705,11 +9701,10 @@ button.settings-overview-card:focus-visible,
   max-height: 320px;
   overflow: auto;
 }
-.run-economics-grid {
+.ds-toolbar.run-economics-grid {
   margin-top: var(--sp-2);
-  display: flex;
-  flex-wrap: wrap;
   gap: var(--sp-2) var(--sp-4);
+  justify-content: flex-start;
 }
 .run-verification-list {
   margin: var(--sp-2) 0 0;
@@ -10448,7 +10443,7 @@ button.settings-overview-card:focus-visible,
   .activity-row-metric {
     white-space: normal;
   }
-  .provider-model-grid { grid-template-columns: 1fr; }
+  .ds-panel-grid.provider-model-grid { grid-template-columns: 1fr; }
   .provider-type-segmented { display: none; }
   .provider-type-select { max-width: none; }
   .page-wrap { padding: var(--sp-4); }

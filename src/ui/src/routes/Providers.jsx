@@ -21,7 +21,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ActionDock, DetailHead, InlineHead, SectionMarker } from "../components/layout/index.js";
+import { ActionDock, DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { pushToast } from "../lib/toast.js";
@@ -483,7 +483,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
     return (
       <div class="entity-editor-rail-content">
         <Card variant="spacious" title="Connection" class="entity-rail-card">
-          <div class="task-context-list">
+          <SectionStack class="task-context-list">
             <div class="task-context-row">
               <span class="task-context-icon"><Icon name={providerIcon(provider.provider_type)} size={13} /></span>
               <span class="task-context-copy">
@@ -507,7 +507,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                 </span>
               </div>
             )}
-          </div>
+          </SectionStack>
         </Card>
 
         {!isNew && (
@@ -697,7 +697,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                   {(models || []).length === 0 ? (
                     <div class="field-hint">No models yet. Discovery runs automatically when the provider opens; use Discover above to retry.</div>
                   ) : (
-                    <div class="provider-model-grid">
+                    <PanelGrid class="provider-model-grid">
                       {models.map((model) => {
                         const capabilities = model.capabilities || {};
                         const embeddingOnly = isEmbeddingOnlyModel(capabilities);
@@ -731,18 +731,18 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                                   {modelPricingLabel(modelPricingState(provider, model))}
                                 </Chip>
                               </InlineHead>
-                              <div class="provider-model-pricing-grid">
+                              <FormGrid columns={3} class="provider-model-pricing-grid">
                                 {MODEL_PRICING_FIELDS.map((field) => (
                                   <FormField label={field.label} class="provider-model-price-field" key={field.key}>
                                     <PricingInput model={model} field={field} onSave={saveModelPricing} />
                                   </FormField>
                                 ))}
-                              </div>
+                              </FormGrid>
                             </div>
                           </div>
                         );
                       })}
-                    </div>
+                    </PanelGrid>
                   )}
                 </FormSection>
               </>
