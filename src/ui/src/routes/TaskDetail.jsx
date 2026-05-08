@@ -966,10 +966,10 @@ export function TaskDetail({ id, runParam = null }) {
                     <Icon name="terminal" size={10} /> Instructions / Request
                   </div>
                   {task.instructions && (
-                    <button
-                      type="button"
+                    <IconButton
                       class="task-hero-instructions-copy"
                       aria-label="Copy instructions"
+                      icon={<Icon name="copy" size={12} />}
                       onClick={async () => {
                         try {
                           await navigator.clipboard.writeText(task.instructions || "");
@@ -978,9 +978,7 @@ export function TaskDetail({ id, runParam = null }) {
                           pushToast("Copy failed", { variant: "error" });
                         }
                       }}
-                    >
-                      <Icon name="copy" size={12} />
-                    </button>
+                    />
                   )}
                 </div>
                 {task.instructions ? (
@@ -989,13 +987,14 @@ export function TaskDetail({ id, runParam = null }) {
                   <div class="task-plan-empty">No instructions recorded.</div>
                 )}
                 {(task.instructions || "").length > 400 && (
-                  <button
-                    type="button"
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     class="task-hero-instructions-toggle"
                     onClick={() => setInstructionsExpanded((v) => !v)}
                   >
                     {instructionsExpanded ? "Show less" : "Show full"}
-                  </button>
+                  </Button>
                 )}
               </div>
             </FormSection>

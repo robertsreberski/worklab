@@ -161,6 +161,16 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("builds task instruction actions on shared button primitives", () => {
+    const taskDetailSource = readFileSync(taskDetailPath, "utf8");
+    expect(taskDetailSource).toMatch(/import\s+\{\s*Button\s*\}/);
+    expect(taskDetailSource).toMatch(/import\s+\{\s*IconButton\s*\}/);
+    expect(taskDetailSource).toMatch(/<IconButton[\s\S]*class="task-hero-instructions-copy"/);
+    expect(taskDetailSource).toMatch(/<Button[\s\S]*class="task-hero-instructions-toggle"/);
+    expect(taskDetailSource).not.toMatch(/<button[\s\S]*class="task-hero-instructions-copy"/);
+    expect(taskDetailSource).not.toMatch(/<button[\s\S]*class="task-hero-instructions-toggle"/);
+  });
+
   it("builds task workflow meta on the shared FormSection component", () => {
     const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
     expect(workflowCardsSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
