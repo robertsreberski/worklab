@@ -120,6 +120,25 @@ function displayPathFromRoots(path, roots = []) {
   return "";
 }
 
+function relativeDisplayPath(path) {
+  const normalized = normalizeArtifactPath(path);
+  return normalized && !isAbsolutePath(normalized) ? normalized : "";
+}
+
+function artifactIdentityPath(rawPath, change = {}, meta = {}) {
+  const roots = displayRoots(meta);
+  const displayPath = change?.display_path || change?.displayPath || meta.display_path || "";
+  return displayPathFromRoots(rawPath, roots)
+    || displayPathFromRoots(displayPath, roots)
+    || relativeDisplayPath(displayPath)
+    || relativeDisplayPath(rawPath)
+    || rawPath;
+}
+
+function artifactIdentityKey(rawPath, change, incomingType, meta) {
+  return `${incomingType || "generated_output"}:${artifactIdentityPath(rawPath, change, meta)}`;
+}
+
 function dirnameParts(path) {
   const parts = pathParts(path);
   return parts.slice(0, Math.max(0, parts.length - 1));
@@ -228,10 +247,11 @@ function mergeArtifactType(current, next) {
     : currentType;
 }
 
-function mergeSources(existing, incoming) {
+function mergeSources(existing, incoming, incomingSources = []) {
   return [...new Set([
     ...asArray(existing.sources),
     existing.source,
+    ...asArray(incomingSources),
     incoming,
   ].filter(Boolean))];
 }
@@ -317,6 +337,22 @@ function mergeRunMetadata(existing, meta = {}) {
   };
 }
 
+function hasRunId(artifact, runId) {
+  if (!runId) return false;
+  return asArray(artifact.run_ids).includes(runId)
+    || artifact.first_run_id === runId
+    || artifact.last_run_id === runId;
+}
+
+function isCrossSourceDuplicate(existing, incomingSource, incomingRunId) {
+  if (!incomingSource || !hasRunId(existing, incomingRunId)) return false;
+  const sources = new Set([
+    existing.source,
+    ...asArray(existing.sources),
+  ].filter(Boolean));
+  return sources.size > 0 && !sources.has(incomingSource);
+}
+
 function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const rawPath = normalizeArtifactPath(change?.path);
   if (!rawPath) return;
@@ -324,21 +360,23 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const stats = change?.line_stats || {};
   const kind = fileEditKindLabel(change?.kind);
   const incomingSource = change?.source || meta.source || "file_edit";
+  const incomingSources = [...asArray(change?.sources), incomingSource].filter(Boolean);
   const incomingType = change?.artifact_type || meta.artifact_type || artifactTypeForPath(rawPath, { source: incomingSource });
+  const key = artifactIdentityKey(rawPath, change, incomingType, meta);
   const incomingTemporary = change?.temporary ?? meta.temporary ?? (incomingType === "scratch");
   const incomingEventSeq = numberOrNull(change?.event_seq ?? meta.event_seq);
   const incomingFirstEventSeq = numberOrNull(change?.first_event_seq ?? meta.first_event_seq ?? incomingEventSeq);
   const incomingLastEventSeq = numberOrNull(change?.last_event_seq ?? meta.last_event_seq ?? incomingEventSeq);
   const incomingEventCount = numberOrNull(change?.event_count ?? meta.event_count)
     ?? (incomingEventSeq == null ? 0 : 1);
-  const existing = map.get(rawPath) || {
+  const existing = map.get(key) || {
     path: rawPath,
     display_path: change?.display_path || change?.displayPath || meta.display_path || null,
     kind,
     status: "in_progress",
     artifact_type: incomingType,
     source: incomingSource,
-    sources: incomingSource ? [incomingSource] : [],
+    sources: incomingSources,
     temporary: Boolean(incomingTemporary),
     size_bytes: numberOrNull(change?.size_bytes ?? meta.size_bytes),
     href: change?.href || meta.href || null,
@@ -365,16 +403,25 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const after = lineNumber(stats.after_lines);
   const incomingHunks = Array.isArray(stats.hunks) && stats.hunks.length > 0 ? stats.hunks : null;
   const incomingRunId = meta.run_id || meta.runId || null;
+  const crossSourceDuplicate = isCrossSourceDuplicate(existing, incomingSource, incomingRunId);
+  const incomingHasLineDelta = added != null || removed != null;
+  const shouldAccumulateLineStats = !crossSourceDuplicate || !existing.has_line_delta || !incomingHasLineDelta;
   let nextHunks = normalizeHunks(existing.hunks);
   if (incomingHunks) {
     const sameRun = !existing.last_run_id || !incomingRunId || existing.last_run_id === incomingRunId;
-    nextHunks = sameRun
-      ? mergeHunkRanges(existing.hunks, incomingHunks)
-      : clampHunks(incomingHunks);
+    if (!crossSourceDuplicate || nextHunks.length === 0) {
+      nextHunks = sameRun
+        ? mergeHunkRanges(existing.hunks, incomingHunks)
+        : clampHunks(incomingHunks);
+    }
   }
-  map.set(rawPath, {
+  const preferredPath = !isAbsolutePath(rawPath) && isAbsolutePath(existing.path) ? rawPath : existing.path;
+  const nextAdded = shouldAccumulateLineStats ? existing.added_lines + (added || 0) : existing.added_lines;
+  const nextRemoved = shouldAccumulateLineStats ? existing.removed_lines + (removed || 0) : existing.removed_lines;
+  map.set(key, {
     ...existing,
     ...mergeRunMetadata(existing, meta),
+    path: preferredPath,
     display_path: displayPathFromRoots(rawPath, displayRoots(meta))
       || change?.display_path
       || change?.displayPath
@@ -385,7 +432,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     status: mergeStatus(existing.status, status),
     artifact_type: mergeArtifactType(existing.artifact_type, incomingType),
     source: existing.source === incomingSource ? existing.source : "multiple",
-    sources: mergeSources(existing, incomingSource),
+    sources: mergeSources(existing, incomingSource, incomingSources),
     temporary: Boolean(existing.temporary || incomingTemporary),
     size_bytes: numberOrNull(change?.size_bytes ?? meta.size_bytes) ?? existing.size_bytes ?? null,
     href: change?.href || meta.href || existing.href || null,
@@ -393,14 +440,15 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     event_count: (Number(existing.event_count) || 0) + incomingEventCount,
     first_event_seq: mergeEventSeq(existing.first_event_seq, incomingFirstEventSeq),
     last_event_seq: mergeLastEventSeq(existing.last_event_seq, incomingLastEventSeq),
-    added_lines: existing.added_lines + (added || 0),
-    removed_lines: existing.removed_lines + (removed || 0),
+    added_lines: nextAdded,
+    removed_lines: nextRemoved,
     has_line_delta: existing.has_line_delta || added != null || removed != null,
     before_lines: existing.before_lines == null && before != null ? before : existing.before_lines,
-    after_lines: after != null ? after : existing.after_lines,
+    after_lines: after != null && (!crossSourceDuplicate || existing.after_lines == null) ? after : existing.after_lines,
     unavailable_reason: stats.unavailable_reason || existing.unavailable_reason,
     hunks: nextHunks,
   });
+  return key;
 }
 
 function fileEditPayloadFromBlock(block) {
@@ -433,7 +481,7 @@ function normalizeEvent(event) {
 }
 
 function finalizeArtifacts(map, options = {}) {
-  const displayPaths = displayPathMap([...map.keys()], options);
+  const displayPaths = displayPathMap([...map.values()].map((artifact) => artifact.path), options);
   const roots = displayRoots(options);
   return [...map.values()]
     .map((artifact) => ({
@@ -487,37 +535,57 @@ export function normalizeStoredArtifacts(value, options = {}) {
   const parsed = safeJsonParse(value, []);
   if (!Array.isArray(parsed)) return [];
   const byPath = new Map();
+  const run = options.run || options;
   for (const item of parsed) {
     const rawPath = normalizeArtifactPath(item?.path);
     if (!rawPath) continue;
-    byPath.set(rawPath, {
+    const source = item.source || "stored";
+    const status = item.status || "completed";
+    const key = mergeArtifact(byPath, {
       path: rawPath,
       display_path: item.display_path || item.displayPath || rawPath,
       kind: item.kind || "change",
-      status: item.status || "completed",
-      artifact_type: item.artifact_type || artifactTypeForPath(rawPath, { source: item.source || "stored" }),
-      source: item.source || "stored",
-      sources: asArray(item.sources),
-      temporary: Boolean(item.temporary),
-      size_bytes: numberOrNull(item.size_bytes),
-      href: item.href || null,
-      artifact_relative_path: item.artifact_relative_path || null,
-      event_count: Number(item.event_count) || 0,
-      first_event_seq: numberOrNull(item.first_event_seq),
-      last_event_seq: numberOrNull(item.last_event_seq),
-      added_lines: Number(item.added_lines) || 0,
-      removed_lines: Number(item.removed_lines) || 0,
-      has_line_delta: Boolean(item.has_line_delta),
-      before_lines: lineNumber(item.before_lines),
-      after_lines: lineNumber(item.after_lines),
-      unavailable_reason: item.unavailable_reason || null,
-      hunks: clampHunks(item.hunks),
-      run_ids: asArray(item.run_ids),
-      first_run_id: item.first_run_id || null,
-      last_run_id: item.last_run_id || null,
-      first_seen_at: lineNumber(item.first_seen_at),
-      last_seen_at: lineNumber(item.last_seen_at),
+      line_stats: {
+        before_lines: item.before_lines,
+        after_lines: item.after_lines,
+        added_lines: item.has_line_delta ? item.added_lines : undefined,
+        removed_lines: item.has_line_delta ? item.removed_lines : undefined,
+        unavailable_reason: item.unavailable_reason,
+        hunks: item.hunks,
+      },
+      artifact_type: item.artifact_type || artifactTypeForPath(rawPath, { source }),
+      source,
+      temporary: item.temporary,
+      size_bytes: item.size_bytes,
+      href: item.href,
+      artifact_relative_path: item.artifact_relative_path,
+      event_count: item.event_count,
+      first_event_seq: item.first_event_seq,
+      last_event_seq: item.last_event_seq,
+    }, status, isFailedStatus(status), {
+      run_id: item.last_run_id || item.first_run_id || run?.id,
+      started_at: item.first_seen_at || run?.started_at,
+      ended_at: item.last_seen_at || run?.ended_at,
+      display_path: item.display_path || item.displayPath,
+      event_count: item.event_count,
+      first_event_seq: item.first_event_seq,
+      last_event_seq: item.last_event_seq,
     });
+    const merged = byPath.get(key);
+    if (merged) {
+      merged.sources = [...new Set([...asArray(merged.sources), ...asArray(item.sources), source].filter(Boolean))];
+      merged.run_ids = [...new Set([
+        ...asArray(merged.run_ids),
+        ...asArray(item.run_ids),
+        item.first_run_id,
+        item.last_run_id,
+        run?.id,
+      ].filter(Boolean))];
+      merged.first_run_id = merged.first_run_id || item.first_run_id || run?.id || null;
+      merged.last_run_id = item.last_run_id || run?.id || merged.last_run_id || null;
+      merged.first_seen_at = merged.first_seen_at ?? lineNumber(item.first_seen_at);
+      merged.last_seen_at = lineNumber(item.last_seen_at) ?? merged.last_seen_at;
+    }
   }
   return finalizeArtifacts(byPath, options);
 }
@@ -585,15 +653,15 @@ export function aggregateRunArtifacts(runs = []) {
   for (const run of runs || []) {
     const artifacts = normalizeStoredArtifacts(run?.artifacts || run?.artifacts_json || [], { run });
     for (const artifact of artifacts) {
-      mergeArtifact(byPath, {
+      const key = mergeArtifact(byPath, {
         path: artifact.path,
         display_path: artifact.display_path,
         kind: artifact.kind,
         line_stats: {
           before_lines: artifact.before_lines,
           after_lines: artifact.after_lines,
-          added_lines: artifact.added_lines,
-          removed_lines: artifact.removed_lines,
+          added_lines: artifact.has_line_delta ? artifact.added_lines : undefined,
+          removed_lines: artifact.has_line_delta ? artifact.removed_lines : undefined,
           unavailable_reason: artifact.unavailable_reason,
           hunks: artifact.hunks,
         },
@@ -615,7 +683,7 @@ export function aggregateRunArtifacts(runs = []) {
         first_event_seq: artifact.first_event_seq,
         last_event_seq: artifact.last_event_seq,
       });
-      const merged = byPath.get(normalizeArtifactPath(artifact.path));
+      const merged = byPath.get(key);
       if (merged) {
         merged.run_ids = [...new Set([...asArray(merged.run_ids), ...asArray(artifact.run_ids), run?.id].filter(Boolean))];
         merged.first_run_id = merged.first_run_id || artifact.first_run_id || run?.id || null;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aggregateRunArtifacts,
   artifactDeltaLabel,
   buildRunArtifactTree,
   extractRunArtifacts,
@@ -158,6 +159,48 @@ describe("run artifact extraction", () => {
       after_lines: 4,
     });
     expect(artifactDeltaLabel(artifacts[0])).toBe("+2 -1");
+  });
+
+  it("aggregates edited file artifacts by canonical display path", () => {
+    const artifacts = aggregateRunArtifacts([{
+      id: "run-1",
+      workdir: "/Users/me/project",
+      started_at: 1,
+      ended_at: 2,
+      artifacts: [
+        {
+          path: "src/a.js",
+          display_path: "src/a.js",
+          artifact_type: "code_change",
+          source: "file_edit",
+          status: "completed",
+          added_lines: 2,
+          removed_lines: 1,
+          has_line_delta: true,
+        },
+        {
+          path: "/Users/me/project/src/a.js",
+          display_path: "src/a.js",
+          artifact_type: "code_change",
+          source: "workspace_delta",
+          status: "completed",
+          added_lines: 2,
+          removed_lines: 1,
+          has_line_delta: true,
+        },
+      ],
+    }]);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      display_path: "src/a.js",
+      added_lines: 2,
+      removed_lines: 1,
+      source: "multiple",
+      sources: expect.arrayContaining(["file_edit", "workspace_delta"]),
+    });
+    expect(runArtifactSummary(artifacts).files).toBe(1);
+    expect(buildRunArtifactTree(artifacts)[0].children).toHaveLength(1);
   });
 
   it("normalizes raw Codex app-server fileChange events", () => {
