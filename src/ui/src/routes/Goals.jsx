@@ -18,6 +18,9 @@ import { Select } from "../components/primitives/Select.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { FormField } from "../components/FormField.jsx";
+import { FormGrid } from "../components/FormGrid.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Card } from "../components/Card.jsx";
@@ -420,9 +423,9 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
       <div class="pane-detail-body entity-detail-body goal-edit-body">
         <div class="goal-editor">
           {error && <p class="error">{error}</p>}
-          <Card title="Assignment">
-            <div class="goal-form-grid">
-              <label>Team
+          <FormSection kicker="Assignment" title="Assignment">
+            <FormGrid columns={2}>
+              <FormField label="Team">
                 <Select
                   value={draft.team_id}
                   onChange={(value) => update({ team_id: value })}
@@ -431,8 +434,8 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
                   disabled={!isNew}
                   searchable
                 />
-              </label>
-              <label>Project
+              </FormField>
+              <FormField label="Project">
                 <Select
                   value={draft.project_id}
                   onChange={(value) => update({ project_id: value })}
@@ -441,25 +444,25 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
                   disabled={!isNew}
                   searchable
                 />
-              </label>
-            </div>
-          </Card>
-          <Card title="Contract">
-            <div class="goal-form-grid">
-              <label>Objective
+              </FormField>
+            </FormGrid>
+          </FormSection>
+          <FormSection kicker="Contract" title="Contract">
+            <FormGrid columns={2}>
+              <FormField label="Objective" class="span-2">
                 <Textarea rows={4} value={draft.objective} onInput={(event) => update({ objective: event.currentTarget.value })} />
-              </label>
-              <label>Stop when
+              </FormField>
+              <FormField label="Stop when">
                 <Input value={draft.stopping_condition} onInput={(event) => update({ stopping_condition: event.currentTarget.value })} />
-              </label>
-              <label>Validate with
+              </FormField>
+              <FormField label="Validate with">
                 <Input value={draft.validation_loop} onInput={(event) => update({ validation_loop: event.currentTarget.value })} />
-              </label>
-              <label>Constraints
+              </FormField>
+              <FormField label="Constraints" class="span-2">
                 <Textarea rows={4} value={draft.constraints_text} onInput={(event) => update({ constraints_text: event.currentTarget.value })} />
-              </label>
-            </div>
-          </Card>
+              </FormField>
+            </FormGrid>
+          </FormSection>
         </div>
       </div>
     </>
