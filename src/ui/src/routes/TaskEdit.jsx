@@ -24,7 +24,7 @@ import { FormSection } from "../components/FormSection.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, PanelGrid, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
@@ -305,7 +305,7 @@ export function TaskEdit({ mode = "create", id = null }) {
     return (
       <div class="task-edit-rail-content">
         <FormField label={mode === "create" ? "Initial stage" : "Stage"}>
-          <div class="stage-grid status-grid">
+          <PanelGrid class="stage-grid status-grid">
             {stageOptions.map((opt) => (
               <StageToken
                 key={opt.value}
@@ -315,7 +315,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                 onClick={() => update({ stage: opt.value })}
               />
             ))}
-          </div>
+          </PanelGrid>
         </FormField>
 
         <FormField label="Owner" hint="Required for work. Also plans when no planner is set.">
@@ -515,7 +515,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                   >
                     <div class="dependency-picker">
                       {draft.blocked_by_ids.length > 0 && (
-                        <div class="dependency-chip-list">
+                        <Toolbar class="dependency-chip-list" align="start">
                           {draft.blocked_by_ids.map((dependencyId) => {
                             const dependency = selectedDependencyMap.get(dependencyId);
                             const label = dependency?.title || dependencyId;
@@ -525,7 +525,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                               </Chip>
                             );
                           })}
-                        </div>
+                        </Toolbar>
                       )}
                       <Select
                         value={dependencyDraft}

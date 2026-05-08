@@ -6189,8 +6189,7 @@ html.assistant-resizing * {
   font-weight: 500;
 }
 /* §6.4 Status grid in the right rail. */
-.status-grid {
-  display: grid;
+.ds-panel-grid.status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-1);
   min-width: 0;
@@ -8163,8 +8162,7 @@ button.settings-overview-card:focus-visible,
   font-size: var(--text-sm);
   text-align: center;
 }
-.capability-grid {
-  display: grid;
+.ds-panel-grid.capability-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 168px), 1fr));
   justify-content: start;
   gap: var(--sp-2);
@@ -8710,9 +8708,8 @@ button.settings-overview-card:focus-visible,
   flex-direction: column;
   gap: var(--sp-2);
 }
-.dependency-chip-list {
-  display: flex;
-  flex-wrap: wrap;
+.ds-toolbar.dependency-chip-list {
+  justify-content: flex-start;
   gap: var(--sp-2);
 }
 
@@ -11053,9 +11050,8 @@ button.settings-overview-card:focus-visible,
 .stage-token-grid.active .stage-token-selection {
   opacity: 1;
 }
-.stage-grid,
-.status-grid {
-  display: grid;
+.ds-panel-grid.stage-grid,
+.ds-panel-grid.status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
@@ -12149,8 +12145,8 @@ button.settings-overview-card:focus-visible,
   .entity-editor-rail.is-mobile-drawer-source {
     display: none;
   }
-  .stage-grid,
-  .status-grid {
+  .ds-panel-grid.stage-grid,
+  .ds-panel-grid.status-grid {
     grid-template-columns: minmax(0, 1fr);
   }
   .commander-row {
