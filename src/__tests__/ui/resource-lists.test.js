@@ -167,10 +167,11 @@ describe("resource list helpers", () => {
     expect(metaComponent).toContain("function ResourceRowChip");
     expect(metaComponent).toContain("function ResourceRowPath");
 
-    for (const route of ["Agents.jsx", "Goals.jsx", "Skills.jsx", "Projects.jsx"]) {
+    for (const route of ["Agents.jsx", "Goals.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx", "Teams.jsx"]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceRowTags");
       expect(contents).toContain("ResourceRowChip");
+      expect(contents).not.toMatch(/class="[^"]*resource-row-(tags|chip)/);
     }
 
     const projects = source("src/ui/src/routes/Projects.jsx");
