@@ -15,7 +15,7 @@ import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { Page } from "../components/layout/index.js";
+import { Page, SummaryGrid } from "../components/layout/index.js";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -210,7 +210,7 @@ export function Activity() {
         description="Recent task runs, automations, and consolidation events."
         actions={pageActions}
       >
-        <section class="activity-stats" aria-label="Activity statistics">
+        <SummaryGrid as="section" class="activity-stats" aria-label="Activity statistics">
           <article class="activity-stat-card activity-stat-card-primary activity-stat-cost">
             <div class="activity-stat-head">
               <span class="activity-stat-label">Cost history</span>
@@ -260,7 +260,7 @@ export function Activity() {
             </div>
           </article>
 
-        </section>
+        </SummaryGrid>
 
         <Card
           title="Filters"
