@@ -113,6 +113,7 @@ export function spawnTaskRun({
   // re-spawns a stage from the UI.
   const parentRelationship = (() => {
     if (diagnosticsSeed?.continuation_of_run_id) return "recovery_continuation";
+    if (diagnosticsSeed?.worktree_conflict_retry) return "worktree_conflict_retry";
     if (diagnosticsSeed?.manual_retry) return "manual_retry";
     if (parentRunId) return "stage_progression";
     return null;

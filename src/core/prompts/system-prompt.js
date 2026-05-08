@@ -149,6 +149,10 @@ function formatTimestamp(ts) {
   return ts ? new Date(ts).toISOString() : "";
 }
 
+function shortHash(value) {
+  return value ? String(value).slice(0, 7) : "";
+}
+
 function clipText(text, maxChars = 1200) {
   const trimmed = String(text || "").trim();
   if (!trimmed) return "";
@@ -178,6 +182,8 @@ function formatPriorRuns(priorRuns) {
   if (!priorRuns?.length) return "";
   return priorRuns
     .map((run, index) => {
+      const worktree = run.worktree || null;
+      const conflictPaths = Array.isArray(worktree?.conflictPaths) ? worktree.conflictPaths : [];
       const lines = [
         `### Run ${index + 1} - ${run.mode} by ${run.agentName} (${run.status})`,
         run.id ? `- Run id: ${run.id}` : "",
@@ -186,6 +192,12 @@ function formatPriorRuns(priorRuns) {
         run.durationMs ? `- Duration: ${formatDuration(run.durationMs)}` : "",
         run.numTurns ? `- Turns: ${run.numTurns}` : "",
         run.errorText ? `- Error: ${run.errorText}` : "",
+        worktree?.status ? `- Worktree: ${worktree.status}` : "",
+        worktree?.branch ? `- AI branch: \`${worktree.branch}\`` : "",
+        worktree?.branchHead ? `- Branch head: ${shortHash(worktree.branchHead)}` : "",
+        worktree?.sourceHead ? `- Source head: ${shortHash(worktree.sourceHead)}` : "",
+        conflictPaths.length ? `- Conflict paths: ${conflictPaths.map((path) => `\`${path}\``).join(", ")}` : "",
+        worktree?.retryRunId ? `- Auto retry: \`${worktree.retryRunId}\`` : "",
       ].filter(Boolean);
 
       const finalText = formatContextText(run.finalText);

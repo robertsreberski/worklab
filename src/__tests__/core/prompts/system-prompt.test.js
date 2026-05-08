@@ -154,6 +154,43 @@ describe("buildExecuteSystemPrompt", () => {
     expect(prompt).toContain("`run-prior`");
   });
 
+  it("surfaces prior worktree conflict context for reruns", () => {
+    const prompt = buildExecuteSystemPrompt({
+      agent: baseAgent,
+      task: baseTask,
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      priorRuns: [
+        {
+          id: "run-conflict",
+          mode: "execute",
+          status: "complete",
+          agentName: "coder",
+          startedAt: 1_700_000_000_000,
+          endedAt: 1_700_000_005_000,
+          worktree: {
+            status: "merge_conflict",
+            branch: "worklab/run/run-conflict",
+            branchHead: "aaa111122223333",
+            sourceHead: "bbb222233334444",
+            conflictPaths: ["src/screens/JournalDetailScreen.tsx"],
+            retryRunId: "run-retry",
+          },
+        },
+      ],
+    });
+
+    expect(prompt).toContain("Worktree: merge_conflict");
+    expect(prompt).toContain("AI branch: `worklab/run/run-conflict`");
+    expect(prompt).toContain("Branch head: aaa1111");
+    expect(prompt).toContain("Source head: bbb2222");
+    expect(prompt).toContain("Conflict paths: `src/screens/JournalDetailScreen.tsx`");
+    expect(prompt).toContain("Auto retry: `run-retry`");
+  });
+
   it("normalizes raw Worklab JSON comments and prior run output before prompting", () => {
     const early = {
       schema: "worklab.v2",
