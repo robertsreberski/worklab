@@ -190,8 +190,13 @@ describe("design system stylesheet", () => {
   it("builds task editor sections on the shared FormSection component", () => {
     const taskEditSource = readFileSync(taskEditPath, "utf8");
     expect(taskEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    expect(taskEditSource).toMatch(/import\s+\{[^}]*DetailHead[^}]*PanelGrid[^}]*SectionMarker[^}]*Toolbar[^}]*\}\s+from/);
     expect(taskEditSource).toMatch(/<FormSection[^>]+class="task-edit-section"/);
+    expect(taskEditSource).toMatch(/<PanelGrid\s+class="stage-grid status-grid"/);
+    expect(taskEditSource).toMatch(/<Toolbar\s+class="dependency-chip-list"/);
     expect(taskEditSource).not.toMatch(/<section\s+class="task-edit-section"/);
+    expect(taskEditSource).not.toMatch(/<div\s+class="stage-grid status-grid"/);
+    expect(taskEditSource).not.toMatch(/<div\s+class="dependency-chip-list"/);
   });
 
   it("builds task editor header actions on the shared DetailHead toolbar", () => {
@@ -297,10 +302,11 @@ describe("design system stylesheet", () => {
     const agentEditSource = readFileSync(agentEditPath, "utf8");
     expect(agentEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(agentEditSource).toMatch(/import\s+\{\s*Button\s*\}/);
-    expect(agentEditSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*Toolbar[^}]*\}\s+from/);
+    expect(agentEditSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*PanelGrid[^}]*Toolbar[^}]*\}\s+from/);
     expect(agentEditSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
     expect(agentEditSource).toMatch(/<FormSection\s+class="capability-panel"/);
     expect(agentEditSource).toMatch(/<InlineHead\s+class="capability-panel-head"/);
+    expect(agentEditSource).toMatch(/<PanelGrid\s+class="capability-grid"\s+role="group"/);
     expect(agentEditSource).toMatch(/<InlineHead\s+class="agent-learning-item-head"/);
     expect(agentEditSource).toMatch(/<Toolbar\s+class="capability-panel-actions"/);
     expect(agentEditSource).toMatch(/<Toolbar\s+class="agent-memory-actions"/);
@@ -308,6 +314,7 @@ describe("design system stylesheet", () => {
     expect(agentEditSource).toMatch(/<Button\s+variant="ghost"\s+size="sm"\s+class="link-button capability-reset"/);
     expect(agentEditSource).not.toMatch(/<section\s+class="capability-panel"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="capability-panel-head"/);
+    expect(agentEditSource).not.toMatch(/<div\s+class="capability-grid"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="agent-learning-item-head"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="capability-panel-actions"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="agent-memory-actions"/);
@@ -619,7 +626,7 @@ describe("design system stylesheet", () => {
       ".metric-grid",
       ".kv-list",
       ".advanced-meta-list",
-      ".status-grid",
+      ".ds-panel-grid.status-grid",
       ".kbd-help-grid",
       ".task-subtasks-add",
       ".task-automation-form",
