@@ -956,7 +956,8 @@ export function TaskDetail({ id, runParam = null }) {
           title={task.title}
           titleClass="task-hero-title title-display"
           meta={detailMeta}
-          actions={taskActions && <div class="task-hero-actions toolbar">{taskActions}</div>}
+          actionsClass="task-hero-actions"
+          actions={taskActions}
           subBar={detailSubBar}
           glyph="T"
         />
