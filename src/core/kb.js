@@ -551,6 +551,40 @@ export function kbListPinned({ dataDir, limit = 10 } = {}) {
   }
 }
 
+// Mention-picker typeahead. Mirrors `kbList` but filters by case-insensitive
+// substring against title and slug, then ranks exact-slug > slug-prefix >
+// title-prefix > substring. Reuses the same on-disk scan so newly-created
+// entries show up without an index rebuild.
+export function kbListByTitlePrefix({ dataDir, query, limit = 8 } = {}) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const lower = q.toLowerCase();
+  const all = kbList({ dataDir });
+  const ranked = [];
+  for (const meta of all) {
+    const slug = String(meta.slug || "").toLowerCase();
+    const title = String(meta.title || "").toLowerCase();
+    let rank = -1;
+    if (slug === lower) rank = 0;
+    else if (slug.startsWith(lower)) rank = 1;
+    else if (title.startsWith(lower)) rank = 2;
+    else if (slug.includes(lower) || title.includes(lower)) rank = 3;
+    if (rank >= 0) ranked.push({ rank, meta });
+  }
+  ranked.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    const at = a.meta.updated_at || "";
+    const bt = b.meta.updated_at || "";
+    return at < bt ? 1 : at > bt ? -1 : 0;
+  });
+  return ranked.slice(0, limit).map((x) => x.meta);
+}
+
+export function kbReadMeta({ dataDir, slug }) {
+  const entry = kbRead({ dataDir, slug });
+  return entry ? entry.meta : null;
+}
+
 export function kbList({ dataDir, tag, category, subcategory, project_id, pinned } = {}) {
   const dir = knowledgeDir(dataDir);
   if (!existsSync(dir)) return [];

@@ -291,11 +291,27 @@ export {
   kbCreate,
   kbDelete,
   kbList,
+  kbListByTitlePrefix,
   kbListPinned,
   kbPath,
   kbRead,
+  kbReadMeta,
   kbUpdate,
 } from "./kb.js";
+
+// ---------- Mentions ----------
+export {
+  MENTION_TOKEN_RE,
+  MENTION_TYPES,
+  expandMentionsForLlm,
+  expandMentionsInRecord,
+  parseMentionToken,
+  parseMentions,
+  resolveMentions,
+  resolvedMentionsToObject,
+  serializeMention,
+  uniqueMentionTokens,
+} from "./mentions/index.js";
 
 // ---------- Journals + memory ----------
 export {

@@ -68,6 +68,26 @@ export function updateProjectFields(db, fields, values) {
   db.prepare(`UPDATE projects SET ${fields.join(", ")} WHERE id = ?`).run(...values);
 }
 
+export function listProjectsByNamePrefix(db, query, limit) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const like = `${q.replace(/[%_]/g, "\\$&")}%`;
+  const contains = `%${q.replace(/[%_]/g, "\\$&")}%`;
+  return db.prepare(`
+    SELECT id, slug, name, description, archived
+    FROM projects
+    WHERE archived = 0
+      AND (name LIKE ? ESCAPE '\\' OR slug LIKE ? ESCAPE '\\')
+    ORDER BY
+      CASE WHEN slug = ? THEN 0
+           WHEN slug LIKE ? ESCAPE '\\' THEN 1
+           WHEN name LIKE ? ESCAPE '\\' THEN 2
+           ELSE 3 END,
+      updated_at DESC
+    LIMIT ?
+  `).all(contains, contains, q, like, like, limit);
+}
+
 export function listProjectsByIds(db, ids) {
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(", ");
