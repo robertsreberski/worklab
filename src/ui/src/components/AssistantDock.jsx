@@ -7,6 +7,7 @@ import { Icon } from "./Icon.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { IconButton } from "./primitives/IconButton.jsx";
 import { Textarea } from "./primitives/Textarea.jsx";
+import { MentionableTextarea } from "./MentionableTextarea.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
@@ -420,7 +421,7 @@ export function AssistantDock({
       </div>
       <form class="assistant-composer" onSubmit={submit}>
         {error && <div class="assistant-error">{error}</div>}
-        <Textarea
+        <MentionableTextarea
           rows={2}
           autoGrow
           value={draft}

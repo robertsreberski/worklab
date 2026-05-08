@@ -8,6 +8,7 @@ import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
@@ -328,7 +329,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
 
             <SectionMarker id="kb-edit-body" num="02" kicker="Body" meta="Markdown" />
             <FormSection kicker="Content" title="Body (Markdown)">
-              <Textarea rows={22} monospace autoGrow value={entry.body} onInput={(e) => setEntry({ ...entry, body: e.target.value })} />
+              <MentionableTextarea rows={22} monospace autoGrow value={entry.body} onInput={(e) => setEntry({ ...entry, body: e.target.value })} />
             </FormSection>
 
             <SectionMarker id="kb-edit-references" num="03" kicker="References" meta="Source" />

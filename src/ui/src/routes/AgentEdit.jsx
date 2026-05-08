@@ -16,6 +16,7 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
@@ -990,7 +991,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             <SectionMarker id="agent-edit-behavior" num="04" kicker="Behavior" meta="Prompt" />
             <FormSection kicker="Behavior" title="Instructions">
               <FormField label="System prompt role">
-                <Textarea
+                <MentionableTextarea
                   rows={12}
                   monospace
                   autoGrow

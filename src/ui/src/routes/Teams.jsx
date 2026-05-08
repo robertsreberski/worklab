@@ -19,6 +19,7 @@ import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/
 import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { FormField } from "../components/FormField.jsx";
@@ -444,7 +445,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
                 <Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} />
               </FormField>
               <FormField label="Team charter" class="span-2">
-                <Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} />
+                <MentionableTextarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} />
               </FormField>
               <FormField label="Lead agent" class="span-2">
                 <AgentPicker
