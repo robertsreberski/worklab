@@ -5817,12 +5817,14 @@ html.assistant-resizing * {
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
 }
-.agent-learning-item-head,
 .agent-learning-actions {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   justify-content: space-between;
+}
+.agent-learning-item-head {
+  gap: var(--sp-2);
 }
 .agent-learning-actions {
   justify-content: flex-end;
@@ -8120,11 +8122,10 @@ button.settings-overview-card:focus-visible,
   box-shadow: var(--elev-flat);
 }
 .capability-panel-head {
-  display: flex;
   flex-direction: column;
   align-items: flex-start;
+  justify-content: flex-start;
   gap: var(--sp-2);
-  min-width: 0;
 }
 .capability-panel-title {
   font-size: var(--text-md);

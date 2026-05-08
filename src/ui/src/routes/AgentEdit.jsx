@@ -28,7 +28,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
-import { DetailHead, SectionMarker, Toolbar } from "../components/layout/index.js";
+import { DetailHead, InlineHead, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
@@ -302,7 +302,7 @@ function CapabilityGroup({
 
   return (
     <FormSection class="capability-panel">
-      <div class="capability-panel-head">
+      <InlineHead class="capability-panel-head">
         <div class="min-w-0">
           <div class="capability-panel-title">{title}</div>
           {hint && <div class="capability-panel-hint">{hint}</div>}
@@ -315,7 +315,7 @@ function CapabilityGroup({
             </Button>
           )}
         </Toolbar>
-      </div>
+      </InlineHead>
 
       {items.length === 0 ? (
         <div class="capability-empty">{emptyText}</div>
@@ -740,10 +740,10 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                   const dirty = memory.content !== memory.original_content && memory.original_content !== undefined;
                   return (
                     <div class="agent-learning-item" key={memory.id}>
-                      <div class="agent-learning-item-head">
+                      <InlineHead class="agent-learning-item-head">
                         <span class="agent-learning-kind">{memory.kind}</span>
                         <StatusPill status={learningMemoryStatusTone(memory)} label={learningMemoryStatusLabel(memory)} size="sm" />
-                      </div>
+                      </InlineHead>
                       <Textarea
                         rows={2}
                         class="agent-learning-textarea"
