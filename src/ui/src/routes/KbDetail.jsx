@@ -96,6 +96,7 @@ function RelationSlugList({ label, slugs = [] }) {
 export function KbDetail({ slug }) {
   const [entry, setEntry] = useState(null);
   const [usage, setUsage] = useState(null);
+  const [mentions, setMentions] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -103,7 +104,11 @@ export function KbDetail({ slug }) {
     setUsage(null);
 
     api.getKb(slug)
-      .then((res) => { if (!cancelled) setEntry(normalizeKbEntry(res.entry)); })
+      .then((res) => {
+        if (cancelled) return;
+        setEntry(normalizeKbEntry(res.entry));
+        setMentions(res.mentions || null);
+      })
       .catch(() => { if (!cancelled) setEntry({ notFound: true }); });
     api.kbUsage(slug)
       .then((res) => { if (!cancelled) setUsage(res); })
@@ -114,7 +119,10 @@ export function KbDetail({ slug }) {
 
   useAppResume(() => {
     api.getKb(slug)
-      .then((res) => setEntry(normalizeKbEntry(res.entry)))
+      .then((res) => {
+        setEntry(normalizeKbEntry(res.entry));
+        setMentions(res.mentions || null);
+      })
       .catch(() => setEntry({ notFound: true }));
     api.kbUsage(slug)
       .then((res) => setUsage(res))
@@ -267,6 +275,7 @@ export function KbDetail({ slug }) {
                     content={entry.body}
                     className="markdown doc-content knowledge-read-markdown"
                     expandable={false}
+                    mentions={mentions}
                   />
                 </article>
               ) : (

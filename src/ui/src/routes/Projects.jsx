@@ -332,6 +332,7 @@ function ProjectEditor({ selectedId, onSaved }) {
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [teams, setTeams] = useState([]);
+  const [mentions, setMentions] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -350,6 +351,7 @@ function ProjectEditor({ selectedId, onSaved }) {
         const next = projectDraftFrom(res.project);
         setDraft(next);
         setBaseline(next);
+        setMentions(res.mentions || null);
       })
       .catch((err) => { if (err?.name !== "AbortError") setError(err.message || "Project not found"); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
@@ -373,6 +375,7 @@ function ProjectEditor({ selectedId, onSaved }) {
         const next = projectDraftFrom(res.project);
         setDraft(next);
         setBaseline(next);
+        setMentions(res.mentions || null);
         setError(null);
       })
       .catch((err) => setError(err.message || "Project not found"));
@@ -747,7 +750,7 @@ function ProjectDetail({ selectedId, onChanged }) {
               <ProjectGoalSummary goal={project.team_goal} />
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
-                  <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} />
+                  <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} mentions={mentions} />
                 </article>
               ) : (
                 <div class="task-plan-empty">No project context yet.</div>

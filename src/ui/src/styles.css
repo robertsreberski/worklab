@@ -1206,6 +1206,122 @@ select,
 }
 .chip-remove:hover { opacity: 1; }
 
+/* Mention badges rendered inline in markdown. One color per entity type
+   so cross-entity references stay scannable in dense prose. The base
+   inherits from `.chip` (anchor variant works the same). */
+.chip-mention {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  height: 20px;
+  padding: 0 var(--sp-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-decoration: none;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+a.chip-mention { text-decoration: none; }
+a.chip-mention:hover { filter: brightness(1.1); }
+.chip-mention--agent {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.chip-mention--task {
+  color: var(--status-todo);
+  background: var(--status-todo-bg-10);
+  border-color: var(--status-todo-border);
+}
+.chip-mention--project {
+  color: var(--status-progress);
+  background: var(--status-progress-bg-10);
+  border-color: var(--status-progress-border);
+}
+.chip-mention--team {
+  color: var(--status-review);
+  background: var(--status-review-bg-10);
+  border-color: var(--status-review-border);
+}
+.chip-mention--kb {
+  color: var(--text-muted);
+  background: var(--surface-elevated);
+  border-color: var(--border);
+}
+.chip-mention--missing {
+  color: var(--text-subtle);
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  text-decoration: line-through;
+}
+
+/* Mention picker dropdown — anchored to a MentionableTextarea wrapper,
+   appears just below the textarea. Matches the .select-menu look so it
+   feels native to the design system. */
+.mentionable {
+  position: relative;
+}
+.mention-picker {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 60;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.30);
+  padding: var(--sp-1);
+}
+.mention-picker-empty {
+  padding: var(--sp-2) var(--sp-3);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.mention-picker-option {
+  display: flex;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+.mention-picker-option.active {
+  background: var(--accent-soft);
+}
+.mention-picker-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.mention-picker-label {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mention-picker-sublabel {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mention-picker-token {
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.mention-picker-type {
+  font-size: var(--text-xs);
+}
+
 /* §3.11 StatusPill */
 .status-pill {
   display: inline-flex;

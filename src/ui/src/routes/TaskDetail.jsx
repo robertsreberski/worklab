@@ -255,6 +255,7 @@ export function TaskDetail({ id, runParam = null }) {
   const isTeamRoot = Boolean(task?.is_team_root);
   const runs = data?.runs || [];
   const comments = data?.comments || [];
+  const mentions = data?.mentions || null;
   const stage = task?.stage || "plan";
   const automationSummary = task?.automation_summary || {};
   const hasTaskSchedules = Number(automationSummary.count || 0) > 0;
@@ -1170,7 +1171,7 @@ export function TaskDetail({ id, runParam = null }) {
                           )}
                         </InlineHead>
                         {item.body && (
-                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} /></div>
+                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={mentions} /></div>
                         )}
                       </div>
                     </div>

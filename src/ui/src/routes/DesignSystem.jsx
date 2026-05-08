@@ -31,6 +31,7 @@ import { KeyValueList } from "../components/KeyValueList.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Metric } from "../components/Metric.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -196,6 +197,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "LiveRunPanel", group: "component", coverage: "visible" },
   { name: "LoadingState", group: "component", coverage: "visible" },
   { name: "MarkdownContent", group: "component", coverage: "visible" },
+  { name: "MentionableTextarea", group: "component", coverage: "visible" },
   { name: "Metric", group: "component", coverage: "visible" },
   { name: "MobileConfigSheet", group: "component", coverage: "shell-hosted" },
   { name: "MobileConfigTrigger", group: "component", coverage: "shell-hosted" },
@@ -476,6 +478,9 @@ export function DesignSystem() {
                 </FormField>
                 <FormField label="Instructions" class="span-2">
                   <Textarea value="Plan carefully, keep edits scoped, and report concrete outcomes." readOnly />
+                </FormField>
+                <FormField label="Mentionable instructions" class="span-2" hint="Type @ to open the cross-entity mention picker.">
+                  <MentionableTextarea value="Hand off to @agent/triager when ready." readOnly />
                 </FormField>
               </FormGrid>
             </FormSection>

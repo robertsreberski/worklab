@@ -1,6 +1,58 @@
 import { describe, expect, it } from "vitest";
 import { renderMarkdown } from "../../ui/src/components/Markdown.jsx";
 
+describe("renderMarkdown mentions", () => {
+  it("renders a known agent mention as a clickable badge with the resolved label", () => {
+    const html = renderMarkdown("Hey @agent/triager handle this.", {
+      mentions: {
+        "@agent/triager": {
+          token: "@agent/triager",
+          type: "agent",
+          label: "Triager Bot",
+          href: "#/agents/triager",
+          exists: true,
+        },
+      },
+    });
+    expect(html).toContain('<a class="chip-mention chip-mention--agent" href="#/agents/triager"');
+    expect(html).toContain(">Triager Bot</a>");
+    expect(html).toContain('title="@agent/triager"');
+  });
+
+  it("renders unknown / deleted mentions as a struck-through chip", () => {
+    const html = renderMarkdown("ping @agent/missing", { mentions: {} });
+    expect(html).toContain("chip-mention--missing");
+    expect(html).toContain("agent/missing");
+    expect(html).toContain('title="Mention target no longer exists"');
+  });
+
+  it("renders the bare token id as a fallback when no mentions map is provided", () => {
+    const html = renderMarkdown("@agent/triager");
+    expect(html).toContain("chip-mention--agent");
+    expect(html).toContain("agent/triager");
+  });
+
+  it("does not produce a mention badge for email-style @ in prose", () => {
+    const html = renderMarkdown("Email admin@agent/x for help.");
+    expect(html).not.toContain("chip-mention");
+  });
+
+  it("renders mentions inside list items", () => {
+    const html = renderMarkdown("- assign @agent/triager", {
+      mentions: {
+        "@agent/triager": {
+          token: "@agent/triager",
+          type: "agent",
+          label: "Triager",
+          href: "#/agents/triager",
+          exists: true,
+        },
+      },
+    });
+    expect(html).toMatch(/<ul><li>assign <a class="chip-mention chip-mention--agent"/);
+  });
+});
+
 describe("renderMarkdown", () => {
   it("renders headings, emphasis, lists, and tables used in task comments", () => {
     const html = renderMarkdown("# Heading\n\n**bold** text\n\n- one\n- two\n\n| A | B |\n| --- | --- |\n| 1 | 2 |");
