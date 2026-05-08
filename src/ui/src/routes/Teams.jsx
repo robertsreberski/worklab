@@ -109,6 +109,173 @@ export function teamSetupGaps(team = {}, members = [], projects = []) {
   return gaps;
 }
 
+export function goalStatusLabel(goal = {}) {
+  if (goal?.contract?.paused_at) return "Paused";
+  const status = goal?.goal_status || "in_progress";
+  if (status === "complete") return "Complete";
+  if (status === "blocked") return "Blocked";
+  return "In progress";
+}
+
+function goalStatusVariant(goal = {}) {
+  if (goal?.contract?.paused_at) return "muted";
+  if (goal?.goal_status === "complete") return "primary";
+  if (goal?.goal_status === "blocked") return "warn";
+  return "primary";
+}
+
+function goalGroupKey(goal = {}) {
+  if (goal?.contract?.paused_at) return "paused";
+  if (goal?.goal_status === "complete") return "complete";
+  if (goal?.goal_status === "blocked") return "blocked";
+  return "active";
+}
+
+export function buildTeamGoalDashboardGroups(goals = []) {
+  const meta = {
+    active: { key: "active", label: "Active", items: [] },
+    blocked: { key: "blocked", label: "Blocked", items: [] },
+    paused: { key: "paused", label: "Paused", items: [] },
+    complete: { key: "complete", label: "Complete", items: [] },
+  };
+  for (const goal of goals || []) {
+    const key = goalGroupKey(goal);
+    meta[key].items.push(goal);
+  }
+  return ["active", "blocked", "paused", "complete"]
+    .map((key) => ({
+      ...meta[key],
+      items: meta[key].items.sort((a, b) => String(a.project?.name || "").localeCompare(String(b.project?.name || ""))),
+    }))
+    .filter((group) => group.items.length > 0);
+}
+
+function latestCheckpoint(goal = {}) {
+  const notes = Array.isArray(goal?.contract?.checkpoint_notes) ? goal.contract.checkpoint_notes : [];
+  return notes[notes.length - 1] || null;
+}
+
+function GoalContractDetails({ goal }) {
+  const contract = goal?.contract || {};
+  const checkpoint = latestCheckpoint(goal);
+  return (
+    <div class="team-goal-contract">
+      <div>
+        <span>Objective</span>
+        <strong>{contract.objective || "(not set)"}</strong>
+      </div>
+      <div>
+        <span>Stop when</span>
+        <strong>{contract.stopping_condition || "(not set)"}</strong>
+      </div>
+      <div>
+        <span>Validate with</span>
+        <strong>{contract.validation_loop || "(not set)"}</strong>
+      </div>
+      {contract.constraints?.length ? (
+        <div>
+          <span>Constraints</span>
+          <strong>{contract.constraints.join(", ")}</strong>
+        </div>
+      ) : null}
+      {checkpoint ? (
+        <div>
+          <span>Latest checkpoint</span>
+          <strong>{checkpoint.checkpoint_note || checkpoint.validation_summary || "(empty checkpoint)"}</strong>
+        </div>
+      ) : null}
+      {goal.goal_status_reason ? (
+        <div>
+          <span>Status reason</span>
+          <strong>{goal.goal_status_reason}</strong>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
+  const project = goal?.project || {};
+  const statusLabel = goalStatusLabel(goal);
+  const paused = Boolean(goal?.contract?.paused_at);
+  return (
+    <div class={`team-goal-card${compact ? " is-compact" : ""}`}>
+      <div class="team-goal-card-head">
+        <div>
+          <a class="team-goal-project" href={`#/projects/${encodeURIComponent(project.slug || project.id || "")}`}>
+            {project.name || project.slug || goal?.project_id}
+          </a>
+          <div class="team-goal-meta">
+            {goal?.team_name && <span>{goal.team_name}</span>}
+            {goal?.last_lead_at && <span>lead {relativeTime(goal.last_lead_at)}</span>}
+          </div>
+        </div>
+        <Badge variant={goalStatusVariant(goal)}>{statusLabel}</Badge>
+      </div>
+      <GoalContractDetails goal={goal} />
+      <div class="team-goal-actions">
+        <Button size="sm" variant="primary" onClick={() => onRun?.(goal)} disabled={!goal?.team_id || !goal?.project_id}>
+          Run lead
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => onAction?.(goal, paused ? "resume" : "pause")}>
+          {paused ? "Resume" : "Pause"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onAction?.(goal, "clear")}>
+          Clear
+        </Button>
+        {goal?.root_task_id && (
+          <a class="team-cycle-link" href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>
+            <Icon name="arrow-right" size={13} />
+            <span>Root</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function TeamGoalsDashboard({ goals = [], onRunGoal, onGoalAction }) {
+  const groups = buildTeamGoalDashboardGroups(goals);
+  return (
+    <div class="team-goal-dashboard">
+      <div class="team-goal-dashboard-head">
+        <div>
+          <h2>Team goals</h2>
+          <p class="muted">Durable objectives for each team-project pairing.</p>
+        </div>
+        <Badge variant="muted">{goals.length} goal{goals.length === 1 ? "" : "s"}</Badge>
+      </div>
+      {groups.length ? (
+        groups.map((group) => (
+          <section key={group.key} class="team-goal-dashboard-group">
+            <div class="team-goal-dashboard-group-head">
+              <span>{group.label}</span>
+              <span>{group.items.length}</span>
+            </div>
+            <div class="team-goal-grid">
+              {group.items.map((goal) => (
+                <TeamGoalCard
+                  key={`${goal.team_id}:${goal.project_id}`}
+                  goal={goal}
+                  compact
+                  onRun={onRunGoal}
+                  onAction={onGoalAction}
+                />
+              ))}
+            </div>
+          </section>
+        ))
+      ) : (
+        <EmptyState
+          icon={<Icon name="users" size={20} />}
+          title="No team goals"
+          body="Assign teams to projects to create per-project goal contracts."
+        />
+      )}
+    </div>
+  );
+}
+
 function leadRunFailureReason(result) {
   return String(result?.error || result?.message || result?.skipped || "unknown reason");
 }
@@ -387,7 +554,7 @@ function LeadCycleRow({ cycle }) {
   );
 }
 
-function TeamDetail({ team, members, projects, cycles, onChanged }) {
+function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, onRunGoal, onGoalAction }) {
   const [running, setRunning] = useState(false);
   const setupGaps = teamSetupGaps(team, members, projects);
   async function runLeadNow() {
@@ -420,6 +587,22 @@ function TeamDetail({ team, members, projects, cycles, onChanged }) {
         <p>{team.goal || <em>(no goal set)</em>}</p>
       </Card>
       <TeamSetupGapsCard gaps={setupGaps} />
+      <Card title={`Project goals (${goals.length})`}>
+        {goals.length ? (
+          <div class="team-goal-grid is-detail">
+            {goals.map((goal) => (
+              <TeamGoalCard
+                key={`${goal.team_id}:${goal.project_id}`}
+                goal={goal}
+                onRun={onRunGoal}
+                onAction={onGoalAction}
+              />
+            ))}
+          </div>
+        ) : (
+          <p class="muted">Assign this team to a project to create a durable project goal contract.</p>
+        )}
+      </Card>
       <Card title={`Roster (${members.length})`}>
         {members.length === 0 ? (
           <p class="muted">No members.</p>
@@ -483,6 +666,7 @@ function emptyState() {
 
 export function Teams({ selectedId = null, mode = null }) {
   const [teams, setTeams] = useState([]);
+  const [goalsByTeamId, setGoalsByTeamId] = useState({});
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("active");
@@ -498,8 +682,27 @@ export function Teams({ selectedId = null, mode = null }) {
     const ctrl = new AbortController();
     reloadRef.current = ctrl;
     api.listTeams({ include_archived: "true" }, { signal: ctrl.signal })
-      .then((r) => { if (!ctrl.signal.aborted) setTeams(r.teams || []); })
-      .catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
+      .then(async (r) => {
+        if (ctrl.signal.aborted) return;
+        const nextTeams = r.teams || [];
+        setTeams(nextTeams);
+        const results = await Promise.allSettled(nextTeams.map((team) => (
+          api.listTeamGoals(team.id, { include_archived: "true" }, { signal: ctrl.signal })
+            .then((res) => [team.id, res.goals || []])
+        )));
+        if (ctrl.signal.aborted) return;
+        const nextGoals = {};
+        for (const result of results) {
+          if (result.status === "fulfilled") nextGoals[result.value[0]] = result.value[1];
+        }
+        setGoalsByTeamId(nextGoals);
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") {
+          setTeams([]);
+          setGoalsByTeamId({});
+        }
+      });
   }, []);
   const reloadSoon = useThrottledCallback(reload, 100);
 
@@ -538,9 +741,50 @@ export function Teams({ selectedId = null, mode = null }) {
 
   const loadDetail = useCallback(() => {
     if (!selectedId || selectedId === "new") { setDetail(null); return; }
-    api.getTeam(selectedId).then(setDetail).catch(() => setDetail(null));
+    api.getTeam(selectedId).then((nextDetail) => {
+      setDetail(nextDetail);
+      if (nextDetail?.team?.id) {
+        setGoalsByTeamId((current) => ({
+          ...current,
+          [nextDetail.team.id]: nextDetail.goals || [],
+        }));
+      }
+    }).catch(() => setDetail(null));
   }, [selectedId]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
+
+  const runGoal = useCallback(async (goal) => {
+    if (!goal?.team_id || !goal?.project_id) return;
+    try {
+      const res = await api.runTeamLead(goal.team_id, { project_id: goal.project_id, reason: "manual" });
+      const toast = formatTeamLeadRunToast(res.results || []);
+      pushToast(toast.message, { variant: toast.variant });
+      reload();
+      loadDetail();
+    } catch (err) {
+      pushToast(`Run-lead failed: ${err.message}`, { variant: "error" });
+    }
+  }, [loadDetail, reload]);
+
+  const updateGoal = useCallback(async (goal, action) => {
+    if (!goal?.team_id || !goal?.project_id || !action) return;
+    try {
+      const res = await api.patchTeamGoal(goal.team_id, goal.project_id, { action });
+      if (res?.goal) {
+        setGoalsByTeamId((current) => ({
+          ...current,
+          [goal.team_id]: (current[goal.team_id] || []).map((item) => (
+            item.project_id === goal.project_id ? res.goal : item
+          )),
+        }));
+      }
+      pushToast(`Goal ${action === "clear" ? "cleared" : action === "pause" ? "paused" : "resumed"}`, { variant: "success" });
+      reload();
+      loadDetail();
+    } catch (err) {
+      pushToast(`Goal update failed: ${err.message}`, { variant: "error" });
+    }
+  }, [loadDetail, reload]);
 
   const groups = useMemo(() => buildTeamResourceGroups(teams, {
     query,
@@ -549,6 +793,7 @@ export function Teams({ selectedId = null, mode = null }) {
     lead: leadFilter,
   }), [leadFilter, query, scheduleFilter, statusFilter, teams]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const allGoals = useMemo(() => teams.flatMap((team) => goalsByTeamId[team.id] || []), [goalsByTeamId, teams]);
   const hasFilter = query.trim() || statusFilter !== "active" || scheduleFilter !== "all" || leadFilter !== "all";
   const statusTabs = useMemo(() => [
     { value: "active", label: "Active", count: teams.filter((team) => team.status !== "archived").length },
@@ -599,12 +844,15 @@ export function Teams({ selectedId = null, mode = null }) {
           members={detail.members || []}
           projects={detail.projects || []}
           cycles={detail.recent_cycles || []}
+          goals={detail.goals || goalsByTeamId[detail.team?.id] || []}
           onChanged={() => { reload(); loadDetail(); }}
+          onRunGoal={runGoal}
+          onGoalAction={updateGoal}
         />
       );
     }
   } else {
-    body = emptyState();
+    body = <TeamGoalsDashboard goals={allGoals} onRunGoal={runGoal} onGoalAction={updateGoal} />;
   }
 
   return (

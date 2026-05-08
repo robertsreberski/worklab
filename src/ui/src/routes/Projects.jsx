@@ -91,6 +91,26 @@ function projectTeamLabel(project) {
   return project?.team?.name || project?.team_name || project?.team_slug || project?.team_id || "";
 }
 
+function projectGoalStatusLabel(goal = {}) {
+  if (goal?.contract?.paused_at) return "Paused";
+  const status = goal?.goal_status || "in_progress";
+  if (status === "complete") return "Complete";
+  if (status === "blocked") return "Blocked";
+  return "In progress";
+}
+
+function projectGoalChipVariant(goal = {}) {
+  if (goal?.contract?.paused_at) return "muted";
+  if (goal?.goal_status === "blocked") return "warn";
+  if (goal?.goal_status === "complete") return "trigger";
+  return "accent";
+}
+
+function latestProjectGoalCheckpoint(goal = {}) {
+  const notes = Array.isArray(goal?.contract?.checkpoint_notes) ? goal.contract.checkpoint_notes : [];
+  return notes[notes.length - 1] || null;
+}
+
 function formatProjectAge(value) {
   if (!value) return "";
   const ms = Date.now() - Number(value);
@@ -99,6 +119,51 @@ function formatProjectAge(value) {
   if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h`;
   if (ms < 86_400_000 * 7) return `${Math.floor(ms / 86_400_000)}d`;
   return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function ProjectGoalSummary({ goal }) {
+  if (!goal) return null;
+  const contract = goal.contract || {};
+  const checkpoint = latestProjectGoalCheckpoint(goal);
+  return (
+    <div class="project-goal-summary">
+      <div class="project-goal-summary-head">
+        <div>
+          <span class="soft-meta">Project goal</span>
+          <strong>{goal.team_name || goal.team_slug || "Assigned team"}</strong>
+        </div>
+        <Chip variant={projectGoalChipVariant(goal)}>{projectGoalStatusLabel(goal)}</Chip>
+      </div>
+      <div class="team-goal-contract">
+        <div>
+          <span>Objective</span>
+          <strong>{contract.objective || "(not set)"}</strong>
+        </div>
+        <div>
+          <span>Stop when</span>
+          <strong>{contract.stopping_condition || "(not set)"}</strong>
+        </div>
+        <div>
+          <span>Validate with</span>
+          <strong>{contract.validation_loop || "(not set)"}</strong>
+        </div>
+        {checkpoint ? (
+          <div>
+            <span>Latest checkpoint</span>
+            <strong>{checkpoint.checkpoint_note || checkpoint.validation_summary || "(empty checkpoint)"}</strong>
+          </div>
+        ) : null}
+      </div>
+      <div class="project-goal-links">
+        {goal.team_slug || goal.team_id ? (
+          <a href={`#/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
+        ) : null}
+        {goal.root_task_id ? (
+          <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function ProjectTaskAttentionChips({ items = [], limit = 3 }) {
@@ -674,6 +739,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                   </span>
                 </div>
               )}
+              <ProjectGoalSummary goal={project.team_goal} />
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
                   <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} />

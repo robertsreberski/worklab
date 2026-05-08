@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildTeamGoalDashboardGroups,
   formatTeamLeadRunToast,
+  goalStatusLabel,
   leadCycleRawLogHref,
   leadCycleTaskHref,
   teamSetupGaps,
@@ -59,6 +61,37 @@ describe("team setup guidance", () => {
     expect(leadCycleTaskHref({ task_id: "task 1" })).toBe(null);
     expect(leadCycleTaskHref({ id: "run/1" })).toBe(null);
     expect(leadCycleRawLogHref({})).toBe(null);
+  });
+
+  it("groups team-project goals for the Teams dashboard", () => {
+    const goals = [
+      { project: { name: "Done" }, goal_status: "complete", contract: { objective: "Done" } },
+      { project: { name: "Paused" }, goal_status: "in_progress", contract: { objective: "Paused", paused_at: 10 } },
+      { project: { name: "Active" }, goal_status: "in_progress", contract: { objective: "Active" } },
+      { project: { name: "Blocked" }, goal_status: "blocked", contract: { objective: "Blocked" } },
+    ];
+
+    const groups = buildTeamGoalDashboardGroups(goals);
+
+    expect(groups.map((group) => [group.key, group.items.map((item) => item.project.name)])).toEqual([
+      ["active", ["Active"]],
+      ["blocked", ["Blocked"]],
+      ["paused", ["Paused"]],
+      ["complete", ["Done"]],
+    ]);
+    expect(goalStatusLabel(goals[1])).toBe("Paused");
+    expect(goalStatusLabel(goals[2])).toBe("In progress");
+  });
+
+  it("surfaces goal dashboard hooks in Teams, Projects, and Commander", () => {
+    const teamsSource = readFileSync(teamsSourcePath, "utf8");
+    const projectsSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/Projects.jsx"), "utf8");
+    const commanderSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/components/CommanderRow.jsx"), "utf8");
+
+    expect(teamsSource).toContain("Team goals");
+    expect(teamsSource).toContain("team-goal-dashboard");
+    expect(projectsSource).toContain("Project goal");
+    expect(commanderSource).toContain("team-goal-chip");
   });
 
   it("keeps Teams setup guidance short and contextual", () => {
