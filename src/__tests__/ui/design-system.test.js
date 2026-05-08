@@ -18,6 +18,7 @@ const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
+const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
 const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
@@ -162,6 +163,21 @@ describe("design system stylesheet", () => {
     expect(workflowCardsSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(workflowCardsSource).toMatch(/<FormSection\s+class="task-workflow-meta"/);
     expect(workflowCardsSource).not.toMatch(/<section\s+class="task-workflow-meta"/);
+  });
+
+  it("builds task pending radio answers on the shared RadioGroup primitive", () => {
+    const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
+    expect(workflowCardsSource).toMatch(/import\s+\{\s*RadioGroup\s*\}/);
+    expect(workflowCardsSource).toMatch(/<RadioGroup[\s\S]*variant="stacked"[\s\S]*task-pending-radio-group/);
+    expect(workflowCardsSource).not.toMatch(/<label[^>]+class="task-pending-radio"/);
+  });
+
+  it("builds run input preview fields on the shared FormField component", () => {
+    const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");
+    expect(runInputPreviewSource).toMatch(/import\s+\{\s*FormField\s*\}/);
+    expect(runInputPreviewSource).toMatch(/<FormField\s+label="System message"\s+class="run-input-preview-field"/);
+    expect(runInputPreviewSource).toMatch(/<FormField\s+label="User messages"\s+class="run-input-preview-field"/);
+    expect(runInputPreviewSource).not.toMatch(/<label\s+class="run-input-preview-field"/);
   });
 
   it("builds agent capability panels on the shared FormSection component", () => {

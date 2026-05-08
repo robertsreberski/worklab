@@ -6,6 +6,7 @@ export function RadioGroup({
   onChange,
   options = [],
   ariaLabel,
+  variant = "segmented",
   class: className = "",
 }) {
   const containerRef = useRef(null);
@@ -29,13 +30,14 @@ export function RadioGroup({
   return (
     <div
       ref={containerRef}
-      class={`radio-group ${className}`.trim()}
+      class={`radio-group radio-group-${variant} ${className}`.trim()}
       role="radiogroup"
       aria-label={ariaLabel}
       onKeyDown={onKeyDown}
     >
-      {options.map((opt) => {
+      {options.map((opt, index) => {
         const checked = opt.value === value;
+        const firstEnabled = !value && index === options.findIndex((item) => !item.disabled);
         return (
           <button
             key={opt.value}
@@ -44,11 +46,14 @@ export function RadioGroup({
             role="radio"
             aria-checked={checked}
             disabled={opt.disabled}
-            tabIndex={checked ? 0 : -1}
+            tabIndex={checked || firstEnabled ? 0 : -1}
             onClick={() => !opt.disabled && onChange?.(opt.value)}
           >
             {opt.icon}
-            <span>{opt.label}</span>
+            <span class="radio-group-option-copy">
+              <span>{opt.label}</span>
+              {opt.description && <small>{opt.description}</small>}
+            </span>
           </button>
         );
       })}

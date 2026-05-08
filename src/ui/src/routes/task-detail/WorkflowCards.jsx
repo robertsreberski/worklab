@@ -8,6 +8,7 @@ import { MarkdownContent } from "../../components/Markdown.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
 import { Checkbox } from "../../components/primitives/Checkbox.jsx";
 import { Chip } from "../../components/primitives/Chip.jsx";
+import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
@@ -151,7 +152,11 @@ function emptyQuestionAnswer() {
 }
 
 function optionLabel(option) {
-  return option?.description ? `${option.label} - ${option.description}` : option?.label;
+  return option?.label || "";
+}
+
+function optionDescription(option) {
+  return option?.description || "";
 }
 
 export function TaskPendingQuestionsCard({ task, onAnswered }) {
@@ -213,32 +218,35 @@ export function TaskPendingQuestionsCard({ task, onAnswered }) {
               <legend>{question.header || `Question ${index + 1}`}</legend>
               <div class="task-pending-question-text">{question.question}</div>
               <div class="task-pending-options">
-                {(question.options || []).map((option) => {
-                  const checked = selected.has(option.id);
-                  if (question.multi_select) {
+                {question.multi_select ? (
+                  (question.options || []).map((option) => {
+                    const checked = selected.has(option.id);
+                    const description = optionDescription(option);
                     return (
                       <Checkbox
                         key={option.id}
                         checked={checked}
                         onChange={(value) => toggleOption(question, option.id, value)}
-                        label={optionLabel(option)}
+                        label={description ? `${optionLabel(option)} - ${description}` : optionLabel(option)}
                         disabled={saving}
                       />
                     );
-                  }
-                  return (
-                    <label key={option.id} class="task-pending-radio">
-                      <input
-                        type="radio"
-                        name={`question-${question.id}`}
-                        checked={checked}
-                        disabled={saving}
-                        onChange={() => toggleOption(question, option.id, true)}
-                      />
-                      <span>{optionLabel(option)}</span>
-                    </label>
-                  );
-                })}
+                  })
+                ) : (
+                  <RadioGroup
+                    value={[...selected][0] || ""}
+                    onChange={(value) => toggleOption(question, value, true)}
+                    options={(question.options || []).map((option) => ({
+                      value: option.id,
+                      label: optionLabel(option),
+                      description: optionDescription(option),
+                      disabled: saving,
+                    }))}
+                    ariaLabel={question.header || `Question ${index + 1}`}
+                    variant="stacked"
+                    class="task-pending-radio-group"
+                  />
+                )}
               </div>
               {question.allow_free_text && (
                 <Textarea
