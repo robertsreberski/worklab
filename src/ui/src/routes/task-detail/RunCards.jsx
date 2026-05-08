@@ -5,7 +5,7 @@ import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
-import { SectionGroup, Toolbar } from "../../components/layout/index.js";
+import { SectionGroup, SectionStack, Toolbar } from "../../components/layout/index.js";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../../lib/runFormatting.js";
@@ -631,7 +631,7 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
       {outputGroups.length > 0 && (
         <details class="run-artifact-outputs">
           <summary>Run outputs · {outputArtifacts.length}</summary>
-          <div class="run-artifact-groups">
+          <SectionStack class="run-artifact-groups">
             {outputGroups.map((group) => (
               <SectionGroup
                 class="run-artifact-group"
@@ -647,7 +647,7 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
                 />
               </SectionGroup>
             ))}
-          </div>
+          </SectionStack>
         </details>
       )}
     </SectionGroup>

@@ -5980,7 +5980,6 @@ html.assistant-resizing * {
   white-space: nowrap;
 }
 .run-artifact-groups {
-  display: grid;
   gap: var(--sp-3);
 }
 .run-artifact-outputs {
@@ -6549,6 +6548,11 @@ html.assistant-resizing * {
 .ds-section-group {
   display: grid;
   gap: var(--sp-3);
+  min-width: 0;
+}
+.ds-section-stack {
+  display: grid;
+  gap: var(--sp-4);
   min-width: 0;
 }
 .ds-section-group-head {
@@ -8939,7 +8943,6 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-2);
 }
 .project-knowledge-workspace,
-.project-knowledge-groups,
 .project-knowledge-group,
 .project-task-output-lane,
 .project-output-list {
@@ -8948,9 +8951,6 @@ button.settings-overview-card:focus-visible,
 }
 .project-knowledge-workspace {
   gap: var(--sp-5);
-}
-.project-knowledge-groups {
-  gap: var(--sp-4);
 }
 .project-knowledge-group {
   gap: var(--sp-2);
@@ -9149,7 +9149,6 @@ button.settings-overview-card:focus-visible,
   font-size: var(--text-sm);
 }
 .project-task-groups {
-  display: grid;
   gap: var(--sp-4);
 }
 .project-task-group {
