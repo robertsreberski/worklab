@@ -1,10 +1,16 @@
 // §4.17 Markdown — GFM-lite, sanitized, clamps by rendered height (not char count).
 // Full Markdown always renders; long bodies clamp to 320px with "Show more".
+//
+// Cross-entity mentions: pass `{ mentions: { token: ResolvedMention } }` to
+// renderMarkdown / MarkdownContent and `@agent/...`-style tokens swap for
+// clickable badges via the same hash routes as the rest of the app.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { MENTION_TOKEN_RE } from "../lib/mentions.js";
 
-export function renderMarkdown(md) {
+export function renderMarkdown(md, options = {}) {
   if (!md) return "";
+  const ctx = { mentions: options.mentions || null };
 
   const codeBlocks = [];
   const text = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, __, code) => {
@@ -36,7 +42,7 @@ export function renderMarkdown(md) {
     const headingMatch = line.match(/^(#{1,3})\s+(.+)$/);
     if (headingMatch) {
       const level = headingMatch[1].length;
-      out.push(`<h${level}>${renderInline(headingMatch[2])}</h${level}>`);
+      out.push(`<h${level}>${renderInline(headingMatch[2], ctx)}</h${level}>`);
       i += 1;
       continue;
     }
@@ -47,7 +53,7 @@ export function renderMarkdown(md) {
         quoteLines.push(lines[i].slice(2));
         i += 1;
       }
-      out.push(`<blockquote>${renderInline(quoteLines.join("\n"))}</blockquote>`);
+      out.push(`<blockquote>${renderInline(quoteLines.join("\n"), ctx)}</blockquote>`);
       continue;
     }
 
@@ -57,7 +63,7 @@ export function renderMarkdown(md) {
         tableLines.push(lines[i]);
         i += 1;
       }
-      out.push(renderTable(tableLines));
+      out.push(renderTable(tableLines, ctx));
       continue;
     }
 
@@ -65,7 +71,7 @@ export function renderMarkdown(md) {
       const items = [];
       while (i < lines.length && /^\s*[-*]\s/.test(lines[i])) {
         const stripped = lines[i].replace(/^\s*[-*]\s+/, "");
-        items.push(`<li>${renderInline(stripped)}</li>`);
+        items.push(`<li>${renderInline(stripped, ctx)}</li>`);
         i += 1;
       }
       out.push(`<ul>${items.join("")}</ul>`);
@@ -78,7 +84,7 @@ export function renderMarkdown(md) {
         items.push(lines[i].replace(/^\s*\d+\.\s+/, ""));
         i += 1;
       }
-      out.push(`<ol>${items.map((item) => `<li>${renderInline(item)}</li>`).join("")}</ol>`);
+      out.push(`<ol>${items.map((item) => `<li>${renderInline(item, ctx)}</li>`).join("")}</ol>`);
       continue;
     }
 
@@ -97,7 +103,7 @@ export function renderMarkdown(md) {
       i += 1;
     }
     if (paragraphLines.length > 0) {
-      out.push(`<p>${renderInline(paragraphLines.join("\n"))}</p>`);
+      out.push(`<p>${renderInline(paragraphLines.join("\n"), ctx)}</p>`);
     }
   }
 
@@ -111,6 +117,7 @@ export function MarkdownContent({
   className = "markdown doc-content",
   maxHeight = 320,
   expandable = true,
+  mentions = null,
 }) {
   const ref = useRef(null);
   const [needsClamp, setNeedsClamp] = useState(false);
@@ -137,7 +144,7 @@ export function MarkdownContent({
       <div
         ref={ref}
         class={`${className}${needsClamp && !expanded ? " markdown-expandable clamped" : ""}`}
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(content, { mentions }) }}
       />
       {expandable && needsClamp && (
         <button
@@ -175,7 +182,7 @@ function renderAnchor(href, label) {
   return `<a href="${safe}"${externalAttrs}>${label}</a>`;
 }
 
-function renderInline(text) {
+function renderInline(text, ctx = {}) {
   const placeholders = [];
   const stash = (html) => {
     const index = placeholders.length;
@@ -183,18 +190,55 @@ function renderInline(text) {
     return `\x00INLINE${index}\x00`;
   };
 
+  // Stash mentions BEFORE escapeHtml so the `@` and `/` survive
+  // intact; the placeholder protects them from later passes.
+  const withMentions = linkifyMentions(text, ctx?.mentions || null, stash);
+
   const rendered = linkifyBareUrls(
-    escapeHtml(text)
+    escapeHtml(withMentions)
       .replace(/`([^`]+)`/g, (_, code) => stash(`<code>${code}</code>`))
       .replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>")
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/\*(.+?)\*/g, "<em>$1</em>")
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
         stash(renderAnchor(url, label))),
-    stash
+    stash,
   ).replace(/\n/g, "<br/>");
 
   return restoreInlinePlaceholders(rendered, placeholders);
+}
+
+function linkifyMentions(text, mentions, stash) {
+  if (typeof text !== "string" || !text.length) return text;
+  const re = new RegExp(MENTION_TOKEN_RE.source, "g");
+  let last = 0;
+  let out = "";
+  let match;
+  while ((match = re.exec(text)) !== null) {
+    out += text.slice(last, match.index);
+    out += stash(renderMentionBadge(match[0], match[1], match[2], mentions));
+    last = match.index + match[0].length;
+  }
+  out += text.slice(last);
+  return out;
+}
+
+function renderMentionBadge(token, type, id, mentions) {
+  // When no resolved-mentions map is provided (legacy callers, optimistic
+  // local rendering before an API response), render a best-effort badge
+  // showing the bare id. When a map IS provided but this token is absent
+  // or marked exists=false, the entity has been deleted — render muted.
+  const hasMap = mentions != null;
+  const meta = hasMap ? mentions[token] : null;
+  const isMissing = hasMap && (!meta || meta.exists === false);
+  const label = meta?.label || `${type}/${id}`;
+  const cls = `chip-mention chip-mention--${type}${isMissing ? " chip-mention--missing" : ""}`;
+  if (isMissing || !meta?.href) {
+    const tooltip = isMissing ? "Mention target no longer exists" : token;
+    return `<span class="${cls}" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</span>`;
+  }
+  const safe = safeHref(meta.href);
+  return `<a class="${cls}" href="${safe}" title="${escapeHtml(token)}">${escapeHtml(label)}</a>`;
 }
 
 function restoreInlinePlaceholders(value, placeholders) {
@@ -250,14 +294,14 @@ function countChar(value, char) {
   return [...value].filter((entry) => entry === char).length;
 }
 
-function renderTable(lines) {
+function renderTable(lines, ctx) {
   const parseRow = (line) => line.replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
   const headers = parseRow(lines[0]);
   const rows = lines.slice(2).map(parseRow);
   return [
     '<div class="doc-table-wrap"><table class="doc-table">',
-    `<thead><tr>${headers.map((header) => `<th>${renderInline(header)}</th>`).join("")}</tr></thead>`,
-    `<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell)}</td>`).join("")}</tr>`).join("")}</tbody>`,
+    `<thead><tr>${headers.map((header) => `<th>${renderInline(header, ctx)}</th>`).join("")}</tr></thead>`,
+    `<tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${renderInline(cell, ctx)}</td>`).join("")}</tr>`).join("")}</tbody>`,
     "</table></div>",
   ].join("");
 }

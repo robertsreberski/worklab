@@ -5,7 +5,7 @@ import { SectionStack } from "./layout/index.js";
 import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
 import { normalizeCommentText, parseVerdictComment, shouldHideComment } from "../lib/commentFormatting.js";
 
-export function CommentList({ comments, agents = [] }) {
+export function CommentList({ comments, agents = [], mentions = null }) {
   const visibleComments = (comments || []).filter((c) => !shouldHideComment(c));
   if (!visibleComments.length) return <div class="meta">No comments yet.</div>;
   return (
@@ -24,7 +24,7 @@ export function CommentList({ comments, agents = [] }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" />}
+            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" mentions={mentions} />}
           </div>
         );
       })}
