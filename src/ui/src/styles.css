@@ -7391,8 +7391,7 @@ html.assistant-resizing * {
   color: var(--text-muted);
   font-size: var(--text-base);
 }
-.settings-overview-grid {
-  display: grid;
+.ds-panel-grid.settings-overview-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
   gap: var(--sp-4);
 }
@@ -7566,12 +7565,11 @@ button.settings-overview-card:focus-visible,
   min-width: 0;
   flex-wrap: wrap;
 }
-.settings-panel-grid {
-  display: grid;
+.ds-panel-grid.settings-panel-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: var(--sp-4);
 }
-.settings-panel-grid > .span-2 {
+.ds-panel-grid.settings-panel-grid > .span-2 {
   grid-column: span 2;
 }
 .settings-panel {
@@ -7616,12 +7614,14 @@ button.settings-overview-card:focus-visible,
   font-size: var(--text-sm);
   line-height: 1.4;
 }
-.settings-panel-body,
-.settings-switch-stack {
+.settings-panel-body {
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
   min-width: 0;
+}
+.ds-section-stack.settings-switch-stack {
+  gap: var(--sp-4);
 }
 .settings-advanced {
   min-width: 0;
@@ -7685,15 +7685,14 @@ button.settings-overview-card:focus-visible,
   border-top: 1px solid var(--border);
 }
 
-.settings-note-grid {
-  display: grid;
+.ds-panel-grid.settings-note-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
   gap: var(--sp-3);
 }
-.settings-note-grid.single {
+.ds-panel-grid.settings-note-grid.single {
   grid-template-columns: 1fr;
 }
-.settings-note-grid-paths {
+.ds-panel-grid.settings-note-grid-paths {
   grid-template-columns: 1fr;
 }
 .settings-note {
@@ -7911,12 +7910,12 @@ button.settings-overview-card:focus-visible,
   .settings-note-grid-paths .settings-note strong {
     margin-top: var(--sp-1);
   }
-  .settings-panel-grid,
-  .settings-note-grid,
+  .ds-panel-grid.settings-panel-grid,
+  .ds-panel-grid.settings-note-grid,
   .settings-index-status {
     grid-template-columns: 1fr;
   }
-  .settings-panel-grid > .span-2 {
+  .ds-panel-grid.settings-panel-grid > .span-2 {
     grid-column: auto;
   }
   .settings-admin-row.compact,
