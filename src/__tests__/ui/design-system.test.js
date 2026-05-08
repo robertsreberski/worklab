@@ -27,6 +27,7 @@ const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const detailHeadPath = resolve(repoRoot, "src/ui/src/components/layout/DetailHead.jsx");
 const detailLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Detail.jsx");
+const editShellPath = resolve(repoRoot, "src/ui/src/components/layout/EditShell.jsx");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
 
 function componentExportsFromBarrel(filePath) {
@@ -157,6 +158,13 @@ describe("design system stylesheet", () => {
       expect(source).toMatch(/<Toolbar\b/);
       expect(source).not.toMatch(/<div[^>]+class="(?:actions\s+)?toolbar ds-toolbar ds-toolbar-end"/);
     }
+  });
+
+  it("builds edit header action rows on the shared Toolbar layout", () => {
+    const editShellSource = readFileSync(editShellPath, "utf8");
+    expect(editShellSource).toMatch(/import\s+\{\s*Toolbar\s*\}/);
+    expect(editShellSource).toMatch(/<Toolbar\s+class="task-edit-toolbar edit-shell-toolbar"/);
+    expect(editShellSource).not.toMatch(/<div[^>]+class="toolbar task-edit-toolbar edit-shell-toolbar"/);
   });
 
   it("builds task editor sections on the shared FormSection component", () => {
