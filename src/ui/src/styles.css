@@ -3567,8 +3567,7 @@ html.assistant-resizing * {
   gap: var(--sp-2);
 }
 .run-input-preview-message-head {
-  display: flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
 }
 .run-input-preview-message-head code,
@@ -8562,9 +8561,7 @@ button.settings-overview-card:focus-visible,
   color: var(--text-muted);
 }
 .rail-agent-row-head {
-  display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--sp-2);
 }
 .rail-agent-row-kicker {

@@ -373,6 +373,18 @@ describe("design system stylesheet", () => {
     expect(runCardsSource).not.toMatch(/<div\s+class="run-summary-result-head"/);
   });
 
+  it("builds task-detail support heads on the shared InlineHead layout", () => {
+    const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");
+    const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
+    for (const source of [runInputPreviewSource, workflowCardsSource]) {
+      expect(source).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    }
+    expect(runInputPreviewSource).toMatch(/<InlineHead\s+class="run-input-preview-message-head"/);
+    expect(workflowCardsSource).toMatch(/<InlineHead\s+class="rail-agent-row-head"/);
+    expect(runInputPreviewSource).not.toMatch(/<div\s+class="run-input-preview-message-head"/);
+    expect(workflowCardsSource).not.toMatch(/<div\s+class="rail-agent-row-head"/);
+  });
+
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);

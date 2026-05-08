@@ -1,6 +1,7 @@
 import { Button } from "../../components/primitives/Button.jsx";
 import { FormField } from "../../components/FormField.jsx";
 import { Icon } from "../../components/Icon.jsx";
+import { InlineHead } from "../../components/layout/index.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { normalizeRunPreviewInput, runPreviewMetadataItems } from "./runPreview.js";
@@ -63,10 +64,10 @@ export function RunInputPreviewModal({
               <div class="run-input-preview-message-list">
                 {input.messages.map((message, index) => (
                   <div key={`${message.role}-${index}`} class="run-input-preview-message">
-                    <div class="run-input-preview-message-head">
+                    <InlineHead class="run-input-preview-message-head">
                       <code>{message.role || "message"}</code>
                       <span>{message.format || "plain"}</span>
-                    </div>
+                    </InlineHead>
                     <Textarea
                       rows={6}
                       monospace
