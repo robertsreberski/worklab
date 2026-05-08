@@ -3,12 +3,20 @@ import { join } from "node:path";
 import { getAgentByName } from "../db/queries/agents.js";
 import { listRecentAgentRuns } from "../db/queries/runs.js";
 import { listProjectTasksWithRunSnapshots } from "../db/queries/tasks.js";
+import {
+  listProjectsForTeam,
+  listRecentLeadCycles,
+  listTeamMembers,
+  listTeams as listTeamRows,
+  resolveTeamByIdOrSlug,
+} from "../db/queries/teams.js";
 import { kbList, kbRead } from "../kb.js";
 import { getProvider, listModels, listProviders } from "../providers.js";
 import { projectFromRow, resolveProjectRow } from "../projects.js";
 import { buildSkillFileTree, loadSkills } from "../skills.js";
+import { teamFromRow } from "../teams.js";
 
-const RESOURCE_TYPES = new Set(["task", "project", "agent", "skill", "knowledge", "provider"]);
+const RESOURCE_TYPES = new Set(["task", "project", "agent", "team", "skill", "knowledge", "provider"]);
 const MAX_QUERY_KEYS = 12;
 
 function oneLine(value, max = 240) {
@@ -239,6 +247,53 @@ function appendAgentContext(lines, { db, context }) {
   lines.push("Tool hint: use worklab_agent_runs for recent run inspection.");
 }
 
+function appendTeamContext(lines, { db, context }) {
+  const team = context.resource_id ? teamFromRow(resolveTeamByIdOrSlug(db, context.resource_id)) : null;
+  if (!team) {
+    lines.push(`Team: ${context.resource_id ? `not found for ${context.resource_id}` : "no persisted team is open"}.`);
+    return;
+  }
+  lines.push(`Team: ${team.name} (${team.slug || team.id})`);
+  lines.push(`Team id: ${team.id}`);
+  lines.push(`Status: ${team.status || "active"}`);
+  lines.push(`Lead agent: ${team.lead_agent || "none"}`);
+  lines.push(`Schedule: ${team.schedule_enabled ? `${team.schedule_interval_minutes || "default"} minutes` : "manual"}`);
+  lines.push(`Budgets: daily=${team.daily_budget_usd ?? "none"}, per_run=${team.per_run_budget_usd ?? "none"}`);
+  if (team.goal) lines.push(`Goal excerpt:\n${block(team.goal, 1000)}`);
+  if (team.description) lines.push(`Description: ${oneLine(team.description, 300)}`);
+
+  const members = listTeamMembers(db, team.id);
+  if (members.length) {
+    lines.push("Team members:");
+    for (const member of members.slice(0, 10)) {
+      lines.push(`- ${member.display_name || member.agent_name} (${member.agent_name}) enabled=${member.enabled ? "yes" : "no"}${member.role_description ? ` role=${oneLine(member.role_description, 120)}` : ""}`);
+    }
+  } else {
+    lines.push("Team members: none.");
+  }
+
+  const projects = listProjectsForTeam(db, team.id);
+  if (projects.length) {
+    lines.push("Assigned projects:");
+    for (const project of projects.slice(0, 10)) {
+      lines.push(`- ${project.name} (${project.slug || project.id}) archived=${project.archived ? "yes" : "no"}`);
+    }
+  } else {
+    lines.push("Assigned projects: none.");
+  }
+
+  const cycles = listRecentLeadCycles(db, team.id, 5);
+  if (cycles.length) {
+    lines.push("Recent lead cycles:");
+    for (const cycle of cycles) {
+      lines.push(`- ${cycle.id}: project=${cycle.project_id || "none"} task=${cycle.task_id || "none"} ${cycle.status}/${cycle.process_status} started=${formatTime(cycle.started_at) || "unknown"}${cycle.summary ? ` summary=${oneLine(cycle.summary, 240)}` : ""}`);
+    }
+  } else {
+    lines.push("Recent lead cycles: none.");
+  }
+  lines.push("Tool hint: use worklab_team_get for roster, project goals, and recent cycles.");
+}
+
 function appendSkillContext(lines, { dataDir, context }) {
   if (!dataDir || !context.resource_id) {
     lines.push("Skill: no persisted skill is open.");
@@ -320,6 +375,14 @@ function appendListOverview(lines, { db, dataDir, context }) {
   } else if (context.view === "agent_list" || context.route === "agents") {
     const counts = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) AS enabled FROM agents").get();
     lines.push(`Agents: total=${counts?.total || 0}, enabled=${counts?.enabled || 0}`);
+  } else if (context.view === "team_list" || context.route === "teams") {
+    const teams = listTeamRows(db, { limit: 8 });
+    const counts = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active FROM teams").get();
+    lines.push(`Teams: total=${counts?.total || 0}, active=${counts?.active || 0}`);
+    for (const row of teams) {
+      const team = teamFromRow(row);
+      lines.push(`- ${team.name} (${team.slug || team.id}) status=${team.status} lead=${team.lead_agent || "none"} projects=${team.project_count ?? 0} members=${team.member_count ?? 0}`);
+    }
   } else if (context.view === "skill_list" || context.route === "skills") {
     const skills = dataDir ? loadSkills(join(dataDir, "skills")) : [];
     lines.push(`Skills: total=${skills.length}, enabled=${skills.filter((skill) => skill.enabled).length}`);
@@ -370,6 +433,7 @@ export function renderAssistantViewContext({ db, dataDir, config, viewContext } 
     if (context.resource_type === "task") appendTaskContext(lines, { db, dataDir, config, context });
     else if (context.resource_type === "project") appendProjectContext(lines, { db, dataDir, config, context });
     else if (context.resource_type === "agent") appendAgentContext(lines, { db, dataDir, config, context });
+    else if (context.resource_type === "team") appendTeamContext(lines, { db, dataDir, config, context });
     else if (context.resource_type === "skill") appendSkillContext(lines, { db, dataDir, config, context });
     else if (context.resource_type === "knowledge") appendKnowledgeContext(lines, { db, dataDir, config, context });
     else if (context.resource_type === "provider") appendProviderContext(lines, { db, dataDir, config, context });
