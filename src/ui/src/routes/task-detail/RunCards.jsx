@@ -5,7 +5,7 @@ import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
-import { SectionGroup } from "../../components/layout/index.js";
+import { SectionGroup, Toolbar } from "../../components/layout/index.js";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../../lib/runFormatting.js";
@@ -474,11 +474,11 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
         </div>
       </summary>
       {run.raw_output_path && (
-        <div class="run-card-actions">
+        <Toolbar class="run-card-actions">
           <a href={`/api/runs/${encodeURIComponent(run.id)}/raw-log`} target="_blank" rel="noreferrer">
             Raw log
           </a>
-        </div>
+        </Toolbar>
       )}
       <RunCancellationNote run={run} />
       <RunWorktreeNote run={run} />

@@ -382,6 +382,13 @@ describe("design system stylesheet", () => {
     expect(readFileSync(taskDetailPath, "utf8")).not.toMatch(/<div[^>]+class="dependency-group"/);
   });
 
+  it("builds run card action rows on the shared Toolbar layout", () => {
+    const runCardsSource = readFileSync(runCardsPath, "utf8");
+    expect(runCardsSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(runCardsSource).toMatch(/<Toolbar\s+class="run-card-actions"/);
+    expect(runCardsSource).not.toMatch(/<div\s+class="run-card-actions"/);
+  });
+
   it("bounds shared component text surfaces", () => {
     const css = readFileSync(stylesPath, "utf8");
     for (const selector of [
