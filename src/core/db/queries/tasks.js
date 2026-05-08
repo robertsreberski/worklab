@@ -68,6 +68,36 @@ export function getTaskKeyById(db, id) {
   return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id)?.task_key || null;
 }
 
+export function getTaskByKey(db, taskKey) {
+  return db.prepare("SELECT * FROM tasks WHERE task_key = ?").get(taskKey);
+}
+
+export function listTasksByTitlePrefix(db, query, limit) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const escaped = q.replace(/[%_]/g, "\\$&");
+  const like = `${escaped}%`;
+  const contains = `%${escaped}%`;
+  // Surface task_key matches first so typing `T-42` still resolves a
+  // task referenced by its key. Synthetic team-root tasks are hidden.
+  return db.prepare(`
+    SELECT id, task_key, title, stage, project_id
+    FROM tasks
+    WHERE is_team_root = 0
+      AND (
+        task_key LIKE ? ESCAPE '\\'
+        OR title LIKE ? ESCAPE '\\'
+      )
+    ORDER BY
+      CASE WHEN task_key = ? THEN 0
+           WHEN task_key LIKE ? ESCAPE '\\' THEN 1
+           WHEN title LIKE ? ESCAPE '\\' THEN 2
+           ELSE 3 END,
+      updated_at DESC
+    LIMIT ?
+  `).all(contains, contains, q, like, like, limit);
+}
+
 export function getTaskKeyRow(db, id) {
   return db.prepare("SELECT task_key FROM tasks WHERE id = ?").get(id);
 }

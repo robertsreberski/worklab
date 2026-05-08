@@ -28,6 +28,26 @@ export function listTeams(db, { filters = [], params = [], limit = 200 } = {}) {
   `).all(...params, limit);
 }
 
+export function listTeamsByNamePrefix(db, query, limit) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const like = `${q.replace(/[%_]/g, "\\$&")}%`;
+  const contains = `%${q.replace(/[%_]/g, "\\$&")}%`;
+  return db.prepare(`
+    SELECT id, slug, name, description, status
+    FROM teams
+    WHERE status <> 'archived'
+      AND (name LIKE ? ESCAPE '\\' OR slug LIKE ? ESCAPE '\\')
+    ORDER BY
+      CASE WHEN slug = ? THEN 0
+           WHEN slug LIKE ? ESCAPE '\\' THEN 1
+           WHEN name LIKE ? ESCAPE '\\' THEN 2
+           ELSE 3 END,
+      updated_at DESC
+    LIMIT ?
+  `).all(contains, contains, q, like, like, limit);
+}
+
 export function insertTeam(db, {
   id,
   slug,
