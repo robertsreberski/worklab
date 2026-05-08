@@ -360,6 +360,21 @@ describe("design system stylesheet", () => {
     expect(projectsSource).not.toMatch(/<div\s+class="project-goal-summary-head"/);
   });
 
+  it("builds goal detail and team goal dashboards on shared layout primitives", () => {
+    const goalsSource = readFileSync(goalsPath, "utf8");
+    const teamsSource = readFileSync(teamsPath, "utf8");
+    expect(goalsSource).toMatch(/import\s+\{[^}]*DetailHead[^}]*SectionStack[^}]*Toolbar[^}]*\}\s+from/);
+    expect(goalsSource).toMatch(/<SectionStack\s+class="goal-detail-grid"/);
+    expect(goalsSource).toMatch(/<SectionStack\s+class="goal-editor"/);
+    expect(goalsSource).toMatch(/<Toolbar\s+class="goal-link-list"/);
+    expect(goalsSource).not.toMatch(/<div\s+class="goal-detail-grid"/);
+    expect(goalsSource).not.toMatch(/<div\s+class="goal-editor"/);
+    expect(goalsSource).not.toMatch(/<div\s+class="goal-link-list"/);
+    expect(teamsSource).toMatch(/import\s+\{[^}]*PanelGrid[^}]*\}\s+from/);
+    expect(teamsSource).toMatch(/<PanelGrid\s+class="team-goal-grid"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="team-goal-grid"/);
+  });
+
   it("builds project task heads on the shared InlineHead layout", () => {
     const projectsSource = readFileSync(projectsPath, "utf8");
     expect(projectsSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
@@ -629,7 +644,7 @@ describe("design system stylesheet", () => {
     const css = readFileSync(stylesPath, "utf8");
     for (const selector of [
       ".run-input-preview-meta",
-      ".team-goal-grid",
+      ".ds-panel-grid.team-goal-grid",
       ".summary-tiles",
       ".activity-cost-chart",
       ".provider-model-pricing-grid",

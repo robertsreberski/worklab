@@ -27,7 +27,7 @@ import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
-import { DetailHead, InlineHead, SectionGroup, Toolbar } from "../components/layout/index.js";
+import { DetailHead, InlineHead, PanelGrid, SectionGroup, Toolbar } from "../components/layout/index.js";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -264,7 +264,7 @@ function TeamGoalsDashboard({ goals = [], onRunGoal, onGoalAction }) {
             label={group.label}
             count={group.items.length}
           >
-            <div class="team-goal-grid">
+            <PanelGrid class="team-goal-grid">
               {group.items.map((goal) => (
                 <TeamGoalCard
                   key={`${goal.team_id}:${goal.project_id}`}
@@ -274,7 +274,7 @@ function TeamGoalsDashboard({ goals = [], onRunGoal, onGoalAction }) {
                   onAction={onGoalAction}
                 />
               ))}
-            </div>
+            </PanelGrid>
           </SectionGroup>
         ))
       ) : (

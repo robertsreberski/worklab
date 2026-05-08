@@ -12,7 +12,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { DetailHead } from "../components/layout/index.js";
+import { DetailHead, SectionStack, Toolbar } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
@@ -292,7 +292,7 @@ function GoalDetail({ goal, onChanged }) {
         actions={detailActions}
       />
       <div class="pane-detail-body entity-detail-body goal-detail-body">
-        <div class="goal-detail-grid">
+        <SectionStack class="goal-detail-grid">
           <Card title="Goal state">
             <div class="goal-state-card">
               <Chip variant={goalStatusVariant(goal)}>{goalStatusLabel(goal)}</Chip>
@@ -303,11 +303,11 @@ function GoalDetail({ goal, onChanged }) {
             <GoalContractDetails goal={goal} />
           </Card>
           <Card title="Links">
-            <div class="goal-link-list">
+            <Toolbar class="goal-link-list" align="start">
               <a href={`#/projects/${encodeURIComponent(goal.project?.slug || goal.project_id)}`}>Project</a>
               <a href={`#/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
               {goal.root_task_id && <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>}
-            </div>
+            </Toolbar>
           </Card>
           <Card title="Latest lead cycle">
             {latest ? (
@@ -320,7 +320,7 @@ function GoalDetail({ goal, onChanged }) {
               <p class="muted">No lead-cycle runs yet.</p>
             )}
           </Card>
-        </div>
+        </SectionStack>
       </div>
     </>
   );
@@ -421,7 +421,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
         actions={editorActions}
       />
       <div class="pane-detail-body entity-detail-body goal-edit-body">
-        <div class="goal-editor">
+        <SectionStack class="goal-editor">
           {error && <p class="error">{error}</p>}
           <FormSection kicker="Assignment" title="Assignment">
             <FormGrid columns={2}>
@@ -463,7 +463,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
               </FormField>
             </FormGrid>
           </FormSection>
-        </div>
+        </SectionStack>
       </div>
     </>
   );
