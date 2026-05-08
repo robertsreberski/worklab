@@ -1329,6 +1329,21 @@ describe("POST /api/tasks/:id/subtasks", () => {
     expect(parentRow.stage_reason).toBe("required_child_blocked");
     expect(JSON.parse(parentRow.blocking_issues_json)).toEqual(["Required child blocked: Child"]);
   });
+
+  it("human finishing a formerly blocked required child clears the stale parent blocker", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task: parent } } = await agent.post("/api/tasks").send({ title: "Parent", stage: "execute" }).expect(201);
+    const { body: { task: child } } = await agent.post(`/api/tasks/${parent.id}/subtasks`).send({ title: "Child" }).expect(201);
+
+    await agent.patch(`/api/tasks/${child.id}`).send({ stage: "blocked" }).expect(200);
+    await agent.patch(`/api/tasks/${child.id}`).send({ stage: "done" }).expect(200);
+
+    const parentRow = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent.id);
+    expect(parentRow.stage).toBe("execute");
+    expect(parentRow.error_text).toBeNull();
+    expect(parentRow.stage_reason).toBe("required children completed");
+    expect(JSON.parse(parentRow.blocking_issues_json)).toEqual([]);
+  });
 });
 
 describe("DELETE /api/tasks/:id", () => {

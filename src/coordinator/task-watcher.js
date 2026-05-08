@@ -8,7 +8,10 @@ import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
 import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result/contract.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
-import { resumeWaitingParents } from "../core/task-joins.js";
+import {
+  reconcileRequiredChildBlockedParents,
+  resumeWaitingParents,
+} from "../core/task-joins.js";
 import { nextTaskKey, resolveTaskId } from "../core/task-keys.js";
 import { readSettings } from "../core/settings.js";
 import { recordRunResultLearning } from "../core/agent-learning.js";
@@ -209,6 +212,32 @@ export function createTaskWatcher({
     applyTx(taskId, sideEffects, currentStage, newStage, options);
     broker.broadcast("global", { type: "task_updated", id: taskId });
   }
+
+  function reconcileRequiredChildBlocksAtBoot() {
+    const reconciled = reconcileRequiredChildBlockedParents({
+      db,
+      applySideEffects,
+      onParentReady: (parentId) => {
+        scheduleAutoStart(parentId, (err) => {
+          logger?.warn?.({ err, parentTaskId: parentId }, "parent resume run failed");
+          annotateTaskFailure(parentId, {
+            message: `Parent resume failed: ${err.message}`,
+            failureKind: "spawn",
+            retryStage: "execute",
+          });
+        });
+      },
+    });
+    if (reconciled.length > 0) {
+      logger?.info?.(
+        { count: reconciled.length },
+        "reconciled required-child-blocked parents at boot",
+      );
+    }
+    return reconciled;
+  }
+
+  reconcileRequiredChildBlocksAtBoot();
 
   function annotateTaskFailure(taskId, { message, failureKind = "spawn", retryStage }) {
     const task = getTaskById(db, taskId);

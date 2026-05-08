@@ -34,7 +34,10 @@ export {
   taskStage,
 } from "./task-side-effects.js";
 
-export { resumeWaitingParents } from "./task-joins.js";
+export {
+  reconcileRequiredChildBlockedParents,
+  resumeWaitingParents,
+} from "./task-joins.js";
 export { delegationDepth } from "./delegation.js";
 
 export {

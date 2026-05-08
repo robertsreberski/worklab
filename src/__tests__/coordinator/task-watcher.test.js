@@ -41,6 +41,30 @@ function seedTask(db, { owner = null, planner = null, reviewer = null, stage = "
   return id;
 }
 
+function seedSubtask(db, parentId, { stage = "done", title = "child", required = 1 } = {}) {
+  const id = newTaskId();
+  const now = Date.now();
+  db.prepare(
+    `INSERT INTO tasks
+      (id, root_task_id, parent_task_id, title, stage, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  ).run(id, parentId, parentId, title, stage, now, now);
+  db.prepare(
+    `INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_at)
+     VALUES (?, ?, 'subtask', ?, ?)`,
+  ).run(parentId, id, required, now);
+  return id;
+}
+
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error("timed out waiting for condition");
+}
+
 function seedProject(db, patch = {}) {
   const now = Date.now();
   const project = {
@@ -192,6 +216,40 @@ function upsertRunEvents(db, runId, events) {
 }
 
 describe("task-watcher", () => {
+  it("repairs stale required-child blockers at boot and auto-starts runnable parents", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const parent = seedTask(db, {
+      owner: "coder",
+      stage: "blocked",
+      runPolicy: "auto_plan_execute",
+    });
+    db.prepare(`
+      UPDATE tasks
+      SET stage_reason = 'required_child_blocked',
+          error_text = 'Required child blocked: stale child',
+          blocking_issues_json = '["Required child blocked: stale child"]'
+      WHERE id = ?
+    `).run(parent);
+    seedSubtask(db, parent, { stage: "done" });
+
+    const spawn = vi.fn(() => ({
+      pid: 12345,
+      done: new Promise(() => {}),
+      cancel: vi.fn(),
+    }));
+    createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    await waitFor(() => spawn.mock.calls.length === 1);
+    const row = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent);
+    expect(row).toMatchObject({
+      stage: "execute",
+      error_text: null,
+      blocking_issues_json: "[]",
+    });
+    expect(row.stage_reason).not.toBe("required_child_blocked");
+  });
+
   it("handleRunRequested on execute task with owner and reviewer spawns work, then waits at review", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
