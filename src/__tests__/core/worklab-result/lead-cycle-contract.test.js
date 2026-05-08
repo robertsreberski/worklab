@@ -13,6 +13,8 @@ const baseResult = {
   goal_status: "in_progress",
   goal_status_reason: "",
   summary: "Made progress on infra.",
+  checkpoint_note: "Checked current work and assigned the next task.",
+  validation_summary: "No validation run was needed this cycle.",
   task_creations: [],
   advisory_notes: [],
   next_review_hint: null,
@@ -37,6 +39,8 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.additionalProperties).toBe(false);
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("goal_status");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("summary");
+    expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("checkpoint_note");
+    expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("validation_summary");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.schema.enum).toEqual([LEAD_CYCLE_SCHEMA]);
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.goal_status.enum).toEqual(["in_progress", "complete", "blocked"]);
   });
@@ -54,8 +58,19 @@ describe("worklab.lead_cycle.v1 contract", () => {
     const result = normalizeLeadCycleResult({ ...baseResult, summary: "Hello" });
     expect(result.ok).toBe(true);
     expect(result.result.goal_status).toBe("in_progress");
+    expect(result.result.checkpoint_note).toBe("Checked current work and assigned the next task.");
+    expect(result.result.validation_summary).toBe("No validation run was needed this cycle.");
     expect(result.result.task_creations).toEqual([]);
     expect(result.result.task_assignments).toEqual([]);
+  });
+
+  it("defaults checkpoint and validation summaries for legacy lead-cycle results", () => {
+    const { checkpoint_note, validation_summary, ...legacy } = baseResult;
+    const result = normalizeLeadCycleResult({ ...legacy, summary: "Legacy cycle" });
+
+    expect(result.ok).toBe(true);
+    expect(result.result.checkpoint_note).toBe("Legacy cycle");
+    expect(result.result.validation_summary).toBe("");
   });
 
   it("rejects missing schema marker", () => {

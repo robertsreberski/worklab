@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 34;
+export const SCHEMA_VERSION = 35;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -85,6 +85,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   is_team_root INTEGER NOT NULL DEFAULT 0,
   goal_status TEXT,
   goal_status_reason TEXT,
+  goal_contract_json TEXT NOT NULL DEFAULT '{}',
   last_lead_at INTEGER,
   root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
   parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,

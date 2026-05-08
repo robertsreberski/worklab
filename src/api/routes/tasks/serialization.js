@@ -41,6 +41,16 @@ import {
 import { listProjectsByIds } from "../../../core/db/queries/projects.js";
 import { DEFAULT_RUN_POLICY } from "./constants.js";
 
+function safeJsonObject(value) {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 export function rowToTask(row) {
   if (!row) return null;
   const stage = row.stage || "plan";
@@ -55,6 +65,7 @@ export function rowToTask(row) {
     is_team_root: !!row.is_team_root,
     goal_status: row.goal_status || null,
     goal_status_reason: row.goal_status_reason || null,
+    goal_contract: safeJsonObject(row.goal_contract_json),
     last_lead_at: row.last_lead_at || null,
     root_task_id: row.root_task_id || row.id,
     parent_task_id: row.parent_task_id || null,

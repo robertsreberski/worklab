@@ -120,6 +120,8 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `- goal_status: "in_progress" | "complete" | "blocked"`,
     `- goal_status_reason: short string (required when not in_progress)`,
     `- summary: short narrative of what you decided this cycle`,
+    `- checkpoint_note: compact progress note for the team-project goal dashboard`,
+    `- validation_summary: what evidence, commands, or artifacts were checked this cycle (empty string if none)`,
     `- task_creations: array of { title, instructions, suggested_agent, depends_on, acceptance_criteria, expected_artifact, priority ("high"|"normal"|"low") }`,
     `- task_assignments: array of { target_task_id, owner_agent, rationale }`,
     `- advisory_notes: array of { target_task_id, kind ("warning"|"suggestion"|"blocker_observation"), content }`,

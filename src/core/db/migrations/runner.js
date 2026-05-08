@@ -246,7 +246,36 @@ function ensureCurrentTaskRuntimeColumns(db) {
   addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "goal_status", "goal_status TEXT");
   addColumnIfMissing(db, "tasks", "goal_status_reason", "goal_status_reason TEXT");
+  addColumnIfMissing(db, "tasks", "goal_contract_json", "goal_contract_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "tasks", "last_lead_at", "last_lead_at INTEGER");
+}
+
+function backfillTeamGoalContracts(db) {
+  if (!tableExists(db, "tasks") || !tableExists(db, "teams") || !hasColumn(db, "tasks", "goal_contract_json")) return;
+  const rows = db.prepare(`
+    SELECT t.id, t.goal_contract_json, tm.goal
+    FROM tasks t
+    JOIN teams tm ON tm.id = t.team_id
+    WHERE COALESCE(t.is_team_root, 0) = 1
+      AND (t.goal_contract_json IS NULL OR t.goal_contract_json = '' OR t.goal_contract_json = '{}')
+  `).all();
+  if (!rows.length) return;
+  const update = db.prepare("UPDATE tasks SET goal_contract_json = ? WHERE id = ?");
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      update.run(JSON.stringify({
+        objective: String(row.goal || "").trim(),
+        stopping_condition: "",
+        validation_loop: "",
+        constraints: [],
+        checkpoint_notes: [],
+        paused_at: null,
+        cleared_at: null,
+        updated_at: null,
+      }), row.id);
+    }
+  });
+  tx();
 }
 
 function normalizeWorkflowState(db) {
@@ -682,6 +711,7 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "goal_status", "goal_status TEXT");
   addColumnIfMissing(db, "tasks", "goal_status_reason", "goal_status_reason TEXT");
+  addColumnIfMissing(db, "tasks", "goal_contract_json", "goal_contract_json TEXT NOT NULL DEFAULT '{}'");
   addColumnIfMissing(db, "tasks", "last_lead_at", "last_lead_at INTEGER");
   addColumnIfMissing(db, "task_runs", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
@@ -805,6 +835,7 @@ export function runMigrations(db) {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   ensureCurrentTaskRuntimeColumns(db);
+  backfillTeamGoalContracts(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

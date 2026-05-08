@@ -10,6 +10,7 @@ import {
   getTeamRosterAgentNames,
   hasInFlightLeadCycle as hasInFlightLeadCycleRow,
   insertTeam,
+  listRecentLeadCycles,
   listTeamMembers,
   listProjectsForTeam,
   listTeams as listTeamsRow,
@@ -22,6 +23,68 @@ import { newTaskId, newTeamId } from "./ids.js";
 import { projectRouteError } from "./projects.js";
 
 export const TEAM_STATUSES = ["active", "archived"];
+
+export function safeParseTeamGoalContract(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringList(value) {
+  if (value == null || value === "") return [];
+  const source = Array.isArray(value) ? value : [value];
+  return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
+}
+
+function nullableTimestamp(value) {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function normalizeCheckpointNotes(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      return {
+        at: nullableTimestamp(item.at),
+        run_id: String(item.run_id || "").trim() || null,
+        goal_status: String(item.goal_status || "").trim() || null,
+        checkpoint_note: String(item.checkpoint_note || item.summary || "").trim(),
+        validation_summary: String(item.validation_summary || "").trim(),
+      };
+    })
+    .filter((item) => item && (item.checkpoint_note || item.validation_summary || item.goal_status || item.run_id));
+}
+
+export function normalizeTeamGoalContract(value, { teamGoal = "", now = null } = {}) {
+  const parsed = safeParseTeamGoalContract(value);
+  const objective = "objective" in parsed ? parsed.objective : teamGoal;
+  return {
+    objective: String(objective || "").trim(),
+    stopping_condition: String(parsed.stopping_condition || "").trim(),
+    validation_loop: String(parsed.validation_loop || "").trim(),
+    constraints: stringList(parsed.constraints),
+    checkpoint_notes: normalizeCheckpointNotes(parsed.checkpoint_notes).slice(-20),
+    paused_at: nullableTimestamp(parsed.paused_at),
+    cleared_at: nullableTimestamp(parsed.cleared_at),
+    updated_at: nullableTimestamp(parsed.updated_at) || nullableTimestamp(now),
+  };
+}
+
+export function serializeTeamGoalContract(contract) {
+  return JSON.stringify(normalizeTeamGoalContract(contract));
+}
+
+export function initialTeamGoalContract(team, now = Date.now()) {
+  return normalizeTeamGoalContract({}, { teamGoal: team?.goal || "", now });
+}
 
 export function teamFromRow(row) {
   if (!row) return null;
@@ -88,6 +151,160 @@ export function loadTeamRoster(db, teamId) {
     lead_agent: team.lead_agent || null,
     member_agents: getTeamRosterAgentNames(db, team.id),
   };
+}
+
+function latestLeadCycleForProject(db, { teamId, projectId }) {
+  if (!teamId || !projectId) return null;
+  const row = listRecentLeadCycles(db, teamId, 50).find((cycle) => cycle.project_id === projectId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    task_id: row.task_id,
+    project_id: row.project_id,
+    process_status: row.process_status,
+    status: row.status,
+    failure_kind: row.failure_kind || null,
+    started_at: row.started_at,
+    ended_at: row.ended_at,
+    summary: row.summary || null,
+    cost_usd: row.cost_usd ?? null,
+  };
+}
+
+export function teamProjectGoalFromRows({ team, project, root, latestCycle = null } = {}) {
+  if (!team || !project || !root) return null;
+  return {
+    team_id: team.id,
+    team_slug: team.slug,
+    team_name: team.name,
+    project_id: project.id,
+    root_task_id: root.id,
+    task_id: root.id,
+    goal_status: root.goal_status || "in_progress",
+    goal_status_reason: root.goal_status_reason || null,
+    last_lead_at: root.last_lead_at || null,
+    contract: normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" }),
+    project: {
+      id: project.id,
+      slug: project.slug,
+      name: project.name,
+      archived: !!project.archived,
+    },
+    latest_cycle: latestCycle,
+  };
+}
+
+export function getTeamProjectGoal(db, { teamId, projectId, now = Date.now(), ensureRoot = true } = {}) {
+  if (!teamId || !projectId) return null;
+  const team = getTeamById(db, teamId);
+  const project = getProjectById(db, projectId);
+  if (!team || !project || project.team_id !== teamId) return null;
+  const root = ensureRoot
+    ? ensureTeamRootTask(db, { teamId, projectId, now })
+    : getTeamRootTask(db, { teamId, projectId });
+  if (!root) return null;
+  return teamProjectGoalFromRows({
+    team,
+    project,
+    root,
+    latestCycle: latestLeadCycleForProject(db, { teamId, projectId }),
+  });
+}
+
+export function listTeamProjectGoals(db, teamId, { includeArchived = true, now = Date.now() } = {}) {
+  const team = getTeamById(db, teamId);
+  if (!team) return [];
+  return listProjectsForTeam(db, teamId)
+    .filter((project) => includeArchived || !project.archived)
+    .map((project) => {
+      const root = ensureTeamRootTask(db, { teamId, projectId: project.id, now });
+      return teamProjectGoalFromRows({
+        team,
+        project,
+        root,
+        latestCycle: latestLeadCycleForProject(db, { teamId, projectId: project.id }),
+      });
+    })
+    .filter(Boolean);
+}
+
+export function updateTeamProjectGoal(db, {
+  teamId,
+  projectId,
+  patch = {},
+  action = null,
+  now = Date.now(),
+} = {}) {
+  const resolvedProject = listProjectsForTeam(db, teamId).find((project) => project.id === projectId || project.slug === projectId);
+  const current = getTeamProjectGoal(db, { teamId, projectId: resolvedProject?.id || projectId, now });
+  if (!current) return { ok: false, error: "team/project goal not found" };
+  let contract = { ...current.contract };
+  if (patch && typeof patch === "object" && !Array.isArray(patch)) {
+    if ("objective" in patch) contract.objective = String(patch.objective || "").trim();
+    if ("stopping_condition" in patch) contract.stopping_condition = String(patch.stopping_condition || "").trim();
+    if ("validation_loop" in patch) contract.validation_loop = String(patch.validation_loop || "").trim();
+    if ("constraints" in patch) contract.constraints = stringList(patch.constraints);
+  }
+  if (action === "pause") {
+    contract.paused_at = now;
+    contract.cleared_at = null;
+  } else if (action === "resume") {
+    contract.paused_at = null;
+  } else if (action === "clear") {
+    contract.paused_at = null;
+    contract.cleared_at = now;
+  } else if (action && action !== "update") {
+    return { ok: false, error: `unsupported goal action: ${action}` };
+  }
+  contract.updated_at = now;
+  db.prepare("UPDATE tasks SET goal_contract_json = ?, updated_at = ? WHERE id = ?")
+    .run(serializeTeamGoalContract(contract), now, current.root_task_id);
+  return {
+    ok: true,
+    goal: getTeamProjectGoal(db, { teamId, projectId, now, ensureRoot: false }),
+  };
+}
+
+export function appendTeamGoalCheckpoint(db, {
+  rootTaskId,
+  runId = null,
+  goalStatus = null,
+  checkpointNote = "",
+  validationSummary = "",
+  now = Date.now(),
+} = {}) {
+  if (!rootTaskId) return null;
+  const row = db.prepare("SELECT goal_contract_json FROM tasks WHERE id = ?").get(rootTaskId);
+  if (!row) return null;
+  const contract = normalizeTeamGoalContract(row.goal_contract_json);
+  const note = {
+    at: now,
+    run_id: runId || null,
+    goal_status: goalStatus || null,
+    checkpoint_note: String(checkpointNote || "").trim(),
+    validation_summary: String(validationSummary || "").trim(),
+  };
+  if (note.checkpoint_note || note.validation_summary || note.goal_status || note.run_id) {
+    contract.checkpoint_notes = [...contract.checkpoint_notes, note].slice(-20);
+  }
+  contract.updated_at = now;
+  db.prepare("UPDATE tasks SET goal_contract_json = ?, updated_at = ? WHERE id = ?")
+    .run(serializeTeamGoalContract(contract), now, rootTaskId);
+  return contract;
+}
+
+export function leadCycleBlockedByGoal(db, { teamId, projectId, reason = "manual" } = {}) {
+  if (!teamId || !projectId || reason === "manual") return null;
+  const root = getTeamRootTask(db, { teamId, projectId });
+  if (!root) return null;
+  const contract = normalizeTeamGoalContract(root.goal_contract_json);
+  if (contract.paused_at) {
+    return { skipped: "goal_paused", error: "team-project goal is paused" };
+  }
+  if ((root.goal_status || "in_progress") === "complete") {
+    return { skipped: "goal_complete", error: "team-project goal is complete" };
+  }
+  return null;
 }
 
 // Team that "owns" a task: explicit task.team_id wins, otherwise inherit from
@@ -164,9 +381,13 @@ export function ensureTeamRootTask(db, { teamId, projectId, now = Date.now() } =
   db.prepare(`
     INSERT INTO tasks (
       id, project_id, team_id, is_team_root, root_task_id, title, instructions,
-      stage, run_policy, owner_agent, goal_status, created_at, updated_at
-    ) VALUES (?, ?, ?, 1, ?, ?, ?, 'execute', 'manual', ?, 'in_progress', ?, ?)
-  `).run(id, projectId, teamId, id, title, instructions, team.lead_agent || null, now, now);
+      stage, run_policy, owner_agent, goal_status, goal_contract_json, created_at, updated_at
+    ) VALUES (?, ?, ?, 1, ?, ?, ?, 'execute', 'manual', ?, 'in_progress', ?, ?, ?)
+  `).run(
+    id, projectId, teamId, id, title, instructions, team.lead_agent || null,
+    serializeTeamGoalContract(initialTeamGoalContract(team, now)),
+    now, now,
+  );
   return getTeamRootTask(db, { teamId, projectId });
 }
 

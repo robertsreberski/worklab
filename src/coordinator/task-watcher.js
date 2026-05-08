@@ -65,7 +65,7 @@ import {
   looksLikePlanBody,
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
-import { effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle } from "../core/teams.js";
+import { appendTeamGoalCheckpoint, effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle, leadCycleBlockedByGoal } from "../core/teams.js";
 import { getTeamById, getTeamRosterAgentNames } from "../core/db/queries/teams.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
@@ -338,6 +338,8 @@ export function createTaskWatcher({
     if (team.status !== "active") return { ok: false, error: "team is archived" };
     const root = ensureTeamRootTask(db, { teamId, projectId, now: Date.now() });
     if (!root) return { ok: false, error: "could not resolve synthetic root task" };
+    const goalBlock = leadCycleBlockedByGoal(db, { teamId, projectId, reason });
+    if (goalBlock) return { ok: false, ...goalBlock };
     if (active.has(root.id)) return { ok: false, error: "lead cycle already running on this root" };
     const budget = checkBudget({ db, agentName: team.lead_agent, teamId });
     if (!budget.ok) return { ok: false, error: budget.message, scope: budget.scope };
@@ -1900,6 +1902,14 @@ export function createTaskWatcher({
     db.prepare(
       `UPDATE tasks SET goal_status = ?, goal_status_reason = ?, last_lead_at = ?, updated_at = ? WHERE id = ?`,
     ).run(goalStatus, goalReason, now, now, taskId);
+    appendTeamGoalCheckpoint(db, {
+      rootTaskId: taskId,
+      runId,
+      goalStatus,
+      checkpointNote: finalLead.checkpoint_note || finalLead.summary || "",
+      validationSummary: finalLead.validation_summary || "",
+      now,
+    });
     if (teamId) {
       try {
         db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(now, teamId);

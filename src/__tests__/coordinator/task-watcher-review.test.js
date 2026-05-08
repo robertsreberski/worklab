@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
+import { ensureTeamRootTask } from "../../core/teams.js";
 import { synthesizeWorklabResult } from "../../core/worklab-result/contract.js";
 
 function stubBroker() {
@@ -1120,6 +1121,32 @@ describe("task-watcher v2 workflow", () => {
       { title: "First child", team_id: teamId },
       { title: "Second child", team_id: teamId },
     ]);
+  });
+
+  it("skips automatic lead cycles when the team-project goal is complete or paused but allows manual runs", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const { spawn } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    const root = ensureTeamRootTask(db, { teamId, projectId, now: 1000 });
+
+    db.prepare("UPDATE tasks SET goal_status = 'complete', goal_status_reason = 'done' WHERE id = ?").run(root.id);
+    expect(watcher.spawnLeadCycle({ teamId, projectId, reason: "scheduled" })).toMatchObject({
+      ok: false,
+      skipped: "goal_complete",
+    });
+    expect(spawn).not.toHaveBeenCalled();
+
+    db.prepare("UPDATE tasks SET goal_status = 'in_progress', goal_contract_json = ? WHERE id = ?")
+      .run(JSON.stringify({ objective: "Keep moving", paused_at: 2000 }), root.id);
+    expect(watcher.spawnLeadCycle({ teamId, projectId, reason: "task_completed" })).toMatchObject({
+      ok: false,
+      skipped: "goal_paused",
+    });
+    expect(spawn).not.toHaveBeenCalled();
+
+    expect(watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" })).toMatchObject({ ok: true });
+    expect(spawn).toHaveBeenCalledTimes(1);
   });
 
   it("lead cycles assign ownerless team tasks and allow normal auto-start policy", async () => {

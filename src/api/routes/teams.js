@@ -8,7 +8,9 @@ import {
   projectRouteError,
   TEAM_STATUSES,
   ensureTeamRootTask,
+  listTeamProjectGoals,
   teamFromRow,
+  updateTeamProjectGoal,
   uniqueTeamSlug,
 } from "../../core/index.js";
 import {
@@ -268,6 +270,42 @@ export function registerTeamRoutes(app, { db, broker, watcher }) {
     }
   });
 
+  app.get("/api/teams/:id/goals", (req, res) => {
+    try {
+      const row = teamOr404(db, req.params.id);
+      const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
+      res.json({ goals: listTeamProjectGoals(db, row.id, { includeArchived, now: Date.now() }) });
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+  });
+
+  app.patch("/api/teams/:id/goals/:project_id", (req, res) => {
+    try {
+      const row = teamOr404(db, req.params.id);
+      const action = typeof req.body?.action === "string" ? req.body.action.trim() : null;
+      const out = updateTeamProjectGoal(db, {
+        teamId: row.id,
+        projectId: req.params.project_id,
+        patch: req.body || {},
+        action,
+        now: Date.now(),
+      });
+      if (!out.ok) {
+        return res.status(400).json({ error: { code: "validation", message: out.error || "goal update failed" } });
+      }
+      broker?.broadcast?.("global", {
+        type: "team_goal_updated",
+        team_id: row.id,
+        project_id: out.goal.project_id,
+        goal_status: out.goal.goal_status,
+      });
+      res.json({ goal: out.goal });
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
+  });
+
   app.get("/api/teams/:id", (req, res) => {
     try {
       const row = teamOr404(db, req.params.id);
@@ -275,7 +313,8 @@ export function registerTeamRoutes(app, { db, broker, watcher }) {
       const members = listTeamMembers(db, row.id).map(memberOut);
       const projects = listProjectsForTeam(db, row.id);
       const cycles = listRecentLeadCycles(db, row.id, 50).map(leadCycleOut);
-      res.json({ team, members, projects, recent_cycles: cycles });
+      const goals = listTeamProjectGoals(db, row.id, { includeArchived: true, now: Date.now() });
+      res.json({ team, members, projects, recent_cycles: cycles, goals });
     } catch (error) {
       return sendRouteError(res, error);
     }

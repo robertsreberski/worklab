@@ -53,6 +53,8 @@ export const leadCycleResultSchema = z.object({
   goal_status: z.enum(LEAD_GOAL_STATUSES),
   goal_status_reason: z.string().default(""),
   summary: z.string().trim().min(1),
+  checkpoint_note: z.string().default(""),
+  validation_summary: z.string().default(""),
   task_creations: z.array(leadTaskCreationSchema).default([]),
   task_assignments: z.array(leadTaskAssignmentSchema).default([]),
   advisory_notes: z.array(leadAdvisoryNoteSchema).default([]),
@@ -67,6 +69,8 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     "goal_status",
     "goal_status_reason",
     "summary",
+    "checkpoint_note",
+    "validation_summary",
     "task_creations",
     "task_assignments",
     "advisory_notes",
@@ -77,6 +81,8 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     goal_status: { type: "string", enum: LEAD_GOAL_STATUSES },
     goal_status_reason: { type: "string" },
     summary: { type: "string" },
+    checkpoint_note: { type: "string" },
+    validation_summary: { type: "string" },
     task_creations: {
       type: "array",
       items: {
@@ -168,7 +174,12 @@ export function normalizeLeadCycleResult(value, fallback = {}) {
       result: null,
     };
   }
-  return { ok: true, result: parsed.data, error: null };
+  const result = {
+    ...parsed.data,
+    checkpoint_note: parsed.data.checkpoint_note || parsed.data.summary || "",
+    validation_summary: parsed.data.validation_summary || "",
+  };
+  return { ok: true, result, error: null };
 }
 
 // Semantic checks beyond shape: roster membership, completion implies no new
