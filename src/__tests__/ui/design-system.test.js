@@ -262,6 +262,19 @@ describe("design system stylesheet", () => {
     expect(workflowCardsSource).not.toMatch(/<label[^>]+class="task-pending-radio"/);
   });
 
+  it("builds task workflow card action rows on the shared Toolbar layout", () => {
+    const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
+    expect(workflowCardsSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    for (const className of [
+      "task-pending-question-actions",
+      "task-automation-form-actions",
+      "task-automation-actions",
+    ]) {
+      expect(workflowCardsSource).toMatch(new RegExp(`<Toolbar\\s+class="${className}"`));
+      expect(workflowCardsSource).not.toMatch(new RegExp(`<div\\s+class="${className}"`));
+    }
+  });
+
   it("builds run input preview fields on the shared FormField component", () => {
     const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");
     expect(runInputPreviewSource).toMatch(/import\s+\{\s*FormField\s*\}/);

@@ -12,6 +12,7 @@ import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
+import { Toolbar } from "../../components/layout/index.js";
 import { api } from "../../lib/api.js";
 import { collapseDuplicateParagraphs } from "../../lib/commentFormatting.js";
 import { taskDisplayKey, taskRouteId } from "../../lib/display.js";
@@ -262,11 +263,11 @@ export function TaskPendingQuestionsCard({ task, onAnswered }) {
             </fieldset>
           );
         })}
-        <div class="task-pending-question-actions">
+        <Toolbar class="task-pending-question-actions">
           <Button type="submit" variant="primary" disabled={!complete || saving}>
             {saving ? "Submitting..." : "Submit answers"}
           </Button>
-        </div>
+        </Toolbar>
       </form>
     </Card>
   );
@@ -482,10 +483,10 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
             label="Enabled"
             disabled={saving}
           />
-          <div class="task-automation-form-actions">
+          <Toolbar class="task-automation-form-actions">
             <Button type="button" size="sm" variant="ghost" onClick={cancelEdit} disabled={saving}>Cancel</Button>
             <Button type="submit" size="sm" variant="primary" loading={saving}>{editingId === "new" ? "Create" : "Save"}</Button>
-          </div>
+          </Toolbar>
         </form>
       )}
       {loading ? (
@@ -509,7 +510,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
                   </span>
                   {latest?.reason && <span class="task-automation-reason">{latest.reason}</span>}
                 </div>
-                <div class="task-automation-actions">
+                <Toolbar class="task-automation-actions">
                   <Button size="sm" variant="ghost" iconLeft={<Icon name="play" size={12} />} onClick={() => runAutomation(automation)}>
                     Run
                   </Button>
@@ -519,7 +520,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
                   <Button size="sm" variant="ghost" iconLeft={<Icon name="trash" size={12} />} onClick={() => deleteAutomation(automation)}>
                     Delete
                   </Button>
-                </div>
+                </Toolbar>
               </div>
             );
           })}
