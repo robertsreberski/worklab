@@ -225,9 +225,9 @@ function ProjectTaskRow({ task, nested = false }) {
   return (
     <div class="project-task-row-block">
       {row}
-      <div class="project-task-child-list" aria-label={`Child tasks for ${task.title}`}>
+      <SectionStack class="project-task-child-list" aria-label={`Child tasks for ${task.title}`}>
         {children.map((child) => <ProjectTaskRow key={child.id} task={child} nested />)}
-      </div>
+      </SectionStack>
     </div>
   );
 }
@@ -288,7 +288,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
             <Icon name="alert-triangle" size={14} />
             <strong>{attentionCount} requiring attention</strong>
           </InlineHead>
-          <div class="project-task-attention-list">
+          <SectionStack class="project-task-attention-list">
             {progress.attention_tasks.slice(0, 4).map((task) => (
               <a key={task.id} href={`#/tasks/${taskRouteId(task)}`} class="project-task-attention-item">
                 <span class="pane-row-mono">{taskDisplayKey(task)}</span>
@@ -297,7 +297,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
               </a>
             ))}
             {attentionCount > 4 && <span class="project-task-attention-more">+{attentionCount - 4} more</span>}
-          </div>
+          </SectionStack>
         </div>
       )}
 
@@ -311,9 +311,9 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
             count={group.tasks.length}
           >
             {group.tasks.length ? (
-              <div class="project-task-group-list">
+              <SectionStack class="project-task-group-list">
                 {group.tasks.map((task) => <ProjectTaskRow key={task.id} task={task} />)}
-              </div>
+              </SectionStack>
             ) : (
               <div class="project-task-group-empty">No {group.label.toLowerCase()} tasks.</div>
             )}
@@ -776,7 +776,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                           label={group.label}
                           count={group.entries.length}
                         >
-                          <div class="project-knowledge-list">
+                          <SectionStack class="project-knowledge-list">
                             {group.entries.map((entry) => (
                               <a key={entry.slug} href={`#/knowledge/${encodeURIComponent(entry.slug)}`} class="project-knowledge-row">
                                 <span class="project-knowledge-title">{entry.title || entry.slug}</span>
@@ -787,7 +787,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                                 </span>
                               </a>
                             ))}
-                          </div>
+                          </SectionStack>
                         </SectionGroup>
                       ))}
                     </SectionStack>
@@ -799,7 +799,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                       label="Recent task outputs"
                       count={taskOutputs.length}
                     >
-                      <div class="project-output-list">
+                      <SectionStack class="project-output-list">
                         {taskOutputs.map((output) => (
                           <div key={`${output.task_id}:${output.run_id}`} class="project-output-row">
                             <a class="project-output-copy" href={`#/tasks/${taskRouteId({ id: output.task_id, task_key: output.task_key })}`}>
@@ -821,7 +821,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                             </Button>
                           </div>
                         ))}
-                      </div>
+                      </SectionStack>
                     </SectionGroup>
                   )}
                 </div>

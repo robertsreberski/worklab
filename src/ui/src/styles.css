@@ -8910,14 +8910,12 @@ button.settings-overview-card:focus-visible,
 .knowledge-read-usage-list li {
   align-items: flex-start;
 }
-.project-knowledge-list {
-  display: grid;
+.ds-section-stack.project-knowledge-list {
   gap: var(--sp-2);
 }
 .project-knowledge-workspace,
 .project-knowledge-group,
-.project-task-output-lane,
-.project-output-list {
+.project-task-output-lane {
   display: grid;
   min-width: 0;
 }
@@ -8962,7 +8960,7 @@ button.settings-overview-card:focus-visible,
   padding-top: var(--sp-2);
   border-top: 1px solid var(--border);
 }
-.project-output-list {
+.ds-section-stack.project-output-list {
   gap: var(--sp-2);
 }
 .project-output-row {
@@ -9090,8 +9088,7 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-2);
   color: var(--status-error);
 }
-.project-task-attention-list {
-  display: grid;
+.ds-section-stack.project-task-attention-list {
   gap: var(--sp-2);
 }
 .project-task-attention-item {
@@ -9116,8 +9113,8 @@ button.settings-overview-card:focus-visible,
 .project-task-group > .ds-section-group-head {
   font-weight: 500;
 }
-.project-task-group-list {
-  display: grid;
+.ds-section-stack.project-task-group-list {
+  gap: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -9152,8 +9149,8 @@ button.settings-overview-card:focus-visible,
 .project-task-row:hover {
   background: var(--surface-elevated);
 }
-.project-task-child-list {
-  display: grid;
+.ds-section-stack.project-task-child-list {
+  gap: 0;
   border-top: 1px solid var(--border);
   background: var(--surface-sunken);
 }
