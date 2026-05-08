@@ -11,6 +11,7 @@ function lazyNamed(loader, exportName) {
 const Activity = lazyNamed(() => import("./routes/Activity.jsx"), "Activity");
 const Agents = lazyNamed(() => import("./routes/Agents.jsx"), "Agents");
 const DesignSystem = lazyNamed(() => import("./routes/DesignSystem.jsx"), "DesignSystem");
+const Goals = lazyNamed(() => import("./routes/Goals.jsx"), "Goals");
 const Knowledge = lazyNamed(() => import("./routes/Knowledge.jsx"), "Knowledge");
 const Projects = lazyNamed(() => import("./routes/Projects.jsx"), "Projects");
 const Providers = lazyNamed(() => import("./routes/Providers.jsx"), "Providers");
@@ -80,6 +81,8 @@ export function App() {
     else body = <Commander query={query} />;
   } else if (route === "projects") {
     body = <Projects selectedId={rest[0] || null} mode={rest[1] || null} />;
+  } else if (route === "goals") {
+    body = <Goals selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "agents") {
     body = <Agents selectedName={rest[0] || null} />;
   } else if (route === "teams") {

@@ -5445,6 +5445,51 @@ html.assistant-resizing * {
 .team-list-status {
   color: var(--text-muted);
 }
+.goal-row-leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  color: var(--text-muted);
+}
+.goal-detail-body,
+.goal-edit-body {
+  padding: var(--sp-5);
+}
+.goal-detail-grid,
+.goal-editor {
+  display: grid;
+  gap: var(--sp-4);
+  max-width: 920px;
+}
+.goal-state-card,
+.goal-link-list,
+.goal-latest-cycle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.goal-link-list a,
+.goal-latest-cycle a {
+  font-size: var(--text-sm);
+}
+.goal-form-grid {
+  display: grid;
+  gap: var(--sp-3);
+}
+.goal-form-grid label {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
 .team-picker-icon {
   display: inline-flex;
   align-items: center;
