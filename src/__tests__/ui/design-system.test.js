@@ -7,6 +7,7 @@ const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
+const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
@@ -103,6 +104,12 @@ describe("design system stylesheet", () => {
     expect(labelRule).toMatch(/overflow:\s*hidden\b/);
     expect(labelRule).toMatch(/text-overflow:\s*ellipsis\b/);
     expect(labelRule).toMatch(/white-space:\s*nowrap\b/);
+  });
+
+  it("builds confirmation actions on the shared Button primitive", () => {
+    const confirmButtonSource = readFileSync(confirmButtonPath, "utf8");
+    expect(confirmButtonSource).toMatch(/import\s+\{\s*Button\s*\}/);
+    expect(confirmButtonSource).not.toMatch(/<button\b/);
   });
 
   it("bounds shared component text surfaces", () => {
