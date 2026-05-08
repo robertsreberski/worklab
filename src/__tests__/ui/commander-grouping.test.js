@@ -165,7 +165,7 @@ describe("commander task grouping", () => {
       showCompleted: false,
       groupFilter: "all",
       stageFilter: "all",
-    })).toEqual({ scope: "runtime", include_team_roots: "1", done_limit: "0" });
+    })).toEqual({ scope: "runtime", done_limit: "0" });
     expect(commanderTaskListCacheKey({
       showCompleted: false,
       groupFilter: "all",
@@ -176,7 +176,7 @@ describe("commander task grouping", () => {
       showCompleted: true,
       groupFilter: "all",
       stageFilter: "all",
-    })).toEqual({ scope: "runtime", include_team_roots: "1", done_limit: "200" });
+    })).toEqual({ scope: "runtime", done_limit: "200" });
     expect(commanderTaskListCacheKey({
       showCompleted: false,
       groupFilter: "completed",
