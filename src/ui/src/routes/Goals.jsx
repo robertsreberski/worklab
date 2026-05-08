@@ -10,7 +10,7 @@ import { AppShell, MobileTopbar } from "../components/AppShell.jsx";
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { DetailHead } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
@@ -643,7 +643,7 @@ export function Goals({ selectedId = null, mode = null }) {
           </ResourceListToolbar>
         )}
         listBody={(
-          <div class="resource-list goal-resource-list">
+          <ResourceList class="goal-resource-list">
             {filtered.length === 0 ? (
               hasFilter ? (
                 <EmptyStateFiltered body="No goals match." onClearFilters={() => { setQuery(""); setStateFilter("active"); }} />
@@ -665,7 +665,7 @@ export function Goals({ selectedId = null, mode = null }) {
                 ))}
               </ResourceGroup>
             ))}
-          </div>
+          </ResourceList>
         )}
         detail={body}
         listFirst

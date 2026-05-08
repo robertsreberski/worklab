@@ -152,12 +152,16 @@ describe("resource list helpers", () => {
   });
 
   it("wires resource routes through the list-first layout and shared toolbar", () => {
+    const listComponents = source("src/ui/src/components/ResourceListToolbar.jsx");
+    expect(listComponents).toContain("export function ResourceList(");
     expect(source("src/ui/src/components/PaneLayout.jsx")).toContain("listFirst && !hasSelection");
     for (const route of ["Agents.jsx", "Goals.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx"]) {
       const contents = source(`src/ui/src/routes/${route}`);
+      expect(contents).toContain("ResourceList");
       expect(contents).toContain("ResourceListToolbar");
       expect(contents).toContain("listFirst");
       expect(contents).toContain("resource-list-layout");
+      expect(contents).not.toMatch(/<div class="resource-list/);
     }
   });
 

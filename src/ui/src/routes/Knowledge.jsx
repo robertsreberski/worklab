@@ -12,7 +12,7 @@ import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { KbEdit } from "./KbEdit.jsx";
 import { KbDetail } from "./KbDetail.jsx";
@@ -170,7 +170,7 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
       />
     )
   ) : (
-    <div class="resource-list">
+    <ResourceList>
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((e) => {
@@ -212,7 +212,7 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
           })}
         </ResourceGroup>
       ))}
-    </div>
+    </ResourceList>
   );
 
   const isEditing = selectedSlug === "new" || mode === "edit";

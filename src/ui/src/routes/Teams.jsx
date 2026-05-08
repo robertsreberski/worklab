@@ -15,7 +15,7 @@ import { Icon } from "../components/Icon.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
@@ -955,7 +955,7 @@ export function Teams({ selectedId = null, mode = null }) {
           </ResourceListToolbar>
         )}
         listBody={(
-          <div class="resource-list">
+          <ResourceList>
             {filtered.length === 0 ? (
               hasFilter ? (
                 <EmptyStateFiltered body="No teams match." onClearFilters={() => { setQuery(""); setStatusFilter("active"); setScheduleFilter("all"); setLeadFilter("all"); }} />
@@ -999,7 +999,7 @@ export function Teams({ selectedId = null, mode = null }) {
                 ))}
               </ResourceGroup>
             ))}
-          </div>
+          </ResourceList>
         )}
         detail={body}
         listFirst
