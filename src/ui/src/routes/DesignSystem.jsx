@@ -90,6 +90,7 @@ import {
   PanelGrid,
   RailStack,
   SectionMarker,
+  SectionGroup,
   SettingsMatrix,
   SummaryGrid,
   Toolbar,
@@ -144,6 +145,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "PanelGrid", group: "layout", coverage: "visible" },
   { name: "RailStack", group: "layout", coverage: "visible" },
   { name: "SectionMarker", group: "layout", coverage: "visible" },
+  { name: "SectionGroup", group: "layout", coverage: "visible" },
   { name: "SettingsMatrix", group: "layout", coverage: "visible" },
   { name: "SummaryGrid", group: "layout", coverage: "visible" },
   { name: "Toolbar", group: "layout", coverage: "visible" },
@@ -561,6 +563,14 @@ export function DesignSystem() {
                   overflow={<Button variant="secondary">Preview</Button>}
                   primary={<Button variant="primary">Save</Button>}
                 />
+              </Card>
+              <Card title="SectionGroup">
+                <SectionGroup label="Todo" count={3}>
+                  <div class="ds-catalog-row">
+                    <StatusPill status="queued" size="sm" />
+                    <StatusPill status="running" size="sm" />
+                  </div>
+                </SectionGroup>
               </Card>
             </PanelGrid>
           </Card>

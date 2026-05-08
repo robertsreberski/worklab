@@ -16,6 +16,7 @@ const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileCon
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
 const projectsPath = resolve(repoRoot, "src/ui/src/routes/Projects.jsx");
 const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
+const runCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunCards.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
@@ -237,6 +238,18 @@ describe("design system stylesheet", () => {
     expect(settingsSource).toMatch(/import\s+\{\s*Page,\s*PanelGrid\s*\}/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
+  });
+
+  it("builds counted route groups on the shared SectionGroup layout", () => {
+    for (const filePath of [projectsPath, teamsPath, runCardsPath]) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{[^}]*SectionGroup[^}]*\}\s+from/);
+      expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|team-goal-dashboard-group|run-artifact-group)"/);
+    }
+
+    expect(readFileSync(projectsPath, "utf8")).not.toMatch(/<section[^>]+class="project-task-group"/);
+    expect(readFileSync(teamsPath, "utf8")).not.toMatch(/<section[^>]+class="team-goal-dashboard-group"/);
+    expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<section[^>]+class="run-artifact-group"/);
   });
 
   it("bounds shared component text surfaces", () => {

@@ -5,6 +5,7 @@ import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
+import { SectionGroup } from "../../components/layout/index.js";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../../lib/runFormatting.js";
@@ -631,18 +632,19 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
           <summary>Run outputs · {outputArtifacts.length}</summary>
           <div class="run-artifact-groups">
             {outputGroups.map((group) => (
-              <section class="run-artifact-group" key={group.id}>
-                <div class="run-artifact-group-title">
-                  <span>{group.label}</span>
-                  <span>{group.summary.files}</span>
-                </div>
+              <SectionGroup
+                class="run-artifact-group"
+                key={group.id}
+                label={group.label}
+                count={group.summary.files}
+              >
                 <FileTree
                   files={group.tree}
                   ariaLabel={`${group.label} artifacts`}
                   renderMeta={(node) => <RunArtifactMeta node={node} />}
                   getNodeClass={(node) => node.type === "file" && (node.status === "in_progress" || node.status === "running") ? "is-pending" : ""}
                 />
-              </section>
+              </SectionGroup>
             ))}
           </div>
         </details>
