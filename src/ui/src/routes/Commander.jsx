@@ -21,7 +21,7 @@ import { ErrorState } from "../components/ErrorState.jsx";
 import { teamPickerOptions } from "../components/TeamPicker.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
-import { Toolbar } from "../components/layout/index.js";
+import { InlineHead, Toolbar } from "../components/layout/index.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
@@ -883,13 +883,13 @@ export function Commander({ query: routeQuery = {} }) {
           >
             {grouped.map((group) => (
               <div key={group.status} class="commander-group">
-                <div class="commander-group-header">
+                <InlineHead class="commander-group-header">
                   <span class="group-icon" style={{ color: group.meta.color }} aria-hidden="true">
                     <Icon name={group.meta.icon} size={14} strokeWidth={2} />
                   </span>
                   {group.meta.label}
                   <span class="group-count">{group.tasks.length}</span>
-                </div>
+                </InlineHead>
                 {group.tasks.map((task) => (
                   <CommanderRow
                     key={task.id}

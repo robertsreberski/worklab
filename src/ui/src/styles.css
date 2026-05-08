@@ -3188,8 +3188,8 @@ html.assistant-resizing * {
 /* Group header sits inline at the top of its group block — NOT sticky.
    Sticky positioning was overlapping rows during scroll (see plan note). */
 .commander-group-header {
-  display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
   padding: 10px var(--sp-6) 6px;
   background: transparent;

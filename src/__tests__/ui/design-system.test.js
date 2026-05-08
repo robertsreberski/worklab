@@ -423,9 +423,11 @@ describe("design system stylesheet", () => {
     expect(activitySource).not.toMatch(/<div\s+class="activity-filter-card-actions"/);
     expect(activitySource).not.toMatch(/<div\s+class="activity-filter-actions"/);
     expect(activitySource).not.toMatch(/<div\s+class="form-actions"/);
-    expect(commanderSource).toMatch(/import\s+\{\s*Toolbar\s*\}\s+from/);
+    expect(commanderSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*Toolbar[^}]*\}\s+from/);
+    expect(commanderSource).toMatch(/<InlineHead\s+class="commander-group-header"/);
     expect(commanderSource).toMatch(/<Toolbar\s+class="commander-bulkbar-actions"/);
     expect(commanderSource).toMatch(/<Toolbar\s+class="commander-filter-actions"/);
+    expect(commanderSource).not.toMatch(/<div\s+class="commander-group-header"/);
     expect(commanderSource).not.toMatch(/<div\s+class="commander-bulkbar-actions"/);
     expect(commanderSource).not.toMatch(/<div\s+class="commander-filter-actions"/);
   });
