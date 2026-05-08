@@ -41,6 +41,7 @@ const detailLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Detail.
 const editShellPath = resolve(repoRoot, "src/ui/src/components/layout/EditShell.jsx");
 const workflowLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Workflow.jsx");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
+const routesDir = resolve(repoRoot, "src/ui/src/routes");
 
 function componentExportsFromBarrel(filePath) {
   const source = readFileSync(filePath, "utf8");
@@ -66,6 +67,23 @@ function coverageNames(group) {
     .filter((item) => item.group === group)
     .map((item) => item.name)
     .sort();
+}
+
+function jsFilesUnder(dir) {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = resolve(dir, entry.name);
+    if (entry.isDirectory()) return jsFilesUnder(fullPath);
+    return /\.(js|jsx)$/.test(entry.name) ? [fullPath] : [];
+  });
+}
+
+function componentDeclarations(filePath) {
+  const source = readFileSync(filePath, "utf8");
+  const matches = [
+    ...source.matchAll(/(?:export\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g),
+    ...source.matchAll(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[^=;]+)\s*=>/g),
+  ];
+  return [...new Set(matches.map((match) => match[1]))];
 }
 
 function declarationsForSelector(css, selector) {
@@ -109,6 +127,22 @@ describe("design system catalog", () => {
     const invalidCoverage = DESIGN_SYSTEM_COMPONENT_COVERAGE
       .filter((item) => !["visible", "shell-hosted"].includes(item.coverage));
     expect(invalidCoverage).toEqual([]);
+  });
+
+  it("keeps PascalCase UI component names unique across shared and route-local code", () => {
+    const declarationsByName = new Map();
+    for (const filePath of [...jsFilesUnder(componentsDir), ...jsFilesUnder(routesDir)]) {
+      for (const name of componentDeclarations(filePath)) {
+        const owners = declarationsByName.get(name) || [];
+        owners.push(filePath.replace(`${repoRoot}/`, ""));
+        declarationsByName.set(name, owners);
+      }
+    }
+    const duplicates = [...declarationsByName.entries()]
+      .filter(([, owners]) => owners.length > 1)
+      .map(([name, owners]) => `${name}: ${owners.join(", ")}`)
+      .sort();
+    expect(duplicates).toEqual([]);
   });
 
   it("does not duplicate coverage entries", () => {

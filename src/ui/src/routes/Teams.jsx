@@ -20,6 +20,7 @@ import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/R
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
+import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -153,50 +154,6 @@ export function buildTeamGoalDashboardGroups(goals = []) {
       items: meta[key].items.sort((a, b) => String(a.project?.name || "").localeCompare(String(b.project?.name || ""))),
     }))
     .filter((group) => group.items.length > 0);
-}
-
-function latestCheckpoint(goal = {}) {
-  const notes = Array.isArray(goal?.contract?.checkpoint_notes) ? goal.contract.checkpoint_notes : [];
-  return notes[notes.length - 1] || null;
-}
-
-function GoalContractDetails({ goal }) {
-  const contract = goal?.contract || {};
-  const checkpoint = latestCheckpoint(goal);
-  return (
-    <div class="team-goal-contract">
-      <div>
-        <span>Objective</span>
-        <strong>{contract.objective || "(not set)"}</strong>
-      </div>
-      <div>
-        <span>Stop when</span>
-        <strong>{contract.stopping_condition || "(not set)"}</strong>
-      </div>
-      <div>
-        <span>Validate with</span>
-        <strong>{contract.validation_loop || "(not set)"}</strong>
-      </div>
-      {contract.constraints?.length ? (
-        <div>
-          <span>Constraints</span>
-          <strong>{contract.constraints.join(", ")}</strong>
-        </div>
-      ) : null}
-      {checkpoint ? (
-        <div>
-          <span>Latest checkpoint</span>
-          <strong>{checkpoint.checkpoint_note || checkpoint.validation_summary || "(empty checkpoint)"}</strong>
-        </div>
-      ) : null}
-      {goal.goal_status_reason ? (
-        <div>
-          <span>Status reason</span>
-          <strong>{goal.goal_status_reason}</strong>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
