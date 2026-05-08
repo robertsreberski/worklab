@@ -9,6 +9,7 @@ const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
+const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
@@ -124,6 +125,13 @@ describe("design system stylesheet", () => {
     expect(mobileConfigSource).toMatch(/<IconButton[\s\S]*mobile-config-sheet-close/);
     expect(mobileConfigSource).not.toMatch(/class=\{`icon-button/);
     expect(mobileConfigSource).not.toMatch(/<button[^>]+class="mobile-config-sheet-close"/);
+  });
+
+  it("builds task editor sections on the shared FormSection component", () => {
+    const taskEditSource = readFileSync(taskEditPath, "utf8");
+    expect(taskEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    expect(taskEditSource).toMatch(/<FormSection[^>]+class="task-edit-section"/);
+    expect(taskEditSource).not.toMatch(/<section\s+class="task-edit-section"/);
   });
 
   it("bounds shared component text surfaces", () => {

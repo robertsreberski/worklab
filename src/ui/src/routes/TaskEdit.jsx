@@ -20,6 +20,7 @@ import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
 import { TeamPicker } from "../components/TeamPicker.jsx";
 import { FormField } from "../components/FormField.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
@@ -476,7 +477,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                   />
                 )}
 
-                <section class="task-edit-section" aria-labelledby="task-edit-title">
+                <FormSection class="task-edit-section" aria-labelledby="task-edit-title">
                   <SectionMarker id="task-edit-title" num="01" kicker="Title" meta="Required" />
                   <FormField label="Title" required>
                     <Input
@@ -486,9 +487,9 @@ export function TaskEdit({ mode = "create", id = null }) {
                       autoFocus={mode === "create"}
                     />
                   </FormField>
-                </section>
+                </FormSection>
 
-                <section class="task-edit-section" aria-labelledby="task-edit-instructions">
+                <FormSection class="task-edit-section" aria-labelledby="task-edit-instructions">
                   <SectionMarker id="task-edit-instructions" num="02" kicker="Instructions" meta="Markdown" />
                   <FormField
                     label="Instructions"
@@ -503,9 +504,9 @@ export function TaskEdit({ mode = "create", id = null }) {
                       onInput={(e) => update({ instructions: e.target.value })}
                     />
                   </FormField>
-                </section>
+                </FormSection>
 
-                <section class="task-edit-section" aria-labelledby="task-edit-dependencies">
+                <FormSection class="task-edit-section" aria-labelledby="task-edit-dependencies">
                   <SectionMarker id="task-edit-dependencies" num="03" kicker="Dependencies" meta="Blockers" />
                   <FormField
                     label="Depends on"
@@ -535,7 +536,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                       />
                     </div>
                   </FormField>
-                </section>
+                </FormSection>
               </div>
 
               {/* Right rail — assignment & stage */}
