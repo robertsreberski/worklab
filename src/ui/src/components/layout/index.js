@@ -2,6 +2,7 @@ export {
   Page,
   PageHeader,
   PanelGrid,
+  SectionGroup,
   SummaryGrid,
   Toolbar,
 } from "./Page.jsx";

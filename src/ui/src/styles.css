@@ -5615,7 +5615,6 @@ html.assistant-resizing * {
   padding: var(--sp-5);
 }
 .team-goal-dashboard-head,
-.team-goal-dashboard-group-head,
 .team-goal-card-head,
 .project-goal-summary-head,
 .project-goal-links,
@@ -5637,14 +5636,7 @@ html.assistant-resizing * {
   margin: var(--sp-1) 0 0;
 }
 .team-goal-dashboard-group {
-  display: grid;
   gap: var(--sp-3);
-}
-.team-goal-dashboard-group-head {
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
 }
 .team-goal-grid {
   display: grid;
@@ -6017,22 +6009,10 @@ html.assistant-resizing * {
   margin-bottom: var(--sp-3);
 }
 .run-artifact-group {
-  display: grid;
   gap: var(--sp-2);
-  min-width: 0;
 }
-.run-artifact-group-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  color: var(--text-muted);
+.run-artifact-group > .ds-section-group-head {
   font-size: var(--text-xs);
-  font-weight: 600;
-}
-.run-artifact-group-title span:last-child {
-  font-family: var(--font-mono);
-  color: var(--text-subtle);
 }
 .run-artifacts-summary {
   display: inline-flex;
@@ -6575,6 +6555,34 @@ html.assistant-resizing * {
 }
 .ds-panel-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.ds-section-group {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.ds-section-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.ds-section-group-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ds-section-group-count {
+  flex: 0 0 auto;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
 }
 .filter-bar {
   display: grid;
@@ -9042,16 +9050,9 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-4);
 }
 .project-task-group {
-  min-width: 0;
-}
-.project-task-group-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--sp-2);
-  padding: 0 0 var(--sp-2);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
+}
+.project-task-group > .ds-section-group-head {
   font-weight: 500;
 }
 .project-task-group-list {

@@ -12,7 +12,7 @@ import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.js
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -303,11 +303,13 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
 
       <div class="project-task-groups">
         {progress.groups.map((group) => (
-          <section key={group.key} class="project-task-group" data-group={group.key}>
-            <div class="project-task-group-head">
-              <span>{group.label}</span>
-              <span>{group.tasks.length}</span>
-            </div>
+          <SectionGroup
+            key={group.key}
+            class="project-task-group"
+            data-group={group.key}
+            label={group.label}
+            count={group.tasks.length}
+          >
             {group.tasks.length ? (
               <div class="project-task-group-list">
                 {group.tasks.map((task) => <ProjectTaskRow key={task.id} task={task} />)}
@@ -315,7 +317,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
             ) : (
               <div class="project-task-group-empty">No {group.label.toLowerCase()} tasks.</div>
             )}
-          </section>
+          </SectionGroup>
         ))}
       </div>
     </div>

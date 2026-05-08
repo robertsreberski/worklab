@@ -55,3 +55,22 @@ export function SummaryGrid({ children, class: className = "", as: Component = "
 export function PanelGrid({ children, class: className = "", ...props }) {
   return <div {...props} class={`ds-panel-grid ${className}`.trim()}>{children}</div>;
 }
+
+export function SectionGroup({
+  label,
+  count,
+  children,
+  class: className = "",
+  as: Component = "section",
+  ...props
+}) {
+  return (
+    <Component {...props} class={`ds-section-group ${className}`.trim()}>
+      <header class="ds-section-group-head">
+        <span class="ds-section-group-label">{label}</span>
+        {count !== undefined && count !== null && <span class="ds-section-group-count">{count}</span>}
+      </header>
+      {children}
+    </Component>
+  );
+}
