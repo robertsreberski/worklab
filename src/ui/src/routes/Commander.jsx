@@ -21,6 +21,7 @@ import { ErrorState } from "../components/ErrorState.jsx";
 import { teamPickerOptions } from "../components/TeamPicker.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
+import { Toolbar } from "../components/layout/index.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { navigateHash } from "../lib/navigation.js";
 import { agentModelEffortLabel, taskRouteId } from "../lib/display.js";
@@ -328,7 +329,7 @@ function BulkTaskBar({
         <strong>{count}</strong>
         <span>{count === 1 ? "task selected" : "tasks selected"}</span>
       </div>
-      <div class="commander-bulkbar-actions">
+      <Toolbar class="commander-bulkbar-actions">
         <Button size="sm" variant="ghost" iconLeft={<Icon name="x" size={12} />} disabled={busy} onClick={onClear}>
           Clear
         </Button>
@@ -417,7 +418,7 @@ function BulkTaskBar({
         >
           Delete
         </Button>
-      </div>
+      </Toolbar>
     </div>
   );
 }
@@ -823,13 +824,13 @@ export function Commander({ query: routeQuery = {} }) {
                 placeholder="Project"
                 ariaLabel="Filter by project"
               />
-              <div class="commander-filter-actions">
+              <Toolbar class="commander-filter-actions">
                 <DailyCostChip />
                 {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
                 <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
                   New task
                 </Button>
-              </div>
+              </Toolbar>
             </MobileConfigSheet>
           </div>
           {checkedTaskIds.length > 0 && (

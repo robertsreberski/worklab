@@ -15,7 +15,7 @@ import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { Page, SummaryGrid } from "../components/layout/index.js";
+import { Page, SummaryGrid, Toolbar } from "../components/layout/index.js";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -266,7 +266,7 @@ export function Activity() {
           title="Filters"
           class="activity-filter-card"
           headerRight={(
-            <div class="activity-filter-card-actions">
+            <Toolbar class="activity-filter-card-actions">
               <span class={`activity-filter-count ${activeFilterCount ? "active" : ""}`.trim()}>
                 {activeFilterCount ? `${activeFilterCount} active` : "All activity"}
               </span>
@@ -278,7 +278,7 @@ export function Activity() {
                 activeCount={activeFilterCount}
                 onClick={() => setConfigOpen(true)}
               />
-            </div>
+            </Toolbar>
           )}
         >
           <MobileConfigSheet
@@ -322,7 +322,7 @@ export function Activity() {
               <span>Date range</span>
               <DateRangePicker value={dateRange} onChange={setDateRange} class="activity-date-range" />
             </div>
-            <div class="activity-filter-actions">
+            <Toolbar class="activity-filter-actions">
               {activeFilterCount > 0 && (
                 <Button
                   size="sm"
@@ -336,7 +336,7 @@ export function Activity() {
                   Reset
                 </Button>
               )}
-            </div>
+            </Toolbar>
           </MobileConfigSheet>
         </Card>
 
