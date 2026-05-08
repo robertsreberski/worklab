@@ -412,10 +412,16 @@ describe("design system stylesheet", () => {
 
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
-    expect(providerSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    expect(providerSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*PanelGrid[^}]*SectionStack[^}]*\}\s+from/);
+    expect(providerSource).toMatch(/<SectionStack\s+class="task-context-list"/);
+    expect(providerSource).toMatch(/<PanelGrid\s+class="provider-model-grid"/);
     expect(providerSource).toMatch(/<InlineHead\s+class="provider-model-pricing-head"/);
+    expect(providerSource).toMatch(/<FormGrid\s+columns=\{3\}\s+class="provider-model-pricing-grid"/);
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);
+    expect(providerSource).not.toMatch(/<div\s+class="task-context-list"/);
+    expect(providerSource).not.toMatch(/<div\s+class="provider-model-grid"/);
     expect(providerSource).not.toMatch(/<div\s+class="provider-model-pricing-head"/);
+    expect(providerSource).not.toMatch(/<div\s+class="provider-model-pricing-grid"/);
     expect(providerSource).not.toMatch(/<label\s+class="provider-model-price-field"/);
   });
 
@@ -541,7 +547,9 @@ describe("design system stylesheet", () => {
     const runCardsSource = readFileSync(runCardsPath, "utf8");
     expect(runCardsSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
     expect(runCardsSource).toMatch(/<Toolbar\s+class="run-card-actions"/);
+    expect(runCardsSource).toMatch(/<Toolbar\s+class="run-economics-grid"/);
     expect(runCardsSource).not.toMatch(/<div\s+class="run-card-actions"/);
+    expect(runCardsSource).not.toMatch(/<div\s+class="run-economics-grid"/);
   });
 
   it("bounds shared component text surfaces", () => {
@@ -647,7 +655,8 @@ describe("design system stylesheet", () => {
       ".ds-panel-grid.team-goal-grid",
       ".summary-tiles",
       ".activity-cost-chart",
-      ".provider-model-pricing-grid",
+      ".ds-panel-grid.provider-model-grid",
+      ".form-grid.provider-model-pricing-grid",
       ".ds-control-grid",
       ".modal-foot",
       ".form-actions",

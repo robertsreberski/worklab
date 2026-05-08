@@ -232,7 +232,7 @@ function RunEconomicsPanel({ run }) {
   return (
     <details class="run-diagnostics run-economics">
       <summary>Run economics</summary>
-      <div class="run-economics-grid">
+      <Toolbar class="run-economics-grid" align="start">
         {haveInput && <RunMetric label="Turn 1 input" value={`${inputTokens.toLocaleString()} tok`} />}
         {haveOverhead && (
           <RunMetric
@@ -245,7 +245,7 @@ function RunEconomicsPanel({ run }) {
         {truncatedCount > 0 && <RunMetric label="Truncated" value={`${truncatedCount}`} />}
         {prunedCount > 0 && <RunMetric label="Pruned" value={`${prunedCount}`} />}
         {compactionCount > 0 && <RunMetric label="Compactions" value={`${compactionCount}`} />}
-      </div>
+      </Toolbar>
     </details>
   );
 }
