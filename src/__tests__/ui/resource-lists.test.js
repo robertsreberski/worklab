@@ -161,11 +161,32 @@ describe("resource list helpers", () => {
     }
   });
 
+  it("shares resource-row metadata primitives across the primary resource screens", () => {
+    const metaComponent = source("src/ui/src/components/ResourceRowMeta.jsx");
+    expect(metaComponent).toContain("function ResourceRowTags");
+    expect(metaComponent).toContain("function ResourceRowChip");
+    expect(metaComponent).toContain("function ResourceRowPath");
+
+    for (const route of ["Agents.jsx", "Goals.jsx", "Skills.jsx", "Projects.jsx"]) {
+      const contents = source(`src/ui/src/routes/${route}`);
+      expect(contents).toContain("ResourceRowTags");
+      expect(contents).toContain("ResourceRowChip");
+    }
+
+    const projects = source("src/ui/src/routes/Projects.jsx");
+    expect(projects).toContain("<ResourceRowPath label=\"workdir\" value={project.workdir} />");
+    expect(projects).not.toContain("project-row-workdir-chip");
+  });
+
   it("bounds resource row metadata so long chips do not widen list geometry", () => {
     const styles = source("src/ui/src/styles.css");
     const fullWidthRowRule = cssRule(styles, ".resource-list-layout.two-pane-list-first .pane-row");
     const chipRule = cssRule(styles, ".resource-row-chip");
     const tagMonoRule = cssRule(styles, ".resource-row-tags > .pane-row-mono");
+    const pathRule = cssRule(styles, ".resource-row-path");
+    const pathValueRule = cssRule(styles, ".resource-row-path-value");
+    const projectWorkdirRowRule = cssRule(styles, ".project-workdir-row");
+    const projectWorkdirValueRule = cssRule(styles, ".project-workdir-value");
     const metaRule = cssRule(styles, ".pane-row-meta");
     const summaryRule = cssRule(styles, ".pane-row-summary");
 
@@ -176,6 +197,19 @@ describe("resource list helpers", () => {
       expect(rule).toContain("text-overflow: ellipsis");
       expect(rule).toContain("white-space: nowrap");
     }
+    expect(pathRule).toContain("max-width");
+    expect(pathRule).toContain("overflow: hidden");
+    expect(pathRule).not.toContain("border-radius");
+    expect(pathValueRule).toContain("overflow: hidden");
+    expect(pathValueRule).toContain("text-overflow: ellipsis");
+    expect(pathValueRule).toContain("white-space: nowrap");
+    expect(projectWorkdirRowRule).toContain("grid-template-columns: max-content minmax(0, 1fr) max-content");
+    expect(projectWorkdirValueRule).toContain("overflow-wrap: anywhere");
+    expect(projectWorkdirValueRule).toContain("word-break: normal");
+    expect(styles).toContain("container-name: entity-detail");
+    expect(styles).toContain("@container entity-detail");
+    expect(styles).toContain("container-name: project-detail");
+    expect(styles).toContain("@container project-detail");
     expect(metaRule).toContain("overflow: hidden");
     expect(summaryRule).toContain("max-width: 100%");
   });

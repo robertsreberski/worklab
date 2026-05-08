@@ -2729,6 +2729,107 @@ test("mobile resource list filters are available from the shared configuration s
   }
 });
 
+test("project list workdirs render as path metadata instead of badges", async ({ page }) => {
+  for (const viewport of [
+    { label: "desktop", width: 1440, height: 900 },
+    { label: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/#/projects`);
+    const row = page.locator(".project-pane-row", { hasText: "Mobile Layout Project" });
+    await expect(row).toBeVisible();
+
+    const metrics = await row.evaluate((node) => {
+      const path = node.querySelector(".resource-row-path");
+      const value = node.querySelector(".resource-row-path-value");
+      const style = path ? getComputedStyle(path) : null;
+      const pathRect = path?.getBoundingClientRect();
+      const rowRect = node.getBoundingClientRect();
+      return {
+        oldWorkdirChipCount: node.querySelectorAll(".project-row-workdir-chip").length,
+        pathText: value?.textContent?.trim() || "",
+        pathWidth: pathRect ? Math.round(pathRect.width) : 0,
+        rowWidth: Math.round(rowRect.width),
+        pathBorderRadius: style?.borderRadius || "",
+        pathBorderWidth: style?.borderTopWidth || "",
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.oldWorkdirChipCount, `${viewport.label} old workdir chip`).toBe(0);
+    expect(metrics.pathText, `${viewport.label} workdir text`).toContain("mobile-layout-project");
+    expect(metrics.pathWidth, `${viewport.label} path width`).toBeGreaterThan(0);
+    expect(metrics.pathWidth, `${viewport.label} bounded path width`).toBeLessThanOrEqual(metrics.rowWidth);
+    expect(metrics.pathBorderRadius, `${viewport.label} path border radius`).toBe("0px");
+    expect(metrics.pathBorderWidth, `${viewport.label} path border`).toBe("0px");
+    expect(metrics.overflow, `${viewport.label} projects overflow`).toBeLessThanOrEqual(0);
+  }
+});
+
+test("project detail keeps workdir metadata readable in the detail pane", async ({ page }) => {
+  for (const viewport of [
+    { label: "desktop", width: 1440, height: 900 },
+    { label: "mobile", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/#/projects/${projectSlug}`);
+    await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const layout = document.querySelector(".project-read-layout");
+      const row = document.querySelector(".project-workdir-row");
+      const value = document.querySelector(".project-workdir-value");
+      const layoutStyle = layout ? getComputedStyle(layout) : null;
+      const rowRect = row?.getBoundingClientRect();
+      const valueRect = value?.getBoundingClientRect();
+      return {
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        layoutColumns: layoutStyle?.gridTemplateColumns || "",
+        rowHeight: rowRect ? Math.round(rowRect.height) : 0,
+        valueWidth: valueRect ? Math.round(valueRect.width) : 0,
+        valueLineCount: value ? value.getClientRects().length : 0,
+      };
+    });
+
+    expect(metrics.overflow, `${viewport.label} project detail overflow`).toBeLessThanOrEqual(0);
+    expect(metrics.layoutColumns.split(" ").length, `${viewport.label} project detail columns`).toBe(1);
+    expect(metrics.valueWidth, `${viewport.label} workdir value width`).toBeGreaterThan(140);
+    expect(metrics.valueLineCount, `${viewport.label} workdir line count`).toBeLessThanOrEqual(3);
+    expect(metrics.rowHeight, `${viewport.label} workdir row height`).toBeLessThanOrEqual(76);
+  }
+});
+
+test("resource editor rails collapse before form sections become cramped", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  for (const route of [
+    { label: "skill", hash: `#/skills/${skillName}`, title: "Regression Skill", layout: ".skill-editor-layout" },
+    { label: "project", hash: `#/projects/${projectSlug}/edit`, title: "Mobile Layout Project", layout: ".project-editor-layout" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-detail-head h2", { hasText: route.title })).toBeVisible();
+    const metrics = await page.evaluate((layoutSelector) => {
+      const layout = document.querySelector(layoutSelector);
+      const layoutStyle = layout ? getComputedStyle(layout) : null;
+      const sections = [...document.querySelectorAll(`${layoutSelector} .entity-editor-main > .form-section`)];
+      const rail = document.querySelector(`${layoutSelector} > .entity-editor-rail`);
+      return {
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        columns: layoutStyle?.gridTemplateColumns || "",
+        minSectionWidth: sections.length
+          ? Math.min(...sections.map((section) => Math.round(section.getBoundingClientRect().width)))
+          : 0,
+        railPosition: rail ? getComputedStyle(rail).position : "",
+      };
+    }, route.layout);
+
+    expect(metrics.overflow, `${route.label} editor overflow`).toBeLessThanOrEqual(0);
+    expect(metrics.columns.split(" ").length, `${route.label} editor columns`).toBe(1);
+    expect(metrics.minSectionWidth, `${route.label} form width`).toBeGreaterThan(360);
+    if (metrics.railPosition) {
+      expect(metrics.railPosition, `${route.label} rail position`).toBe("static");
+    }
+  }
+});
+
 test("mobile resource list create actions move to a floating FAB", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [

@@ -14,6 +14,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -712,7 +713,10 @@ function ProjectDetail({ selectedId, onChanged }) {
                 {project.workdir && (
                   <Button
                     variant="ghost"
+                    class="project-workdir-copy"
                     iconLeft={<Icon name="copy" size={11} />}
+                    aria-label="Copy workdir"
+                    title="Copy workdir"
                     onClick={() => {
                       navigator.clipboard?.writeText(project.workdir).then(
                         () => pushToast("Workdir copied", { variant: "success" }),
@@ -956,17 +960,17 @@ export function Projects({ selectedId = null, mode = null }) {
                 sub={(
                   <span class="pane-row-substack">
                     {project.description && <span class="pane-row-description">{project.description}</span>}
-                    <span class="resource-row-tags">
-                      <span class="pane-row-mono">{project.slug}</span>
-                      {project.workdir && <span class="resource-row-chip project-row-workdir-chip" title={project.workdir}>{project.workdir}</span>}
+                    <ResourceRowTags>
+                      <ResourceRowId>{project.slug}</ResourceRowId>
+                      <ResourceRowPath label="workdir" value={project.workdir} />
                       {project.worktree_mode && project.worktree_mode !== "off" && (
-                        <span class="resource-row-chip">worktrees {project.worktree_mode}</span>
+                        <ResourceRowChip>worktrees {project.worktree_mode}</ResourceRowChip>
                       )}
-                      {teamLabel && <span class="resource-row-chip">team {teamLabel}</span>}
-                      {tags.slice(0, 3).map((tag) => <span key={tag} class="resource-row-chip">{tag}</span>)}
-                      {tags.length > 3 && <span class="resource-row-chip">+{tags.length - 3}</span>}
-                      {project.archived && <span class="resource-row-chip">archived</span>}
-                    </span>
+                      {teamLabel && <ResourceRowChip>team {teamLabel}</ResourceRowChip>}
+                      {tags.slice(0, 3).map((tag) => <ResourceRowChip key={tag}>{tag}</ResourceRowChip>)}
+                      {tags.length > 3 && <ResourceRowChip>+{tags.length - 3}</ResourceRowChip>}
+                      {project.archived && <ResourceRowChip>archived</ResourceRowChip>}
+                    </ResourceRowTags>
                   </span>
                 )}
                 trailing={(

@@ -11,6 +11,7 @@ import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { DetailHead } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -204,11 +205,11 @@ function GoalRow({ goal, active }) {
       sub={(
         <span class="pane-row-substack">
           <span class="pane-row-description">{goal.contract?.objective || "(no objective set)"}</span>
-          <span class="resource-row-tags">
-            <span class="resource-row-chip">team {goalTeamLabel(goal)}</span>
-            {goal.last_lead_at && <span class="resource-row-chip">lead {relativeTime(goal.last_lead_at)}</span>}
-            {checkpoint && <span class="resource-row-chip">checkpoint</span>}
-          </span>
+          <ResourceRowTags>
+            <ResourceRowChip>team {goalTeamLabel(goal)}</ResourceRowChip>
+            {goal.last_lead_at && <ResourceRowChip>lead {relativeTime(goal.last_lead_at)}</ResourceRowChip>}
+            {checkpoint && <ResourceRowChip>checkpoint</ResourceRowChip>}
+          </ResourceRowTags>
         </span>
       )}
       trailing={<Badge variant={goalStatusVariant(goal)}>{goalStatusLabel(goal)}</Badge>}

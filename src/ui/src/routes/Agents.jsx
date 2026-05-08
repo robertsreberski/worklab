@@ -18,6 +18,7 @@ import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { AgentEdit } from "./AgentEdit.jsx";
 import { humanizeSlug, modelDisplayName } from "../lib/display.js";
 import { agentIsRecent, buildAgentResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -161,12 +162,12 @@ export function Agents({ selectedName = null }) {
                 sub={(
                   <span class="pane-row-substack">
                     {description && <span class="pane-row-description">{description}</span>}
-                    <span class="resource-row-tags">
-                      <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
-                      {a.effort && <span class="resource-row-chip">{a.effort} effort</span>}
-                      {a.context_window === "1m" && <span class="resource-row-chip">1M context</span>}
-                      {a.enabled === false && <span class="resource-row-chip">disabled</span>}
-                    </span>
+                    <ResourceRowTags>
+                      <ResourceRowId>{modelDisplayName(a.model)}</ResourceRowId>
+                      {a.effort && <ResourceRowChip>{a.effort} effort</ResourceRowChip>}
+                      {a.context_window === "1m" && <ResourceRowChip>1M context</ResourceRowChip>}
+                      {a.enabled === false && <ResourceRowChip>disabled</ResourceRowChip>}
+                    </ResourceRowTags>
                   </span>
                 )}
                 trailing={trailing}
