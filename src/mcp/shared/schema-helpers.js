@@ -94,6 +94,7 @@ export function compactAgent(row) {
     sdk: row.sdk || null,
     model: row.model || null,
     effort: row.effort || null,
+    context_window: row.context_window || "default",
     execution_mode: row.execution_mode || null,
     enabled: row.enabled !== false,
     allow_self_review: !!row.allow_self_review,
@@ -118,6 +119,7 @@ export function compactAgentList(result, input = {}) {
       agent.sdk,
       agent.model,
       agent.effort,
+      agent.context_window,
     ], input.q);
   });
   const limit = clampLimit(input.limit, 50, 200);

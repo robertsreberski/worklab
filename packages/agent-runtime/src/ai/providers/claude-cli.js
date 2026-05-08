@@ -8,6 +8,7 @@ import { normalizeCodexItemEvent } from "../streaming/codex-events.js";
 import { createFileChangePayload } from "../file-change-stats.js";
 import { estimateCost } from "../cost.js";
 import { createStderrTail } from "../failure.js";
+import { modelWithContextWindow } from "../runtime/context-windows.js";
 import {
   claudeNativeAgentDefinitions,
   claudeToolsWithNativeSubagents,
@@ -255,6 +256,7 @@ export function buildCliCommand({
   skillDirs,
   resumeSessionId,
   nativeSubagents,
+  contextWindow,
 }) {
   // Effort is expected to be pre-normalized by core/ai.js#generateResponse
   // before reaching this provider. Direct callers of buildCliCommand must
@@ -275,7 +277,7 @@ export function buildCliCommand({
       "--output-format", "stream-json",
       "--verbose",
       ...(outputSchema ? ["--json-schema", JSON.stringify(outputSchema)] : []),
-      "--model", model,
+      "--model", modelWithContextWindow(model, contextWindow),
       "--append-system-prompt", systemPrompt,
       ...resumeFlag,
     ];
@@ -359,6 +361,7 @@ export async function generateCliResponse(systemPrompt, options = {}) {
       : getSkillAccessDirs(options.skills || []),
     resumeSessionId: reusableSessionId,
     nativeSubagents: options.nativeSubagents,
+    contextWindow: options.contextWindow,
   });
 
   const events = [];

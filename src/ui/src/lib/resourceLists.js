@@ -60,7 +60,7 @@ export function buildAgentResourceGroups(agents = [], {
       if (activity === "idle" && recent) return false;
       if (model !== "all" && agent?.model !== model) return false;
       if (effort !== "all" && (agent?.effort || "") !== effort) return false;
-      return matchesQuery([agent?.name, agent?.display_name, agent?.description, agent?.model, agent?.effort], query);
+      return matchesQuery([agent?.name, agent?.display_name, agent?.description, agent?.model, agent?.effort, agent?.context_window], query);
     })
     .sort((left, right) => {
       const leftRecent = agentIsRecent(left, now);

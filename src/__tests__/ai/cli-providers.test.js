@@ -52,6 +52,19 @@ describe("CLI provider adapters", () => {
     expect(cmd.args).not.toContain("--json-schema");
   });
 
+  it("passes the Claude Code 1M model suffix when context_window is enabled", () => {
+    const cmd = buildCliCommand({
+      sdk: "claude-code",
+      model: "claude-opus-4-7",
+      contextWindow: "1m",
+      cwd: "/repo",
+      systemPrompt: "system",
+      prompt: "do work",
+    });
+    const modelIndex = cmd.args.indexOf("--model");
+    expect(cmd.args[modelIndex + 1]).toBe("claude-opus-4-7[1m]");
+  });
+
   it("passes --resume <session_id> when a parent session is available, replacing --no-session-persistence", () => {
     const cmd = buildCliCommand({
       sdk: "claude-code",

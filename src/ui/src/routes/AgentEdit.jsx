@@ -30,6 +30,7 @@ import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
+import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
@@ -61,6 +62,7 @@ const emptyAgent = {
   sdk: "claude",
   model: "claude:claude-sonnet-4-6",
   effort: "medium",
+  context_window: "default",
   instructions: "",
   skills_allowlist: [],
   skills_allowlist_mode: "all",
@@ -120,6 +122,16 @@ function supportedBuiltinTools(option) {
   if (option?.capabilities?.tool_use === false) return [];
   if (Array.isArray(option?.builtin_tools)) return option.builtin_tools;
   return BUILTIN_TOOLS;
+}
+
+function modelIdFromOption(option = {}) {
+  if (option.model) return option.model;
+  const value = String(option.value || "");
+  return value.startsWith("claude:") ? value.slice("claude:".length) : "";
+}
+
+export function agentSupportsOneMillionContext(option) {
+  return claudeModelSupportsOneMillionContext(modelIdFromOption(option));
 }
 
 function modelGroupLabel(group) {
@@ -363,6 +375,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const reasoningMode = getReasoningMode(selectedModel);
   const reasoningLevels = getReasoningLevels(selectedModel);
   const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
+  const oneMillionContextEligible = agentSupportsOneMillionContext(selectedModel);
+  const normalizedContextWindow = oneMillionContextEligible ? normalizeContextWindow(agent?.context_window) : "default";
   const visibleTools = supportedBuiltinTools(selectedModel);
   const supportsToolUse = visibleTools.length > 0;
   const modelChanged = !!baseline && agent?.model !== baseline.model;
@@ -423,6 +437,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       ...agent,
       name: isNew ? undefined : agent.name,
       effort: normalizedEffort,
+      context_window: normalizedContextWindow,
       skills_allowlist_mode: skillsMode,
       skills_allowlist: skillsMode === "all"
         ? []
@@ -530,6 +545,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       model,
       sdk: String(model || "").split(":", 1)[0] || "claude",
       effort: normalizeEffort(opt, agent.effort),
+      context_window: agentSupportsOneMillionContext(opt) ? normalizeContextWindow(agent.context_window) : "default",
       builtin_allowlist: opt?.capabilities?.tool_use === false
         ? []
         : agent.builtin_allowlist.filter((t) => supportedBuiltinTools(opt).includes(t)),
@@ -825,6 +841,12 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             <span>{headerModelLabel}</span>
             <span class="pane-row-dot">·</span>
             <span>{normalizedEffort} effort</span>
+            {normalizedContextWindow === "1m" && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>1M context</span>
+              </>
+            )}
           </>
         )}
         actions={headerActions}
@@ -919,6 +941,16 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                   ? ` · Reasoning: ${reasoningMode === "toggle" ? "toggle" : reasoningLevels.join(", ")}`
                   : " · Reasoning: unavailable"}
               </div>
+              {oneMillionContextEligible && (
+                <FormField switchInside>
+                  <Switch
+                    checked={normalizedContextWindow === "1m"}
+                    onChange={(next) => setAgent({ ...agent, context_window: next ? "1m" : "default" })}
+                    label="Use 1M context"
+                    description="Available for Claude Opus 4.7 and Opus 4.6."
+                  />
+                </FormField>
+              )}
             </FormSection>
 
             <SectionMarker id="agent-edit-policy" num="03" kicker="Policy" meta="Review" />

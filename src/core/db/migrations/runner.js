@@ -613,6 +613,7 @@ export function runMigrations(db) {
   // The seeded planner / executor / reviewer ship with 'cli' so the host's
   // claude / codex CLIs do the heavy lifting.
   addColumnIfMissing(db, "agents", "execution_mode", "execution_mode TEXT NOT NULL DEFAULT 'sdk'");
+  addColumnIfMissing(db, "agents", "context_window", "context_window TEXT NOT NULL DEFAULT 'default'");
   addColumnIfMissing(db, "tasks", "rejection_streak", "rejection_streak INTEGER NOT NULL DEFAULT 0");
   // R4: cumulative lifetime counters that survive `reset_failure_count`. The
   // existing `failure_count` / `rejection_streak` columns reset on success, so

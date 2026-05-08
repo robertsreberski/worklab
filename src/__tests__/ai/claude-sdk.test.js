@@ -229,6 +229,22 @@ describe("generateClaudeResponse", () => {
     });
   });
 
+  it("passes the Claude Code 1M model suffix through the SDK query options when enabled", async () => {
+    mockQuery.mockReturnValue(mockStream([
+      { type: "result", subtype: "success", usage: {}, duration_ms: 1, num_turns: 1 },
+    ]));
+
+    await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "hi" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      contextWindow: "1m",
+      effort: "medium",
+      onEvent: () => {},
+    });
+
+    expect(mockQuery.mock.calls[0][0].options.model).toBe("claude-opus-4-7[1m]");
+  });
+
   it("passes native teammate subagents to the Claude SDK Task surface", async () => {
     mockQuery.mockReturnValue(mockStream([
       { type: "result", subtype: "success", result: "done", usage: {}, duration_ms: 1, num_turns: 1 },
