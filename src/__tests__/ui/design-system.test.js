@@ -37,6 +37,13 @@ function coverageNames(group) {
     .sort();
 }
 
+function declarationsForSelector(css, selector) {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => match[1].split(",").map((item) => item.trim()).includes(selector))
+    .map((match) => match[2])
+    .join("\n");
+}
+
 describe("design system catalog", () => {
   it("keeps the written design-system reference available", () => {
     expect(existsSync(docsPath)).toBe(true);
@@ -96,6 +103,24 @@ describe("design system stylesheet", () => {
     expect(labelRule).toMatch(/overflow:\s*hidden\b/);
     expect(labelRule).toMatch(/text-overflow:\s*ellipsis\b/);
     expect(labelRule).toMatch(/white-space:\s*nowrap\b/);
+  });
+
+  it("bounds shared component text surfaces", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".card-title",
+      ".modal-head h2",
+      ".drawer-head h2",
+      ".empty-state-title",
+      ".empty-state-body",
+      ".error-state-title",
+      ".error-state-body",
+      ".loading-state-caption",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+      expect(declarations).toMatch(/overflow-wrap:\s*anywhere\b/);
+    }
   });
 
   it("uses a contained pulse animation for active stage-token dots", () => {
