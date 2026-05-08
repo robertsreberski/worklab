@@ -4302,10 +4302,9 @@ html.assistant-resizing * {
   min-width: 0;
 }
 .run-summary-result-head {
-  display: flex;
   align-items: baseline;
+  justify-content: flex-start;
   gap: var(--sp-2);
-  min-width: 0;
   flex-wrap: wrap;
 }
 .run-result-decision {
@@ -9768,10 +9767,9 @@ button.settings-overview-card:focus-visible,
   border-left-color: var(--text-muted);
 }
 .run-verification-head {
-  display: flex;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: var(--sp-2);
-  align-items: center;
 }
 .run-verification-kind {
   text-transform: uppercase;
