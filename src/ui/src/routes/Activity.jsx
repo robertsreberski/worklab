@@ -15,7 +15,7 @@ import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { Page, SummaryGrid, Toolbar } from "../components/layout/index.js";
+import { InlineHead, Page, SummaryGrid, Toolbar } from "../components/layout/index.js";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -212,10 +212,10 @@ export function Activity() {
       >
         <SummaryGrid as="section" class="activity-stats" aria-label="Activity statistics">
           <article class="activity-stat-card activity-stat-card-primary activity-stat-cost">
-            <div class="activity-stat-head">
+            <InlineHead class="activity-stat-head">
               <span class="activity-stat-label">Cost history</span>
               <span class="activity-stat-icon"><Icon name="calendar" size={15} /></span>
-            </div>
+            </InlineHead>
             <strong class="activity-stat-value">{stats.totalCost}</strong>
             <div class="activity-stat-subline">
               <span>{stats.averageCost}/run avg</span>
@@ -240,10 +240,10 @@ export function Activity() {
           </article>
 
           <article class="activity-stat-card activity-stat-card-primary activity-stat-health">
-            <div class="activity-stat-head">
+            <InlineHead class="activity-stat-head">
               <span class="activity-stat-label">Run Health</span>
               <span class="activity-stat-icon"><Icon name="check-circle" size={15} /></span>
-            </div>
+            </InlineHead>
             <strong class="activity-stat-value">{fmtCount(stats.runs)}</strong>
             <div
               class="activity-health-bar"
