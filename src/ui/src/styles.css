@@ -5603,8 +5603,7 @@ html.assistant-resizing * {
 .team-goal-dashboard-group {
   gap: var(--sp-3);
 }
-.team-goal-grid {
-  display: grid;
+.ds-panel-grid.team-goal-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: var(--sp-3);
 }
@@ -5723,19 +5722,21 @@ html.assistant-resizing * {
 .goal-edit-body {
   padding: var(--sp-5);
 }
-.goal-detail-grid,
-.goal-editor {
-  display: grid;
+.ds-section-stack.goal-detail-grid,
+.ds-section-stack.goal-editor {
   gap: var(--sp-4);
   max-width: 920px;
 }
 .goal-state-card,
-.goal-link-list,
 .goal-latest-cycle {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
   align-items: center;
+}
+.ds-toolbar.goal-link-list {
+  justify-content: flex-start;
+  gap: var(--sp-2);
 }
 .goal-link-list a,
 .goal-latest-cycle a {
