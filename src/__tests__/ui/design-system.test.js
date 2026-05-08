@@ -364,6 +364,15 @@ describe("design system stylesheet", () => {
     expect(projectsSource).not.toMatch(/<div\s+class="project-task-attention-head"/);
   });
 
+  it("builds run-card heads on the shared InlineHead layout", () => {
+    const runCardsSource = readFileSync(runCardsPath, "utf8");
+    expect(runCardsSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    expect(runCardsSource).toMatch(/<InlineHead\s+class="run-verification-head"/);
+    expect(runCardsSource).toMatch(/<InlineHead\s+class="run-summary-result-head"/);
+    expect(runCardsSource).not.toMatch(/<div\s+class="run-verification-head"/);
+    expect(runCardsSource).not.toMatch(/<div\s+class="run-summary-result-head"/);
+  });
+
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);

@@ -5,7 +5,7 @@ import { FileTree } from "../../components/FileTree.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { AgentReferenceText } from "../../components/AgentLink.jsx";
 import { RunHistoryNotice } from "../../components/RunHistoryNotice.jsx";
-import { SectionGroup, SectionStack, Toolbar } from "../../components/layout/index.js";
+import { InlineHead, SectionGroup, SectionStack, Toolbar } from "../../components/layout/index.js";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { useRunStream } from "../../lib/useRunStream.js";
 import { formatRunSummaryTitle, runMetricItems, runResultPreview } from "../../lib/runFormatting.js";
@@ -199,12 +199,12 @@ function RunVerificationPanel({ run }) {
           const tone = failed || unmatched ? "verification-fail" : (VERIFICATION_KIND_TONES[row.kind] || "verification-pass");
           return (
             <li key={index} class={`run-verification-item ${tone}`}>
-              <div class="run-verification-head">
+              <InlineHead class="run-verification-head">
                 <span class="run-verification-kind">{row.kind}</span>
                 {row.command_or_url && <code class="run-verification-cmd">{row.command_or_url}</code>}
                 {row.exit_code_or_status && <span class="run-verification-status">{row.exit_code_or_status}</span>}
                 {check?.match_source && <span class="run-verification-status">{check.match_source}</span>}
-              </div>
+              </InlineHead>
               {row.snippet && <pre class="run-verification-snippet">{row.snippet}</pre>}
               {row.reason && <div class="run-verification-reason">{row.reason}</div>}
               {check && <div class="run-verification-reason">{check.match_source ? `Matched ${check.matched_tool_call || ""}: ${check.reason || check.match_source}` : `Unmatched: ${check.reason || "No matching logged tool call."}`}</div>}
@@ -407,7 +407,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
           <div class="run-summary-main">
             {resultPreview.hasResult ? (
               <div class="run-summary-result">
-                <div class="run-summary-result-head">
+                <InlineHead class="run-summary-result-head">
                   {resultPreview.decision && (
                     <span class={`run-result-decision ${resultPreview.tone || ""}`.trim()}>
                       {resultPreview.decision}
@@ -435,7 +435,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
                       {run.cancel_initiator}
                     </span>
                   )}
-                </div>
+                </InlineHead>
                 {resultPreview.details && <div class="run-result-details"><AgentReferenceText text={resultPreview.details} agents={agents} /></div>}
               </div>
             ) : (
