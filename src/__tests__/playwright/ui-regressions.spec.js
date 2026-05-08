@@ -34,6 +34,8 @@ let projectSlug;
 let teamSlug;
 let goalId;
 
+const liveLongToken = `live-unbroken-${"x".repeat(180)}`;
+
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
     const server = createServer();
@@ -517,13 +519,14 @@ test.beforeAll(async () => {
       _event_seq: index + 2,
     })),
     { type: "text", text: "Existing streamed event", ts: now - 5_000, _event_seq: 27 },
-    { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" }, _event_seq: 28 },
+    { type: "text", text: `Live unbroken token ${liveLongToken}`, ts: now - 4_950, _event_seq: 28 },
+    { type: "tool_use", tool_use_id: "tool-live-existing", name: "shell", input: { cmd: "npm test" }, _event_seq: 29 },
     {
       type: "tool_use",
       tool_use_id: "tool-live-mobile-existing",
       name: "mcp__worklab__journal_append",
       input: { bullet: "confirming a mobile live preview value with enough text to require truncation" },
-      _event_seq: 29,
+      _event_seq: 30,
     },
   ];
   db.prepare(
@@ -1179,6 +1182,18 @@ test("task detail live panel hydrates existing run events", async ({ page }) => 
   });
   expect(stageTokenAnimation).toBe("wl-stage-token-pulse");
   await expect(page.locator(".task-live-panel", { hasText: "Existing streamed event" })).toBeVisible();
+  const longLiveEvent = page.locator(".task-live-panel .agentlog-event-text", { hasText: liveLongToken });
+  await expect(longLiveEvent).toBeVisible();
+  const longLiveMetrics = await longLiveEvent.evaluate((node) => {
+    const style = getComputedStyle(node);
+    return {
+      clientWidth: Math.ceil(node.clientWidth),
+      scrollWidth: Math.ceil(node.scrollWidth),
+      overflowWrap: style.overflowWrap,
+    };
+  });
+  expect(longLiveMetrics.overflowWrap).toBe("anywhere");
+  expect(longLiveMetrics.scrollWidth).toBeLessThanOrEqual(longLiveMetrics.clientWidth + 1);
   await expect(page.locator(".task-live-header .live-pulse")).toHaveCount(0);
   await expect(page.locator(".task-live-header .status-pill")).toHaveCount(1);
   await expect(page.locator(".task-live-header .status-pill")).toContainText("Running");

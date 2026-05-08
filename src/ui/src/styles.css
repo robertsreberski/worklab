@@ -1980,6 +1980,22 @@ select,
 }
 .event-row.new { animation: wl-tick-in var(--dur-tick) linear; }
 
+.event-row-body-text,
+.tool-call-pre,
+.structured-plain,
+.tool-call-missing-note,
+.tool-call-truncated-note,
+.file-edit-muted,
+.agentlog-coll-body,
+.agentlog-event-text,
+.agentlog-event-live-input,
+.run-card-events-loading,
+.task-live-composer-error {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* §4.16 ToolCallBlock */
 .tool-call {
   background: var(--surface-sunken);
