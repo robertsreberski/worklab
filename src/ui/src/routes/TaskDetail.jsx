@@ -281,6 +281,10 @@ export function TaskDetail({ id, runParam = null }) {
     maxEvents: 10,
   });
 
+  useEffect(() => {
+    if (stage === "done" && runError) setRunError(null);
+  }, [runError, stage]);
+
   const activity = useMemo(
     () => buildActivity({ comments, runs }),
     [comments, runs]

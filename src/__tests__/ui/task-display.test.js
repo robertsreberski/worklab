@@ -40,6 +40,17 @@ describe("task display helpers", () => {
     })).toBe(true);
   });
 
+  it("does not surface stale run errors after task completion", () => {
+    expect(hasRunError({
+      stage: "done",
+      last_run: { status: "error", process_status: "failed", failure_kind: "spawn" },
+    })).toBe(false);
+    expect(hasRunError({
+      stage: "execute",
+      last_run: { status: "error", process_status: "failed", failure_kind: "spawn" },
+    })).toBe(true);
+  });
+
   it("labels active recovery retries from compact task metadata", () => {
     const task = {
       stage: "review",

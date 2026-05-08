@@ -23,6 +23,7 @@ export function taskHasEnabledAutomation(task = {}) {
 
 export function taskHasRunError(task = {}) {
   if (!task || taskHasRunningRun(task)) return false;
+  if ((task.stage || "plan") === "done") return false;
   if (task.last_run?.status === "error" || task.last_run?.process_status === "failed" || task.last_run?.process_status === "abandoned") {
     return true;
   }

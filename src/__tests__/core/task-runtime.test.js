@@ -38,6 +38,17 @@ describe("runtime task grouping", () => {
     expect(items[0]).toMatchObject({ label: "Failed: spawn", tone: "error" });
   });
 
+  it("does not treat completed tasks with stale failed runs as attention", () => {
+    const task = {
+      stage: "done",
+      owner_agent: "owner",
+      last_run: { status: "error", process_status: "failed", failure_kind: "spawn" },
+    };
+
+    expect(runtimeTaskAttentionItems(task)).toEqual([]);
+    expect(runtimeTaskGroupKey(task)).toBe("completed");
+  });
+
   it("does not treat dependency-only waiting as attention", () => {
     expect(runtimeTaskAttentionItems({
       stage: "execute",
