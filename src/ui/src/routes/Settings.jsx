@@ -628,8 +628,9 @@ export function Settings() {
 
         <nav class="settings-section-nav" aria-label="Settings sections">
           {SETTINGS_SECTION_LINKS.map((item) => (
-            <button
-              type="button"
+            <Button
+              variant="ghost"
+              size="sm"
               key={item.id}
               class={activeSectionId === item.id ? "is-active" : ""}
               aria-current={activeSectionId === item.id ? "location" : undefined}
@@ -637,7 +638,7 @@ export function Settings() {
             >
               <Icon name={item.icon} size={14} />
               <span>{item.label}</span>
-            </button>
+            </Button>
           ))}
         </nav>
 

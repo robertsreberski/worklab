@@ -7391,7 +7391,7 @@ button.settings-overview-card:hover,
   box-shadow: inset 3px 0 0 var(--accent);
 }
 button.settings-overview-card:focus-visible,
-.settings-section-nav button:focus-visible {
+.settings-section-nav .button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -7454,29 +7454,30 @@ button.settings-overview-card:focus-visible,
   scrollbar-width: none;
 }
 .settings-section-nav::-webkit-scrollbar { display: none; }
-.settings-section-nav button {
+.settings-section-nav .button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
+  height: auto;
   min-height: 34px;
   padding: 0 var(--sp-3);
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  cursor: pointer;
   font: inherit;
   font-size: var(--text-sm);
+  box-shadow: none;
   white-space: nowrap;
 }
-.settings-section-nav button:hover {
+.settings-section-nav .button:hover {
   color: var(--text);
   background: var(--surface-elevated);
   border-color: var(--border);
 }
-.settings-section-nav button.is-active,
-.settings-section-nav button[aria-current="location"] {
+.settings-section-nav .button.is-active,
+.settings-section-nav .button[aria-current="location"] {
   color: var(--text);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface-elevated));
   border-color: color-mix(in srgb, var(--accent) 36%, var(--border));

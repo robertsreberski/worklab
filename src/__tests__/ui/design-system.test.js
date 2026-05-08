@@ -252,8 +252,10 @@ describe("design system stylesheet", () => {
   it("builds settings panel groups on the shared PanelGrid layout", () => {
     const settingsSource = readFileSync(settingsPath, "utf8");
     expect(settingsSource).toMatch(/import\s+\{\s*Page,\s*PanelGrid\s*\}/);
+    expect(settingsSource).toMatch(/<Button[\s\S]*class=\{activeSectionId === item\.id \? "is-active" : ""\}/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
+    expect(settingsSource).not.toMatch(/<button[\s\S]*key=\{item\.id\}/);
   });
 
   it("builds counted route groups on the shared SectionGroup layout", () => {
