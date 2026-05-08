@@ -11604,6 +11604,7 @@ button.settings-overview-card:focus-visible,
   min-width: 0;
   flex-direction: column;
   gap: var(--sp-4);
+  margin-bottom: 0;
 }
 .task-edit .task-edit-body {
   width: min(100%, 1180px);

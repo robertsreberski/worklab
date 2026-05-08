@@ -24,6 +24,7 @@ import { Card } from "../components/Card.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
@@ -957,7 +958,7 @@ export function TaskDetail({ id, runParam = null }) {
         <TaskParentReference task={task} />
         <div class="task-detail editor-body">
           <div class="task-detail-main editor-main">
-            <section class="task-brief-section" aria-labelledby="task-brief">
+            <FormSection class="task-brief-section" aria-labelledby="task-brief">
               <SectionMarker id="task-brief" num="01" kicker="Brief" meta="Request" />
               <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>
                 <div class="task-hero-instructions-head">
@@ -997,9 +998,9 @@ export function TaskDetail({ id, runParam = null }) {
                   </button>
                 )}
               </div>
-            </section>
+            </FormSection>
 
-            <section class="task-plan-section" aria-labelledby="task-plan">
+            <FormSection class="task-plan-section" aria-labelledby="task-plan">
               <SectionMarker id="task-plan" num="02" kicker="Plan" meta="Markdown" />
               <TaskPlanCard
                 task={task}
@@ -1011,9 +1012,9 @@ export function TaskDetail({ id, runParam = null }) {
                 onCancel={cancelPlanEdit}
                 onSave={savePlan}
               />
-            </section>
+            </FormSection>
 
-            <section class="task-workflow-section" aria-labelledby="task-workflow">
+            <FormSection class="task-workflow-section" aria-labelledby="task-workflow">
               <SectionMarker id="task-workflow" num="03" kicker="Workflow" meta="Hierarchy" />
 
               <TaskWorkflowMeta task={task} />
@@ -1075,9 +1076,9 @@ export function TaskDetail({ id, runParam = null }) {
                   />
                 </div>
               ) : null}
-            </section>
+            </FormSection>
 
-            <section class="task-activity-section" aria-labelledby="task-activity">
+            <FormSection class="task-activity-section" aria-labelledby="task-activity">
               <SectionMarker id="task-activity" num="04" kicker="Activity" meta="Comments & runs" />
               <Card
                 title="Activity"
@@ -1171,7 +1172,7 @@ export function TaskDetail({ id, runParam = null }) {
               <div class="activity-empty">{runningRun ? "No comments or completed runs yet." : "No activity yet."}</div>
             )}
               </Card>
-            </section>
+            </FormSection>
           </div>
 
           <aside class="task-detail-rail editor-rail">
