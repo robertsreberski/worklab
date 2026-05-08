@@ -8,8 +8,10 @@ const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
+const kbDetailPath = resolve(repoRoot, "src/ui/src/routes/KbDetail.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
+const projectsPath = resolve(repoRoot, "src/ui/src/routes/Projects.jsx");
 const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
@@ -149,6 +151,15 @@ describe("design system stylesheet", () => {
     ]) {
       expect(taskDetailSource).toMatch(new RegExp(`<FormSection[^>]+class="${sectionClass}"`));
       expect(taskDetailSource).not.toMatch(new RegExp(`<section\\s+class="${sectionClass}"`));
+    }
+  });
+
+  it("builds project and knowledge read sections on the shared FormSection component", () => {
+    for (const filePath of [kbDetailPath, projectsPath]) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{\s*FormSection\s*\}/);
+      expect(source).toMatch(/<FormSection[^>]+class="knowledge-read-section"/);
+      expect(source).not.toMatch(/<section\s+class="knowledge-read-section"/);
     }
   });
 

@@ -704,7 +704,7 @@ function ProjectDetail({ selectedId, onChanged }) {
       <div class="pane-detail-body entity-detail-body project-detail-body">
         <div class="knowledge-read-layout project-read-layout">
           <main class="knowledge-read-main project-read-main">
-            <section class="knowledge-read-section" aria-labelledby="project-details">
+            <FormSection class="knowledge-read-section" aria-labelledby="project-details">
               <SectionMarker id="project-details" num="01" kicker="Context" meta="Run input" />
               {project.description && <p class="soft-meta project-description">{project.description}</p>}
               <div class="project-workdir-row">
@@ -750,18 +750,18 @@ function ProjectDetail({ selectedId, onChanged }) {
               ) : (
                 <div class="task-plan-empty">No project context yet.</div>
               )}
-            </section>
+            </FormSection>
 
-            <section class="knowledge-read-section" aria-labelledby="project-tasks">
+            <FormSection class="knowledge-read-section" aria-labelledby="project-tasks">
               <SectionMarker id="project-tasks" num="02" kicker="Tasks" meta={taskSectionMeta} />
               {project.tasks?.length ? (
                 <ProjectTaskProgress tasks={project.tasks} progress={taskProgress} />
               ) : (
                 <div class="task-plan-empty">No tasks are assigned to this project.</div>
               )}
-            </section>
+            </FormSection>
 
-            <section class="knowledge-read-section" aria-labelledby="project-knowledge">
+            <FormSection class="knowledge-read-section" aria-labelledby="project-knowledge">
               <SectionMarker id="project-knowledge" num="03" kicker="Knowledge" meta={knowledgeSectionMeta} />
               {canonicalKnowledgeCount || taskOutputs.length ? (
                 <div class="project-knowledge-workspace">
@@ -825,7 +825,7 @@ function ProjectDetail({ selectedId, onChanged }) {
               ) : (
                 <div class="task-plan-empty">No canonical knowledge or task outputs yet.</div>
               )}
-            </section>
+            </FormSection>
           </main>
           <aside class="entity-editor-rail project-read-rail is-mobile-drawer-source">{rail}</aside>
         </div>

@@ -8,6 +8,7 @@ import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
@@ -261,7 +262,7 @@ export function KbDetail({ slug }) {
       <div class="pane-detail-body entity-detail-body knowledge-detail-body knowledge-read-body">
         <div class="knowledge-read-layout">
           <main class="knowledge-read-main">
-            <section class="knowledge-read-section" aria-labelledby="kb-read-body">
+            <FormSection class="knowledge-read-section" aria-labelledby="kb-read-body">
               <SectionMarker id="kb-read-body" num="01" kicker="Body" meta="Markdown" />
               {entry.body.trim() ? (
                 <article class="knowledge-read-article">
@@ -274,7 +275,7 @@ export function KbDetail({ slug }) {
               ) : (
                 <div class="task-plan-empty knowledge-read-empty">No content yet. Use edit to add Markdown.</div>
               )}
-            </section>
+            </FormSection>
           </main>
 
           <aside class="entity-editor-rail knowledge-read-rail is-mobile-drawer-source">
