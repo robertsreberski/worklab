@@ -12,7 +12,7 @@ import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.js
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -301,7 +301,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
         </div>
       )}
 
-      <div class="project-task-groups">
+      <SectionStack class="project-task-groups">
         {progress.groups.map((group) => (
           <SectionGroup
             key={group.key}
@@ -319,7 +319,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
             )}
           </SectionGroup>
         ))}
-      </div>
+      </SectionStack>
     </div>
   );
 }
@@ -768,7 +768,7 @@ function ProjectDetail({ selectedId, onChanged }) {
               {canonicalKnowledgeCount || taskOutputs.length ? (
                 <div class="project-knowledge-workspace">
                   {canonicalKnowledgeCount > 0 && (
-                    <div class="project-knowledge-groups">
+                    <SectionStack class="project-knowledge-groups">
                       {knowledgeGroups.map((group) => (
                         <SectionGroup
                           key={group.key}
@@ -790,7 +790,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                           </div>
                         </SectionGroup>
                       ))}
-                    </div>
+                    </SectionStack>
                   )}
 
                   {taskOutputs.length > 0 && (

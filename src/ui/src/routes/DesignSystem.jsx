@@ -93,6 +93,7 @@ import {
   RailStack,
   SectionMarker,
   SectionGroup,
+  SectionStack,
   SettingsMatrix,
   SummaryGrid,
   Toolbar,
@@ -150,6 +151,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "RailStack", group: "layout", coverage: "visible" },
   { name: "SectionMarker", group: "layout", coverage: "visible" },
   { name: "SectionGroup", group: "layout", coverage: "visible" },
+  { name: "SectionStack", group: "layout", coverage: "visible" },
   { name: "SettingsMatrix", group: "layout", coverage: "visible" },
   { name: "SummaryGrid", group: "layout", coverage: "visible" },
   { name: "Toolbar", group: "layout", coverage: "visible" },
@@ -569,12 +571,17 @@ export function DesignSystem() {
                 />
               </Card>
               <Card title="SectionGroup">
-                <SectionGroup label="Todo" count={3}>
-                  <div class="ds-catalog-row">
-                    <StatusPill status="queued" size="sm" />
-                    <StatusPill status="running" size="sm" />
-                  </div>
-                </SectionGroup>
+                <SectionStack>
+                  <SectionGroup label="Todo" count={3}>
+                    <div class="ds-catalog-row">
+                      <StatusPill status="queued" size="sm" />
+                      <StatusPill status="running" size="sm" />
+                    </div>
+                  </SectionGroup>
+                  <SectionGroup label="Done" count={1}>
+                    <StatusPill status="done" size="sm" />
+                  </SectionGroup>
+                </SectionStack>
               </Card>
               <Card title="ControlGroup">
                 <ControlGroupStack>

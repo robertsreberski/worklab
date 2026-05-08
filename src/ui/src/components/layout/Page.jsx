@@ -90,3 +90,12 @@ export function SectionGroup({
     </Component>
   );
 }
+
+export function SectionStack({
+  children,
+  class: className = "",
+  as: Component = "div",
+  ...props
+}) {
+  return <Component {...props} class={`ds-section-stack ${className}`.trim()}>{children}</Component>;
+}
