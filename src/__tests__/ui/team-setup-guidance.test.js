@@ -20,7 +20,7 @@ describe("team setup guidance", () => {
       [],
       [],
     )).toEqual([
-      "Add a goal so the lead knows what work this team owns.",
+      "Add a team charter so the lead knows what work this team owns.",
       "Pick a lead agent to coordinate and delegate.",
       "Add member agents with distinct specialties.",
       "Assign the team to a project or task when it is ready.",
@@ -83,15 +83,19 @@ describe("team setup guidance", () => {
     expect(goalStatusLabel(goals[2])).toBe("In progress");
   });
 
-  it("surfaces goal dashboard hooks in Teams, Projects, and Commander", () => {
+  it("surfaces native goal links in Teams, Projects, Commander, and Task Detail", () => {
     const teamsSource = readFileSync(teamsSourcePath, "utf8");
     const projectsSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/Projects.jsx"), "utf8");
     const commanderSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/components/CommanderRow.jsx"), "utf8");
+    const taskDetailSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskDetail.jsx"), "utf8");
 
-    expect(teamsSource).toContain("Team goals");
-    expect(teamsSource).toContain("team-goal-dashboard");
+    expect(teamsSource).toContain("Team charter");
+    expect(teamsSource).toContain("#/goals/");
     expect(projectsSource).toContain("Project goal");
+    expect(projectsSource).toContain("#/goals/");
     expect(commanderSource).toContain("team-goal-chip");
+    expect(commanderSource).toContain("#/goals/");
+    expect(taskDetailSource).toContain("#/goals/");
   });
 
   it("keeps Teams setup guidance short and contextual", () => {

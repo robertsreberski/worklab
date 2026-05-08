@@ -744,9 +744,9 @@ export function TaskDetail({ id, runParam = null }) {
         </a>
       )}
       {task.is_team_root && (
-        <span class="chip chip-muted">
-          <Icon name="users" size={10} /> Team root
-        </span>
+        <a class="chip chip-muted" href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal">
+          <Icon name="target" size={10} /> Goal
+        </a>
       )}
       {hasLastRunError && (
         <span class="chip chip-error">

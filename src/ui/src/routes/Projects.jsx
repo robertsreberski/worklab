@@ -155,6 +155,9 @@ function ProjectGoalSummary({ goal }) {
         ) : null}
       </div>
       <div class="project-goal-links">
+        {goal.goal_id || goal.root_task_id ? (
+          <a href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}>Goal</a>
+        ) : null}
         {goal.team_slug || goal.team_id ? (
           <a href={`#/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
         ) : null}

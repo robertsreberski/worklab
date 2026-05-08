@@ -1,4 +1,4 @@
-// §6.x Teams — minimal pane layout. List teams, edit roster/goal/budget,
+// §6.x Teams — minimal pane layout. List teams, edit roster/charter/budget,
 // view recent lead cycles, and trigger a manual run-lead. Reuses the
 // PaneLayout pattern from Agents/Projects.
 
@@ -30,7 +30,7 @@ import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceL
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 
 const GOOD_TEAM_CHECKLIST = [
-  "Goal: define the kind of work this team owns.",
+  "Team charter: define the kind of work this team owns.",
   "Lead: pick a coordinator/orchestrator who can triage and delegate.",
   "Members: add 2-5 specialists with distinct strengths.",
   "Roles: describe when each member should be used.",
@@ -96,7 +96,7 @@ export function leadCycleRawLogHref(cycle = {}) {
 export function teamSetupGaps(team = {}, members = [], projects = []) {
   const gaps = [];
   if (!String(team?.goal || "").trim()) {
-    gaps.push("Add a goal so the lead knows what work this team owns.");
+    gaps.push("Add a team charter so the lead knows what work this team owns.");
   }
   if (!String(team?.lead_agent || "").trim()) {
     gaps.push("Pick a lead agent to coordinate and delegate.");
@@ -224,6 +224,12 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         <Button size="sm" variant="ghost" onClick={() => onAction?.(goal, "clear")}>
           Clear
         </Button>
+        {goal?.root_task_id && (
+          <a class="team-cycle-link" href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}>
+            <Icon name="target" size={13} />
+            <span>Goal</span>
+          </a>
+        )}
         {goal?.root_task_id && (
           <a class="team-cycle-link" href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>
             <Icon name="arrow-right" size={13} />
@@ -469,7 +475,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
               <label>Name<Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} /></label>
               <label>Slug<Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" /></label>
               <label>Description<Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} /></label>
-              <label>Goal<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
+              <label>Team charter<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
               <label>Lead agent
                 <AgentPicker
                   class="team-lead-picker"
@@ -633,8 +639,8 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
       />
       <div class="pane-detail-body entity-detail-body team-detail-body">
         <div style={{ padding: "1rem", display: "grid", gap: "1rem" }}>
-          <Card title="Goal">
-            <p>{team.goal || <em>(no goal set)</em>}</p>
+          <Card title="Team charter">
+            <p>{team.goal || <em>(no team charter set)</em>}</p>
           </Card>
           <TeamSetupGapsCard gaps={setupGaps} />
           <Card title={`Project goals (${goals.length})`}>
@@ -845,7 +851,6 @@ export function Teams({ selectedId = null, mode = null }) {
     lead: leadFilter,
   }), [leadFilter, query, scheduleFilter, statusFilter, teams]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
-  const allGoals = useMemo(() => teams.flatMap((team) => goalsByTeamId[team.id] || []), [goalsByTeamId, teams]);
   const hasFilter = query.trim() || statusFilter !== "active" || scheduleFilter !== "all" || leadFilter !== "all";
   const statusTabs = useMemo(() => [
     { value: "active", label: "Active", count: teams.filter((team) => team.status !== "archived").length },
@@ -904,7 +909,7 @@ export function Teams({ selectedId = null, mode = null }) {
       );
     }
   } else {
-    body = <TeamGoalsDashboard goals={allGoals} onRunGoal={runGoal} onGoalAction={updateGoal} />;
+    body = emptyState();
   }
 
   return (
