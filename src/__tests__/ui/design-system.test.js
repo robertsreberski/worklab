@@ -140,6 +140,27 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("bounds live output and run-log text surfaces", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".event-row-body-text",
+      ".tool-call-pre",
+      ".structured-plain",
+      ".tool-call-missing-note",
+      ".tool-call-truncated-note",
+      ".file-edit-muted",
+      ".agentlog-coll-body",
+      ".agentlog-event-text",
+      ".agentlog-event-live-input",
+      ".run-card-events-loading",
+      ".task-live-composer-error",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+      expect(declarations).toMatch(/overflow-wrap:\s*anywhere\b/);
+    }
+  });
+
   it("uses a contained pulse animation for active stage-token dots", () => {
     const css = readFileSync(stylesPath, "utf8");
     const pulseRule = css.match(/\.stage-token-pulse\s+\.stage-token-glyph\s*\{[^}]*\}/)?.[0] || "";
