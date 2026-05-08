@@ -17,11 +17,17 @@ import {
   WORKLAB_BUILTIN_TOOLS,
 } from "../../../core/index.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
+import {
+  claudeModelSupportsOneMillionContext,
+  normalizeContextWindow,
+  ONE_MILLION_CONTEXT_WINDOW,
+} from "@worklab/agent-runtime/ai/runtime/context-windows.js";
 
 const allowlistModeSchema = z.enum(["all", "custom"]).optional();
 const effortSchema = z.enum(["none", "low", "medium", "high", "xhigh", "max"]).optional();
 const executionModeSchema = z.enum(["cli", "sdk"]).optional();
 const subagentModeSchema = z.enum(["disabled", "advisory", "workspace"]).optional();
+const contextWindowSchema = z.enum(["default", "1m"]).optional();
 
 export const agentCreateSchema = z.object({
   name: z.string().optional(),
@@ -29,6 +35,7 @@ export const agentCreateSchema = z.object({
   model: z.string().min(1, "model is required"),
   execution_mode: executionModeSchema,
   effort: effortSchema,
+  context_window: contextWindowSchema,
   description: z.string().optional(),
   instructions: z.string().optional(),
   skills_allowlist: z.array(z.string()).optional(),
@@ -91,6 +98,15 @@ function validateBuiltinAllowlist(model, allowlist) {
   return list;
 }
 
+function validateContextWindow({ resolved, contextWindow }) {
+  const normalized = normalizeContextWindow(contextWindow);
+  if (normalized !== ONE_MILLION_CONTEXT_WINDOW) return normalized;
+  if (resolved.sdk === "claude" && claudeModelSupportsOneMillionContext(resolved.model)) {
+    return normalized;
+  }
+  throw new Error("1M context is only available for Claude Opus 4.7 and Opus 4.6.");
+}
+
 function agentSummary(row) {
   return {
     name: row.name,
@@ -98,6 +114,7 @@ function agentSummary(row) {
     model: row.model,
     sdk: row.sdk,
     effort: row.effort,
+    context_window: row.context_window || "default",
     execution_mode: row.execution_mode || "sdk",
     enabled: !!row.enabled,
     skills_allowlist_mode: row.skills_allowlist_mode,
@@ -121,6 +138,7 @@ export const definitions = [
         model: { type: "string", description: "Explicit model reference" },
         execution_mode: { type: "string", enum: ["cli", "sdk"], description: "Execution mode. codex:* requires cli; pi:* requires sdk." },
         effort: { type: "string", enum: ["none", "low", "medium", "high", "xhigh", "max"] },
+        context_window: { type: "string", enum: ["default", "1m"], description: "1m is only available for Claude Opus 4.7 and Opus 4.6." },
         description: { type: "string" },
         instructions: { type: "string" },
         skills_allowlist: { type: "array", items: { type: "string" } },
@@ -150,6 +168,7 @@ export function buildHandlers(context) {
         const executionMode = parsed.execution_mode || "sdk";
         const modeReason = executionModeIncompatibilityReason(resolved, executionMode);
         if (modeReason) throw new Error(modeReason);
+        const contextWindow = validateContextWindow({ resolved, contextWindow: parsed.context_window });
         const finalName = parsed.name || uniqueSlug(parsed.display_name, (candidate) =>
           agentExists(db, candidate),
           { fallback: "agent" },
@@ -166,12 +185,12 @@ export function buildHandlers(context) {
         const effort = normalizeReasoningEffortForModel(resolved, parsed.effort || "medium");
         db.prepare(`
           INSERT INTO agents
-            (name, display_name, description, sdk, model, effort, instructions,
+            (name, display_name, description, sdk, model, effort, context_window, instructions,
              skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
              builtin_allowlist, builtin_allowlist_mode, allow_self_review,
              browser_tools_review_only,
              subagent_mode, execution_mode, enabled, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           finalName,
           parsed.display_name,
@@ -179,6 +198,7 @@ export function buildHandlers(context) {
           resolved.sdk,
           model,
           effort,
+          contextWindow,
           parsed.instructions || "",
           JSON.stringify(skillsAllow.list),
           skillsAllow.mode,

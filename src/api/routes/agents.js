@@ -17,6 +17,11 @@ import {
 } from "../../core/index.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import {
+  claudeModelSupportsOneMillionContext,
+  normalizeContextWindow,
+  ONE_MILLION_CONTEXT_WINDOW,
+} from "@worklab/agent-runtime/ai/runtime/context-windows.js";
+import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
   normalizeAllowlistMode,
@@ -53,6 +58,7 @@ function rowToAgent(row) {
     browser_tools_review_only: !!row.browser_tools_review_only,
     subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
+    context_window: normalizeContextWindow(row.context_window),
   };
 }
 
@@ -62,6 +68,7 @@ const PATCHABLE = [
   "sdk",
   "model",
   "effort",
+  "context_window",
   "instructions",
   "skills_allowlist",
   "skills_allowlist_mode",
@@ -97,6 +104,25 @@ function normalizeSubagentMode(value, fallback = "advisory") {
     throw new Error(`subagent_mode must be one of: ${[...VALID_SUBAGENT_MODES].join(", ")}`);
   }
   return trimmed;
+}
+
+function normalizeAgentContextWindow(value, fallback = "default") {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string") throw new Error("context_window must be a string");
+  const trimmed = value.trim();
+  if (trimmed !== "default" && trimmed !== ONE_MILLION_CONTEXT_WINDOW) {
+    throw new Error("context_window must be one of: default, 1m");
+  }
+  return normalizeContextWindow(trimmed);
+}
+
+function validateContextWindowForAgent({ resolved, contextWindow }) {
+  const normalized = normalizeAgentContextWindow(contextWindow, "default");
+  if (normalized !== ONE_MILLION_CONTEXT_WINDOW) return normalized;
+  if (resolved?.sdk === "claude" && claudeModelSupportsOneMillionContext(resolved.model)) {
+    return normalized;
+  }
+  throw new Error("1M context is only available for Claude Opus 4.7 and Opus 4.6.");
 }
 
 function validateModelForAgent({ db, dataDir, model }) {
@@ -310,6 +336,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let browserToolsReviewOnly;
     let subagentMode;
     let executionMode;
+    let contextWindow;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
@@ -333,6 +360,21 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         });
       }
     }
+    try {
+      contextWindow = validateContextWindowForAgent({
+        resolved,
+        contextWindow: req.body.context_window,
+      });
+    } catch (err) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_context_window",
+          message: err.message,
+          context_window: req.body.context_window,
+          model: canonicalModel,
+        },
+      });
+    }
 
     insertAgent(db, {
       name: finalName,
@@ -341,6 +383,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       sdk: resolved.sdk,
       model: canonicalModel,
       effort,
+      contextWindow,
       instructions,
       skillsAllowlistJson: JSON.stringify(skillsAllow.list),
       skillsAllowlistMode: skillsAllow.mode,
@@ -424,6 +467,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     const values = [];
     let targetModel = existing.model;
     let targetResolved = null;
+    let targetContextWindow = normalizeContextWindow(existing.context_window);
     let wroteEffort = false;
 
     for (const k of PATCHABLE) {
@@ -451,6 +495,14 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             wroteEffort = true;
           } catch (err) {
             return res.status(400).json({ error: { code: "invalid_model", message: err.message } });
+          }
+        }
+        if (k === "context_window") {
+          try {
+            targetContextWindow = normalizeAgentContextWindow(req.body[k], targetContextWindow);
+            req.body[k] = targetContextWindow;
+          } catch (err) {
+            return res.status(400).json({ error: { code: "invalid_context_window", message: err.message } });
           }
         }
         fields.push(`${k} = ?`);
@@ -510,6 +562,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         ? normalizeExecutionMode(req.body.execution_mode, existing.execution_mode || "sdk")
         : (existing.execution_mode || "sdk");
       const effectiveModel = "model" in req.body ? targetModel : existing.model;
+      const effectiveContextWindow = "context_window" in req.body
+        ? targetContextWindow
+        : normalizeContextWindow(existing.context_window);
       let effectiveResolved = targetResolved;
       if (!effectiveResolved && effectiveModel) {
         try { effectiveResolved = normalizeModelReference(effectiveModel); } catch { effectiveResolved = null; }
@@ -523,6 +578,21 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             code: "incompatible_execution_mode",
             message: reason,
             execution_mode: effectiveExecutionMode,
+            model: effectiveModel,
+          },
+        });
+      }
+      try {
+        validateContextWindowForAgent({
+          resolved: effectiveResolved,
+          contextWindow: effectiveContextWindow,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          error: {
+            code: "invalid_context_window",
+            message: err.message,
+            context_window: effectiveContextWindow,
             model: effectiveModel,
           },
         });

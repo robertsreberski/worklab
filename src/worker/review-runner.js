@@ -142,6 +142,7 @@ export async function runReview(ctx) {
       model,
       effort: agent.effort || "medium",
       executionMode: agent.execution_mode || "sdk",
+      contextWindow: agent.context_window || "default",
       db,
       dataDir: config.dataDir,
       skills,

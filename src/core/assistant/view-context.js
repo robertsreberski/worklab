@@ -224,7 +224,7 @@ function appendAgentContext(lines, { db, context }) {
   }
   lines.push(`Agent: ${agent.display_name || agent.name} (${agent.name})`);
   lines.push(`Enabled: ${agent.enabled ? "yes" : "no"}`);
-  lines.push(`Model: ${agent.model} (${agent.sdk}, effort=${agent.effort})`);
+  lines.push(`Model: ${agent.model} (${agent.sdk}, effort=${agent.effort}, context=${agent.context_window || "default"})`);
   if (agent.description) lines.push(`Description: ${oneLine(agent.description, 300)}`);
   if (agent.instructions) lines.push(`Instructions excerpt:\n${block(agent.instructions, 1200)}`);
   lines.push(`Allowlist modes: skills=${agent.skills_allowlist_mode || "all"}, mcp=${agent.mcp_allowlist_mode || "all"}, builtins=${agent.builtin_allowlist_mode || "all"}`);

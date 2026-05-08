@@ -81,6 +81,69 @@ describe("agents CRUD", () => {
     expect(row.execution_mode).toBe("cli");
   });
 
+  it("accepts 1M context only for eligible Opus Claude agents", async () => {
+    const { agent, db } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "opus-long",
+      display_name: "Opus Long",
+      model: "claude:claude-opus-4-7",
+      execution_mode: "cli",
+      context_window: "1m",
+    }).expect(201);
+    expect(created.body.agent.context_window).toBe("1m");
+    const row = db.prepare("SELECT context_window FROM agents WHERE name = 'opus-long'").get();
+    expect(row.context_window).toBe("1m");
+
+    const opus46 = await agent.post("/api/agents").send({
+      name: "opus-46-long",
+      display_name: "Opus 4.6 Long",
+      model: "claude:claude-opus-4-6",
+      execution_mode: "sdk",
+      context_window: "1m",
+    }).expect(201);
+    expect(opus46.body.agent.context_window).toBe("1m");
+  });
+
+  it("rejects 1M context for non-Opus and non-Claude agents", async () => {
+    const { agent } = makeTestServer();
+    const sonnet = await agent.post("/api/agents").send({
+      name: "sonnet-long",
+      display_name: "Sonnet Long",
+      model: "claude:claude-sonnet-4-6",
+      context_window: "1m",
+    }).expect(400);
+    expect(sonnet.body.error.code).toBe("invalid_context_window");
+
+    const codex = await agent.post("/api/agents").send({
+      name: "codex-long",
+      display_name: "Codex Long",
+      model: "codex:gpt-5.5",
+      execution_mode: "cli",
+      context_window: "1m",
+    }).expect(400);
+    expect(codex.body.error.code).toBe("invalid_context_window");
+  });
+
+  it("rejects PATCH when a model change would leave 1M context on an ineligible model", async () => {
+    const { agent } = makeTestServer();
+    await agent.post("/api/agents").send({
+      name: "opus-patch",
+      display_name: "Opus Patch",
+      model: "claude:claude-opus-4-7",
+      context_window: "1m",
+    }).expect(201);
+
+    const rejected = await agent.patch("/api/agents/opus-patch").send({ model: "claude:claude-sonnet-4-6" }).expect(400);
+    expect(rejected.body.error.code).toBe("invalid_context_window");
+
+    const cleared = await agent.patch("/api/agents/opus-patch").send({
+      model: "claude:claude-sonnet-4-6",
+      context_window: "default",
+    }).expect(200);
+    expect(cleared.body.agent.model).toBe("claude:claude-sonnet-4-6");
+    expect(cleared.body.agent.context_window).toBe("default");
+  });
+
   it("rejects POST when execution_mode='cli' is paired with a non-codex pi model", async () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/agents").send({

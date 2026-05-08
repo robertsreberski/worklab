@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 33;
+export const SCHEMA_VERSION = 34;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS agents (
   sdk TEXT NOT NULL,
   model TEXT NOT NULL,
   effort TEXT NOT NULL DEFAULT 'medium',
+  context_window TEXT NOT NULL DEFAULT 'default',
   instructions TEXT NOT NULL DEFAULT '',
   skills_allowlist TEXT NOT NULL DEFAULT '[]',
   skills_allowlist_mode TEXT NOT NULL DEFAULT 'all',

@@ -66,6 +66,7 @@ export function insertAgent(db, {
   sdk,
   model,
   effort,
+  contextWindow,
   instructions,
   skillsAllowlistJson,
   skillsAllowlistMode,
@@ -83,13 +84,13 @@ export function insertAgent(db, {
 }) {
   db.prepare(`
     INSERT INTO agents
-      (name, display_name, description, sdk, model, effort, instructions,
+      (name, display_name, description, sdk, model, effort, context_window, instructions,
        skills_allowlist, skills_allowlist_mode, mcp_allowlist, mcp_allowlist_mode,
        builtin_allowlist, builtin_allowlist_mode, allow_self_review,
        browser_tools_review_only, subagent_mode, execution_mode, enabled, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    name, displayName, description, sdk, model, effort, instructions,
+    name, displayName, description, sdk, model, effort, contextWindow || "default", instructions,
     skillsAllowlistJson, skillsAllowlistMode,
     mcpAllowlistJson, mcpAllowlistMode,
     builtinAllowlistJson, builtinAllowlistMode,

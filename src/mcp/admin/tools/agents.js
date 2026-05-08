@@ -19,6 +19,7 @@ const agentCreateInput = object({
   model: string("Explicit model reference, for example codex:gpt-5.5, pi:openai-codex:gpt-5.5, or claude:claude-sonnet-4-6"),
   execution_mode: string("Execution mode: cli for codex/Claude Code-style CLI runs, sdk for Pi/Claude SDK runs"),
   effort: string("Reasoning effort: none, low, medium, high, xhigh, or max"),
+  context_window: string("Context window: default, or 1m for Claude Opus 4.7 / Opus 4.6"),
   description: string("Short description"),
   instructions: string("Agent instructions"),
   skills_allowlist: arrayOfString("Allowed skills when skills_allowlist_mode is custom"),

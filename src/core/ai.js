@@ -5,6 +5,7 @@ import {
   normalizeRuntimeModelReference,
   parseRuntimeModelReference,
 } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
+import { claudeModelSupportsOneMillionContext } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
 import { createRuntime } from "@worklab/agent-runtime";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
@@ -22,6 +23,7 @@ import {
 export const BUILTIN_CLAUDE_MODELS = [
   "claude-haiku-4-5-20251001",
   "claude-sonnet-4-6",
+  "claude-opus-4-6",
   "claude-opus-4-7",
 ];
 
@@ -80,6 +82,7 @@ const PI_PROVIDER_LABELS = {
 const MODEL_SHORT_LABELS = {
   "claude-haiku-4-5-20251001": "Haiku 4.5",
   "claude-sonnet-4-6": "Sonnet 4.6",
+  "claude-opus-4-6": "Opus 4.6",
   "claude-opus-4-7": "Opus 4.7",
   "gpt-5.5": "GPT-5.5",
   "gpt-5.4": "GPT-5.4",
@@ -117,6 +120,9 @@ function claudeReasoningCapabilities(model, runtime = "sdk") {
     tool_use: true,
     vision: true,
     json_mode: true,
+    context_window_tokens: claudeModelSupportsOneMillionContext(model) ? 1_000_000 : 200_000,
+    supports_1m_context: claudeModelSupportsOneMillionContext(model),
+    context_windows: claudeModelSupportsOneMillionContext(model) ? ["default", "1m"] : ["default"],
     ...runtimeMetadata({
       runtimeKind: runtime,
       supportsMcp: true,
@@ -272,6 +278,14 @@ const BUILTIN_MODEL_GROUPS = [
         sdk: "claude",
         model: "claude-sonnet-4-6",
         capabilities: claudeReasoningCapabilities("claude-sonnet-4-6"),
+      },
+      {
+        value: "claude:claude-opus-4-6",
+        label: "Claude Opus 4.6",
+        description: "Deep reasoning",
+        sdk: "claude",
+        model: "claude-opus-4-6",
+        capabilities: claudeReasoningCapabilities("claude-opus-4-6"),
       },
       {
         value: "claude:claude-opus-4-7",

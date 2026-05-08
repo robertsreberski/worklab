@@ -164,6 +164,7 @@ export function Agents({ selectedName = null }) {
                     <span class="resource-row-tags">
                       <span class="pane-row-mono">{modelDisplayName(a.model)}</span>
                       {a.effort && <span class="resource-row-chip">{a.effort} effort</span>}
+                      {a.context_window === "1m" && <span class="resource-row-chip">1M context</span>}
                       {a.enabled === false && <span class="resource-row-chip">disabled</span>}
                     </span>
                   </span>

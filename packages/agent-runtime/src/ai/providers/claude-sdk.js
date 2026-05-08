@@ -10,6 +10,7 @@ import {
 } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
+import { modelWithContextWindow } from "../runtime/context-windows.js";
 import { backendCapabilities } from "../backend.js";
 import { MAX_TOOL_RESULT_BYTES, summarisePayload } from "../../agent/tool-bloat.js";
 import { normalizeMcpToolParams } from "../../agent/tools/pi-bridge.js";
@@ -486,7 +487,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   const nativeAgents = claudeNativeAgentDefinitions(options.nativeSubagents);
   const queryOptions = {
     systemPrompt,
-    model: model.model,
+    model: modelWithContextWindow(model.model, options.contextWindow),
     cwd,
     permissionMode,
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),

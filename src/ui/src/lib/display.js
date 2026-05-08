@@ -54,6 +54,7 @@ export function agentModelEffortLabel(agent) {
   const parts = [];
   if (agent?.model) parts.push(String(agent.model));
   if (agent?.effort) parts.push(`${agent.effort} effort`);
+  if (agent?.context_window === "1m") parts.push("1M context");
   return parts.join(" · ");
 }
 

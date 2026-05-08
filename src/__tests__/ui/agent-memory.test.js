@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentSupportsOneMillionContext,
   formatMemoryBytes,
   learningMemoryMeta,
   learningMemoryStatusLabel,
@@ -9,6 +10,15 @@ import {
   memoryFreshnessStatus,
   memoryMetaItems,
 } from "../../ui/src/routes/AgentEdit.jsx";
+
+describe("agent runtime UI helpers", () => {
+  it("shows the 1M context switch only for eligible Opus Claude models", () => {
+    expect(agentSupportsOneMillionContext({ value: "claude:claude-opus-4-7" })).toBe(true);
+    expect(agentSupportsOneMillionContext({ value: "claude:claude-opus-4-6" })).toBe(true);
+    expect(agentSupportsOneMillionContext({ value: "claude:claude-sonnet-4-6" })).toBe(false);
+    expect(agentSupportsOneMillionContext({ value: "codex:gpt-5.5" })).toBe(false);
+  });
+});
 
 describe("agent memory UI helpers", () => {
   it("maps memory freshness to user-facing labels and pill statuses", () => {
