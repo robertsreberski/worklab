@@ -30,7 +30,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { ActionDock, DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
+import { ActionDock, DetailHead, SectionGroup, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -1108,7 +1108,7 @@ export function TaskDetail({ id, runParam = null }) {
                   value={newComment}
                   onInput={(e) => setNewComment(e.target.value)}
                 />
-                <div class="activity-composer-actions">
+                <Toolbar class="activity-composer-actions">
                   <div class="activity-composer-options">
                     <Checkbox
                       class="activity-rerun-checkbox"
@@ -1122,7 +1122,7 @@ export function TaskDetail({ id, runParam = null }) {
                   <Button type="submit" variant="primary" disabled={!newComment.trim() || commentSaving}>
                     {commentSaving ? "Posting…" : commentRerun && !runningRun ? "Post & run" : "Post"}
                   </Button>
-                </div>
+                </Toolbar>
               </form>
             </div>
 
