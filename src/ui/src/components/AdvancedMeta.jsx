@@ -13,10 +13,10 @@ export function AdvancedMeta({ title = "Advanced details", items = [], children 
         {visibleItems.length > 0 && (
           <dl class="advanced-meta-list">
             {visibleItems.map((item) => (
-              <div key={item.label}>
-                <dt>{item.label}</dt>
-                <dd>{item.value}</dd>
-              </div>
+              <>
+                <dt key={`label-${item.label}`}>{item.label}</dt>
+                <dd key={`value-${item.label}`}>{item.value}</dd>
+              </>
             ))}
           </dl>
         )}
