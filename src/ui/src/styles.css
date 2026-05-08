@@ -392,6 +392,8 @@ select,
   align-items: center;
   justify-content: center;
   gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
   height: 32px;
   padding: 0 var(--sp-4);
   border: 1px solid var(--border-strong);
@@ -404,6 +406,7 @@ select,
   font-size: var(--text-base);
   font-weight: 500;
   cursor: pointer;
+  overflow: hidden;
   white-space: nowrap;
   transition:
     background var(--dur-snap) var(--ease-snap),
@@ -463,6 +466,17 @@ select,
 .button[disabled],
 .button:disabled,
 .button[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; }
+
+.button > svg { flex: 0 0 auto; }
+
+.button-label {
+  display: inline-block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .button .spinner {
   display: inline-block;

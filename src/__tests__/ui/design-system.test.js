@@ -6,6 +6,7 @@ import { DESIGN_SYSTEM_COMPONENT_COVERAGE } from "../../ui/src/routes/DesignSyst
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
+const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
@@ -81,6 +82,20 @@ describe("design system stylesheet", () => {
       expect(rule).toMatch(/text-overflow:\s*ellipsis\b/);
       expect(rule).toMatch(/white-space:\s*nowrap\b/);
     }
+  });
+
+  it("wraps and clips button labels through the Button primitive", () => {
+    const buttonSource = readFileSync(buttonPath, "utf8");
+    const css = readFileSync(stylesPath, "utf8");
+    const buttonRule = css.match(/\.button\s*\{[^}]*\}/)?.[0] || "";
+    const labelRule = css.match(/\.button-label\s*\{[^}]*\}/)?.[0] || "";
+
+    expect(buttonSource).toContain("button-label");
+    expect(buttonRule).toMatch(/min-width:\s*0\b/);
+    expect(buttonRule).toMatch(/max-width:\s*100%/);
+    expect(labelRule).toMatch(/overflow:\s*hidden\b/);
+    expect(labelRule).toMatch(/text-overflow:\s*ellipsis\b/);
+    expect(labelRule).toMatch(/white-space:\s*nowrap\b/);
   });
 
   it("uses a contained pulse animation for active stage-token dots", () => {
