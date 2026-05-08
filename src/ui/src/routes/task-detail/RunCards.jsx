@@ -609,16 +609,17 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
 
   if (!task) return null;
   return (
-    <div class="run-artifacts-section">
-      <div class="task-rail-section-head">
-        <span class="all-caps">Edited files</span>
-        {summaryLabel && (
-          <span class="run-artifacts-summary">
-            <span>{summaryLabel}</span>
-            {lineLabel && <span class="run-artifacts-lines">{lineLabel}</span>}
-          </span>
-        )}
-      </div>
+    <SectionGroup
+      as="div"
+      class="run-artifacts-section"
+      label={<span class="all-caps">Edited files</span>}
+      count={summaryLabel ? (
+        <span class="run-artifacts-summary">
+          <span>{summaryLabel}</span>
+          {lineLabel && <span class="run-artifacts-lines">{lineLabel}</span>}
+        </span>
+      ) : null}
+    >
       <div class="run-artifacts-context" title={task.id}>{taskArtifactsTitle(task, runningRun)}</div>
       <FileTree
         files={tree}
@@ -649,6 +650,6 @@ export function RunArtifactsSection({ task, runningRun, streamState = null }) {
           </div>
         </details>
       )}
-    </div>
+    </SectionGroup>
   );
 }

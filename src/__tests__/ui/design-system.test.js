@@ -257,17 +257,20 @@ describe("design system stylesheet", () => {
   });
 
   it("builds counted route groups on the shared SectionGroup layout", () => {
-    for (const filePath of [projectsPath, teamsPath, runCardsPath, kbDetailPath]) {
+    for (const filePath of [projectsPath, teamsPath, runCardsPath, kbDetailPath, taskDetailPath]) {
       const source = readFileSync(filePath, "utf8");
       expect(source).toMatch(/import\s+\{[^}]*SectionGroup[^}]*\}\s+from/);
-      expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|project-knowledge-group|team-goal-dashboard-group|run-artifact-group|knowledge-usage-group)"/);
+      expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|project-knowledge-group|team-goal-dashboard-group|run-artifacts-section|run-artifact-group|knowledge-usage-group|task-dependencies-section|dependency-group)"/);
     }
 
     expect(readFileSync(projectsPath, "utf8")).not.toMatch(/<section[^>]+class="project-task-group"/);
     expect(readFileSync(projectsPath, "utf8")).not.toMatch(/<div[^>]+class="project-knowledge-group"/);
     expect(readFileSync(teamsPath, "utf8")).not.toMatch(/<section[^>]+class="team-goal-dashboard-group"/);
+    expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<div[^>]+class="run-artifacts-section"/);
     expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<section[^>]+class="run-artifact-group"/);
     expect(readFileSync(kbDetailPath, "utf8")).not.toMatch(/<div[^>]+class="knowledge-usage-group"/);
+    expect(readFileSync(taskDetailPath, "utf8")).not.toMatch(/<div[^>]+class="task-dependencies-section"/);
+    expect(readFileSync(taskDetailPath, "utf8")).not.toMatch(/<div[^>]+class="dependency-group"/);
   });
 
   it("bounds shared component text surfaces", () => {
