@@ -43,6 +43,46 @@ describe("agents CRUD", () => {
     expect(res.body).toEqual({ agents: [] });
   });
 
+  it("GET /api/agents returns compact run stats without log events", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    await agent.post("/api/agents").send({
+      name: "stats-agent",
+      display_name: "Stats Agent",
+      model: "claude:claude-sonnet-4-6",
+    }).expect(201);
+    db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)")
+      .run("stats-task", "Stats task", now, now);
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("stats-run-1", "stats-task", "execute", "execute", "stats-agent", "complete", "succeeded", now - 2000, now - 1000);
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("stats-run-2", "stats-task", "execute", "execute", "stats-agent", "complete", "succeeded", now - 1000, now);
+    db.prepare(`
+      INSERT INTO agent_logs
+        (id, task_run_id, events, model, duration_ms, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("stats-log-1", "stats-run-1", "x".repeat(4096), "claude:claude-sonnet-4-6", 1000, "complete", now);
+    db.prepare(`
+      INSERT INTO agent_logs
+        (id, task_run_id, events, model, duration_ms, status, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("stats-log-2", "stats-run-2", "x".repeat(4096), "claude:claude-sonnet-4-6", 3000, "complete", now);
+
+    const res = await agent.get("/api/agents").expect(200);
+    const statsAgent = res.body.agents.find((row) => row.name === "stats-agent");
+
+    expect(statsAgent).toMatchObject({
+      last_run_at: now - 1000,
+      run_count_30d: 2,
+      avg_run_duration_ms: 2000,
+    });
+    expect(statsAgent.events).toBeUndefined();
+  });
+
   it("POST /api/agents creates with required fields", async () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);

@@ -54,6 +54,21 @@ describe("openDb + runMigrations", () => {
       .toEqual({ todos: [], updated_at: null, update_count: 0 });
   });
 
+  it("creates covering summary indexes for agent list run stats", () => {
+    const db = openDb(":memory:");
+    runMigrations(db);
+
+    const indexes = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='index' ORDER BY name")
+      .all()
+      .map((row) => row.name);
+
+    expect(indexes).toEqual(expect.arrayContaining([
+      "idx_logs_run_summary",
+      "idx_runs_agent_started",
+    ]));
+  });
+
   it("clears stale task failure kind when the latest run succeeded", () => {
     const db = openDb(":memory:");
     runMigrations(db);

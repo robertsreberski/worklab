@@ -47,16 +47,48 @@ export function listAgentInstructionsForKbUsage(db) {
 export function listAgentsWithRunStats(db, since) {
   return db.prepare(`
     SELECT
-      a.*,
-      MAX(r.started_at) AS last_run_at,
-      COUNT(CASE WHEN r.started_at >= ? THEN 1 END) AS run_count_30d,
-      AVG(CASE WHEN r.started_at >= ? THEN l.duration_ms END) AS avg_run_duration_ms
+      a.name,
+      a.display_name,
+      a.description,
+      a.sdk,
+      a.model,
+      a.effort,
+      a.context_window,
+      a.instructions,
+      a.skills_allowlist,
+      a.skills_allowlist_mode,
+      a.mcp_allowlist,
+      a.mcp_allowlist_mode,
+      a.builtin_allowlist,
+      a.builtin_allowlist_mode,
+      a.allow_self_review,
+      a.browser_tools_review_only,
+      a.subagent_mode,
+      a.execution_mode,
+      a.enabled,
+      a.created_at,
+      a.updated_at,
+      last_runs.last_run_at,
+      COALESCE(recent_runs.run_count_30d, 0) AS run_count_30d,
+      recent_runs.avg_run_duration_ms
     FROM agents a
-    LEFT JOIN task_runs r ON r.agent_name = a.name
-    LEFT JOIN agent_logs l ON l.task_run_id = r.id
-    GROUP BY a.name
+    LEFT JOIN (
+      SELECT agent_name, MAX(started_at) AS last_run_at
+      FROM task_runs
+      GROUP BY agent_name
+    ) last_runs ON last_runs.agent_name = a.name
+    LEFT JOIN (
+      SELECT
+        r.agent_name,
+        COUNT(*) AS run_count_30d,
+        AVG(l.duration_ms) AS avg_run_duration_ms
+      FROM task_runs r
+      LEFT JOIN agent_logs l ON l.task_run_id = r.id
+      WHERE r.started_at >= ?
+      GROUP BY r.agent_name
+    ) recent_runs ON recent_runs.agent_name = a.name
     ORDER BY a.name
-  `).all(since, since);
+  `).all(since);
 }
 
 export function insertAgent(db, {

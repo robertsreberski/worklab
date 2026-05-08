@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 35;
+export const SCHEMA_VERSION = 36;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -207,6 +207,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
   first_turn_overhead_tokens INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC);
@@ -228,6 +229,10 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_logs_run ON agent_logs(task_run_id);
+CREATE INDEX IF NOT EXISTS idx_logs_run_summary
+  ON agent_logs(task_run_id, id, model, effort, input_tokens, output_tokens,
+                cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms,
+                num_turns, status);
 
 CREATE TABLE IF NOT EXISTS run_compactions (
   id TEXT PRIMARY KEY,
