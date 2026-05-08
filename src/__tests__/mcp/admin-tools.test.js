@@ -13,6 +13,8 @@ describe("admin MCP tools", () => {
     expect(names).toContain("worklab_task_comment_delete");
     expect(names).toContain("worklab_agent_create");
     expect(names).toContain("worklab_automation_create");
+    expect(names).toContain("worklab_team_goals");
+    expect(names).toContain("worklab_team_goal_update");
     expect(names).toContain("worklab_kb_organize");
     expect(names).toContain("worklab_kb_cleanup_auto_promoted");
     expect(names).not.toContain("worklab_schedule_create");
@@ -22,8 +24,8 @@ describe("admin MCP tools", () => {
   // Snapshot-style guard: catches accidental drift after the per-domain
   // tool-module split. Tool names must be unique and the total count must
   // not change without an explicit edit to this number.
-  it("registers exactly 78 unique admin tool definitions", () => {
-    expect(adminToolDefinitions.length).toBe(78);
+  it("registers exactly 80 unique admin tool definitions", () => {
+    expect(adminToolDefinitions.length).toBe(80);
     const names = adminToolDefinitions.map((tool) => tool.name);
     expect(new Set(names).size).toBe(adminToolDefinitions.length);
   });
