@@ -1,6 +1,7 @@
 import { Icon } from "../Icon.jsx";
 import { IconButton } from "../primitives/IconButton.jsx";
 import { Kbd } from "../primitives/Kbd.jsx";
+import { Toolbar } from "./Page.jsx";
 
 export function SectionMarker({ num, kicker, meta, id, class: className = "" }) {
   return (
@@ -75,7 +76,7 @@ export function DetailHead({
             {meta && <div class="title-meta pane-detail-subline">{meta}</div>}
           </div>
         </div>
-        {actions && <div class="actions toolbar ds-toolbar ds-toolbar-end">{actions}</div>}
+        {actions && <Toolbar class="actions">{actions}</Toolbar>}
       </div>
       {subBar && <div class="sub-bar">{subBar}</div>}
     </header>

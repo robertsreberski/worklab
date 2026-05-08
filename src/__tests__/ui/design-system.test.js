@@ -26,6 +26,7 @@ const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/Workf
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const detailHeadPath = resolve(repoRoot, "src/ui/src/components/layout/DetailHead.jsx");
+const detailLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Detail.jsx");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
 
 function componentExportsFromBarrel(filePath) {
@@ -146,6 +147,16 @@ describe("design system stylesheet", () => {
     expect(detailHeadSource).toMatch(/import\s+\{\s*IconButton\s*\}/);
     expect(detailHeadSource).toMatch(/<IconButton[\s\S]*class="back-btn"/);
     expect(detailHeadSource).not.toMatch(/<button[^>]+class="back-btn"/);
+  });
+
+  it("builds detail header action rows on the shared Toolbar layout", () => {
+    const detailHeadSource = readFileSync(detailHeadPath, "utf8");
+    const detailLayoutSource = readFileSync(detailLayoutPath, "utf8");
+    for (const source of [detailHeadSource, detailLayoutSource]) {
+      expect(source).toMatch(/import\s+\{\s*Toolbar\s*\}/);
+      expect(source).toMatch(/<Toolbar\b/);
+      expect(source).not.toMatch(/<div[^>]+class="(?:actions\s+)?toolbar ds-toolbar ds-toolbar-end"/);
+    }
   });
 
   it("builds task editor sections on the shared FormSection component", () => {
