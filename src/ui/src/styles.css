@@ -3301,12 +3301,16 @@ html.assistant-resizing * {
 .commander-title {
   flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
   color: var(--text);
   font-weight: 600;
   letter-spacing: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
 }
 .commander-live-line {
   grid-column: 3 / -1;
@@ -10213,6 +10217,40 @@ html.assistant-resizing * {
   .app.has-mobile-action-dock .task-edit-head {
     padding: var(--sp-2) var(--sp-3);
   }
+  .app.has-mobile-action-dock .task-edit-task-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+    gap: var(--sp-1);
+  }
+  .app.has-mobile-action-dock .task-edit-task-head .title-row,
+  .app.has-mobile-action-dock .task-edit-task-head .title-block,
+  .app.has-mobile-action-dock .task-edit-task-head .title-copy {
+    gap: 0;
+    min-width: 0;
+  }
+  .app.has-mobile-action-dock .task-edit-task-head .title-icon,
+  .app.has-mobile-action-dock .task-edit-task-head .kicker,
+  .app.has-mobile-action-dock .task-edit-task-head .title-meta {
+    display: none;
+  }
+  .app.has-mobile-action-dock .task-edit-task-head .title-copy h2 {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xl);
+    line-height: 1.1;
+  }
+  .app.has-mobile-action-dock .task-edit-task-head .id-prefix {
+    font-size: var(--text-sm);
+    margin-right: var(--sp-2);
+  }
+  .app.has-mobile-action-dock .task-edit-task-head .sub-bar {
+    margin-top: 0;
+    gap: var(--sp-2);
+    flex-wrap: nowrap;
+  }
   .app.has-mobile-action-dock .task-edit-toolbar {
     display: none;
   }
@@ -11703,9 +11741,11 @@ html.assistant-resizing * {
   }
   .app.responsive.has-dock .pane-detail-compact:has(.entity-edit-mobile-dock) .pane-detail-body,
   .app.responsive.has-dock .task-detail,
-  .app.responsive.has-dock .task-detail-shell .task-detail,
-  .app.responsive.has-dock .task-edit-body {
+  .app.responsive.has-dock .task-detail-shell .task-detail {
     padding-bottom: var(--sp-4);
+  }
+  .app.responsive.has-dock .task-edit-body {
+    padding-bottom: calc(var(--mobile-action-dock-height) + var(--sp-16) + var(--sp-6));
   }
   .detail-head .sub-bar .section-jump-pill,
   .detail-head .sub-bar .rail-summary-pill {

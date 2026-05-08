@@ -130,6 +130,7 @@ describe("design system stylesheet", () => {
     const css = readFileSync(stylesPath, "utf8");
     for (const selector of [
       ".card-title",
+      ".commander-title",
       ".modal-head h2",
       ".drawer-head h2",
       ".empty-state-title",

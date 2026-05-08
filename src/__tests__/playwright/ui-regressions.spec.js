@@ -796,7 +796,7 @@ test("agents two-pane: clicking a list row selects inline editor via URL", async
   await expect(page.locator(".pane-detail-head h2", { hasText: "New agent" })).toBeVisible();
 });
 
-test("agent profile availability stays inline after identity fields", async ({ page }) => {
+test("agent profile availability stays grouped after identity fields", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${baseUrl}/#/agents/new`);
   await expect(page.locator(".agent-profile-grid")).toBeVisible();
@@ -807,6 +807,8 @@ test("agent profile availability stays inline after identity fields", async ({ p
       return {
         text: (child.textContent || "").replace(/\s+/g, " ").trim(),
         left: Math.round(rect.left),
+        right: Math.round(rect.right),
+        top: Math.round(rect.top),
         bottom: Math.round(rect.bottom),
       };
     });
@@ -816,9 +818,10 @@ test("agent profile availability stays inline after identity fields", async ({ p
   expect(fields[0].text).toContain("Display name");
   expect(fields[1].text).toContain("Description");
   expect(fields[2].text).toContain("Available for assignment");
-  expect(fields[0].left).toBeLessThan(fields[1].left);
-  expect(fields[1].left).toBeLessThan(fields[2].left);
-  expect(Math.abs(fields[0].bottom - fields[2].bottom)).toBeLessThanOrEqual(6);
+  expect(fields[1].top).toBeGreaterThanOrEqual(fields[0].top);
+  expect(fields[2].top).toBeGreaterThan(fields[1].top);
+  expect(fields[2].left).toBe(fields[0].left);
+  expect(fields[2].right).toBeGreaterThanOrEqual(Math.max(fields[0].right, fields[1].right));
 });
 
 test("task edit is reachable via #/tasks/new and shows a full-page form", async ({ page }) => {
@@ -905,7 +908,7 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   expect(metadata["Next scheduled run"]).toMatch(/^[A-Z][a-z]{2} \d{1,2}(, \d{4})? · (soon|in \d+[mhd]|\d+[mhd] ago|now)$/);
   expect(metadata["Run mode"]).toBe("Manual");
   await expect(page.locator(".task-detail-rail")).not.toContainText("Not done");
-  await expect(page.locator(".task-metadata-card")).toContainText("Artifacts");
+  await expect(page.locator(".task-metadata-card")).toContainText("Edited files");
   await expect(page.locator(".task-metadata-card")).toContainText("TaskDetail.jsx");
   await expect(page.locator(".task-metadata-card")).toContainText("+10 -2");
   await expect(page.locator(".run-artifacts-card")).toHaveCount(0);
@@ -1448,7 +1451,9 @@ test("task detail shows an optimistic running state while start-run reload is pe
   });
   await expect.poll(() => detailReloadRequested).toBe(true);
   await expect(page.getByText("Loading task…")).toHaveCount(0);
-  await expect(page.locator(".task-hero-status-row .status-menu-trigger")).toContainText("Running");
+  const statusTrigger = page.locator(".task-hero-status-row .status-menu-trigger");
+  await expect(statusTrigger).toContainText("Execute");
+  await expect(statusTrigger.locator(".stage-token-pulse")).toBeVisible();
   await expect(page.locator(".task-live-panel")).toBeVisible();
 
   releaseDetailReload();
@@ -2179,7 +2184,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Skills", "Knowledge", "Providers", "Settings"]) {
+  for (const label of ["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2198,7 +2203,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   expect(metrics.navCount).toBe(5);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Skills", "Knowledge", "Providers", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
@@ -3504,19 +3509,20 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/activity`);
   await expect(page.locator(".activity-row").first()).toBeVisible();
-  await expect(page.getByRole("combobox", { name: "Filter by agent" })).toContainText("All agents");
-  await expect(page.getByRole("combobox", { name: "Filter by status" })).toContainText("All statuses");
+  await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
+  await expect(page.locator(".activity-filter-card .activity-filter-panel")).toBeHidden();
   await expect(page.locator(".activity-stat-card", { hasText: "Cost history" })).toBeVisible();
   await expect(page.locator(".activity-stat-card", { hasText: "Run Health" })).toBeVisible();
 
   const metrics = await page.evaluate(() => {
-    const filters = document.querySelector(".activity-filters");
+    const filters = document.querySelector(".activity-filter-card .activity-filter-panel");
     const row = document.querySelector(".activity-row");
     const status = row?.querySelector(".status-pill");
     const time = row?.querySelector(".activity-time");
     const stats = [...document.querySelectorAll(".activity-stat-card")];
     return {
       overflow: document.documentElement.scrollWidth - window.innerWidth,
+      filtersVisible: filters ? !!(filters.offsetWidth || filters.offsetHeight || filters.getClientRects().length) : false,
       filterColumns: filters ? getComputedStyle(filters).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
       rowColumns: row ? getComputedStyle(row).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
       rowWidth: row ? Math.round(row.getBoundingClientRect().width) : 0,
@@ -3532,7 +3538,8 @@ test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   });
 
   expect(metrics.overflow).toBeLessThanOrEqual(0);
-  expect(metrics.filterColumns).toBe(1);
+  expect(metrics.filtersVisible).toBe(false);
+  expect(metrics.filterColumns).toBeGreaterThanOrEqual(1);
   expect(metrics.rowColumns).toBe(3);
   expect(metrics.rowWidth).toBeLessThanOrEqual(390);
   expect(metrics.rowRadius).toBeGreaterThanOrEqual(6);
