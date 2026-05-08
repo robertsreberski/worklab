@@ -247,6 +247,32 @@ export function buildSkillResourceGroups(skills = [], {
   });
 }
 
+export function buildProviderResourceGroups(providers = [], {
+  query = "",
+  state = "all",
+  type = "all",
+} = {}) {
+  const items = (providers || [])
+    .filter((provider) => {
+      const enabled = provider?.enabled !== false;
+      if (state === "enabled" && !enabled) return false;
+      if (state === "disabled" && enabled) return false;
+      if (type !== "all" && provider?.provider_type !== type) return false;
+      return matchesQuery([provider?.name, provider?.base_url, provider?.provider_type], query);
+    })
+    .sort((left, right) => {
+      if ((left.enabled !== false) !== (right.enabled !== false)) return left.enabled !== false ? -1 : 1;
+      const updated = timestamp(right.updated_at) - timestamp(left.updated_at);
+      if (updated !== 0) return updated;
+      return compareByLabel(left, right, (provider) => provider.name || provider.id);
+    });
+
+  return groupFrom(items, [
+    { key: "enabled", label: "Enabled" },
+    { key: "disabled", label: "Disabled" },
+  ], (provider) => provider.enabled === false ? "disabled" : "enabled");
+}
+
 export function flattenResourceGroups(groups = []) {
   return (groups || []).flatMap((group) => group.items || []);
 }

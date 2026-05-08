@@ -5,6 +5,7 @@ import {
   buildAgentResourceGroups,
   buildKnowledgeResourceGroups,
   buildProjectResourceGroups,
+  buildProviderResourceGroups,
   buildSkillResourceGroups,
   buildTeamResourceGroups,
 } from "../../ui/src/lib/resourceLists.js";
@@ -83,6 +84,18 @@ describe("resource list helpers", () => {
     ]);
   });
 
+  it("filters and groups providers by enabled state and type", () => {
+    const groups = buildProviderResourceGroups([
+      { id: "ollama-1", name: "Ollama", provider_type: "ollama", base_url: "http://localhost:11434", enabled: true, model_count: 2, updated_at: 1000 },
+      { id: "groq-1", name: "Groq", provider_type: "groq", base_url: "https://api.groq.com/openai", enabled: true, model_count: 4, updated_at: 3000 },
+      { id: "old-1", name: "Old gateway", provider_type: "openai_compat", base_url: "https://old.example.com", enabled: false, model_count: 1, updated_at: 2000 },
+    ], { state: "enabled", type: "groq", query: "api.groq" });
+
+    expect(groups.map((group) => [group.key, group.items.map((provider) => provider.id)])).toEqual([
+      ["enabled", ["groq-1"]],
+    ]);
+  });
+
   it("keeps projects searchable and grouped for the full-width resource list", () => {
     const projects = [
       {
@@ -135,12 +148,20 @@ describe("resource list helpers", () => {
 
   it("wires resource routes through the list-first layout and shared toolbar", () => {
     expect(source("src/ui/src/components/PaneLayout.jsx")).toContain("listFirst && !hasSelection");
-    for (const route of ["Agents.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx"]) {
+    for (const route of ["Agents.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx"]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceListToolbar");
       expect(contents).toContain("listFirst");
       expect(contents).toContain("resource-list-layout");
     }
+  });
+
+  it("cross-links provider detail pages to agents that use their models", () => {
+    const contents = source("src/ui/src/routes/Providers.jsx");
+
+    expect(contents).toContain("api.providerAgents");
+    expect(contents).toContain("Used by agents");
+    expect(contents).toContain("#/agents/${encodeURIComponent(agent.name)}");
   });
 
   it("keeps mobile list create actions in a shared floating FAB", () => {
