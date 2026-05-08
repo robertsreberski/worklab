@@ -3,6 +3,7 @@
 // Uses wl-confirm-pulse while armed to draw attention.
 
 import { useEffect, useState } from "preact/hooks";
+import { Button } from "./primitives/Button.jsx";
 
 export function ConfirmButton({
   onConfirm,
@@ -20,7 +21,7 @@ export function ConfirmButton({
     return () => clearTimeout(t);
   }, [armed, timeout]);
 
-  const classes = `button ${variant} ${className} confirm-button${armed ? " confirm-button-armed" : ""}`.trim();
+  const classes = `${className} confirm-button${armed ? " confirm-button-armed" : ""}`.trim();
 
   async function handleClick(e) {
     if (!armed) {
@@ -32,8 +33,8 @@ export function ConfirmButton({
   }
 
   return (
-    <button type="button" onClick={handleClick} class={classes} aria-pressed={armed} {...props}>
+    <Button type="button" variant={variant} onClick={handleClick} class={classes} aria-pressed={armed} {...props}>
       {armed ? confirmLabel : children}
-    </button>
+    </Button>
   );
 }
