@@ -9465,11 +9465,7 @@ button.settings-overview-card:focus-visible,
   border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 .provider-model-pricing-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--sp-2);
-  min-width: 0;
   margin-bottom: var(--sp-2);
   color: var(--text-muted);
   font-size: var(--text-xs);
