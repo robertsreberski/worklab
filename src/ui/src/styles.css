@@ -9045,9 +9045,7 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-4);
 }
 .project-task-progress-head {
-  display: flex;
   align-items: flex-end;
-  justify-content: space-between;
   gap: var(--sp-4);
 }
 .project-task-progress-copy {
@@ -9113,8 +9111,7 @@ button.settings-overview-card:focus-visible,
   background: var(--status-error-bg-10);
 }
 .project-task-attention-head {
-  display: inline-flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
   color: var(--status-error);
 }

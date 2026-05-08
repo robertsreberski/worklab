@@ -355,6 +355,15 @@ describe("design system stylesheet", () => {
     expect(projectsSource).not.toMatch(/<div\s+class="project-goal-summary-head"/);
   });
 
+  it("builds project task heads on the shared InlineHead layout", () => {
+    const projectsSource = readFileSync(projectsPath, "utf8");
+    expect(projectsSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    expect(projectsSource).toMatch(/<InlineHead\s+class="project-task-progress-head"/);
+    expect(projectsSource).toMatch(/<InlineHead\s+class="project-task-attention-head"/);
+    expect(projectsSource).not.toMatch(/<div\s+class="project-task-progress-head"/);
+    expect(projectsSource).not.toMatch(/<div\s+class="project-task-attention-head"/);
+  });
+
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);
