@@ -392,7 +392,10 @@ describe("design system stylesheet", () => {
 
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
+    expect(providerSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    expect(providerSource).toMatch(/<InlineHead\s+class="provider-model-pricing-head"/);
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);
+    expect(providerSource).not.toMatch(/<div\s+class="provider-model-pricing-head"/);
     expect(providerSource).not.toMatch(/<label\s+class="provider-model-price-field"/);
   });
 

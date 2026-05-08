@@ -21,7 +21,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ActionDock, DetailHead, SectionMarker } from "../components/layout/index.js";
+import { ActionDock, DetailHead, InlineHead, SectionMarker } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { pushToast } from "../lib/toast.js";
@@ -725,12 +725,12 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                               />
                             </div>
                             <div class="provider-model-pricing">
-                              <div class="provider-model-pricing-head">
+                              <InlineHead class="provider-model-pricing-head">
                                 <span>Pricing per 1M tokens</span>
                                 <Chip variant={modelPricingVariant(modelPricingState(provider, model))}>
                                   {modelPricingLabel(modelPricingState(provider, model))}
                                 </Chip>
-                              </div>
+                              </InlineHead>
                               <div class="provider-model-pricing-grid">
                                 {MODEL_PRICING_FIELDS.map((field) => (
                                   <FormField label={field.label} class="provider-model-price-field" key={field.key}>
