@@ -11,6 +11,7 @@ const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const bannerPath = resolve(repoRoot, "src/ui/src/components/Banner.jsx");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const cardPath = resolve(repoRoot, "src/ui/src/components/Card.jsx");
+const commanderPath = resolve(repoRoot, "src/ui/src/routes/Commander.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const entityHeaderPath = resolve(repoRoot, "src/ui/src/components/EntityHeader.jsx");
 const kbDetailPath = resolve(repoRoot, "src/ui/src/routes/KbDetail.jsx");
@@ -320,9 +321,24 @@ describe("design system stylesheet", () => {
 
   it("builds activity stats on the shared SummaryGrid layout", () => {
     const activitySource = readFileSync(activityPath, "utf8");
-    expect(activitySource).toMatch(/import\s+\{\s*Page,\s*SummaryGrid\s*\}/);
+    expect(activitySource).toMatch(/import\s+\{[^}]*Page[^}]*SummaryGrid[^}]*\}\s+from/);
     expect(activitySource).toMatch(/<SummaryGrid[^>]+as="section"[^>]+class="activity-stats"/);
     expect(activitySource).not.toMatch(/<section\s+class="activity-stats"/);
+  });
+
+  it("builds activity and commander filter actions on the shared Toolbar layout", () => {
+    const activitySource = readFileSync(activityPath, "utf8");
+    const commanderSource = readFileSync(commanderPath, "utf8");
+    expect(activitySource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(activitySource).toMatch(/<Toolbar\s+class="activity-filter-card-actions"/);
+    expect(activitySource).toMatch(/<Toolbar\s+class="activity-filter-actions"/);
+    expect(activitySource).not.toMatch(/<div\s+class="activity-filter-card-actions"/);
+    expect(activitySource).not.toMatch(/<div\s+class="activity-filter-actions"/);
+    expect(commanderSource).toMatch(/import\s+\{\s*Toolbar\s*\}\s+from/);
+    expect(commanderSource).toMatch(/<Toolbar\s+class="commander-bulkbar-actions"/);
+    expect(commanderSource).toMatch(/<Toolbar\s+class="commander-filter-actions"/);
+    expect(commanderSource).not.toMatch(/<div\s+class="commander-bulkbar-actions"/);
+    expect(commanderSource).not.toMatch(/<div\s+class="commander-filter-actions"/);
   });
 
   it("builds settings panel groups on the shared PanelGrid layout", () => {
