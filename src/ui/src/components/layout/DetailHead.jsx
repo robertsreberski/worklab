@@ -23,6 +23,7 @@ export function DetailHead({
   titleClass = "",
   meta,
   actions,
+  actionsClass = "",
   subBar,
   hint,
   glyph,
@@ -76,7 +77,7 @@ export function DetailHead({
             {meta && <div class="title-meta pane-detail-subline">{meta}</div>}
           </div>
         </div>
-        {actions && <Toolbar class="actions">{actions}</Toolbar>}
+        {actions && <Toolbar class={`actions ${actionsClass}`.trim()}>{actions}</Toolbar>}
       </div>
       {subBar && <div class="sub-bar">{subBar}</div>}
     </header>

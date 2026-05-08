@@ -441,8 +441,9 @@ export function TaskEdit({ mode = "create", id = null }) {
           hint
           glyph="T"
           subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={TASK_EDIT_SECTIONS} />}
+          actionsClass="task-edit-toolbar"
           actions={(
-            <div class="task-edit-toolbar">
+            <>
               <Button variant="ghost" onClick={cancel}>Cancel</Button>
               <Button
                 variant={saveButtonVariant}
@@ -452,7 +453,7 @@ export function TaskEdit({ mode = "create", id = null }) {
               >
                 {saveButtonLabel}
               </Button>
-            </div>
+            </>
           )}
         />
         <form
