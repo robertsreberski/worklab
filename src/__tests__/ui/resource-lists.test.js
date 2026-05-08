@@ -222,6 +222,23 @@ describe("resource list helpers", () => {
     expect(contents).toContain("#/agents/${encodeURIComponent(agent.name)}");
   });
 
+  it("keeps resource list filters behind a compact shared configuration surface", () => {
+    const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
+    const styles = source("src/ui/src/styles.css");
+    const toolbarRule = cssRule(styles, ".resource-toolbar");
+    const sheetRule = cssRule(styles, ".resource-toolbar-config.mobile-config-sheet");
+    const openSheetRule = cssRule(styles, ".resource-toolbar-config.mobile-config-sheet.open");
+    const panelRule = cssRule(styles, ".resource-toolbar-config .mobile-config-sheet-panel");
+
+    expect(toolbar).toContain("resource-toolbar resource-toolbar-compact");
+    expect(toolbar).toContain("resource-mobile-config-trigger");
+    expect(toolbarRule).toContain("grid-template-columns: minmax(0, 1fr) auto auto");
+    expect(sheetRule).toContain("display: none");
+    expect(openSheetRule).toContain("display: block");
+    expect(panelRule).toContain("position: fixed");
+    expect(panelRule).toContain("width: min(360px, calc(100vw - 32px))");
+  });
+
   it("keeps mobile list create actions in a shared floating FAB", () => {
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const paneHeader = source("src/ui/src/components/layout/PaneListHeader.jsx");

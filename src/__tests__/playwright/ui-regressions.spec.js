@@ -2774,6 +2774,64 @@ test("mobile resource list filters are available from the shared configuration s
   }
 });
 
+test("desktop resource list filters use the same compact configuration surface", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  for (const route of [
+    { hash: "#/agents", label: "Agents" },
+    { hash: "#/goals", label: "Goals" },
+    { hash: "#/projects", label: "Projects" },
+    { hash: "#/knowledge", label: "Knowledge" },
+    { hash: "#/skills", label: "Skills" },
+    { hash: "#/teams", label: "Teams" },
+    { hash: "#/providers", label: "Providers" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    const toolbar = page.locator(".resource-toolbar").first();
+    await expect(toolbar.locator(".search-field")).toBeVisible();
+    await expect(toolbar.locator(".resource-mobile-config-trigger")).toBeVisible();
+    await expect(page.locator(".resource-toolbar-filters")).toBeHidden();
+
+    const compactMetrics = await toolbar.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const search = node.querySelector(".search-field")?.getBoundingClientRect();
+      const trigger = node.querySelector(".resource-mobile-config-trigger")?.getBoundingClientRect();
+      return {
+        height: Math.round(rect.height),
+        searchWidth: search ? Math.round(search.width) : 0,
+        searchAndTriggerSameRow: search && trigger
+          ? Math.round(trigger.top) < Math.round(search.bottom)
+            && Math.round(search.top) < Math.round(trigger.bottom)
+          : false,
+      };
+    });
+    expect(compactMetrics.height, `${route.label} toolbar height`).toBeLessThanOrEqual(58);
+    expect(compactMetrics.searchWidth, `${route.label} search width`).toBeGreaterThanOrEqual(240);
+    expect(compactMetrics.searchAndTriggerSameRow, `${route.label} search/config row`).toBe(true);
+
+    await toolbar.locator(".resource-mobile-config-trigger").click();
+    const sheet = page.getByRole("dialog", { name: `${route.label} configuration` });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.locator(".resource-toolbar-filters")).toBeVisible();
+    await expect(sheet.locator(".tabs, .resource-filter-select").first()).toBeVisible();
+    const sheetMetrics = await sheet.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const body = node.querySelector(".resource-toolbar-filters")?.getBoundingClientRect();
+      return {
+        width: Math.round(rect.width),
+        rightGap: Math.round(window.innerWidth - rect.right),
+        top: Math.round(rect.top),
+        bodyWidth: body ? Math.round(body.width) : 0,
+      };
+    });
+    expect(sheetMetrics.width, `${route.label} sheet width`).toBeLessThanOrEqual(380);
+    expect(sheetMetrics.rightGap, `${route.label} right alignment`).toBeGreaterThanOrEqual(12);
+    expect(sheetMetrics.top, `${route.label} sheet top`).toBeGreaterThanOrEqual(56);
+    expect(sheetMetrics.bodyWidth, `${route.label} sheet body width`).toBeGreaterThanOrEqual(280);
+    await sheet.getByRole("button", { name: "Close" }).click();
+    await expect(sheet).toBeHidden();
+  }
+});
+
 test("project list workdirs render as path metadata instead of badges", async ({ page }) => {
   for (const viewport of [
     { label: "desktop", width: 1440, height: 900 },
