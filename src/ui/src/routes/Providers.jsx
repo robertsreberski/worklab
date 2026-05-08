@@ -728,10 +728,9 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                               </div>
                               <div class="provider-model-pricing-grid">
                                 {MODEL_PRICING_FIELDS.map((field) => (
-                                  <label class="provider-model-price-field" key={field.key}>
-                                    <span>{field.label}</span>
+                                  <FormField label={field.label} class="provider-model-price-field" key={field.key}>
                                     <PricingInput model={model} field={field} onSave={saveModelPricing} />
-                                  </label>
+                                  </FormField>
                                 ))}
                               </div>
                             </div>

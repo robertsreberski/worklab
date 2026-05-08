@@ -10,6 +10,7 @@ const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.js
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
+const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
@@ -148,6 +149,12 @@ describe("design system stylesheet", () => {
       expect(source).not.toMatch(/<label\b/);
       expect(source).not.toMatch(/style=\{\{[^}]*display:\s*"grid"/);
     }
+  });
+
+  it("builds provider pricing inputs on shared form fields", () => {
+    const providerSource = readFileSync(providersPath, "utf8");
+    expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);
+    expect(providerSource).not.toMatch(/<label\s+class="provider-model-price-field"/);
   });
 
   it("bounds shared component text surfaces", () => {
