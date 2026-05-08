@@ -2688,6 +2688,15 @@ test("mobile goals keep detail and editor actions reachable", async ({ page }) =
   expect(metrics.buttonOverflow).toBe(false);
 });
 
+test("goals missing detail degrades to a stable not-found state", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/goals/not-a-real-goal`);
+
+  await expect(page.locator(".empty-state", { hasText: "Goal not found" })).toBeVisible();
+  await expect(page.locator(".loading-state", { hasText: "Loading goal" })).toHaveCount(0);
+  await expectNoHorizontalOverflow(page, "missing goal detail");
+});
+
 test("mobile Activity filters collapse into a configuration sheet", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/activity`);
