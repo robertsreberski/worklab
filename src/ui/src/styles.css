@@ -7232,7 +7232,7 @@ html.assistant-resizing * {
 }
 .settings-overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
   gap: var(--sp-4);
 }
 .settings-overview-card {
@@ -7245,6 +7245,26 @@ html.assistant-resizing * {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+button.settings-overview-card {
+  width: 100%;
+  appearance: none;
+  cursor: pointer;
+}
+button.settings-overview-card:hover,
+.settings-overview-card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+button.settings-overview-card:focus-visible,
+.settings-section-nav button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 .settings-overview-icon,
 .settings-panel-icon {
@@ -7325,6 +7345,12 @@ html.assistant-resizing * {
   color: var(--text);
   background: var(--surface-elevated);
   border-color: var(--border);
+}
+.settings-section-nav button.is-active,
+.settings-section-nav button[aria-current="location"] {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border));
 }
 .settings-sections {
   display: flex;
