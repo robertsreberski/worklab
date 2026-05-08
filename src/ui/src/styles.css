@@ -3460,7 +3460,7 @@ html.assistant-resizing * {
 }
 .run-input-preview-meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
   gap: var(--sp-2);
 }
 .run-input-preview-meta-item {
@@ -6662,7 +6662,7 @@ html.assistant-resizing * {
 }
 .summary-tiles {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: var(--sp-3);
 }
 .summary-tile {
@@ -6809,7 +6809,7 @@ html.assistant-resizing * {
 }
 .activity-cost-chart {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(34px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 34px), 1fr));
   align-items: end;
   gap: var(--sp-2);
   min-height: 78px;
@@ -9171,7 +9171,7 @@ html.assistant-resizing * {
 }
 .provider-model-pricing-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(86px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 86px), 1fr));
   gap: var(--sp-2);
 }
 .provider-model-price-field {
@@ -10277,7 +10277,7 @@ html.assistant-resizing * {
   .modal-foot {
     padding-bottom: var(--sp-3);
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 112px), 1fr));
     align-items: stretch;
   }
   .modal-foot .button {
@@ -10292,7 +10292,7 @@ html.assistant-resizing * {
   }
   .form-actions {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
     align-items: stretch;
   }
   .form-actions .button {
@@ -10624,7 +10624,7 @@ html.assistant-resizing * {
 }
 .app.responsive .app-nav a {
   display: grid;
-  grid-template-columns: 18px 1fr;
+  grid-template-columns: 18px minmax(0, 1fr);
   height: 32px;
   min-height: 32px;
   border-radius: 0;
@@ -11681,7 +11681,7 @@ html.assistant-resizing * {
   }
   .mobile-config-sheet-body.activity-filter-panel {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     align-items: stretch;
     align-content: start;
   }
