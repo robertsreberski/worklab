@@ -206,8 +206,11 @@ describe("design system stylesheet", () => {
   it("builds agent capability panels on the shared FormSection component", () => {
     const agentEditSource = readFileSync(agentEditPath, "utf8");
     expect(agentEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    expect(agentEditSource).toMatch(/import\s+\{\s*Button\s*\}/);
     expect(agentEditSource).toMatch(/<FormSection\s+class="capability-panel"/);
+    expect(agentEditSource).toMatch(/<Button\s+variant="ghost"\s+size="sm"\s+class="link-button capability-reset"/);
     expect(agentEditSource).not.toMatch(/<section\s+class="capability-panel"/);
+    expect(agentEditSource).not.toMatch(/<button[^>]+class="link-button capability-reset"/);
   });
 
   it("builds project and knowledge read sections on the shared FormSection component", () => {
