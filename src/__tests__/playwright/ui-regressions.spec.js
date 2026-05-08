@@ -36,6 +36,7 @@ let goalId;
 
 const liveLongToken = `live-unbroken-${"x".repeat(180)}`;
 const childLongToken = `child-unbroken-${"y".repeat(150)}`;
+const errorLongToken = `error-unbroken-${"z".repeat(180)}`;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -559,14 +560,29 @@ test.beforeAll(async () => {
   );
   db.prepare(
     `INSERT INTO task_runs
-      (id, task_id, mode, agent_name, worker_pid, status, started_at, ended_at, exit_code, error_text)
-     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'error', ?, ?, 1, ?)`,
+      (id, task_id, mode, agent_name, worker_pid, status, process_status, failure_kind,
+       started_at, ended_at, exit_code, error_text, warnings_json, diagnostics_json)
+     VALUES (?, ?, 'execute', 'regression-agent', NULL, 'error', 'failed', 'provider_error',
+       ?, ?, 1, ?, ?, ?)`,
   ).run(
     "run-desktop-error-existing",
     desktopErroredTaskId,
     now - 14_000,
     now - 11_000,
-    "Seeded desktop failure",
+    `Seeded desktop failure ${errorLongToken}`,
+    JSON.stringify([{
+      kind: "runtime_warning_long",
+      source: errorLongToken,
+      message: `Runtime warning carried a long provider payload ${errorLongToken}`,
+    }]),
+    JSON.stringify({
+      provider_error_subkind: `subkind_${errorLongToken}`,
+      error_details: {
+        last_text_excerpt: `Provider returned a long unbroken failure excerpt ${errorLongToken}`,
+        last_tool_name: `tool_${errorLongToken}`,
+        stderr_tail: `stderr tail ${errorLongToken}`,
+      },
+    }),
   );
   db.close();
 
@@ -1054,7 +1070,7 @@ test("desktop task detail states keep actions and context obvious without clippe
       label: "running",
       id: desktopRunningTaskId,
       title: "Desktop running task",
-      status: "Running",
+      status: "Execute",
       actions: [{ label: "Cancel", enabled: true }],
       contextText: "Desktop running event",
     },
@@ -1157,6 +1173,69 @@ test("desktop task detail states keep actions and context obvious without clippe
         `${viewport.label} task detail ${state.label}`,
       );
     }
+  }
+});
+
+test("task detail wraps long run warning and failure details", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page.goto(`${baseUrl}/#/tasks/${desktopErroredTaskId}`, { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".task-hero-title", { hasText: "Desktop errored task" })).toBeVisible();
+  await expect(page.locator(".run-warning-badge", { hasText: "1" })).toBeVisible();
+  await page.locator(".run-card-summary").first().click();
+  await expect(page.locator(".run-warnings-list", { hasText: errorLongToken })).toBeVisible();
+  await expect(page.locator(".run-failure-details", { hasText: errorLongToken })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const bounded = [
+      ".run-warning-message",
+      ".run-failure-row dd",
+      ".run-failure-snippet",
+      ".run-failure-stderr",
+    ].flatMap((selector) => [...document.querySelectorAll(selector)].map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        selector,
+        overflowWrap: style.overflowWrap,
+        right: Math.ceil(node.getBoundingClientRect().right),
+        clientWidth: Math.ceil(node.clientWidth),
+        scrollWidth: Math.ceil(node.scrollWidth),
+      };
+    }));
+    const warningSources = [...document.querySelectorAll(".run-warning-source")].map((node) => {
+      const style = getComputedStyle(node);
+      return {
+        overflow: style.overflow,
+        textOverflow: style.textOverflow,
+        whiteSpace: style.whiteSpace,
+        right: Math.ceil(node.getBoundingClientRect().right),
+      };
+    });
+    const badge = document.querySelector(".run-warning-badge");
+    const badgeStyle = badge ? getComputedStyle(badge) : null;
+    return {
+      pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      viewportWidth: window.innerWidth,
+      bounded,
+      warningSources,
+      badge: badge ? {
+        overflow: badgeStyle.overflow,
+        textOverflow: badgeStyle.textOverflow,
+        right: Math.ceil(badge.getBoundingClientRect().right),
+      } : null,
+    };
+  });
+
+  expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
+  expect(metrics.badge).toMatchObject({ overflow: "hidden", textOverflow: "ellipsis" });
+  expect(metrics.badge.right).toBeLessThanOrEqual(metrics.viewportWidth);
+  for (const item of metrics.warningSources) {
+    expect(item).toMatchObject({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
+    expect(item.right).toBeLessThanOrEqual(metrics.viewportWidth);
+  }
+  for (const item of metrics.bounded) {
+    expect(item.overflowWrap, item.selector).toBe("anywhere");
+    expect(item.right, item.selector).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(item.scrollWidth, item.selector).toBeLessThanOrEqual(item.clientWidth + 1);
   }
 });
 

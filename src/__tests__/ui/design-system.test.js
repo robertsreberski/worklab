@@ -146,6 +146,8 @@ describe("design system stylesheet", () => {
       ".event-row-body-text",
       ".tool-call-pre",
       ".structured-plain",
+      ".run-result-summary",
+      ".run-result-details",
       ".tool-call-missing-note",
       ".tool-call-truncated-note",
       ".file-edit-muted",
@@ -178,6 +180,42 @@ describe("design system stylesheet", () => {
     expect(attentionChip).toMatch(/overflow:\s*hidden\b/);
     expect(attentionChip).toMatch(/text-overflow:\s*ellipsis\b/);
     expect(attentionChip).toMatch(/white-space:\s*nowrap\b/);
+  });
+
+  it("bounds error and warning text surfaces", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".banner-title",
+      ".banner-detail",
+      ".form-error",
+      ".form-field-error",
+      ".field-error",
+      ".assistant-error",
+      ".run-input-preview-error",
+      ".run-cancel-note",
+      ".run-worktree-note",
+      ".run-warning-message",
+      ".run-failure-row dd",
+      ".run-failure-snippet",
+      ".run-failure-stderr",
+      ".settings-inline-warning",
+      ".settings-health-note",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+      expect(declarations).toMatch(/overflow-wrap:\s*anywhere\b/);
+    }
+
+    const warningBadge = declarationsForSelector(css, ".run-warning-badge");
+    expect(warningBadge).toMatch(/max-width:/);
+    expect(warningBadge).toMatch(/overflow:\s*hidden\b/);
+    expect(warningBadge).toMatch(/text-overflow:\s*ellipsis\b/);
+
+    const warningSource = declarationsForSelector(css, ".run-warning-source");
+    expect(warningSource).toMatch(/max-width:/);
+    expect(warningSource).toMatch(/overflow:\s*hidden\b/);
+    expect(warningSource).toMatch(/text-overflow:\s*ellipsis\b/);
+    expect(warningSource).toMatch(/white-space:\s*nowrap\b/);
   });
 
   it("uses a contained pulse animation for active stage-token dots", () => {
