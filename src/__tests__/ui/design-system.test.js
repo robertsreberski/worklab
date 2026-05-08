@@ -41,7 +41,11 @@ function coverageNames(group) {
 
 function declarationsForSelector(css, selector) {
   return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
-    .filter((match) => match[1].split(",").map((item) => item.trim()).includes(selector))
+    .filter((match) => match[1]
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(",")
+      .map((item) => item.trim())
+      .includes(selector))
     .map((match) => match[2])
     .join("\n");
 }
@@ -180,6 +184,39 @@ describe("design system stylesheet", () => {
     expect(attentionChip).toMatch(/overflow:\s*hidden\b/);
     expect(attentionChip).toMatch(/text-overflow:\s*ellipsis\b/);
     expect(attentionChip).toMatch(/white-space:\s*nowrap\b/);
+  });
+
+  it("uses zero-min tracks for shared grid surfaces", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".metric-grid",
+      ".kv-list",
+      ".advanced-meta-list",
+      ".status-grid",
+      ".kbd-help-grid",
+      ".task-subtasks-add",
+      ".task-automation-form",
+      ".team-member-row",
+      ".activity-filter-panel",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/grid-template-columns:[^;]*minmax\(0,/);
+    }
+
+    for (const selector of [
+      ".kv-list",
+      ".kv-list dt",
+      ".kv-list dd",
+      ".advanced-meta-list",
+      ".advanced-meta-list dt",
+      ".advanced-meta-list dd",
+      ".kbd-help-grid",
+      ".kbd-help-label",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/min-width:\s*0\b/);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+    }
   });
 
   it("bounds error and warning text surfaces", () => {
