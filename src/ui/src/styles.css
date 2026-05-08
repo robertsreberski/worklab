@@ -6931,10 +6931,6 @@ html.assistant-resizing * {
 .activity-stat-running { --activity-stat-tone: var(--status-progress); }
 .activity-stat-error { --activity-stat-tone: var(--status-error); }
 .activity-stat-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
   margin-bottom: var(--sp-3);
 }
 .activity-stat-icon {

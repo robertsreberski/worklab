@@ -377,6 +377,13 @@ describe("design system stylesheet", () => {
     expect(activitySource).not.toMatch(/<section\s+class="activity-stats"/);
   });
 
+  it("builds activity stat heads on the shared InlineHead layout", () => {
+    const activitySource = readFileSync(activityPath, "utf8");
+    expect(activitySource).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    expect(activitySource).toMatch(/<InlineHead\s+class="activity-stat-head"/);
+    expect(activitySource).not.toMatch(/<div\s+class="activity-stat-head"/);
+  });
+
   it("builds activity and commander filter actions on the shared Toolbar layout", () => {
     const activitySource = readFileSync(activityPath, "utf8");
     const commanderSource = readFileSync(commanderPath, "utf8");
