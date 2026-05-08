@@ -17,6 +17,7 @@ const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
+const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
@@ -153,6 +154,13 @@ describe("design system stylesheet", () => {
       expect(taskDetailSource).toMatch(new RegExp(`<FormSection[^>]+class="${sectionClass}"`));
       expect(taskDetailSource).not.toMatch(new RegExp(`<section\\s+class="${sectionClass}"`));
     }
+  });
+
+  it("builds task workflow meta on the shared FormSection component", () => {
+    const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
+    expect(workflowCardsSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    expect(workflowCardsSource).toMatch(/<FormSection\s+class="task-workflow-meta"/);
+    expect(workflowCardsSource).not.toMatch(/<section\s+class="task-workflow-meta"/);
   });
 
   it("builds project and knowledge read sections on the shared FormSection component", () => {

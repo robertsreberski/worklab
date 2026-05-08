@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 
 import { AgentPicker } from "../../components/AgentPicker.jsx";
 import { Card } from "../../components/Card.jsx";
+import { FormSection } from "../../components/FormSection.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { MarkdownContent } from "../../components/Markdown.jsx";
 import { Button } from "../../components/primitives/Button.jsx";
@@ -108,7 +109,7 @@ export function TaskWorkflowMeta({ task }) {
     return null;
   }
   return (
-    <section class="task-workflow-meta">
+    <FormSection class="task-workflow-meta">
       {showStageReason && (
         <div class="task-workflow-stage-reason">
           <Icon name="info" size={12} />
@@ -129,7 +130,7 @@ export function TaskWorkflowMeta({ task }) {
           </ul>
         </Card>
       )}
-    </section>
+    </FormSection>
   );
 }
 
