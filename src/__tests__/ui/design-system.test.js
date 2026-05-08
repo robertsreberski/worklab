@@ -12,6 +12,7 @@ const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileCon
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
 const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
+const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
@@ -135,6 +136,20 @@ describe("design system stylesheet", () => {
     expect(taskEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(taskEditSource).toMatch(/<FormSection[^>]+class="task-edit-section"/);
     expect(taskEditSource).not.toMatch(/<section\s+class="task-edit-section"/);
+  });
+
+  it("builds task detail sections on the shared FormSection component", () => {
+    const taskDetailSource = readFileSync(taskDetailPath, "utf8");
+    expect(taskDetailSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    for (const sectionClass of [
+      "task-brief-section",
+      "task-plan-section",
+      "task-workflow-section",
+      "task-activity-section",
+    ]) {
+      expect(taskDetailSource).toMatch(new RegExp(`<FormSection[^>]+class="${sectionClass}"`));
+      expect(taskDetailSource).not.toMatch(new RegExp(`<section\\s+class="${sectionClass}"`));
+    }
   });
 
   it("builds team and goal editor forms on shared form primitives", () => {
