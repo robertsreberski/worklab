@@ -29,6 +29,7 @@ import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
@@ -1101,7 +1102,7 @@ export function TaskDetail({ id, runParam = null }) {
               >
             <div class="activity-composer">
               <form onSubmit={addComment} class="activity-composer-form">
-                <Textarea
+                <MentionableTextarea
                   rows={1}
                   autoGrow
                   class="activity-composer-input"

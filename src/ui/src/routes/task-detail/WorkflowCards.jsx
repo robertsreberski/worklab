@@ -12,6 +12,7 @@ import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../../components/MentionableTextarea.jsx";
 import { InlineHead, SectionStack, Toolbar } from "../../components/layout/index.js";
 import { api } from "../../lib/api.js";
 import { collapseDuplicateParagraphs } from "../../lib/commentFormatting.js";
@@ -250,7 +251,7 @@ export function TaskPendingQuestionsCard({ task, onAnswered }) {
                 )}
               </div>
               {question.allow_free_text && (
-                <Textarea
+                <MentionableTextarea
                   rows={2}
                   autoGrow
                   class="task-pending-free-text"
@@ -313,7 +314,7 @@ export function TaskPlanCard({
     >
       {meta && <div class="task-plan-meta">{meta}</div>}
       {editing ? (
-        <Textarea
+        <MentionableTextarea
           rows={8}
           autoGrow
           class="task-plan-editor"

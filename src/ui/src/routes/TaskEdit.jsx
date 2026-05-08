@@ -13,6 +13,7 @@ import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.js
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { StageToken } from "../components/primitives/StageToken.jsx";
@@ -496,7 +497,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                     label="Instructions"
                     hint="Optional context sent to the owner. Markdown supported."
                   >
-                    <Textarea
+                    <MentionableTextarea
                       rows={10}
                       monospace
                       autoGrow

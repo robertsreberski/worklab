@@ -19,6 +19,7 @@ import { Select } from "../components/primitives/Select.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -412,7 +413,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
           <FormSection kicker="Contract" title="Contract">
             <FormGrid columns={2}>
               <FormField label="Objective" class="span-2">
-                <Textarea rows={4} value={draft.objective} onInput={(event) => update({ objective: event.currentTarget.value })} />
+                <MentionableTextarea rows={4} value={draft.objective} onInput={(event) => update({ objective: event.currentTarget.value })} />
               </FormField>
               <FormField label="Stop when">
                 <Input value={draft.stopping_condition} onInput={(event) => update({ stopping_condition: event.currentTarget.value })} />
@@ -421,7 +422,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
                 <Input value={draft.validation_loop} onInput={(event) => update({ validation_loop: event.currentTarget.value })} />
               </FormField>
               <FormField label="Constraints" class="span-2">
-                <Textarea rows={4} value={draft.constraints_text} onInput={(event) => update({ constraints_text: event.currentTarget.value })} />
+                <MentionableTextarea rows={4} value={draft.constraints_text} onInput={(event) => update({ constraints_text: event.currentTarget.value })} />
               </FormField>
             </FormGrid>
           </FormSection>

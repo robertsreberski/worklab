@@ -20,6 +20,7 @@ import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
@@ -537,7 +538,7 @@ function ProjectEditor({ selectedId, onSaved }) {
 
             <SectionMarker id="project-edit-context" num="02" kicker="Context" meta="Markdown" />
             <FormSection kicker="Run context" title="Context inserted into assigned task runs">
-              <Textarea rows={18} monospace autoGrow value={draft.context} onInput={(event) => update({ context: event.currentTarget.value })} />
+              <MentionableTextarea rows={18} monospace autoGrow value={draft.context} onInput={(event) => update({ context: event.currentTarget.value })} />
             </FormSection>
 
             <SectionMarker id="project-edit-team" num="03" kicker="Team" meta="Roster" />
