@@ -7750,11 +7750,7 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-3);
 }
 .settings-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--sp-3);
-  min-width: 0;
 }
 .settings-list-actions {
   display: flex;
@@ -7807,11 +7803,8 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-4);
 }
 .settings-mcp-head {
-  display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--sp-3);
-  min-width: 0;
 }
 .settings-health-note {
   padding: var(--sp-2) var(--sp-3);

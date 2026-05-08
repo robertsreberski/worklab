@@ -18,7 +18,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ControlGroup, ControlGroupStack, Page, PanelGrid, Toolbar } from "../components/layout/index.js";
+import { ControlGroup, ControlGroupStack, InlineHead, Page, PanelGrid, Toolbar } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -1104,7 +1104,7 @@ export function Settings() {
                 </SettingPanel>
               )}
             </PanelGrid>
-            <div class="settings-list-head">
+            <InlineHead class="settings-list-head">
               <div>
                 <h3>External MCP servers</h3>
                 <p>{mcpRows.length ? `${mcpRows.length} configured` : "No external servers configured"}</p>
@@ -1113,7 +1113,7 @@ export function Settings() {
                 <Button size="sm" variant="secondary" loading={mcpAllBusy} iconLeft={<Icon name="refresh-cw" size={12} />} onClick={checkAllMcpHealth}>Health check</Button>
                 <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
               </Toolbar>
-            </div>
+            </InlineHead>
             <div class="settings-list">
               {mcpRows.length === 0 && <div class="settings-empty-note">External MCP servers can be added when an agent needs tools outside Worklab.</div>}
               {mcpRows.map((row) => {
@@ -1130,7 +1130,7 @@ export function Settings() {
                   : "Draft";
                 return (
                 <div class="settings-admin-row settings-mcp-row" key={row.id}>
-                  <div class="settings-mcp-head">
+                  <InlineHead class="settings-mcp-head">
                     <div>
                       <strong>{row.name || "New MCP server"}</strong>
                       <div class="settings-row-sub">{row.transport} / external</div>
@@ -1140,7 +1140,7 @@ export function Settings() {
                       <Button variant="secondary" size="sm" loading={!!mcpHealthBusy[healthKey]} disabled={mcpAllBusy} iconLeft={<Icon name="check-circle" size={12} />} onClick={() => checkMcpRowHealth(row)}>Check</Button>
                       <Button variant="destructive" size="sm" iconLeft={<Icon name="trash" size={12} />} onClick={() => deleteMcpRow(row.id)}>Delete</Button>
                     </Toolbar>
-                  </div>
+                  </InlineHead>
                   {rowHealth && <div class={`settings-health-note ${rowHealth.health}`.trim()}>{mcpHealthDetail(rowHealth)}</div>}
                   <FormGrid columns={3}>
                     <FormField label="Name">
