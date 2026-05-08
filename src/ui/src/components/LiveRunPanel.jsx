@@ -12,6 +12,7 @@ import { Card } from "./Card.jsx";
 import { Icon } from "./Icon.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { RunHistoryNotice } from "./RunHistoryNotice.jsx";
+import { SectionGroup } from "./layout/index.js";
 import { useRunStream } from "../lib/useRunStream.js";
 import { formatMode, runMetricItems } from "../lib/runFormatting.js";
 import { api } from "../lib/api.js";
@@ -86,14 +87,17 @@ export function RunTodoPanel({ run }) {
   if (!todoPanel.visible) return null;
   const extraPending = Math.max(0, todoPanel.pending.length - 4);
   return (
-    <section class="task-live-todos" aria-label="Run todo list">
-      <div class="task-live-todos-header">
-        <span class="task-live-todos-title">
+    <SectionGroup
+      class="task-live-todos"
+      aria-label="Run todo list"
+      label={(
+        <>
           <Icon name="layout-list" size={14} />
           <span>Checklist</span>
-        </span>
-        <span class="task-live-todos-count">{todoPanel.completedCount}/{todoPanel.total}</span>
-      </div>
+        </>
+      )}
+      count={`${todoPanel.completedCount}/${todoPanel.total}`}
+    >
       <ul class="task-live-todos-list">
         {todoPanel.current && <TodoRow todo={todoPanel.current} tone="active" />}
         {todoPanel.pending.slice(0, 4).map((todo, index) => (
@@ -109,7 +113,7 @@ export function RunTodoPanel({ run }) {
           <TodoRow todo={todo} tone="completed" key={`${todo.content}-${index}`} />
         ))}
       </ul>
-    </section>
+    </SectionGroup>
   );
 }
 

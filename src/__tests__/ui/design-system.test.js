@@ -186,8 +186,11 @@ describe("design system stylesheet", () => {
   it("builds live run panels on the shared Card component", () => {
     const liveRunPanelSource = readFileSync(liveRunPanelPath, "utf8");
     expect(liveRunPanelSource).toMatch(/import\s+\{\s*Card\s*\}/);
+    expect(liveRunPanelSource).toMatch(/import\s+\{\s*SectionGroup\s*\}/);
     expect(liveRunPanelSource).toMatch(/<Card\s+variant="spacious"\s+class="task-live-panel"/);
+    expect(liveRunPanelSource).toMatch(/<SectionGroup[\s\S]*class="task-live-todos"/);
     expect(liveRunPanelSource).not.toMatch(/<section\s+class="card card-spacious task-live-panel"/);
+    expect(liveRunPanelSource).not.toMatch(/<section\s+class="task-live-todos"/);
   });
 
   it("builds agent capability panels on the shared FormSection component", () => {
@@ -241,15 +244,17 @@ describe("design system stylesheet", () => {
   });
 
   it("builds counted route groups on the shared SectionGroup layout", () => {
-    for (const filePath of [projectsPath, teamsPath, runCardsPath]) {
+    for (const filePath of [projectsPath, teamsPath, runCardsPath, kbDetailPath]) {
       const source = readFileSync(filePath, "utf8");
       expect(source).toMatch(/import\s+\{[^}]*SectionGroup[^}]*\}\s+from/);
-      expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|team-goal-dashboard-group|run-artifact-group)"/);
+      expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|project-knowledge-group|team-goal-dashboard-group|run-artifact-group|knowledge-usage-group)"/);
     }
 
     expect(readFileSync(projectsPath, "utf8")).not.toMatch(/<section[^>]+class="project-task-group"/);
+    expect(readFileSync(projectsPath, "utf8")).not.toMatch(/<div[^>]+class="project-knowledge-group"/);
     expect(readFileSync(teamsPath, "utf8")).not.toMatch(/<section[^>]+class="team-goal-dashboard-group"/);
     expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<section[^>]+class="run-artifact-group"/);
+    expect(readFileSync(kbDetailPath, "utf8")).not.toMatch(/<div[^>]+class="knowledge-usage-group"/);
   });
 
   it("bounds shared component text surfaces", () => {
