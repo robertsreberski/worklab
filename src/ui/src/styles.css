@@ -9375,7 +9375,7 @@ button.settings-overview-card:focus-visible,
   flex-direction: column;
   gap: var(--sp-1);
 }
-.provider-model-price-field > span {
+.provider-model-price-field .form-field-label {
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
