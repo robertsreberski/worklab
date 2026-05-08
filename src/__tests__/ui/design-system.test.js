@@ -225,6 +225,7 @@ describe("design system stylesheet", () => {
     const css = readFileSync(stylesPath, "utf8");
     for (const selector of [
       ".run-input-preview-meta",
+      ".team-goal-grid",
       ".summary-tiles",
       ".activity-cost-chart",
       ".provider-model-pricing-grid",
