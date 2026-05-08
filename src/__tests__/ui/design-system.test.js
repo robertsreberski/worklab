@@ -72,6 +72,17 @@ describe("design system stylesheet", () => {
     expect(statusPillRule).toMatch(/flex-shrink:\s*0\b/);
   });
 
+  it("clips chip and badge text through shared primitives", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [".chip", ".badge", ".kb-category-badge"]) {
+      const rule = css.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))?.[0] || "";
+      expect(rule).toMatch(/max-width:\s*100%/);
+      expect(rule).toMatch(/overflow:\s*hidden\b/);
+      expect(rule).toMatch(/text-overflow:\s*ellipsis\b/);
+      expect(rule).toMatch(/white-space:\s*nowrap\b/);
+    }
+  });
+
   it("uses a contained pulse animation for active stage-token dots", () => {
     const css = readFileSync(stylesPath, "utf8");
     const pulseRule = css.match(/\.stage-token-pulse\s+\.stage-token-glyph\s*\{[^}]*\}/)?.[0] || "";
