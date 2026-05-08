@@ -85,6 +85,7 @@ import {
   EditHeader,
   EntityEditorLayout,
   FilterBar,
+  InlineHead,
   InlineEditorPanel,
   Page,
   PageHeader,
@@ -143,6 +144,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "EditHeader", group: "layout", coverage: "visible" },
   { name: "EntityEditorLayout", group: "layout", coverage: "visible" },
   { name: "FilterBar", group: "layout", coverage: "visible" },
+  { name: "InlineHead", group: "layout", coverage: "visible" },
   { name: "InlineEditorPanel", group: "layout", coverage: "visible" },
   { name: "Page", group: "layout", coverage: "visible" },
   { name: "PageHeader", group: "layout", coverage: "visible" },
@@ -544,6 +546,15 @@ export function DesignSystem() {
                   <SearchField value={search} onInput={(event) => setSearch(event.target.value)} placeholder="Search..." />
                   <Tabs value={tab} onChange={setTab} tabs={STATUS_TABS} class="tabs-pills" ariaLabel="Status" />
                 </Toolbar>
+              </Card>
+              <Card title="InlineHead">
+                <InlineHead>
+                  <div>
+                    <span class="soft-meta">Inline head</span>
+                    <strong>Shared title/action row</strong>
+                  </div>
+                  <Badge variant="muted">Meta</Badge>
+                </InlineHead>
               </Card>
               <Card title="FilterBar">
                 <FilterBar

@@ -12,7 +12,7 @@ import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.js
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
-import { DetailHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
+import { DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -124,13 +124,13 @@ function ProjectGoalSummary({ goal }) {
   const checkpoint = latestProjectGoalCheckpoint(goal);
   return (
     <div class="project-goal-summary">
-      <div class="project-goal-summary-head">
+      <InlineHead class="project-goal-summary-head">
         <div>
           <span class="soft-meta">Project goal</span>
           <strong>{goal.team_name || goal.team_slug || "Assigned team"}</strong>
         </div>
         <Chip variant={projectGoalChipVariant(goal)}>{projectGoalStatusLabel(goal)}</Chip>
-      </div>
+      </InlineHead>
       <div class="team-goal-contract">
         <div>
           <span>Objective</span>
