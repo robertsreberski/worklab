@@ -1,4 +1,5 @@
 import { Icon } from "../Icon.jsx";
+import { IconButton } from "../primitives/IconButton.jsx";
 import { Kbd } from "../primitives/Kbd.jsx";
 
 export function SectionMarker({ num, kicker, meta, id, class: className = "" }) {
@@ -39,9 +40,12 @@ export function DetailHead({
     <header class={`detail-head pane-detail-head ds-detail-head ${className}`.trim()} aria-label={ariaLabel || (typeof title === "string" ? title : undefined)}>
       <div class="crumbs-row">
         {onBack && (
-          <button type="button" class="back-btn" aria-label={backLabel} onClick={onBack}>
-            <Icon name="chevron-left" size={14} />
-          </button>
+          <IconButton
+            class="back-btn"
+            icon={<Icon name="chevron-left" size={14} />}
+            aria-label={backLabel}
+            onClick={onBack}
+          />
         )}
         {crumbs.map((crumb, index) => (
           <>

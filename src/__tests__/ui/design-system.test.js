@@ -25,6 +25,7 @@ const settingsPath = resolve(repoRoot, "src/ui/src/routes/Settings.jsx");
 const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
+const detailHeadPath = resolve(repoRoot, "src/ui/src/components/layout/DetailHead.jsx");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
 
 function componentExportsFromBarrel(filePath) {
@@ -138,6 +139,13 @@ describe("design system stylesheet", () => {
     expect(mobileConfigSource).toMatch(/<IconButton[\s\S]*mobile-config-sheet-close/);
     expect(mobileConfigSource).not.toMatch(/class=\{`icon-button/);
     expect(mobileConfigSource).not.toMatch(/<button[^>]+class="mobile-config-sheet-close"/);
+  });
+
+  it("builds detail header back actions on the shared IconButton primitive", () => {
+    const detailHeadSource = readFileSync(detailHeadPath, "utf8");
+    expect(detailHeadSource).toMatch(/import\s+\{\s*IconButton\s*\}/);
+    expect(detailHeadSource).toMatch(/<IconButton[\s\S]*class="back-btn"/);
+    expect(detailHeadSource).not.toMatch(/<button[^>]+class="back-btn"/);
   });
 
   it("builds task editor sections on the shared FormSection component", () => {
