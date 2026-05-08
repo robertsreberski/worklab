@@ -43,6 +43,12 @@ export const api = {
   listTeamGoals: (id, query, options) => request("GET", `/teams/${encodeURIComponent(id)}/goals${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   patchTeamGoal: (id, projectId, patch) => request("PATCH", `/teams/${encodeURIComponent(id)}/goals/${encodeURIComponent(projectId)}`, patch),
   runTeamLead: (id, body = {}) => request("POST", `/teams/${encodeURIComponent(id)}/run-lead`, body),
+  // goals
+  listGoals: (query, options) => request("GET", `/goals${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  getGoal: (id, options) => request("GET", `/goals/${encodeURIComponent(id)}`, null, options),
+  createGoal: (data) => request("POST", "/goals", data),
+  patchGoal: (id, patch) => request("PATCH", `/goals/${encodeURIComponent(id)}`, patch),
+  runGoal: (id, body = {}) => request("POST", `/goals/${encodeURIComponent(id)}/run`, body),
   // tasks
   listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getTask: (id, options) => request("GET", `/tasks/${id}`, null, options),

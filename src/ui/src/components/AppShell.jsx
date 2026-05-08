@@ -27,8 +27,9 @@ export const ROUTE_GROUPS = [
     label: "Work",
     routes: [
       { id: "tasks", label: "Tasks", icon: "layout-list" },
-      { id: "activity", label: "Activity", icon: "clock" },
+      { id: "goals", label: "Goals", icon: "target" },
       { id: "projects", label: "Projects", icon: "folder" },
+      { id: "activity", label: "Activity", icon: "clock" },
     ],
   },
   {
@@ -54,11 +55,11 @@ const AppChromeContext = createContext(null);
 
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
-  { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
+  { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
-  { id: "agents", label: "Agents", icon: "user", href: "#/agents" },
+  { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
 ];
-const MORE_ROUTE_IDS = ["teams", "skills", "knowledge", "providers", "settings"];
+const MORE_ROUTE_IDS = ["teams", "agents", "skills", "knowledge", "providers", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
   .map((route) => ({ ...route, href: `#/${route.id}` }));

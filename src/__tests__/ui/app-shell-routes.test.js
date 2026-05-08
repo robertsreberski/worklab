@@ -11,6 +11,7 @@ const lazyRouteModules = [
   "Activity",
   "Agents",
   "DesignSystem",
+  "Goals",
   "Knowledge",
   "Projects",
   "Providers",
@@ -38,6 +39,19 @@ describe("app shell routes", () => {
     expect(ROUTES.find((route) => route.id === "teams")).toMatchObject({
       label: "Teams",
       icon: "users",
+    });
+  });
+
+  it("exposes Goals as a first-class Work route", () => {
+    const workGroup = ROUTE_GROUPS.find((group) => group.label === "Work");
+    const workIds = workGroup?.routes.map((route) => route.id) || [];
+
+    expect(workIds).toContain("goals");
+    expect(workIds.indexOf("goals")).toBeGreaterThan(workIds.indexOf("tasks"));
+    expect(workIds.indexOf("goals")).toBeLessThan(workIds.indexOf("projects"));
+    expect(ROUTES.find((route) => route.id === "goals")).toMatchObject({
+      label: "Goals",
+      icon: "target",
     });
   });
 
