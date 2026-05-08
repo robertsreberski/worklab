@@ -18,6 +18,7 @@ import { getProcessContextCache, makeContextCacheKey, shortHash } from "./contex
 import { findRepositoryGitRoot, loadRepositoryInstructions } from "./repository-instructions.js";
 import { formatAgentLearningContext, selectAgentLearningMemories } from "./agent-learning.js";
 import { getTaskById } from "./db/queries/tasks.js";
+import { expandMentionsForLlm } from "./mentions/index.js";
 import { getLatestExecuteRunSummary, getRunById } from "./db/queries/runs.js";
 import { getAgentByName } from "./db/queries/agents.js";
 import { listTaskComments } from "./db/queries/comments.js";
@@ -289,10 +290,28 @@ export function loadAgentCapabilities({ config, agent, agentName, runId, env, mo
   };
 }
 
+function expandTaskMentions(db, config, row) {
+  if (!row) return row;
+  const dataDir = config?.dataDir || null;
+  const next = { ...row };
+  if (typeof row.title === "string" && row.title.length > 0) {
+    next.title = expandMentionsForLlm(db, row.title, { dataDir });
+  }
+  if (typeof row.instructions === "string" && row.instructions.length > 0) {
+    next.instructions = expandMentionsForLlm(db, row.instructions, { dataDir });
+  }
+  return next;
+}
+
 export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = null }) {
   requireDataDir(config);
-  const task = getTaskById(db, taskId);
-  if (!task) throw runInputError(404, "not_found", `task ${taskId} not found`);
+  const taskRow = getTaskById(db, taskId);
+  if (!taskRow) throw runInputError(404, "not_found", `task ${taskId} not found`);
+  // Expand mention tokens (e.g. `@agent/triager`) into readable form
+  // before the task crosses the LLM boundary so the model never has
+  // to know the raw token syntax. UI reads use the sidecar to render
+  // badges from the same tokens.
+  const task = expandTaskMentions(db, config, taskRow);
   const agent = getAgentByName(db, agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
@@ -322,7 +341,9 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
   const commentRows = enrichCommentRows(
     db,
     listTaskComments(db, taskId),
-  );
+  ).map((row) => row.body
+    ? { ...row, body: expandMentionsForLlm(db, row.body, { dataDir: config.dataDir }) }
+    : row);
 
   const { memory, journalTail } = readAgentMemoryContext({
     dataDir: config.dataDir,

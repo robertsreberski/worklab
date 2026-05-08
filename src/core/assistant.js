@@ -30,6 +30,7 @@ import {
   warningRows,
 } from "./assistant/logging.js";
 import { renderAssistantViewContext } from "./assistant/view-context.js";
+import { expandMentionsForLlm } from "./mentions/index.js";
 
 export const DEFAULT_ASSISTANT_THREAD_ID = "personal";
 export const ASSISTANT_HISTORY_PAGE_SIZE = 5;
@@ -427,14 +428,19 @@ Return only one JSON object with this exact schema:
         agent: agentName,
         maxLines: settings.journal_tail_lines,
       });
-      const history = this.recentMessages(threadId, [userMessageId, assistantMessageId]);
+      const dataDir = this.config.dataDir;
+      const history = this.recentMessages(threadId, [userMessageId, assistantMessageId])
+        .map((row) => row.body
+          ? { ...row, body: expandMentionsForLlm(this.db, row.body, { dataDir }) }
+          : row);
+      const expandedInput = expandMentionsForLlm(this.db, input, { dataDir });
       const currentView = renderAssistantViewContext({
         db: this.db,
-        dataDir: this.config.dataDir,
+        dataDir,
         config: this.config,
         viewContext,
       });
-      const systemPrompt = this.buildSystemPrompt({ agentName, skills, memory, journalTail, history, input, currentView });
+      const systemPrompt = this.buildSystemPrompt({ agentName, skills, memory, journalTail, history, input: expandedInput, currentView });
       const model = resolveModel(settings.assistant_model || settings.slack_model || "pi:openai-codex:gpt-5.5");
       const mcpServers = assistantMcpServers(this.config);
       const response = await this.runAgent(systemPrompt, {
@@ -443,7 +449,7 @@ Return only one JSON object with this exact schema:
         db: this.db,
         dataDir: this.config.dataDir,
         skills,
-        messages: [{ role: "user", content: input }],
+        messages: [{ role: "user", content: expandedInput }],
         cwd: this.config.workspace,
         mcpServers,
         allowedTools: [
