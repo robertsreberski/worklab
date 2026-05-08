@@ -14,6 +14,7 @@ import {
   taskStage,
 } from "../../core/index.js";
 import { renderToolSurfaceMarkdown } from "../../mcp/agent/tools/index.js";
+import { withMentions } from "../lib/with-mentions.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 import {
@@ -447,7 +448,11 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     // R4: lifetime counters that survive `reset_failure_count`. The UI badge
     // can render "needed N retries" without scanning task_runs.
     task.health = getTaskHealth(db, row.id) || null;
-    res.json({ task, comments, runs });
+    res.json(withMentions(
+      { db, dataDir },
+      { task, comments, runs },
+      [task.title, task.instructions, comments.map((c) => c.body)],
+    ));
   });
 
   app.patch("/api/tasks/:id", (req, res) => {

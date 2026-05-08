@@ -24,6 +24,7 @@ import {
   countTasksByStageForProject,
   listProjectTasksWithRunSnapshots,
 } from "../../core/db/queries/tasks.js";
+import { withMentions } from "../lib/with-mentions.js";
 
 function sendRouteError(res, error) {
   if (!error?.status) throw error;
@@ -188,7 +189,7 @@ function normalizeProjectPatch(db, existing, body = {}) {
   return { fields, values };
 }
 
-export function registerProjectRoutes(app, { db, broker }) {
+export function registerProjectRoutes(app, { db, broker, dataDir }) {
   app.get("/api/projects", (req, res) => {
     const includeArchived = req.query.include_archived === "true" || req.query.include_archived === "1";
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
@@ -258,15 +259,23 @@ export function registerProjectRoutes(app, { db, broker }) {
       const teamGoal = project.team_id
         ? getTeamProjectGoal(db, { teamId: project.team_id, projectId: project.id, now: Date.now() })
         : null;
-      res.json({
-        project: {
-          ...project,
-          stats: projectStats(db, row.id),
-          tasks,
-          team_goal: teamGoal,
-          repository_instructions: repositoryInstructionsPromptMetadata(loadRepositoryInstructions(project.workdir)),
-        },
-      });
+      const detailedProject = {
+        ...project,
+        stats: projectStats(db, row.id),
+        tasks,
+        team_goal: teamGoal,
+        repository_instructions: repositoryInstructionsPromptMetadata(loadRepositoryInstructions(project.workdir)),
+      };
+      res.json(withMentions(
+        { db, dataDir },
+        { project: detailedProject },
+        [
+          detailedProject.context,
+          detailedProject.description,
+          tasks.map((t) => t.title),
+          teamGoal?.goal,
+        ],
+      ));
     } catch (error) {
       return sendRouteError(res, error);
     }

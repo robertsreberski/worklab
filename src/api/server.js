@@ -91,8 +91,8 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
-  registerProjectRoutes(app, { db, broker, config });
-  registerTeamRoutes(app, { db, broker, watcher });
+  registerProjectRoutes(app, { db, broker, dataDir, config });
+  registerTeamRoutes(app, { db, broker, watcher, dataDir });
   registerGoalRoutes(app, { db, broker, watcher });
   registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });

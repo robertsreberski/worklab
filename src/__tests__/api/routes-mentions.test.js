@@ -129,3 +129,75 @@ describe("GET /api/mentions/search", () => {
     expect(task.href).toBe("#/tasks/task-uuid-1");
   });
 });
+
+describe("mentions sidecar on read endpoints", () => {
+  it("attaches mentions[] to GET /api/tasks/:id when instructions reference an agent", async () => {
+    const { agent, db } = mkServer();
+    seedAgent(db, "triager", "Triager Bot");
+    seedTask(db, { id: "task-uuid-1", task_key: "T-7", title: "Triage" });
+    db.prepare("UPDATE tasks SET instructions = ? WHERE id = ?")
+      .run("Hand off to @agent/triager when ready.", "task-uuid-1");
+
+    const res = await agent.get("/api/tasks/task-uuid-1").expect(200);
+    expect(res.body.mentions["@agent/triager"]).toMatchObject({
+      type: "agent",
+      label: "Triager Bot",
+      exists: true,
+    });
+  });
+
+  it("attaches mentions[] to GET /api/projects/:id from project context", async () => {
+    const { agent, db } = mkServer();
+    seedAgent(db, "triager", "Triager Bot");
+    const res = await agent
+      .post("/api/projects")
+      .send({
+        name: "Mobile",
+        slug: "mobile",
+        context: "Owned by @agent/triager",
+      })
+      .expect(201);
+    const detail = await agent.get(`/api/projects/${res.body.project.id}`).expect(200);
+    expect(detail.body.mentions["@agent/triager"].exists).toBe(true);
+  });
+
+  it("attaches mentions[] to GET /api/teams/:id from team goal", async () => {
+    const { agent, db } = mkServer();
+    seedAgent(db, "triager", "Triager Bot");
+    const res = await agent
+      .post("/api/teams")
+      .send({
+        name: "Triage",
+        slug: "triage",
+        goal: "Coordinate with @agent/triager",
+      })
+      .expect(201);
+    const detail = await agent.get(`/api/teams/${res.body.team.id}`).expect(200);
+    expect(detail.body.mentions["@agent/triager"].exists).toBe(true);
+  });
+
+  it("attaches mentions[] to GET /api/kb/:slug from body", async () => {
+    const { agent, db, dataDir } = mkServer();
+    seedAgent(db, "triager", "Triager Bot");
+    kbCreate({
+      dataDir,
+      slug: "auth",
+      title: "Auth",
+      body: "See @agent/triager for the queue",
+      author: "human",
+    });
+    const detail = await agent.get("/api/kb/auth").expect(200);
+    expect(detail.body.mentions["@agent/triager"].exists).toBe(true);
+  });
+
+  it("attaches mentions[] to GET /api/agents/:name from instructions", async () => {
+    const { agent, db } = mkServer();
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, enabled, instructions, created_at, updated_at)
+      VALUES ('coder', 'Coder', 'claude', 'claude:claude-sonnet-4-6', 1, 'Defer to @agent/triager', 1, 1)
+    `).run();
+    seedAgent(db, "triager", "Triager Bot");
+    const detail = await agent.get("/api/agents/coder").expect(200);
+    expect(detail.body.mentions["@agent/triager"].exists).toBe(true);
+  });
+});
