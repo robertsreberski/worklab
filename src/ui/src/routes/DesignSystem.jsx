@@ -78,6 +78,8 @@ import {
 } from "../components/primitives/index.js";
 import {
   ActionDock,
+  ControlGroup,
+  ControlGroupStack,
   DetailHead,
   DetailHeader,
   EditHeader,
@@ -133,6 +135,8 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "ToolToken", group: "primitive", coverage: "visible" },
   { name: "Tooltip", group: "primitive", coverage: "visible" },
   { name: "ActionDock", group: "layout", coverage: "visible" },
+  { name: "ControlGroup", group: "layout", coverage: "visible" },
+  { name: "ControlGroupStack", group: "layout", coverage: "visible" },
   { name: "DetailHead", group: "layout", coverage: "visible" },
   { name: "DetailHeader", group: "layout", coverage: "visible" },
   { name: "EditHeader", group: "layout", coverage: "visible" },
@@ -571,6 +575,18 @@ export function DesignSystem() {
                     <StatusPill status="running" size="sm" />
                   </div>
                 </SectionGroup>
+              </Card>
+              <Card title="ControlGroup">
+                <ControlGroupStack>
+                  <ControlGroup title="Budgets" description="Dense controls with a grouped heading.">
+                    <FormField label="Warn turns">
+                      <NumberStepper min={1} max={1000} value={150} ariaLabel="Warn turns" onChange={() => {}} />
+                    </FormField>
+                    <FormField label="Max turns">
+                      <NumberStepper min={1} max={1000} value={300} ariaLabel="Max turns" onChange={() => {}} />
+                    </FormField>
+                  </ControlGroup>
+                </ControlGroupStack>
               </Card>
             </PanelGrid>
           </Card>

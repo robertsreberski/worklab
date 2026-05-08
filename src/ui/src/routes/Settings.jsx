@@ -18,7 +18,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { Page, PanelGrid } from "../components/layout/index.js";
+import { ControlGroup, ControlGroupStack, Page, PanelGrid } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -657,7 +657,7 @@ export function Settings() {
                 </FormField>
               </SettingPanel>
               <SettingPanel icon="database" title="Environment snapshot" meta="Read-only runtime locations.">
-                <div class="settings-note-grid">
+                <div class="settings-note-grid settings-note-grid-paths">
                   <FieldNote label="Data directory" value={runtime?.readOnly?.dataDir} mono />
                   <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
                   <FieldNote label="Service" value={serviceMeta.label} />
@@ -720,7 +720,7 @@ export function Settings() {
                 </div>
               </SettingPanel>
               <SettingPanel icon="file-text" title="Planning harness" meta="Plan-stage prompt and tool policy.">
-                <FormGrid columns={2}>
+                <FormGrid columns={2} class="settings-planning-grid">
                   <FormField label="Harness">
                     <Select
                       value={settings.planning_harness || "balanced_polished"}
@@ -847,84 +847,98 @@ export function Settings() {
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
                 </div>
-                <AdvancedSettings summary="Budgets and recovery" count={23}>
-                  <FormGrid columns={3}>
-                    <FormField label="Delegation depth">
-                      <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
-                    </FormField>
-                    <FormField label="Children per round">
-                      <NumberStepper min={1} max={50} value={settings.delegation_max_children_per_round ?? 5} ariaLabel="Delegation children per round" onChange={(value) => setSettings({ ...settings, delegation_max_children_per_round: value })} />
-                    </FormField>
-                    <FormField label="Parallel children">
-                      <NumberStepper min={1} max={50} value={settings.delegation_max_parallel_children ?? 3} ariaLabel="Delegation parallel children" onChange={(value) => setSettings({ ...settings, delegation_max_parallel_children: value })} />
-                    </FormField>
-                    <FormField label="Warn turns">
-                      <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_soft_turns ?? 150} ariaLabel="Agent budget warning turns" onChange={(value) => setSettings({ ...settings, agent_budget_soft_turns: value })} />
-                    </FormField>
-                    <FormField label="Max turns">
-                      <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_hard_turns ?? 300} ariaLabel="Agent budget max turns" onChange={(value) => setSettings({ ...settings, agent_budget_hard_turns: value })} />
-                    </FormField>
-                    <FormField label="Trigger ratio">
-                      <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
-                    </FormField>
-                    <FormField label="Keep recent tokens">
-                      <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
-                    </FormField>
-                    <FormField label="Summary tokens">
-                      <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
-                    </FormField>
-                    <FormField label="Min savings tokens">
-                      <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? 20000} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
-                    </FormField>
-                    <FormField label="Tool compaction chars">
-                      <NumberStepper min={0} max={10485760} step={10000} value={settings.agent_tool_payload_compaction_trigger_chars ?? 0} ariaLabel="Tool payload compaction character trigger" onChange={(value) => setSettings({ ...settings, agent_tool_payload_compaction_trigger_chars: value })} />
-                    </FormField>
-                    <FormField label="Tool prune tokens">
-                      <NumberStepper min={0} max={500000} step={1000} value={settings.agent_tool_prune_trigger_tokens ?? 40000} ariaLabel="Tool result prune token trigger" onChange={(value) => setSettings({ ...settings, agent_tool_prune_trigger_tokens: value })} />
-                    </FormField>
-                    <FormField label="Tool text chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
-                    </FormField>
-                    <FormField label="Bash chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_bash_output_limit_chars ?? 20000} ariaLabel="Bash output character limit" onChange={(value) => setSettings({ ...settings, agent_bash_output_limit_chars: value })} />
-                    </FormField>
-                    <FormField label="MCP text chars">
-                      <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 12000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
-                    </FormField>
-                    <FormField label="Search result limit">
-                      <NumberStepper min={10} max={1000} step={10} value={settings.agent_search_result_limit ?? 100} ariaLabel="Search result limit" onChange={(value) => setSettings({ ...settings, agent_search_result_limit: value })} />
-                    </FormField>
-                    <FormField label="Image bytes">
-                      <NumberStepper min={0} max={10485760} step={50000} value={settings.agent_image_inline_max_bytes ?? 250000} ariaLabel="Inline image byte limit" onChange={(value) => setSettings({ ...settings, agent_image_inline_max_bytes: value })} />
-                    </FormField>
-                    <FormField label="MCP timeout">
-                      <DurationInput unit="seconds" value={settings.agent_mcp_call_timeout_ms ?? 120000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_mcp_call_timeout_ms: value })} ariaLabel="MCP call timeout" />
-                    </FormField>
-                    <FormField label="Continuations">
-                      <NumberStepper min={0} max={20} value={settings.agent_recovery_continuation_limit ?? 3} ariaLabel="Recovery continuation limit" onChange={(value) => setSettings({ ...settings, agent_recovery_continuation_limit: value })} />
-                    </FormField>
-                    <FormField label="Provider recovery">
-                      <Switch checked={settings.agent_provider_recovery_enabled !== false} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_enabled: value })} label="Provider recovery" description="Retry transient provider failures automatically." />
-                    </FormField>
-                    <FormField label="Provider retry delay">
-                      <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
-                    </FormField>
-                    <FormField label="Verification adjudicator">
-                      <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />
-                    </FormField>
-                    <FormField label="Adjudicator model">
-                      <Select
-                        value={currentAdjudicatorModel}
-                        options={adjudicatorModelOptions}
-                        onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_model: value })}
-                        placeholder="Select provider model"
-                        ariaLabel="Verification adjudicator model"
-                      />
-                    </FormField>
-                    <FormField label="Adjudicator timeout">
-                      <DurationInput unit="seconds" value={settings.agent_verification_adjudicator_timeout_ms ?? 30000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_timeout_ms: value })} ariaLabel="Verification adjudicator timeout" />
-                    </FormField>
-                  </FormGrid>
+                <AdvancedSettings summary="Budgets and recovery" count={5}>
+                  <ControlGroupStack>
+                    <ControlGroup title="Delegation" description="Limits for child-task fanout.">
+                      <FormField label="Depth">
+                        <NumberStepper min={0} max={10} value={settings.delegation_max_depth ?? 1} ariaLabel="Delegation depth" onChange={(value) => setSettings({ ...settings, delegation_max_depth: value })} />
+                      </FormField>
+                      <FormField label="Children per round">
+                        <NumberStepper min={1} max={50} value={settings.delegation_max_children_per_round ?? 5} ariaLabel="Delegation children per round" onChange={(value) => setSettings({ ...settings, delegation_max_children_per_round: value })} />
+                      </FormField>
+                      <FormField label="Parallel children">
+                        <NumberStepper min={1} max={50} value={settings.delegation_max_parallel_children ?? 3} ariaLabel="Delegation parallel children" onChange={(value) => setSettings({ ...settings, delegation_max_parallel_children: value })} />
+                      </FormField>
+                    </ControlGroup>
+
+                    <ControlGroup title="Run turn budget" description="Default warning and hard-stop thresholds for new agent runs.">
+                      <FormField label="Warn turns">
+                        <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_soft_turns ?? 150} ariaLabel="Agent budget warning turns" onChange={(value) => setSettings({ ...settings, agent_budget_soft_turns: value })} />
+                      </FormField>
+                      <FormField label="Max turns">
+                        <NumberStepper min={1} max={10000} step={25} value={settings.agent_budget_hard_turns ?? 300} ariaLabel="Agent budget max turns" onChange={(value) => setSettings({ ...settings, agent_budget_hard_turns: value })} />
+                      </FormField>
+                    </ControlGroup>
+
+                    <ControlGroup title="Context compaction" description="Transcript compaction trigger and retained context size.">
+                      <FormField label="Trigger ratio">
+                        <NumberStepper min={0.2} max={0.95} step={0.01} value={settings.agent_compaction_trigger_ratio ?? 0.85} ariaLabel="Compaction trigger ratio" onChange={(value) => setSettings({ ...settings, agent_compaction_trigger_ratio: value })} />
+                      </FormField>
+                      <FormField label="Keep tokens">
+                        <NumberStepper min={4000} max={200000} step={1000} value={settings.agent_compaction_keep_recent_tokens ?? 24000} ariaLabel="Keep recent tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_keep_recent_tokens: value })} />
+                      </FormField>
+                      <FormField label="Summary tokens">
+                        <NumberStepper min={1000} max={64000} step={1000} value={settings.agent_compaction_summary_max_tokens ?? 16000} ariaLabel="Compaction summary tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_summary_max_tokens: value })} />
+                      </FormField>
+                      <FormField label="Min savings">
+                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_compaction_min_savings_tokens ?? 20000} ariaLabel="Minimum compaction savings tokens" onChange={(value) => setSettings({ ...settings, agent_compaction_min_savings_tokens: value })} />
+                      </FormField>
+                    </ControlGroup>
+
+                    <ControlGroup title="Tool output limits" description="Caps for large tool payloads before pruning, compaction, or artifact fallback.">
+                      <FormField label="Compact chars">
+                        <NumberStepper min={0} max={10485760} step={10000} value={settings.agent_tool_payload_compaction_trigger_chars ?? 0} ariaLabel="Tool payload compaction character trigger" onChange={(value) => setSettings({ ...settings, agent_tool_payload_compaction_trigger_chars: value })} />
+                      </FormField>
+                      <FormField label="Prune tokens">
+                        <NumberStepper min={0} max={500000} step={1000} value={settings.agent_tool_prune_trigger_tokens ?? 40000} ariaLabel="Tool result prune token trigger" onChange={(value) => setSettings({ ...settings, agent_tool_prune_trigger_tokens: value })} />
+                      </FormField>
+                      <FormField label="Tool chars">
+                        <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_tool_text_limit_chars ?? 16000} ariaLabel="Tool text character limit" onChange={(value) => setSettings({ ...settings, agent_tool_text_limit_chars: value })} />
+                      </FormField>
+                      <FormField label="Bash chars">
+                        <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_bash_output_limit_chars ?? 20000} ariaLabel="Bash output character limit" onChange={(value) => setSettings({ ...settings, agent_bash_output_limit_chars: value })} />
+                      </FormField>
+                      <FormField label="MCP chars">
+                        <NumberStepper min={1000} max={200000} step={1000} value={settings.agent_mcp_text_limit_chars ?? 12000} ariaLabel="MCP text character limit" onChange={(value) => setSettings({ ...settings, agent_mcp_text_limit_chars: value })} />
+                      </FormField>
+                      <FormField label="Search results">
+                        <NumberStepper min={10} max={1000} step={10} value={settings.agent_search_result_limit ?? 100} ariaLabel="Search result limit" onChange={(value) => setSettings({ ...settings, agent_search_result_limit: value })} />
+                      </FormField>
+                      <FormField label="Image bytes">
+                        <NumberStepper min={0} max={10485760} step={50000} value={settings.agent_image_inline_max_bytes ?? 250000} ariaLabel="Inline image byte limit" onChange={(value) => setSettings({ ...settings, agent_image_inline_max_bytes: value })} />
+                      </FormField>
+                      <FormField label="MCP timeout">
+                        <DurationInput unit="seconds" value={settings.agent_mcp_call_timeout_ms ?? 120000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_mcp_call_timeout_ms: value })} ariaLabel="MCP call timeout" />
+                      </FormField>
+                    </ControlGroup>
+
+                    <ControlGroup title="Recovery and verification" description="Provider retry behavior and optional completion adjudication.">
+                      <FormField label="Continuations">
+                        <NumberStepper min={0} max={20} value={settings.agent_recovery_continuation_limit ?? 3} ariaLabel="Recovery continuation limit" onChange={(value) => setSettings({ ...settings, agent_recovery_continuation_limit: value })} />
+                      </FormField>
+                      <FormField switchInside class="span-2">
+                        <Switch checked={settings.agent_provider_recovery_enabled !== false} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_enabled: value })} label="Provider recovery" description="Retry transient provider failures automatically." />
+                      </FormField>
+                      <FormField label="Retry delay">
+                        <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
+                      </FormField>
+                      <FormField label="Adjudicator">
+                        <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />
+                      </FormField>
+                      <FormField label="Adjudicator model" class="span-2">
+                        <Select
+                          value={currentAdjudicatorModel}
+                          options={adjudicatorModelOptions}
+                          onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_model: value })}
+                          placeholder="Select provider model"
+                          ariaLabel="Verification adjudicator model"
+                        />
+                      </FormField>
+                      <FormField label="Adjudicator timeout">
+                        <DurationInput unit="seconds" value={settings.agent_verification_adjudicator_timeout_ms ?? 30000} min={1} step={5} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_timeout_ms: value })} ariaLabel="Verification adjudicator timeout" />
+                      </FormField>
+                    </ControlGroup>
+                  </ControlGroupStack>
                 </AdvancedSettings>
               </SettingPanel>
             </PanelGrid>

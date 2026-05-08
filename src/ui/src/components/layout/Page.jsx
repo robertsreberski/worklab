@@ -56,6 +56,22 @@ export function PanelGrid({ children, class: className = "", ...props }) {
   return <div {...props} class={`ds-panel-grid ${className}`.trim()}>{children}</div>;
 }
 
+export function ControlGroupStack({ children, class: className = "", ...props }) {
+  return <div {...props} class={`ds-control-groups ${className}`.trim()}>{children}</div>;
+}
+
+export function ControlGroup({ title, description, children, class: className = "", gridClass = "", ...props }) {
+  return (
+    <section {...props} class={`ds-control-group ${className}`.trim()}>
+      <header class="ds-control-group-head">
+        <h4>{title}</h4>
+        {description && <p>{description}</p>}
+      </header>
+      <div class={`ds-control-grid ${gridClass}`.trim()}>{children}</div>
+    </section>
+  );
+}
+
 export function SectionGroup({
   label,
   count,

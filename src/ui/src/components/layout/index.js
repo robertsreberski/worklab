@@ -1,4 +1,6 @@
 export {
+  ControlGroup,
+  ControlGroupStack,
   Page,
   PageHeader,
   PanelGrid,
