@@ -18,7 +18,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { Page } from "../components/layout/index.js";
+import { Page, PanelGrid } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -649,7 +649,7 @@ export function Settings() {
             description="Service boot values are written to the Worklab data-dir .env file."
             aside={<StatusPill status={serviceMeta.status} label={serviceMeta.label} />}
           >
-            <div class="settings-panel-grid">
+            <PanelGrid class="settings-panel-grid">
               <SettingPanel icon="folder" title="Workspace" meta="Agent working directory. Requires restart.">
                 <FormField label="Workspace">
                   <PathOrUrlInput disabled={!!runtimeError} value={runtimeDraft.workspace} onInput={(event) => setRuntimeDraft({ ...runtimeDraft, workspace: event.target.value })} placeholder="/path/to/workspace" />
@@ -662,7 +662,7 @@ export function Settings() {
                   <FieldNote label="Service" value={serviceMeta.label} />
                 </div>
               </SettingPanel>
-            </div>
+            </PanelGrid>
             <AdvancedSettings summary="Network and process settings" count={4}>
               <FormGrid columns={3}>
                 <FormField label="Host" hint="Requires restart.">
@@ -688,7 +688,7 @@ export function Settings() {
             description="Run limits, memory refresh, planning harness, and log context for new agent runs."
             aside={<StatusPill status={settings.consolidation_enabled ? "enabled" : "disabled"} label={settings.consolidation_enabled ? "Memory on" : "Memory off"} />}
           >
-            <div class="settings-panel-grid">
+            <PanelGrid class="settings-panel-grid">
               <SettingPanel icon="clock" title="Run limits" meta="Global timeout behavior for spawned workers.">
                 <FormGrid columns={2}>
                   <FormField label="Worker timeout">
@@ -736,7 +736,7 @@ export function Settings() {
                   </FormField>
                 </FormGrid>
               </SettingPanel>
-            </div>
+            </PanelGrid>
             <AdvancedSettings summary="Context and logging limits" count={6}>
               <FormGrid columns={3}>
                 <FormField label="Journal tail lines">
@@ -789,7 +789,7 @@ export function Settings() {
             description="Personal assistant model, memory identity, and agent robustness defaults."
             aside={<StatusPill status="enabled" label="Available" />}
           >
-            <div class="settings-panel-grid">
+            <PanelGrid class="settings-panel-grid">
               <SettingPanel icon="sparkles" title="Run behavior" meta="Default model used by the assistant dock.">
                 <FormGrid columns={2}>
                   <FormField label="Default model" class="span-2">
@@ -926,7 +926,7 @@ export function Settings() {
                   </FormGrid>
                 </AdvancedSettings>
               </SettingPanel>
-            </div>
+            </PanelGrid>
           </SettingsSection>
 
           <SettingsSection
@@ -941,7 +941,7 @@ export function Settings() {
               </div>
             )}
           >
-            <div class="settings-panel-grid">
+            <PanelGrid class="settings-panel-grid">
               <SettingPanel icon="message-square" title="Delivery" meta="Bot intake and outbound DMs." status={slackMeta.status} statusLabel={slackMeta.label}>
                 <div class="settings-switch-stack">
                   <Switch
@@ -988,7 +988,7 @@ export function Settings() {
                   </FormField>
                 </FormGrid>
               </SettingPanel>
-            </div>
+            </PanelGrid>
             <AdvancedSettings summary="Routing and run tuning" count={3}>
               <FormGrid columns={3}>
                 <FormField label="Bot memory name">
@@ -1064,7 +1064,7 @@ export function Settings() {
             aside={<StatusPill status={mcpSummary.status} label={mcpSummary.label} />}
           >
             {mcpStatus?.config_error && <Banner variant="error" title="MCP config error" detail={mcpStatus.config_error} />}
-            <div class="settings-panel-grid">
+            <PanelGrid class="settings-panel-grid">
               {builtinMcpServers.map((server) => {
                 const health = mcpHealthResults[mcpHealthBuiltinKey(server.name)];
                 const healthMeta = mcpHealthMeta(health);
@@ -1088,7 +1088,7 @@ export function Settings() {
                   <div class="settings-inline-status">No built-in MCP servers are available.</div>
                 </SettingPanel>
               )}
-            </div>
+            </PanelGrid>
             <div class="settings-list-head">
               <div>
                 <h3>External MCP servers</h3>

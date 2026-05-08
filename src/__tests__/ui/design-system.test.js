@@ -19,6 +19,7 @@ const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
+const settingsPath = resolve(repoRoot, "src/ui/src/routes/Settings.jsx");
 const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
@@ -221,6 +222,13 @@ describe("design system stylesheet", () => {
     expect(activitySource).toMatch(/import\s+\{\s*Page,\s*SummaryGrid\s*\}/);
     expect(activitySource).toMatch(/<SummaryGrid[^>]+as="section"[^>]+class="activity-stats"/);
     expect(activitySource).not.toMatch(/<section\s+class="activity-stats"/);
+  });
+
+  it("builds settings panel groups on the shared PanelGrid layout", () => {
+    const settingsSource = readFileSync(settingsPath, "utf8");
+    expect(settingsSource).toMatch(/import\s+\{\s*Page,\s*PanelGrid\s*\}/);
+    expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
   });
 
   it("bounds shared component text surfaces", () => {
