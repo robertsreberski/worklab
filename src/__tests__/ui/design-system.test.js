@@ -379,13 +379,18 @@ describe("design system stylesheet", () => {
   });
 
   it("builds task-detail support heads on the shared InlineHead layout", () => {
+    const taskDetailSource = readFileSync(taskDetailPath, "utf8");
     const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");
     const workflowCardsSource = readFileSync(workflowCardsPath, "utf8");
-    for (const source of [runInputPreviewSource, workflowCardsSource]) {
+    for (const source of [taskDetailSource, runInputPreviewSource, workflowCardsSource]) {
       expect(source).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
     }
+    expect(taskDetailSource).toMatch(/<InlineHead\s+class="task-hero-instructions-head"/);
+    expect(taskDetailSource).toMatch(/<InlineHead\s+class="activity-item-head"/);
     expect(runInputPreviewSource).toMatch(/<InlineHead\s+class="run-input-preview-message-head"/);
     expect(workflowCardsSource).toMatch(/<InlineHead\s+class="rail-agent-row-head"/);
+    expect(taskDetailSource).not.toMatch(/<div\s+class="task-hero-instructions-head"/);
+    expect(taskDetailSource).not.toMatch(/<div\s+class="activity-item-head"/);
     expect(runInputPreviewSource).not.toMatch(/<div\s+class="run-input-preview-message-head"/);
     expect(workflowCardsSource).not.toMatch(/<div\s+class="rail-agent-row-head"/);
   });

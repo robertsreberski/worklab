@@ -3637,9 +3637,6 @@ html.assistant-resizing * {
   border-radius: var(--radius-sm);
 }
 .task-hero-instructions-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: var(--sp-2);
   margin-bottom: var(--sp-2);
 }
@@ -4191,8 +4188,7 @@ html.assistant-resizing * {
 }
 .activity-item-head {
   position: relative;
-  display: flex;
-  align-items: center;
+  justify-content: flex-start;
   gap: var(--sp-2);
   padding-right: 34px;
   margin-bottom: var(--sp-2);
