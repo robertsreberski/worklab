@@ -71,6 +71,13 @@ export function assistantViewContextFromHash(hash = "") {
     return resourceContext(parsed, "agent_detail", "agent", first);
   }
 
+  if (parsed.route === "teams") {
+    if (!first) return baseContext(parsed, "team_list");
+    if (first === "new") return baseContext(parsed, "team_new");
+    if (second === "edit") return resourceContext(parsed, "team_edit", "team", first, { mode: "edit" });
+    return resourceContext(parsed, "team_detail", "team", first, { mode: second || null });
+  }
+
   if (parsed.route === "skills") {
     if (!first) return baseContext(parsed, "skill_list");
     if (first === "new") return baseContext(parsed, "skill_new");

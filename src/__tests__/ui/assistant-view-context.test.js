@@ -37,6 +37,12 @@ describe("assistant view context", () => {
       resource_type: "agent",
       resource_id: "assistant",
     });
+    expect(assistantViewContextFromHash("#/teams/core-platform/edit")).toMatchObject({
+      view: "team_edit",
+      resource_type: "team",
+      resource_id: "core-platform",
+      mode: "edit",
+    });
     expect(assistantViewContextFromHash("#/knowledge/current-decisions/edit")).toMatchObject({
       view: "knowledge_edit",
       resource_type: "knowledge",
