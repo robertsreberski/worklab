@@ -27,7 +27,7 @@ import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
-import { DetailHead, SectionGroup } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, Toolbar } from "../components/layout/index.js";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -218,7 +218,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         <Badge variant={goalStatusVariant(goal)}>{statusLabel}</Badge>
       </div>
       <GoalContractDetails goal={goal} />
-      <div class="team-goal-actions">
+      <Toolbar class="team-goal-actions">
         <Button size="sm" variant="primary" onClick={() => onRun?.(goal)} disabled={!goal?.team_id || !goal?.project_id}>
           Run lead
         </Button>
@@ -240,7 +240,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
             <span>Root</span>
           </a>
         )}
-      </div>
+      </Toolbar>
     </div>
   );
 }
@@ -563,10 +563,10 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
               </FormField>
             </FormGrid>
           </FormSection>
-          <div class="form-actions">
+          <Toolbar class="form-actions">
             <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
             <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
-          </div>
+          </Toolbar>
         </div>
       </div>
     </>
@@ -590,7 +590,7 @@ function LeadCycleRow({ cycle }) {
         {cycle?.summary ? <div class="team-cycle-summary">{cycle.summary}</div> : null}
       </div>
       {(taskHref || rawLogHref) && (
-        <div class="team-cycle-actions">
+        <Toolbar class="team-cycle-actions">
           {taskHref && (
             <a class="team-cycle-link" href={taskHref}>
               <Icon name="arrow-right" size={13} />
@@ -603,7 +603,7 @@ function LeadCycleRow({ cycle }) {
               <span>Raw log</span>
             </a>
           )}
-        </div>
+        </Toolbar>
       )}
     </li>
   );

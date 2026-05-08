@@ -311,6 +311,14 @@ describe("design system stylesheet", () => {
       expect(source).not.toMatch(/<label\b/);
       expect(source).not.toMatch(/style=\{\{[^}]*display:\s*"grid"/);
     }
+    const teamsSource = readFileSync(teamsPath, "utf8");
+    expect(teamsSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(teamsSource).toMatch(/<Toolbar\s+class="team-goal-actions"/);
+    expect(teamsSource).toMatch(/<Toolbar\s+class="form-actions"/);
+    expect(teamsSource).toMatch(/<Toolbar\s+class="team-cycle-actions"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="team-goal-actions"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="form-actions"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="team-cycle-actions"/);
   });
 
   it("builds provider pricing inputs on shared form fields", () => {
