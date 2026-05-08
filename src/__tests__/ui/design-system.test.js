@@ -174,6 +174,14 @@ describe("design system stylesheet", () => {
     expect(taskEditSource).not.toMatch(/<section\s+class="task-edit-section"/);
   });
 
+  it("builds task editor header actions on the shared DetailHead toolbar", () => {
+    const taskEditSource = readFileSync(taskEditPath, "utf8");
+    const detailHeadSource = readFileSync(detailHeadPath, "utf8");
+    expect(detailHeadSource).toMatch(/actionsClass\s*=\s*""/);
+    expect(taskEditSource).toMatch(/actionsClass="task-edit-toolbar"/);
+    expect(taskEditSource).not.toMatch(/<div\s+class="task-edit-toolbar"/);
+  });
+
   it("builds task detail sections on the shared FormSection component", () => {
     const taskDetailSource = readFileSync(taskDetailPath, "utf8");
     expect(taskDetailSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
