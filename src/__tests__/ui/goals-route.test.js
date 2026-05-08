@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGoalResourceGroups,
+  goalDraftFrom,
   goalRouteHash,
   goalStatusLabel,
 } from "../../ui/src/routes/Goals.jsx";
@@ -45,5 +46,16 @@ describe("Goals route helpers", () => {
 
     expect(groups).toHaveLength(1);
     expect(groups[0].items.map((goal) => goal.goal_id)).toEqual(["a"]);
+  });
+
+  it("builds a blank editor draft for a new goal", () => {
+    expect(goalDraftFrom(null)).toEqual({
+      team_id: "",
+      project_id: "",
+      objective: "",
+      stopping_condition: "",
+      validation_loop: "",
+      constraints_text: "",
+    });
   });
 });
