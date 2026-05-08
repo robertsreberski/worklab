@@ -326,9 +326,14 @@ export function CommanderRow({
             </a>
           )}
           {isTeamGoalRoot && (
-            <span class={`chip ${commanderGoalChipClass(task)} team-goal-chip`} title={task.goal_status_reason || "Synthetic team goal root"}>
+            <a
+              class={`chip ${commanderGoalChipClass(task)} team-goal-chip`}
+              href={`#/goals/${encodeURIComponent(task.id)}`}
+              title={task.goal_status_reason || "Synthetic team goal root"}
+              onClick={(event) => event.stopPropagation()}
+            >
               <Icon name="check-circle" size={10} /> {commanderGoalStatusLabel(task)}
-            </span>
+            </a>
           )}
           {metaChip}
           {autoRun && (
