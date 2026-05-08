@@ -198,6 +198,8 @@ describe("design system stylesheet", () => {
       ".task-automation-form",
       ".team-member-row",
       ".activity-filter-panel",
+      ".app.responsive .app-nav a",
+      ".mobile-config-sheet-body.activity-filter-panel",
     ]) {
       const declarations = declarationsForSelector(css, selector);
       expect(declarations).toMatch(/grid-template-columns:[^;]*minmax\(0,/);
@@ -216,6 +218,21 @@ describe("design system stylesheet", () => {
       const declarations = declarationsForSelector(css, selector);
       expect(declarations).toMatch(/min-width:\s*0\b/);
       expect(declarations).toMatch(/max-width:\s*100%/);
+    }
+  });
+
+  it("keeps auto-fit grids viewport-safe", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".run-input-preview-meta",
+      ".summary-tiles",
+      ".activity-cost-chart",
+      ".provider-model-pricing-grid",
+      ".modal-foot",
+      ".form-actions",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/repeat\(auto-fit,\s*minmax\(min\(100%,/);
     }
   });
 
