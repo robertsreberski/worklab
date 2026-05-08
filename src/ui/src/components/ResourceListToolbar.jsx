@@ -21,7 +21,7 @@ export function ResourceListToolbar({
   const configId = `resource-config-${configTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list"}`;
 
   return (
-    <div class="resource-toolbar">
+    <div class="resource-toolbar resource-toolbar-compact">
       <SearchField
         value={searchValue}
         onInput={(event) => onSearch?.(event.target.value, event)}
