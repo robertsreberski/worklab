@@ -2450,6 +2450,26 @@ select,
 .banner-detail { font-size: var(--text-sm); color: var(--text-muted); }
 .banner-actions { display: inline-flex; align-items: center; gap: var(--sp-2); flex: 0 0 auto; }
 
+.banner-title,
+.banner-detail,
+.form-error,
+.form-field-error,
+.field-error,
+.assistant-error,
+.run-input-preview-error,
+.run-cancel-note,
+.run-worktree-note,
+.run-warning-message,
+.run-failure-row dd,
+.run-failure-snippet,
+.run-failure-stderr,
+.settings-inline-warning,
+.settings-health-note {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 /* 7. AppShell + screens --------------------------------------- */
 
 /* §6.1 AppShell */
@@ -4259,20 +4279,27 @@ html.assistant-resizing * {
   background: var(--status-error-bg-10);
 }
 .run-result-summary {
+  max-width: 100%;
   min-width: 0;
   color: var(--text);
   font-size: var(--text-base);
   font-weight: 700;
   line-height: 1.42;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
 }
 .run-result-details {
+  max-width: 100%;
+  min-width: 0;
   color: var(--text-muted);
   font-size: var(--text-sm);
   line-height: 1.45;
   overflow: hidden;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -9141,6 +9168,7 @@ html.assistant-resizing * {
   min-width: 0;
 }
 .run-warning-badge {
+  max-width: min(180px, 100%);
   border: 1px solid var(--status-progress-border);
   color: var(--status-progress);
   background: var(--status-progress-bg-10);
@@ -9148,6 +9176,8 @@ html.assistant-resizing * {
   padding: 1px var(--sp-2);
   font-size: var(--text-xs);
   line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .run-warning-count {
@@ -9222,10 +9252,14 @@ html.assistant-resizing * {
 .run-warning-item {
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--text-sm);
 }
 .run-warning-kind {
+  flex: 0 0 auto;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   color: var(--status-progress);
@@ -9233,10 +9267,18 @@ html.assistant-resizing * {
   letter-spacing: 0.04em;
 }
 .run-warning-source {
+  flex: 1 1 96px;
+  min-width: 0;
+  max-width: min(180px, 100%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--text-muted);
   font-size: var(--text-xs);
 }
 .run-warning-message {
+  min-width: 0;
+  flex: 1 1 180px;
   color: var(--text);
 }
 .run-continuation-links {
@@ -9268,9 +9310,11 @@ html.assistant-resizing * {
 }
 .run-failure-row {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: minmax(96px, 140px) minmax(0, 1fr);
   gap: var(--sp-2);
   align-items: baseline;
+  min-width: 0;
+  max-width: 100%;
 }
 .run-failure-row dt {
   color: var(--text-muted);
