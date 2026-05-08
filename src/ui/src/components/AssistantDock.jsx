@@ -10,6 +10,7 @@ import { Textarea } from "./primitives/Textarea.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
+import { Toolbar } from "./layout/index.js";
 
 const HISTORY_PAGE_SIZE = 5;
 
@@ -369,7 +370,7 @@ export function AssistantDock({
             <span>{thread?.title || "Personal assistant"}</span>
           </div>
         </div>
-        <div class="assistant-head-actions">
+        <Toolbar class="assistant-head-actions">
           {activeRunId && (
             <IconButton
               icon={<Icon name="stop" size={14} />}
@@ -382,7 +383,7 @@ export function AssistantDock({
             aria-label="Collapse assistant"
             onClick={onToggle}
           />
-        </div>
+        </Toolbar>
       </header>
       <div class="assistant-thread wl-scrollbar" ref={scrollRef}>
         {!loading && hasOlderHistory && (

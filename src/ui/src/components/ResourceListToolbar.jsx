@@ -2,7 +2,7 @@ import { useState } from "preact/hooks";
 import { Button, SearchField } from "./primitives/index.js";
 import { Icon } from "./Icon.jsx";
 import { MobileConfigSheet, MobileConfigTrigger } from "./MobileConfigSheet.jsx";
-import { SectionGroup } from "./layout/index.js";
+import { SectionGroup, Toolbar } from "./layout/index.js";
 
 export function ResourceListToolbar({
   searchValue,
@@ -53,7 +53,7 @@ export function ResourceListToolbar({
           </MobileConfigSheet>
         </>
       )}
-      <div class="resource-toolbar-actions">
+      <Toolbar class="resource-toolbar-actions">
         {countLabel && <span class="resource-toolbar-count">{countLabel}</span>}
         {actionLabel && (
           <Button
@@ -65,7 +65,7 @@ export function ResourceListToolbar({
             {actionLabel}
           </Button>
         )}
-      </div>
+      </Toolbar>
       {actionLabel && (
         <Button
           class="resource-list-fab"

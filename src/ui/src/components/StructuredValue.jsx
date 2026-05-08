@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
+import { SectionStack, Toolbar } from "./layout/index.js";
 import {
   parseMaybeJson,
   rawJsonText,
@@ -188,7 +189,7 @@ function ContentValue({ value }) {
         <strong>Content</strong>
         <Badge>{content.length} item{content.length === 1 ? "" : "s"}</Badge>
       </div>
-      <div class="structured-content-list">
+      <SectionStack class="structured-content-list">
         {content.map((item, index) => (
           <div class="structured-content-item" key={index}>
             <Badge>{item.type || "item"}</Badge>
@@ -197,7 +198,7 @@ function ContentValue({ value }) {
               : <span>{item.text || item.content || structuredPreview(item)}</span>}
           </div>
         ))}
-      </div>
+      </SectionStack>
     </>
   );
 }
@@ -235,10 +236,10 @@ export function StructuredValue({ value, title, hideRaw = false, class: classNam
 
   return (
     <div class={`structured-value structured-${kind} ${className}`.trim()}>
-      <div class="structured-actions">
+      <Toolbar class="structured-actions">
         {title && <span class="structured-title">{title}</span>}
         <CopyRawButton raw={raw} />
-      </div>
+      </Toolbar>
       {kind === "worklab" ? <WorklabResult value={data} /> :
         kind === "error" ? <ErrorValue value={data} /> :
           kind === "schema" ? <SchemaValue value={data} /> :

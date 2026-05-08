@@ -1,6 +1,7 @@
 // §5.9 Keyboard help drawer — discoverable list of every shortcut.
 import { Drawer } from "./Drawer.jsx";
 import { Kbd } from "./primitives/Kbd.jsx";
+import { SectionStack } from "./layout/index.js";
 
 const SHORTCUTS = [
   {
@@ -33,7 +34,7 @@ const SHORTCUTS = [
 export function KeyboardHelpDrawer({ open, onClose }) {
   return (
     <Drawer open={open} onClose={onClose} title="Keyboard shortcuts">
-      <div class="kbd-help-stack">
+      <SectionStack class="kbd-help-stack">
         {SHORTCUTS.map((section) => (
           <section key={section.title} class="kbd-help-section">
             <h3 class="all-caps kbd-help-title">{section.title}</h3>
@@ -49,7 +50,7 @@ export function KeyboardHelpDrawer({ open, onClose }) {
             </dl>
           </section>
         ))}
-      </div>
+      </SectionStack>
     </Drawer>
   );
 }
