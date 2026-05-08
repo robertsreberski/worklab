@@ -207,6 +207,15 @@ describe("design system stylesheet", () => {
     expect(taskDetailSource).not.toMatch(/<div\s+class="task-hero-actions toolbar"/);
   });
 
+  it("builds rail action stacks on the shared ActionDock layout", () => {
+    for (const filePath of [taskDetailPath, providersPath]) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{[^}]*ActionDock[^}]*\}\s+from/);
+      expect(source).toMatch(/<ActionDock[\s\S]*class="task-actions-stack"/);
+      expect(source).not.toMatch(/<div\s+class="task-actions-stack"/);
+    }
+  });
+
   it("builds task detail sections on the shared FormSection component", () => {
     const taskDetailSource = readFileSync(taskDetailPath, "utf8");
     expect(taskDetailSource).toMatch(/import\s+\{\s*FormSection\s*\}/);

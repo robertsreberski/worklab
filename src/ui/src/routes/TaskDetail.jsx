@@ -30,7 +30,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
+import { ActionDock, DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -843,50 +843,59 @@ export function TaskDetail({ id, runParam = null }) {
         </Card>
 
         <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
-          <div class="task-actions-stack">
-            <Button
-              variant="secondary"
-              iconLeft={<Icon name="database" size={13} />}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(taskDisplayKey(task));
-                  pushToast("Task key copied", { variant: "success" });
-                } catch {
-                  pushToast("Copy failed", { variant: "error" });
-                }
-              }}
-            >
-              Copy task key
-            </Button>
-            <Button
-              variant="secondary"
-              iconLeft={<Icon name="copy" size={13} />}
-              onClick={async () => {
-                try {
-                  const copy = {
-                    title: `Copy of ${task.title}`,
-                    instructions: task.instructions,
-                    owner_agent: task.owner_agent,
-                    planner_agent: task.planner_agent,
-                    reviewer_agent: task.reviewer_agent,
-                    run_policy: task.run_policy || DEFAULT_RUN_POLICY,
-                    project_id: task.project_id || null,
-                    tags: task.tags,
-                  };
-                  const r = await api.createTask(copy);
-                  pushToast("Task duplicated", { variant: "success" });
-                  navigateHash(`#/tasks/${taskRouteId(r.task)}`);
-                } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
-              }}
-            >Duplicate</Button>
-            <Button
-              variant="destructive"
-              iconLeft={<Icon name="trash" size={13} />}
-              onClick={() => setDeleteOpen(true)}
-            >
-              Delete task
-            </Button>
-          </div>
+          <ActionDock
+            class="task-actions-stack"
+            secondary={(
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="database" size={13} />}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(taskDisplayKey(task));
+                    pushToast("Task key copied", { variant: "success" });
+                  } catch {
+                    pushToast("Copy failed", { variant: "error" });
+                  }
+                }}
+              >
+                Copy task key
+              </Button>
+            )}
+            overflow={(
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="copy" size={13} />}
+                onClick={async () => {
+                  try {
+                    const copy = {
+                      title: `Copy of ${task.title}`,
+                      instructions: task.instructions,
+                      owner_agent: task.owner_agent,
+                      planner_agent: task.planner_agent,
+                      reviewer_agent: task.reviewer_agent,
+                      run_policy: task.run_policy || DEFAULT_RUN_POLICY,
+                      project_id: task.project_id || null,
+                      tags: task.tags,
+                    };
+                    const r = await api.createTask(copy);
+                    pushToast("Task duplicated", { variant: "success" });
+                    navigateHash(`#/tasks/${taskRouteId(r.task)}`);
+                  } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
+                }}
+              >
+                Duplicate
+              </Button>
+            )}
+            primary={(
+              <Button
+                variant="destructive"
+                iconLeft={<Icon name="trash" size={13} />}
+                onClick={() => setDeleteOpen(true)}
+              >
+                Delete task
+              </Button>
+            )}
+          />
         </Card>
       </div>
     );

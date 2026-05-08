@@ -21,7 +21,7 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { ActionDock, DetailHead, SectionMarker } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { pushToast } from "../lib/toast.js";
@@ -531,26 +531,31 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 
         {!isNew && (
           <Card variant="spacious" title="Provider actions" class="entity-rail-card">
-            <div class="task-actions-stack">
-              <Button
-                variant="secondary"
-                loading={connectionStatus?.kind === "testing"}
-                onClick={() => testProviderConnection()}
-                disabled={isDirty}
-                title={isDirty ? "Save provider changes before testing." : undefined}
-              >
-                Test connection
-              </Button>
-              <Button
-                variant="secondary"
-                loading={discoveryStatus?.kind === "discovering"}
-                onClick={() => discoverProviderModels()}
-                disabled={isDirty}
-                title={isDirty ? "Save provider changes before discovering models." : undefined}
-              >
-                Discover models
-              </Button>
-            </div>
+            <ActionDock
+              class="task-actions-stack"
+              secondary={(
+                <Button
+                  variant="secondary"
+                  loading={connectionStatus?.kind === "testing"}
+                  onClick={() => testProviderConnection()}
+                  disabled={isDirty}
+                  title={isDirty ? "Save provider changes before testing." : undefined}
+                >
+                  Test connection
+                </Button>
+              )}
+              overflow={(
+                <Button
+                  variant="secondary"
+                  loading={discoveryStatus?.kind === "discovering"}
+                  onClick={() => discoverProviderModels()}
+                  disabled={isDirty}
+                  title={isDirty ? "Save provider changes before discovering models." : undefined}
+                >
+                  Discover models
+                </Button>
+              )}
+            />
           </Card>
         )}
 
