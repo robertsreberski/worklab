@@ -7898,6 +7898,15 @@ button.settings-overview-card:focus-visible,
   padding: 0;
 }
 .link-button:hover { color: var(--accent-hover); }
+.button.link-button {
+  height: auto;
+  min-height: 0;
+  box-shadow: none;
+}
+.button.link-button:hover {
+  background: transparent;
+  border-color: transparent;
+}
 
 .toolbar { display: inline-flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .provider-model-grid {

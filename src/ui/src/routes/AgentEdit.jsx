@@ -310,9 +310,9 @@ function CapabilityGroup({
         <div class="capability-panel-actions">
           <span class={`capability-mode ${!explicit ? "default" : explicit ? "explicit" : ""}`.trim()}>{summary}</span>
           {explicit && (
-            <button type="button" class="link-button capability-reset" onClick={() => onChange([], "all")}>
+            <Button variant="ghost" size="sm" class="link-button capability-reset" onClick={() => onChange([], "all")}>
               Reset to all
-            </button>
+            </Button>
           )}
         </div>
       </div>
