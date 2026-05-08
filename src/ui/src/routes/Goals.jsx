@@ -6,7 +6,7 @@ import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { pushToast } from "../lib/toast.js";
-import { AppShell } from "../components/AppShell.jsx";
+import { AppShell, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
@@ -133,11 +133,11 @@ function constraintsFromText(value) {
     .filter(Boolean);
 }
 
-function goalDraftFrom(goal = {}) {
-  const contract = goal.contract || {};
+export function goalDraftFrom(goal = {}) {
+  const contract = goal?.contract || {};
   return {
-    team_id: goal.team_id || "",
-    project_id: goal.project_id || "",
+    team_id: goal?.team_id || "",
+    project_id: goal?.project_id || "",
     objective: contract.objective || "",
     stopping_condition: contract.stopping_condition || "",
     validation_loop: contract.validation_loop || "",
@@ -247,6 +247,24 @@ function GoalDetail({ goal, onChanged }) {
   }
 
   const latest = goal.latest_cycle || null;
+  const detailActions = (
+    <>
+      <Button variant="primary" loading={running} onClick={runLeadCycle} iconLeft={<Icon name="play" size={13} />}>
+        Run lead cycle
+      </Button>
+      <Button variant="secondary" loading={updating} onClick={setPaused}>
+        {paused ? "Resume" : "Pause"}
+      </Button>
+      <Button variant="secondary" onClick={() => navigateHash(`${goalRouteHash(goal)}/edit`)}>
+        Edit
+      </Button>
+    </>
+  );
+
+  useAppChrome({
+    mobileTopbar: <MobileTopbar title={goalProjectLabel(goal)} backLabel="Goals" onBack={() => navigateHash("#/goals")} />,
+    mobileActionDock: detailActions,
+  }, [goal?.goal_id, running, updating, paused]);
 
   return (
     <>
@@ -265,19 +283,7 @@ function GoalDetail({ goal, onChanged }) {
             <span>{goalStatusLabel(goal)}</span>
           </>
         )}
-        actions={(
-          <>
-            <Button variant="primary" loading={running} onClick={runLeadCycle} iconLeft={<Icon name="play" size={13} />}>
-              Run lead cycle
-            </Button>
-            <Button variant="secondary" loading={updating} onClick={setPaused}>
-              {paused ? "Resume" : "Pause"}
-            </Button>
-            <Button variant="secondary" onClick={() => navigateHash(`${goalRouteHash(goal)}/edit`)}>
-              Edit
-            </Button>
-          </>
-        )}
+        actions={detailActions}
       />
       <div class="pane-detail-body entity-detail-body goal-detail-body">
         <div class="goal-detail-grid">
@@ -360,6 +366,34 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
       setSaving(false);
     }
   }
+  const cancel = () => navigateHash(isNew ? "#/goals" : goalRouteHash(goal));
+  const saveLabel = isNew ? "Create goal" : "Save";
+  const editorActions = (
+    <>
+      <Button variant="ghost" onClick={cancel}>Cancel</Button>
+      <Button variant="primary" loading={saving} onClick={save}>{saveLabel}</Button>
+    </>
+  );
+
+  useAppChrome({
+    mobileTopbar: <MobileTopbar title={isNew ? "New goal" : goalProjectLabel(goal)} backLabel="Goals" onBack={cancel} />,
+    mobileActionDock: (
+      <>
+        <Button variant="secondary" onClick={cancel}>Cancel</Button>
+        <Button variant="primary" loading={saving} onClick={save}>{saveLabel}</Button>
+      </>
+    ),
+  }, [
+    goal?.goal_id,
+    isNew,
+    saving,
+    draft.team_id,
+    draft.project_id,
+    draft.objective,
+    draft.stopping_condition,
+    draft.validation_loop,
+    draft.constraints_text,
+  ]);
 
   const teamOptions = teams.map((team) => ({
     value: team.id,
@@ -387,12 +421,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
         icon={<Icon name="target" size={16} />}
         kicker={isNew ? "Create goal" : "Goal editor"}
         title={isNew ? "New goal" : goalProjectLabel(goal)}
-        actions={(
-          <>
-            <Button variant="ghost" onClick={() => navigateHash(isNew ? "#/goals" : goalRouteHash(goal))}>Cancel</Button>
-            <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create goal" : "Save"}</Button>
-          </>
-        )}
+        actions={editorActions}
       />
       <div class="pane-detail-body entity-detail-body goal-edit-body">
         <div class="goal-editor">

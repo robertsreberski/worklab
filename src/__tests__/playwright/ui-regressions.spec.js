@@ -32,6 +32,7 @@ let providerId;
 let skillName;
 let projectSlug;
 let teamSlug;
+let goalId;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -393,6 +394,22 @@ test.beforeAll(async () => {
     ok: [201],
   });
   teamSlug = team.team.slug;
+  const goal = await requestJson("/api/goals", {
+    method: "POST",
+    body: {
+      team_id: teamSlug,
+      project_id: projectSlug,
+      objective: "Keep the native Goals workspace usable with an intentionally long objective that should clamp instead of widening the list row or hiding page actions on a narrow viewport.",
+      stopping_condition: "Mobile, tablet, and desktop route checks can inspect the same goal without horizontal overflow.",
+      validation_loop: "Run the responsive UI regression suite and confirm goal actions stay reachable.",
+      constraints: [
+        "No hidden primary controls on mobile",
+        "Long contract text wraps inside the detail surface",
+      ],
+    },
+    ok: [201],
+  });
+  goalId = goal.goal.goal_id;
 
   const db = new Database(join(dataDir, "worklab.db"));
   const now = Date.now();
@@ -1985,11 +2002,14 @@ const RESPONSIVE_VIEWPORTS = [
 ];
 
 function responsiveRoutes(page, ids) {
-  const { taskId, providerId, skillName, projectSlug, teamSlug } = ids;
+  const { taskId, providerId, skillName, projectSlug, teamSlug, goalId } = ids;
   return [
     { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
     { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
     { hash: "#/tasks/new", ready: () => page.locator(".task-edit-head").first() },
+    { hash: "#/goals", ready: () => page.locator(".goal-resource-list") },
+    { hash: `#/goals/${goalId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
+    { hash: "#/goals/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New goal" }) },
     { hash: "#/projects", ready: () => page.locator(".pane-list") },
     { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
     { hash: "#/projects/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "Untitled project" }) },
@@ -2017,7 +2037,7 @@ function responsiveRoutes(page, ids) {
 for (const vp of RESPONSIVE_VIEWPORTS) {
   test(`no horizontal overflow at ${vp.label} (${vp.w}x${vp.h})`, async ({ page }) => {
     await page.setViewportSize({ width: vp.w, height: vp.h });
-    const routes = responsiveRoutes(page, { taskId, providerId, skillName, projectSlug, teamSlug });
+    const routes = responsiveRoutes(page, { taskId, providerId, skillName, projectSlug, teamSlug, goalId });
     for (const route of routes) {
       await page.goto("about:blank");
       await page.goto(`${baseUrl}/${route.hash}`);
@@ -2511,6 +2531,7 @@ test("mobile resource list filters are available from the shared configuration s
   await page.setViewportSize({ width: 390, height: 844 });
   for (const route of [
     { hash: "#/agents", label: "Agents" },
+    { hash: "#/goals", label: "Goals" },
     { hash: "#/projects", label: "Projects" },
     { hash: "#/knowledge", label: "Knowledge" },
     { hash: "#/skills", label: "Skills" },
@@ -2541,6 +2562,7 @@ test("mobile resource list create actions move to a floating FAB", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
     { hash: "#/agents", label: "New agent", target: /#\/agents\/new/, toolbar: "resource" },
+    { hash: "#/goals", label: "New goal", target: /#\/goals\/new/, toolbar: "resource" },
     { hash: "#/projects", label: "New project", target: /#\/projects\/new/, toolbar: "resource" },
     { hash: "#/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
     { hash: "#/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
@@ -2630,6 +2652,40 @@ test("mobile resource list create actions move to a floating FAB", async ({ page
     await fabButton.click();
     await expect(page).toHaveURL(route.target);
   }
+});
+
+test("mobile goals keep detail and editor actions reachable", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto(`${baseUrl}/#/goals/${goalId}`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Run lead cycle" })).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Edit" })).toBeVisible();
+  await expectNoHorizontalOverflow(page, "mobile goal detail actions");
+
+  await page.goto(`${baseUrl}/#/goals/new`);
+  await expect(page.locator(".pane-detail-head h2", { hasText: "New goal" })).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Create goal" })).toBeVisible();
+  await expect(page.locator(".app-mobile-action-dock .button", { hasText: "Cancel" })).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const dock = document.querySelector(".app-mobile-action-dock");
+    const tabbar = document.querySelector(".app-tabbar");
+    const buttons = [...document.querySelectorAll(".app-mobile-action-dock .button")];
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
+      minButtonHeight: buttons.length ? Math.min(...buttons.map((button) => Math.round(button.getBoundingClientRect().height))) : 0,
+      buttonOverflow: buttons.some((button) => button.scrollWidth > button.clientWidth + 1),
+    };
+  });
+
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.tabbarDisplay).toBe("none");
+  expect(metrics.minButtonHeight).toBeGreaterThanOrEqual(44);
+  expect(metrics.buttonOverflow).toBe(false);
 });
 
 test("mobile Activity filters collapse into a configuration sheet", async ({ page }) => {
