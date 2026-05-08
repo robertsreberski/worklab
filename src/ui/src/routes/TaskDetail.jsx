@@ -30,7 +30,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { ActionDock, DetailHead, SectionGroup, SectionMarker, Toolbar } from "../components/layout/index.js";
+import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -976,7 +976,7 @@ export function TaskDetail({ id, runParam = null }) {
             <FormSection class="task-brief-section" aria-labelledby="task-brief">
               <SectionMarker id="task-brief" num="01" kicker="Brief" meta="Request" />
               <div class={`task-hero-instructions${instructionsExpanded ? " expanded" : ""}${(task.instructions || "").length > 400 ? " clampable" : ""}`}>
-                <div class="task-hero-instructions-head">
+                <InlineHead class="task-hero-instructions-head">
                   <div class="all-caps task-hero-instructions-kicker">
                     <Icon name="terminal" size={10} /> Instructions / Request
                   </div>
@@ -995,7 +995,7 @@ export function TaskDetail({ id, runParam = null }) {
                       }}
                     />
                   )}
-                </div>
+                </InlineHead>
                 {task.instructions ? (
                   <pre class="task-hero-instructions-body">{task.instructions}</pre>
                 ) : (
@@ -1154,7 +1154,7 @@ export function TaskDetail({ id, runParam = null }) {
                     <div key={item.id} class={`activity-feed-entry comment ${item.authorType || "human"}`}>
                       <div class="activity-feed-rail"><ActivityRailDot item={item} /></div>
                       <div class="activity-feed-content activity-item">
-                        <div class="activity-item-head">
+                        <InlineHead class="activity-item-head">
                           {renderCommentAuthor(item)}
                           <span class="activity-item-time" title={formatDate(item.at) || undefined}>{formatActivityTime(item.at)}</span>
                           {canDeleteComment && (
@@ -1168,7 +1168,7 @@ export function TaskDetail({ id, runParam = null }) {
                               onClick={() => setCommentDeleteTarget(item)}
                             />
                           )}
-                        </div>
+                        </InlineHead>
                         {item.body && (
                           <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} /></div>
                         )}
