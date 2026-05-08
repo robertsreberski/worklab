@@ -240,6 +240,18 @@ describe("resource list helpers", () => {
     expect(panelRule).toContain("width: min(360px, calc(100vw - 32px))");
   });
 
+  it("builds resource list groups on the shared SectionGroup layout", () => {
+    const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
+    const styles = source("src/ui/src/styles.css");
+
+    expect(toolbar).toContain("import { SectionGroup }");
+    expect(toolbar).toMatch(/<SectionGroup[\s\S]*class="resource-group"/);
+    expect(toolbar).not.toMatch(/<div\s+class="resource-group-header"/);
+    expect(styles).toContain(".resource-group > .ds-section-group-head");
+    expect(styles).not.toContain(".resource-group-header");
+    expect(styles).not.toContain(".resource-group-count");
+  });
+
   it("keeps mobile list create actions in a shared floating FAB", () => {
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const paneHeader = source("src/ui/src/components/layout/PaneListHeader.jsx");

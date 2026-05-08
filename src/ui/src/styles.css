@@ -5119,24 +5119,17 @@ html.assistant-resizing * {
   overflow: auto;
 }
 .resource-group {
-  display: flex;
-  flex-direction: column;
+  gap: 0;
 }
-.resource-group-header {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
+.resource-group > .ds-section-group-head {
   padding: 10px var(--sp-6) 6px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 58%, transparent);
-  color: var(--text-muted);
   font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
-.resource-group-count {
-  margin-left: auto;
-  color: var(--text-subtle);
+.resource-group > .ds-section-group-head .ds-section-group-count {
   font-weight: 500;
 }
 .resource-list-layout.two-pane-list-first .pane-row {
@@ -9996,7 +9989,7 @@ button.settings-overview-card:focus-visible,
     padding: 0;
     border-radius: 999px;
   }
-  .resource-group-header {
+  .resource-group > .ds-section-group-head {
     padding: var(--sp-2) var(--sp-4);
   }
   .knowledge-filter-row { grid-template-columns: 1fr; }

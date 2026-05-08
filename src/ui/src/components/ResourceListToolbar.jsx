@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 import { Button, SearchField } from "./primitives/index.js";
 import { Icon } from "./Icon.jsx";
 import { MobileConfigSheet, MobileConfigTrigger } from "./MobileConfigSheet.jsx";
+import { SectionGroup } from "./layout/index.js";
 
 export function ResourceListToolbar({
   searchValue,
@@ -81,12 +82,13 @@ export function ResourceListToolbar({
 
 export function ResourceGroup({ group, children }) {
   return (
-    <div class="resource-group">
-      <div class="resource-group-header">
-        <span>{group.label}</span>
-        <span class="resource-group-count">{group.items?.length || 0}</span>
-      </div>
+    <SectionGroup
+      as="div"
+      class="resource-group"
+      label={group.label}
+      count={group.items?.length || 0}
+    >
       {children}
-    </div>
+    </SectionGroup>
   );
 }
