@@ -19,6 +19,7 @@ import {
   updateTeamFields,
 } from "./db/queries/teams.js";
 import { getProjectById } from "./db/queries/projects.js";
+import { getTaskById } from "./db/queries/tasks.js";
 import { newTaskId, newTeamId } from "./ids.js";
 import { projectRouteError } from "./projects.js";
 
@@ -174,6 +175,8 @@ function latestLeadCycleForProject(db, { teamId, projectId }) {
 export function teamProjectGoalFromRows({ team, project, root, latestCycle = null } = {}) {
   if (!team || !project || !root) return null;
   return {
+    id: root.id,
+    goal_id: root.id,
     team_id: team.id,
     team_slug: team.slug,
     team_name: team.name,
@@ -208,6 +211,18 @@ export function getTeamProjectGoal(db, { teamId, projectId, now = Date.now(), en
     project,
     root,
     latestCycle: latestLeadCycleForProject(db, { teamId, projectId }),
+  });
+}
+
+export function getTeamProjectGoalById(db, goalId, { now = Date.now() } = {}) {
+  if (!goalId) return null;
+  const root = getTaskById(db, goalId);
+  if (!root || !root.is_team_root || !root.team_id || !root.project_id) return null;
+  return getTeamProjectGoal(db, {
+    teamId: root.team_id,
+    projectId: root.project_id,
+    now,
+    ensureRoot: false,
   });
 }
 

@@ -15,6 +15,7 @@ import { registerProviderRoutes } from "./routes/providers.js";
 import { registerModelRoutes } from "./routes/models.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerAutomationRoutes } from "./routes/automations.js";
+import { registerGoalRoutes } from "./routes/goals.js";
 import { registerProjectRoutes } from "./routes/projects.js";
 import { registerTeamRoutes } from "./routes/teams.js";
 import { registerSlackRoutes } from "./routes/slack.js";
@@ -91,6 +92,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
 
   registerProjectRoutes(app, { db, broker, config });
   registerTeamRoutes(app, { db, broker, watcher });
+  registerGoalRoutes(app, { db, broker, watcher });
   registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
   registerActivityRoutes(app, { db, logger });
