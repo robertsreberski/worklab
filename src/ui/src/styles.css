@@ -5442,7 +5442,8 @@ html.assistant-resizing * {
   container-type: inline-size;
 }
 .pane-detail-body > .form-section,
-.entity-editor-main > .form-section {
+.entity-editor-main > .form-section,
+.goal-editor > .form-section {
   margin-bottom: 0;
   padding: var(--sp-5);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
@@ -5468,6 +5469,11 @@ html.assistant-resizing * {
   flex-direction: column;
   gap: var(--sp-5);
   min-width: 0;
+}
+.team-detail-main {
+  display: grid;
+  gap: var(--sp-4);
+  padding: var(--sp-4);
 }
 .team-members-editor {
   display: grid;
@@ -5746,18 +5752,6 @@ html.assistant-resizing * {
 .goal-link-list a,
 .goal-latest-cycle a {
   font-size: var(--text-sm);
-}
-.goal-form-grid {
-  display: grid;
-  gap: var(--sp-3);
-}
-.goal-form-grid label {
-  display: grid;
-  gap: var(--sp-1);
-  min-width: 0;
-  color: var(--text-muted);
-  font-size: var(--text-sm);
-  font-weight: 600;
 }
 .team-picker-icon {
   display: inline-flex;
@@ -9910,7 +9904,8 @@ button.settings-overview-card:focus-visible,
     flex: 1 1 112px;
   }
   .pane-detail-body { padding: var(--sp-4) var(--sp-3); }
-  .pane-detail-body > .form-section { padding: var(--sp-4); }
+  .pane-detail-body > .form-section,
+  .goal-editor > .form-section { padding: var(--sp-4); }
   .pane-row-summary { justify-content: flex-start; }
   .pane-list-head { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
   .pane-list-head > .button { width: 100%; }
@@ -10767,6 +10762,7 @@ button.settings-overview-card:focus-visible,
   .task-edit-body { padding: var(--sp-3); }
   .pane-detail-body > .form-section,
   .entity-editor-main > .form-section,
+  .goal-editor > .form-section,
   .entity-rail-card.card-spacious { padding: var(--sp-3); }
   .skill-body-editor { min-height: 420px; }
   .page-wrap,

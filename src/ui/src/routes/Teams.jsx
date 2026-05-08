@@ -20,6 +20,9 @@ import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/R
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
+import { FormField } from "../components/FormField.jsx";
+import { FormGrid } from "../components/FormGrid.jsx";
+import { FormSection } from "../components/FormSection.jsx";
 import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
@@ -468,16 +471,24 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
         actions={headerActions}
       />
       <div class="pane-detail-body entity-detail-body team-edit-body">
-        <div class="entity-editor-main" style={{ padding: "1rem" }}>
+        <div class="entity-editor-main">
           {error && <p class="error">{error}</p>}
           <TeamSetupGuide />
-          <Card title="Team">
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <label>Name<Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} /></label>
-              <label>Slug<Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" /></label>
-              <label>Description<Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} /></label>
-              <label>Team charter<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
-              <label>Lead agent
+          <FormSection kicker="Identity" title="Team">
+            <FormGrid columns={2}>
+              <FormField label="Name">
+                <Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} />
+              </FormField>
+              <FormField label="Slug" hint={isNew ? "Leave blank to generate from name." : null}>
+                <Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" />
+              </FormField>
+              <FormField label="Description" class="span-2">
+                <Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} />
+              </FormField>
+              <FormField label="Team charter" class="span-2">
+                <Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} />
+              </FormField>
+              <FormField label="Lead agent" class="span-2">
                 <AgentPicker
                   class="team-lead-picker"
                   value={draft.lead_agent || ""}
@@ -486,21 +497,23 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
                   placeholder="Pick a lead"
                   ariaLabel="Team lead agent"
                 />
-              </label>
-            </div>
-          </Card>
-          <Card title="Members">
+              </FormField>
+            </FormGrid>
+          </FormSection>
+          <FormSection kicker="Roster" title="Members">
             <MembersEditor members={draft.members} agents={agents} onChange={(m) => update({ members: m })} />
-          </Card>
-          <Card title="Schedule">
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <Switch
-                checked={!!draft.schedule_enabled}
-                onChange={(v) => update({ schedule_enabled: v })}
-                label="Run lead cycles on a schedule"
-                description="Periodically fire a worklab.lead_cycle.v1 run for each project this team is assigned to."
-              />
-              <label>Interval (minutes)
+          </FormSection>
+          <FormSection kicker="Automation" title="Schedule">
+            <FormGrid columns={2}>
+              <FormField switchInside class="span-2">
+                <Switch
+                  checked={!!draft.schedule_enabled}
+                  onChange={(v) => update({ schedule_enabled: v })}
+                  label="Run lead cycles on a schedule"
+                  description="Periodically fire a worklab.lead_cycle.v1 run for each project this team is assigned to."
+                />
+              </FormField>
+              <FormField label="Interval (minutes)">
                 <Input
                   type="number"
                   min="1"
@@ -512,12 +525,16 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
                     update({ schedule_interval_minutes: v === "" ? null : Number(v) });
                   }}
                 />
-              </label>
-            </div>
-          </Card>
-          <Card title="Budget">
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              <label>Daily budget (USD)
+              </FormField>
+            </FormGrid>
+          </FormSection>
+          <FormSection
+            kicker="Spend"
+            title="Budget"
+            description="Team budgets replace the retired per-agent budgets. The workspace daily cap in Settings remains a global ceiling."
+          >
+            <FormGrid columns={2}>
+              <FormField label="Daily budget (USD)">
                 <Input
                   type="number"
                   min="0"
@@ -529,8 +546,8 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
                     update({ daily_budget_usd: v === "" ? null : Number(v) });
                   }}
                 />
-              </label>
-              <label>Per-run budget (USD)
+              </FormField>
+              <FormField label="Per-run budget (USD)">
                 <Input
                   type="number"
                   min="0"
@@ -542,11 +559,10 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
                     update({ per_run_budget_usd: v === "" ? null : Number(v) });
                   }}
                 />
-              </label>
-              <p class="muted">Team budgets replace the retired per-agent budgets. The workspace daily cap (Settings) remains a global ceiling.</p>
-            </div>
-          </Card>
-          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+              </FormField>
+            </FormGrid>
+          </FormSection>
+          <div class="form-actions">
             <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
             <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
           </div>
@@ -639,7 +655,7 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
         actions={headerActions}
       />
       <div class="pane-detail-body entity-detail-body team-detail-body">
-        <div style={{ padding: "1rem", display: "grid", gap: "1rem" }}>
+        <div class="team-detail-main">
           <Card title="Team charter">
             <p>{team.goal || <em>(no team charter set)</em>}</p>
           </Card>

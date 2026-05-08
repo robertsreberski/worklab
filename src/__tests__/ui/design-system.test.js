@@ -9,6 +9,8 @@ const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
+const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
+const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
@@ -132,6 +134,20 @@ describe("design system stylesheet", () => {
     expect(taskEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(taskEditSource).toMatch(/<FormSection[^>]+class="task-edit-section"/);
     expect(taskEditSource).not.toMatch(/<section\s+class="task-edit-section"/);
+  });
+
+  it("builds team and goal editor forms on shared form primitives", () => {
+    for (const filePath of [goalsPath, teamsPath]) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{\s*FormField\s*\}/);
+      expect(source).toMatch(/import\s+\{\s*FormGrid\s*\}/);
+      expect(source).toMatch(/import\s+\{\s*FormSection\s*\}/);
+      expect(source).toMatch(/<FormSection\b/);
+      expect(source).toMatch(/<FormGrid\b/);
+      expect(source).toMatch(/<FormField\b/);
+      expect(source).not.toMatch(/<label\b/);
+      expect(source).not.toMatch(/style=\{\{[^}]*display:\s*"grid"/);
+    }
   });
 
   it("bounds shared component text surfaces", () => {
