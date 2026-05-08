@@ -794,11 +794,11 @@ function ProjectDetail({ selectedId, onChanged }) {
                   )}
 
                   {taskOutputs.length > 0 && (
-                    <div class="project-task-output-lane">
-                      <div class="project-task-output-lane-head">
-                        <span>Recent task outputs</span>
-                        <span>{taskOutputs.length}</span>
-                      </div>
+                    <SectionGroup
+                      class="project-task-output-lane"
+                      label="Recent task outputs"
+                      count={taskOutputs.length}
+                    >
                       <div class="project-output-list">
                         {taskOutputs.map((output) => (
                           <div key={`${output.task_id}:${output.run_id}`} class="project-output-row">
@@ -822,7 +822,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                           </div>
                         ))}
                       </div>
-                    </div>
+                    </SectionGroup>
                   )}
                 </div>
               ) : (
