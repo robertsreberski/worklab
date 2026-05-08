@@ -6574,6 +6574,49 @@ html.assistant-resizing * {
   font-size: var(--text-xs);
   font-weight: 600;
 }
+.ds-control-groups {
+  display: grid;
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.ds-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface) 72%, var(--surface-subtle));
+}
+.ds-control-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.ds-control-group-head h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 800;
+  letter-spacing: 0;
+}
+.ds-control-group-head p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+}
+.ds-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 128px), 1fr));
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.ds-control-grid .span-2 {
+  grid-column: span 2;
+}
 .filter-bar {
   display: grid;
   grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1fr) auto auto;
@@ -7661,12 +7704,21 @@ button.settings-overview-card:focus-visible,
 .settings-note-grid.single {
   grid-template-columns: 1fr;
 }
+.settings-note-grid-paths {
+  grid-template-columns: 1fr;
+}
 .settings-note {
   min-width: 0;
   padding: var(--sp-3);
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: var(--radius-sm);
   background: var(--surface-sunken);
+}
+.settings-note-grid-paths .settings-note {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.32fr) minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
 }
 .settings-note span,
 .settings-row-sub,
@@ -7681,6 +7733,9 @@ button.settings-overview-card:focus-visible,
   color: var(--text);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
+}
+.settings-note-grid-paths .settings-note strong {
+  margin-top: 0;
 }
 .settings-inline-warning {
   padding: var(--sp-3);
@@ -7794,6 +7849,17 @@ button.settings-overview-card:focus-visible,
 .settings-page .duration-input {
   min-height: 0;
 }
+.settings-page .select {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+}
+.settings-page .select-trigger {
+  min-width: 0;
+}
+.settings-page .settings-planning-grid {
+  grid-template-columns: 1fr;
+}
 .settings-page .number-stepper {
   height: 32px;
 }
@@ -7840,6 +7906,31 @@ button.settings-overview-card:focus-visible,
     grid-column: 2;
     justify-self: start;
   }
+  .settings-section-shell {
+    padding: var(--sp-4) var(--sp-3);
+  }
+  .settings-panel {
+    padding: var(--sp-3);
+  }
+  .settings-advanced-body {
+    padding: var(--sp-3);
+  }
+  .ds-control-group {
+    padding: var(--sp-3);
+  }
+  .ds-control-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .ds-control-grid .span-2 {
+    grid-column: 1 / -1;
+  }
+  .settings-note-grid-paths .settings-note {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .settings-note-grid-paths .settings-note strong {
+    margin-top: var(--sp-1);
+  }
   .settings-panel-grid,
   .settings-note-grid,
   .settings-index-status {
@@ -7875,6 +7966,11 @@ button.settings-overview-card:focus-visible,
   .settings-row-actions .button.sm {
     height: 32px;
     min-height: 0;
+  }
+}
+@media (max-width: 360px) {
+  .ds-control-grid {
+    grid-template-columns: 1fr;
   }
 }
 

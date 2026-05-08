@@ -1775,6 +1775,56 @@ test("settings overview cards, section nav, and sections stay connected", async 
   await expectNoHorizontalOverflow(page, "settings connected nav mobile");
 });
 
+test("settings dense layout controls stay grouped and unclipped", async ({ page }) => {
+  async function visibleClipOffenders(scope) {
+    return await page.evaluate((selector) => {
+      return [...document.querySelectorAll(`${selector} *`)]
+        .filter((el) => {
+          if (["INPUT", "TEXTAREA", "SELECT", "OPTION"].includes(el.tagName)) return false;
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return style.display !== "none"
+            && style.visibility !== "hidden"
+            && rect.width > 0
+            && style.overflowX !== "hidden"
+            && style.overflowX !== "clip"
+            && Math.ceil(el.scrollWidth) > Math.ceil(el.clientWidth) + 1;
+        })
+        .map((el) => ({
+          tag: el.tagName,
+          className: typeof el.className === "string" ? el.className : el.getAttribute("class") || "",
+          text: (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 100),
+          clientWidth: Math.ceil(el.clientWidth),
+          scrollWidth: Math.ceil(el.scrollWidth),
+        }))
+        .slice(0, 8);
+    }, scope);
+  }
+
+  await page.setViewportSize({ width: 1100, height: 820 });
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await page.locator("#settings-assistant summary", { hasText: "Budgets and recovery" }).click();
+  await expect(page.locator("#settings-assistant .ds-control-group")).toHaveCount(5);
+  await expect(page.locator("#settings-runtime .settings-note-grid-paths .settings-note")).toHaveCount(3);
+  expect(await visibleClipOffenders("#settings-runtime, #settings-execution, #settings-assistant")).toEqual([]);
+  await expectNoHorizontalOverflow(page, "settings dense controls desktop");
+
+  const collapseAssistant = page.getByRole("button", { name: "Collapse assistant" });
+  if (await collapseAssistant.count()) await collapseAssistant.first().click();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await page.locator("#settings-assistant summary", { hasText: "Budgets and recovery" }).click();
+  await expect(page.locator("#settings-assistant .ds-control-group")).toHaveCount(5);
+  const mobileGridColumns = await page.locator("#settings-assistant .ds-control-grid").first().evaluate((node) => {
+    return getComputedStyle(node).gridTemplateColumns.split(" ").length;
+  });
+  expect(mobileGridColumns).toBe(2);
+  expect(await visibleClipOffenders("#settings-runtime, #settings-execution, #settings-assistant")).toEqual([]);
+  await expectNoHorizontalOverflow(page, "settings dense controls mobile");
+});
+
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
 	    "#/agents/regression-agent",

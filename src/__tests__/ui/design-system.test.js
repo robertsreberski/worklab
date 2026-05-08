@@ -278,10 +278,13 @@ describe("design system stylesheet", () => {
 
   it("builds settings panel groups on the shared PanelGrid layout", () => {
     const settingsSource = readFileSync(settingsPath, "utf8");
-    expect(settingsSource).toMatch(/import\s+\{\s*Page,\s*PanelGrid\s*\}/);
+    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*Page[^}]*PanelGrid[^}]*\}/);
     expect(settingsSource).toMatch(/<Button[\s\S]*class=\{activeSectionId === item\.id \? "is-active" : ""\}/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
+    expect(settingsSource).toMatch(/<ControlGroupStack>/);
+    expect(settingsSource).toMatch(/<ControlGroup\s+title="Delegation"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
+    expect(settingsSource).not.toMatch(/SettingsControlGroup/);
     expect(settingsSource).not.toMatch(/<button[\s\S]*key=\{item\.id\}/);
   });
 
@@ -406,6 +409,7 @@ describe("design system stylesheet", () => {
       ".summary-tiles",
       ".activity-cost-chart",
       ".provider-model-pricing-grid",
+      ".ds-control-grid",
       ".modal-foot",
       ".form-actions",
     ]) {

@@ -21,6 +21,7 @@ import {
 } from "../../ui/src/routes/settings/helpers.js";
 
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
+const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 
 describe("settings UI duration conversions", () => {
   it("keeps Run limits labels compact because the controls already show units", () => {
@@ -49,6 +50,28 @@ describe("settings UI duration conversions", () => {
     expect(source).toContain("SETTINGS_SECTION_LINKS.map");
     expect(source).toContain("active={activeSectionId === card.targetId}");
     expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
+  });
+
+  it("keeps dense Settings layout surfaces grouped and width-safe", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(source).toContain('class="settings-note-grid settings-note-grid-paths"');
+    expect(source).toContain('class="settings-planning-grid"');
+    expect(source).toContain('<AdvancedSettings summary="Budgets and recovery" count={5}>');
+    for (const group of [
+      "Delegation",
+      "Run turn budget",
+      "Context compaction",
+      "Tool output limits",
+      "Recovery and verification",
+    ]) {
+      expect(source).toContain(`ControlGroup title="${group}"`);
+    }
+    expect(styles).toContain(".settings-page .select");
+    expect(styles).toContain(".ds-control-groups");
+    expect(styles).toContain(".ds-control-grid");
+    expect(styles).toContain(".settings-note-grid-paths");
   });
 
   it("formats millisecond timeout values as minutes", () => {
