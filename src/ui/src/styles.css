@@ -3808,9 +3808,11 @@ html.assistant-resizing * {
 }
 .task-subtask-link {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
   align-items: center;
   gap: var(--sp-3);
+  min-width: 0;
+  max-width: 100%;
   min-height: 48px;
   padding: var(--sp-2) var(--sp-3);
   border: 1px solid var(--border);
@@ -3847,6 +3849,9 @@ html.assistant-resizing * {
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   white-space: nowrap;
 }
 .task-subtasks-add {
@@ -8810,6 +8815,7 @@ html.assistant-resizing * {
 }
 .project-task-row {
   min-width: 0;
+  max-width: 100%;
   display: grid;
   grid-template-columns: minmax(52px, max-content) minmax(0, 1fr) minmax(0, auto) 48px;
   align-items: center;
@@ -8870,6 +8876,12 @@ html.assistant-resizing * {
 .project-task-row-meta > .truncate {
   min-width: 0;
 }
+.project-task-row-meta > span:not(.status-pill) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .project-task-row-age {
   text-align: right;
   white-space: nowrap;
@@ -8884,6 +8896,7 @@ html.assistant-resizing * {
 }
 .project-task-attention-chip {
   max-width: 180px;
+  min-width: 0;
   min-height: 22px;
   display: inline-flex;
   align-items: center;
