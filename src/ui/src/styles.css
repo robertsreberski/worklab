@@ -5058,6 +5058,33 @@ html.assistant-resizing * {
   vertical-align: bottom;
   white-space: nowrap;
 }
+.resource-row-path {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  min-width: 0;
+  max-width: min(44ch, 100%);
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.resource-row-path svg {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.resource-row-path-label {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+}
+.resource-row-path-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+}
 
 /* §4.6 PaneRow */
 .pane-row {
@@ -5226,13 +5253,6 @@ html.assistant-resizing * {
   background: var(--surface-sunken);
   color: var(--text-muted);
 }
-.project-row-workdir-chip {
-  max-width: min(42ch, 100%);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  justify-content: flex-start;
-}
-
 .skill-import-surface {
   position: relative;
   display: flex;
@@ -5308,6 +5328,8 @@ html.assistant-resizing * {
 }
 .entity-detail-body {
   width: min(100%, 1180px);
+  container-name: entity-detail;
+  container-type: inline-size;
 }
 .agent-detail-body {
   container-name: agent-editor;
@@ -8577,6 +8599,10 @@ html.assistant-resizing * {
   container-type: inline-size;
   container-name: knowledge-read;
 }
+.project-detail-body {
+  container-type: inline-size;
+  container-name: project-detail;
+}
 .knowledge-read-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
@@ -9041,7 +9067,8 @@ html.assistant-resizing * {
   }
 }
 .project-workdir-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
   gap: var(--sp-2);
   margin: var(--sp-2) 0 var(--sp-4);
@@ -9056,9 +9083,29 @@ html.assistant-resizing * {
   flex-shrink: 0;
 }
 .project-workdir-value {
-  flex: 1;
+  min-width: 0;
   color: var(--text);
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.project-workdir-row > .button {
+  min-width: max-content;
+}
+.project-workdir-copy {
+  justify-self: end;
+}
+@media (max-width: 520px) {
+  .project-workdir-row {
+    grid-template-columns: max-content minmax(0, 1fr) 32px;
+  }
+  .project-workdir-copy.button {
+    width: 32px;
+    min-width: 32px;
+    padding: 0;
+  }
+  .project-workdir-copy .button-label {
+    display: none;
+  }
 }
 .project-repository-status {
   display: flex;
@@ -9115,6 +9162,24 @@ html.assistant-resizing * {
     grid-template-columns: minmax(0, min(760px, 100%));
   }
   .knowledge-read-rail {
+    position: static;
+  }
+}
+@container project-detail (max-width: 860px) {
+  .project-read-layout,
+  .project-editor-layout {
+    grid-template-columns: minmax(0, min(760px, 100%));
+  }
+  .project-read-rail,
+  .project-editor-layout > .entity-editor-rail {
+    position: static;
+  }
+}
+@container entity-detail (max-width: 860px) {
+  .entity-editor-layout {
+    grid-template-columns: minmax(0, min(760px, 100%));
+  }
+  .entity-editor-layout > .entity-editor-rail {
     position: static;
   }
 }

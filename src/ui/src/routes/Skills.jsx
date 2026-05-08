@@ -12,6 +12,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { SkillEdit } from "./SkillEdit.jsx";
 import { skillDisplayName } from "../lib/display.js";
 import { buildSkillResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -180,10 +181,10 @@ export function Skills({ selectedName = null }) {
                 sub={(
                   <span class="pane-row-substack">
                     <span class="pane-row-description">{s.trigger || "No trigger defined"}</span>
-                    <span class="resource-row-tags">
-                      <span class="pane-row-mono">{s.name}</span>
-                      {!enabled && <span class="resource-row-chip">disabled</span>}
-                    </span>
+                    <ResourceRowTags>
+                      <ResourceRowId>{s.name}</ResourceRowId>
+                      {!enabled && <ResourceRowChip>disabled</ResourceRowChip>}
+                    </ResourceRowTags>
                   </span>
                 )}
                 trailing={(
