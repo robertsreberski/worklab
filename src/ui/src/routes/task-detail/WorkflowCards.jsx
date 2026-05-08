@@ -12,7 +12,7 @@ import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
-import { Toolbar } from "../../components/layout/index.js";
+import { InlineHead, Toolbar } from "../../components/layout/index.js";
 import { api } from "../../lib/api.js";
 import { collapseDuplicateParagraphs } from "../../lib/commentFormatting.js";
 import { taskDisplayKey, taskRouteId } from "../../lib/display.js";
@@ -544,12 +544,12 @@ export function AgentRailRow({ role, value, onChange, agents, caption: captionOv
       : (unassigned ? "Optional" : "Runs review"));
   return (
     <div class={`rail-agent-row${unassigned ? " unassigned" : ""}`}>
-      <div class="rail-agent-row-head">
+      <InlineHead class="rail-agent-row-head">
         <div>
           <div class="rail-agent-row-kicker">{roleLabel}</div>
         </div>
         <span class="rail-agent-row-caption">{caption}</span>
-      </div>
+      </InlineHead>
       <AgentPicker
         class="rail-agent-picker"
         value={value || null}
