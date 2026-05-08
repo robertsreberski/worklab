@@ -27,6 +27,12 @@ const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
 const settingsPath = resolve(repoRoot, "src/ui/src/routes/Settings.jsx");
 const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
+const assistantDockPath = resolve(repoRoot, "src/ui/src/components/AssistantDock.jsx");
+const commentListPath = resolve(repoRoot, "src/ui/src/components/CommentList.jsx");
+const keyboardHelpDrawerPath = resolve(repoRoot, "src/ui/src/components/KeyboardHelpDrawer.jsx");
+const resourceListToolbarPath = resolve(repoRoot, "src/ui/src/components/ResourceListToolbar.jsx");
+const structuredValuePath = resolve(repoRoot, "src/ui/src/components/StructuredValue.jsx");
+const toolCallBlockPath = resolve(repoRoot, "src/ui/src/components/ToolCallBlock.jsx");
 const primitivesIndexPath = resolve(repoRoot, "src/ui/src/components/primitives/index.js");
 const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js");
 const detailHeadPath = resolve(repoRoot, "src/ui/src/components/layout/DetailHead.jsx");
@@ -557,6 +563,43 @@ describe("design system stylesheet", () => {
     expect(runCardsSource).toMatch(/<Toolbar\s+class="run-economics-grid"/);
     expect(runCardsSource).not.toMatch(/<div\s+class="run-card-actions"/);
     expect(runCardsSource).not.toMatch(/<div\s+class="run-economics-grid"/);
+  });
+
+  it("builds shared component stacks and action rows on layout primitives", () => {
+    const assistantDockSource = readFileSync(assistantDockPath, "utf8");
+    const commentListSource = readFileSync(commentListPath, "utf8");
+    const keyboardHelpSource = readFileSync(keyboardHelpDrawerPath, "utf8");
+    const resourceToolbarSource = readFileSync(resourceListToolbarPath, "utf8");
+    const structuredValueSource = readFileSync(structuredValuePath, "utf8");
+    const toolCallSource = readFileSync(toolCallBlockPath, "utf8");
+
+    expect(resourceToolbarSource).toMatch(/import\s+\{[^}]*SectionGroup[^}]*Toolbar[^}]*\}\s+from/);
+    expect(resourceToolbarSource).toMatch(/<Toolbar\s+class="resource-toolbar-actions"/);
+    expect(resourceToolbarSource).not.toMatch(/<div\s+class="resource-toolbar-actions"/);
+
+    expect(commentListSource).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
+    expect(commentListSource).toMatch(/<SectionStack\s+class="comment-list"/);
+    expect(commentListSource).not.toMatch(/<div\s+class="comment-list"/);
+
+    expect(keyboardHelpSource).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
+    expect(keyboardHelpSource).toMatch(/<SectionStack\s+class="kbd-help-stack"/);
+    expect(keyboardHelpSource).not.toMatch(/<div\s+class="kbd-help-stack"/);
+
+    expect(assistantDockSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(assistantDockSource).toMatch(/<Toolbar\s+class="assistant-head-actions"/);
+    expect(assistantDockSource).not.toMatch(/<div\s+class="assistant-head-actions"/);
+
+    expect(structuredValueSource).toMatch(/import\s+\{[^}]*SectionStack[^}]*Toolbar[^}]*\}\s+from/);
+    expect(structuredValueSource).toMatch(/<SectionStack\s+class="structured-content-list"/);
+    expect(structuredValueSource).toMatch(/<Toolbar\s+class="structured-actions"/);
+    expect(structuredValueSource).not.toMatch(/<div\s+class="structured-content-list"/);
+    expect(structuredValueSource).not.toMatch(/<div\s+class="structured-actions"/);
+
+    expect(toolCallSource).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
+    expect(toolCallSource).toMatch(/<SectionStack\s+class="tool-call-section chat-tool-section"/);
+    expect(toolCallSource).toMatch(/<SectionStack\s+class="tool-call-section chat-tool-missing-note"/);
+    expect(toolCallSource).not.toMatch(/<div\s+class="tool-call-section chat-tool-section"/);
+    expect(toolCallSource).not.toMatch(/<div\s+class="tool-call-section chat-tool-missing-note"/);
   });
 
   it("bounds shared component text surfaces", () => {

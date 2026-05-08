@@ -248,7 +248,7 @@ describe("resource list helpers", () => {
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const styles = source("src/ui/src/styles.css");
 
-    expect(toolbar).toContain("import { SectionGroup }");
+    expect(toolbar).toMatch(/import\s+\{[^}]*SectionGroup[^}]*\}\s+from/);
     expect(toolbar).toMatch(/<SectionGroup[\s\S]*class="resource-group"/);
     expect(toolbar).not.toMatch(/<div\s+class="resource-group-header"/);
     expect(styles).toContain(".resource-group > .ds-section-group-head");

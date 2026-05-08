@@ -2075,7 +2075,7 @@ select,
 .tool-call-chevron { color: var(--text-muted); transition: transform var(--dur-snap) var(--ease-snap); }
 .tool-call-chevron.open { transform: rotate(180deg); }
 .tool-call-body { padding: var(--sp-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: var(--sp-3); }
-.tool-call-section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ds-section-stack.tool-call-section { gap: var(--sp-2); }
 .tool-call-section-header {
   display: flex;
   align-items: center;
@@ -2227,8 +2227,7 @@ select,
   white-space: pre-wrap;
   overflow: auto;
 }
-.structured-actions {
-  display: flex;
+.ds-toolbar.structured-actions {
   justify-content: space-between;
   align-items: center;
   gap: var(--sp-2);
@@ -2346,9 +2345,7 @@ select,
   flex-direction: column;
   gap: var(--sp-2);
 }
-.structured-content-list {
-  display: flex;
-  flex-direction: column;
+.ds-section-stack.structured-content-list {
   gap: var(--sp-2);
 }
 .structured-content-item {
@@ -2806,9 +2803,7 @@ html.assistant-resizing * {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.assistant-head-actions {
-  display: inline-flex;
-  align-items: center;
+.ds-toolbar.assistant-head-actions {
   gap: var(--sp-1);
   flex: 0 0 auto;
 }
@@ -4611,7 +4606,7 @@ html.assistant-resizing * {
 }
 .comment + .comment { margin-top: var(--sp-2); }
 .comment-author { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
-.comment-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ds-section-stack.comment-list { gap: var(--sp-2); }
 .comment-head {
   display: flex;
   align-items: center;
@@ -5089,9 +5084,7 @@ html.assistant-resizing * {
 .resource-toolbar-config .button:not(.mobile-config-sheet-close) {
   justify-content: center;
 }
-.resource-toolbar-actions {
-  display: inline-flex;
-  align-items: center;
+.ds-toolbar.resource-toolbar-actions {
   justify-content: flex-end;
   gap: var(--sp-3);
   flex: 0 0 auto;
@@ -8377,7 +8370,7 @@ button.settings-overview-card:focus-visible,
 .task-live-header-label { font-weight: 600; }
 
 /* §5.9 KeyboardHelpDrawer — section stack + grid */
-.kbd-help-stack { display: flex; flex-direction: column; gap: var(--sp-5); }
+.ds-section-stack.kbd-help-stack { gap: var(--sp-5); }
 .kbd-help-section {}
 .kbd-help-title { margin: 0 0 var(--sp-2); }
 .kbd-help-grid {
@@ -10005,7 +9998,7 @@ button.settings-overview-card:focus-visible,
     grid-column: 2;
     align-self: stretch;
   }
-  .resource-toolbar-actions {
+  .ds-toolbar.resource-toolbar-actions {
     display: none;
   }
   .resource-toolbar-count,

@@ -5,6 +5,7 @@
 import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { StructuredValue } from "./StructuredValue.jsx";
+import { SectionStack } from "./layout/index.js";
 import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { fileEditChangeLabel, fileEditKindLabel, fileEditLineDelta, shortFilePath } from "../lib/fileEditDisplay.js";
 import { rawJsonText } from "../lib/structuredValue.js";
@@ -124,7 +125,7 @@ function ToolCallBody({
   const hasStructuredAck = isGenericStructuredOutputAck(rawOutput);
   return (
     <div class="tool-call-body chat-tool-body">
-      <div class="tool-call-section chat-tool-section">
+      <SectionStack class="tool-call-section chat-tool-section">
         <div class="tool-call-section-header chat-tool-section-header">
           <span>{showStructuredResult ? "STRUCTURED OUTPUT" : "INPUT"}</span>
           {inputText && <CopyButton text={inputText} label={showStructuredResult ? "Copy structured output" : "Copy tool input"} />}
@@ -134,9 +135,9 @@ function ToolCallBody({
         ) : (
           <pre class="tool-call-pre">(empty)</pre>
         )}
-      </div>
+      </SectionStack>
       {toolResult && !(showStructuredResult && hasStructuredAck) && (
-        <div class="tool-call-section chat-tool-section">
+        <SectionStack class="tool-call-section chat-tool-section">
           <div class="tool-call-section-header chat-tool-section-header">
             <span>{isError ? "ERROR" : "OUTPUT"}</span>
             {!outputIsEmpty && <CopyButton text={outputText} label="Copy tool output" />}
@@ -153,12 +154,12 @@ function ToolCallBody({
           ) : (
             <StructuredValue value={rawOutput} hideRaw class={`tool-call-structured ${isError ? "tool-call-error" : ""}`} />
           )}
-        </div>
+        </SectionStack>
       )}
       {missing && (
-        <div class="tool-call-section chat-tool-missing-note">
+        <SectionStack class="tool-call-section chat-tool-missing-note">
           No result was captured for this tool call.
-        </div>
+        </SectionStack>
       )}
     </div>
   );
