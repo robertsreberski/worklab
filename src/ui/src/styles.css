@@ -10748,8 +10748,13 @@ button.settings-overview-card:focus-visible,
   .task-actions-stack {
     align-items: stretch;
   }
+  .task-actions-stack > .action-dock-primary,
+  .task-actions-stack > .action-dock-secondary,
+  .task-actions-stack > .action-dock-overflow {
+    width: 100%;
+  }
   .card-collapsible-body > .button,
-  .task-actions-stack > .button {
+  .task-actions-stack .button {
     width: 100%;
   }
   .kbd-help-grid {
