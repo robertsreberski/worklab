@@ -8,8 +8,11 @@ const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const activityPath = resolve(repoRoot, "src/ui/src/routes/Activity.jsx");
 const agentEditPath = resolve(repoRoot, "src/ui/src/routes/AgentEdit.jsx");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
+const bannerPath = resolve(repoRoot, "src/ui/src/components/Banner.jsx");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
+const cardPath = resolve(repoRoot, "src/ui/src/components/Card.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
+const entityHeaderPath = resolve(repoRoot, "src/ui/src/components/EntityHeader.jsx");
 const kbDetailPath = resolve(repoRoot, "src/ui/src/routes/KbDetail.jsx");
 const liveRunPanelPath = resolve(repoRoot, "src/ui/src/components/LiveRunPanel.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
@@ -28,6 +31,7 @@ const layoutIndexPath = resolve(repoRoot, "src/ui/src/components/layout/index.js
 const detailHeadPath = resolve(repoRoot, "src/ui/src/components/layout/DetailHead.jsx");
 const detailLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Detail.jsx");
 const editShellPath = resolve(repoRoot, "src/ui/src/components/layout/EditShell.jsx");
+const workflowLayoutPath = resolve(repoRoot, "src/ui/src/components/layout/Workflow.jsx");
 const componentsDir = resolve(repoRoot, "src/ui/src/components");
 
 function componentExportsFromBarrel(filePath) {
@@ -165,6 +169,21 @@ describe("design system stylesheet", () => {
     expect(editShellSource).toMatch(/import\s+\{\s*Toolbar\s*\}/);
     expect(editShellSource).toMatch(/<Toolbar\s+class="task-edit-toolbar edit-shell-toolbar"/);
     expect(editShellSource).not.toMatch(/<div[^>]+class="toolbar task-edit-toolbar edit-shell-toolbar"/);
+  });
+
+  it("builds shared component action rows on the shared Toolbar layout", () => {
+    for (const [filePath, className] of [
+      [bannerPath, "banner-actions"],
+      [cardPath, "card-header-actions"],
+      [entityHeaderPath, "entity-header-actions"],
+      [workflowLayoutPath, "filter-bar-actions"],
+      [workflowLayoutPath, "inline-editor-panel-actions"],
+    ]) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{\s*Toolbar\s*\}/);
+      expect(source).toContain(`<Toolbar class="${className}"`);
+      expect(source).not.toContain(`<div class="${className}"`);
+    }
   });
 
   it("builds task editor sections on the shared FormSection component", () => {

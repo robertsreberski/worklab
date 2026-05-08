@@ -1,3 +1,5 @@
+import { Toolbar } from "./layout/index.js";
+
 export function EntityHeader({ eyebrow, title, description, meta, actions, class: className = "" }) {
   return (
     <section class={`entity-header ${className}`}>
@@ -7,7 +9,7 @@ export function EntityHeader({ eyebrow, title, description, meta, actions, class
         {description && <p>{description}</p>}
         {meta && <div class="entity-header-meta">{meta}</div>}
       </div>
-      {actions && <div class="entity-header-actions">{actions}</div>}
+      {actions && <Toolbar class="entity-header-actions">{actions}</Toolbar>}
     </section>
   );
 }

@@ -1,6 +1,8 @@
 // §4.7 Card — grouped rectangular surface. variant: default | spacious | inset.
 // Optional `collapsible={{ summary, defaultOpen, count }}` renders as <details>
 // with a styled summary row, replacing ad-hoc `<details class="card">` JSX.
+import { Toolbar } from "./layout/index.js";
+
 export function Card({
   variant = "default",
   kicker,
@@ -36,7 +38,7 @@ export function Card({
             {kicker && <div class="card-kicker">{kicker}</div>}
             {title && <h3 class="card-title">{title}</h3>}
           </div>
-          {headerRight && <div class="card-header-actions">{headerRight}</div>}
+          {headerRight && <Toolbar class="card-header-actions">{headerRight}</Toolbar>}
         </header>
       )}
       {children}
