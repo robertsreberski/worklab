@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
-import { resumeWaitingParents } from "../../core/task-joins.js";
+import {
+  reconcileRequiredChildBlockedParents,
+  resumeWaitingParents,
+} from "../../core/task-joins.js";
 import { applyTaskSideEffects } from "../../core/task-side-effects.js";
 import { newTaskId } from "../../core/ids.js";
 
@@ -112,6 +115,69 @@ describe("resumeWaitingParents", () => {
     expect(row.error_text).toMatch(/Required child blocked: bad child/);
   });
 
+  it("resumes a required-child-blocked parent when the blocked child later finishes", () => {
+    const db = makeTestDb();
+    const parent = seedTask(db, { stage: "awaiting_children" });
+    const blocked = seedTask(db, { stage: "blocked", parentId: parent, title: "bad child" });
+    linkSubtask(db, parent, blocked);
+
+    const apply = makeApply(db);
+    resumeWaitingParents({ db, childTaskId: blocked, applySideEffects: apply.fn });
+    db.prepare(`
+      UPDATE tasks
+      SET stage = 'done', stage_reason = NULL, error_text = NULL, blocking_issues_json = '[]'
+      WHERE id = ?
+    `).run(blocked);
+
+    const ready = [];
+    const resumed = resumeWaitingParents({
+      db,
+      childTaskId: blocked,
+      applySideEffects: apply.fn,
+      onParentReady: (id) => ready.push(id),
+    });
+
+    expect(resumed).toEqual([{ parentId: parent, stage: "execute", reason: "children_completed" }]);
+    expect(ready).toEqual([parent]);
+    const row = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent);
+    expect(row).toMatchObject({
+      stage: "execute",
+      error_text: null,
+      stage_reason: "required children completed",
+      blocking_issues_json: "[]",
+    });
+  });
+
+  it("moves a required-child-blocked parent back to awaiting_children when the child is unblocked but unfinished", () => {
+    const db = makeTestDb();
+    const parent = seedTask(db, { stage: "awaiting_children" });
+    const child = seedTask(db, { stage: "blocked", parentId: parent, title: "bad child" });
+    linkSubtask(db, parent, child);
+
+    const apply = makeApply(db);
+    resumeWaitingParents({ db, childTaskId: child, applySideEffects: apply.fn });
+    db.prepare(`
+      UPDATE tasks
+      SET stage = 'execute', stage_reason = NULL, error_text = NULL, blocking_issues_json = '[]'
+      WHERE id = ?
+    `).run(child);
+
+    const resumed = resumeWaitingParents({
+      db,
+      childTaskId: child,
+      applySideEffects: apply.fn,
+    });
+
+    expect(resumed).toEqual([{ parentId: parent, stage: "awaiting_children", reason: "children_unblocked" }]);
+    const row = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent);
+    expect(row).toMatchObject({
+      stage: "awaiting_children",
+      error_text: null,
+      stage_reason: "waiting for required children",
+      blocking_issues_json: "[]",
+    });
+  });
+
   it("noops if the parent is not in awaiting_children", () => {
     const db = makeTestDb();
     const parent = seedTask(db, { stage: "execute" });
@@ -124,6 +190,24 @@ describe("resumeWaitingParents", () => {
     });
     expect(resumed).toEqual([]);
     expect(apply.calls).toEqual([]);
+  });
+
+  it("does not resume unrelated blocked parents", () => {
+    const db = makeTestDb();
+    const parent = seedTask(db, { stage: "blocked" });
+    const child = seedTask(db, { stage: "done", parentId: parent });
+    linkSubtask(db, parent, child);
+
+    const apply = makeApply(db);
+    const resumed = resumeWaitingParents({
+      db,
+      childTaskId: child,
+      applySideEffects: apply.fn,
+    });
+
+    expect(resumed).toEqual([]);
+    expect(apply.calls).toEqual([]);
+    expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(parent).stage).toBe("blocked");
   });
 
   it("noops if the parent has no required children", () => {
@@ -148,5 +232,39 @@ describe("resumeWaitingParents", () => {
     const apply = makeApply(db);
     expect(() => resumeWaitingParents({ db, childTaskId: child, applySideEffects: apply.fn })).not.toThrow();
     expect(db.prepare("SELECT stage FROM tasks WHERE id = ?").get(parent).stage).toBe("execute");
+  });
+});
+
+describe("reconcileRequiredChildBlockedParents", () => {
+  it("repairs stale required-child blockers at startup", () => {
+    const db = makeTestDb();
+    const parent = seedTask(db, { stage: "blocked" });
+    db.prepare(`
+      UPDATE tasks
+      SET stage_reason = 'required_child_blocked',
+          error_text = 'Required child blocked: old child',
+          blocking_issues_json = '["Required child blocked: old child"]'
+      WHERE id = ?
+    `).run(parent);
+    const child = seedTask(db, { stage: "done", parentId: parent });
+    linkSubtask(db, parent, child);
+
+    const apply = makeApply(db);
+    const ready = [];
+    const reconciled = reconcileRequiredChildBlockedParents({
+      db,
+      applySideEffects: apply.fn,
+      onParentReady: (id) => ready.push(id),
+    });
+
+    expect(reconciled).toEqual([{ parentId: parent, stage: "execute", reason: "children_completed" }]);
+    expect(ready).toEqual([parent]);
+    const row = db.prepare("SELECT stage, error_text, stage_reason, blocking_issues_json FROM tasks WHERE id = ?").get(parent);
+    expect(row).toMatchObject({
+      stage: "execute",
+      error_text: null,
+      stage_reason: "required children completed",
+      blocking_issues_json: "[]",
+    });
   });
 });
