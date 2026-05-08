@@ -360,8 +360,10 @@ describe("design system stylesheet", () => {
     expect(activitySource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
     expect(activitySource).toMatch(/<Toolbar\s+class="activity-filter-card-actions"/);
     expect(activitySource).toMatch(/<Toolbar\s+class="activity-filter-actions"/);
+    expect(activitySource).toMatch(/<Toolbar\s+class="form-actions"/);
     expect(activitySource).not.toMatch(/<div\s+class="activity-filter-card-actions"/);
     expect(activitySource).not.toMatch(/<div\s+class="activity-filter-actions"/);
+    expect(activitySource).not.toMatch(/<div\s+class="form-actions"/);
     expect(commanderSource).toMatch(/import\s+\{\s*Toolbar\s*\}\s+from/);
     expect(commanderSource).toMatch(/<Toolbar\s+class="commander-bulkbar-actions"/);
     expect(commanderSource).toMatch(/<Toolbar\s+class="commander-filter-actions"/);
