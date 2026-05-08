@@ -66,6 +66,19 @@ export const definitions = [
     id: string("Team id or slug"),
     limit: number("Max cycles to return (default 50)"),
   }, ["id"])),
+  tool("worklab_team_goals", "List per-project durable goals for a team.", object({
+    id: string("Team id or slug"),
+    include_archived: boolean("Include archived project goals"),
+  }, ["id"])),
+  tool("worklab_team_goal_update", "Edit or control one team-project goal. Use action pause, resume, or clear for lifecycle controls.", object({
+    id: string("Team id or slug"),
+    project_id: string("Assigned project id or slug"),
+    objective: string("Concrete objective for this team-project goal"),
+    stopping_condition: string("Verifiable stopping condition"),
+    validation_loop: string("Commands or artifacts that prove progress"),
+    constraints: arrayOfString("Constraints the lead must respect"),
+    action: string("Optional lifecycle action: update, pause, resume, or clear"),
+  }, ["id", "project_id"])),
   tool("worklab_team_assign_project", "Assign a project to a team (alias for worklab_project_update with team_id).", object({
     team_id: string("Team id or slug; pass null/empty to unassign"),
     project_id: string("Project id or slug to assign"),
@@ -82,6 +95,8 @@ const specs = [
   ["worklab_team_members_set", "PUT", "/api/teams/:id/members", [], "members"],
   ["worklab_team_run_lead", "POST", "/api/teams/:id/run-lead", [], "input"],
   ["worklab_team_cycles", "GET", "/api/teams/:id/cycles", ["limit"]],
+  ["worklab_team_goals", "GET", "/api/teams/:id/goals", ["include_archived"]],
+  ["worklab_team_goal_update", "PATCH", "/api/teams/:id/goals/:project_id", [], "input"],
 ];
 
 export function buildHandlers(client) {

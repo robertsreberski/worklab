@@ -8,6 +8,7 @@ import {
   projectRouteError,
   loadRepositoryInstructions,
   repositoryInstructionsPromptMetadata,
+  getTeamProjectGoal,
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/index.js";
@@ -254,11 +255,15 @@ export function registerProjectRoutes(app, { db, broker }) {
       const row = projectOr404(db, req.params.id);
       const project = projectFromRow(row);
       const tasks = listProjectTasksWithRunSnapshots(db, row.id).map(projectTaskSummary);
+      const teamGoal = project.team_id
+        ? getTeamProjectGoal(db, { teamId: project.team_id, projectId: project.id, now: Date.now() })
+        : null;
       res.json({
         project: {
           ...project,
           stats: projectStats(db, row.id),
           tasks,
+          team_goal: teamGoal,
           repository_instructions: repositoryInstructionsPromptMetadata(loadRepositoryInstructions(project.workdir)),
         },
       });

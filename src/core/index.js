@@ -353,13 +353,19 @@ export {
 // ---------- Teams ----------
 export {
   TEAM_STATUSES,
+  appendTeamGoalCheckpoint,
   effectiveTeamForTask,
   enforceTeamRoster,
   ensureTeamRootTask,
   enqueueLeadCycle,
+  getTeamProjectGoal,
+  leadCycleBlockedByGoal,
+  listTeamProjectGoals,
   loadTeamRoster,
+  normalizeTeamGoalContract,
   resolveEffectiveTeamForProject,
   teamFromRow,
+  updateTeamProjectGoal,
   uniqueTeamSlug,
 } from "./teams.js";
 

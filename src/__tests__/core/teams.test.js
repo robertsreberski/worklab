@@ -5,7 +5,9 @@ import {
   ensureTeamRootTask,
   enforceTeamRoster,
   enqueueLeadCycle,
+  listTeamProjectGoals,
   loadTeamRoster,
+  updateTeamProjectGoal,
 } from "../../core/teams.js";
 import { newTeamId } from "../../core/ids.js";
 
@@ -93,6 +95,68 @@ describe("core/teams.js", () => {
     expect(first.project_id).toBe(projectId);
     const all = db.prepare("SELECT COUNT(*) AS c FROM tasks WHERE team_id = ?").get(teamId).c;
     expect(all).toBe(1);
+  });
+
+  it("creates team roots with a durable per-project goal contract", () => {
+    const db = makeTestDb();
+    seedAgent(db, "lead"); seedAgent(db, "engineer");
+    const teamId = seedTeam(db);
+    const projectId = seedProject(db, { teamId });
+
+    const root = ensureTeamRootTask(db, { teamId, projectId, now: 1234 });
+    const contract = JSON.parse(root.goal_contract_json);
+
+    expect(contract.objective).toBe("Build it");
+    expect(contract.stopping_condition).toBe("");
+    expect(contract.validation_loop).toBe("");
+    expect(contract.checkpoint_notes).toEqual([]);
+    expect(contract.updated_at).toBe(1234);
+  });
+
+  it("lists and updates per-project team goals without changing the team charter", () => {
+    const db = makeTestDb();
+    seedAgent(db, "lead"); seedAgent(db, "engineer");
+    const teamId = seedTeam(db);
+    const projectId = seedProject(db, { teamId });
+    ensureTeamRootTask(db, { teamId, projectId, now: 1000 });
+
+    const patched = updateTeamProjectGoal(db, {
+      teamId,
+      projectId,
+      patch: {
+        objective: "Ship the first usable dashboard",
+        stopping_condition: "All goal widgets are visible",
+        validation_loop: "Run npm test",
+        constraints: ["Keep Teams optional"],
+      },
+      now: 2000,
+    });
+
+    expect(patched.ok).toBe(true);
+    expect(patched.goal.contract).toMatchObject({
+      objective: "Ship the first usable dashboard",
+      stopping_condition: "All goal widgets are visible",
+      validation_loop: "Run npm test",
+      constraints: ["Keep Teams optional"],
+      updated_at: 2000,
+    });
+
+    const paused = updateTeamProjectGoal(db, { teamId, projectId, action: "pause", now: 3000 });
+    expect(paused.goal.contract.paused_at).toBe(3000);
+    const resumed = updateTeamProjectGoal(db, { teamId, projectId, action: "resume", now: 4000 });
+    expect(resumed.goal.contract.paused_at).toBe(null);
+    const cleared = updateTeamProjectGoal(db, { teamId, projectId, action: "clear", now: 5000 });
+    expect(cleared.goal.contract.cleared_at).toBe(5000);
+
+    const goals = listTeamProjectGoals(db, teamId);
+    expect(goals).toHaveLength(1);
+    expect(goals[0]).toMatchObject({
+      team_id: teamId,
+      project_id: projectId,
+      goal_status: "in_progress",
+    });
+    expect(goals[0].contract.objective).toBe("Ship the first usable dashboard");
+    expect(db.prepare("SELECT goal FROM teams WHERE id = ?").get(teamId).goal).toBe("Build it");
   });
 
   it("enqueueLeadCycle returns a descriptor with the synthetic root task id", () => {
