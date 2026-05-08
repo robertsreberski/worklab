@@ -6,6 +6,10 @@ export function Toolbar({ children, align = "end", class: className = "" }) {
   );
 }
 
+export function InlineHead({ children, class: className = "", as: Component = "div", ...props }) {
+  return <Component {...props} class={`ds-inline-head ${className}`.trim()}>{children}</Component>;
+}
+
 export function PageHeader({
   kicker,
   title,

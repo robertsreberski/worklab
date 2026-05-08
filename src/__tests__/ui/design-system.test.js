@@ -341,6 +341,20 @@ describe("design system stylesheet", () => {
     expect(teamsSource).not.toMatch(/<div\s+class="team-cycle-actions"/);
   });
 
+  it("builds team and project goal heads on the shared InlineHead layout", () => {
+    const teamsSource = readFileSync(teamsPath, "utf8");
+    const projectsSource = readFileSync(projectsPath, "utf8");
+    for (const source of [teamsSource, projectsSource]) {
+      expect(source).toMatch(/import\s+\{[^}]*InlineHead[^}]*\}\s+from/);
+    }
+    expect(teamsSource).toMatch(/<InlineHead\s+class="team-goal-card-head"/);
+    expect(teamsSource).toMatch(/<InlineHead\s+class="team-goal-dashboard-head"/);
+    expect(projectsSource).toMatch(/<InlineHead\s+class="project-goal-summary-head"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="team-goal-card-head"/);
+    expect(teamsSource).not.toMatch(/<div\s+class="team-goal-dashboard-head"/);
+    expect(projectsSource).not.toMatch(/<div\s+class="project-goal-summary-head"/);
+  });
+
   it("builds provider pricing inputs on shared form fields", () => {
     const providerSource = readFileSync(providersPath, "utf8");
     expect(providerSource).toMatch(/<FormField[^>]+class="provider-model-price-field"/);

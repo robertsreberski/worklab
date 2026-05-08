@@ -27,7 +27,7 @@ import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
-import { DetailHead, SectionGroup, Toolbar } from "../components/layout/index.js";
+import { DetailHead, InlineHead, SectionGroup, Toolbar } from "../components/layout/index.js";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -205,7 +205,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
   const paused = Boolean(goal?.contract?.paused_at);
   return (
     <div class={`team-goal-card${compact ? " is-compact" : ""}`}>
-      <div class="team-goal-card-head">
+      <InlineHead class="team-goal-card-head">
         <div>
           <a class="team-goal-project" href={`#/projects/${encodeURIComponent(project.slug || project.id || "")}`}>
             {project.name || project.slug || goal?.project_id}
@@ -216,7 +216,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
           </div>
         </div>
         <Badge variant={goalStatusVariant(goal)}>{statusLabel}</Badge>
-      </div>
+      </InlineHead>
       <GoalContractDetails goal={goal} />
       <Toolbar class="team-goal-actions">
         <Button size="sm" variant="primary" onClick={() => onRun?.(goal)} disabled={!goal?.team_id || !goal?.project_id}>
@@ -249,13 +249,13 @@ function TeamGoalsDashboard({ goals = [], onRunGoal, onGoalAction }) {
   const groups = buildTeamGoalDashboardGroups(goals);
   return (
     <div class="team-goal-dashboard">
-      <div class="team-goal-dashboard-head">
+      <InlineHead class="team-goal-dashboard-head">
         <div>
           <h2>Team goals</h2>
           <p class="muted">Durable objectives for each team-project pairing.</p>
         </div>
         <Badge variant="muted">{goals.length} goal{goals.length === 1 ? "" : "s"}</Badge>
-      </div>
+      </InlineHead>
       {groups.length ? (
         groups.map((group) => (
           <SectionGroup

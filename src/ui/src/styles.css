@@ -5598,19 +5598,10 @@ html.assistant-resizing * {
   width: 100%;
   padding: var(--sp-5);
 }
-.team-goal-dashboard-head,
-.team-goal-card-head,
-.project-goal-summary-head,
 .project-goal-links,
 .team-goal-actions {
   display: flex;
   align-items: center;
-}
-.team-goal-dashboard-head,
-.team-goal-card-head,
-.project-goal-summary-head {
-  justify-content: space-between;
-  gap: var(--sp-3);
 }
 .team-goal-dashboard-head h2 {
   margin: 0;
@@ -6534,6 +6525,13 @@ html.assistant-resizing * {
 }
 .ds-toolbar-start { justify-content: flex-start; }
 .ds-toolbar-between { justify-content: space-between; }
+.ds-inline-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  min-width: 0;
+}
 .ds-summary-grid,
 .ds-panel-grid {
   display: grid;
