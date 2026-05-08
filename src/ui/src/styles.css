@@ -7980,6 +7980,7 @@ button.settings-overview-card:focus-visible,
   align-items: start;
   gap: var(--sp-4);
   min-width: 0;
+  margin-bottom: 0;
   padding: var(--sp-4);
   border: 1px solid color-mix(in srgb, var(--border) 78%, var(--accent));
   border-radius: var(--radius-md);

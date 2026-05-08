@@ -301,7 +301,7 @@ function CapabilityGroup({
   }
 
   return (
-    <section class="capability-panel">
+    <FormSection class="capability-panel">
       <div class="capability-panel-head">
         <div class="min-w-0">
           <div class="capability-panel-title">{title}</div>
@@ -347,7 +347,7 @@ function CapabilityGroup({
           })}
         </div>
       )}
-    </section>
+    </FormSection>
   );
 }
 

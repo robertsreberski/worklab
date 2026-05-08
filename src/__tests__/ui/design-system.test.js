@@ -6,6 +6,7 @@ import { DESIGN_SYSTEM_COMPONENT_COVERAGE } from "../../ui/src/routes/DesignSyst
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const activityPath = resolve(repoRoot, "src/ui/src/routes/Activity.jsx");
+const agentEditPath = resolve(repoRoot, "src/ui/src/routes/AgentEdit.jsx");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
@@ -161,6 +162,13 @@ describe("design system stylesheet", () => {
     expect(workflowCardsSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(workflowCardsSource).toMatch(/<FormSection\s+class="task-workflow-meta"/);
     expect(workflowCardsSource).not.toMatch(/<section\s+class="task-workflow-meta"/);
+  });
+
+  it("builds agent capability panels on the shared FormSection component", () => {
+    const agentEditSource = readFileSync(agentEditPath, "utf8");
+    expect(agentEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
+    expect(agentEditSource).toMatch(/<FormSection\s+class="capability-panel"/);
+    expect(agentEditSource).not.toMatch(/<section\s+class="capability-panel"/);
   });
 
   it("builds project and knowledge read sections on the shared FormSection component", () => {
