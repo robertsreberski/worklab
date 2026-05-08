@@ -11859,6 +11859,7 @@ html.assistant-resizing * {
   }
   .commander-title {
     flex: 0 0 100%;
+    -webkit-line-clamp: 1;
   }
   .commander-cell-title-row > .chip {
     max-width: min(100%, 220px);
