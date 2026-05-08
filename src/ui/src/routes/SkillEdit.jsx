@@ -10,7 +10,8 @@ import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormField } from "../components/FormField.jsx";
@@ -31,11 +32,6 @@ const SKILL_EDIT_SECTIONS = [
   { id: "skill-edit-activation", num: "01", label: "Activation", meta: "Trigger" },
   { id: "skill-edit-body", num: "02", label: "Body", meta: "Playbook" },
 ];
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
-}
 
 export function SkillFileTree({ files = [] }) {
   return <FileTree files={files} ariaLabel="Skill files" emptyText="No files found." highlightSkillFile />;
