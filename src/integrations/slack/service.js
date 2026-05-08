@@ -23,6 +23,19 @@ import { buildTriageMessages, buildTriageSystemPrompt } from "./context.js";
 import { slackMessageFilterReason } from "./filter.js";
 import { parseTriageResult, TRIAGE_RESULT_JSON_SCHEMA } from "./triage-result.js";
 import { getTaskById } from "../../core/db/queries/tasks.js";
+import { expandMentionsForLlm } from "../../core/index.js";
+
+function expandSlackInputMentions(db, dataDir, input) {
+  if (!input) return input;
+  const next = { ...input };
+  if (typeof input.text === "string" && input.text.length > 0) {
+    next.text = expandMentionsForLlm(db, input.text, { dataDir });
+  }
+  if (typeof input.title === "string" && input.title.length > 0) {
+    next.title = expandMentionsForLlm(db, input.title, { dataDir });
+  }
+  return next;
+}
 
 function stringify(value) {
   try { return JSON.stringify(value); } catch { return "{}"; }
@@ -392,7 +405,7 @@ export class WorklabSlackService {
     `).run(runId, id, settings.slack_model, settings.slack_effort, startedAt, logPath);
 
     const events = [];
-    const input = rowToInput(row);
+    const input = expandSlackInputMentions(this.db, this.config.dataDir, rowToInput(row));
     const skills = loadSkills(join(this.config.dataDir, "skills")).filter((skill) => skill.enabled !== false);
     const memory = readAgentMemoryContent({ dataDir: this.config.dataDir, agent: agentName });
     const journalTail = readJournalTail({

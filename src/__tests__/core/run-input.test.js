@@ -147,6 +147,33 @@ describe("run input assembly", () => {
     });
   });
 
+  it("expands @-mention tokens in task instructions before they reach the LLM", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      seedAgent(db, "triager", "Triage as triager.");
+      const task = seedTask(db, {
+        stage: "execute",
+        owner_agent: "owner",
+        title: "Hand off to @agent/triager",
+        instructions: "Coordinate with @agent/triager and ship.",
+      });
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-mentions",
+        mode: "execute",
+        now: 12345,
+      });
+      const expanded = "triager (agent, @agent/triager)";
+      expect(input.systemPrompt).not.toContain("@agent/triager and ship");
+      expect(input.systemPrompt).toContain(`Hand off to ${expanded}`);
+      expect(input.systemPrompt).toContain(`Coordinate with ${expanded}`);
+      expect(input.messages.find((m) => m.role === "user").content).toContain(expanded);
+    });
+  });
+
   it("adds run-local date context to task messages", () => {
     withRunInputDb(({ db, config }) => {
       config.timezone = "Europe/Amsterdam";
