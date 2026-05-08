@@ -6756,8 +6756,7 @@ html.assistant-resizing * {
 .ds-catalog .field {
   min-width: 0;
 }
-.ds-rubric-grid {
-  display: grid;
+.ds-panel-grid.ds-rubric-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 1fr));
   gap: var(--sp-3);
   margin-top: var(--sp-4);
@@ -6812,8 +6811,7 @@ html.assistant-resizing * {
 .ds-catalog .date-picker-popover {
   width: min(292px, calc(100vw - var(--sp-6)));
 }
-.ds-swatch-grid {
-  display: grid;
+.ds-panel-grid.ds-swatch-grid {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
   gap: var(--sp-3);
 }
