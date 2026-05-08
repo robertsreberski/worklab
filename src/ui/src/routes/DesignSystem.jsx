@@ -34,6 +34,7 @@ import { Metric } from "../components/Metric.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { RunHistoryNotice } from "../components/RunHistoryNotice.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
@@ -202,6 +203,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "PaneLayout", group: "component", coverage: "visible" },
   { name: "PaneRow", group: "component", coverage: "visible" },
   { name: "ResourceGroup", group: "component", coverage: "visible" },
+  { name: "ResourceList", group: "component", coverage: "visible" },
   { name: "ResourceListToolbar", group: "component", coverage: "visible" },
   { name: "ResourceRowChip", group: "component", coverage: "visible" },
   { name: "ResourceRowId", group: "component", coverage: "visible" },
@@ -573,6 +575,25 @@ export function DesignSystem() {
                   actionLabel="New"
                   onAction={() => {}}
                 />
+              </Card>
+              <Card title="ResourceList">
+                <ResourceListToolbar
+                  searchValue={search}
+                  onSearch={setSearch}
+                  searchPlaceholder="Search resources"
+                  searchAriaLabel="Search resources"
+                  countLabel="2 shown"
+                  actionLabel="New"
+                  onAction={() => {}}
+                >
+                  <Tabs value={tab} onChange={setTab} tabs={STATUS_TABS} ariaLabel="Filter resources" class="tabs-pills" />
+                </ResourceListToolbar>
+                <ResourceList>
+                  <ResourceGroup group={{ label: "Active", items: [{ id: "one" }, { id: "two" }] }}>
+                    <PaneRow title="Agent builder" sub="Resource row inside shared list" trailing={<StatusPill status="running" size="sm" />} />
+                    <PaneRow title="Project docs" sub="Grouped by ResourceGroup" trailing={<StatusPill status="done" size="sm" />} />
+                  </ResourceGroup>
+                </ResourceList>
               </Card>
               <Card title="ActionDock">
                 <ActionDock
