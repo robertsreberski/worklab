@@ -69,6 +69,10 @@ function coverageNames(group) {
     .sort();
 }
 
+function isPascalComponentName(name) {
+  return /^[A-Z][A-Za-z0-9]*$/.test(name) && /[a-z]/.test(name);
+}
+
 function jsFilesUnder(dir) {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const fullPath = resolve(dir, entry.name);
@@ -83,7 +87,7 @@ function componentDeclarations(filePath) {
     ...source.matchAll(/(?:export\s+)?function\s+([A-Z][A-Za-z0-9_]*)\s*\(/g),
     ...source.matchAll(/(?:export\s+)?const\s+([A-Z][A-Za-z0-9_]*)\s*=\s*(?:\([^)]*\)|[^=;]+)\s*=>/g),
   ];
-  return [...new Set(matches.map((match) => match[1]))];
+  return [...new Set(matches.map((match) => match[1]).filter(isPascalComponentName))];
 }
 
 function declarationsForSelector(css, selector) {
