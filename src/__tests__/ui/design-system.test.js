@@ -493,6 +493,24 @@ describe("design system stylesheet", () => {
     expect(kbDetailSource).not.toMatch(/<div\s+class="knowledge-usage-groups"/);
   });
 
+  it("builds route list stacks on the shared SectionStack layout", () => {
+    const sources = [
+      [activityPath, "activity-list"],
+      [agentEditPath, "agent-learning-list"],
+      [runInputPreviewPath, "run-input-preview-message-list"],
+      [settingsPath, "settings-list"],
+      [taskDetailPath, "rail-agents-stack"],
+      [workflowCardsPath, "task-automation-list"],
+    ];
+
+    for (const [filePath, className] of sources) {
+      const source = readFileSync(filePath, "utf8");
+      expect(source).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
+      expect(source).toMatch(new RegExp(`<SectionStack\\s+class="${className}"`));
+      expect(source).not.toMatch(new RegExp(`<div\\s+class="${className}"`));
+    }
+  });
+
   it("builds run card action rows on the shared Toolbar layout", () => {
     const runCardsSource = readFileSync(runCardsPath, "utf8");
     expect(runCardsSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);

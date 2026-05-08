@@ -30,7 +30,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, Toolbar } from "../components/layout/index.js";
+import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -786,7 +786,7 @@ export function TaskDetail({ id, runParam = null }) {
     return (
       <div class="task-detail-rail-content">
         <Card variant="spacious" kicker="Assignment" title="Roles" class="rail-agents-card">
-          <div class="rail-agents-stack">
+          <SectionStack class="rail-agents-stack">
             <AgentRailRow
               role="owner"
               value={task.owner_agent || ""}
@@ -806,7 +806,7 @@ export function TaskDetail({ id, runParam = null }) {
               onChange={(value) => updateAssignee("reviewer_agent", value)}
               agents={agents}
             />
-          </div>
+          </SectionStack>
         </Card>
 
         <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">

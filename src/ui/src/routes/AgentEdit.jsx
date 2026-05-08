@@ -28,7 +28,7 @@ import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
-import { DetailHead, InlineHead, SectionMarker, Toolbar } from "../components/layout/index.js";
+import { DetailHead, InlineHead, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
@@ -734,7 +734,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             {activeLearningMemories.length === 0 ? (
               <div class="agent-learning-empty">No structured memories yet.</div>
             ) : (
-              <div class="agent-learning-list">
+              <SectionStack class="agent-learning-list">
                 {activeLearningMemories.slice(0, 8).map((memory) => {
                   const busy = learningBusyId === memory.id;
                   const dirty = memory.content !== memory.original_content && memory.original_content !== undefined;
@@ -787,7 +787,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     </div>
                   );
                 })}
-              </div>
+              </SectionStack>
             )}
           </Card>
         )}

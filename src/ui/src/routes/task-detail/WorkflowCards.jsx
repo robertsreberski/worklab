@@ -12,7 +12,7 @@ import { RadioGroup } from "../../components/primitives/RadioGroup.jsx";
 import { ScheduleBuilder, normalizeScheduleTrigger as normalizeAutomationTrigger } from "../../components/primitives/ScheduleBuilder.jsx";
 import { StatusPill } from "../../components/primitives/StatusPill.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
-import { InlineHead, Toolbar } from "../../components/layout/index.js";
+import { InlineHead, SectionStack, Toolbar } from "../../components/layout/index.js";
 import { api } from "../../lib/api.js";
 import { collapseDuplicateParagraphs } from "../../lib/commentFormatting.js";
 import { taskDisplayKey, taskRouteId } from "../../lib/display.js";
@@ -494,7 +494,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
       ) : list.length === 0 ? (
         <div class="task-automations-empty">No schedules yet.</div>
       ) : (
-        <div class="task-automation-list">
+        <SectionStack class="task-automation-list">
           {list.map((automation) => {
             const meta = automationOutcomeMeta(automation);
             const latest = automation.recent_triggers?.[0] || null;
@@ -524,7 +524,7 @@ export function TaskAutomationsCard({ taskId, automations, loading, onChanged })
               </div>
             );
           })}
-        </div>
+        </SectionStack>
       )}
     </Card>
   );

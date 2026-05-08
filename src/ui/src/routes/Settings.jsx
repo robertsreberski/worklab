@@ -18,7 +18,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ControlGroup, ControlGroupStack, InlineHead, Page, PanelGrid, Toolbar } from "../components/layout/index.js";
+import { ControlGroup, ControlGroupStack, InlineHead, Page, PanelGrid, SectionStack, Toolbar } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -1114,7 +1114,7 @@ export function Settings() {
                 <Button size="sm" variant="secondary" iconLeft={<Icon name="plus" size={12} />} onClick={addMcpRow}>Add MCP server</Button>
               </Toolbar>
             </InlineHead>
-            <div class="settings-list">
+            <SectionStack class="settings-list">
               {mcpRows.length === 0 && <div class="settings-empty-note">External MCP servers can be added when an agent needs tools outside Worklab.</div>}
               {mcpRows.map((row) => {
                 const serverStatus = userMcpStatusByName.get(row.name);
@@ -1180,7 +1180,7 @@ export function Settings() {
                 </div>
                 );
               })}
-            </div>
+            </SectionStack>
           </SettingsSection>
 
         </div>

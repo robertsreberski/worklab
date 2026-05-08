@@ -1,7 +1,7 @@
 import { Button } from "../../components/primitives/Button.jsx";
 import { FormField } from "../../components/FormField.jsx";
 import { Icon } from "../../components/Icon.jsx";
-import { InlineHead } from "../../components/layout/index.js";
+import { InlineHead, SectionStack } from "../../components/layout/index.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { normalizeRunPreviewInput, runPreviewMetadataItems } from "./runPreview.js";
@@ -61,7 +61,7 @@ export function RunInputPreviewModal({
               />
             </FormField>
             <FormField label="User messages" class="run-input-preview-field">
-              <div class="run-input-preview-message-list">
+              <SectionStack class="run-input-preview-message-list">
                 {input.messages.map((message, index) => (
                   <div key={`${message.role}-${index}`} class="run-input-preview-message">
                     <InlineHead class="run-input-preview-message-head">
@@ -79,7 +79,7 @@ export function RunInputPreviewModal({
                   </div>
                 ))}
                 {!input.messages.length && <div class="field-hint">No user messages.</div>}
-              </div>
+              </SectionStack>
             </FormField>
             {!!input.tools.length && (
               <div class="run-input-preview-tools" aria-label="On-demand tools">
