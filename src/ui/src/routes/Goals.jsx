@@ -478,6 +478,8 @@ function emptyDetail() {
 export function Goals({ selectedId = null, mode = null }) {
   const [goals, setGoals] = useState([]);
   const [detail, setDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
   const [teams, setTeams] = useState([]);
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
@@ -555,11 +557,24 @@ export function Goals({ selectedId = null, mode = null }) {
   const loadDetail = useCallback(() => {
     if (!selectedId || selectedId === "new") {
       setDetail(null);
+      setDetailError(null);
+      setDetailLoading(false);
       return;
     }
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
     api.getGoal(selectedId)
-      .then((res) => setDetail(res.goal || null))
-      .catch(() => setDetail(null));
+      .then((res) => {
+        const nextGoal = res.goal || null;
+        setDetail(nextGoal);
+        setDetailError(nextGoal ? null : "Goal not found.");
+      })
+      .catch((err) => {
+        setDetail(null);
+        setDetailError(err?.message || "Goal not found.");
+      })
+      .finally(() => setDetailLoading(false));
   }, [selectedId]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
 
@@ -580,8 +595,17 @@ export function Goals({ selectedId = null, mode = null }) {
   if (isNew) {
     body = <GoalEditor isNew teams={teams} projects={projects} onSaved={() => { reload(); loadCatalog(); }} />;
   } else if (selectedId) {
-    if (!detail) {
+    if (detailLoading) {
       body = <LoadingState caption="Loading goal..." />;
+    } else if (!detail) {
+      body = (
+        <EmptyState
+          icon={<Icon name="target" size={28} />}
+          title="Goal not found"
+          body={detailError || "This goal is unavailable or has been removed."}
+          cta={<Button variant="secondary" onClick={() => navigateHash("#/goals")}>Back to goals</Button>}
+        />
+      );
     } else if (isEditing) {
       body = <GoalEditor goal={detail} teams={teams} projects={projects} onSaved={() => { reload(); loadDetail(); }} />;
     } else {
