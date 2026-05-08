@@ -8955,18 +8955,8 @@ button.settings-overview-card:focus-visible,
 .project-knowledge-group {
   gap: var(--sp-2);
 }
-.project-task-output-lane-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  color: var(--text-muted);
-  font-size: var(--text-xs);
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-.project-knowledge-group > .ds-section-group-head {
+.project-knowledge-group > .ds-section-group-head,
+.project-task-output-lane > .ds-section-group-head {
   font-size: var(--text-xs);
   font-weight: 700;
   letter-spacing: 0;
