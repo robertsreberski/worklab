@@ -30,7 +30,7 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
@@ -812,27 +812,32 @@ export function TaskDetail({ id, runParam = null }) {
         <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">
           <TaskContextList task={task} />
           {hasRailDependencies && (
-            <div class="task-dependencies-section">
-              <div class="task-rail-section-head">
-                <span class="all-caps">Dependencies</span>
-              </div>
+            <SectionGroup as="div" class="task-dependencies-section" label={<span class="all-caps">Dependencies</span>}>
               {(task.blocked_by || []).length > 0 && (
-                <div class="dependency-group">
-                  <div class="all-caps">Blocked by</div>
+                <SectionGroup
+                  as="div"
+                  class="dependency-group"
+                  label={<span class="all-caps">Blocked by</span>}
+                  count={(task.blocked_by || []).length}
+                >
                   {(task.blocked_by || []).map((dependency) => (
                     <DependencyLink key={dependency.id} dependency={dependency} />
                   ))}
-                </div>
+                </SectionGroup>
               )}
               {(task.blocks || []).length > 0 && (
-                <div class={`dependency-group ${(task.blocked_by || []).length > 0 ? "dependency-group-spaced" : ""}`}>
-                  <div class="all-caps">Blocks</div>
+                <SectionGroup
+                  as="div"
+                  class="dependency-group"
+                  label={<span class="all-caps">Blocks</span>}
+                  count={(task.blocks || []).length}
+                >
                   {(task.blocks || []).map((dependency) => (
                     <DependencyLink key={dependency.id} dependency={dependency} />
                   ))}
-                </div>
+                </SectionGroup>
               )}
-            </div>
+            </SectionGroup>
           )}
           <RunArtifactsSection task={task} runningRun={runningRun} streamState={runningRunStream} />
         </Card>

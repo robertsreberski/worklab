@@ -5971,6 +5971,12 @@ html.assistant-resizing * {
   max-height: 360px;
   overflow: auto;
 }
+.run-artifacts-section {
+  gap: var(--sp-2);
+}
+.run-artifacts-section > .ds-section-group-head .ds-section-group-count {
+  font-family: inherit;
+}
 .run-artifacts-context {
   margin-bottom: var(--sp-3);
   min-width: 0;
@@ -8559,13 +8565,6 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-1);
   min-width: 0;
 }
-.task-rail-section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  min-width: 0;
-}
 .task-context-list {
   display: flex;
   flex-direction: column;
@@ -8614,17 +8613,14 @@ button.settings-overview-card:focus-visible,
   overflow-wrap: anywhere;
 }
 .dependency-group {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
 }
 .task-dependencies-section {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
-.task-dependencies-section .dependency-group-spaced { margin-top: 0; }
-.dependency-group-spaced { margin-top: var(--sp-4); }
+.dependency-group > .ds-section-group-head {
+  font-size: var(--text-xs);
+}
 .task-actions-stack {
   display: flex;
   flex-direction: column;
