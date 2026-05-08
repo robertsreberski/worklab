@@ -8908,7 +8908,6 @@ button.settings-overview-card:focus-visible,
   margin-bottom: 0;
 }
 .knowledge-read-rail-content,
-.knowledge-usage-groups,
 .knowledge-usage-group {
   display: flex;
   min-width: 0;
