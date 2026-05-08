@@ -9,6 +9,7 @@ export function IconButton({
   onClick,
   type = "button",
   class: className = "",
+  children,
   ...rest
 }) {
   const cls = `icon-button ${variant} ${size} ${className}`.trim();
@@ -23,6 +24,7 @@ export function IconButton({
       {...rest}
     >
       {icon}
+      {children}
     </button>
   );
 }
