@@ -68,7 +68,7 @@ function UsageList({ usage }) {
           <ul class="usage-list knowledge-read-usage-list">
             {agents.map((agent) => (
               <li key={agent.name}>
-                <a href={`#/agents/${agent.name}`}>{agent.display_name || agent.name}</a>
+                <a href={`#/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
               </li>
             ))}
           </ul>
@@ -194,7 +194,7 @@ export function KbDetail({ slug }) {
             <Button
               variant="primary"
               iconLeft={<Icon name="edit-3" size={13} />}
-              onClick={() => navigateHash(`#/knowledge/${slug}/edit`)}
+              onClick={() => navigateHash(`#/knowledge/${encodeURIComponent(slug)}/edit`)}
             >
               Edit
             </Button>
@@ -250,7 +250,7 @@ export function KbDetail({ slug }) {
             <Button
               variant="secondary"
               iconLeft={<Icon name="edit-3" size={13} />}
-              onClick={() => navigateHash(`#/knowledge/${slug}/edit`)}
+              onClick={() => navigateHash(`#/knowledge/${encodeURIComponent(slug)}/edit`)}
             >
               Edit
             </Button>

@@ -149,12 +149,12 @@ export function Agents({ selectedName = null }) {
             return (
               <PaneRow
                 key={a.name}
-                href={`#/agents/${a.name}`}
+                href={`#/agents/${encodeURIComponent(a.name)}`}
                 active={a.name === selectedName}
                 class="agent-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/agents/${a.name}`);
+                  navigateHash(`#/agents/${encodeURIComponent(a.name)}`);
                 }}
                 leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
                 title={a.display_name || humanizeSlug(a.name)}
@@ -184,7 +184,7 @@ export function Agents({ selectedName = null }) {
       name={selectedName}
       onSaved={(name) => {
         reload();
-        if (selectedName === "new") window.location.hash = `#/agents/${name}`;
+        if (selectedName === "new") window.location.hash = `#/agents/${encodeURIComponent(name)}`;
       }}
       onDeleted={() => {
         reload();

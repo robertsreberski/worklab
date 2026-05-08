@@ -397,7 +397,7 @@ export function Activity() {
                       {item.task_id && (
                         <a
                           class="activity-open-link"
-                          href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${item.id}`}
+                          href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${encodeURIComponent(item.id)}`}
                         >
                           Open
                         </a>

@@ -158,6 +158,30 @@ describe("ui API client", () => {
       body: JSON.stringify({ name: "Launch", context: "Shared notes" }),
     });
   });
+
+  it("encodes dynamic path segments from decoded route ids", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+
+    await api.getTask("task 1");
+    await api.patchTask("task/1", { title: "Updated" });
+    await api.getRun("run/1");
+    await api.getAgent("agent 1");
+    await api.getSkill("skill/1");
+    await api.getProvider("provider 1");
+
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/tasks/task%201",
+      "/api/tasks/task%2F1",
+      "/api/runs/run%2F1",
+      "/api/agents/agent%201",
+      "/api/skills/skill%2F1",
+      "/api/providers/provider%201",
+    ]);
+  });
 });
 
 describe("ui API call sites", () => {

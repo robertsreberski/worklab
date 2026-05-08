@@ -65,7 +65,7 @@ function useAssistantRunStream(runId, { subscribe = true, hydrate = true, initia
 
     if (!subscribe) return () => { cancelled = true; controller.abort(); };
 
-    const unsubscribe = subscribeSharedEventSource(`assistant:${runId}`, `/api/assistant/runs/${runId}/stream`, (payload) => {
+    const unsubscribe = subscribeSharedEventSource(`assistant:${runId}`, `/api/assistant/runs/${encodeURIComponent(runId)}/stream`, (payload) => {
       if (payload.type === "done") {
         if (payload.run) setRun(payload.run);
         setDonePayload(payload);

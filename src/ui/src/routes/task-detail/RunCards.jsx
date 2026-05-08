@@ -474,7 +474,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
       </summary>
       {run.raw_output_path && (
         <div class="run-card-actions">
-          <a href={`/api/runs/${run.id}/raw-log`} target="_blank" rel="noreferrer">
+          <a href={`/api/runs/${encodeURIComponent(run.id)}/raw-log`} target="_blank" rel="noreferrer">
             Raw log
           </a>
         </div>

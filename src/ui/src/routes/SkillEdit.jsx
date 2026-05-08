@@ -177,7 +177,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           <Card variant="spacious" title="Used by agents" class="entity-rail-card">
             <ul class="usage-list">
               {usage.explicit.map((a) => (
-                <li key={a.name}><a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a></li>
+                <li key={a.name}><a href={`#/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a></li>
               ))}
             </ul>
           </Card>

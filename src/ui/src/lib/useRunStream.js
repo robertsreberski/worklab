@@ -215,7 +215,7 @@ export function mergeRunEvents(current = [], incoming = [], { limit = null } = {
 }
 
 function runStreamUrl(runId) {
-  return `/api/runs/${runId}/stream`;
+  return `/api/runs/${encodeURIComponent(runId)}/stream`;
 }
 
 function ensureRunStream(runId) {
@@ -296,12 +296,13 @@ function notifyRunState(entry) {
 }
 
 function runUrl(runId, initialEventLimit) {
-  if (initialEventLimit === null) return `/api/runs/${runId}`;
+  const encodedRunId = encodeURIComponent(runId);
+  if (initialEventLimit === null) return `/api/runs/${encodedRunId}`;
   const query = new URLSearchParams({
     events: "tail",
     limit: String(initialEventLimit ?? DEFAULT_INITIAL_EVENT_LIMIT),
   });
-  return `/api/runs/${runId}?${query}`;
+  return `/api/runs/${encodedRunId}?${query}`;
 }
 
 function hydrationKey(initialEventLimit) {

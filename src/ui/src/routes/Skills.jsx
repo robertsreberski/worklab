@@ -69,7 +69,7 @@ export function Skills({ selectedName = null }) {
         }
       }
       await reload();
-      if (lastImported) navigateHash(`#/skills/${lastImported}`);
+      if (lastImported) navigateHash(`#/skills/${encodeURIComponent(lastImported)}`);
     } finally {
       setImporting(false);
     }
@@ -168,12 +168,12 @@ export function Skills({ selectedName = null }) {
             return (
               <PaneRow
                 key={s.name}
-                href={`#/skills/${s.name}`}
+                href={`#/skills/${encodeURIComponent(s.name)}`}
                 active={s.name === selectedName}
                 class="skill-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/skills/${s.name}`);
+                  navigateHash(`#/skills/${encodeURIComponent(s.name)}`);
                 }}
                 leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
                 title={skillDisplayName(s)}
@@ -204,7 +204,7 @@ export function Skills({ selectedName = null }) {
     <SkillEdit
       key={selectedName}
       name={selectedName}
-      onSaved={(name) => { reload(); if (selectedName === "new") window.location.hash = `#/skills/${name}`; }}
+      onSaved={(name) => { reload(); if (selectedName === "new") window.location.hash = `#/skills/${encodeURIComponent(name)}`; }}
       onDeleted={() => { reload(); window.location.hash = "#/skills"; }}
     />
   ) : (

@@ -2170,6 +2170,54 @@ for (const vp of RESPONSIVE_VIEWPORTS) {
   });
 }
 
+test("browser back walks through mapped app routes without anchor hash remounts", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.goto(`${baseUrl}/#/projects/${projectSlug}`);
+  const projectTitle = page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" });
+  await expect(projectTitle).toBeVisible();
+  await page.evaluate(() => { window.location.hash = "#project-details"; });
+  await page.waitForFunction(() => window.location.hash === "#project-details");
+  await expect(projectTitle).toBeVisible();
+  await page.evaluate(() => window.history.back());
+  await page.waitForFunction((expected) => window.location.hash === expected, `#/projects/${projectSlug}`);
+  await expect(projectTitle).toBeVisible();
+
+  const routes = [
+    { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
+    { hash: "#/goals", ready: () => page.locator(".goal-resource-list") },
+    { hash: `#/goals/${goalId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
+    { hash: "#/projects", ready: () => page.locator(".pane-list") },
+    { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
+    { hash: "#/teams", ready: () => page.locator(".pane-list") },
+    { hash: `#/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
+    { hash: "#/agents", ready: () => page.locator(".pane-list") },
+    { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
+    { hash: "#/skills", ready: () => page.locator(".pane-list") },
+    { hash: `#/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
+    { hash: "#/knowledge", ready: () => page.locator(".pane-list") },
+    { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
+    { hash: "#/providers", ready: () => page.locator(".pane-list") },
+    { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
+    { hash: "#/activity", ready: () => page.locator(".activity-stats") },
+    { hash: "#/settings", ready: () => page.locator(".settings-sections") },
+  ];
+
+  await page.goto(`${baseUrl}/${routes[0].hash}`);
+  await expect(routes[0].ready()).toBeVisible();
+  for (const route of routes.slice(1)) {
+    await page.evaluate((hash) => { window.location.hash = hash; }, route.hash);
+    await page.waitForFunction((expected) => window.location.hash === expected, route.hash);
+    await expect(route.ready()).toBeVisible({ timeout: 5000 });
+  }
+
+  for (let index = routes.length - 2; index >= 0; index -= 1) {
+    await page.evaluate(() => window.history.back());
+    await page.waitForFunction((expected) => window.location.hash === expected, routes[index].hash);
+    await expect(routes[index].ready()).toBeVisible({ timeout: 5000 });
+  }
+});
+
 test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
