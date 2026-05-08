@@ -177,6 +177,21 @@ export function commanderRowStagePresentation(task) {
   return { displayStage, runtimeStatus };
 }
 
+function commanderGoalStatusLabel(task = {}) {
+  if (task?.goal_contract?.paused_at) return "Goal paused";
+  const status = task?.goal_status || "in_progress";
+  if (status === "complete") return "Goal complete";
+  if (status === "blocked") return "Goal blocked";
+  return "Team goal";
+}
+
+function commanderGoalChipClass(task = {}) {
+  if (task?.goal_contract?.paused_at) return "chip-muted";
+  if (task?.goal_status === "blocked") return "chip-warn";
+  if (task?.goal_status === "complete") return "chip-trigger";
+  return "chip-accent";
+}
+
 export function CommanderRow({
   task,
   agents = [],
@@ -217,6 +232,7 @@ export function CommanderRow({
   const scheduleTitle = schedule.next_fire_at
     ? `Next scheduled run: ${new Date(schedule.next_fire_at).toLocaleString()}`
     : (hasSchedule ? "Task schedule is paused" : undefined);
+  const isTeamGoalRoot = Boolean(task.is_team_root && task.team_id && task.project_id);
 
   // Title-row chip — surfaces warnings without changing the stage grouping.
   // Order: stuck > error > needs-owner.
@@ -308,6 +324,11 @@ export function CommanderRow({
             >
               <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
             </a>
+          )}
+          {isTeamGoalRoot && (
+            <span class={`chip ${commanderGoalChipClass(task)} team-goal-chip`} title={task.goal_status_reason || "Synthetic team goal root"}>
+              <Icon name="check-circle" size={10} /> {commanderGoalStatusLabel(task)}
+            </span>
           )}
           {metaChip}
           {autoRun && (

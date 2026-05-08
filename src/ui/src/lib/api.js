@@ -40,6 +40,8 @@ export const api = {
   archiveTeam: (id) => request("DELETE", `/teams/${encodeURIComponent(id)}`),
   setTeamMembers: (id, members) => request("PUT", `/teams/${encodeURIComponent(id)}/members`, { members }),
   listTeamCycles: (id, query) => request("GET", `/teams/${encodeURIComponent(id)}/cycles${query ? "?" + new URLSearchParams(query) : ""}`),
+  listTeamGoals: (id, query, options) => request("GET", `/teams/${encodeURIComponent(id)}/goals${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  patchTeamGoal: (id, projectId, patch) => request("PATCH", `/teams/${encodeURIComponent(id)}/goals/${encodeURIComponent(projectId)}`, patch),
   runTeamLead: (id, body = {}) => request("POST", `/teams/${encodeURIComponent(id)}/run-lead`, body),
   // tasks
   listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
