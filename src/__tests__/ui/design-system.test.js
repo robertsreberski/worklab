@@ -501,6 +501,11 @@ describe("design system stylesheet", () => {
       [settingsPath, "settings-list"],
       [taskDetailPath, "rail-agents-stack"],
       [workflowCardsPath, "task-automation-list"],
+      [projectsPath, "project-task-child-list"],
+      [projectsPath, "project-task-attention-list"],
+      [projectsPath, "project-task-group-list"],
+      [projectsPath, "project-knowledge-list"],
+      [projectsPath, "project-output-list"],
     ];
 
     for (const [filePath, className] of sources) {
