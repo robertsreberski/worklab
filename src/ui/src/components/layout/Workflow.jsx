@@ -1,5 +1,6 @@
 import { Button } from "../primitives/Button.jsx";
 import { SearchField } from "../primitives/SearchField.jsx";
+import { Toolbar } from "./Page.jsx";
 
 export function FilterBar({
   searchValue,
@@ -26,11 +27,11 @@ export function FilterBar({
       )}
       {filters && <div class="filter-bar-filters">{filters}</div>}
       {presets && <div class="filter-bar-presets">{presets}</div>}
-      <div class="filter-bar-actions">
+      <Toolbar class="filter-bar-actions">
         {activeCount > 0 && <span class="filter-bar-count">{activeCount} active</span>}
         {activeCount > 0 && onClear && <Button size="sm" variant="ghost" onClick={onClear}>Reset</Button>}
         {actions}
-      </div>
+      </Toolbar>
     </div>
   );
 }
@@ -80,7 +81,7 @@ export function InlineEditorPanel({
             {title && <h4>{title}</h4>}
             {description && <p>{description}</p>}
           </div>
-          {actions && <div class="inline-editor-panel-actions">{actions}</div>}
+          {actions && <Toolbar class="inline-editor-panel-actions">{actions}</Toolbar>}
         </header>
       )}
       <div class="inline-editor-panel-body">{children}</div>

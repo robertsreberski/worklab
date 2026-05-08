@@ -3,6 +3,7 @@
 
 import { IconButton } from "./primitives/IconButton.jsx";
 import { Icon } from "./Icon.jsx";
+import { Toolbar } from "./layout/index.js";
 
 const ICONS = {
   warn: "alert-triangle",
@@ -32,7 +33,7 @@ export function Banner({
         {children}
       </div>
       {(actions || (dismissible && onDismiss)) && (
-        <div class="banner-actions">
+        <Toolbar class="banner-actions">
           {actions}
           {dismissible && onDismiss && (
             <IconButton
@@ -41,7 +42,7 @@ export function Banner({
               onClick={onDismiss}
             />
           )}
-        </div>
+        </Toolbar>
       )}
     </div>
   );
