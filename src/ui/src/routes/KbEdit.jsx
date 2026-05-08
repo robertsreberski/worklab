@@ -12,7 +12,8 @@ import { Switch } from "../components/primitives/Switch.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
-import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
@@ -47,11 +48,6 @@ const CATEGORY_OPTIONS = [
   { value: "howto", label: "How-to" },
   { value: "policy", label: "Policy" },
 ];
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
-}
 
 function cleanList(value) {
   if (!Array.isArray(value)) return [];

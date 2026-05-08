@@ -16,6 +16,11 @@ function source(path) {
   return readFileSync(`${repoRoot}/${path}`, "utf8");
 }
 
+function cssRule(styles, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return styles.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]+)\\}`))?.groups?.body || "";
+}
+
 describe("resource list helpers", () => {
   it("filters and groups agents by enabled state and recent activity", () => {
     const now = Date.parse("2026-05-06T12:00:00Z");
@@ -148,12 +153,31 @@ describe("resource list helpers", () => {
 
   it("wires resource routes through the list-first layout and shared toolbar", () => {
     expect(source("src/ui/src/components/PaneLayout.jsx")).toContain("listFirst && !hasSelection");
-    for (const route of ["Agents.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx"]) {
+    for (const route of ["Agents.jsx", "Goals.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx"]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceListToolbar");
       expect(contents).toContain("listFirst");
       expect(contents).toContain("resource-list-layout");
     }
+  });
+
+  it("bounds resource row metadata so long chips do not widen list geometry", () => {
+    const styles = source("src/ui/src/styles.css");
+    const fullWidthRowRule = cssRule(styles, ".resource-list-layout.two-pane-list-first .pane-row");
+    const chipRule = cssRule(styles, ".resource-row-chip");
+    const tagMonoRule = cssRule(styles, ".resource-row-tags > .pane-row-mono");
+    const metaRule = cssRule(styles, ".pane-row-meta");
+    const summaryRule = cssRule(styles, ".pane-row-summary");
+
+    expect(fullWidthRowRule).toMatch(/grid-template-columns:\s*minmax\(28px,\s*auto\)\s+minmax\(0,\s*1fr\)\s+minmax\(96px,\s*168px\)/);
+    for (const rule of [chipRule, tagMonoRule]) {
+      expect(rule).toContain("max-width");
+      expect(rule).toContain("overflow: hidden");
+      expect(rule).toContain("text-overflow: ellipsis");
+      expect(rule).toContain("white-space: nowrap");
+    }
+    expect(metaRule).toContain("overflow: hidden");
+    expect(summaryRule).toContain("max-width: 100%");
   });
 
   it("cross-links provider detail pages to agents that use their models", () => {

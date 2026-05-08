@@ -168,6 +168,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "EmptyState", group: "component", coverage: "visible" },
   { name: "EmptyStateFiltered", group: "component", coverage: "visible" },
   { name: "EntityHeader", group: "component", coverage: "visible" },
+  { name: "EntityChromeBridge", group: "component", coverage: "shell-hosted" },
   { name: "EntityMetaList", group: "component", coverage: "visible" },
   { name: "ErrorState", group: "component", coverage: "visible" },
   { name: "EventRow", group: "component", coverage: "visible" },

@@ -4,7 +4,8 @@ import { navigateHash } from "../lib/navigation.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { Card } from "../components/Card.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -18,11 +19,6 @@ import { useAppResume } from "../lib/pageVisibility.js";
 const KB_READ_SECTIONS = [
   { id: "kb-read-body", num: "01", label: "Body", meta: "Markdown" },
 ];
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
-}
 
 function categoryToken(category) {
   const c = (category || "").toLowerCase();

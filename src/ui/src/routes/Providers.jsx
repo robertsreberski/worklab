@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
 import { api } from "../lib/api.js";
-import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -77,11 +78,6 @@ export const MODEL_PRICING_FIELDS = [
 ];
 
 const LOCAL_ZERO_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
-}
 
 function providerTypeLabel(value) {
   return PROVIDER_TYPE_OPTIONS.find((option) => option.value === value)?.label || value;

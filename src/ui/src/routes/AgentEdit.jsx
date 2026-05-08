@@ -16,7 +16,8 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
-import { MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -150,11 +151,6 @@ function normalizedNames(list) {
 
 function allowlistMode(mode) {
   return mode === "custom" ? "custom" : "all";
-}
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
 }
 
 export function memoryFreshnessLabel(memory) {

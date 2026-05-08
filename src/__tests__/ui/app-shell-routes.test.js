@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ROUTE_GROUPS, ROUTES } from "../../ui/src/components/AppShell.jsx";
 
 const appShellPath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
+const entityChromeBridgePath = resolve(import.meta.dirname, "../../ui/src/components/EntityChromeBridge.jsx");
 const appPath = resolve(import.meta.dirname, "../../ui/src/App.jsx");
 const commanderPath = resolve(import.meta.dirname, "../../ui/src/routes/Commander.jsx");
 const primitiveIndexPath = resolve(import.meta.dirname, "../../ui/src/components/primitives/index.js");
@@ -85,5 +86,18 @@ describe("app shell routes", () => {
 
     expect(source).toContain('export { StatusDot } from "./StatusDot.jsx";');
     expect(source).not.toContain('export { StatusPill, StatusDot, statusMeta } from "./StatusPill.jsx";');
+  });
+
+  it("shares entity chrome registration instead of duplicating route-local bridges", () => {
+    expect(existsSync(entityChromeBridgePath)).toBe(true);
+    const bridgeSource = readFileSync(entityChromeBridgePath, "utf8");
+    expect(bridgeSource).toContain("useAppChrome");
+    expect(bridgeSource).toContain("export function EntityChromeBridge");
+
+    for (const route of ["AgentEdit.jsx", "SkillEdit.jsx", "KbEdit.jsx", "KbDetail.jsx", "Projects.jsx", "Providers.jsx", "Goals.jsx"]) {
+      const routeSource = readFileSync(resolve(import.meta.dirname, `../../ui/src/routes/${route}`), "utf8");
+      expect(routeSource).toContain("../components/EntityChromeBridge.jsx");
+      expect(routeSource).not.toMatch(/function EntityChromeBridge/);
+    }
   });
 });

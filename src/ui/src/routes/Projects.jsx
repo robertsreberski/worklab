@@ -8,7 +8,8 @@ import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { AppShell, MobilePillRow, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
@@ -53,11 +54,6 @@ const WORKTREE_MODE_OPTIONS = [
   { value: "auto", label: "Auto", description: "Use an isolated Git worktree when the project supports it." },
   { value: "required", label: "Required", description: "Block execute runs unless an isolated Git worktree is available." },
 ];
-
-function EntityChromeBridge({ chrome }) {
-  useAppChrome(chrome, [chrome]);
-  return null;
-}
 
 function projectRouteId(project) {
   return encodeURIComponent(project?.slug || project?.id || "");

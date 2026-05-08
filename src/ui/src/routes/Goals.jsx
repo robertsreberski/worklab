@@ -6,7 +6,8 @@ import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { pushToast } from "../lib/toast.js";
-import { AppShell, MobileTopbar, useAppChrome } from "../components/AppShell.jsx";
+import { AppShell, MobileTopbar } from "../components/AppShell.jsx";
+import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
@@ -261,13 +262,14 @@ function GoalDetail({ goal, onChanged }) {
     </>
   );
 
-  useAppChrome({
-    mobileTopbar: <MobileTopbar title={goalProjectLabel(goal)} backLabel="Goals" onBack={() => navigateHash("#/goals")} />,
-    mobileActionDock: detailActions,
-  }, [goal?.goal_id, running, updating, paused]);
-
   return (
     <>
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={goalProjectLabel(goal)} backLabel="Goals" onBack={() => navigateHash("#/goals")} />,
+          mobileActionDock: detailActions,
+        }}
+      />
       <DetailHead
         class="goal-detail-head"
         backLabel="All goals"
@@ -375,26 +377,6 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
     </>
   );
 
-  useAppChrome({
-    mobileTopbar: <MobileTopbar title={isNew ? "New goal" : goalProjectLabel(goal)} backLabel="Goals" onBack={cancel} />,
-    mobileActionDock: (
-      <>
-        <Button variant="secondary" onClick={cancel}>Cancel</Button>
-        <Button variant="primary" loading={saving} onClick={save}>{saveLabel}</Button>
-      </>
-    ),
-  }, [
-    goal?.goal_id,
-    isNew,
-    saving,
-    draft.team_id,
-    draft.project_id,
-    draft.objective,
-    draft.stopping_condition,
-    draft.validation_loop,
-    draft.constraints_text,
-  ]);
-
   const teamOptions = teams.map((team) => ({
     value: team.id,
     label: team.name || team.slug || team.id,
@@ -413,6 +395,17 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
 
   return (
     <>
+      <EntityChromeBridge
+        chrome={{
+          mobileTopbar: <MobileTopbar title={isNew ? "New goal" : goalProjectLabel(goal)} backLabel="Goals" onBack={cancel} />,
+          mobileActionDock: (
+            <>
+              <Button variant="secondary" onClick={cancel}>Cancel</Button>
+              <Button variant="primary" loading={saving} onClick={save}>{saveLabel}</Button>
+            </>
+          ),
+        }}
+      />
       <DetailHead
         class="goal-detail-head goal-edit-head"
         backLabel="All goals"
