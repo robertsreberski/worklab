@@ -12,7 +12,7 @@ import { FormSection } from "../components/FormSection.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
-import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
 import { normalizeKbEntry } from "./kb-entry-form.js";
 import { taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
@@ -51,8 +51,7 @@ function UsageList({ usage }) {
   return (
     <div class="knowledge-usage-groups">
       {tasks.length > 0 && (
-        <div class="knowledge-usage-group">
-          <div class="form-section-kicker">Tasks ({tasks.length})</div>
+        <SectionGroup class="knowledge-usage-group" label="Tasks" count={`(${tasks.length})`}>
           <ul class="usage-list knowledge-read-usage-list">
             {tasks.map((task) => (
               <li key={task.id}>
@@ -61,11 +60,10 @@ function UsageList({ usage }) {
               </li>
             ))}
           </ul>
-        </div>
+        </SectionGroup>
       )}
       {agents.length > 0 && (
-        <div class="knowledge-usage-group">
-          <div class="form-section-kicker">Agents ({agents.length})</div>
+        <SectionGroup class="knowledge-usage-group" label="Agents" count={`(${agents.length})`}>
           <ul class="usage-list knowledge-read-usage-list">
             {agents.map((agent) => (
               <li key={agent.name}>
@@ -73,7 +71,7 @@ function UsageList({ usage }) {
               </li>
             ))}
           </ul>
-        </div>
+        </SectionGroup>
       )}
     </div>
   );
@@ -83,8 +81,7 @@ function RelationSlugList({ label, slugs = [] }) {
   const visible = Array.isArray(slugs) ? slugs.filter(Boolean) : [];
   if (!visible.length) return null;
   return (
-    <div class="knowledge-usage-group">
-      <div class="form-section-kicker">{label} ({visible.length})</div>
+    <SectionGroup class="knowledge-usage-group" label={label} count={`(${visible.length})`}>
       <ul class="usage-list knowledge-read-usage-list">
         {visible.map((relationSlug) => (
           <li key={relationSlug}>
@@ -92,7 +89,7 @@ function RelationSlugList({ label, slugs = [] }) {
           </li>
         ))}
       </ul>
-    </div>
+    </SectionGroup>
   );
 }
 

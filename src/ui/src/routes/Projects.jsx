@@ -770,11 +770,12 @@ function ProjectDetail({ selectedId, onChanged }) {
                   {canonicalKnowledgeCount > 0 && (
                     <div class="project-knowledge-groups">
                       {knowledgeGroups.map((group) => (
-                        <div key={group.key} class="project-knowledge-group">
-                          <div class="project-knowledge-group-title">
-                            <span>{group.label}</span>
-                            <span>{group.entries.length}</span>
-                          </div>
+                        <SectionGroup
+                          key={group.key}
+                          class="project-knowledge-group"
+                          label={group.label}
+                          count={group.entries.length}
+                        >
                           <div class="project-knowledge-list">
                             {group.entries.map((entry) => (
                               <a key={entry.slug} href={`#/knowledge/${encodeURIComponent(entry.slug)}`} class="project-knowledge-row">
@@ -787,7 +788,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                               </a>
                             ))}
                           </div>
-                        </div>
+                        </SectionGroup>
                       ))}
                     </div>
                   )}
