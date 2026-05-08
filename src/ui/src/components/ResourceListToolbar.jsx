@@ -80,6 +80,10 @@ export function ResourceListToolbar({
   );
 }
 
+export function ResourceList({ children, class: className = "", ...props }) {
+  return <div {...props} class={`resource-list ${className}`.trim()}>{children}</div>;
+}
+
 export function ResourceGroup({ group, children }) {
   return (
     <SectionGroup

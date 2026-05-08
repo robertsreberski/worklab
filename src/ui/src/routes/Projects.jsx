@@ -13,7 +13,7 @@ import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
@@ -940,7 +940,7 @@ export function Projects({ selectedId = null, mode = null }) {
       />
     )
   ) : (
-    <div class="resource-list">
+    <ResourceList>
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((project) => {
@@ -989,7 +989,7 @@ export function Projects({ selectedId = null, mode = null }) {
           })}
         </ResourceGroup>
       ))}
-    </div>
+    </ResourceList>
   );
 
   const isEditing = selectedId === "new" || mode === "edit";

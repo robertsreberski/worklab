@@ -17,7 +17,7 @@ import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { LivePulse } from "../components/primitives/LivePulse.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { AgentEdit } from "./AgentEdit.jsx";
 import { humanizeSlug, modelDisplayName } from "../lib/display.js";
@@ -132,7 +132,7 @@ export function Agents({ selectedName = null }) {
       />
     )
   ) : (
-    <div class="resource-list">
+    <ResourceList>
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((a) => {
@@ -176,7 +176,7 @@ export function Agents({ selectedName = null }) {
           })}
         </ResourceGroup>
       ))}
-    </div>
+    </ResourceList>
   );
 
   const detail = selectedName ? (

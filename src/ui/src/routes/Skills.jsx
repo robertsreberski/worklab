@@ -11,7 +11,7 @@ import { Chip } from "../components/primitives/Chip.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { SkillEdit } from "./SkillEdit.jsx";
 import { skillDisplayName } from "../lib/display.js";
@@ -160,7 +160,7 @@ export function Skills({ selectedName = null }) {
       />
     )
   ) : (
-    <div class="resource-list">
+    <ResourceList>
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((s) => {
@@ -198,7 +198,7 @@ export function Skills({ selectedName = null }) {
           })}
         </ResourceGroup>
       ))}
-    </div>
+    </ResourceList>
   );
 
   const detail = selectedName ? (

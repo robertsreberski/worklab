@@ -22,7 +22,7 @@ import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { ActionDock, DetailHead, InlineHead, SectionMarker } from "../components/layout/index.js";
-import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
@@ -871,7 +871,7 @@ export function Providers({ selectedId = null }) {
       />
     )
   ) : (
-    <div class="resource-list">
+    <ResourceList>
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((provider) => (
@@ -905,7 +905,7 @@ export function Providers({ selectedId = null }) {
           ))}
         </ResourceGroup>
       ))}
-    </div>
+    </ResourceList>
   );
 
   const detail = selectedId ? (
