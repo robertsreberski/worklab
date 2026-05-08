@@ -1,4 +1,5 @@
 import { Button } from "../../components/primitives/Button.jsx";
+import { FormField } from "../../components/FormField.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
@@ -48,8 +49,7 @@ export function RunInputPreviewModal({
                 </div>
               ))}
             </div>
-            <label class="run-input-preview-field">
-              <span>System message</span>
+            <FormField label="System message" class="run-input-preview-field">
               <Textarea
                 rows={14}
                 monospace
@@ -58,9 +58,8 @@ export function RunInputPreviewModal({
                 aria-label="System message"
                 value={input.system.content || ""}
               />
-            </label>
-            <div class="run-input-preview-field">
-              <span>User messages</span>
+            </FormField>
+            <FormField label="User messages" class="run-input-preview-field">
               <div class="run-input-preview-message-list">
                 {input.messages.map((message, index) => (
                   <div key={`${message.role}-${index}`} class="run-input-preview-message">
@@ -80,7 +79,7 @@ export function RunInputPreviewModal({
                 ))}
                 {!input.messages.length && <div class="field-hint">No user messages.</div>}
               </div>
-            </div>
+            </FormField>
             {!!input.tools.length && (
               <div class="run-input-preview-tools" aria-label="On-demand tools">
                 <span>On-demand tools</span>
