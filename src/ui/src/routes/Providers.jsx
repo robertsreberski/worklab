@@ -8,6 +8,7 @@ import { Input } from "../components/primitives/Input.jsx";
 import { PathOrUrlInput, SecretInput } from "../components/primitives/index.js";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
@@ -19,7 +20,8 @@ import { Card } from "../components/Card.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { DetailHead, PaneListHeader, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionMarker } from "../components/layout/index.js";
+import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -27,6 +29,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
 import { useAppResume } from "../lib/pageVisibility.js";
+import { buildProviderResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama" },
@@ -262,12 +265,25 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   const modelsRef = useRef([]);
   const [connectionStatus, setConnectionStatus] = useState(null);
   const [discoveryStatus, setDiscoveryStatus] = useState(null);
+  const [providerAgents, setProviderAgents] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const loadModels = useCallback(async (id) => {
     const response = await api.listProviderModels(id);
     setModels(response.models || []);
   }, []);
+  const loadProviderAgents = useCallback(async (id, { isCancelled = () => false } = {}) => {
+    if (isNew) {
+      if (!isCancelled()) setProviderAgents([]);
+      return;
+    }
+    try {
+      const response = await api.providerAgents(id);
+      if (!isCancelled()) setProviderAgents(response.agents || []);
+    } catch {
+      if (!isCancelled()) setProviderAgents([]);
+    }
+  }, [isNew]);
 
   useEffect(() => {
     modelsRef.current = models;
@@ -310,9 +326,11 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
       setProvider(EMPTY_FORM);
       setBaseline(EMPTY_FORM);
       setModels([]);
+      setProviderAgents([]);
       return () => { cancelled = true; };
     }
     setProvider(null);
+    setProviderAgents(null);
     api.getProvider(providerId)
       .then((response) => {
         if (cancelled) return;
@@ -322,10 +340,11 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
       })
       .catch(() => { if (!cancelled) setProvider({ notFound: true }); });
     loadModels(providerId).catch(() => { if (!cancelled) setModels([]); });
+    loadProviderAgents(providerId, { isCancelled: () => cancelled });
     testProviderConnection(providerId, { isCancelled: () => cancelled });
     discoverProviderModels(providerId, { isCancelled: () => cancelled });
     return () => { cancelled = true; };
-  }, [discoverProviderModels, isNew, loadModels, providerId, testProviderConnection]);
+  }, [discoverProviderModels, isNew, loadModels, loadProviderAgents, providerId, testProviderConnection]);
 
   const isDirty = useMemo(
     () => (baseline ? JSON.stringify(provider) !== JSON.stringify(baseline) : true),
@@ -334,6 +353,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   useAppResume(() => {
     if (isNew) return;
     loadModels(providerId).catch(() => setModels([]));
+    loadProviderAgents(providerId);
     testProviderConnection(providerId);
     if (isDirty) return;
     api.getProvider(providerId)
@@ -462,6 +482,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   );
 
   function renderProviderRail() {
+    const linkedAgents = providerAgents || [];
     return (
       <div class="entity-editor-rail-content">
         <Card variant="spacious" title="Connection" class="entity-rail-card">
@@ -480,8 +501,36 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
                 <span class="task-context-value">{models.length}</span>
               </span>
             </div>
+            {!isNew && (
+              <div class="task-context-row">
+                <span class="task-context-icon"><Icon name="user" size={13} /></span>
+                <span class="task-context-copy">
+                  <span class="task-context-label">Agents</span>
+                  <span class="task-context-value">{providerAgents ? linkedAgents.length : "Loading"}</span>
+                </span>
+              </div>
+            )}
           </div>
         </Card>
+
+        {!isNew && (
+          <Card variant="spacious" title="Used by agents" class="entity-rail-card provider-agents-card">
+            {providerAgents == null ? (
+              <p class="soft-meta">Checking agent model references...</p>
+            ) : linkedAgents.length > 0 ? (
+              <ul class="usage-list provider-agent-list">
+                {linkedAgents.map((agent) => (
+                  <li key={agent.name}>
+                    <a href={`#/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
+                    <StatusPill status={agent.enabled ? "enabled" : "disabled"} size="sm" />
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p class="soft-meta">No agents use this provider.</p>
+            )}
+          </Card>
+        )}
 
         {!isNew && (
           <Card variant="spacious" title="Provider actions" class="entity-rail-card">
@@ -561,7 +610,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
           </>
         )}
         actions={headerActions}
-        subBar={<MobilePillRow railLabel="Details" railCount={isNew ? 1 : 3} sections={PROVIDER_EDIT_SECTIONS} />}
+        subBar={<MobilePillRow railLabel="Details" railCount={isNew ? 1 : 4} sections={PROVIDER_EDIT_SECTIONS} />}
       />
 
       <div class="pane-detail-body entity-detail-body provider-detail-body">
@@ -744,6 +793,8 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 export function Providers({ selectedId = null }) {
   const [providers, setProviders] = useState([]);
   const [query, setQuery] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -771,31 +822,46 @@ export function Providers({ selectedId = null }) {
     },
   });
 
-  const filtered = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    if (!normalized) return providers;
-    return providers.filter((provider) => (
-      provider.name?.toLowerCase().includes(normalized) ||
-      provider.base_url?.toLowerCase().includes(normalized) ||
-      provider.provider_type?.toLowerCase().includes(normalized)
-    ));
-  }, [providers, query]);
+  const groups = useMemo(() => buildProviderResourceGroups(providers, {
+    query,
+    state: stateFilter,
+    type: typeFilter,
+  }), [providers, query, stateFilter, typeFilter]);
+  const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
+  const hasFilter = query.trim() || stateFilter !== "all" || typeFilter !== "all";
+  const stateTabs = useMemo(() => [
+    { value: "all", label: "All", count: providers.length },
+    { value: "enabled", label: "Enabled", count: providers.filter((provider) => provider.enabled !== false).length },
+    { value: "disabled", label: "Disabled", count: providers.filter((provider) => provider.enabled === false).length },
+  ], [providers]);
+  const typeOptions = useMemo(() => [
+    { value: "all", label: "All types" },
+    ...[...new Set(providers.map((provider) => provider.provider_type).filter(Boolean))]
+      .sort((left, right) => providerTypeLabel(left).localeCompare(providerTypeLabel(right)))
+      .map((type) => ({ value: type, label: providerTypeLabel(type) })),
+  ], [providers]);
 
   const listHeader = (
-    <PaneListHeader
+    <ResourceListToolbar
       searchValue={query}
       onSearch={setQuery}
       searchPlaceholder="Search providers…"
       searchAriaLabel="Search providers"
       searchRef={searchRef}
+      countLabel={`${filtered.length} shown`}
       actionLabel="New provider"
       onAction={() => navigateHash("#/providers/new")}
-    />
+      configTitle="Providers configuration"
+      activeConfigCount={[stateFilter !== "all", typeFilter !== "all"].filter(Boolean).length}
+    >
+      <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter providers by enabled state" class="tabs-pills" />
+      <Select class="resource-filter-select" variant="menu" value={typeFilter} onChange={setTypeFilter} options={typeOptions} ariaLabel="Filter providers by type" />
+    </ResourceListToolbar>
   );
 
   const listBody = filtered.length === 0 ? (
-    query ? (
-      <EmptyStateFiltered body="No providers match." onClearFilters={() => setQuery("")} />
+    hasFilter ? (
+      <EmptyStateFiltered body="No providers match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setTypeFilter("all"); }} />
     ) : (
       <EmptyState
         title="No providers yet"
@@ -804,26 +870,41 @@ export function Providers({ selectedId = null }) {
       />
     )
   ) : (
-    filtered.map((provider) => (
-      <PaneRow
-        key={provider.id}
-        href={`#/providers/${provider.id}`}
-        active={provider.id === selectedId}
-        onClick={(event) => {
-          event?.preventDefault?.();
-          navigateHash(`#/providers/${provider.id}`);
-        }}
-        leading={<Icon name={providerIcon(provider.provider_type)} size={16} />}
-        title={provider.name}
-        sub={providerTypeLabel(provider.provider_type)}
-        trailing={(
-          <span class="pane-row-summary">
-            <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
-            <span>{provider.model_count || 0} models</span>
-          </span>
-        )}
-      />
-    ))
+    <div class="resource-list">
+      {groups.map((group) => (
+        <ResourceGroup key={group.key} group={group}>
+          {group.items.map((provider) => (
+            <PaneRow
+              key={provider.id}
+              href={`#/providers/${provider.id}`}
+              active={provider.id === selectedId}
+              class="provider-pane-row"
+              onClick={(event) => {
+                event?.preventDefault?.();
+                navigateHash(`#/providers/${provider.id}`);
+              }}
+              leading={<Icon name={providerIcon(provider.provider_type)} size={16} />}
+              title={provider.name}
+              sub={(
+                <span class="pane-row-substack">
+                  <span class="resource-row-tags">
+                    <span class="resource-row-chip">{providerTypeLabel(provider.provider_type)}</span>
+                    {provider.base_url && <span class="resource-row-chip pane-row-mono" title={provider.base_url}>{provider.base_url}</span>}
+                    {provider.trust_public_url && <span class="resource-row-chip">trusted public URL</span>}
+                  </span>
+                </span>
+              )}
+              trailing={(
+                <span class="pane-row-summary">
+                  <StatusPill status={provider.enabled ? "enabled" : "disabled"} size="sm" />
+                  <span>{provider.model_count || 0} models</span>
+                </span>
+              )}
+            />
+          ))}
+        </ResourceGroup>
+      ))}
+    </div>
   );
 
   const detail = selectedId ? (
@@ -858,6 +939,8 @@ export function Providers({ selectedId = null }) {
         detail={detail}
         hasSelection={!!selectedId}
         detailOwnsMobileBack={!!selectedId}
+        listFirst
+        class="resource-list-layout"
         onBack={() => navigateHash("#/providers")}
         backLabel="All providers"
       />

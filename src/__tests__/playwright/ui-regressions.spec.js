@@ -2498,6 +2498,7 @@ test("mobile resource list filters are available from the shared configuration s
     { hash: "#/knowledge", label: "Knowledge" },
     { hash: "#/skills", label: "Skills" },
     { hash: "#/teams", label: "Teams" },
+    { hash: "#/providers", label: "Providers" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
     await expect(page.locator(".resource-toolbar .search-field")).toBeVisible();
@@ -2527,7 +2528,7 @@ test("mobile resource list create actions move to a floating FAB", async ({ page
     { hash: "#/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
     { hash: "#/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
     { hash: "#/teams", label: "New team", target: /#\/teams\/new/, toolbar: "resource" },
-    { hash: "#/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "pane" },
+    { hash: "#/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "resource" },
   ];
 
   for (const route of routes) {
