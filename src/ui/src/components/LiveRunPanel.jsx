@@ -8,6 +8,7 @@ import { ShimmerBar } from "./primitives/ShimmerBar.jsx";
 import { StatusPill } from "./primitives/StatusPill.jsx";
 import { Button } from "./primitives/Button.jsx";
 import { Textarea } from "./primitives/Textarea.jsx";
+import { Card } from "./Card.jsx";
 import { Icon } from "./Icon.jsx";
 import { EventTimeline } from "./EventTimeline.jsx";
 import { RunHistoryNotice } from "./RunHistoryNotice.jsx";
@@ -154,7 +155,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
   }
 
   return (
-    <section class="card card-spacious task-live-panel">
+    <Card variant="spacious" class="task-live-panel">
       {isStreaming && <ShimmerBar height={2} />}
       <header class="task-live-header">
         <div class="task-live-header-copy">
@@ -219,6 +220,6 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
           {error && <div class="task-live-composer-error">{error}</div>}
         </form>
       )}
-    </section>
+    </Card>
   );
 }

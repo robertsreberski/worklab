@@ -11,6 +11,7 @@ const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const buttonPath = resolve(repoRoot, "src/ui/src/components/primitives/Button.jsx");
 const confirmButtonPath = resolve(repoRoot, "src/ui/src/components/ConfirmButton.jsx");
 const kbDetailPath = resolve(repoRoot, "src/ui/src/routes/KbDetail.jsx");
+const liveRunPanelPath = resolve(repoRoot, "src/ui/src/components/LiveRunPanel.jsx");
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
 const projectsPath = resolve(repoRoot, "src/ui/src/routes/Projects.jsx");
@@ -179,6 +180,13 @@ describe("design system stylesheet", () => {
     expect(runInputPreviewSource).toMatch(/<FormField\s+label="System message"\s+class="run-input-preview-field"/);
     expect(runInputPreviewSource).toMatch(/<FormField\s+label="User messages"\s+class="run-input-preview-field"/);
     expect(runInputPreviewSource).not.toMatch(/<label\s+class="run-input-preview-field"/);
+  });
+
+  it("builds live run panels on the shared Card component", () => {
+    const liveRunPanelSource = readFileSync(liveRunPanelPath, "utf8");
+    expect(liveRunPanelSource).toMatch(/import\s+\{\s*Card\s*\}/);
+    expect(liveRunPanelSource).toMatch(/<Card\s+variant="spacious"\s+class="task-live-panel"/);
+    expect(liveRunPanelSource).not.toMatch(/<section\s+class="card card-spacious task-live-panel"/);
   });
 
   it("builds agent capability panels on the shared FormSection component", () => {
