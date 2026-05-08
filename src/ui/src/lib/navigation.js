@@ -3,11 +3,49 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 let activeGuard = null;
 const allowedHashes = new Set();
 
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function isAppRouteHash(hash) {
+  if (!hash) return true;
+  const value = String(hash);
+  if (value === "#") return true;
+  if (value.startsWith("#/")) return true;
+  if (!value.startsWith("#")) return true;
+  return false;
+}
+
 export function normalizeHash(hash) {
   if (!hash) return "#/tasks";
   if (hash.startsWith("#")) return hash;
   if (hash.startsWith("/")) return `#${hash}`;
   return `#/${hash.replace(/^#?\/?/, "")}`;
+}
+
+export function parseHashRoute(hash = "") {
+  const normalized = isAppRouteHash(hash) ? normalizeHash(hash) : "#/tasks";
+  const raw = normalized.replace(/^#\/?/, "");
+  const queryIndex = raw.indexOf("?");
+  const pathPart = queryIndex === -1 ? raw : raw.slice(0, queryIndex);
+  const queryString = queryIndex === -1 ? "" : raw.slice(queryIndex + 1);
+  const path = pathPart.replace(/^\/+/, "") || "tasks";
+  const segments = path.split("/").filter(Boolean).map(safeDecode);
+  const query = {};
+  for (const [key, value] of new URLSearchParams(queryString)) {
+    query[key] = value;
+  }
+  return {
+    route: segments[0] || "tasks",
+    rest: segments.slice(1),
+    path,
+    queryString,
+    query,
+  };
 }
 
 export function registerNavigationGuard(guard) {

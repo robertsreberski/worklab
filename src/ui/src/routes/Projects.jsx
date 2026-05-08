@@ -771,7 +771,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                           </div>
                           <div class="project-knowledge-list">
                             {group.entries.map((entry) => (
-                              <a key={entry.slug} href={`#/knowledge/${entry.slug}`} class="project-knowledge-row">
+                              <a key={entry.slug} href={`#/knowledge/${encodeURIComponent(entry.slug)}`} class="project-knowledge-row">
                                 <span class="project-knowledge-title">{entry.title || entry.slug}</span>
                                 <span class="project-knowledge-meta">
                                   {entry.subcategory || entry.category || "uncategorized"}

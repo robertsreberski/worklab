@@ -2,7 +2,14 @@ import { lazy, Suspense } from "preact/compat";
 import { useEffect, useState } from "preact/hooks";
 import { LoadingState } from "./components/LoadingState.jsx";
 import { Commander } from "./routes/Commander.jsx";
-import { consumeAllowedHash, getNavigationGuard, navigateHash, normalizeHash } from "./lib/navigation.js";
+import {
+  consumeAllowedHash,
+  getNavigationGuard,
+  isAppRouteHash,
+  navigateHash,
+  normalizeHash,
+  parseHashRoute,
+} from "./lib/navigation.js";
 
 function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
@@ -21,36 +28,22 @@ const TaskDetail = lazyNamed(() => import("./routes/TaskDetail.jsx"), "TaskDetai
 const TaskEdit = lazyNamed(() => import("./routes/TaskEdit.jsx"), "TaskEdit");
 const Teams = lazyNamed(() => import("./routes/Teams.jsx"), "Teams");
 
-function parseHash() {
-  const h = window.location.hash.replace(/^#\/?/, "");
-  const queryIndex = h.indexOf("?");
-  const pathPart = queryIndex === -1 ? h : h.slice(0, queryIndex);
-  const queryPart = queryIndex === -1 ? "" : h.slice(queryIndex + 1);
-  const segments = pathPart.split("/").filter(Boolean);
-  const route = segments[0] || "tasks";
-  const rest = segments.slice(1);
-  const query = {};
-  for (const [key, value] of new URLSearchParams(queryPart)) {
-    query[key] = value;
-  }
-  return { route, rest, query };
-}
-
 function RouteFallback() {
   return <LoadingState caption="Loading route..." />;
 }
 
 export function App() {
-  const [{ route, rest, query }, setRoute] = useState(parseHash());
+  const [{ route, rest, query }, setRoute] = useState(() => parseHashRoute(window.location.hash));
 
   useEffect(() => {
-    let currentHash = normalizeHash(window.location.hash);
+    let currentHash = isAppRouteHash(window.location.hash) ? normalizeHash(window.location.hash) : "#/tasks";
 
     const handler = () => {
+      if (!isAppRouteHash(window.location.hash)) return;
       const nextHash = normalizeHash(window.location.hash);
       if (consumeAllowedHash(nextHash)) {
         currentHash = nextHash;
-        setRoute(parseHash());
+        setRoute(parseHashRoute(nextHash));
         return;
       }
       const guard = getNavigationGuard();
@@ -62,7 +55,7 @@ export function App() {
         return;
       }
       currentHash = nextHash;
-      setRoute(parseHash());
+      setRoute(parseHashRoute(nextHash));
     };
     window.addEventListener("hashchange", handler);
     return () => window.removeEventListener("hashchange", handler);

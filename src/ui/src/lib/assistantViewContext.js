@@ -1,30 +1,4 @@
-function safeDecode(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function parseHash(hash = "") {
-  const raw = String(hash || "").replace(/^#\/?/, "");
-  const [pathPart = "", queryPart = ""] = raw.split("?");
-  const restPath = pathPart.replace(/^\/+/, "");
-  const segments = restPath.split("/").filter(Boolean).map(safeDecode);
-  const query = {};
-  for (const pair of queryPart.split("&")) {
-    if (!pair) continue;
-    const [key, value = ""] = pair.split("=");
-    query[safeDecode(key)] = safeDecode(value);
-  }
-  return {
-    route: segments[0] || "tasks",
-    rest: segments.slice(1),
-    path: restPath || "tasks",
-    queryString: queryPart,
-    query,
-  };
-}
+import { parseHashRoute } from "./navigation.js";
 
 function baseContext(parsed, view) {
   return {
@@ -46,7 +20,7 @@ function resourceContext(parsed, view, resourceType, resourceId, extra = {}) {
 }
 
 export function assistantViewContextFromHash(hash = "") {
-  const parsed = parseHash(hash);
+  const parsed = parseHashRoute(hash);
   const [first, second] = parsed.rest;
 
   if (parsed.route === "tasks") {

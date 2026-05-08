@@ -119,7 +119,7 @@ export function LiveRunPanel({ run, events = [], isStreaming = false, agentLabel
   const visibleEvents = events.length ? events : effectiveStream.events;
   const loading = effectiveStream.loading;
   const rawLogHref = effectiveRun?.raw_output_path && effectiveRun?.id
-    ? `/api/runs/${effectiveRun.id}/raw-log`
+    ? `/api/runs/${encodeURIComponent(effectiveRun.id)}/raw-log`
     : null;
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);

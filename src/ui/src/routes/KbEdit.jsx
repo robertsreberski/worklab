@@ -377,7 +377,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
                       <ul class="usage-list">
                         {usage.agents.map((a) => (
                           <li key={a.name}>
-                            <a href={`#/agents/${a.name}`}>{a.display_name || a.name}</a>
+                            <a href={`#/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a>
                           </li>
                         ))}
                       </ul>

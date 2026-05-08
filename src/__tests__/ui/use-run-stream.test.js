@@ -63,6 +63,22 @@ describe("shared run stream subscriptions", () => {
     expect(FakeEventSource.instances[0].close).toHaveBeenCalledTimes(1);
   });
 
+  it("encodes run ids in stream and hydration URLs", async () => {
+    const callback = vi.fn();
+
+    const unsubscribe = subscribeRunState("run/with space", callback, { subscribe: true });
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "/api/runs/run%2Fwith%20space?events=tail&limit=10",
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      );
+    });
+    expect(FakeEventSource.instances[0].url).toBe("/api/runs/run%2Fwith%20space/stream");
+
+    unsubscribe();
+  });
+
   it("shares one compact run hydration request across subscribers", async () => {
     const first = vi.fn();
     const second = vi.fn();

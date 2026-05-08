@@ -177,12 +177,12 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
             return (
               <PaneRow
                 key={e.slug}
-                href={`#/knowledge/${e.slug}`}
+                href={`#/knowledge/${encodeURIComponent(e.slug)}`}
                 active={e.slug === selectedSlug}
                 class="knowledge-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/knowledge/${e.slug}`);
+                  navigateHash(`#/knowledge/${encodeURIComponent(e.slug)}`);
                 }}
                 leading={(
                   <span class={`knowledge-row-leading ${e.pinned ? "pinned" : ""}`.trim()}>

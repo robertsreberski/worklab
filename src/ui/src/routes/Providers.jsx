@@ -872,12 +872,12 @@ export function Providers({ selectedId = null }) {
           {group.items.map((provider) => (
             <PaneRow
               key={provider.id}
-              href={`#/providers/${provider.id}`}
+              href={`#/providers/${encodeURIComponent(provider.id)}`}
               active={provider.id === selectedId}
               class="provider-pane-row"
               onClick={(event) => {
                 event?.preventDefault?.();
-                navigateHash(`#/providers/${provider.id}`);
+                navigateHash(`#/providers/${encodeURIComponent(provider.id)}`);
               }}
               leading={<Icon name={providerIcon(provider.provider_type)} size={16} />}
               title={provider.name}
@@ -909,7 +909,7 @@ export function Providers({ selectedId = null }) {
       providerId={selectedId}
       onSaved={(id) => {
         reload();
-        if (selectedId === "new" && id) navigateHash(`#/providers/${id}`);
+        if (selectedId === "new" && id) navigateHash(`#/providers/${encodeURIComponent(id)}`);
       }}
       onDeleted={() => {
         reload();
