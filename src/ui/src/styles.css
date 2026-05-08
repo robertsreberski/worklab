@@ -5479,7 +5479,7 @@ html.assistant-resizing * {
 }
 .team-goal-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
   gap: var(--sp-3);
 }
 .team-goal-card,
