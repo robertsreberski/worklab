@@ -241,7 +241,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
   const nestedChildTotal = Number(progress.nested_child_total || 0);
   return (
     <div class="project-task-progress">
-      <div class="project-task-progress-head">
+      <InlineHead class="project-task-progress-head">
         <div class="project-task-progress-copy">
           <strong>{progress.percent_done}%</strong>
           <span>complete across {total} top-level task{total === 1 ? "" : "s"}</span>
@@ -260,7 +260,7 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
             </span>
           )}
         </div>
-      </div>
+      </InlineHead>
       {nestedChildTotal > 0 && (
         <div class="field-hint">
           {nestedChildTotal} delegated child task{nestedChildTotal === 1 ? "" : "s"} nested under parent tasks.
@@ -284,10 +284,10 @@ function ProjectTaskProgress({ tasks = [], progress: providedProgress = null }) 
 
       {attentionCount > 0 && (
         <div class="project-task-attention-panel" role="status">
-          <div class="project-task-attention-head">
+          <InlineHead class="project-task-attention-head">
             <Icon name="alert-triangle" size={14} />
             <strong>{attentionCount} requiring attention</strong>
-          </div>
+          </InlineHead>
           <div class="project-task-attention-list">
             {progress.attention_tasks.slice(0, 4).map((task) => (
               <a key={task.id} href={`#/tasks/${taskRouteId(task)}`} class="project-task-attention-item">
