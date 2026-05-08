@@ -161,6 +161,25 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("bounds nested task row surfaces", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [".task-subtask-link", ".task-subtask-meta", ".project-task-row"]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/min-width:\s*0\b/);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+    }
+
+    const projectMetaText = declarationsForSelector(css, ".project-task-row-meta > span:not(.status-pill)");
+    expect(projectMetaText).toMatch(/overflow:\s*hidden\b/);
+    expect(projectMetaText).toMatch(/text-overflow:\s*ellipsis\b/);
+    expect(projectMetaText).toMatch(/white-space:\s*nowrap\b/);
+
+    const attentionChip = declarationsForSelector(css, ".project-task-attention-chip");
+    expect(attentionChip).toMatch(/overflow:\s*hidden\b/);
+    expect(attentionChip).toMatch(/text-overflow:\s*ellipsis\b/);
+    expect(attentionChip).toMatch(/white-space:\s*nowrap\b/);
+  });
+
   it("uses a contained pulse animation for active stage-token dots", () => {
     const css = readFileSync(stylesPath, "utf8");
     const pulseRule = css.match(/\.stage-token-pulse\s+\.stage-token-glyph\s*\{[^}]*\}/)?.[0] || "";

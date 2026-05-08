@@ -35,6 +35,7 @@ let teamSlug;
 let goalId;
 
 const liveLongToken = `live-unbroken-${"x".repeat(180)}`;
+const childLongToken = `child-unbroken-${"y".repeat(150)}`;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -322,7 +323,7 @@ test.beforeAll(async () => {
   const childResult = await requestJson(`/api/tasks/${parentWithChildTaskId}/subtasks`, {
     method: "POST",
     body: {
-      title: "Nested child task",
+      title: `Nested child task ${childLongToken}`,
       owner_agent: "regression-agent",
       required: false,
     },
@@ -1527,9 +1528,32 @@ test("task detail hides empty subtask controls and keeps automation checkboxes a
 });
 
 test("task detail shows existing child tasks without manual add controls", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
   await page.goto(`${baseUrl}/#/tasks/${parentWithChildTaskId}`);
   await expect(page.locator(".task-subtasks-card")).toBeVisible();
   await expect(page.locator(".task-subtask-link", { hasText: "Nested child task" })).toBeVisible();
+  const childLinkMetrics = await page.locator(".task-subtask-link", { hasText: "Nested child task" }).evaluate((node) => {
+    const title = node.querySelector(".task-subtask-title");
+    const meta = node.querySelector(".task-subtask-meta");
+    const titleStyle = title ? getComputedStyle(title) : null;
+    const metaStyle = meta ? getComputedStyle(meta) : null;
+    return {
+      pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+      linkRight: Math.ceil(node.getBoundingClientRect().right),
+      viewportWidth: window.innerWidth,
+      titleWhiteSpace: titleStyle?.whiteSpace || "",
+      titleScrollHeight: title ? Math.ceil(title.scrollHeight) : 0,
+      titleHeight: title ? Math.ceil(title.getBoundingClientRect().height) : 0,
+      metaWhiteSpace: metaStyle?.whiteSpace || "",
+      metaFlexWrap: metaStyle?.flexWrap || "",
+    };
+  });
+  expect(childLinkMetrics.pageOverflow).toBeLessThanOrEqual(0);
+  expect(childLinkMetrics.linkRight).toBeLessThanOrEqual(childLinkMetrics.viewportWidth);
+  expect(childLinkMetrics.titleWhiteSpace).toBe("nowrap");
+  expect(childLinkMetrics.titleScrollHeight).toBeLessThanOrEqual(childLinkMetrics.titleHeight + 1);
+  expect(childLinkMetrics.metaWhiteSpace).toBe("normal");
+  expect(childLinkMetrics.metaFlexWrap).toBe("wrap");
   await expect(page.locator(".task-subtasks-add")).toHaveCount(0);
   await expect(page.locator(".task-subtasks-empty")).toHaveCount(0);
 });
