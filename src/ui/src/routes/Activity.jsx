@@ -15,7 +15,7 @@ import { DateRangePicker } from "../components/primitives/DatePicker.jsx";
 import { Card } from "../components/Card.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
-import { InlineHead, Page, SummaryGrid, Toolbar } from "../components/layout/index.js";
+import { InlineHead, Page, SectionStack, SummaryGrid, Toolbar } from "../components/layout/index.js";
 import { MobileConfigSheet, MobileConfigTrigger } from "../components/MobileConfigSheet.jsx";
 import { modelDisplayName, taskRouteId } from "../lib/display.js";
 import { navigateHash } from "../lib/navigation.js";
@@ -353,7 +353,7 @@ export function Activity() {
 
         {items?.length > 0 && (
           <Card title="Recent activity" class="activity-list-card" headerRight={<span class="activity-list-count">{fmtCount(items.length)} shown</span>}>
-            <div class="activity-list">
+            <SectionStack class="activity-list">
               {items.map((item) => {
                 const metaParts = activityMetaParts(item);
                 const metricParts = activityMetricParts(item);
@@ -406,7 +406,7 @@ export function Activity() {
                   </article>
                 );
               })}
-            </div>
+            </SectionStack>
             {nextCursor && (
               <Toolbar class="form-actions">
                 <Button variant="secondary" onClick={() => load({ append: true, cursor: nextCursor })} loading={loading}>

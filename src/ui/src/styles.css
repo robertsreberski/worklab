@@ -3556,9 +3556,7 @@ html.assistant-resizing * {
   min-height: 140px;
   max-height: 240px;
 }
-.run-input-preview-message-list {
-  display: flex;
-  flex-direction: column;
+.ds-section-stack.run-input-preview-message-list {
   gap: var(--sp-3);
 }
 .run-input-preview-message {
@@ -3976,9 +3974,7 @@ html.assistant-resizing * {
   gap: var(--sp-2);
   white-space: nowrap;
 }
-.task-automation-list {
-  display: flex;
-  flex-direction: column;
+.ds-section-stack.task-automation-list {
   gap: var(--sp-2);
 }
 .task-automation-row {
@@ -5801,8 +5797,7 @@ html.assistant-resizing * {
   flex-direction: column;
   gap: var(--sp-3);
 }
-.agent-learning-list {
-  display: grid;
+.ds-section-stack.agent-learning-list {
   gap: var(--sp-3);
 }
 .agent-learning-item {
@@ -7221,7 +7216,7 @@ html.assistant-resizing * {
 .activity-list-card {
   padding: var(--sp-4);
 }
-.activity-list { display: flex; flex-direction: column; gap: var(--sp-2); }
+.ds-section-stack.activity-list { gap: var(--sp-2); }
 .activity-row {
   display: grid;
   grid-template-columns: 4px auto minmax(0, 1fr) auto;
@@ -7740,9 +7735,7 @@ button.settings-overview-card:focus-visible,
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
-.settings-list {
-  display: flex;
-  flex-direction: column;
+.ds-section-stack.settings-list {
   gap: var(--sp-3);
 }
 .settings-list-head {
@@ -8534,7 +8527,7 @@ button.settings-overview-card:focus-visible,
 }
 
 /* §6.3 Agents rail tile — full AgentPicker, not a tiny "change" control. */
-.rail-agents-stack { display: flex; flex-direction: column; }
+.ds-section-stack.rail-agents-stack { gap: 0; }
 .rail-agent-row {
   display: flex;
   flex-direction: column;
