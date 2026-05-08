@@ -208,6 +208,13 @@ describe("design system stylesheet", () => {
     expect(taskDetailSource).not.toMatch(/<div\s+class="task-hero-actions toolbar"/);
   });
 
+  it("builds task detail activity composer actions on the shared Toolbar layout", () => {
+    const taskDetailSource = readFileSync(taskDetailPath, "utf8");
+    expect(taskDetailSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
+    expect(taskDetailSource).toMatch(/<Toolbar\s+class="activity-composer-actions"/);
+    expect(taskDetailSource).not.toMatch(/<div\s+class="activity-composer-actions"/);
+  });
+
   it("builds rail action stacks on the shared ActionDock layout", () => {
     for (const filePath of [taskDetailPath, providersPath]) {
       const source = readFileSync(filePath, "utf8");
