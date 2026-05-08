@@ -23,6 +23,7 @@ import { Card } from "../components/Card.jsx";
 import { Badge } from "../components/primitives/Badge.jsx";
 import { StatusDot } from "../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { DetailHead } from "../components/layout/index.js";
 import { navigateHash } from "../lib/navigation.js";
 import { pushToast } from "../lib/toast.js";
 import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -431,90 +432,120 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
     }
   }
 
+  const title = isNew ? "New team" : (draft.name || "Untitled team");
+  const slugLabel = isNew ? "Slug after create" : (draft.slug || team?.slug || "");
+  const headerActions = (
+    <>
+      <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
+      <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
+    </>
+  );
+
   return (
-    <div class="entity-editor-main" style={{ padding: "1rem" }}>
-      {error && <p class="error">{error}</p>}
-      <TeamSetupGuide />
-      <Card title="Team">
-        <div style={{ display: "grid", gap: "0.75rem" }}>
-          <label>Name<Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} /></label>
-          <label>Slug<Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" /></label>
-          <label>Description<Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} /></label>
-          <label>Goal<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
-          <label>Lead agent
-            <AgentPicker
-              class="team-lead-picker"
-              value={draft.lead_agent || ""}
-              onChange={(agentName) => update({ lead_agent: agentName || "" })}
-              agents={agents}
-              placeholder="Pick a lead"
-              ariaLabel="Team lead agent"
-            />
-          </label>
+    <>
+      <DetailHead
+        class="team-detail-head team-edit-head"
+        backLabel="All teams"
+        onBack={() => navigateHash("#/teams")}
+        crumbs={[{ label: "Teams", href: "#/teams" }, { label: isNew ? "New" : "Edit" }]}
+        icon={<Icon name="users" size={16} />}
+        kicker={isNew ? "Create team" : "Team editor"}
+        title={title}
+        meta={(
+          <>
+            <span class="pane-row-mono">{slugLabel}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{draft.status || "active"}</span>
+          </>
+        )}
+        actions={headerActions}
+      />
+      <div class="pane-detail-body entity-detail-body team-edit-body">
+        <div class="entity-editor-main" style={{ padding: "1rem" }}>
+          {error && <p class="error">{error}</p>}
+          <TeamSetupGuide />
+          <Card title="Team">
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <label>Name<Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} /></label>
+              <label>Slug<Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" /></label>
+              <label>Description<Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} /></label>
+              <label>Goal<Textarea rows={4} value={draft.goal} onInput={(e) => update({ goal: e.currentTarget.value })} /></label>
+              <label>Lead agent
+                <AgentPicker
+                  class="team-lead-picker"
+                  value={draft.lead_agent || ""}
+                  onChange={(agentName) => update({ lead_agent: agentName || "" })}
+                  agents={agents}
+                  placeholder="Pick a lead"
+                  ariaLabel="Team lead agent"
+                />
+              </label>
+            </div>
+          </Card>
+          <Card title="Members">
+            <MembersEditor members={draft.members} agents={agents} onChange={(m) => update({ members: m })} />
+          </Card>
+          <Card title="Schedule">
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <Switch
+                checked={!!draft.schedule_enabled}
+                onChange={(v) => update({ schedule_enabled: v })}
+                label="Run lead cycles on a schedule"
+                description="Periodically fire a worklab.lead_cycle.v1 run for each project this team is assigned to."
+              />
+              <label>Interval (minutes)
+                <Input
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={draft.schedule_interval_minutes ?? ""}
+                  placeholder="e.g. 60"
+                  onInput={(e) => {
+                    const v = e.currentTarget.value.trim();
+                    update({ schedule_interval_minutes: v === "" ? null : Number(v) });
+                  }}
+                />
+              </label>
+            </div>
+          </Card>
+          <Card title="Budget">
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <label>Daily budget (USD)
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.daily_budget_usd ?? ""}
+                  placeholder="No cap"
+                  onInput={(e) => {
+                    const v = e.currentTarget.value.trim();
+                    update({ daily_budget_usd: v === "" ? null : Number(v) });
+                  }}
+                />
+              </label>
+              <label>Per-run budget (USD)
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={draft.per_run_budget_usd ?? ""}
+                  placeholder="No cap"
+                  onInput={(e) => {
+                    const v = e.currentTarget.value.trim();
+                    update({ per_run_budget_usd: v === "" ? null : Number(v) });
+                  }}
+                />
+              </label>
+              <p class="muted">Team budgets replace the retired per-agent budgets. The workspace daily cap (Settings) remains a global ceiling.</p>
+            </div>
+          </Card>
+          <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
+            <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
+            <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
+          </div>
         </div>
-      </Card>
-      <Card title="Members">
-        <MembersEditor members={draft.members} agents={agents} onChange={(m) => update({ members: m })} />
-      </Card>
-      <Card title="Schedule">
-        <div style={{ display: "grid", gap: "0.75rem" }}>
-          <Switch
-            checked={!!draft.schedule_enabled}
-            onChange={(v) => update({ schedule_enabled: v })}
-            label="Run lead cycles on a schedule"
-            description="Periodically fire a worklab.lead_cycle.v1 run for each project this team is assigned to."
-          />
-          <label>Interval (minutes)
-            <Input
-              type="number"
-              min="1"
-              step="1"
-              value={draft.schedule_interval_minutes ?? ""}
-              placeholder="e.g. 60"
-              onInput={(e) => {
-                const v = e.currentTarget.value.trim();
-                update({ schedule_interval_minutes: v === "" ? null : Number(v) });
-              }}
-            />
-          </label>
-        </div>
-      </Card>
-      <Card title="Budget">
-        <div style={{ display: "grid", gap: "0.75rem" }}>
-          <label>Daily budget (USD)
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.daily_budget_usd ?? ""}
-              placeholder="No cap"
-              onInput={(e) => {
-                const v = e.currentTarget.value.trim();
-                update({ daily_budget_usd: v === "" ? null : Number(v) });
-              }}
-            />
-          </label>
-          <label>Per-run budget (USD)
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={draft.per_run_budget_usd ?? ""}
-              placeholder="No cap"
-              onInput={(e) => {
-                const v = e.currentTarget.value.trim();
-                update({ per_run_budget_usd: v === "" ? null : Number(v) });
-              }}
-            />
-          </label>
-          <p class="muted">Team budgets replace the retired per-agent budgets. The workspace daily cap (Settings) remains a global ceiling.</p>
-        </div>
-      </Card>
-      <div style={{ display: "flex", gap: "0.5rem", marginTop: "1rem" }}>
-        <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
-        <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -571,86 +602,107 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
     }
   }
 
+  const headerActions = (
+    <>
+      <Badge variant={statusTone(team.status)}>{team.status}</Badge>
+      <Button variant="primary" loading={running} disabled={!team.lead_agent} onClick={runLeadNow}>Run lead now</Button>
+      <Button variant="secondary" onClick={() => navigateHash(`#/teams/${encodeURIComponent(team.slug)}/edit`)}>Edit</Button>
+    </>
+  );
+
   return (
-    <div style={{ padding: "1rem", display: "grid", gap: "1rem" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "1rem", justifyContent: "space-between" }}>
-        <div>
-          <h2>{team.name}</h2>
-          <p class="muted">{team.slug} — <Badge variant={statusTone(team.status)}>{team.status}</Badge></p>
-        </div>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <Button variant="primary" loading={running} disabled={!team.lead_agent} onClick={runLeadNow}>Run lead now</Button>
-          <Button variant="secondary" onClick={() => navigateHash(`#/teams/${encodeURIComponent(team.slug)}/edit`)}>Edit</Button>
+    <>
+      <DetailHead
+        class="team-detail-head"
+        backLabel="All teams"
+        onBack={() => navigateHash("#/teams")}
+        crumbs={[{ label: "Teams", href: "#/teams" }, { label: team.name }]}
+        icon={<Icon name="users" size={16} />}
+        kicker="Team"
+        title={team.name}
+        meta={(
+          <>
+            <span class="pane-row-mono">{team.slug}</span>
+            <span class="pane-row-dot">·</span>
+            <span>Lead {team.lead_agent || "unassigned"}</span>
+            <span class="pane-row-dot">·</span>
+            <span>{projects.length} project{projects.length === 1 ? "" : "s"}</span>
+          </>
+        )}
+        actions={headerActions}
+      />
+      <div class="pane-detail-body entity-detail-body team-detail-body">
+        <div style={{ padding: "1rem", display: "grid", gap: "1rem" }}>
+          <Card title="Goal">
+            <p>{team.goal || <em>(no goal set)</em>}</p>
+          </Card>
+          <TeamSetupGapsCard gaps={setupGaps} />
+          <Card title={`Project goals (${goals.length})`}>
+            {goals.length ? (
+              <div class="team-goal-grid is-detail">
+                {goals.map((goal) => (
+                  <TeamGoalCard
+                    key={`${goal.team_id}:${goal.project_id}`}
+                    goal={goal}
+                    onRun={onRunGoal}
+                    onAction={onGoalAction}
+                  />
+                ))}
+              </div>
+            ) : (
+              <p class="muted">Assign this team to a project to create a durable project goal contract.</p>
+            )}
+          </Card>
+          <Card title={`Roster (${members.length})`}>
+            {members.length === 0 ? (
+              <p class="muted">No members.</p>
+            ) : (
+              <ul>
+                {members.map((m) => (
+                  <li key={m.agent_name}>
+                    <strong>{m.display_name || m.agent_name}</strong>
+                    {m.role_description ? ` — ${m.role_description}` : null}
+                    {!m.enabled ? <Badge variant="warn"> disabled </Badge> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p class="muted">Lead: {team.lead_agent || "(none)"}</p>
+          </Card>
+          <Card title={`Assigned projects (${projects.length})`}>
+            {projects.length === 0 ? (
+              <p class="muted">Not assigned to any project yet. Open a project's edit page and set its team.</p>
+            ) : (
+              <ul>
+                {projects.map((p) => (
+                  <li key={p.id}>
+                    <a href={`#/projects/${encodeURIComponent(p.slug)}`}>{p.name}</a> ({p.slug})
+                    {p.archived ? <Badge variant="muted"> archived </Badge> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+          <Card title={`Recent lead cycles (${cycles.length})`}>
+            {cycles.length === 0 ? (
+              <p class="muted">No cycles yet.</p>
+            ) : (
+              <ul class="team-cycle-list">
+                {cycles.map((c) => (
+                  <LeadCycleRow key={c.id || `${c.task_id}-${c.started_at}`} cycle={c} />
+                ))}
+              </ul>
+            )}
+          </Card>
+          <Card title="Schedule">
+            <p>{team.schedule_enabled ? `Auto-running every ${intervalDisplay(team.schedule_interval_minutes)}` : "Off (lead runs only on task completions or manual trigger)"}</p>
+          </Card>
+          <Card title="Budget">
+            <p>Daily: {team.daily_budget_usd ? `$${Number(team.daily_budget_usd).toFixed(2)}` : "(no cap)"} · Per-run: {team.per_run_budget_usd ? `$${Number(team.per_run_budget_usd).toFixed(2)}` : "(no cap)"}</p>
+          </Card>
         </div>
       </div>
-      <Card title="Goal">
-        <p>{team.goal || <em>(no goal set)</em>}</p>
-      </Card>
-      <TeamSetupGapsCard gaps={setupGaps} />
-      <Card title={`Project goals (${goals.length})`}>
-        {goals.length ? (
-          <div class="team-goal-grid is-detail">
-            {goals.map((goal) => (
-              <TeamGoalCard
-                key={`${goal.team_id}:${goal.project_id}`}
-                goal={goal}
-                onRun={onRunGoal}
-                onAction={onGoalAction}
-              />
-            ))}
-          </div>
-        ) : (
-          <p class="muted">Assign this team to a project to create a durable project goal contract.</p>
-        )}
-      </Card>
-      <Card title={`Roster (${members.length})`}>
-        {members.length === 0 ? (
-          <p class="muted">No members.</p>
-        ) : (
-          <ul>
-            {members.map((m) => (
-              <li key={m.agent_name}>
-                <strong>{m.display_name || m.agent_name}</strong>
-                {m.role_description ? ` — ${m.role_description}` : null}
-                {!m.enabled ? <Badge variant="warn"> disabled </Badge> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        <p class="muted">Lead: {team.lead_agent || "(none)"}</p>
-      </Card>
-      <Card title={`Assigned projects (${projects.length})`}>
-        {projects.length === 0 ? (
-          <p class="muted">Not assigned to any project yet. Open a project's edit page and set its team.</p>
-        ) : (
-          <ul>
-            {projects.map((p) => (
-              <li key={p.id}>
-                <a href={`#/projects/${encodeURIComponent(p.slug)}`}>{p.name}</a> ({p.slug})
-                {p.archived ? <Badge variant="muted"> archived </Badge> : null}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Card>
-      <Card title={`Recent lead cycles (${cycles.length})`}>
-        {cycles.length === 0 ? (
-          <p class="muted">No cycles yet.</p>
-        ) : (
-          <ul class="team-cycle-list">
-            {cycles.map((c) => (
-              <LeadCycleRow key={c.id || `${c.task_id}-${c.started_at}`} cycle={c} />
-            ))}
-          </ul>
-        )}
-      </Card>
-      <Card title="Schedule">
-        <p>{team.schedule_enabled ? `Auto-running every ${intervalDisplay(team.schedule_interval_minutes)}` : "Off (lead runs only on task completions or manual trigger)"}</p>
-      </Card>
-      <Card title="Budget">
-        <p>Daily: {team.daily_budget_usd ? `$${Number(team.daily_budget_usd).toFixed(2)}` : "(no cap)"} · Per-run: {team.per_run_budget_usd ? `$${Number(team.per_run_budget_usd).toFixed(2)}` : "(no cap)"}</p>
-      </Card>
-    </div>
+    </>
   );
 }
 
@@ -856,7 +908,7 @@ export function Teams({ selectedId = null, mode = null }) {
   }
 
   return (
-    <AppShell>
+    <AppShell route="teams">
       <PaneLayout
         hasSelection={!!selectedId}
         onBack={() => navigateHash("#/teams")}

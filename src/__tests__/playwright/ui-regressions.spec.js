@@ -31,6 +31,7 @@ let childTaskId;
 let providerId;
 let skillName;
 let projectSlug;
+let teamSlug;
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -379,6 +380,19 @@ test.beforeAll(async () => {
     ok: [201],
   });
   projectSlug = project.project.slug;
+  const team = await requestJson("/api/teams", {
+    method: "POST",
+    body: {
+      name: "Regression Team",
+      slug: "regression-team",
+      description: "Seeded team for route coverage.",
+      goal: "Keep routed resources connected.",
+      lead_agent: "regression-agent",
+      members: [{ agent_name: "regression-agent", role_description: "Lead" }],
+    },
+    ok: [201],
+  });
+  teamSlug = team.team.slug;
 
   const db = new Database(join(dataDir, "worklab.db"));
   const now = Date.now();
@@ -1971,7 +1985,7 @@ const RESPONSIVE_VIEWPORTS = [
 ];
 
 function responsiveRoutes(page, ids) {
-  const { taskId, providerId, skillName, projectSlug } = ids;
+  const { taskId, providerId, skillName, projectSlug, teamSlug } = ids;
   return [
     { hash: "#/tasks", ready: () => page.locator(".commander-row").first() },
     { hash: `#/tasks/${taskId}`, ready: () => page.locator(".task-hero-title", { hasText: "UI regression task" }) },
@@ -1979,6 +1993,9 @@ function responsiveRoutes(page, ids) {
     { hash: "#/projects", ready: () => page.locator(".pane-list") },
     { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
     { hash: "#/projects/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "Untitled project" }) },
+    { hash: "#/teams", ready: () => page.locator(".pane-list") },
+    { hash: `#/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
+    { hash: "#/teams/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New team" }) },
     { hash: "#/agents", ready: () => page.locator(".pane-list") },
     { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
     { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
@@ -2000,7 +2017,7 @@ function responsiveRoutes(page, ids) {
 for (const vp of RESPONSIVE_VIEWPORTS) {
   test(`no horizontal overflow at ${vp.label} (${vp.w}x${vp.h})`, async ({ page }) => {
     await page.setViewportSize({ width: vp.w, height: vp.h });
-    const routes = responsiveRoutes(page, { taskId, providerId, skillName, projectSlug });
+    const routes = responsiveRoutes(page, { taskId, providerId, skillName, projectSlug, teamSlug });
     for (const route of routes) {
       await page.goto("about:blank");
       await page.goto(`${baseUrl}/${route.hash}`);
