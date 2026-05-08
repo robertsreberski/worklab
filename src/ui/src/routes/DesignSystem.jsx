@@ -311,14 +311,14 @@ function Swatch({ name, value }) {
 function CoverageGrid({ group }) {
   const items = DESIGN_SYSTEM_COMPONENT_COVERAGE.filter((item) => item.group === group);
   return (
-    <div class="ds-rubric-grid">
+    <PanelGrid class="ds-rubric-grid">
       {items.map((item) => (
         <div key={item.name}>
           <strong>{item.name}</strong>
           <span>{item.coverage === "shell-hosted" ? "Hosted by AppShell" : "Visible example"}</span>
         </div>
       ))}
-    </div>
+    </PanelGrid>
   );
 }
 
@@ -377,24 +377,24 @@ export function DesignSystem() {
               <Metric label="Default" value="Next" unit="action" />
               <Metric label="Hidden" value="Rare" unit="controls" />
             </SettingsMatrix>
-            <div class="ds-rubric-grid">
+            <PanelGrid class="ds-rubric-grid">
               <div><strong>Surface</strong><span>Show only the decision or action needed for the current state.</span></div>
               <div><strong>Timing</strong><span>Reveal advanced fields after intent is declared.</span></div>
               <div><strong>Input</strong><span>Use domain controls for dates, durations, secrets, JSON, and schedules.</span></div>
-            </div>
+            </PanelGrid>
           </Card>
         </section>
 
         <section class="ds-catalog-section">
           <Card title="Tokens">
-            <div class="ds-swatch-grid">
+            <PanelGrid class="ds-swatch-grid">
               <Swatch name="Background" value="--bg" />
               <Swatch name="Surface" value="--surface" />
               <Swatch name="Elevated" value="--surface-elevated" />
               <Swatch name="Accent" value="--accent" />
               <Swatch name="Progress" value="--status-progress" />
               <Swatch name="Error" value="--status-error" />
-            </div>
+            </PanelGrid>
           </Card>
         </section>
 
@@ -859,12 +859,12 @@ export function DesignSystem() {
 
         <section class="ds-catalog-section">
           <Card title="Shell Hosted Components">
-            <div class="ds-rubric-grid">
+            <PanelGrid class="ds-rubric-grid">
               <div><strong>AppShell</strong><span>This catalog is rendered inside the shared shell.</span></div>
               <div><strong>AssistantDock</strong><span>Mounted by AppShell and opened from the global assistant control.</span></div>
               <div><strong>KeyboardHelpDrawer</strong><span>Mounted by AppShell and opened with the keyboard help shortcut.</span></div>
               <div><strong>ToastHost</strong><span>Mounted globally so notifications stack above route content.</span></div>
-            </div>
+            </PanelGrid>
           </Card>
         </section>
       </Page>

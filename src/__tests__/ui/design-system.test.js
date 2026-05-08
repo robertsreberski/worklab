@@ -5,6 +5,7 @@ import { DESIGN_SYSTEM_COMPONENT_COVERAGE } from "../../ui/src/routes/DesignSyst
 
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
+const designSystemPath = resolve(repoRoot, "src/ui/src/routes/DesignSystem.jsx");
 const activityPath = resolve(repoRoot, "src/ui/src/routes/Activity.jsx");
 const agentEditPath = resolve(repoRoot, "src/ui/src/routes/AgentEdit.jsx");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
@@ -84,6 +85,15 @@ describe("design system catalog", () => {
     const docs = readFileSync(docsPath, "utf8");
     expect(docs).toContain("# Worklab UI Design System");
     expect(docs).toContain("src/ui/src/routes/DesignSystem.jsx");
+  });
+
+  it("builds catalog demo grids on the shared PanelGrid layout", () => {
+    const designSystemSource = readFileSync(designSystemPath, "utf8");
+    expect(designSystemSource).toMatch(/import\s+\{[^}]*PanelGrid[^}]*\}\s+from/);
+    expect(designSystemSource).toMatch(/<PanelGrid\s+class="ds-rubric-grid"/);
+    expect(designSystemSource).toMatch(/<PanelGrid\s+class="ds-swatch-grid"/);
+    expect(designSystemSource).not.toMatch(/<div\s+class="ds-rubric-grid"/);
+    expect(designSystemSource).not.toMatch(/<div\s+class="ds-swatch-grid"/);
   });
 
   it("represents every primitive export in the live catalog coverage", () => {
