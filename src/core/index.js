@@ -359,6 +359,7 @@ export {
   ensureTeamRootTask,
   enqueueLeadCycle,
   getTeamProjectGoal,
+  getTeamProjectGoalById,
   leadCycleBlockedByGoal,
   listTeamProjectGoals,
   loadTeamRoster,
