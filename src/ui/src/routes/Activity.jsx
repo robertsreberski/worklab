@@ -408,11 +408,11 @@ export function Activity() {
               })}
             </div>
             {nextCursor && (
-              <div class="form-actions">
+              <Toolbar class="form-actions">
                 <Button variant="secondary" onClick={() => load({ append: true, cursor: nextCursor })} loading={loading}>
                   Load more
                 </Button>
-              </div>
+              </Toolbar>
             )}
           </Card>
         )}
