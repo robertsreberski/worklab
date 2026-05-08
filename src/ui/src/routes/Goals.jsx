@@ -12,6 +12,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
+import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { DetailHead, SectionStack, Toolbar } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -156,45 +157,6 @@ function goalProjectLabel(goal = {}) {
 
 function goalTeamLabel(goal = {}) {
   return goal.team_name || goal.team_slug || goal.team_id || "Unassigned team";
-}
-
-function GoalContractDetails({ goal }) {
-  const contract = goal?.contract || {};
-  const checkpoint = latestCheckpoint(goal);
-  return (
-    <div class="team-goal-contract">
-      <div>
-        <span>Objective</span>
-        <strong>{contract.objective || "(not set)"}</strong>
-      </div>
-      <div>
-        <span>Stop when</span>
-        <strong>{contract.stopping_condition || "(not set)"}</strong>
-      </div>
-      <div>
-        <span>Validate with</span>
-        <strong>{contract.validation_loop || "(not set)"}</strong>
-      </div>
-      {contract.constraints?.length ? (
-        <div>
-          <span>Constraints</span>
-          <strong>{contract.constraints.join(", ")}</strong>
-        </div>
-      ) : null}
-      {checkpoint ? (
-        <div>
-          <span>Latest checkpoint</span>
-          <strong>{checkpoint.checkpoint_note || checkpoint.validation_summary || "(empty checkpoint)"}</strong>
-        </div>
-      ) : null}
-      {goal.goal_status_reason ? (
-        <div>
-          <span>Status reason</span>
-          <strong>{goal.goal_status_reason}</strong>
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 function GoalRow({ goal, active }) {

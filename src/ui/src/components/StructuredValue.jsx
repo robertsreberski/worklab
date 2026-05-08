@@ -1,6 +1,7 @@
 import { useState } from "preact/hooks";
 import { Icon } from "./Icon.jsx";
 import { SectionStack, Toolbar } from "./layout/index.js";
+import { Badge as PrimitiveBadge } from "./primitives/Badge.jsx";
 import {
   parseMaybeJson,
   rawJsonText,
@@ -18,9 +19,9 @@ function isObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function Badge({ children, tone = "" }) {
+function StructuredBadge({ children, tone = "" }) {
   if (!children && children !== 0) return null;
-  return <span class={`structured-badge ${tone}`.trim()}>{children}</span>;
+  return <PrimitiveBadge class={`structured-badge ${tone}`.trim()}>{children}</PrimitiveBadge>;
 }
 
 function CopyRawButton({ raw }) {
@@ -52,7 +53,7 @@ function RawDisclosure({ raw }) {
 
 function Scalar({ value }) {
   if (value == null) return <span class="structured-null">null</span>;
-  if (typeof value === "boolean") return <Badge tone={value ? "ok" : ""}>{String(value)}</Badge>;
+  if (typeof value === "boolean") return <StructuredBadge tone={value ? "ok" : ""}>{String(value)}</StructuredBadge>;
   if (typeof value === "number") return <code>{value}</code>;
   return <span>{String(value)}</span>;
 }
@@ -103,8 +104,8 @@ function WorklabResult({ value }) {
       <div class="structured-header">
         <strong>Worklab result</strong>
         <div class="structured-badges">
-          <Badge>{result.stage}</Badge>
-          <Badge tone={result.decision === "approve" || result.decision === "advance" ? "ok" : result.decision === "reject" || result.decision === "block" ? "error" : ""}>{result.decision}</Badge>
+          <StructuredBadge>{result.stage}</StructuredBadge>
+          <StructuredBadge tone={result.decision === "approve" || result.decision === "advance" ? "ok" : result.decision === "reject" || result.decision === "block" ? "error" : ""}>{result.decision}</StructuredBadge>
         </div>
       </div>
       {result.summary && <p class="structured-summary">{result.summary}</p>}
@@ -126,9 +127,9 @@ function ErrorValue({ value }) {
       <div class="structured-header">
         <strong>Error</strong>
         <div class="structured-badges">
-          <Badge tone="error">{err.code}</Badge>
-          <Badge>{err.param}</Badge>
-          <Badge>{err.status || value.status}</Badge>
+          <StructuredBadge tone="error">{err.code}</StructuredBadge>
+          <StructuredBadge>{err.param}</StructuredBadge>
+          <StructuredBadge>{err.status || value.status}</StructuredBadge>
         </div>
       </div>
       <p class="structured-detail">{err.message || err.error || structuredPreview(err)}</p>
@@ -148,10 +149,10 @@ function SchemaValue({ value }) {
       <div class="structured-header">
         <strong>JSON Schema</strong>
         <div class="structured-badges">
-          <Badge>{Array.isArray(value.type) ? value.type.join(" | ") : value.type}</Badge>
-          <Badge tone={value.additionalProperties === false ? "ok" : ""}>
+          <StructuredBadge>{Array.isArray(value.type) ? value.type.join(" | ") : value.type}</StructuredBadge>
+          <StructuredBadge tone={value.additionalProperties === false ? "ok" : ""}>
             {value.additionalProperties === false ? "strict" : value.additionalProperties === true ? "allows extra fields" : ""}
-          </Badge>
+          </StructuredBadge>
         </div>
       </div>
       <KeyValueRows entries={[
@@ -169,7 +170,7 @@ function SchemaValue({ value }) {
                 <tr key={row.name}>
                   <td><code>{row.name}</code></td>
                   <td>{row.type}</td>
-                  <td>{row.required ? <Badge tone="ok">yes</Badge> : <span class="structured-muted">no</span>}</td>
+                  <td>{row.required ? <StructuredBadge tone="ok">yes</StructuredBadge> : <span class="structured-muted">no</span>}</td>
                   <td>{row.enum || <span class="structured-muted">-</span>}</td>
                 </tr>
               ))}
@@ -187,12 +188,12 @@ function ContentValue({ value }) {
     <>
       <div class="structured-header">
         <strong>Content</strong>
-        <Badge>{content.length} item{content.length === 1 ? "" : "s"}</Badge>
+        <StructuredBadge>{content.length} item{content.length === 1 ? "" : "s"}</StructuredBadge>
       </div>
       <SectionStack class="structured-content-list">
         {content.map((item, index) => (
           <div class="structured-content-item" key={index}>
-            <Badge>{item.type || "item"}</Badge>
+            <StructuredBadge>{item.type || "item"}</StructuredBadge>
             {isObject(item.content) || Array.isArray(item.content)
               ? <NestedValue value={item.content} />
               : <span>{item.text || item.content || structuredPreview(item)}</span>}
@@ -207,7 +208,7 @@ function GenericValue({ value }) {
   if (Array.isArray(value)) {
     return (
       <>
-        <div class="structured-header"><strong>Array</strong><Badge>{value.length} item{value.length === 1 ? "" : "s"}</Badge></div>
+        <div class="structured-header"><strong>Array</strong><StructuredBadge>{value.length} item{value.length === 1 ? "" : "s"}</StructuredBadge></div>
         <ol class="structured-array">
           {value.slice(0, 20).map((item, index) => <li key={index}><NestedValue value={item} /></li>)}
         </ol>
@@ -218,7 +219,7 @@ function GenericValue({ value }) {
   if (isObject(value)) {
     return (
       <>
-        <div class="structured-header"><strong>Object</strong><Badge>{Object.keys(value).length} fields</Badge></div>
+        <div class="structured-header"><strong>Object</strong><StructuredBadge>{Object.keys(value).length} fields</StructuredBadge></div>
         <KeyValueRows entries={Object.entries(value)} />
       </>
     );

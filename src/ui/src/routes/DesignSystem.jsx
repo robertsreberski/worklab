@@ -26,6 +26,7 @@ import { FileTree } from "../components/FileTree.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { FormGrid } from "../components/FormGrid.jsx";
 import { FormSection } from "../components/FormSection.jsx";
+import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { KeyValueList } from "../components/KeyValueList.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
@@ -188,6 +189,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "FormField", group: "component", coverage: "visible" },
   { name: "FormGrid", group: "component", coverage: "visible" },
   { name: "FormSection", group: "component", coverage: "visible" },
+  { name: "GoalContractDetails", group: "component", coverage: "visible" },
   { name: "Icon", group: "component", coverage: "visible" },
   { name: "KeyValueList", group: "component", coverage: "visible" },
   { name: "KeyboardHelpDrawer", group: "component", coverage: "shell-hosted" },
@@ -752,6 +754,17 @@ export function DesignSystem() {
               <TeamPicker value={team} onChange={setTeam} teams={DEMO_TEAMS} />
             </FormField>
             <KeyValueList entries={[["Owner", "builder"], ["Reviewer", "reviewer"]]} />
+            <GoalContractDetails
+              goal={{
+                contract: {
+                  objective: "Keep shared components reusable.",
+                  stopping_condition: "No duplicate route-local component.",
+                  validation_loop: "Catalog, tests, and browser sweep.",
+                  constraints: ["Use shared primitives"],
+                },
+                goal_status_reason: "Component inventory is current.",
+              }}
+            />
           </Card>
         </section>
 
