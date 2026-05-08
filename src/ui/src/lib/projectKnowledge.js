@@ -41,13 +41,15 @@ export function groupProjectKnowledgeEntries(entries = []) {
 }
 
 function artifactLabel(summary = {}) {
-  const files = Number(summary.files || 0);
+  const safeSummary = summary || {};
+  const files = Number(safeSummary.files || 0);
   if (!files) return "";
   return `${files} file${files === 1 ? "" : "s"}`;
 }
 
 function taskOutputText(run = {}) {
-  return String(run.summary || run.details || "").trim();
+  const safeRun = run || {};
+  return String(safeRun.summary || safeRun.details || "").trim();
 }
 
 function flattenTasks(tasks = []) {

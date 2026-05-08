@@ -58,6 +58,12 @@ describe("project knowledge helpers", () => {
     expect(outputs[1].artifact_label).toBe("2 files");
   });
 
+  it("ignores tasks with an explicit null last run", () => {
+    expect(recentProjectTaskOutputs([
+      { id: "never-run", task_key: "T-0", title: "Never run", last_run: null },
+    ])).toEqual([]);
+  });
+
   it("builds a project-scoped promotion URL with source metadata", () => {
     const hash = buildKnowledgePromotionHash({
       project: { id: "project-1", slug: "project-one" },
