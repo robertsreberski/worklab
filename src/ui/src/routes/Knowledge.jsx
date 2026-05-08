@@ -13,6 +13,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { KbEdit } from "./KbEdit.jsx";
 import { KbDetail } from "./KbDetail.jsx";
 import { buildKnowledgeResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
@@ -191,15 +192,15 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
                 )}
                 title={e.title}
                 sub={(
-                  <span class="resource-row-tags">
-                    {e.project?.slug && <span class="pane-row-mono">{e.project.slug}</span>}
-                    {e.auto_promoted && <span class="kb-category-badge" data-category="run-results">run output</span>}
-                    {e.category && <span class="kb-category-badge" data-category={cat}>{e.category}</span>}
-                    {e.subcategory && <span class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</span>}
-                    {e.pinned && <span class="resource-row-chip">pinned</span>}
-                    {e.related_slugs?.length ? <span class="resource-row-chip">{e.related_slugs.length} related</span> : null}
-                    <span class="pane-row-mono">{e.slug}</span>
-                  </span>
+                  <ResourceRowTags>
+                    {e.project?.slug && <ResourceRowId>{e.project.slug}</ResourceRowId>}
+                    {e.auto_promoted && <ResourceRowChip class="kb-category-badge" data-category="run-results">run output</ResourceRowChip>}
+                    {e.category && <ResourceRowChip class="kb-category-badge" data-category={cat}>{e.category}</ResourceRowChip>}
+                    {e.subcategory && <ResourceRowChip class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</ResourceRowChip>}
+                    {e.pinned && <ResourceRowChip>pinned</ResourceRowChip>}
+                    {e.related_slugs?.length ? <ResourceRowChip>{e.related_slugs.length} related</ResourceRowChip> : null}
+                    <ResourceRowId>{e.slug}</ResourceRowId>
+                  </ResourceRowTags>
                 )}
                 trailing={(
                   <span class="pane-row-summary pane-row-summary-metrics">

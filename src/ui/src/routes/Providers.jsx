@@ -23,6 +23,7 @@ import { Modal } from "../components/Modal.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { pushToast } from "../lib/toast.js";
 import { useFormSave } from "../lib/useFormSave.js";
 import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
@@ -883,11 +884,11 @@ export function Providers({ selectedId = null }) {
               title={provider.name}
               sub={(
                 <span class="pane-row-substack">
-                  <span class="resource-row-tags">
-                    <span class="resource-row-chip">{providerTypeLabel(provider.provider_type)}</span>
-                    {provider.base_url && <span class="resource-row-chip pane-row-mono" title={provider.base_url}>{provider.base_url}</span>}
-                    {provider.trust_public_url && <span class="resource-row-chip">trusted public URL</span>}
-                  </span>
+                  <ResourceRowTags>
+                    <ResourceRowChip>{providerTypeLabel(provider.provider_type)}</ResourceRowChip>
+                    {provider.base_url && <ResourceRowChip class="pane-row-mono" title={provider.base_url}>{provider.base_url}</ResourceRowChip>}
+                    {provider.trust_public_url && <ResourceRowChip>trusted public URL</ResourceRowChip>}
+                  </ResourceRowTags>
                 </span>
               )}
               trailing={(

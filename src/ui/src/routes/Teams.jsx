@@ -16,6 +16,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { ResourceGroup, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
@@ -960,13 +961,13 @@ export function Teams({ selectedId = null, mode = null }) {
                     sub={(
                       <span class="pane-row-substack">
                         {(team.goal || team.description) && <span class="pane-row-description">{team.goal || team.description}</span>}
-                        <span class="resource-row-tags">
-                          <span class="pane-row-mono">{team.slug}</span>
-                          {team.lead_agent && <span class="resource-row-chip">lead {team.lead_agent}</span>}
-                          {team.schedule_enabled && <span class="resource-row-chip">scheduled</span>}
-                          <span class="resource-row-chip">{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</span>
-                          {Number(team.project_count || 0) > 0 && <span class="resource-row-chip">{team.project_count} project{team.project_count === 1 ? "" : "s"}</span>}
-                        </span>
+                        <ResourceRowTags>
+                          <ResourceRowId>{team.slug}</ResourceRowId>
+                          {team.lead_agent && <ResourceRowChip>lead {team.lead_agent}</ResourceRowChip>}
+                          {team.schedule_enabled && <ResourceRowChip>scheduled</ResourceRowChip>}
+                          <ResourceRowChip>{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</ResourceRowChip>
+                          {Number(team.project_count || 0) > 0 && <ResourceRowChip>{team.project_count} project{team.project_count === 1 ? "" : "s"}</ResourceRowChip>}
+                        </ResourceRowTags>
                       </span>
                     )}
                     trailing={(

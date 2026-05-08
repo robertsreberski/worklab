@@ -9,9 +9,9 @@ export function ResourceRowId({ children, title }) {
   return <span class="pane-row-mono" title={title || children}>{children}</span>;
 }
 
-export function ResourceRowChip({ children, title, class: className = "" }) {
+export function ResourceRowChip({ children, title, class: className = "", ...props }) {
   if (!children && children !== 0) return null;
-  return <span class={`resource-row-chip ${className}`.trim()} title={title}>{children}</span>;
+  return <span {...props} class={`resource-row-chip ${className}`.trim()} title={title}>{children}</span>;
 }
 
 export function ResourceRowPath({ value, label = "path", icon = "folder" }) {
