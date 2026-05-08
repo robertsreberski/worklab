@@ -615,7 +615,7 @@ export function Settings() {
           />
         )}
 
-        <div class="settings-overview-grid">
+        <PanelGrid class="settings-overview-grid">
           {overviewCards.map((card) => (
             <SettingsOverviewCard
               key={card.targetId}
@@ -624,7 +624,7 @@ export function Settings() {
               onSelect={selectSettingsSection}
             />
           ))}
-        </div>
+        </PanelGrid>
 
         <nav class="settings-section-nav" aria-label="Settings sections">
           {SETTINGS_SECTION_LINKS.map((item) => (
@@ -657,11 +657,11 @@ export function Settings() {
                 </FormField>
               </SettingPanel>
               <SettingPanel icon="database" title="Environment snapshot" meta="Read-only runtime locations.">
-                <div class="settings-note-grid settings-note-grid-paths">
+                <PanelGrid class="settings-note-grid settings-note-grid-paths">
                   <FieldNote label="Data directory" value={runtime?.readOnly?.dataDir} mono />
                   <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
                   <FieldNote label="Service" value={serviceMeta.label} />
-                </div>
+                </PanelGrid>
               </SettingPanel>
             </PanelGrid>
             <AdvancedSettings summary="Network and process settings" count={4}>
@@ -701,7 +701,7 @@ export function Settings() {
                 </FormGrid>
               </SettingPanel>
               <SettingPanel icon="book" title="Memory refresh" meta="Nightly consolidation for agent memory.">
-                <div class="settings-switch-stack">
+                <SectionStack class="settings-switch-stack">
                   <Switch
                     checked={!!settings.consolidation_enabled}
                     onChange={(next) => setSettings({ ...settings, consolidation_enabled: next })}
@@ -717,7 +717,7 @@ export function Settings() {
                   <FormField label="Consolidation hour">
                     <NumberStepper min={0} max={23} value={settings.consolidation_hour} ariaLabel="Consolidation hour" onChange={(value) => setSettings({ ...settings, consolidation_hour: value })} />
                   </FormField>
-                </div>
+                </SectionStack>
               </SettingPanel>
               <SettingPanel icon="file-text" title="Planning harness" meta="Plan-stage prompt and tool policy.">
                 <FormGrid columns={2} class="settings-planning-grid">
@@ -817,17 +817,17 @@ export function Settings() {
                 </FormGrid>
               </SettingPanel>
               <SettingPanel icon="database" title="Memory" meta="Uses the same durable identity as Slack.">
-                <div class="settings-note-grid">
+                <PanelGrid class="settings-note-grid">
                   <FieldNote
                     label="Memory name"
                     value={<AgentLink name={settings.slack_agent_name || "assistant"} agents={agents} />}
                     mono
                   />
                   <FieldNote label="Journal tail" value={`${settings.journal_tail_lines ?? 80} lines`} />
-                </div>
+                </PanelGrid>
               </SettingPanel>
               <SettingPanel icon="terminal" title="Agent robustness" meta="Context compaction, tool budgets, and continuation limits." class="span-2">
-                <div class="settings-switch-stack">
+                <SectionStack class="settings-switch-stack">
                   <Switch
                     checked={settings.agent_compaction_enabled !== false}
                     onChange={(next) => setSettings({ ...settings, agent_compaction_enabled: next })}
@@ -846,7 +846,7 @@ export function Settings() {
                     label="Auto-run delegated children"
                     description="Start delegated child tasks automatically while respecting the parallel cap."
                   />
-                </div>
+                </SectionStack>
                 <AdvancedSettings summary="Budgets and recovery" count={5}>
                   <ControlGroupStack>
                     <ControlGroup title="Delegation" description="Limits for child-task fanout.">
@@ -958,7 +958,7 @@ export function Settings() {
           >
             <PanelGrid class="settings-panel-grid">
               <SettingPanel icon="message-square" title="Delivery" meta="Bot intake and outbound DMs." status={slackMeta.status} statusLabel={slackMeta.label}>
-                <div class="settings-switch-stack">
+                <SectionStack class="settings-switch-stack">
                   <Switch
                     checked={!!settings.slack_enabled}
                     onChange={(next) => setSettings({ ...settings, slack_enabled: next })}
@@ -977,7 +977,7 @@ export function Settings() {
                     label="Task errors"
                     description="DM when a task run fails or blocks."
                   />
-                </div>
+                </SectionStack>
               </SettingPanel>
               <SettingPanel icon="user" title="Identity" meta="Human recipient for DMs and commands." status={slackUserIsBot ? "error" : undefined} statusLabel={slackUserIsBot ? "Bot ID" : undefined}>
                 <FormField label="Human Slack user ID" hint="This must be your Slack user ID, not the bot user ID.">
@@ -1024,12 +1024,12 @@ export function Settings() {
               </FormGrid>
             </AdvancedSettings>
             <AdvancedSettings summary="Slack diagnostics" count={4} defaultOpen={!!slackStatus?.last_error || slackUserIsBot}>
-              <div class="settings-note-grid">
+              <PanelGrid class="settings-note-grid">
                 <FieldNote label="Last inbound" value={slackStatus?.last_inbound?.received_at ? new Date(slackStatus.last_inbound.received_at).toLocaleString() : "-"} />
                 <FieldNote label="Last rejected" value={slackRejectedSenderLabel(slackStatus)} mono />
                 <FieldNote label="Last run" value={slackStatus?.last_run?.status || "-"} />
                 <FieldNote label="Last delivery" value={slackStatus?.last_delivery?.status || "-"} />
-              </div>
+              </PanelGrid>
             </AdvancedSettings>
             {slackUserIsBot && (
               <Banner

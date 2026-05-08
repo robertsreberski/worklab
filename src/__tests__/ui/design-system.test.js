@@ -439,16 +439,22 @@ describe("design system stylesheet", () => {
 
   it("builds settings panel groups on the shared PanelGrid layout", () => {
     const settingsSource = readFileSync(settingsPath, "utf8");
-    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*InlineHead[^}]*Page[^}]*PanelGrid[^}]*Toolbar[^}]*\}/);
+    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*InlineHead[^}]*Page[^}]*PanelGrid[^}]*SectionStack[^}]*Toolbar[^}]*\}/);
     expect(settingsSource).toMatch(/<Button[\s\S]*class=\{activeSectionId === item\.id \? "is-active" : ""\}/);
+    expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-overview-grid"/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
+    expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-note-grid/);
+    expect(settingsSource).toMatch(/<SectionStack\s+class="settings-switch-stack"/);
     expect(settingsSource).toMatch(/<ControlGroupStack>/);
     expect(settingsSource).toMatch(/<ControlGroup\s+title="Delegation"/);
     expect(settingsSource).toMatch(/<InlineHead\s+class="settings-list-head"/);
     expect(settingsSource).toMatch(/<InlineHead\s+class="settings-mcp-head"/);
     expect(settingsSource).toMatch(/<Toolbar\s+class="settings-list-actions"/);
     expect(settingsSource).toMatch(/<Toolbar\s+class="settings-row-actions"/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-overview-grid"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-panel-grid"/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-note-grid/);
+    expect(settingsSource).not.toMatch(/<div\s+class="settings-switch-stack"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-list-head"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-mcp-head"/);
     expect(settingsSource).not.toMatch(/<div\s+class="settings-list-actions"/);
