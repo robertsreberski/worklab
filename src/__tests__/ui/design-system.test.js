@@ -409,15 +409,18 @@ describe("design system stylesheet", () => {
   it("builds nested section stacks on the shared SectionStack layout", () => {
     const projectsSource = readFileSync(projectsPath, "utf8");
     const runCardsSource = readFileSync(runCardsPath, "utf8");
-    for (const source of [projectsSource, runCardsSource]) {
+    const kbDetailSource = readFileSync(kbDetailPath, "utf8");
+    for (const source of [projectsSource, runCardsSource, kbDetailSource]) {
       expect(source).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
     }
     expect(projectsSource).toMatch(/<SectionStack\s+class="project-task-groups"/);
     expect(projectsSource).toMatch(/<SectionStack\s+class="project-knowledge-groups"/);
     expect(runCardsSource).toMatch(/<SectionStack\s+class="run-artifact-groups"/);
+    expect(kbDetailSource).toMatch(/<SectionStack\s+class="knowledge-usage-groups"/);
     expect(projectsSource).not.toMatch(/<div\s+class="project-task-groups"/);
     expect(projectsSource).not.toMatch(/<div\s+class="project-knowledge-groups"/);
     expect(runCardsSource).not.toMatch(/<div\s+class="run-artifact-groups"/);
+    expect(kbDetailSource).not.toMatch(/<div\s+class="knowledge-usage-groups"/);
   });
 
   it("builds run card action rows on the shared Toolbar layout", () => {

@@ -12,7 +12,7 @@ import { FormSection } from "../components/FormSection.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
-import { DetailHead, SectionGroup, SectionMarker } from "../components/layout/index.js";
+import { DetailHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { normalizeKbEntry } from "./kb-entry-form.js";
 import { taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
@@ -49,7 +49,7 @@ function UsageList({ usage }) {
   if (tasks.length === 0 && agents.length === 0) return <p class="soft-meta">No references yet.</p>;
 
   return (
-    <div class="knowledge-usage-groups">
+    <SectionStack class="knowledge-usage-groups">
       {tasks.length > 0 && (
         <SectionGroup class="knowledge-usage-group" label="Tasks" count={`(${tasks.length})`}>
           <ul class="usage-list knowledge-read-usage-list">
@@ -73,7 +73,7 @@ function UsageList({ usage }) {
           </ul>
         </SectionGroup>
       )}
-    </div>
+    </SectionStack>
   );
 }
 
@@ -152,13 +152,13 @@ export function KbDetail({ slug }) {
           />
         </Card>
         <Card variant="spacious" title="References" class="entity-rail-card knowledge-read-usage-card">
-          <div class="knowledge-usage-groups">
+          <SectionStack class="knowledge-usage-groups">
             {entry.canonical_slug && (
               <RelationSlugList label="Canonical entry" slugs={[entry.canonical_slug]} />
             )}
             <RelationSlugList label="Related entries" slugs={entry.related_slugs} />
             <RelationSlugList label="Supersedes" slugs={entry.supersedes_slugs} />
-          </div>
+          </SectionStack>
           <UsageList usage={usage} />
         </Card>
       </div>
