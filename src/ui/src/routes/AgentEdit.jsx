@@ -125,6 +125,7 @@ function supportedBuiltinTools(option) {
 }
 
 function modelIdFromOption(option = {}) {
+  if (!option) return "";
   if (option.model) return option.model;
   const value = String(option.value || "");
   return value.startsWith("claude:") ? value.slice("claude:".length) : "";

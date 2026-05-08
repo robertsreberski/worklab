@@ -258,7 +258,6 @@ function commanderTaskListIncludesCompleted({
 export function commanderTaskListRequestQuery(filters = {}) {
   return {
     scope: "runtime",
-    include_team_roots: "1",
     done_limit: String(commanderTaskListIncludesCompleted(filters) ? SHOWN_DONE_LIMIT : HIDDEN_DONE_LIMIT),
   };
 }

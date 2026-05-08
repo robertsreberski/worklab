@@ -13,6 +13,8 @@ import {
 
 describe("agent runtime UI helpers", () => {
   it("shows the 1M context switch only for eligible Opus Claude models", () => {
+    expect(agentSupportsOneMillionContext(null)).toBe(false);
+    expect(agentSupportsOneMillionContext(undefined)).toBe(false);
     expect(agentSupportsOneMillionContext({ value: "claude:claude-opus-4-7" })).toBe(true);
     expect(agentSupportsOneMillionContext({ value: "claude:claude-opus-4-6" })).toBe(true);
     expect(agentSupportsOneMillionContext({ value: "claude:claude-sonnet-4-6" })).toBe(false);
