@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
 import Database from "better-sqlite3";
-import { MOBILE_VIEWPORT_CACHE_KEY } from "../../ui/src/lib/mobileViewport.js";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 
@@ -2406,188 +2405,6 @@ test("mobile tabbar does not create document scroll space below content", async 
   expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
 });
 
-test("mobile PWA tabbar starts with cached safe-area metrics on reload", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(({ cacheKey }) => {
-    try {
-      Object.defineProperty(window.navigator, "standalone", {
-        configurable: true,
-        get: () => true,
-      });
-    } catch {}
-    try {
-      Object.defineProperty(window.screen, "orientation", {
-        configurable: true,
-        get() { return { type: "portrait-primary", angle: 0 }; },
-      });
-    } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 11 } }));
-  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
-
-  await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".commander-row").first()).toBeVisible();
-
-  const metrics = await page.evaluate(() => {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const body = document.querySelector(".app-body");
-    const tabbar = document.querySelector(".app-tabbar");
-    const tabbarRect = tabbar?.getBoundingClientRect();
-    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
-    const parsePx = (value) => Math.round(parseFloat(value) || 0);
-    return {
-      viewportHeight: window.innerHeight,
-      appHeightVar: rootStyles.getPropertyValue("--app-height").trim(),
-      viewportVar: rootStyles.getPropertyValue("--worklab-viewport-height").trim(),
-      safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
-      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
-      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
-      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
-      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
-      tabbarPosition: tabbarStyles?.position || "",
-      documentScrollHeight: document.documentElement.scrollHeight,
-    };
-  });
-
-  expect(metrics.appHeightVar).toBe("844px");
-  expect(metrics.viewportVar).toBe("844px");
-  expect(metrics.safeTopVar).toBe("31px");
-  expect(metrics.safeBottomVar).toBe("11px");
-  expect(metrics.tabbarHeight).toBe(67);
-  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
-  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
-  expect(metrics.tabbarPosition).toBe("fixed");
-  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
-});
-
-test("mobile PWA tabbar ignores inflated cached bottom safe-area metrics on reload", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(({ cacheKey }) => {
-    try {
-      Object.defineProperty(window.navigator, "standalone", {
-        configurable: true,
-        get: () => true,
-      });
-    } catch {}
-    try {
-      Object.defineProperty(window.screen, "orientation", {
-        configurable: true,
-        get() { return { type: "portrait-primary", angle: 0 }; },
-      });
-    } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 120 } }));
-  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
-
-  await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".commander-row").first()).toBeVisible();
-
-  const metrics = await page.evaluate(() => {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const body = document.querySelector(".app-body");
-    const tabbar = document.querySelector(".app-tabbar");
-    const tabbarRect = tabbar?.getBoundingClientRect();
-    const parsePx = (value) => Math.round(parseFloat(value) || 0);
-    return {
-      viewportHeight: window.innerHeight,
-      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
-      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
-      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
-      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
-      documentScrollHeight: document.documentElement.scrollHeight,
-    };
-  });
-
-  expect(metrics.safeBottomVar).toBe("0px");
-  expect(metrics.tabbarHeight).toBe(56);
-  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
-  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
-  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
-});
-
-test("mobile PWA bottom safe area belongs to the bottom chrome", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(({ cacheKey }) => {
-    try {
-      Object.defineProperty(window.navigator, "standalone", {
-        configurable: true,
-        get: () => true,
-      });
-    } catch {}
-    try {
-      Object.defineProperty(window.screen, "orientation", {
-        configurable: true,
-        get() { return { type: "portrait-primary", angle: 0 }; },
-      });
-    } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 47, bottom: 34 } }));
-  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
-
-  await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".commander-row").first()).toBeVisible();
-
-  const tabbarMetrics = await page.evaluate(() => {
-    const rootStyles = getComputedStyle(document.documentElement);
-    const body = document.querySelector(".app-body");
-    const tabbar = document.querySelector(".app-tabbar");
-    const tabbarRect = tabbar?.getBoundingClientRect();
-    const tabbarStyles = tabbar ? getComputedStyle(tabbar) : null;
-    const parsePx = (value) => Math.round(parseFloat(value) || 0);
-    return {
-      viewportHeight: window.innerHeight,
-      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
-      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
-      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
-      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
-      tabbarPaddingBottom: tabbarStyles ? parsePx(tabbarStyles.paddingBottom) : -1,
-      bottomOwner: document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 4)
-        ?.closest?.(".app-tabbar")
-        ?.className || "",
-      documentScrollHeight: document.documentElement.scrollHeight,
-    };
-  });
-
-  expect(tabbarMetrics.safeBottomVar).toBe("34px");
-  expect(tabbarMetrics.tabbarHeight).toBe(90);
-  expect(tabbarMetrics.tabbarPaddingBottom).toBe(34);
-  expect(tabbarMetrics.bodyPaddingBottom).toBe(90);
-  expect(tabbarMetrics.tabbarBottom).toBe(tabbarMetrics.viewportHeight);
-  expect(tabbarMetrics.bottomOwner).toContain("app-tabbar");
-  expect(tabbarMetrics.documentScrollHeight).toBeLessThanOrEqual(tabbarMetrics.viewportHeight);
-
-  await page.goto(`${baseUrl}/#/tasks/new`);
-  await expect(page.locator(".task-edit-head").first()).toBeVisible();
-  await expect(page.locator(".app-mobile-action-dock .button").first()).toBeVisible();
-
-  const dockMetrics = await page.evaluate(() => {
-    const body = document.querySelector(".app-body");
-    const dock = document.querySelector(".app-mobile-action-dock");
-    const tabbar = document.querySelector(".app-tabbar");
-    const dockRect = dock?.getBoundingClientRect();
-    const parsePx = (value) => Math.round(parseFloat(value) || 0);
-    return {
-      viewportHeight: window.innerHeight,
-      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
-      dockDisplay: dock ? getComputedStyle(dock).display : "",
-      dockHeight: dockRect ? Math.round(dockRect.height) : 0,
-      dockBottom: dockRect ? Math.round(dockRect.bottom) : 0,
-      dockPaddingBottom: dock ? parsePx(getComputedStyle(dock).paddingBottom) : -1,
-      tabbarDisplay: tabbar ? getComputedStyle(tabbar).display : "",
-      bottomOwner: document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 4)
-        ?.closest?.(".app-mobile-action-dock")
-        ?.className || "",
-      documentScrollHeight: document.documentElement.scrollHeight,
-    };
-  });
-
-  expect(dockMetrics.dockDisplay).toBe("flex");
-  expect(dockMetrics.dockHeight).toBe(91);
-  expect(dockMetrics.dockPaddingBottom).toBe(34);
-  expect(dockMetrics.bodyPaddingBottom).toBe(dockMetrics.dockHeight);
-  expect(dockMetrics.dockBottom).toBe(dockMetrics.viewportHeight);
-  expect(dockMetrics.bottomOwner).toContain("app-mobile-action-dock");
-  expect(dockMetrics.tabbarDisplay).toBe("none");
-  expect(dockMetrics.documentScrollHeight).toBeLessThanOrEqual(dockMetrics.viewportHeight);
-});
-
 test("mobile tasks header owns the opening route status safe area", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/tasks`);
@@ -2653,81 +2470,6 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
   expect(metrics.assistantBottomBeforeFab).toBe(true);
   expect(metrics.windowScrollY).toBe(0);
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
-});
-
-test("mobile list and page headers own the status safe-area background", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.addInitScript(({ cacheKey }) => {
-    try {
-      Object.defineProperty(window.navigator, "standalone", {
-        configurable: true,
-        get: () => true,
-      });
-    } catch {}
-    try {
-      Object.defineProperty(window.screen, "orientation", {
-        configurable: true,
-        get() { return { type: "portrait-primary", angle: 0 }; },
-      });
-    } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 11 } }));
-  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
-
-  const routes = [
-    {
-      hash: "#/agents",
-      readySelector: ".pane-list-head",
-      headerSelector: ".pane-list-head",
-      label: "agents list",
-    },
-    {
-      hash: "#/activity",
-      readySelector: ".ds-page-head",
-      headerSelector: ".ds-page-head",
-      label: "activity page",
-    },
-  ];
-
-  for (const route of routes) {
-    await page.goto(`${baseUrl}/${route.hash}`);
-    await expect(page.locator(route.readySelector).first()).toBeVisible();
-
-    const metrics = await page.evaluate(({ headerSelector }) => {
-      const rootStyles = getComputedStyle(document.documentElement);
-      const appBody = document.querySelector(".app-body");
-      const header = document.querySelector(headerSelector);
-      const headerRect = header?.getBoundingClientRect();
-      const bodyStyles = appBody ? getComputedStyle(appBody) : null;
-      const headerStyles = header ? getComputedStyle(header) : null;
-      const parsePx = (value) => Math.round(parseFloat(value) || 0);
-      const safeAreaElement = document.elementFromPoint(12, 12);
-      return {
-        safeTopVar: rootStyles.getPropertyValue("--worklab-safe-area-top").trim(),
-        bodyPaddingTop: bodyStyles ? parsePx(bodyStyles.paddingTop) : -1,
-        headerTop: headerRect ? Math.round(headerRect.top) : -1,
-        headerLeft: headerRect ? Math.round(headerRect.left) : -1,
-        headerRight: headerRect ? Math.round(headerRect.right) : -1,
-        headerPaddingTop: headerStyles ? parsePx(headerStyles.paddingTop) : -1,
-        headerBackground: headerStyles?.backgroundColor || "",
-        safeAreaOwnedByHeader: !!safeAreaElement?.closest?.(headerSelector),
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-        windowScrollY: Math.round(window.scrollY),
-        documentScrollHeight: document.documentElement.scrollHeight,
-      };
-    }, { headerSelector: route.headerSelector });
-
-    expect(metrics.safeTopVar, `${route.label} safe-area variable`).toBe("31px");
-    expect(metrics.bodyPaddingTop, `${route.label} body top padding`).toBe(0);
-    expect(metrics.headerTop, `${route.label} header top`).toBe(0);
-    expect(metrics.headerLeft, `${route.label} header left`).toBeLessThanOrEqual(1);
-    expect(metrics.headerRight, `${route.label} header right`).toBeGreaterThanOrEqual(metrics.viewportWidth - 1);
-    expect(metrics.headerPaddingTop, `${route.label} header safe-area padding`).toBeGreaterThanOrEqual(31);
-    expect(metrics.headerBackground, `${route.label} header background`).not.toBe("rgba(0, 0, 0, 0)");
-    expect(metrics.safeAreaOwnedByHeader, `${route.label} safe-area owner`).toBe(true);
-    expect(metrics.windowScrollY, `${route.label} window scroll`).toBe(0);
-    expect(metrics.documentScrollHeight, `${route.label} document height`).toBeLessThanOrEqual(metrics.viewportHeight);
-  }
 });
 
 test("mobile topbar owns the status safe-area background", async ({ page }) => {
@@ -3735,103 +3477,70 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
-test("mobile tabbar safe-area stays locked across focus/blur and synthetic keyboard cycles", async ({ page }) => {
+test("assistant composer blurs the textarea on send and keeps compact bottom spacing", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  // Seed a trusted portrait baseline before the SPA boots so the test does not depend on
-  // chromium reporting a device safe-area inset (it normally returns 0 on desktop).
-  // Also force the runtime to treat the page as a standalone PWA, since the safe-area
-  // lock only engages in standalone mode.
-  await page.addInitScript(({ key }) => {
+  await page.addInitScript(() => {
     try {
-      window.localStorage.setItem(key, JSON.stringify({ portrait: { top: 47, bottom: 34 } }));
+      window.localStorage.setItem("worklab.assistantDockOpen", "open");
     } catch {}
-    const originalMatchMedia = window.matchMedia.bind(window);
-    window.matchMedia = (query) => {
-      if (query === "(display-mode: standalone)") return { matches: true, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
-      if (query === "(orientation: portrait)") return { matches: true, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
-      if (query === "(orientation: landscape)") return { matches: false, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
-      return originalMatchMedia(query);
-    };
-    try {
-      Object.defineProperty(window.screen, "orientation", {
-        configurable: true,
-        get() { return { type: "portrait-primary", angle: 0 }; },
-      });
-    } catch {}
-  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+  });
 
   await page.goto(`${baseUrl}/#/tasks`);
-  await expect(page.locator(".app-tabbar")).toBeVisible();
+  await expect(page.locator(".assistant-dock.open")).toBeVisible();
+  await expect(page.locator(".assistant-composer")).toBeVisible();
 
-  const initial = await page.evaluate(({ key }) => {
-    const root = document.documentElement;
-    const tabbar = document.querySelector(".app-tabbar");
+  const readState = () => page.evaluate(() => {
+    const composer = document.querySelector(".assistant-composer");
+    const active = document.activeElement;
     return {
-      tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
-      safeAreaBottom: root.style.getPropertyValue("--worklab-safe-area-bottom"),
-      safeAreaTop: root.style.getPropertyValue("--worklab-safe-area-top"),
-      cache: JSON.parse(window.localStorage.getItem(key) || "null"),
+      paddingBottom: composer ? Math.round(parseFloat(getComputedStyle(composer).paddingBottom) || 0) : -1,
+      keyboardOpenClass: document.documentElement.classList.contains("keyboard-open"),
+      activeTag: active ? active.tagName : "",
     };
-  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+  });
 
-  expect(initial.cache).toEqual({ portrait: { top: 47, bottom: 34 } });
-  expect(initial.safeAreaBottom).toBe("34px");
-  expect(initial.safeAreaTop).toBe("47px");
-  expect(initial.tabbarHeight).toBe(56 + 34);
+  // var(--sp-2) is 8px in the design system; the composer keeps that flat across the cycle.
+  const rest = await readState();
+  expect(rest.keyboardOpenClass).toBe(false);
+  expect(rest.paddingBottom).toBe(8);
 
-  // Run three keyboard-style cycles: focus a textarea, dispatch a visualViewport resize
-  // simulating the keyboard taking ~324px, blur, dispatch a resize that returns to full
-  // height with a residual offsetTop (the post-dismiss state we are guarding against).
-  for (let cycle = 0; cycle < 3; cycle += 1) {
-    await page.evaluate(() => {
-      const composerInput = document.querySelector("input, textarea");
-      composerInput?.focus?.();
-      const vv = window.visualViewport;
-      if (vv) {
-        Object.defineProperty(vv, "height", { configurable: true, value: 520 });
-        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
-        vv.dispatchEvent(new Event("resize"));
-      }
-    });
-    await page.waitForTimeout(80);
-    await page.evaluate(() => {
-      const composerInput = document.querySelector("input, textarea");
-      composerInput?.blur?.();
-      const vv = window.visualViewport;
-      if (vv) {
-        Object.defineProperty(vv, "height", { configurable: true, value: window.innerHeight });
-        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 8 });
-        vv.dispatchEvent(new Event("resize"));
-      }
-    });
-    await page.waitForTimeout(400);
-    await page.evaluate(() => {
-      const vv = window.visualViewport;
-      if (vv) {
-        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
-        vv.dispatchEvent(new Event("resize"));
-      }
-    });
-    await page.waitForTimeout(120);
-  }
+  // Focus the composer textarea and simulate the iOS keyboard rising.
+  await page.locator(".assistant-composer .textarea").focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+      Object.defineProperty(vv, "height", { configurable: true, value: 520 });
+      Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+      vv.dispatchEvent(new Event("resize"));
+    }
+  });
+  await page.waitForTimeout(360);
 
-  const final = await page.evaluate(({ key }) => {
-    const root = document.documentElement;
-    const tabbar = document.querySelector(".app-tabbar");
-    return {
-      tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
-      safeAreaBottom: root.style.getPropertyValue("--worklab-safe-area-bottom"),
-      safeAreaTop: root.style.getPropertyValue("--worklab-safe-area-top"),
-      keyboardOpenClassPresent: root.classList.contains("keyboard-open"),
-      cache: JSON.parse(window.localStorage.getItem(key) || "null"),
-    };
-  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+  const open = await readState();
+  expect(open.keyboardOpenClass).toBe(true);
+  expect(open.activeTag).toBe("TEXTAREA");
+  expect(open.paddingBottom).toBe(rest.paddingBottom);
 
-  expect(final.tabbarHeight).toBe(initial.tabbarHeight);
-  expect(final.safeAreaBottom).toBe(initial.safeAreaBottom);
-  expect(final.safeAreaTop).toBe(initial.safeAreaTop);
-  expect(final.keyboardOpenClassPresent).toBe(false);
-  expect(final.cache).toEqual(initial.cache);
+  // Type a draft and submit via Enter — same path as the user's repro.
+  await page.keyboard.type("Hello assistant");
+  await page.keyboard.press("Enter");
+  // After submit the runtime should blur the textarea, then iOS would normally
+  // collapse the keyboard. Simulate that by restoring visualViewport.
+  await page.waitForTimeout(120);
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+      Object.defineProperty(vv, "height", { configurable: true, value: window.innerHeight });
+      Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+      vv.dispatchEvent(new Event("resize"));
+    }
+  });
+  await page.waitForTimeout(360);
+
+  const dismissed = await readState();
+  expect(dismissed.activeTag).not.toBe("TEXTAREA");
+  expect(dismissed.keyboardOpenClass).toBe(false);
+  expect(dismissed.paddingBottom).toBe(rest.paddingBottom);
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {

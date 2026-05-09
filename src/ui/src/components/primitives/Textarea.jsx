@@ -11,10 +11,17 @@ export function Textarea({
   placeholder,
   disabled,
   readOnly,
+  inputRef,
   class: className = "",
   ...rest
 }) {
   const ref = useRef(null);
+
+  const setRef = (node) => {
+    ref.current = node;
+    if (typeof inputRef === "function") inputRef(node);
+    else if (inputRef && typeof inputRef === "object") inputRef.current = node;
+  };
 
   useEffect(() => {
     if (!autoGrow || !ref.current) return;
@@ -28,7 +35,7 @@ export function Textarea({
   const cls = `textarea ${monospace ? "mono" : ""} ${className}`.trim();
   return (
     <textarea
-      ref={ref}
+      ref={setRef}
       class={cls}
       rows={rows}
       value={value ?? ""}

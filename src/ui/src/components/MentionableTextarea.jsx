@@ -21,14 +21,24 @@ export function MentionableTextarea({
   onChange,
   onKeyDown,
   types,
+  inputRef,
   ...rest
 }) {
   const containerRef = useRef(null);
   const pickerRef = useRef(null);
+  const localTextareaRef = useRef(null);
   const [trigger, setTrigger] = useState(null);
 
+  const setTextareaRef = useCallback((node) => {
+    localTextareaRef.current = node;
+    if (typeof inputRef === "function") inputRef(node);
+    else if (inputRef && typeof inputRef === "object") inputRef.current = node;
+  }, [inputRef]);
+
   function getTextarea() {
-    return containerRef.current?.querySelector("textarea") || null;
+    return localTextareaRef.current
+      || containerRef.current?.querySelector("textarea")
+      || null;
   }
 
   const measureTrigger = useCallback((textarea) => {
@@ -107,6 +117,7 @@ export function MentionableTextarea({
     <div class="mentionable" ref={containerRef}>
       <Textarea
         {...rest}
+        inputRef={setTextareaRef}
         value={value}
         onInput={handleInput}
         onChange={onChange}
