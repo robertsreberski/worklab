@@ -12,6 +12,8 @@
 
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Icon } from "../Icon.jsx";
+import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
+import { PopoverPortal } from "./PopoverPortal.jsx";
 
 let selectUid = 0;
 
@@ -52,6 +54,7 @@ export function Select({
 }) {
   const autoId = useRef(id || `wl-select-${++selectUid}`);
   const rootRef = useRef(null);
+  const menuRef = useRef(null);
   const searchRef = useRef(null);
 
   const groups = useMemo(() => normaliseGroups(options), [options]);
@@ -63,11 +66,16 @@ export function Select({
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(selectedIndex);
   const [filter, setFilter] = useState("");
+  const { placement, maxHeight, top, left, width, ready } = useDropdownPlacement(rootRef, menuRef, open);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (e) => {
-      if (!rootRef.current?.contains(e.target)) setOpen(false);
+      // Menu lives in a portal, so it's no longer a descendant of rootRef —
+      // close only when the click is outside both the trigger and the menu.
+      if (rootRef.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -176,12 +184,21 @@ export function Select({
         <Icon name="chevron-down" size={14} class="select-trigger-chev" />
       </button>
       {open && (
+        <PopoverPortal>
         <div
+          ref={menuRef}
           class="select-menu"
           id={`${autoId.current}-listbox`}
           role="listbox"
           aria-activedescendant={filteredFlat[activeIndex] ? `${autoId.current}-opt-${activeIndex}` : undefined}
-          style={menuWidth ? { width: `${menuWidth}px` } : undefined}
+          data-placement={placement}
+          style={{
+            top: `${top}px`,
+            left: `${left}px`,
+            width: menuWidth ? `${menuWidth}px` : `${width}px`,
+            visibility: ready ? "visible" : "hidden",
+            ...(maxHeight != null ? { "--placement-max-height": `${maxHeight}px` } : {}),
+          }}
         >
           {canSearch && (
             <div class="select-menu-search">
@@ -236,6 +253,7 @@ export function Select({
             </div>
           ))}
         </div>
+        </PopoverPortal>
       )}
     </div>
   );
