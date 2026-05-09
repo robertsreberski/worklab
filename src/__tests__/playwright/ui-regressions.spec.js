@@ -2453,6 +2453,44 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
+test("mobile PWA tabbar ignores inflated cached bottom safe-area metrics on reload", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(({ cacheKey }) => {
+    try {
+      Object.defineProperty(window.navigator, "standalone", {
+        configurable: true,
+        get: () => true,
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 120 }));
+  }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-row").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const rootStyles = getComputedStyle(document.documentElement);
+    const body = document.querySelector(".app-body");
+    const tabbar = document.querySelector(".app-tabbar");
+    const tabbarRect = tabbar?.getBoundingClientRect();
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      viewportHeight: window.innerHeight,
+      safeBottomVar: rootStyles.getPropertyValue("--worklab-safe-area-bottom").trim(),
+      bodyPaddingBottom: body ? parsePx(getComputedStyle(body).paddingBottom) : 0,
+      tabbarHeight: tabbarRect ? Math.round(tabbarRect.height) : 0,
+      tabbarBottom: tabbarRect ? Math.round(tabbarRect.bottom) : 0,
+      documentScrollHeight: document.documentElement.scrollHeight,
+    };
+  });
+
+  expect(metrics.safeBottomVar).toBe("0px");
+  expect(metrics.tabbarHeight).toBe(56);
+  expect(metrics.bodyPaddingBottom).toBe(metrics.tabbarHeight);
+  expect(metrics.tabbarBottom).toBe(metrics.viewportHeight);
+  expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
 test("mobile PWA bottom safe area belongs to the bottom chrome", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(({ cacheKey }) => {
