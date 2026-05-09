@@ -7,6 +7,10 @@ export const VV_HEIGHT_VAR = "--vv-height";
 export const VV_OFFSET_VAR = "--vv-offset";
 export const KEYBOARD_HEIGHT_VAR = "--worklab-keyboard-height";
 
+const MAX_SAFE_AREA_TOP = 100;
+const MAX_SAFE_AREA_BOTTOM = 80;
+const VIEWPORT_STABLE_THRESHOLD = 4;
+
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
   "checkbox",
@@ -37,6 +41,11 @@ function parsePx(value) {
   return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
 }
 
+function parseSafeAreaPx(value, max) {
+  const parsed = parsePx(value);
+  return parsed <= max ? parsed : 0;
+}
+
 function px(value) {
   const number = Number(value);
   return `${Math.max(0, Math.round(Number.isFinite(number) ? number : 0))}px`;
@@ -61,8 +70,8 @@ function readCachedInsets(env) {
     if (!raw) return { top: 0, bottom: 0 };
     const parsed = JSON.parse(raw);
     return {
-      top: parsePx(parsed?.top),
-      bottom: parsePx(parsed?.bottom),
+      top: parseSafeAreaPx(parsed?.top, MAX_SAFE_AREA_TOP),
+      bottom: parseSafeAreaPx(parsed?.bottom, MAX_SAFE_AREA_BOTTOM),
     };
   } catch {
     return { top: 0, bottom: 0 };
@@ -162,25 +171,44 @@ export function measureSafeAreaInsets(env = globalThis) {
   return insets;
 }
 
-function effectiveSafeAreaInsets(env, measured) {
-  if (!isStandalonePwa(env)) return measured;
+function sanitizeSafeAreaInsets(insets) {
+  return {
+    top: parseSafeAreaPx(insets?.top, MAX_SAFE_AREA_TOP),
+    bottom: parseSafeAreaPx(insets?.bottom, MAX_SAFE_AREA_BOTTOM),
+  };
+}
+
+function isViewportStable(viewportState) {
+  return !viewportState || viewportState.keyboardHeight <= VIEWPORT_STABLE_THRESHOLD;
+}
+
+function effectiveSafeAreaInsets(env, measured, viewportState) {
+  const sanitizedMeasured = sanitizeSafeAreaInsets(measured);
+  if (!isStandalonePwa(env)) return sanitizedMeasured;
 
   const cached = readCachedInsets(env);
+  const canAcceptMeasurement = isViewportStable(viewportState);
   const effective = {
-    top: measured.top > 0 ? measured.top : cached.top,
-    bottom: measured.bottom > 0 ? measured.bottom : cached.bottom,
+    top: canAcceptMeasurement && sanitizedMeasured.top > 0 ? sanitizedMeasured.top : cached.top,
+    bottom: canAcceptMeasurement && sanitizedMeasured.bottom > 0 ? sanitizedMeasured.bottom : cached.bottom,
   };
-  if (measured.top > 0 || measured.bottom > 0) {
+  if (canAcceptMeasurement && (sanitizedMeasured.top > 0 || sanitizedMeasured.bottom > 0)) {
     writeCachedInsets(env, {
-      top: measured.top > 0 ? measured.top : cached.top,
-      bottom: measured.bottom > 0 ? measured.bottom : cached.bottom,
+      top: sanitizedMeasured.top > 0 ? sanitizedMeasured.top : cached.top,
+      bottom: sanitizedMeasured.bottom > 0 ? sanitizedMeasured.bottom : cached.bottom,
     });
   }
   return effective;
 }
 
-function applyKeyboardState(root, viewportState) {
+function forceLayoutAfterKeyboardDismiss(env) {
+  void documentForEnv(env)?.querySelector?.(".app-body")?.offsetHeight;
+}
+
+function applyKeyboardState(root, viewportState, env) {
+  const wasOpen = root.classList?.contains?.("keyboard-open") === true;
   root.classList?.toggle?.("keyboard-open", viewportState.keyboardOpen);
+  if (wasOpen && !viewportState.keyboardOpen) forceLayoutAfterKeyboardDismiss(env);
   if (viewportState.keyboardOpen) {
     root.style.setProperty(VV_HEIGHT_VAR, px(viewportState.visibleHeight));
     root.style.setProperty(VV_OFFSET_VAR, px(viewportState.offsetTop));
@@ -198,21 +226,21 @@ export function applyMobileViewportMetrics(env = globalThis) {
 
   const win = windowForEnv(env);
   const doc = documentForEnv(env);
-  const measured = measureSafeAreaInsets(env);
-  const safeArea = effectiveSafeAreaInsets(env, measured);
   const viewportState = computeViewportState({
     innerHeight: win?.innerHeight,
     clientHeight: doc?.documentElement?.clientHeight,
     visualViewport: win?.visualViewport,
     activeElement: doc?.activeElement,
   });
+  const measured = measureSafeAreaInsets(env);
+  const safeArea = effectiveSafeAreaInsets(env, measured, viewportState);
   const viewportHeight = viewportState.appHeight;
 
   root.style.setProperty(APP_HEIGHT_VAR, px(viewportHeight));
   root.style.setProperty(VIEWPORT_HEIGHT_VAR, px(viewportHeight));
   root.style.setProperty(SAFE_AREA_TOP_VAR, px(safeArea.top));
   root.style.setProperty(SAFE_AREA_BOTTOM_VAR, px(safeArea.bottom));
-  applyKeyboardState(root, viewportState);
+  applyKeyboardState(root, viewportState, env);
 
   return {
     viewportHeight,

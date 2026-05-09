@@ -71,6 +71,8 @@ function createEnv({
   const storage = new Map();
   let timerId = 0;
   if (cachedInsets) storage.set(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify(cachedInsets));
+  let measuredSafeTop = safeTop;
+  let measuredSafeBottom = safeBottom;
 
   const rootStyle = createStyle();
   const rootClassList = createClassList();
@@ -140,8 +142,8 @@ function createEnv({
     },
     getComputedStyle() {
       return {
-        paddingTop: `${safeTop}px`,
-        paddingBottom: `${safeBottom}px`,
+        paddingTop: `${measuredSafeTop}px`,
+        paddingBottom: `${measuredSafeBottom}px`,
       };
     },
     addEventListener(type, listener) {
@@ -186,6 +188,10 @@ function createEnv({
     },
     setActiveElement(element) {
       env.document.activeElement = element;
+    },
+    setSafeArea(insets = {}) {
+      if (Object.hasOwn(insets, "top")) measuredSafeTop = insets.top;
+      if (Object.hasOwn(insets, "bottom")) measuredSafeBottom = insets.bottom;
     },
     rootStyle,
     rootClassList,
@@ -285,6 +291,82 @@ describe("mobile viewport metrics", () => {
     applyMobileViewportMetrics(env);
 
     expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 11 });
+  });
+
+  it("keeps stable safe-area values during keyboard-open viewport transitions", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 520,
+      safeTop: 31,
+      safeBottom: 120,
+      cachedInsets: { top: 31, bottom: 34 },
+      activeElement: { tagName: "TEXTAREA" },
+    });
+
+    const metrics = applyMobileViewportMetrics(env);
+
+    expect(metrics).toMatchObject({
+      keyboardOpen: true,
+      safeAreaTop: 31,
+      safeAreaBottom: 34,
+      measuredSafeAreaTop: 31,
+      measuredSafeAreaBottom: 120,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 34 });
+  });
+
+  it("does not persist transient safe-area values while keyboard dismissal is settling", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+    });
+
+    applyMobileViewportMetrics(env);
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 34 });
+
+    env.setActiveElement({ tagName: "TEXTAREA" });
+    env.visualViewport.height = 520;
+    env.setSafeArea({ bottom: 120 });
+    applyMobileViewportMetrics(env);
+
+    env.setActiveElement(null);
+    env.visualViewport.height = 640;
+    const dismissing = applyMobileViewportMetrics(env);
+
+    expect(dismissing).toMatchObject({
+      keyboardOpen: false,
+      keyboardHeight: 204,
+      safeAreaBottom: 34,
+      measuredSafeAreaBottom: 120,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({ top: 31, bottom: 34 });
+  });
+
+  it("ignores inflated cached bottom safe-area values on standalone reload", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      safeTop: 0,
+      safeBottom: 0,
+      cachedInsets: { top: 31, bottom: 120 },
+    });
+
+    const metrics = applyMobileViewportMetrics(env);
+
+    expect(metrics).toMatchObject({
+      safeAreaTop: 31,
+      safeAreaBottom: 0,
+      measuredSafeAreaTop: 0,
+      measuredSafeAreaBottom: 0,
+      standalone: true,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("0px");
   });
 
   it("batches viewport refreshes from resize events", () => {
