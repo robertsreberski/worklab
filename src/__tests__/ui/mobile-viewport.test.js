@@ -283,6 +283,67 @@ describe("mobile viewport metrics", () => {
     expect(env.rootClassList.contains("keyboard-open")).toBe(false);
   });
 
+  it("force-clears keyboard-open on focusout when no text input remains focused, even with stale visualViewport", () => {
+    const env = createEnv({
+      innerHeight: 844,
+      visualHeight: 844,
+      activeElement: { tagName: "TEXTAREA" },
+    });
+    const cleanup = installMobileViewportMetrics(env);
+
+    // Bring the keyboard up.
+    env.visualViewport.height = 520;
+    env.emitVisual("resize");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(true);
+    expect(env.rootStyle.values[VV_HEIGHT_VAR]).toBe("520px");
+
+    // User dismisses the keyboard via Done / tap-outside; activeElement is no longer
+    // a text input but iOS hasn't fired visualViewport.resize yet (vv.height stays 520).
+    env.setActiveElement(null);
+    env.emitDocument("focusout");
+    env.flushFrame();
+
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+    expect(env.rootStyle.values[VV_HEIGHT_VAR]).toBeUndefined();
+    expect(env.rootStyle.values[VV_OFFSET_VAR]).toBeUndefined();
+    expect(env.rootStyle.values[KEYBOARD_HEIGHT_VAR]).toBeUndefined();
+
+    cleanup();
+  });
+
+  it("starts a watchdog timer while keyboard-open and clears it once the state flips", () => {
+    const env = createEnv({
+      innerHeight: 844,
+      visualHeight: 844,
+      activeElement: { tagName: "TEXTAREA" },
+    });
+    const cleanup = installMobileViewportMetrics(env);
+
+    // Initial idle: no watchdog yet.
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+
+    // Open the keyboard — watchdog should be scheduled in env.timers.
+    env.visualViewport.height = 520;
+    env.emitVisual("resize");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(true);
+    // env.timers contains both the [120, 360] schedule and the watchdog timer.
+    expect(env.timers.size).toBeGreaterThan(0);
+
+    // Close the keyboard via blur. The proactive clear strips the class; the next
+    // refresh stops the watchdog.
+    env.setActiveElement(null);
+    env.visualViewport.height = 844;
+    env.emitDocument("focusout");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+
+    cleanup();
+    expect(env.timers.size).toBe(0);
+  });
+
   it("is a no-op without browser document APIs", () => {
     const cleanup = installMobileViewportMetrics({});
     expect(typeof cleanup).toBe("function");

@@ -3477,7 +3477,7 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
-test("assistant composer blurs the textarea on send and keeps compact bottom spacing", async ({ page }) => {
+test("assistant composer keeps home-indicator padding at rest and drops it while keyboard is open", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     try {
@@ -3491,20 +3491,20 @@ test("assistant composer blurs the textarea on send and keeps compact bottom spa
 
   const readState = () => page.evaluate(() => {
     const composer = document.querySelector(".assistant-composer");
-    const active = document.activeElement;
     return {
       paddingBottom: composer ? Math.round(parseFloat(getComputedStyle(composer).paddingBottom) || 0) : -1,
       keyboardOpenClass: document.documentElement.classList.contains("keyboard-open"),
-      activeTag: active ? active.tagName : "",
+      activeTag: document.activeElement ? document.activeElement.tagName : "",
     };
   });
 
-  // var(--sp-2) is 8px in the design system; the composer keeps that flat across the cycle.
+  // At rest the composer pads max(sp-2, env(safe-area-inset-bottom)). Chromium reports
+  // env=0 on desktop, so paddingBottom collapses to sp-2 (8px). On a real iPhone PWA
+  // the same rule produces ~34px — that's what the user wants preserved.
   const rest = await readState();
   expect(rest.keyboardOpenClass).toBe(false);
-  expect(rest.paddingBottom).toBe(8);
+  expect(rest.paddingBottom).toBeGreaterThanOrEqual(8);
 
-  // Focus the composer textarea and simulate the iOS keyboard rising.
   await page.locator(".assistant-composer .textarea").focus();
   await page.evaluate(() => {
     const vv = window.visualViewport;
@@ -3518,15 +3518,9 @@ test("assistant composer blurs the textarea on send and keeps compact bottom spa
 
   const open = await readState();
   expect(open.keyboardOpenClass).toBe(true);
-  expect(open.activeTag).toBe("TEXTAREA");
-  expect(open.paddingBottom).toBe(rest.paddingBottom);
+  expect(open.paddingBottom).toBe(8);
 
-  // Type a draft and submit via Enter — same path as the user's repro.
-  await page.keyboard.type("Hello assistant");
-  await page.keyboard.press("Enter");
-  // After submit the runtime should blur the textarea, then iOS would normally
-  // collapse the keyboard. Simulate that by restoring visualViewport.
-  await page.waitForTimeout(120);
+  // Synthesize the iOS keyboard collapsing.
   await page.evaluate(() => {
     const vv = window.visualViewport;
     if (vv) {
@@ -3538,9 +3532,42 @@ test("assistant composer blurs the textarea on send and keeps compact bottom spa
   await page.waitForTimeout(360);
 
   const dismissed = await readState();
-  expect(dismissed.activeTag).not.toBe("TEXTAREA");
   expect(dismissed.keyboardOpenClass).toBe(false);
   expect(dismissed.paddingBottom).toBe(rest.paddingBottom);
+});
+
+test("keyboard-open class clears on focusout even when visualViewport stays shrunk", async ({ page }) => {
+  // Stresses the proactive cleanup path: the user dismisses the keyboard via blur and
+  // iOS lazy-reports visualViewport, leaving .keyboard-open stuck without the runtime's
+  // focusout-driven force-clear.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+
+  const titleInput = page.locator("input[type='text']").first();
+  await expect(titleInput).toBeVisible();
+
+  await titleInput.focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+      Object.defineProperty(vv, "height", { configurable: true, value: 520 });
+      Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+      vv.dispatchEvent(new Event("resize"));
+    }
+  });
+  await page.waitForTimeout(360);
+  expect(await page.evaluate(() => document.documentElement.classList.contains("keyboard-open"))).toBe(true);
+
+  // Blur the input WITHOUT dispatching a visualViewport.resize — emulates iOS lagging
+  // its visualViewport report after a Done-button or tap-outside dismiss.
+  await page.evaluate(() => {
+    const active = document.activeElement;
+    if (active && typeof active.blur === "function") active.blur();
+  });
+  await page.waitForTimeout(80);
+
+  expect(await page.evaluate(() => document.documentElement.classList.contains("keyboard-open"))).toBe(false);
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {
