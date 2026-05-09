@@ -337,6 +337,27 @@ export function installMobileViewportMetrics(env = globalThis) {
     scheduleFrame();
   };
 
+  // On touchend specifically: if the user tapped *outside* the focused text input,
+  // force-blur it. iOS 26 in standalone PWA sometimes fails to blur on tap-outside
+  // and never fires visualViewport.resize for the dismissal — force-blurring breaks
+  // the stuck-state loop by triggering a clean focusout, which our proactive clear
+  // already listens to.
+  const handleTouchEnd = (event) => {
+    if (!isKeyboardOpenClass()) return;
+    const active = doc.activeElement;
+    if (!isTextEntryTarget(active)) {
+      scheduleFrame();
+      return;
+    }
+    const target = event?.target;
+    const inActive = target === active
+      || (typeof active?.contains === "function" && active.contains(target));
+    if (!inActive) {
+      try { active.blur?.(); } catch {}
+    }
+    scheduleFrame();
+  };
+
   refresh();
   schedule([120, 360]);
 
@@ -346,7 +367,7 @@ export function installMobileViewportMetrics(env = globalThis) {
   doc.addEventListener?.("visibilitychange", scheduleResume, { passive: true });
   doc.addEventListener?.("focusin", scheduleSettled, true);
   doc.addEventListener?.("focusout", handleFocusOut, true);
-  doc.addEventListener?.("touchend", handleInteraction, { passive: true, capture: true });
+  doc.addEventListener?.("touchend", handleTouchEnd, { passive: true, capture: true });
   doc.addEventListener?.("pointerup", handleInteraction, { passive: true, capture: true });
   win.visualViewport?.addEventListener?.("resize", scheduleSettled, { passive: true });
   win.visualViewport?.addEventListener?.("scroll", scheduleVisualScroll, { passive: true });
@@ -364,7 +385,7 @@ export function installMobileViewportMetrics(env = globalThis) {
     doc.removeEventListener?.("visibilitychange", scheduleResume);
     doc.removeEventListener?.("focusin", scheduleSettled, true);
     doc.removeEventListener?.("focusout", handleFocusOut, true);
-    doc.removeEventListener?.("touchend", handleInteraction, true);
+    doc.removeEventListener?.("touchend", handleTouchEnd, true);
     doc.removeEventListener?.("pointerup", handleInteraction, true);
     win.visualViewport?.removeEventListener?.("resize", scheduleSettled);
     win.visualViewport?.removeEventListener?.("scroll", scheduleVisualScroll);

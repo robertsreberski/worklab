@@ -10728,23 +10728,19 @@ button.settings-overview-card:focus-visible,
     width: 100%;
   }
 
-  html.keyboard-open body,
-  html.keyboard-open #app {
-    height: var(--vv-height);
-    min-height: var(--vv-height);
-  }
-  html.keyboard-open .app {
-    min-height: var(--vv-height);
-    padding-bottom: 0;
-  }
-  html.keyboard-open .app.responsive {
-    min-height: var(--vv-height);
-    padding-bottom: 0;
-  }
-  html.keyboard-open .app.responsive .app-body {
-    height: var(--vv-height);
-    padding-bottom: 0;
-  }
+  /* Do NOT clamp body / #app / .app / .app-body heights to --vv-height while
+     .keyboard-open is set. iOS 26 in standalone PWA frequently leaves the
+     visualViewport.height stuck at the keyboard-up value after a Done-button or
+     swipe-down dismissal that retains focus, and our self-heal layers can't
+     break that loop. If we clamped, body would render at the stale shrunk
+     height, leaving a phantom band at the bottom that "stays forever until
+     reload" (the user-reported artifact). Letting body keep its full
+     var(--shell-height) makes the bug invisible even when the class is sticky.
+     iOS draws the keyboard on top of body anyway, and body has overflow:hidden
+     globally — the focused input is auto-scrolled into view by iOS. */
+  html.keyboard-open .app,
+  html.keyboard-open .app.responsive,
+  html.keyboard-open .app.responsive .app-body,
   html.keyboard-open .app.responsive.has-dock .app-body {
     padding-bottom: 0;
   }

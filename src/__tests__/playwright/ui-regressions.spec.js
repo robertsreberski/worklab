@@ -3570,6 +3570,36 @@ test("keyboard-open class clears on focusout even when visualViewport stays shru
   expect(await page.evaluate(() => document.documentElement.classList.contains("keyboard-open"))).toBe(false);
 });
 
+test("body height stays at full viewport height even while keyboard-open is set", async ({ page }) => {
+  // The user-reported "empty band at the bottom that stays forever" was caused by the
+  // html.keyboard-open body { height: var(--vv-height) } rule clamping body to a stale
+  // shrunk height when iOS 26 lazy-reports visualViewport. We dropped that clamp; body
+  // should now stay at the real viewport height regardless of .keyboard-open state.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+
+  await page.locator("input[type='text']").first().focus();
+  await page.evaluate(() => {
+    const vv = window.visualViewport;
+    if (vv) {
+      Object.defineProperty(vv, "height", { configurable: true, value: 520 });
+      Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+      vv.dispatchEvent(new Event("resize"));
+    }
+  });
+  await page.waitForTimeout(360);
+
+  const metrics = await page.evaluate(() => ({
+    keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
+    innerHeight: window.innerHeight,
+    bodyHeight: Math.round(document.body.getBoundingClientRect().height),
+  }));
+  expect(metrics.keyboardOpen).toBe(true);
+  // Body height must equal the real viewport height — NOT --vv-height (520).
+  expect(metrics.bodyHeight).toBe(metrics.innerHeight);
+});
+
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
