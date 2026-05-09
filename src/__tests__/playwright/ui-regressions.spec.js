@@ -4323,3 +4323,55 @@ test("provider creation uses a simple mobile provider-type select", async ({ pag
   await expect(page.locator(".provider-type-select select")).toBeVisible();
   await expectNoHorizontalOverflow(page, "mobile provider new");
 });
+
+test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/activity`);
+  await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
+  await page.locator(".activity-mobile-config-trigger").click();
+
+  const sheet = page.getByRole("dialog", { name: "Activity configuration" });
+  await expect(sheet).toBeVisible();
+
+  const statusField = sheet.locator(".activity-filter-field", { hasText: "Status" });
+  const statusTrigger = statusField.locator(".select-trigger");
+  await statusTrigger.click();
+
+  const menu = page.locator(".select-menu").last();
+  await expect(menu).toBeVisible();
+
+  const layout = await page.evaluate(() => {
+    const menus = document.querySelectorAll(".select-menu");
+    const menuEl = menus[menus.length - 1];
+    const sheetPanel = document.querySelector(".mobile-config-sheet.open .mobile-config-sheet-panel");
+    const sheetHead = document.querySelector(".mobile-config-sheet.open .mobile-config-sheet-head");
+    const styles = menuEl ? getComputedStyle(menuEl) : null;
+    return {
+      menuParentIsBody: menuEl?.parentElement === document.body,
+      menuPosition: styles?.position || "",
+      menuZ: Number(styles?.zIndex) || 0,
+      menuVisible: menuEl ? menuEl.getBoundingClientRect().height > 0 : false,
+      menuTop: menuEl?.getBoundingClientRect().top ?? 0,
+      menuLeft: menuEl?.getBoundingClientRect().left ?? 0,
+      menuRight: menuEl?.getBoundingClientRect().right ?? 0,
+      sheetTop: sheetPanel?.getBoundingClientRect().top ?? 0,
+      sheetHeadBottom: sheetHead?.getBoundingClientRect().bottom ?? 0,
+      viewportWidth: window.innerWidth,
+      sheetZ: sheetPanel ? Number(getComputedStyle(sheetPanel).zIndex) || 0 : 0,
+    };
+  });
+
+  // Portal target: <body>, not the sheet panel.
+  expect(layout.menuParentIsBody).toBe(true);
+  expect(layout.menuPosition).toBe("fixed");
+  // The Select menu must paint above the sheet — either by being below the
+  // sheet's header band, or above it on the layer stack.
+  expect(layout.menuVisible).toBe(true);
+  expect(layout.menuZ).toBeGreaterThan(layout.sheetZ);
+  // And it must stay inside the viewport (no off-screen clamp failure).
+  expect(layout.menuLeft).toBeGreaterThanOrEqual(0);
+  expect(layout.menuRight).toBeLessThanOrEqual(layout.viewportWidth + 1);
+
+  await page.keyboard.press("Escape");
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
