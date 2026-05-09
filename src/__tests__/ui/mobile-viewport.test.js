@@ -344,6 +344,39 @@ describe("mobile viewport metrics", () => {
     expect(env.timers.size).toBe(0);
   });
 
+  it("force-blurs the focused text input when a tap lands outside it while keyboard-open is set", () => {
+    let blurredElement = null;
+    const textarea = {
+      tagName: "TEXTAREA",
+      blur() {
+        blurredElement = this;
+      },
+      contains() {
+        return false;
+      },
+    };
+    const env = createEnv({
+      innerHeight: 844,
+      visualHeight: 844,
+      activeElement: textarea,
+    });
+    const cleanup = installMobileViewportMetrics(env);
+
+    // Bring up the keyboard.
+    env.visualViewport.height = 520;
+    env.emitVisual("resize");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(true);
+
+    // Tap outside the focused textarea — the runtime should force-blur so iOS
+    // dismisses cleanly. (createEnv's emitDocument fires the handler; with no
+    // target on the synthetic event the contains() check returns false → outside.)
+    env.emitDocument("touchend");
+    expect(blurredElement).toBe(textarea);
+
+    cleanup();
+  });
+
   it("is a no-op without browser document APIs", () => {
     const cleanup = installMobileViewportMetrics({});
     expect(typeof cleanup).toBe("function");
