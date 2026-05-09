@@ -1,8 +1,11 @@
 // §3.19 Tooltip — floating card with 400ms hover delay.
-// Minimal implementation: positions below trigger, dismisses on mouseleave / Escape.
+// Auto-flips above/below based on viewport space; the `placement` prop is
+// the preferred side, not a hard requirement.
 
 import { cloneElement } from "preact";
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
+import { PopoverPortal } from "./PopoverPortal.jsx";
 
 let tipUid = 0;
 const DELAY = 400;
@@ -13,25 +16,39 @@ export function Tooltip({ label, children, placement = "top" }) {
   const id = useRef(`wl-tooltip-${++tipUid}`);
   const timer = useRef(null);
   const wrapperRef = useRef(null);
+  const tooltipRef = useRef(null);
   const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState({ left: 0, top: 0 });
+  const [coords, setCoords] = useState(null);
 
-  function position() {
-    const el = wrapperRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const top = placement === "bottom"
-      ? rect.bottom + OFFSET
-      : rect.top - OFFSET;
-    setCoords({
-      left: rect.left + rect.width / 2,
-      top,
-    });
-  }
+  const { placement: picked } = useDropdownPlacement(wrapperRef, tooltipRef, open, {
+    preferred: placement === "bottom" ? "below" : "above",
+  });
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setCoords(null);
+      return undefined;
+    }
+    function recompute() {
+      const el = wrapperRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const top = picked === "below" ? rect.bottom + OFFSET : rect.top - OFFSET;
+      setCoords({ left: rect.left + rect.width / 2, top });
+    }
+    recompute();
+    function onScroll() { recompute(); }
+    window.addEventListener("resize", recompute);
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("resize", recompute);
+      window.removeEventListener("scroll", onScroll, { capture: true });
+    };
+  }, [open, picked]);
 
   function show() {
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => { position(); setOpen(true); }, DELAY);
+    timer.current = setTimeout(() => setOpen(true), DELAY);
   }
   function hide() {
     if (timer.current) clearTimeout(timer.current);
@@ -58,18 +75,23 @@ export function Tooltip({ label, children, placement = "top" }) {
       })
     : child;
 
+  const visualPlacement = picked === "below" ? "bottom" : "top";
+
   return (
     <span ref={wrapperRef} class="tooltip-anchor">
       {enhanced}
-      {open && (
-        <span
-          id={id.current}
-          role="tooltip"
-          class={`tooltip tooltip-${placement}`}
-          style={{ left: `${coords.left}px`, top: `${coords.top}px` }}
-        >
-          {label}
-        </span>
+      {open && coords && (
+        <PopoverPortal>
+          <span
+            ref={tooltipRef}
+            id={id.current}
+            role="tooltip"
+            class={`tooltip tooltip-${visualPlacement}`}
+            style={{ left: `${coords.left}px`, top: `${coords.top}px` }}
+          >
+            {label}
+          </span>
+        </PopoverPortal>
       )}
     </span>
   );
