@@ -723,10 +723,8 @@ select,
 .date-picker-placeholder { color: var(--text-subtle); }
 .date-picker-chev { color: var(--text-muted); flex: 0 0 auto; }
 .date-picker-popover {
-  position: absolute;
-  top: calc(100% + var(--sp-1));
-  left: 0;
-  z-index: 60;
+  position: fixed;
+  z-index: var(--z-popover);
   width: 292px;
   max-height: var(--placement-max-height, none);
   overflow: auto;
@@ -740,8 +738,6 @@ select,
   animation: wl-float-in var(--dur-std) var(--ease-snap);
 }
 .date-picker-popover[data-placement="above"] {
-  top: auto;
-  bottom: calc(100% + var(--sp-1));
   animation-name: wl-float-in-up;
 }
 .date-picker-head,

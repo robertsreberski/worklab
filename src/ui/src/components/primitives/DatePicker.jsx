@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { Icon } from "../Icon.jsx";
 import { IconButton } from "./IconButton.jsx";
 import { Button } from "./Button.jsx";
+import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
+import { PopoverPortal } from "./PopoverPortal.jsx";
 
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 const MONTH_FORMATTER = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
@@ -78,15 +80,19 @@ export function DatePicker({
   class: className = "",
 }) {
   const rootRef = useRef(null);
+  const popoverRef = useRef(null);
   const selectedDate = parseDateValue(value);
   const [open, setOpen] = useState(false);
   const [viewDate, setViewDate] = useState(selectedDate || new Date());
   const [focusValue, setFocusValue] = useState(value || localDateValue(new Date()));
+  const { placement, maxHeight, top, left, ready } = useDropdownPlacement(rootRef, popoverRef, open);
 
   useEffect(() => {
     if (!open) return;
     const onPointerDown = (event) => {
-      if (!rootRef.current?.contains(event.target)) setOpen(false);
+      if (rootRef.current?.contains(event.target)) return;
+      if (popoverRef.current?.contains(event.target)) return;
+      setOpen(false);
     };
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
@@ -149,7 +155,20 @@ export function DatePicker({
         <Icon name="chevron-down" size={14} class="date-picker-chev" />
       </button>
       {open && (
-        <div class="date-picker-popover" role="dialog" aria-label={ariaLabel}>
+        <PopoverPortal>
+        <div
+          ref={popoverRef}
+          class="date-picker-popover"
+          role="dialog"
+          aria-label={ariaLabel}
+          data-placement={placement}
+          style={{
+            top: `${top}px`,
+            left: `${left}px`,
+            visibility: ready ? "visible" : "hidden",
+            ...(maxHeight != null ? { "--placement-max-height": `${maxHeight}px` } : {}),
+          }}
+        >
           <div class="date-picker-head">
             <IconButton
               size="sm"
@@ -194,6 +213,7 @@ export function DatePicker({
             <Button size="sm" variant="secondary" onClick={() => choose(new Date())}>Today</Button>
           </div>
         </div>
+        </PopoverPortal>
       )}
     </div>
   );
