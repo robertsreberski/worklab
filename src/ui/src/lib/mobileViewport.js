@@ -116,11 +116,14 @@ export function applyMobileViewportMetrics(env = globalThis) {
     activeElement: doc?.activeElement,
   });
 
+  // --app-height / --worklab-viewport-height are NOT JS-set anymore. iOS reports
+  // window.innerHeight and visualViewport.height inconsistently across minor versions
+  // of iOS 26 (Apple Dev Forums 800125 etc.); whatever we read here can render body
+  // shorter than the actual screen and produce a permanent empty band at the bottom.
+  // The :root chain in styles.css falls back to 100dvh, which iOS reports correctly
+  // in standalone PWA mode. We still compute appHeight in viewportState for the
+  // return value (callers may inspect it), but don't push it to CSS.
   const appHeight = viewportState.appHeight;
-  if (appHeight > 0) {
-    root.style.setProperty(APP_HEIGHT_VAR, px(appHeight));
-    root.style.setProperty(VIEWPORT_HEIGHT_VAR, px(appHeight));
-  }
 
   const wasOpen = root.classList?.contains?.("keyboard-open") === true;
   root.classList?.toggle?.("keyboard-open", viewportState.keyboardOpen);

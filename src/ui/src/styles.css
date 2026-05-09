@@ -150,6 +150,12 @@
   --shell-rail-collapsed: 64px;
   --assistant-w: 320px;
   --content-max: 1560px;
+  /* JS no longer overrides --app-height — innerHeight reads proved unreliable across
+     iOS 26 minor versions, leaving body shorter than the screen and producing a
+     permanent empty band at the bottom. The chain falls back to 100vh, which iOS
+     reports correctly in standalone PWA mode (no browser chrome to dynamic-resize
+     against). 100vh is the established layout-viewport unit per design-system
+     contract and works for our needs here. */
   --worklab-viewport-height: 100vh;
   --app-height: var(--worklab-viewport-height);
   --shell-height: var(--app-height, var(--worklab-viewport-height, 100vh));

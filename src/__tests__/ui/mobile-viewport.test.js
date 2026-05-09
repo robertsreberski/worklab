@@ -236,11 +236,10 @@ describe("mobile viewport metrics", () => {
     }).keyboardOpen).toBe(false);
   });
 
-  it("never writes safe-area CSS variables to documentElement.style", () => {
-    // Safe-area insets are owned entirely by CSS env() now. The mobile viewport runtime
-    // must not set --worklab-safe-area-top / --worklab-safe-area-bottom on the root, because
-    // doing so would shadow the live env() value and re-introduce the post-keyboard-dismiss
-    // inflated-band bug we used to chase with cache locks.
+  it("never writes safe-area or app-height CSS variables to documentElement.style", () => {
+    // Safe-area insets are owned entirely by CSS env(). App-height is owned by CSS
+    // (100dvh fallback) — JS reads of innerHeight/visualViewport are unreliable
+    // across iOS 26 minor versions and would render body shorter than the screen.
     const env = createEnv({
       standalone: true,
       innerHeight: 844,
@@ -253,21 +252,34 @@ describe("mobile viewport metrics", () => {
     expect(env.rootStyle.values["--worklab-safe-area-bottom"]).toBeUndefined();
     expect(env.rootStyle.values["--worklab-safe-area-left"]).toBeUndefined();
     expect(env.rootStyle.values["--worklab-safe-area-right"]).toBeUndefined();
+    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBeUndefined();
+    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBeUndefined();
   });
 
   it("batches viewport refreshes from resize events", () => {
-    const env = createEnv({ innerHeight: 844 });
+    // The runtime no longer JS-sets --app-height / --worklab-viewport-height — body
+    // height is CSS-managed (100dvh). We verify the schedule machinery still runs by
+    // observing a side-effect that *is* JS-driven: the keyboard-open class toggling
+    // when the active element gains focus and visualViewport shrinks.
+    const env = createEnv({
+      innerHeight: 844,
+      visualHeight: 844,
+      activeElement: { tagName: "TEXTAREA" },
+    });
     const cleanup = installMobileViewportMetrics(env);
 
-    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("844px");
-    env.innerHeight = 812;
-    env.document.documentElement.clientHeight = 812;
-    env.visualViewport.height = 812;
+    // No app-height var should have been written.
+    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBeUndefined();
+    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBeUndefined();
+
+    env.visualViewport.height = 520;
     env.emit("resize");
-    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("844px");
+    // Pre-flush: refresh hasn't run yet.
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
 
     env.flushFrame();
-    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("812px");
+    // Post-flush: schedule fired, refresh ran, class toggled.
+    expect(env.rootClassList.contains("keyboard-open")).toBe(true);
 
     cleanup();
   });
@@ -285,7 +297,8 @@ describe("mobile viewport metrics", () => {
     env.flushFrame();
 
     expect(env.rootClassList.contains("keyboard-open")).toBe(true);
-    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBe("844px");
+    // --app-height is CSS-managed now (100dvh); JS no longer sets it on root.style.
+    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBeUndefined();
     expect(env.rootStyle.values[VV_HEIGHT_VAR]).toBe("520px");
     expect(env.rootStyle.values[VV_OFFSET_VAR]).toBe("0px");
     expect(env.rootStyle.values[KEYBOARD_HEIGHT_VAR]).toBe("324px");
