@@ -10762,6 +10762,12 @@ button.settings-overview-card:focus-visible,
   html.keyboard-open .assistant-dock {
     height: var(--vv-height);
   }
+  /* While the iOS keyboard covers the home-indicator safe area, drop the composer's
+     bottom inset so it sits flush against the keyboard with no phantom gap. The inset
+     restores naturally once the .keyboard-open class clears. */
+  html.keyboard-open .assistant-composer {
+    padding-bottom: var(--sp-2);
+  }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual
      typography scale, but make the focused control opt out of the zoom. */
@@ -12446,7 +12452,7 @@ button.settings-overview-card:focus-visible,
   .assistant-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3);
+    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), var(--mobile-safe-bottom));
   }
   .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));

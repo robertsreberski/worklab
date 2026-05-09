@@ -213,21 +213,68 @@ function installTouchBoundaryGuard(env) {
   };
 }
 
+const WATCHDOG_INTERVAL_MS = 200;
+const WATCHDOG_MAX_ATTEMPTS = 25; // ~5s — bounded poll while keyboard-open is set
+
 export function installMobileViewportMetrics(env = globalThis) {
   const win = windowForEnv(env);
   const doc = documentForEnv(env);
   if (!win?.addEventListener || !doc?.documentElement) return () => {};
+  const root = doc.documentElement;
 
   let frame = 0;
   const timeouts = new Set();
+  let watchdogTimer = null;
+  let watchdogAttempts = 0;
   const requestFrame = win.requestAnimationFrame?.bind(win) || ((callback) => win.setTimeout?.(callback, 16));
   const cancelFrame = win.cancelAnimationFrame?.bind(win) || win.clearTimeout?.bind(win);
   const clearTimer = win.clearTimeout?.bind(win) || clearTimeout;
   const setTimer = win.setTimeout?.bind(win) || setTimeout;
 
+  const isKeyboardOpenClass = () => root.classList?.contains?.("keyboard-open") === true;
+
+  const stopWatchdog = () => {
+    if (watchdogTimer != null) {
+      clearTimer(watchdogTimer);
+      watchdogTimer = null;
+    }
+    watchdogAttempts = 0;
+  };
+
+  const tickWatchdog = () => {
+    watchdogTimer = null;
+    if (!isKeyboardOpenClass()) {
+      watchdogAttempts = 0;
+      return;
+    }
+    watchdogAttempts += 1;
+    applyMobileViewportMetrics(env);
+    if (watchdogAttempts >= WATCHDOG_MAX_ATTEMPTS) {
+      // Bound the poll so a stuck visualViewport state doesn't keep us re-measuring forever.
+      watchdogAttempts = 0;
+      return;
+    }
+    if (isKeyboardOpenClass()) {
+      watchdogTimer = setTimer(tickWatchdog, WATCHDOG_INTERVAL_MS);
+    } else {
+      watchdogAttempts = 0;
+    }
+  };
+
+  const ensureWatchdog = () => {
+    if (!isKeyboardOpenClass()) {
+      stopWatchdog();
+      return;
+    }
+    if (watchdogTimer != null) return;
+    watchdogAttempts = 0;
+    watchdogTimer = setTimer(tickWatchdog, WATCHDOG_INTERVAL_MS);
+  };
+
   const refresh = () => {
     frame = 0;
     applyMobileViewportMetrics(env);
+    ensureWatchdog();
   };
   const scheduleFrame = () => {
     if (!frame) frame = requestFrame(refresh);
@@ -254,7 +301,40 @@ export function installMobileViewportMetrics(env = globalThis) {
   // Skip visualViewport scroll while the keyboard is open — iOS fires tiny offsetTop
   // shifts during text entry that would cause a measurement feedback loop.
   const scheduleVisualScroll = () => {
-    if (!doc.documentElement.classList?.contains?.("keyboard-open")) scheduleFrame();
+    if (!isKeyboardOpenClass()) scheduleFrame();
+  };
+
+  // Proactive cleanup: when focus leaves a text input and no other text-entry target
+  // takes its place, force-clear .keyboard-open and the --vv-* vars *immediately* even
+  // if iOS hasn't yet fired visualViewport.resize for the dismissal. This is the path
+  // the entire app's CSS depends on (body/#app/.app-body/.assistant-dock all gate
+  // their layout on the class), so leaving it stuck breaks every responsive surface.
+  const clearKeyboardStateIfBlurred = () => {
+    if (isTextEntryTarget(doc.activeElement)) return;
+    if (!isKeyboardOpenClass()) return;
+    root.classList.remove?.("keyboard-open");
+    root.style.removeProperty?.(VV_HEIGHT_VAR);
+    root.style.removeProperty?.(VV_OFFSET_VAR);
+    root.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
+    stopWatchdog();
+    void root.offsetHeight;
+  };
+
+  const handleFocusOut = () => {
+    // Defer one frame so iOS finishes updating document.activeElement.
+    requestFrame(() => {
+      clearKeyboardStateIfBlurred();
+      applyMobileViewportMetrics(env);
+      ensureWatchdog();
+    });
+  };
+
+  // While keyboard-open, any user interaction can prompt iOS to flush its pending
+  // visualViewport.resize. Re-measuring on these catches Done-button / swipe-down
+  // dismissals where focus stays on the input but iOS lazy-reports the new height.
+  const handleInteraction = () => {
+    if (!isKeyboardOpenClass()) return;
+    scheduleFrame();
   };
 
   refresh();
@@ -265,7 +345,9 @@ export function installMobileViewportMetrics(env = globalThis) {
   win.addEventListener("pageshow", scheduleResume, { passive: true });
   doc.addEventListener?.("visibilitychange", scheduleResume, { passive: true });
   doc.addEventListener?.("focusin", scheduleSettled, true);
-  doc.addEventListener?.("focusout", scheduleSettled, true);
+  doc.addEventListener?.("focusout", handleFocusOut, true);
+  doc.addEventListener?.("touchend", handleInteraction, { passive: true, capture: true });
+  doc.addEventListener?.("pointerup", handleInteraction, { passive: true, capture: true });
   win.visualViewport?.addEventListener?.("resize", scheduleSettled, { passive: true });
   win.visualViewport?.addEventListener?.("scroll", scheduleVisualScroll, { passive: true });
   const removeTouchBoundaryGuard = installTouchBoundaryGuard(env);
@@ -273,6 +355,7 @@ export function installMobileViewportMetrics(env = globalThis) {
   return () => {
     if (frame && cancelFrame) cancelFrame(frame);
     frame = 0;
+    stopWatchdog();
     for (const timeout of timeouts) clearTimer(timeout);
     timeouts.clear();
     win.removeEventListener?.("resize", scheduleSettled);
@@ -280,13 +363,15 @@ export function installMobileViewportMetrics(env = globalThis) {
     win.removeEventListener?.("pageshow", scheduleResume);
     doc.removeEventListener?.("visibilitychange", scheduleResume);
     doc.removeEventListener?.("focusin", scheduleSettled, true);
-    doc.removeEventListener?.("focusout", scheduleSettled, true);
+    doc.removeEventListener?.("focusout", handleFocusOut, true);
+    doc.removeEventListener?.("touchend", handleInteraction, true);
+    doc.removeEventListener?.("pointerup", handleInteraction, true);
     win.visualViewport?.removeEventListener?.("resize", scheduleSettled);
     win.visualViewport?.removeEventListener?.("scroll", scheduleVisualScroll);
     removeTouchBoundaryGuard();
-    doc.documentElement.classList?.remove?.("keyboard-open");
-    doc.documentElement.style.removeProperty?.(VV_HEIGHT_VAR);
-    doc.documentElement.style.removeProperty?.(VV_OFFSET_VAR);
-    doc.documentElement.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
+    root.classList?.remove?.("keyboard-open");
+    root.style.removeProperty?.(VV_HEIGHT_VAR);
+    root.style.removeProperty?.(VV_OFFSET_VAR);
+    root.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
   };
 }
