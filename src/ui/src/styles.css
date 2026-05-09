@@ -8476,14 +8476,7 @@ button.settings-overview-card:focus-visible,
   border-radius: var(--radius-xs);
 }
 .status-menu-list {
-  right: auto;
-  left: 0;
   min-width: 200px;
-  top: calc(100% + var(--sp-1));
-}
-.status-menu-list[data-placement="above"] {
-  top: auto;
-  bottom: calc(100% + var(--sp-1));
 }
 .status-menu-option {
   width: 100%;

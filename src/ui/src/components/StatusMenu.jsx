@@ -5,6 +5,8 @@
 import { useEffect, useId, useMemo, useRef, useState } from "preact/hooks";
 import { statusMeta } from "./primitives/StatusPill.jsx";
 import { StageToken } from "./primitives/StageToken.jsx";
+import { useDropdownPlacement } from "../hooks/useDropdownPlacement.js";
+import { PopoverPortal } from "./primitives/PopoverPortal.jsx";
 
 // Per §5.1 table. Each entry is { from, to, label, confirm?: string }.
 // confirm is the modal message string (caller wires the Modal).
@@ -34,12 +36,18 @@ export function StatusMenu({
   const [activeIndex, setActiveIndex] = useState(0);
   const ref = useRef(null);
   const triggerRef = useRef(null);
+  const menuRef = useRef(null);
   const listId = useId();
   const choices = useMemo(() => allowedTransitions(status), [status]);
+  const { placement, maxHeight, top, left, ready } = useDropdownPlacement(ref, menuRef, open);
 
   useEffect(() => {
     if (!open) return;
-    const close = (e) => { if (!ref.current?.contains(e.target)) setOpen(false); };
+    const close = (e) => {
+      if (ref.current?.contains(e.target)) return;
+      if (menuRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
     document.addEventListener("pointerdown", close);
     const onKey = (e) => { if (e.key === "Escape") { setOpen(false); triggerRef.current?.focus(); } };
     document.addEventListener("keydown", onKey);
@@ -113,10 +121,19 @@ export function StatusMenu({
         <StageToken stage={displayStage} variant="menu" pulse={pulse} as="span" />
       </button>
       {open && choices.length > 0 && (
+        <PopoverPortal>
         <div
+          ref={menuRef}
           class="select-menu status-menu-list"
           id={listId}
           role="listbox"
+          data-placement={placement}
+          style={{
+            top: `${top}px`,
+            left: `${left}px`,
+            visibility: ready ? "visible" : "hidden",
+            ...(maxHeight != null ? { "--placement-max-height": `${maxHeight}px` } : {}),
+          }}
         >
           {choices.map((t, index) => {
             const meta = statusMeta(t.to);
@@ -139,6 +156,7 @@ export function StatusMenu({
             );
           })}
         </div>
+        </PopoverPortal>
       )}
     </div>
   );
