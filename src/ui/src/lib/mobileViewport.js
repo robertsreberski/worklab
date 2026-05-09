@@ -1,15 +1,8 @@
-export const MOBILE_VIEWPORT_CACHE_KEY = "worklab.mobileViewportInsets.v2";
 export const APP_HEIGHT_VAR = "--app-height";
 export const VIEWPORT_HEIGHT_VAR = "--worklab-viewport-height";
-export const SAFE_AREA_TOP_VAR = "--worklab-safe-area-top";
-export const SAFE_AREA_BOTTOM_VAR = "--worklab-safe-area-bottom";
 export const VV_HEIGHT_VAR = "--vv-height";
 export const VV_OFFSET_VAR = "--vv-offset";
 export const KEYBOARD_HEIGHT_VAR = "--worklab-keyboard-height";
-
-const MAX_SAFE_AREA_TOP = 100;
-const MAX_SAFE_AREA_BOTTOM = 80;
-const VIEWPORT_STABLE_THRESHOLD = 4;
 
 const NON_TEXT_INPUT_TYPES = new Set([
   "button",
@@ -36,16 +29,6 @@ function rootForEnv(env) {
   return documentForEnv(env)?.documentElement || null;
 }
 
-function parsePx(value) {
-  const number = Number.parseFloat(String(value || ""));
-  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : 0;
-}
-
-function parseSafeAreaPx(value, max) {
-  const parsed = parsePx(value);
-  return parsed <= max ? parsed : 0;
-}
-
 function px(value) {
   const number = Number(value);
   return `${Math.max(0, Math.round(Number.isFinite(number) ? number : 0))}px`;
@@ -54,59 +37,6 @@ function px(value) {
 function positiveRound(value) {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? Math.round(number) : 0;
-}
-
-function safeStorage(env) {
-  try {
-    return windowForEnv(env)?.localStorage || null;
-  } catch {
-    return null;
-  }
-}
-
-function currentOrientation(env) {
-  const win = windowForEnv(env);
-  const type = String(win?.screen?.orientation?.type || "").toLowerCase();
-  if (type.includes("landscape")) return "landscape";
-  if (type.includes("portrait")) return "portrait";
-  try {
-    if (win?.matchMedia?.("(orientation: landscape)")?.matches) return "landscape";
-  } catch {}
-  return "portrait";
-}
-
-function readCachedRecord(env) {
-  try {
-    const raw = safeStorage(env)?.getItem?.(MOBILE_VIEWPORT_CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function readCachedInsets(env, orientation = currentOrientation(env)) {
-  const record = readCachedRecord(env);
-  const entry = record?.[orientation];
-  if (!entry) return { top: 0, bottom: 0 };
-  return {
-    top: parseSafeAreaPx(entry?.top, MAX_SAFE_AREA_TOP),
-    bottom: parseSafeAreaPx(entry?.bottom, MAX_SAFE_AREA_BOTTOM),
-  };
-}
-
-function writeCachedInsets(env, insets, orientation = currentOrientation(env)) {
-  try {
-    const storage = safeStorage(env);
-    if (!storage?.setItem) return;
-    const record = readCachedRecord(env) || {};
-    record[orientation] = {
-      top: parsePx(insets?.top),
-      bottom: parsePx(insets?.bottom),
-    };
-    storage.setItem(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify(record));
-  } catch {}
 }
 
 export function isStandalonePwa(env = globalThis) {
@@ -169,86 +99,8 @@ export function currentViewportHeight(env = globalThis) {
   }).appHeight;
 }
 
-export function measureSafeAreaInsets(env = globalThis) {
-  const doc = documentForEnv(env);
-  const win = windowForEnv(env);
-  if (!doc?.body?.appendChild || !doc?.createElement || !win?.getComputedStyle) {
-    return { top: 0, bottom: 0 };
-  }
-
-  const probe = doc.createElement("div");
-  probe.setAttribute?.("aria-hidden", "true");
-  probe.style.cssText = [
-    "position: fixed",
-    "left: 0",
-    "top: 0",
-    "width: 0",
-    "height: 0",
-    "visibility: hidden",
-    "pointer-events: none",
-    "padding-top: env(safe-area-inset-top, 0px)",
-    "padding-bottom: env(safe-area-inset-bottom, 0px)",
-  ].join(";");
-  doc.body.appendChild(probe);
-  const styles = win.getComputedStyle(probe);
-  const insets = {
-    top: parsePx(styles?.paddingTop),
-    bottom: parsePx(styles?.paddingBottom),
-  };
-  probe.remove?.();
-  return insets;
-}
-
-function sanitizeSafeAreaInsets(insets) {
-  return {
-    top: parseSafeAreaPx(insets?.top, MAX_SAFE_AREA_TOP),
-    bottom: parseSafeAreaPx(insets?.bottom, MAX_SAFE_AREA_BOTTOM),
-  };
-}
-
-function isViewportStable(viewportState) {
-  return !viewportState || viewportState.keyboardHeight <= VIEWPORT_STABLE_THRESHOLD;
-}
-
-function effectiveSafeAreaInsets(env, measured, viewportState) {
-  const sanitizedMeasured = sanitizeSafeAreaInsets(measured);
-  if (!isStandalonePwa(env)) return sanitizedMeasured;
-
-  // Lock-once-per-orientation: the home indicator never resizes mid-session, so a single
-  // trusted baseline per orientation is enough. iOS returns inflated env(safe-area-inset-*)
-  // values for ~700ms after keyboard dismiss (WebKit bugs 217754, 265578); accepting one
-  // would push a wrong --worklab-safe-area-bottom into the tabbar height calc.
-  const orientation = currentOrientation(env);
-  const cached = readCachedInsets(env, orientation);
-  if (cached.top > 0 || cached.bottom > 0) return cached;
-
-  // No baseline yet for this orientation. Establish one only under stable conditions.
-  if (isViewportStable(viewportState) && (sanitizedMeasured.top > 0 || sanitizedMeasured.bottom > 0)) {
-    writeCachedInsets(env, sanitizedMeasured, orientation);
-    return sanitizedMeasured;
-  }
-  return sanitizedMeasured;
-}
-
 function forceLayoutAfterKeyboardDismiss(env) {
   void documentForEnv(env)?.querySelector?.(".app-body")?.offsetHeight;
-}
-
-function applyKeyboardState(root, viewportState, env) {
-  const wasOpen = root.classList?.contains?.("keyboard-open") === true;
-  root.classList?.toggle?.("keyboard-open", viewportState.keyboardOpen);
-  const justClosed = wasOpen && !viewportState.keyboardOpen;
-  if (justClosed) forceLayoutAfterKeyboardDismiss(env);
-  if (viewportState.keyboardOpen) {
-    root.style.setProperty(VV_HEIGHT_VAR, px(viewportState.visibleHeight));
-    root.style.setProperty(VV_OFFSET_VAR, px(viewportState.offsetTop));
-    root.style.setProperty(KEYBOARD_HEIGHT_VAR, px(viewportState.keyboardHeight));
-    return justClosed;
-  }
-  root.style.removeProperty?.(VV_HEIGHT_VAR);
-  root.style.removeProperty?.(VV_OFFSET_VAR);
-  root.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
-  return justClosed;
 }
 
 export function applyMobileViewportMetrics(env = globalThis) {
@@ -263,28 +115,36 @@ export function applyMobileViewportMetrics(env = globalThis) {
     visualViewport: win?.visualViewport,
     activeElement: doc?.activeElement,
   });
-  const measured = measureSafeAreaInsets(env);
-  const safeArea = effectiveSafeAreaInsets(env, measured, viewportState);
-  const viewportHeight = viewportState.appHeight;
 
-  root.style.setProperty(APP_HEIGHT_VAR, px(viewportHeight));
-  root.style.setProperty(VIEWPORT_HEIGHT_VAR, px(viewportHeight));
-  root.style.setProperty(SAFE_AREA_TOP_VAR, px(safeArea.top));
-  root.style.setProperty(SAFE_AREA_BOTTOM_VAR, px(safeArea.bottom));
-  const keyboardJustClosed = applyKeyboardState(root, viewportState, env);
+  const appHeight = viewportState.appHeight;
+  if (appHeight > 0) {
+    root.style.setProperty(APP_HEIGHT_VAR, px(appHeight));
+    root.style.setProperty(VIEWPORT_HEIGHT_VAR, px(appHeight));
+  }
+
+  const wasOpen = root.classList?.contains?.("keyboard-open") === true;
+  root.classList?.toggle?.("keyboard-open", viewportState.keyboardOpen);
+  const justClosed = wasOpen && !viewportState.keyboardOpen;
+  if (justClosed) forceLayoutAfterKeyboardDismiss(env);
+
+  if (viewportState.keyboardOpen) {
+    root.style.setProperty(VV_HEIGHT_VAR, px(viewportState.visibleHeight));
+    root.style.setProperty(VV_OFFSET_VAR, px(viewportState.offsetTop));
+    root.style.setProperty(KEYBOARD_HEIGHT_VAR, px(viewportState.keyboardHeight));
+  } else {
+    root.style.removeProperty?.(VV_HEIGHT_VAR);
+    root.style.removeProperty?.(VV_OFFSET_VAR);
+    root.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
+  }
 
   return {
-    viewportHeight,
-    appHeight: viewportState.appHeight,
+    viewportHeight: appHeight,
+    appHeight,
     visibleHeight: viewportState.visibleHeight,
     visualViewportOffsetTop: viewportState.offsetTop,
     keyboardHeight: viewportState.keyboardHeight,
     keyboardOpen: viewportState.keyboardOpen,
-    keyboardJustClosed,
-    safeAreaTop: safeArea.top,
-    safeAreaBottom: safeArea.bottom,
-    measuredSafeAreaTop: measured.top,
-    measuredSafeAreaBottom: measured.bottom,
+    keyboardJustClosed: justClosed,
     standalone: isStandalonePwa(env),
   };
 }
@@ -365,11 +225,7 @@ export function installMobileViewportMetrics(env = globalThis) {
 
   const refresh = () => {
     frame = 0;
-    const result = applyMobileViewportMetrics(env);
-    // After the keyboard finishes closing iOS can take ~700ms to settle
-    // visualViewport metrics; schedule extra ticks to re-sync --app-height
-    // and --vv-* once everything has actually settled.
-    if (result?.keyboardJustClosed) schedule([120, 360, 720, 1200]);
+    applyMobileViewportMetrics(env);
   };
   const scheduleFrame = () => {
     if (!frame) frame = requestFrame(refresh);
@@ -393,6 +249,8 @@ export function installMobileViewportMetrics(env = globalThis) {
     if (doc.visibilityState === "hidden") return;
     schedule([0, 120, 360, 720]);
   };
+  // Skip visualViewport scroll while the keyboard is open — iOS fires tiny offsetTop
+  // shifts during text entry that would cause a measurement feedback loop.
   const scheduleVisualScroll = () => {
     if (!doc.documentElement.classList?.contains?.("keyboard-open")) scheduleFrame();
   };
