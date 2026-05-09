@@ -2415,7 +2415,13 @@ test("mobile PWA tabbar starts with cached safe-area metrics on reload", async (
         get: () => true,
       });
     } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11 }));
+    try {
+      Object.defineProperty(window.screen, "orientation", {
+        configurable: true,
+        get() { return { type: "portrait-primary", angle: 0 }; },
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 11 } }));
   }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
 
   await page.goto(`${baseUrl}/#/tasks`);
@@ -2462,7 +2468,13 @@ test("mobile PWA tabbar ignores inflated cached bottom safe-area metrics on relo
         get: () => true,
       });
     } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 120 }));
+    try {
+      Object.defineProperty(window.screen, "orientation", {
+        configurable: true,
+        get() { return { type: "portrait-primary", angle: 0 }; },
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 120 } }));
   }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
 
   await page.goto(`${baseUrl}/#/tasks`);
@@ -2500,7 +2512,13 @@ test("mobile PWA bottom safe area belongs to the bottom chrome", async ({ page }
         get: () => true,
       });
     } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 47, bottom: 34 }));
+    try {
+      Object.defineProperty(window.screen, "orientation", {
+        configurable: true,
+        get() { return { type: "portrait-primary", angle: 0 }; },
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 47, bottom: 34 } }));
   }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
 
   await page.goto(`${baseUrl}/#/tasks`);
@@ -2646,7 +2664,13 @@ test("mobile list and page headers own the status safe-area background", async (
         get: () => true,
       });
     } catch {}
-    window.localStorage.setItem(cacheKey, JSON.stringify({ top: 31, bottom: 11 }));
+    try {
+      Object.defineProperty(window.screen, "orientation", {
+        configurable: true,
+        get() { return { type: "portrait-primary", angle: 0 }; },
+      });
+    } catch {}
+    window.localStorage.setItem(cacheKey, JSON.stringify({ portrait: { top: 31, bottom: 11 } }));
   }, { cacheKey: MOBILE_VIEWPORT_CACHE_KEY });
 
   const routes = [
@@ -3709,6 +3733,105 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
   expect(metrics.tabbarDisplay).toBe("none");
   expect(metrics.overflow).toBeLessThanOrEqual(0);
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
+});
+
+test("mobile tabbar safe-area stays locked across focus/blur and synthetic keyboard cycles", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Seed a trusted portrait baseline before the SPA boots so the test does not depend on
+  // chromium reporting a device safe-area inset (it normally returns 0 on desktop).
+  // Also force the runtime to treat the page as a standalone PWA, since the safe-area
+  // lock only engages in standalone mode.
+  await page.addInitScript(({ key }) => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify({ portrait: { top: 47, bottom: 34 } }));
+    } catch {}
+    const originalMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => {
+      if (query === "(display-mode: standalone)") return { matches: true, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
+      if (query === "(orientation: portrait)") return { matches: true, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
+      if (query === "(orientation: landscape)") return { matches: false, media: query, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false; }, onchange: null };
+      return originalMatchMedia(query);
+    };
+    try {
+      Object.defineProperty(window.screen, "orientation", {
+        configurable: true,
+        get() { return { type: "portrait-primary", angle: 0 }; },
+      });
+    } catch {}
+  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".app-tabbar")).toBeVisible();
+
+  const initial = await page.evaluate(({ key }) => {
+    const root = document.documentElement;
+    const tabbar = document.querySelector(".app-tabbar");
+    return {
+      tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
+      safeAreaBottom: root.style.getPropertyValue("--worklab-safe-area-bottom"),
+      safeAreaTop: root.style.getPropertyValue("--worklab-safe-area-top"),
+      cache: JSON.parse(window.localStorage.getItem(key) || "null"),
+    };
+  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+
+  expect(initial.cache).toEqual({ portrait: { top: 47, bottom: 34 } });
+  expect(initial.safeAreaBottom).toBe("34px");
+  expect(initial.safeAreaTop).toBe("47px");
+  expect(initial.tabbarHeight).toBe(56 + 34);
+
+  // Run three keyboard-style cycles: focus a textarea, dispatch a visualViewport resize
+  // simulating the keyboard taking ~324px, blur, dispatch a resize that returns to full
+  // height with a residual offsetTop (the post-dismiss state we are guarding against).
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await page.evaluate(() => {
+      const composerInput = document.querySelector("input, textarea");
+      composerInput?.focus?.();
+      const vv = window.visualViewport;
+      if (vv) {
+        Object.defineProperty(vv, "height", { configurable: true, value: 520 });
+        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+        vv.dispatchEvent(new Event("resize"));
+      }
+    });
+    await page.waitForTimeout(80);
+    await page.evaluate(() => {
+      const composerInput = document.querySelector("input, textarea");
+      composerInput?.blur?.();
+      const vv = window.visualViewport;
+      if (vv) {
+        Object.defineProperty(vv, "height", { configurable: true, value: window.innerHeight });
+        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 8 });
+        vv.dispatchEvent(new Event("resize"));
+      }
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      if (vv) {
+        Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+        vv.dispatchEvent(new Event("resize"));
+      }
+    });
+    await page.waitForTimeout(120);
+  }
+
+  const final = await page.evaluate(({ key }) => {
+    const root = document.documentElement;
+    const tabbar = document.querySelector(".app-tabbar");
+    return {
+      tabbarHeight: tabbar ? Math.round(tabbar.getBoundingClientRect().height) : 0,
+      safeAreaBottom: root.style.getPropertyValue("--worklab-safe-area-bottom"),
+      safeAreaTop: root.style.getPropertyValue("--worklab-safe-area-top"),
+      keyboardOpenClassPresent: root.classList.contains("keyboard-open"),
+      cache: JSON.parse(window.localStorage.getItem(key) || "null"),
+    };
+  }, { key: MOBILE_VIEWPORT_CACHE_KEY });
+
+  expect(final.tabbarHeight).toBe(initial.tabbarHeight);
+  expect(final.safeAreaBottom).toBe(initial.safeAreaBottom);
+  expect(final.safeAreaTop).toBe(initial.safeAreaTop);
+  expect(final.keyboardOpenClassPresent).toBe(false);
+  expect(final.cache).toEqual(initial.cache);
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {

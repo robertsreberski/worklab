@@ -1,4 +1,4 @@
-export const MOBILE_VIEWPORT_CACHE_KEY = "worklab.mobileViewportInsets.v1";
+export const MOBILE_VIEWPORT_CACHE_KEY = "worklab.mobileViewportInsets.v2";
 export const APP_HEIGHT_VAR = "--app-height";
 export const VIEWPORT_HEIGHT_VAR = "--worklab-viewport-height";
 export const SAFE_AREA_TOP_VAR = "--worklab-safe-area-top";
@@ -64,26 +64,48 @@ function safeStorage(env) {
   }
 }
 
-function readCachedInsets(env) {
+function currentOrientation(env) {
+  const win = windowForEnv(env);
+  const type = String(win?.screen?.orientation?.type || "").toLowerCase();
+  if (type.includes("landscape")) return "landscape";
+  if (type.includes("portrait")) return "portrait";
+  try {
+    if (win?.matchMedia?.("(orientation: landscape)")?.matches) return "landscape";
+  } catch {}
+  return "portrait";
+}
+
+function readCachedRecord(env) {
   try {
     const raw = safeStorage(env)?.getItem?.(MOBILE_VIEWPORT_CACHE_KEY);
-    if (!raw) return { top: 0, bottom: 0 };
+    if (!raw) return null;
     const parsed = JSON.parse(raw);
-    return {
-      top: parseSafeAreaPx(parsed?.top, MAX_SAFE_AREA_TOP),
-      bottom: parseSafeAreaPx(parsed?.bottom, MAX_SAFE_AREA_BOTTOM),
-    };
+    return parsed && typeof parsed === "object" ? parsed : null;
   } catch {
-    return { top: 0, bottom: 0 };
+    return null;
   }
 }
 
-function writeCachedInsets(env, insets) {
+function readCachedInsets(env, orientation = currentOrientation(env)) {
+  const record = readCachedRecord(env);
+  const entry = record?.[orientation];
+  if (!entry) return { top: 0, bottom: 0 };
+  return {
+    top: parseSafeAreaPx(entry?.top, MAX_SAFE_AREA_TOP),
+    bottom: parseSafeAreaPx(entry?.bottom, MAX_SAFE_AREA_BOTTOM),
+  };
+}
+
+function writeCachedInsets(env, insets, orientation = currentOrientation(env)) {
   try {
-    safeStorage(env)?.setItem?.(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify({
+    const storage = safeStorage(env);
+    if (!storage?.setItem) return;
+    const record = readCachedRecord(env) || {};
+    record[orientation] = {
       top: parsePx(insets?.top),
       bottom: parsePx(insets?.bottom),
-    }));
+    };
+    storage.setItem(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify(record));
   } catch {}
 }
 
@@ -118,9 +140,15 @@ export function computeViewportState({
   const layoutHeight = Math.max(positiveRound(innerHeight), positiveRound(clientHeight));
   const visibleHeight = positiveRound(visualViewport?.height) || layoutHeight;
   const offsetTop = Math.max(0, Math.round(Number(visualViewport?.offsetTop) || 0));
-  const appHeight = Math.max(layoutHeight, visibleHeight + offsetTop);
+  const textTargetActive = isTextEntryTarget(activeElement);
+  // Only trust visualViewport offset/height as a viewport extension when a text input owns
+  // the keyboard. After dismiss iOS can briefly leave a non-zero offsetTop; without this
+  // gate it would inflate --app-height past the real viewport.
+  const appHeight = textTargetActive
+    ? Math.max(layoutHeight, visibleHeight + offsetTop)
+    : layoutHeight;
   const keyboardHeight = Math.max(0, appHeight - (visibleHeight + offsetTop));
-  const keyboardOpen = isTextEntryTarget(activeElement) && keyboardHeight > keyboardThreshold;
+  const keyboardOpen = textTargetActive && keyboardHeight > keyboardThreshold;
   return {
     appHeight,
     visibleHeight,
@@ -186,19 +214,20 @@ function effectiveSafeAreaInsets(env, measured, viewportState) {
   const sanitizedMeasured = sanitizeSafeAreaInsets(measured);
   if (!isStandalonePwa(env)) return sanitizedMeasured;
 
-  const cached = readCachedInsets(env);
-  const canAcceptMeasurement = isViewportStable(viewportState);
-  const effective = {
-    top: canAcceptMeasurement && sanitizedMeasured.top > 0 ? sanitizedMeasured.top : cached.top,
-    bottom: canAcceptMeasurement && sanitizedMeasured.bottom > 0 ? sanitizedMeasured.bottom : cached.bottom,
-  };
-  if (canAcceptMeasurement && (sanitizedMeasured.top > 0 || sanitizedMeasured.bottom > 0)) {
-    writeCachedInsets(env, {
-      top: sanitizedMeasured.top > 0 ? sanitizedMeasured.top : cached.top,
-      bottom: sanitizedMeasured.bottom > 0 ? sanitizedMeasured.bottom : cached.bottom,
-    });
+  // Lock-once-per-orientation: the home indicator never resizes mid-session, so a single
+  // trusted baseline per orientation is enough. iOS returns inflated env(safe-area-inset-*)
+  // values for ~700ms after keyboard dismiss (WebKit bugs 217754, 265578); accepting one
+  // would push a wrong --worklab-safe-area-bottom into the tabbar height calc.
+  const orientation = currentOrientation(env);
+  const cached = readCachedInsets(env, orientation);
+  if (cached.top > 0 || cached.bottom > 0) return cached;
+
+  // No baseline yet for this orientation. Establish one only under stable conditions.
+  if (isViewportStable(viewportState) && (sanitizedMeasured.top > 0 || sanitizedMeasured.bottom > 0)) {
+    writeCachedInsets(env, sanitizedMeasured, orientation);
+    return sanitizedMeasured;
   }
-  return effective;
+  return sanitizedMeasured;
 }
 
 function forceLayoutAfterKeyboardDismiss(env) {
@@ -208,16 +237,18 @@ function forceLayoutAfterKeyboardDismiss(env) {
 function applyKeyboardState(root, viewportState, env) {
   const wasOpen = root.classList?.contains?.("keyboard-open") === true;
   root.classList?.toggle?.("keyboard-open", viewportState.keyboardOpen);
-  if (wasOpen && !viewportState.keyboardOpen) forceLayoutAfterKeyboardDismiss(env);
+  const justClosed = wasOpen && !viewportState.keyboardOpen;
+  if (justClosed) forceLayoutAfterKeyboardDismiss(env);
   if (viewportState.keyboardOpen) {
     root.style.setProperty(VV_HEIGHT_VAR, px(viewportState.visibleHeight));
     root.style.setProperty(VV_OFFSET_VAR, px(viewportState.offsetTop));
     root.style.setProperty(KEYBOARD_HEIGHT_VAR, px(viewportState.keyboardHeight));
-    return;
+    return justClosed;
   }
   root.style.removeProperty?.(VV_HEIGHT_VAR);
   root.style.removeProperty?.(VV_OFFSET_VAR);
   root.style.removeProperty?.(KEYBOARD_HEIGHT_VAR);
+  return justClosed;
 }
 
 export function applyMobileViewportMetrics(env = globalThis) {
@@ -240,7 +271,7 @@ export function applyMobileViewportMetrics(env = globalThis) {
   root.style.setProperty(VIEWPORT_HEIGHT_VAR, px(viewportHeight));
   root.style.setProperty(SAFE_AREA_TOP_VAR, px(safeArea.top));
   root.style.setProperty(SAFE_AREA_BOTTOM_VAR, px(safeArea.bottom));
-  applyKeyboardState(root, viewportState, env);
+  const keyboardJustClosed = applyKeyboardState(root, viewportState, env);
 
   return {
     viewportHeight,
@@ -249,6 +280,7 @@ export function applyMobileViewportMetrics(env = globalThis) {
     visualViewportOffsetTop: viewportState.offsetTop,
     keyboardHeight: viewportState.keyboardHeight,
     keyboardOpen: viewportState.keyboardOpen,
+    keyboardJustClosed,
     safeAreaTop: safeArea.top,
     safeAreaBottom: safeArea.bottom,
     measuredSafeAreaTop: measured.top,
@@ -333,7 +365,11 @@ export function installMobileViewportMetrics(env = globalThis) {
 
   const refresh = () => {
     frame = 0;
-    applyMobileViewportMetrics(env);
+    const result = applyMobileViewportMetrics(env);
+    // After the keyboard finishes closing iOS can take ~700ms to settle
+    // visualViewport metrics; schedule extra ticks to re-sync --app-height
+    // and --vv-* once everything has actually settled.
+    if (result?.keyboardJustClosed) schedule([120, 360, 720, 1200]);
   };
   const scheduleFrame = () => {
     if (!frame) frame = requestFrame(refresh);
