@@ -71,12 +71,10 @@ export function computeViewportState({
   const visibleHeight = positiveRound(visualViewport?.height) || layoutHeight;
   const offsetTop = Math.max(0, Math.round(Number(visualViewport?.offsetTop) || 0));
   const textTargetActive = isTextEntryTarget(activeElement);
-  // Only trust visualViewport offset/height as a viewport extension when a text input owns
-  // the keyboard. After dismiss iOS can briefly leave a non-zero offsetTop; without this
-  // gate it would inflate --app-height past the real viewport.
-  const appHeight = textTargetActive
-    ? Math.max(layoutHeight, visibleHeight + offsetTop)
-    : layoutHeight;
+  // Match prior-implementation's verbatim formula: appHeight is the larger of the layout viewport
+  // and visibleHeight + offsetTop. Unconditional — no textTargetActive gate. This is
+  // the proven-good math; deviating from it has no evidence-based justification.
+  const appHeight = Math.max(layoutHeight, visibleHeight + offsetTop);
   const keyboardHeight = Math.max(0, appHeight - (visibleHeight + offsetTop));
   const keyboardOpen = textTargetActive && keyboardHeight > keyboardThreshold;
   return {
@@ -320,6 +318,18 @@ export function installMobileViewportMetrics(env = globalThis) {
     void root.offsetHeight;
   };
 
+  // iOS 26.0 sometimes leaves visualViewport.height stuck at the keyboard-up value
+  // after a Done-button / swipe-down dismissal — even after the keyboard is visually
+  // gone (WebKit bug 301857, fixed in 26.1). A 1-pixel programmatic scroll flushes
+  // WebKit's pending visualViewport state. Documented production workaround
+  // (iifx.dev). Harmless on iOS 26.1+ and other browsers.
+  const unstickVisualViewport = () => {
+    try {
+      win.scrollBy?.(0, -1);
+      win.scrollBy?.(0, 1);
+    } catch {}
+  };
+
   const handleFocusOut = () => {
     // Defer one frame so iOS finishes updating document.activeElement.
     requestFrame(() => {
@@ -327,6 +337,13 @@ export function installMobileViewportMetrics(env = globalThis) {
       applyMobileViewportMetrics(env);
       ensureWatchdog();
     });
+    // Schedule the unstick well after iOS keyboard animation has settled (~300 ms).
+    const timeout = setTimer(() => {
+      timeouts.delete(timeout);
+      unstickVisualViewport();
+      scheduleFrame();
+    }, 100);
+    timeouts.add(timeout);
   };
 
   // While keyboard-open, any user interaction can prompt iOS to flush its pending

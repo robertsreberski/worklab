@@ -147,6 +147,10 @@ function createEnv({
     setActiveElement(element) {
       env.document.activeElement = element;
     },
+    scrollBy(...args) {
+      env.scrollByCalls.push(args);
+    },
+    scrollByCalls: [],
     rootStyle,
     rootClassList,
     timers,
@@ -205,16 +209,31 @@ describe("mobile viewport metrics", () => {
     }).keyboardOpen).toBe(false);
   });
 
-  it("does not inflate appHeight from a residual visualViewport offsetTop when no text field is focused", () => {
-    const state = computeViewportState({
+  it("computes appHeight unconditionally as Math.max(layoutHeight, visibleHeight + offsetTop) — matching prior-implementation", () => {
+    // No text input focused, residual offsetTop after keyboard dismiss.
+    // Assistant-ai's formula returns the larger value (852); we match that exactly.
+    expect(computeViewportState({
       innerHeight: 844,
       clientHeight: 844,
       visualViewport: { height: 844, offsetTop: 8 },
       activeElement: null,
-    });
+    }).appHeight).toBe(852);
 
-    expect(state.appHeight).toBe(844);
-    expect(state.keyboardOpen).toBe(false);
+    // With keyboard up: layoutHeight wins because vv.height + offsetTop is smaller.
+    expect(computeViewportState({
+      innerHeight: 844,
+      clientHeight: 844,
+      visualViewport: { height: 520, offsetTop: 0 },
+      activeElement: { tagName: "TEXTAREA" },
+    }).appHeight).toBe(844);
+
+    // keyboardOpen still gates on focused text input — stays focus-aware.
+    expect(computeViewportState({
+      innerHeight: 844,
+      clientHeight: 844,
+      visualViewport: { height: 844, offsetTop: 8 },
+      activeElement: null,
+    }).keyboardOpen).toBe(false);
   });
 
   it("never writes safe-area CSS variables to documentElement.style", () => {
@@ -342,6 +361,40 @@ describe("mobile viewport metrics", () => {
 
     cleanup();
     expect(env.timers.size).toBe(0);
+  });
+
+  it("force-scrolls 1px on focusout to unstick visualViewport on iOS 26.0", () => {
+    const env = createEnv({
+      innerHeight: 844,
+      visualHeight: 844,
+      activeElement: { tagName: "TEXTAREA" },
+    });
+    const cleanup = installMobileViewportMetrics(env);
+
+    // Open the keyboard.
+    env.visualViewport.height = 520;
+    env.emitVisual("resize");
+    env.flushFrame();
+
+    // User dismisses via Done (focus moves to body).
+    env.scrollByCalls.length = 0;
+    env.setActiveElement(null);
+    env.emitDocument("focusout");
+    env.flushFrame();
+
+    // The 100ms unstick timer should be queued in the env's mocked timers.
+    expect(env.timers.size).toBeGreaterThan(0);
+
+    // Run the queued timer — this triggers unstickVisualViewport which calls
+    // window.scrollBy(0, -1) followed by window.scrollBy(0, 1).
+    const callbacks = [...env.timers.values()];
+    env.timers.clear();
+    for (const cb of callbacks) cb();
+    env.flushFrame();
+
+    expect(env.scrollByCalls).toEqual([[0, -1], [0, 1]]);
+
+    cleanup();
   });
 
   it("force-blurs the focused text input when a tap lands outside it while keyboard-open is set", () => {

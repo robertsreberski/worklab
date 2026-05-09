@@ -3570,12 +3570,18 @@ test("keyboard-open class clears on focusout even when visualViewport stays shru
   expect(await page.evaluate(() => document.documentElement.classList.contains("keyboard-open"))).toBe(false);
 });
 
-test("body height stays at full viewport height even while keyboard-open is set", async ({ page }) => {
-  // The user-reported "empty band at the bottom that stays forever" was caused by the
-  // html.keyboard-open body { height: var(--vv-height) } rule clamping body to a stale
-  // shrunk height when iOS 26 lazy-reports visualViewport. We dropped that clamp; body
-  // should now stay at the real viewport height regardless of .keyboard-open state.
+test("body and assistant dock stay at full viewport height even while keyboard-open is set", async ({ page }) => {
+  // The user-reported "empty band at the bottom that stays forever" was caused by
+  // CSS rules clamping body / .assistant-dock to a stale --vv-height when iOS 26
+  // lazy-reports visualViewport (WebKit bug 301857, fixed in 26.1). We dropped
+  // both clamps; both must stay at the real viewport height regardless of
+  // .keyboard-open state or how stale --vv-height becomes.
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("worklab.assistantDockOpen", "open");
+    } catch {}
+  });
   await page.goto(`${baseUrl}/#/tasks/${taskId}/edit`);
   await expect(page.locator(".task-edit-head").first()).toBeVisible();
 
@@ -3590,14 +3596,22 @@ test("body height stays at full viewport height even while keyboard-open is set"
   });
   await page.waitForTimeout(360);
 
-  const metrics = await page.evaluate(() => ({
-    keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
-    innerHeight: window.innerHeight,
-    bodyHeight: Math.round(document.body.getBoundingClientRect().height),
-  }));
+  const metrics = await page.evaluate(() => {
+    const dock = document.querySelector(".assistant-dock");
+    return {
+      keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
+      innerHeight: window.innerHeight,
+      bodyHeight: Math.round(document.body.getBoundingClientRect().height),
+      dockHeight: dock ? Math.round(dock.getBoundingClientRect().height) : null,
+    };
+  });
   expect(metrics.keyboardOpen).toBe(true);
   // Body height must equal the real viewport height — NOT --vv-height (520).
   expect(metrics.bodyHeight).toBe(metrics.innerHeight);
+  // Assistant dock must also stay at full viewport height — not collapse to --vv-height.
+  if (metrics.dockHeight != null) {
+    expect(metrics.dockHeight).toBe(metrics.innerHeight);
+  }
 });
 
 test("mobile task edit uses compact header and sticky action dock", async ({ page }) => {

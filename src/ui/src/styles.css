@@ -10755,9 +10755,17 @@ button.settings-overview-card:focus-visible,
     display: none;
     pointer-events: none;
   }
-  html.keyboard-open .assistant-dock {
-    height: var(--vv-height);
-  }
+  /* Do NOT clamp .assistant-dock height to var(--vv-height) when keyboard-open.
+     iOS 26.0 leaves visualViewport.height stuck at the keyboard-up value after a
+     Done-button or swipe-down dismissal that retains focus (WebKit bug 301857,
+     fixed in 26.1). With the dock pinned to a stale --vv-height, the bottom of
+     the viewport renders an empty band where the dock no longer covers — the
+     user-visible "artifact that stays forever". The base .assistant-dock rule
+     (position: fixed; top:0; right:0; bottom:0; left:0; height: var(--shell-height))
+     fills the viewport. iOS draws its keyboard on top and auto-scrolls the
+     focused composer into view. No --vv-height dependency means a stale value
+     can no longer drive a layout dimension. */
+
   /* While the iOS keyboard covers the home-indicator safe area, drop the composer's
      bottom inset so it sits flush against the keyboard with no phantom gap. The inset
      restores naturally once the .keyboard-open class clears. */
