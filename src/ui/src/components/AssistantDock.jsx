@@ -171,6 +171,7 @@ export function AssistantDock({
   const resizeCleanupRef = useRef(null);
   const preserveScrollRef = useRef(null);
   const skipNextAutoScrollRef = useRef(false);
+  const textareaRef = useRef(null);
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
   const canSend = draft.trim().length > 0 && !sending && !activeRunId;
@@ -258,6 +259,14 @@ export function AssistantDock({
       setMessages((current) => uniqueMessages([...current, data.user_message, data.assistant_message]));
       setActiveRun(data.run || null);
       if (!messages.length) setHistoryCursor(data.user_message?.id || data.assistant_message?.id || historyCursor);
+      // Reset autoGrow height and dismiss the iOS soft keyboard so the user
+      // can see the reply. Without blurring, the focused textarea keeps iOS
+      // in keyboard-open layout for ~700ms after the keyboard visually goes,
+      // leaving a phantom band below the composer.
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+        textareaRef.current.blur();
+      }
     } catch (err) {
       setError(err?.message || "Message was not sent.");
     } finally {
@@ -424,6 +433,7 @@ export function AssistantDock({
         <MentionableTextarea
           rows={2}
           autoGrow
+          inputRef={textareaRef}
           value={draft}
           onInput={(event) => setDraft(event.target.value)}
           onKeyDown={keyDown}
