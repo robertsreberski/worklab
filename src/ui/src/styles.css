@@ -1275,11 +1275,8 @@ a.chip-mention:hover { filter: brightness(1.1); }
   position: relative;
 }
 .mention-picker {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 60;
+  position: fixed;
+  z-index: var(--z-popover);
   max-height: var(--placement-max-height, 320px);
   overflow-y: auto;
   background: var(--surface-elevated);
@@ -1290,8 +1287,6 @@ a.chip-mention:hover { filter: brightness(1.1); }
   animation: wl-float-in var(--dur-std) var(--ease-snap);
 }
 .mention-picker[data-placement="above"] {
-  top: auto;
-  bottom: calc(100% + 4px);
   animation-name: wl-float-in-up;
 }
 .mention-picker-empty {
