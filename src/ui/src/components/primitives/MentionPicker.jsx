@@ -7,6 +7,8 @@
 import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "preact/hooks";
 import { forwardRef } from "preact/compat";
 import { api } from "../../lib/api.js";
+import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
+import { PopoverPortal } from "./PopoverPortal.jsx";
 
 const TYPE_ORDER = { agent: 0, task: 1, project: 2, team: 3, kb: 4 };
 
@@ -36,7 +38,7 @@ function debounce(fn, delay) {
 }
 
 export const MentionPicker = forwardRef(function MentionPicker(
-  { open, query, types, onSelect, onClose },
+  { open, query, types, onSelect, onClose, anchorRef },
   ref,
 ) {
   const [results, setResults] = useState([]);
@@ -44,6 +46,11 @@ export const MentionPicker = forwardRef(function MentionPicker(
   const [loading, setLoading] = useState(false);
   const fetchAbort = useRef(null);
   const seqRef = useRef(0);
+  const popoverRef = useRef(null);
+  // Always pair MentionPicker with an explicit anchorRef — once portaled, the
+  // popover's parentElement is <body>, so the hook's fallback can no longer
+  // recover the textarea wrapper.
+  const { placement, maxHeight, top, left, width, ready } = useDropdownPlacement(anchorRef, popoverRef, open);
 
   // Keep the picker keyboard-controlled by the parent textarea so
   // focus stays in the editor while navigating.
@@ -103,7 +110,21 @@ export const MentionPicker = forwardRef(function MentionPicker(
     .sort((a, b) => (TYPE_ORDER[a.type] ?? 99) - (TYPE_ORDER[b.type] ?? 99));
 
   return (
-    <div class="mention-picker" role="listbox" aria-label="Mention candidates">
+    <PopoverPortal>
+    <div
+      ref={popoverRef}
+      class="mention-picker"
+      role="listbox"
+      aria-label="Mention candidates"
+      data-placement={placement}
+      style={{
+        top: `${top}px`,
+        left: `${left}px`,
+        width: `${width}px`,
+        visibility: ready ? "visible" : "hidden",
+        ...(maxHeight != null ? { "--placement-max-height": `${maxHeight}px` } : {}),
+      }}
+    >
       {loading && results.length === 0 && (
         <div class="mention-picker-empty">Searching…</div>
       )}
@@ -145,5 +166,6 @@ export const MentionPicker = forwardRef(function MentionPicker(
         />
       )}
     </div>
+    </PopoverPortal>
   );
 });
