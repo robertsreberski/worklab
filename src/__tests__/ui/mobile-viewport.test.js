@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   APP_HEIGHT_VAR,
   KEYBOARD_HEIGHT_VAR,
+  MOBILE_VIEWPORT_CACHE_KEY,
+  SAFE_AREA_BOTTOM_VAR,
+  SAFE_AREA_TOP_VAR,
   VV_HEIGHT_VAR,
   VV_OFFSET_VAR,
   VIEWPORT_HEIGHT_VAR,
@@ -51,21 +54,39 @@ function createClassList() {
   };
 }
 
+function isOrientationKeyed(record) {
+  return !!record && typeof record === "object"
+    && (Object.hasOwn(record, "portrait") || Object.hasOwn(record, "landscape"));
+}
+
 function createEnv({
   innerHeight = 844,
   visualHeight,
   visualOffsetTop = 0,
   standalone = false,
+  safeTop = 0,
+  safeBottom = 0,
+  cachedInsets,
   activeElement = null,
   userAgent = "",
   maxTouchPoints = 0,
+  orientation = "portrait",
 } = {}) {
   const listeners = new Map();
   const timers = new Map();
+  const storage = new Map();
   let timerId = 0;
+  if (cachedInsets) {
+    const record = isOrientationKeyed(cachedInsets) ? cachedInsets : { [orientation]: cachedInsets };
+    storage.set(MOBILE_VIEWPORT_CACHE_KEY, JSON.stringify(record));
+  }
+  let measuredSafeTop = safeTop;
+  let measuredSafeBottom = safeBottom;
+  let currentOrientation = orientation;
 
   const rootStyle = createStyle();
   const rootClassList = createClassList();
+  const elements = [];
   const addListener = (type, listener) => {
     if (!listeners.has(type)) listeners.set(type, new Set());
     listeners.get(type).add(listener);
@@ -94,20 +115,54 @@ function createEnv({
         style: rootStyle,
         classList: rootClassList,
       },
-      body: { appendChild() {} },
+      body: {
+        appendChild(node) {
+          elements.push(node);
+          node.remove = () => {
+            const index = elements.indexOf(node);
+            if (index !== -1) elements.splice(index, 1);
+          };
+          return node;
+        },
+      },
       addEventListener(type, listener) {
         addListener(`document:${type}`, listener);
       },
       removeEventListener(type, listener) {
         removeListener(`document:${type}`, listener);
       },
-      querySelector() {
-        return null;
+      createElement() {
+        return {
+          style: createStyle(),
+          setAttribute() {},
+          remove() {},
+        };
+      },
+    },
+    localStorage: {
+      getItem(key) {
+        return storage.has(key) ? storage.get(key) : null;
+      },
+      setItem(key, value) {
+        storage.set(key, String(value));
       },
     },
     matchMedia(query) {
       if (query === "(display-mode: standalone)") return { matches: standalone };
+      if (query === "(orientation: landscape)") return { matches: currentOrientation === "landscape" };
+      if (query === "(orientation: portrait)") return { matches: currentOrientation === "portrait" };
       return { matches: false };
+    },
+    screen: {
+      get orientation() {
+        return { type: `${currentOrientation}-primary` };
+      },
+    },
+    getComputedStyle() {
+      return {
+        paddingTop: `${measuredSafeTop}px`,
+        paddingBottom: `${measuredSafeBottom}px`,
+      };
     },
     addEventListener(type, listener) {
       addListener(type, listener);
@@ -144,11 +199,24 @@ function createEnv({
       env.pendingFrame = null;
       callback?.();
     },
+    flushTimers() {
+      const callbacks = [...timers.values()];
+      timers.clear();
+      for (const callback of callbacks) callback();
+    },
     setActiveElement(element) {
       env.document.activeElement = element;
     },
+    setSafeArea(insets = {}) {
+      if (Object.hasOwn(insets, "top")) measuredSafeTop = insets.top;
+      if (Object.hasOwn(insets, "bottom")) measuredSafeBottom = insets.bottom;
+    },
+    setOrientation(next) {
+      currentOrientation = next;
+    },
     rootStyle,
     rootClassList,
+    storage,
     timers,
     pendingFrame: null,
   };
@@ -205,39 +273,133 @@ describe("mobile viewport metrics", () => {
     }).keyboardOpen).toBe(false);
   });
 
-  it("does not inflate appHeight from a residual visualViewport offsetTop when no text field is focused", () => {
-    const state = computeViewportState({
-      innerHeight: 844,
-      clientHeight: 844,
-      visualViewport: { height: 844, offsetTop: 8 },
-      activeElement: null,
-    });
-
-    expect(state.appHeight).toBe(844);
-    expect(state.keyboardOpen).toBe(false);
-  });
-
-  it("never writes safe-area CSS variables to documentElement.style", () => {
-    // Safe-area insets are owned entirely by CSS env() now. The mobile viewport runtime
-    // must not set --worklab-safe-area-top / --worklab-safe-area-bottom on the root, because
-    // doing so would shadow the live env() value and re-introduce the post-keyboard-dismiss
-    // inflated-band bug we used to chase with cache locks.
+  it("uses cached standalone safe-area values when first measurement is zero", () => {
     const env = createEnv({
       standalone: true,
       innerHeight: 844,
-      visualHeight: 844,
+      safeTop: 0,
+      safeBottom: 0,
+      cachedInsets: { top: 31, bottom: 11 },
+    });
+
+    const metrics = applyMobileViewportMetrics(env);
+
+    expect(metrics).toMatchObject({
+      viewportHeight: 844,
+      safeAreaTop: 31,
+      safeAreaBottom: 11,
+      measuredSafeAreaTop: 0,
+      measuredSafeAreaBottom: 0,
+      standalone: true,
+      keyboardOpen: false,
+    });
+    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBe("844px");
+    expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("844px");
+    expect(env.rootStyle.values[SAFE_AREA_TOP_VAR]).toBe("31px");
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("11px");
+    expect(env.rootStyle.values[KEYBOARD_HEIGHT_VAR]).toBeUndefined();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+  });
+
+  it("stores measured non-zero safe-area values for future PWA reloads", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      safeTop: 31,
+      safeBottom: 11,
     });
 
     applyMobileViewportMetrics(env);
 
-    expect(env.rootStyle.values["--worklab-safe-area-top"]).toBeUndefined();
-    expect(env.rootStyle.values["--worklab-safe-area-bottom"]).toBeUndefined();
-    expect(env.rootStyle.values["--worklab-safe-area-left"]).toBeUndefined();
-    expect(env.rootStyle.values["--worklab-safe-area-right"]).toBeUndefined();
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 11 },
+    });
+  });
+
+  it("keeps stable safe-area values during keyboard-open viewport transitions", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 520,
+      safeTop: 31,
+      safeBottom: 120,
+      cachedInsets: { top: 31, bottom: 34 },
+      activeElement: { tagName: "TEXTAREA" },
+    });
+
+    const metrics = applyMobileViewportMetrics(env);
+
+    expect(metrics).toMatchObject({
+      keyboardOpen: true,
+      safeAreaTop: 31,
+      safeAreaBottom: 34,
+      measuredSafeAreaTop: 31,
+      measuredSafeAreaBottom: 120,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+    });
+  });
+
+  it("does not persist transient safe-area values while keyboard dismissal is settling", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+    });
+
+    applyMobileViewportMetrics(env);
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+    });
+
+    env.setActiveElement({ tagName: "TEXTAREA" });
+    env.visualViewport.height = 520;
+    env.setSafeArea({ bottom: 120 });
+    applyMobileViewportMetrics(env);
+
+    env.setActiveElement(null);
+    env.visualViewport.height = 640;
+    const dismissing = applyMobileViewportMetrics(env);
+
+    expect(dismissing).toMatchObject({
+      keyboardOpen: false,
+      keyboardHeight: 204,
+      safeAreaBottom: 34,
+      measuredSafeAreaBottom: 120,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+    });
+  });
+
+  it("ignores inflated cached bottom safe-area values on standalone reload", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      safeTop: 0,
+      safeBottom: 0,
+      cachedInsets: { top: 31, bottom: 120 },
+    });
+
+    const metrics = applyMobileViewportMetrics(env);
+
+    expect(metrics).toMatchObject({
+      safeAreaTop: 31,
+      safeAreaBottom: 0,
+      measuredSafeAreaTop: 0,
+      measuredSafeAreaBottom: 0,
+      standalone: true,
+    });
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("0px");
   });
 
   it("batches viewport refreshes from resize events", () => {
-    const env = createEnv({ innerHeight: 844 });
+    const env = createEnv({ innerHeight: 844, safeTop: 31, safeBottom: 11 });
     const cleanup = installMobileViewportMetrics(env);
 
     expect(env.rootStyle.values[VIEWPORT_HEIGHT_VAR]).toBe("844px");
@@ -281,6 +443,148 @@ describe("mobile viewport metrics", () => {
 
     cleanup();
     expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+  });
+
+  it("locks the safe-area baseline across repeated keyboard open/close cycles", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+    });
+
+    applyMobileViewportMetrics(env);
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+
+    for (let cycle = 0; cycle < 3; cycle += 1) {
+      env.setActiveElement({ tagName: "TEXTAREA" });
+      env.visualViewport.height = 520;
+      env.setSafeArea({ bottom: 120 });
+      applyMobileViewportMetrics(env);
+      expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+
+      // Post-dismiss: keyboard gone, viewport stable, but iOS env() probe still inflated.
+      env.setActiveElement(null);
+      env.visualViewport.height = 844;
+      env.setSafeArea({ bottom: 60 });
+      applyMobileViewportMetrics(env);
+      expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    }
+
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+    });
+  });
+
+  it("does not overwrite the baseline when post-dismiss measurement is within sanitizer caps but differs", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+    });
+
+    applyMobileViewportMetrics(env);
+
+    env.setSafeArea({ top: 50, bottom: 50 });
+    const settled = applyMobileViewportMetrics(env);
+
+    expect(settled).toMatchObject({
+      safeAreaTop: 31,
+      safeAreaBottom: 34,
+      measuredSafeAreaTop: 50,
+      measuredSafeAreaBottom: 50,
+    });
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+    });
+  });
+
+  it("re-derives the safe-area baseline on orientationchange and keeps the prior orientation cached", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+      orientation: "portrait",
+    });
+
+    applyMobileViewportMetrics(env);
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+
+    env.setOrientation("landscape");
+    env.innerHeight = 390;
+    env.document.documentElement.clientHeight = 390;
+    env.visualViewport.height = 390;
+    env.setSafeArea({ top: 0, bottom: 21 });
+
+    applyMobileViewportMetrics(env);
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("21px");
+    expect(env.rootStyle.values[SAFE_AREA_TOP_VAR]).toBe("0px");
+
+    expect(JSON.parse(env.storage.get(MOBILE_VIEWPORT_CACHE_KEY))).toEqual({
+      portrait: { top: 31, bottom: 34 },
+      landscape: { top: 0, bottom: 21 },
+    });
+
+    // Returning to portrait reuses the original baseline, even if the probe lies again.
+    env.setOrientation("portrait");
+    env.innerHeight = 844;
+    env.document.documentElement.clientHeight = 844;
+    env.visualViewport.height = 844;
+    env.setSafeArea({ top: 0, bottom: 70 });
+    applyMobileViewportMetrics(env);
+    expect(env.rootStyle.values[SAFE_AREA_BOTTOM_VAR]).toBe("34px");
+    expect(env.rootStyle.values[SAFE_AREA_TOP_VAR]).toBe("31px");
+  });
+
+  it("does not inflate appHeight from a residual visualViewport offsetTop when no text field is focused", () => {
+    const state = computeViewportState({
+      innerHeight: 844,
+      clientHeight: 844,
+      visualViewport: { height: 844, offsetTop: 8 },
+      activeElement: null,
+    });
+
+    expect(state.appHeight).toBe(844);
+    expect(state.keyboardOpen).toBe(false);
+  });
+
+  it("schedules late post-keyboard-close ticks so iOS settling re-syncs --app-height", () => {
+    const env = createEnv({
+      standalone: true,
+      innerHeight: 844,
+      visualHeight: 844,
+      safeTop: 31,
+      safeBottom: 34,
+      activeElement: { tagName: "TEXTAREA" },
+    });
+    const cleanup = installMobileViewportMetrics(env);
+
+    env.visualViewport.height = 520;
+    env.emitVisual("resize");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(true);
+
+    // iOS dismisses the keyboard but leaves a residual offsetTop for ~700ms; without
+    // late ticks we'd never re-measure once visualViewport finally settles.
+    env.setActiveElement(null);
+    env.visualViewport.height = 844;
+    env.visualViewport.offsetTop = 8;
+    env.emitVisual("resize");
+    env.flushFrame();
+    expect(env.rootClassList.contains("keyboard-open")).toBe(false);
+    expect(env.timers.size).toBeGreaterThan(0);
+
+    env.visualViewport.offsetTop = 0;
+    env.flushTimers();
+    env.flushFrame();
+    expect(env.rootStyle.values[APP_HEIGHT_VAR]).toBe("844px");
+
+    cleanup();
   });
 
   it("is a no-op without browser document APIs", () => {
