@@ -13,7 +13,7 @@ const RESULT_FIELD_RULES = `Structured result rules:
 - End each completed run with one terminal \`worklab.v2\` JSON object after all tool calls and verification are finished.
 - Never emit \`worklab.v2\` JSON for progress or status updates. Use normal assistant text, thinking, or available progress tools instead; reserve \`worklab.v2\` for the final answer only.
 - Put the human-facing comment in \`final_text\`. Keep \`summary\` and \`details\` as structured metadata for Worklab.
-- For plan-stage runs, put the complete implementation plan in \`details\` / the plan body; \`final_text\` is the short status note.
+- For plan-stage runs, put the complete implementation plan in \`details\` / the plan body; \`final_text\` is the short status note. Do not use references like "see above" or "the message above" instead of the plan text.
 - \`pending_actions\` requires decision "pause" (exact actions the human must take). \`subtasks\` requires decision "delegate". \`questions\` is for plan-stage pauses needing human input — prefer 2–4 concrete options per question, recommended one first. Keep all three empty for "advance", "approve", "reject".
 - Each subtask: \`{"title":"…","instructions":"…","suggested_agent":"…","required":true,"depends_on":[],"acceptance_criteria":["…"],"expected_artifact":"…"}\`. Bound the work and give enough context for another agent to run independently.
 - \`memory_candidates\` is for durable facts, preferences, procedures, failures, decisions, or episodes with concrete evidence and confidence 0–1. Empty for routine notes.`;

@@ -2554,6 +2554,84 @@ describe("task-watcher", () => {
     expect(agentComment.body).toBe("Plan ready. Moving to execute.");
   });
 
+  it("stores the full assistant ExecPlan when structured details are compressed", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db, { owner: "coder", stage: "plan" });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((r) => {
+        resolveDone = r;
+      }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+    });
+    await watcher.handleRunRequested(taskId);
+    const fullPlan = `## ExecPlan: Create general design system
+
+### Context & assumptions
+
+The workspace is a Worklab vault holding heterogeneous projects. Build a runnable sandbox so agents can preview and copy components.
+
+### Step-by-step implementation
+
+1. Scaffold the Vite project.
+2. Install Tailwind and shadcn/ui.
+3. Build a gallery.
+
+### Verification gates
+
+Run npm build and a dev-server smoke test.
+
+### Risks & recovery notes
+
+Record registry entries that fail to install.`;
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "plan",
+      decision: "advance",
+      summary: "ExecPlan ready",
+      details: "Locked defaults. 11 steps: scaffold Vite, install Tailwind, initialize shadcn, add components, write docs, run verification.",
+      final_text: "Plan ready. Full step-by-step ExecPlan is in details and in the assistant message above this JSON.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      subtasks: [],
+    };
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "Plan delivered. The full ExecPlan is in the message above.",
+      worklabResult,
+      events: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{ type: "text", text: fullPlan }],
+            },
+          },
+        },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    const task = db.prepare("SELECT stage, plan_body FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("execute");
+    expect(task.plan_body).toBe(fullPlan);
+    const agentComment = db
+      .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
+      .get(taskId);
+    expect(agentComment.body).toBe(worklabResult.final_text);
+  });
+
   it("prefers structured plan details over human-facing final prose", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");

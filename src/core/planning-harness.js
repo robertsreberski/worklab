@@ -186,6 +186,8 @@ ${planJsonContract()}
 
 Do not emit this JSON object for interim planning progress or status updates. Use normal progress text, journal notes, todos, or tool calls until the final result is ready.
 
+Put the complete implementation plan directly in \`details\`. Do not write references like "see above", "the message above", or "mirrored in details" as a substitute for the actual plan text.
+
 Use decision "advance" when the plan is ready and the task should move to work, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 }
 

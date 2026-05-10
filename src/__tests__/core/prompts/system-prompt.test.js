@@ -529,6 +529,7 @@ describe("buildPlanSystemPrompt", () => {
     expect(p).toContain('"details": "Complete implementation plan."');
     expect(p).toContain('"final_text": "Short human-facing plan status."');
     expect(p).toContain("Do not emit this JSON object for interim planning progress");
+    expect(p).toContain("Do not write references like \"see above\"");
     expect(p).toContain('Use decision "advance" when the plan is ready');
     expect(p).not.toContain("Preserve durable deliverables in Knowledge");
   });
