@@ -27,14 +27,22 @@ export const ROUTE_GROUPS = [
     label: "Work",
     routes: [
       { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
-      { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
-      { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
+      { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
+      { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
     ],
   },
   {
-    label: "Build",
+    label: "Library",
     routes: [
-      { id: "library", label: "Library", icon: "book", href: "#/library" },
+      { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
+      { id: "teams", label: "Teams", icon: "users", href: "#/library/teams" },
+      { id: "skills", label: "Skills", icon: "sparkles", href: "#/library/skills" },
+    ],
+  },
+  {
+    label: "System",
+    routes: [
+      { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
       { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
       { id: "settings", label: "Settings", icon: "settings", href: "#/settings" },
     ],
@@ -46,11 +54,10 @@ const AppChromeContext = createContext(null);
 
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
-  { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
-  { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
-  { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
+  { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
+  { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
 ];
-const MORE_ROUTE_IDS = ["library", "settings"];
+const MORE_ROUTE_IDS = ["projects", "teams", "skills", "goals", "runs", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
   .map((route) => ({ ...route, href: route.href || `#/${route.id}` }));
@@ -70,8 +77,8 @@ function routeIsActive(item, route) {
   const hash = currentHash();
   if (hash === href || hash.startsWith(`${href}/`) || hash.startsWith(`${href}?`)) return true;
   if (!hash && route === item.id) return true;
+  if (item.id === "agents" && route === "library" && hash === "#/library") return true;
   if (item.id === "settings") return route === "settings" || hash.startsWith("#/settings");
-  if (item.id === "library") return route === "library" || hash.startsWith("#/library");
   return route === item.id;
 }
 
