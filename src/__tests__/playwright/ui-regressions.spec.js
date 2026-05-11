@@ -853,6 +853,128 @@ test("task edit is reachable via #/tasks/new and shows a full-page form", async 
   expect(metrics.railWidth).toBeGreaterThanOrEqual(340);
 });
 
+test("new task creation keeps title, project, owner, and instructions in the primary form", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const main = document.querySelector(".task-edit-main");
+    const rail = document.querySelector(".task-edit-rail");
+    const mainLabels = [...(main?.querySelectorAll(".form-field-label") || [])]
+      .map((label) => (label.textContent || "").replace("*", "").trim());
+    const railLabels = [...(rail?.querySelectorAll(".form-field-label") || [])]
+      .map((label) => (label.textContent || "").replace("*", "").trim());
+    const labelRects = Object.fromEntries(
+      [...(main?.querySelectorAll(".form-field-label") || [])].map((label) => {
+        const text = (label.textContent || "").replace("*", "").trim();
+        const rect = label.getBoundingClientRect();
+        return [text, { top: Math.round(rect.top), left: Math.round(rect.left) }];
+      }),
+    );
+    return {
+      mainLabels,
+      railLabels,
+      titleBeforeProject: labelRects.Title && labelRects.Project
+        ? labelRects.Title.top <= labelRects.Project.top
+        : false,
+      projectBeforeOwner: labelRects.Project && labelRects.Owner
+        ? labelRects.Project.top <= labelRects.Owner.top
+        : false,
+      ownerBeforeInstructions: labelRects.Owner && labelRects.Instructions
+        ? labelRects.Owner.top <= labelRects.Instructions.top
+        : false,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.mainLabels.slice(0, 4)).toEqual(["Title", "Project", "Owner", "Instructions"]);
+  expect(metrics.mainLabels).not.toContain("Depends on");
+  expect(metrics.railLabels).not.toContain("Project");
+  expect(metrics.railLabels).not.toContain("Owner");
+  expect(metrics.railLabels).toContain("Initial stage");
+  expect(metrics.railLabels).toContain("Depends on");
+  expect(metrics.titleBeforeProject).toBe(true);
+  expect(metrics.projectBeforeOwner).toBe(true);
+  expect(metrics.ownerBeforeInstructions).toBe(true);
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+});
+
+test("mobile new task shows primary creation fields without opening settings", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/tasks/new`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const main = document.querySelector(".task-edit-main");
+    const labels = [...(main?.querySelectorAll(".form-field-label") || [])]
+      .map((label) => {
+        const rect = label.getBoundingClientRect();
+        return {
+          text: (label.textContent || "").replace("*", "").trim(),
+          top: Math.round(rect.top),
+          bottom: Math.round(rect.bottom),
+          display: getComputedStyle(label).display,
+        };
+      });
+    const byText = Object.fromEntries(labels.map((label) => [label.text, label]));
+    const rail = document.querySelector(".task-edit-rail");
+    const dock = document.querySelector(".app-mobile-action-dock");
+    return {
+      labels: labels.map((label) => label.text),
+      railDisplay: rail ? getComputedStyle(rail).display : "",
+      dockDisplay: dock ? getComputedStyle(dock).display : "",
+      ordered:
+        byText.Title?.top <= byText.Project?.top
+        && byText.Project?.top <= byText.Owner?.top
+        && byText.Owner?.top <= byText.Instructions?.top,
+      primaryFieldsVisible: ["Title", "Project", "Owner", "Instructions"].every((label) => byText[label]?.display !== "none"),
+      instructionsStartsBeforeDock: byText.Instructions && dock
+        ? byText.Instructions.top < dock.getBoundingClientRect().top
+        : false,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.labels.slice(0, 4)).toEqual(["Title", "Project", "Owner", "Instructions"]);
+  expect(metrics.primaryFieldsVisible).toBe(true);
+  expect(metrics.ordered).toBe(true);
+  expect(metrics.instructionsStartsBeforeDock).toBe(true);
+  expect(metrics.railDisplay).toBe("none");
+  expect(metrics.dockDisplay).toBe("flex");
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
+});
+
+test("new task can prefill project from route query without a dirty-leave prompt", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/tasks/new?project=${projectSlug}`);
+  await expect(page.locator(".task-edit-head").first()).toBeVisible();
+  await expect(page.locator(".task-edit-main .select-trigger", { hasText: "Mobile Layout Project" })).toBeVisible();
+
+  await page.locator(".task-edit-toolbar .button", { hasText: "Cancel" }).click();
+  await expect(page).toHaveURL(/#\/tasks$/);
+  await expect(page.locator(".modal", { hasText: "unsaved" })).toHaveCount(0);
+});
+
+test("project-filtered task creation opens a project-prefilled task form", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto(`${baseUrl}/#/tasks?project=${projectSlug}`);
+  await expect(page.locator(".commander-new-task-inline")).toBeVisible();
+  await page.locator(".commander-new-task-inline").click();
+
+  await expect(page).toHaveURL(new RegExp(`#\\/tasks\\/new\\?project=${projectSlug}`));
+  await expect(page.locator(".task-edit-main .select-trigger", { hasText: "Mobile Layout Project" })).toBeVisible();
+});
+
+test("project detail new task action opens a project-prefilled task form", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto(`${baseUrl}/#/projects/${projectSlug}`);
+  await expect(page.locator(".project-detail-head h2", { hasText: "Mobile Layout Project" })).toBeVisible();
+  await page.locator(".project-detail-head .button", { hasText: "New task" }).click();
+
+  await expect(page).toHaveURL(new RegExp(`#\\/tasks\\/new\\?project=${projectSlug}`));
+  await expect(page.locator(".task-edit-main .select-trigger", { hasText: "Mobile Layout Project" })).toBeVisible();
+});
+
 test("creating a task is single-save and does not show a false unsaved warning", async ({ page }) => {
   const title = `Create once ${Date.now()}`;
   await page.goto(`${baseUrl}/#/tasks/new`);

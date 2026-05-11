@@ -51,6 +51,10 @@ const TASK_EDIT_SECTIONS = [
   { id: "task-edit-instructions", num: "02", label: "Instructions", meta: "Markdown" },
   { id: "task-edit-dependencies", num: "03", label: "Dependencies", meta: "Blockers" },
 ];
+const TASK_CREATE_SECTIONS = [
+  { id: "task-edit-title", num: "01", label: "Details", meta: "Primary" },
+  { id: "task-edit-instructions", num: "02", label: "Instructions", meta: "Markdown" },
+];
 
 const RUN_POLICY_OPTIONS = [
   { value: "auto_plan_execute", label: "Auto" },
@@ -80,7 +84,7 @@ function newClientRequestId() {
   return `task-create-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function TaskEdit({ mode = "create", id = null }) {
+export function TaskEdit({ mode = "create", id = null, query = {} }) {
   const [draft, setDraft] = useState(emptyDraft());
   const [baseline, setBaseline] = useState(emptyDraft());
   const [agents, setAgents] = useState([]);
@@ -93,6 +97,10 @@ export function TaskEdit({ mode = "create", id = null }) {
   const [dependencyDraft, setDependencyDraft] = useState("");
   const formRef = useRef(null);
   const createRequestIdRef = useRef(mode === "create" ? newClientRequestId() : null);
+  const appliedProjectPrefillIdRef = useRef(null);
+  const projectPrefillInput = mode === "create"
+    ? String(query?.project || query?.project_id || "").trim()
+    : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -182,6 +190,33 @@ export function TaskEdit({ mode = "create", id = null }) {
       })
       .catch(() => setNotFound(true));
   });
+
+  useEffect(() => {
+    if (mode !== "create") return;
+    if (!projectPrefillInput) {
+      appliedProjectPrefillIdRef.current = null;
+      return;
+    }
+    if (!projects.length) return;
+    const matchedProject = projects.find((project) => (
+      project.id === projectPrefillInput
+      || project.slug === projectPrefillInput
+      || project.name === projectPrefillInput
+    ));
+    if (!matchedProject) return;
+
+    const previousPrefillId = appliedProjectPrefillIdRef.current;
+    if (draft.project_id && draft.project_id !== previousPrefillId) return;
+    if (draft.project_id === matchedProject.id && previousPrefillId === matchedProject.id) return;
+
+    appliedProjectPrefillIdRef.current = matchedProject.id;
+    const applyProjectPrefill = (current) => {
+      if (current.project_id && current.project_id !== previousPrefillId) return current;
+      return { ...current, project_id: matchedProject.id };
+    };
+    setDraft(applyProjectPrefill);
+    setBaseline(applyProjectPrefill);
+  }, [mode, projectPrefillInput, projects, draft.project_id]);
 
   function update(patch) {
     setDraft((d) => ({ ...d, ...patch }));
@@ -276,6 +311,89 @@ export function TaskEdit({ mode = "create", id = null }) {
     update({ blocked_by_ids: draft.blocked_by_ids.filter((entry) => entry !== taskId) });
   }
 
+  function renderProjectField({ showPreview = false } = {}) {
+    return (
+      <FormField label="Project" hint={mode === "create" ? "Adds shared context and workdir to runs." : "Adds shared context and optional workdir to runs."}>
+        <Select
+          value={draft.project_id || ""}
+          onChange={(value) => update({ project_id: value || null })}
+          options={projectOptions}
+          placeholder="No project"
+          ariaLabel="Project"
+          searchable
+        />
+        {showPreview && selectedProject && (
+          <div class="task-edit-project-preview">
+            <div class="task-edit-project-preview-row">
+              <span class="task-edit-project-preview-label">Workdir</span>
+              <span class="task-edit-project-preview-value mono">
+                {selectedProject.workdir || "Default workspace"}
+              </span>
+            </div>
+            <div class="task-edit-project-preview-row">
+              <span class="task-edit-project-preview-label">Worktrees</span>
+              <span class="task-edit-project-preview-value">
+                {selectedProject.worktree_mode === "required" ? "Required" : selectedProject.worktree_mode === "auto" ? "Auto" : "Off"}
+              </span>
+            </div>
+            {selectedProject.context && (
+              <div class="task-edit-project-preview-context">
+                {truncatedProjectContext}
+              </div>
+            )}
+          </div>
+        )}
+      </FormField>
+    );
+  }
+
+  function renderOwnerField() {
+    return (
+      <FormField label="Owner" hint="Runs the work. Also plans when no planner is set.">
+        <AgentPicker
+          value={draft.owner_agent}
+          onChange={(name) => update({ owner_agent: name })}
+          agents={agents}
+          placeholder="Pick an owner"
+          role="owner"
+        />
+      </FormField>
+    );
+  }
+
+  function renderDependencyField() {
+    return (
+      <FormField
+        label="Depends on"
+        hint="Optional blockers. A task cannot run until every dependency is done."
+      >
+        <div class="dependency-picker">
+          {draft.blocked_by_ids.length > 0 && (
+            <Toolbar class="dependency-chip-list" align="start">
+              {draft.blocked_by_ids.map((dependencyId) => {
+                const dependency = selectedDependencyMap.get(dependencyId);
+                const label = dependency?.title || dependencyId;
+                return (
+                  <Chip key={dependencyId} variant="tag" onRemove={() => removeDependency(dependencyId)}>
+                    {label}
+                  </Chip>
+                );
+              })}
+            </Toolbar>
+          )}
+          <Select
+            value={dependencyDraft}
+            onChange={addDependency}
+            options={dependencyOptions}
+            placeholder="Link another task..."
+            ariaLabel="Add dependency"
+            searchable
+          />
+        </div>
+      </FormField>
+    );
+  }
+
   const heading = mode === "create" ? "New task" : "Edit task";
   const idDisplay = mode === "edit" && id ? taskDisplayKey(loadedTask || id) : null;
   const saveButtonVariant = isDirty || mode === "create" ? "primary" : "secondary";
@@ -299,7 +417,8 @@ export function TaskEdit({ mode = "create", id = null }) {
       </Button>
     </>
   );
-  const railCardCount = 8;
+  const activeSections = mode === "create" ? TASK_CREATE_SECTIONS : TASK_EDIT_SECTIONS;
+  const railCardCount = mode === "create" ? 7 : 8;
 
   function renderTaskEditRail() {
     const stageOptions = taskStageOptionsForMode(mode);
@@ -319,13 +438,15 @@ export function TaskEdit({ mode = "create", id = null }) {
           </PanelGrid>
         </FormField>
 
-        <FormField label="Owner" hint="Required for work. Also plans when no planner is set.">
-          <AgentPicker
-            value={draft.owner_agent}
-            onChange={(name) => update({ owner_agent: name })}
-            agents={agents}
-            placeholder="Pick an owner"
-            role="owner"
+        {mode !== "create" && renderOwnerField()}
+
+        <FormField label="Run mode" hint="Auto mode starts eligible stages after blockers clear.">
+          <Select
+            variant="native"
+            value={draft.run_policy || DEFAULT_RUN_POLICY}
+            onChange={(value) => update({ run_policy: value })}
+            options={RUN_POLICY_OPTIONS}
+            ariaLabel="Run mode"
           />
         </FormField>
 
@@ -339,47 +460,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           />
         </FormField>
 
-        <FormField label="Run mode" hint="Auto mode starts eligible stages after blockers clear.">
-          <Select
-            variant="native"
-            value={draft.run_policy || DEFAULT_RUN_POLICY}
-            onChange={(value) => update({ run_policy: value })}
-            options={RUN_POLICY_OPTIONS}
-            ariaLabel="Run mode"
-          />
-        </FormField>
-
-        <FormField label="Project" hint="Adds shared context and optional workdir to runs.">
-          <Select
-            value={draft.project_id || ""}
-            onChange={(value) => update({ project_id: value || null })}
-            options={projectOptions}
-            placeholder="No project"
-            ariaLabel="Project"
-            searchable
-          />
-          {selectedProject && (
-            <div class="task-edit-project-preview">
-              <div class="task-edit-project-preview-row">
-                <span class="task-edit-project-preview-label">Workdir</span>
-                <span class="task-edit-project-preview-value mono">
-                  {selectedProject.workdir || "Default workspace"}
-                </span>
-              </div>
-              <div class="task-edit-project-preview-row">
-                <span class="task-edit-project-preview-label">Worktrees</span>
-                <span class="task-edit-project-preview-value">
-                  {selectedProject.worktree_mode === "required" ? "Required" : selectedProject.worktree_mode === "auto" ? "Auto" : "Off"}
-                </span>
-              </div>
-              {selectedProject.context && (
-                <div class="task-edit-project-preview-context">
-                  {truncatedProjectContext}
-                </div>
-              )}
-            </div>
-          )}
-        </FormField>
+        {mode !== "create" && renderProjectField({ showPreview: true })}
 
         <FormField label="Team" hint="Optional task override. Defaults to the project team.">
           <TeamPicker
@@ -409,6 +490,8 @@ export function TaskEdit({ mode = "create", id = null }) {
             placeholder="Add tag..."
           />
         </FormField>
+
+        {mode === "create" && renderDependencyField()}
       </div>
     );
   }
@@ -421,7 +504,7 @@ export function TaskEdit({ mode = "create", id = null }) {
       drawerTitle="Settings"
       drawerKicker={mode === "create" ? "New task" : idDisplay || "Task"}
       drawerContent={!loading && !notFound ? renderTaskEditRail() : null}
-      sections={TASK_EDIT_SECTIONS}
+      sections={activeSections}
     >
       <div class="task-edit">
         <DetailHead
@@ -441,7 +524,7 @@ export function TaskEdit({ mode = "create", id = null }) {
           meta={titleMeta}
           hint
           glyph="T"
-          subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={TASK_EDIT_SECTIONS} />}
+          subBar={<MobilePillRow railLabel="Settings" railCount={railCardCount} sections={activeSections} />}
           actionsClass="task-edit-toolbar"
           actions={(
             <>
@@ -480,7 +563,7 @@ export function TaskEdit({ mode = "create", id = null }) {
                 )}
 
                 <FormSection class="task-edit-section" aria-labelledby="task-edit-title">
-                  <SectionMarker id="task-edit-title" num="01" kicker="Title" meta="Required" />
+                  <SectionMarker id="task-edit-title" num="01" kicker={mode === "create" ? "Details" : "Title"} meta={mode === "create" ? "Primary" : "Required"} />
                   <FormField label="Title" required>
                     <Input
                       placeholder="Short, actionable title"
@@ -489,6 +572,12 @@ export function TaskEdit({ mode = "create", id = null }) {
                       autoFocus={mode === "create"}
                     />
                   </FormField>
+                  {mode === "create" && (
+                    <div class="task-edit-primary-grid">
+                      {renderProjectField()}
+                      {renderOwnerField()}
+                    </div>
+                  )}
                 </FormSection>
 
                 <FormSection class="task-edit-section" aria-labelledby="task-edit-instructions">
@@ -508,37 +597,12 @@ export function TaskEdit({ mode = "create", id = null }) {
                   </FormField>
                 </FormSection>
 
-                <FormSection class="task-edit-section" aria-labelledby="task-edit-dependencies">
+                {mode !== "create" && (
+                  <FormSection class="task-edit-section" aria-labelledby="task-edit-dependencies">
                   <SectionMarker id="task-edit-dependencies" num="03" kicker="Dependencies" meta="Blockers" />
-                  <FormField
-                    label="Depends on"
-                    hint="Optional blockers. A task cannot run until every dependency is done."
-                  >
-                    <div class="dependency-picker">
-                      {draft.blocked_by_ids.length > 0 && (
-                        <Toolbar class="dependency-chip-list" align="start">
-                          {draft.blocked_by_ids.map((dependencyId) => {
-                            const dependency = selectedDependencyMap.get(dependencyId);
-                            const label = dependency?.title || dependencyId;
-                            return (
-                              <Chip key={dependencyId} variant="tag" onRemove={() => removeDependency(dependencyId)}>
-                                {label}
-                              </Chip>
-                            );
-                          })}
-                        </Toolbar>
-                      )}
-                      <Select
-                        value={dependencyDraft}
-                        onChange={addDependency}
-                        options={dependencyOptions}
-                        placeholder="Link another task..."
-                        ariaLabel="Add dependency"
-                        searchable
-                      />
-                    </div>
-                  </FormField>
-                </FormSection>
+                    {renderDependencyField()}
+                  </FormSection>
+                )}
               </div>
 
               {/* Right rail — assignment & stage */}

@@ -6451,6 +6451,16 @@ html.assistant-resizing * {
   gap: var(--sp-5);
   min-width: 0;
 }
+.task-edit-primary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  min-width: 0;
+}
+.task-edit-primary-grid .select {
+  width: 100%;
+  min-width: 0;
+}
 .task-edit-rail {
   position: sticky;
   top: var(--sp-6);
@@ -6524,6 +6534,7 @@ html.assistant-resizing * {
 
 @media (max-width: 860px) {
   .task-edit-grid { grid-template-columns: 1fr; }
+  .task-edit-primary-grid { grid-template-columns: 1fr; }
   .task-edit-rail { position: static; }
 }
 
