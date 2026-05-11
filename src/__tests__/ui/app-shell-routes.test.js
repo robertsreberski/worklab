@@ -28,30 +28,27 @@ function moreRouteIds() {
 }
 
 describe("app shell routes", () => {
-  it("exposes resource routes as individual nav entries with canonical hrefs", () => {
+  it("exposes the grouped IA with Library and Settings as aggregate destinations", () => {
     const workGroup = ROUTE_GROUPS.find((group) => group.label === "Work");
-    const libraryGroup = ROUTE_GROUPS.find((group) => group.label === "Library");
-    const systemGroup = ROUTE_GROUPS.find((group) => group.label === "System");
+    const buildGroup = ROUTE_GROUPS.find((group) => group.label === "Build");
 
-    expect(workGroup?.routes.map((route) => [route.id, route.href])).toEqual([
-      ["tasks", "#/tasks"],
-      ["goals", "#/goals"],
-      ["projects", "#/projects"],
-      ["runs", "#/runs"],
+    expect(workGroup?.routes.map((route) => route.id)).toEqual([
+      "tasks",
+      "goals",
+      "projects",
     ]);
-    expect(libraryGroup?.routes.map((route) => [route.id, route.href])).toEqual([
-      ["teams", "#/library/teams"],
-      ["agents", "#/library/agents"],
-      ["skills", "#/library/skills"],
-      ["knowledge", "#/library/knowledge"],
+    expect(buildGroup?.routes.map((route) => route.id)).toEqual([
+      "library",
+      "runs",
+      "settings",
     ]);
-    expect(systemGroup?.routes.map((route) => [route.id, route.href])).toEqual([
-      ["providers", "#/settings/providers"],
-      ["settings", "#/settings"],
-    ]);
-    expect(ROUTES.find((route) => route.id === "agents")).toMatchObject({
-      label: "Agents",
-      href: "#/library/agents",
+    expect(ROUTES.find((route) => route.id === "library")).toMatchObject({
+      label: "Library",
+      icon: "book",
+    });
+    expect(ROUTES.find((route) => route.id === "settings")).toMatchObject({
+      label: "Settings",
+      icon: "settings",
     });
   });
 
@@ -68,10 +65,10 @@ describe("app shell routes", () => {
     });
   });
 
-  it("includes individual resource routes in mobile More navigation", () => {
+  it("keeps aggregate Library and Settings destinations in mobile More navigation", () => {
     const ids = moreRouteIds();
 
-    expect(ids).toEqual(["teams", "agents", "skills", "knowledge", "providers", "settings"]);
+    expect(ids).toEqual(["library", "settings"]);
   });
 
   it("keeps the ambient assistant launcher icon-only and owned by AssistantDock", () => {
