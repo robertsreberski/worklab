@@ -27,24 +27,58 @@ function moreRouteIds() {
   return [...match[1].matchAll(/"([^"]+)"/g)].map((item) => item[1]);
 }
 
+function tabbarRouteIds() {
+  const source = readFileSync(appShellPath, "utf8");
+  const match = source.match(/const TABBAR_ROUTES = \[([\s\S]*?)\];/);
+  if (!match) return [];
+  return [...match[1].matchAll(/id: "([^"]+)"/g)].map((item) => item[1]);
+}
+
 describe("app shell routes", () => {
-  it("exposes the grouped IA with Library and Settings as aggregate destinations", () => {
+  it("exposes the corrected Work, Library, and System IA", () => {
     const workGroup = ROUTE_GROUPS.find((group) => group.label === "Work");
-    const buildGroup = ROUTE_GROUPS.find((group) => group.label === "Build");
+    const libraryGroup = ROUTE_GROUPS.find((group) => group.label === "Library");
+    const systemGroup = ROUTE_GROUPS.find((group) => group.label === "System");
 
     expect(workGroup?.routes.map((route) => route.id)).toEqual([
       "tasks",
-      "goals",
-      "projects",
+      "agents",
+      "knowledge",
     ]);
-    expect(buildGroup?.routes.map((route) => route.id)).toEqual([
-      "library",
+    expect(libraryGroup?.routes.map((route) => route.id)).toEqual([
+      "projects",
+      "teams",
+      "skills",
+    ]);
+    expect(systemGroup?.routes.map((route) => route.id)).toEqual([
+      "goals",
       "runs",
       "settings",
     ]);
-    expect(ROUTES.find((route) => route.id === "library")).toMatchObject({
-      label: "Library",
+    expect(ROUTES.find((route) => route.id === "agents")).toMatchObject({
+      label: "Agents",
+      icon: "user",
+      href: "#/library/agents",
+    });
+    expect(ROUTES.find((route) => route.id === "knowledge")).toMatchObject({
+      label: "Knowledge",
       icon: "book",
+      href: "#/library/knowledge",
+    });
+    expect(ROUTES.find((route) => route.id === "projects")).toMatchObject({
+      label: "Projects",
+      icon: "folder",
+      href: "#/projects",
+    });
+    expect(ROUTES.find((route) => route.id === "teams")).toMatchObject({
+      label: "Teams",
+      icon: "users",
+      href: "#/library/teams",
+    });
+    expect(ROUTES.find((route) => route.id === "skills")).toMatchObject({
+      label: "Skills",
+      icon: "sparkles",
+      href: "#/library/skills",
     });
     expect(ROUTES.find((route) => route.id === "settings")).toMatchObject({
       label: "Settings",
@@ -52,23 +86,26 @@ describe("app shell routes", () => {
     });
   });
 
-  it("exposes Goals as a first-class Work route", () => {
-    const workGroup = ROUTE_GROUPS.find((group) => group.label === "Work");
-    const workIds = workGroup?.routes.map((route) => route.id) || [];
+  it("keeps Goals as a first-class System route", () => {
+    const systemGroup = ROUTE_GROUPS.find((group) => group.label === "System");
+    const systemIds = systemGroup?.routes.map((route) => route.id) || [];
 
-    expect(workIds).toContain("goals");
-    expect(workIds.indexOf("goals")).toBeGreaterThan(workIds.indexOf("tasks"));
-    expect(workIds.indexOf("goals")).toBeLessThan(workIds.indexOf("projects"));
+    expect(systemIds).toContain("goals");
+    expect(systemIds.indexOf("goals")).toBeLessThan(systemIds.indexOf("runs"));
     expect(ROUTES.find((route) => route.id === "goals")).toMatchObject({
       label: "Goals",
       icon: "target",
     });
   });
 
-  it("keeps aggregate Library and Settings destinations in mobile More navigation", () => {
+  it("keeps Work-first routes in the mobile tabbar", () => {
+    expect(tabbarRouteIds()).toEqual(["tasks", "agents", "knowledge"]);
+  });
+
+  it("keeps Library and System routes in mobile More navigation", () => {
     const ids = moreRouteIds();
 
-    expect(ids).toEqual(["library", "settings"]);
+    expect(ids).toEqual(["projects", "teams", "skills", "goals", "runs", "settings"]);
   });
 
   it("keeps the ambient assistant launcher icon-only and owned by AssistantDock", () => {
