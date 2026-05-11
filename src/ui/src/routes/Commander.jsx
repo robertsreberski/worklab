@@ -37,6 +37,8 @@ const HIDDEN_DONE_LIMIT = 0;
 const SHOWN_DONE_LIMIT = 200;
 const RUN_PROGRESS_PREVIEW_LIMIT = 12;
 const COMMANDER_TASK_LIST_CACHE_LIMIT = 4;
+export const COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS = 1200;
+export const COMMANDER_COST_SUMMARY_POLL_MS = 60_000;
 const commanderTaskListCache = new Map();
 
 export function formatCommanderCost(value) {
@@ -82,18 +84,41 @@ export function formatCommanderCostChipLabel(summary) {
   return null;
 }
 
+export function shouldLoadCommanderCostSummary({ inFlight = false, force = false, visible = pageIsVisible() } = {}) {
+  return !inFlight && (force || visible);
+}
+
 function DailyCostChip() {
   const [summary, setSummary] = useState(null);
+  const loadRef = useRef(null);
+  const refreshOnResume = useCallback(() => {
+    loadRef.current?.({ force: true });
+  }, []);
+  useAppResume(refreshOnResume);
   useEffect(() => {
     let cancelled = false;
-    function load() {
-      api.getRunCostSummary().then((res) => {
+    let inFlight = false;
+    async function load({ force = false } = {}) {
+      if (cancelled || !shouldLoadCommanderCostSummary({ inFlight, force })) return;
+      inFlight = true;
+      try {
+        const res = await api.getRunCostSummary();
         if (!cancelled && res?.today) setSummary(res);
-      }).catch(() => {});
+      } catch {
+        // Best-effort status chip; never block Commander rendering on cost data.
+      } finally {
+        inFlight = false;
+      }
     }
-    load();
-    const handle = setInterval(load, 60_000);
-    return () => { cancelled = true; clearInterval(handle); };
+    loadRef.current = load;
+    const initialHandle = setTimeout(() => load({ force: true }), COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS);
+    const pollHandle = setInterval(() => load(), COMMANDER_COST_SUMMARY_POLL_MS);
+    return () => {
+      cancelled = true;
+      loadRef.current = null;
+      clearTimeout(initialHandle);
+      clearInterval(pollHandle);
+    };
   }, []);
   const chipLabel = formatCommanderCostChipLabel(summary);
   if (!chipLabel) return null;

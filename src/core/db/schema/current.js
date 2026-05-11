@@ -209,6 +209,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status);
 CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC);
 

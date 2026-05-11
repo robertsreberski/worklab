@@ -13,6 +13,7 @@ import {
   formatCommanderCostSummaryTitle,
   groupKeyFor,
   readCommanderTaskListCache,
+  shouldLoadCommanderCostSummary,
   taskMatchesCommanderQuery,
   writeCommanderTaskListCache,
 } from "../../ui/src/routes/Commander.jsx";
@@ -60,6 +61,13 @@ describe("commander task grouping", () => {
     expect(formatCommanderCostChipLabel({
       today: { total_usd: 0, run_count: 0, unpriced_run_count: 2 },
     })).toBe("2 unpriced today");
+  });
+
+  it("skips cost-summary refreshes while hidden or already loading", () => {
+    expect(shouldLoadCommanderCostSummary({ visible: true, inFlight: false })).toBe(true);
+    expect(shouldLoadCommanderCostSummary({ visible: false, inFlight: false })).toBe(false);
+    expect(shouldLoadCommanderCostSummary({ visible: true, inFlight: true })).toBe(false);
+    expect(shouldLoadCommanderCostSummary({ visible: false, inFlight: false, force: true })).toBe(true);
   });
 
   it("uses the saved task stage even when the latest run errored", () => {
