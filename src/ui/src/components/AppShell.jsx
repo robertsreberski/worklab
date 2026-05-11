@@ -56,8 +56,9 @@ const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
   { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
+  { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
 ];
-const MORE_ROUTE_IDS = ["teams", "skills", "knowledge", "goals", "runs", "settings"];
+const MORE_ROUTE_IDS = ["teams", "skills", "goals", "runs", "settings"];
 const ROUTE_BY_ID = Object.fromEntries(ROUTES.map((route) => [route.id, route]));
 const MORE_ROUTES = MORE_ROUTE_IDS
   .map((id) => ROUTE_BY_ID[id])

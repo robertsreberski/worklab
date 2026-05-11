@@ -11101,11 +11101,10 @@ button.settings-overview-card:focus-visible,
      focused composer into view. No --vv-height dependency means a stale value
      can no longer drive a layout dimension. */
 
-  /* While the iOS keyboard covers the home-indicator safe area, drop the composer's
-     bottom inset so it sits flush against the keyboard with no phantom gap. The inset
-     restores naturally once the .keyboard-open class clears. */
+  /* Keep the fixed assistant dock full-height, but lift the composer controls above
+     the iOS keyboard while keyboard-open owns the visual viewport shrink. */
   html.keyboard-open .assistant-composer {
-    padding-bottom: var(--sp-2);
+    padding-bottom: calc(var(--worklab-keyboard-height, 0px) + var(--sp-3));
   }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual
@@ -11834,7 +11833,7 @@ button.settings-overview-card:focus-visible,
   z-index: 30;
   height: calc(56px + var(--mobile-safe-bottom));
   padding-bottom: var(--mobile-safe-bottom);
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   overflow-x: clip;
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -12765,8 +12764,70 @@ button.settings-overview-card:focus-visible,
   .app.responsive .ds-page-head-tabs {
     flex: 0 0 auto;
   }
+  .app.responsive .settings-route-shell {
+    gap: var(--sp-3);
+    padding: 0 var(--sp-3) var(--sp-4);
+  }
+  .app.responsive .settings-route-shell > .ds-page-head:first-child {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--sp-2);
+    min-height: 0;
+    padding:
+      calc(var(--sp-3) + var(--mobile-safe-top))
+      var(--sp-1)
+      var(--sp-3);
+  }
+  .app.responsive .settings-route-shell > .ds-page-head:first-child .ds-page-title {
+    width: 100%;
+  }
+  .app.responsive .settings-route-shell .ds-page-head-tabs {
+    width: 100%;
+  }
+  .app.responsive .settings-route-shell .settings-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--sp-1);
+    width: 100%;
+    overflow: visible;
+  }
+  .app.responsive .settings-route-shell .settings-tabs .tab {
+    justify-content: center;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 var(--sp-2);
+    text-align: center;
+  }
   .app.responsive.has-mobile-action-dock .ds-page-head .page-actions {
     display: none;
+  }
+  .app.responsive.has-mobile-action-dock .task-edit-task-head {
+    display: flex;
+    min-height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-2);
+    padding: var(--sp-3);
+  }
+  .app.responsive.has-mobile-action-dock .task-edit-task-head .title-row,
+  .app.responsive.has-mobile-action-dock .task-edit-task-head .title-block,
+  .app.responsive.has-mobile-action-dock .task-edit-task-head .title-copy {
+    gap: var(--sp-2);
+  }
+  .app.responsive.has-mobile-action-dock .task-edit-task-head .title-copy h2 {
+    display: -webkit-box;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: normal;
+    text-overflow: clip;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    font-size: var(--text-xl);
+    line-height: 1.18;
+  }
+  .app.responsive.has-mobile-action-dock .task-edit-task-head .sub-bar {
+    margin-top: 0;
+    gap: var(--sp-2);
   }
   .assistant-dock {
     position: fixed;
