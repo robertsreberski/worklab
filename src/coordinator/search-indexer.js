@@ -8,6 +8,7 @@ export function startSearchIndexer({ db, dataDir, broker, logger, events } = {})
   const timers = new Map();
   let stopped = false;
   let scanning = null; // in-flight scan promise, or null
+  let startupScanTimer = null;
 
   const shouldStop = () => stopped;
 
@@ -49,7 +50,10 @@ export function startSearchIndexer({ db, dataDir, broker, logger, events } = {})
     return promise;
   }
 
-  startScan("startup");
+  startupScanTimer = setImmediate(() => {
+    startupScanTimer = null;
+    startScan("startup");
+  });
 
   function onSettingsUpdated({ keys } = {}) {
     if (!keys?.includes?.("default_embedding_model")) return;
@@ -75,6 +79,8 @@ export function startSearchIndexer({ db, dataDir, broker, logger, events } = {})
   return {
     async shutdown() {
       stopped = true;
+      if (startupScanTimer) clearImmediate(startupScanTimer);
+      startupScanTimer = null;
       events?.off?.("settings:updated", onSettingsUpdated);
       for (const timer of timers.values()) clearTimeout(timer);
       timers.clear();
