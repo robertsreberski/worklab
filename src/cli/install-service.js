@@ -163,8 +163,8 @@ function bootstrapLaunchdService(file) {
   const domain = launchdDomain();
   const target = launchdTarget();
   try { execFileSync("launchctl", ["bootout", domain, file], { stdio: "ignore" }); } catch { /* not loaded */ }
-  execFileSync("launchctl", ["bootstrap", domain, file], { stdio: "inherit" });
   execFileSync("launchctl", ["enable", target], { stdio: "ignore" });
+  execFileSync("launchctl", ["bootstrap", domain, file], { stdio: "inherit" });
   execFileSync("launchctl", ["kickstart", "-k", target], { stdio: "inherit" });
 }
 
