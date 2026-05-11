@@ -288,6 +288,8 @@ export { enrichCommentRows } from "./comments.js";
 // ---------- Knowledge base ----------
 export {
   autoPromotedRunResultInfo,
+  DEFAULT_KB_SORT,
+  KB_SORT_MODES,
   kbCreate,
   kbDelete,
   kbList,
@@ -297,6 +299,7 @@ export {
   kbRead,
   kbReadMeta,
   kbUpdate,
+  normalizeKbSort,
 } from "./kb.js";
 
 // ---------- Mentions ----------

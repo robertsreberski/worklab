@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import supertest from "supertest";
+import { kbCreate } from "../../core/kb.js";
 import { makeTestServer } from "../helpers/test-server.js";
 
 describe("kb REST routes", () => {
@@ -127,6 +128,42 @@ describe("kb REST routes", () => {
     await agent.post("/api/kb").send({ slug: "not-pinned", title: "Not Pinned", body: "" });
     const res = await agent.get("/api/kb").expect(200);
     expect(res.body.entries).toHaveLength(2);
+  });
+
+  it("GET /api/kb defaults to recent updates and supports pinned-first sort", async () => {
+    const { agent, dataDir } = mkServer();
+    kbCreate({
+      dataDir,
+      slug: "old-pin",
+      title: "Old Pin",
+      body: "",
+      pinned: true,
+      author: "test",
+      now: new Date("2026-05-01T00:00:00Z"),
+    });
+    kbCreate({
+      dataDir,
+      slug: "new-note",
+      title: "New Note",
+      body: "",
+      author: "test",
+      now: new Date("2026-05-02T00:00:00Z"),
+    });
+
+    const recent = await agent.get("/api/kb").expect(200);
+    expect(recent.body.entries.map((entry) => entry.slug)).toEqual(["new-note", "old-pin"]);
+
+    const pinnedFirst = await agent.get("/api/kb?sort=pinned_first").expect(200);
+    expect(pinnedFirst.body.entries.map((entry) => entry.slug)).toEqual(["old-pin", "new-note"]);
+  });
+
+  it("GET /api/kb rejects unknown sort modes", async () => {
+    const { agent } = mkServer();
+    const res = await agent.get("/api/kb?sort=unknown").expect(400);
+    expect(res.body.error).toMatchObject({
+      code: "validation",
+      message: expect.stringContaining("sort"),
+    });
   });
 
   // ── GET /api/kb/:slug ───────────────────────────────────────────────────────

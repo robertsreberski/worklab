@@ -31,9 +31,11 @@ describe("admin MCP tools", () => {
   });
 
   it("marks KB admin tools with read/destructive annotations", () => {
-    expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_list")?.annotations).toMatchObject({
+    const listTool = adminToolDefinitions.find((tool) => tool.name === "worklab_kb_list");
+    expect(listTool?.annotations).toMatchObject({
       readOnlyHint: true,
     });
+    expect(listTool?.inputSchema.properties).toHaveProperty("sort");
     expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_delete")?.annotations).toMatchObject({
       destructiveHint: true,
     });
@@ -119,6 +121,11 @@ describe("admin MCP tools", () => {
     expect(taskList.url).toBe("http://localhost:7878/api/tasks?team=team-alpha");
     expect(taskList.method).toBe("GET");
     expect(taskList.body).toBeNull();
+
+    const kbList = await handlers.worklab_kb_list({ pinned: true, sort: "title_asc" });
+    expect(kbList.url).toBe("http://localhost:7878/api/kb?pinned=true&sort=title_asc");
+    expect(kbList.method).toBe("GET");
+    expect(kbList.body).toBeNull();
   });
 
   it("returns compact filtered agent summaries without full instructions", async () => {

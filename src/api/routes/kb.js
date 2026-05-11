@@ -7,6 +7,7 @@ import {
   kbList,
   kbRead,
   kbUpdate,
+  normalizeKbSort,
   resolveProjectRow,
   uniqueSlug,
 } from "../../core/index.js";
@@ -353,12 +354,19 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     if (req.query.pinned === "true") pinned = true;
     else if (req.query.pinned === "false") pinned = false;
     // else leave undefined (no filter)
+    let sort;
+    try {
+      sort = normalizeKbSort(req.query.sort);
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
 
     const filter = {};
     if (tag !== undefined) filter.tag = tag;
     if (category !== undefined) filter.category = category;
     if (subcategory !== undefined) filter.subcategory = subcategory;
     if (pinned !== undefined) filter.pinned = pinned;
+    filter.sort = sort;
     try {
       if (req.query.project_id !== undefined) filter.project_id = resolveKbProjectId(db, req.query.project_id);
     } catch (error) {

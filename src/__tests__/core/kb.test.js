@@ -377,12 +377,77 @@ describe("kbList", () => {
     expect(JSON.stringify(list[0]).length).toBeLessThan(1000);
   });
 
-  it("sorts pinned first, then updated_at DESC", () => {
+  it("defaults to sorting by updated_at DESC without pin promotion", () => {
     const d = mk();
     seed(d);
     const list = kbList({ dataDir: d });
+    expect(list.map((x) => x.slug)).toEqual(["three", "two", "one"]);
+  });
+
+  it("supports explicit pinned-first sorting", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, sort: "pinned_first" });
     expect(list.map((x) => x.slug)).toEqual(["two", "three", "one"]);
-    // two is pinned, three/one unpinned with three updated later
+  });
+
+  it("supports title A-Z sorting", () => {
+    const d = mk();
+    seed(d);
+    const list = kbList({ dataDir: d, sort: "title_asc" });
+    expect(list.map((x) => x.slug)).toEqual(["one", "three", "two"]);
+  });
+
+  it("supports project/category sorting with global entries last", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "global-note",
+      title: "Global",
+      body: "b",
+      category: "decision",
+      author: "human",
+      now: new Date("2026-05-06T00:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "project-runbook",
+      title: "Runbook",
+      body: "b",
+      category: "runbook",
+      project_id: "project-1",
+      author: "human",
+      now: new Date("2026-05-05T00:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "project-research",
+      title: "Research",
+      body: "b",
+      category: "research",
+      project_id: "project-1",
+      pinned: true,
+      author: "human",
+      now: new Date("2026-05-04T00:00:00Z"),
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "other-project",
+      title: "Other Project",
+      body: "b",
+      category: "decision",
+      project_id: "project-2",
+      author: "human",
+      now: new Date("2026-05-07T00:00:00Z"),
+    });
+
+    const list = kbList({ dataDir: d, sort: "project_category" });
+    expect(list.map((x) => x.slug)).toEqual([
+      "project-research",
+      "project-runbook",
+      "other-project",
+      "global-note",
+    ]);
   });
 
   it("filters by tag", () => {
