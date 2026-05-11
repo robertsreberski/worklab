@@ -129,6 +129,38 @@ describe("activity", () => {
     expect(res.body.summary.total_cost_usd).toBeCloseTo(0.0123);
   });
 
+  it("keeps activity list rows summary-only when run payload columns are large", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "large activity" });
+    const now = Date.now();
+    const largeText = "activity payload ".repeat(5000);
+    insertRun(db, { id: "large-activity", taskId: task.id, agent: "alpha", startedAt: now });
+    db.prepare(`
+      UPDATE task_runs
+      SET result_json = ?,
+          artifacts_json = ?,
+          diagnostics_json = ?,
+          transcript_tail_json = ?
+      WHERE id = ?
+    `).run(
+      JSON.stringify({ final_text: largeText }),
+      JSON.stringify([{ path: "src/heavy.js", content: largeText }]),
+      JSON.stringify({ error_details: largeText }),
+      JSON.stringify([{ role: "assistant", content: largeText }]),
+      "large-activity",
+    );
+
+    const res = await agent.get("/api/activity?limit=1").expect(200);
+    const item = res.body.items[0];
+
+    expect(item.id).toBe("large-activity");
+    expect(item.result_json).toBeUndefined();
+    expect(item.artifacts_json).toBeUndefined();
+    expect(item.diagnostics_json).toBeUndefined();
+    expect(item.transcript_tail_json).toBeUndefined();
+    expect(JSON.stringify(res.body).length).toBeLessThan(20_000);
+  });
+
   it("returns day-by-day cost buckets for filtered activity", async () => {
     const { agent, db } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "daily costs" });

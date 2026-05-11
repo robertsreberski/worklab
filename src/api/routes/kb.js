@@ -178,7 +178,9 @@ function attachAutoPromotedInfo(dataDir, entries) {
     const slug = entry.slug || entry.meta?.slug;
     if (!slug) return { ...entry, auto_promoted: false };
     try {
-      const full = entry.body !== undefined && entry.meta ? entry : kbRead({ dataDir, slug });
+      const full = entry.body !== undefined && entry.meta
+        ? entry
+        : { meta: entry.meta || entry, body: "" };
       const info = autoPromotedRunResultInfo(full || entry);
       if (entry.meta) {
         return {

@@ -527,6 +527,29 @@ describe("autoPromotedRunResultInfo", () => {
 
     expect(autoPromotedRunResultInfo(entry).auto_promoted).toBe(false);
   });
+
+  it("detects generated run-result entries from frontmatter metadata", () => {
+    const entry = {
+      meta: {
+        slug: "run-def456",
+        title: "T-2 final answer from coder",
+        category: "run-results",
+        tags: ["run-result", "execute", "agent-coder"],
+        source_run_id: "RunDEF",
+        source_task_key: "T-2",
+        source_agent: "coder",
+        pinned: false,
+      },
+      body: "",
+    };
+
+    expect(autoPromotedRunResultInfo(entry)).toMatchObject({
+      auto_promoted: true,
+      source_run_id: "RunDEF",
+      source_task_ref: "T-2",
+      source_agent: "coder",
+    });
+  });
 });
 
 describe("slug validation", () => {

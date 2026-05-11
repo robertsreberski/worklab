@@ -22,6 +22,7 @@ import {
   listLastNonRunningRunsForTasks,
   listRunningRunSummariesForTasks,
   listRunningRunsWithEventsForTasks,
+  listTaskRunsWithLogJoin,
   selectRunsWithLogJoin,
 } from "../../../core/db/queries/runs.js";
 import {
@@ -514,6 +515,53 @@ function rowToRun(row) {
   };
 }
 
+function rowToRunSummary(row) {
+  if (!row) return null;
+  const {
+    log_id,
+    log_model,
+    log_effort,
+    log_input_tokens,
+    log_output_tokens,
+    log_cache_read_tokens,
+    log_cache_creation_tokens,
+    log_cost_usd,
+    log_duration_ms,
+    log_num_turns,
+    log_status,
+    artifact_summary_json,
+    todo_state_json,
+    worktree_json,
+    ...run
+  } = row;
+  const hasLog = Boolean(log_id);
+  return {
+    ...run,
+    parent_run_id: run.parent_run_id || null,
+    process_status: run.process_status || "running",
+    workspace_mode: run.workspace_mode || "direct",
+    source_workdir: run.source_workdir || null,
+    worktree: safeParseJson(worktree_json, null),
+    stage: run.stage || (run.mode === "review" ? "review" : "execute"),
+    artifact_summary: safeParseJson(artifact_summary_json, null) || {},
+    todo_state: runTodoStateSummary(todo_state_json),
+    cost_usd: run.cost_usd ?? log_cost_usd ?? null,
+    log: hasLog ? {
+      id: log_id,
+      model: log_model,
+      effort: log_effort,
+      input_tokens: log_input_tokens,
+      output_tokens: log_output_tokens,
+      cache_read_tokens: log_cache_read_tokens,
+      cache_creation_tokens: log_cache_creation_tokens,
+      cost_usd: log_cost_usd,
+      duration_ms: log_duration_ms,
+      num_turns: log_num_turns,
+      status: log_status,
+    } : null,
+  };
+}
+
 // Decorate runs with continuation lineage derived purely from the array.
 // Walks `parent_run_id` ancestors within the array (no DB calls) so a single
 // task-detail call doesn't N+1 the chain.
@@ -585,4 +633,9 @@ export function attachLiveInputState(runs, watcher) {
 
 export function selectRunsWithLog(db, whereClause, ...params) {
   return selectRunsWithLogJoin(db, whereClause, ...params).map(rowToRun);
+}
+
+export function selectTaskRunsWithLog(db, taskId, { view = "full", limit = null, cursor = null } = {}) {
+  const rows = listTaskRunsWithLogJoin(db, taskId, { view, limit, cursor });
+  return rows.map(view === "summary" ? rowToRunSummary : rowToRun);
 }

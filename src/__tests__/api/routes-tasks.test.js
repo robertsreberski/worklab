@@ -557,6 +557,59 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.runs.map((run) => run.id)).toEqual(["run-new", "run-old"]);
   });
 
+  it("supports summary-limited task detail runs without heavy payload fields", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "summary runs" });
+    const largeText = "task detail payload ".repeat(5000);
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status,
+         summary, details, result_json, artifacts_json, diagnostics_json, transcript_tail_json)
+      VALUES (?, ?, 'execute', 'execute', 'alpha', ?, ?, 'complete', 'succeeded', ?, ?, ?, ?, ?, ?)
+    `);
+    insertRun.run(
+      "run-old-summary",
+      task.id,
+      1000,
+      1100,
+      "Old summary",
+      "Old details",
+      JSON.stringify({ final_text: largeText }),
+      JSON.stringify([{ path: "src/old.js", content: largeText }]),
+      JSON.stringify({ error_details: largeText }),
+      JSON.stringify([{ role: "assistant", content: largeText }]),
+    );
+    insertRun.run(
+      "run-new-summary",
+      task.id,
+      2000,
+      2100,
+      "New summary",
+      "New details",
+      JSON.stringify({ final_text: largeText }),
+      JSON.stringify([{ path: "src/new.js", content: largeText }]),
+      JSON.stringify({ error_details: largeText }),
+      JSON.stringify([{ role: "assistant", content: largeText }]),
+    );
+
+    const res = await agent.get(`/api/tasks/${task.id}?runs=summary&run_limit=1`).expect(200);
+
+    expect(res.body.runs).toHaveLength(1);
+    expect(res.body.runs[0]).toMatchObject({
+      id: "run-new-summary",
+      summary: "New summary",
+      details: "New details",
+    });
+    expect(res.body.runs[0].result_json).toBeUndefined();
+    expect(res.body.runs[0].result).toBeUndefined();
+    expect(res.body.runs[0].artifacts_json).toBeUndefined();
+    expect(res.body.runs[0].artifacts).toBeUndefined();
+    expect(res.body.runs[0].diagnostics_json).toBeUndefined();
+    expect(res.body.runs[0].diagnostics).toBeUndefined();
+    expect(res.body.runs_next_cursor).toBe(2000);
+    expect(JSON.stringify(res.body).length).toBeLessThan(30_000);
+  });
+
   it("includes parsed worktree metadata on task detail runs", async () => {
     const { agent, db } = makeTestServer();
     const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
@@ -1663,6 +1716,49 @@ describe("GET /api/tasks/:id/runs", () => {
       duration_ms: 250,
       num_turns: 1,
     });
+  });
+
+  it("returns paginated summary runs without heavy payload fields", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { task } } = await agent.post("/api/tasks").send({ title: "paged runs" });
+    const largeText = "paged run payload ".repeat(5000);
+    const insertRun = db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status,
+         summary, result_json, artifacts_json, diagnostics_json)
+      VALUES (?, ?, 'execute', 'execute', 'alpha', ?, ?, 'complete', 'succeeded', ?, ?, ?, ?)
+    `);
+    insertRun.run(
+      "run-page-old",
+      task.id,
+      1000,
+      1100,
+      "Old page",
+      JSON.stringify({ final_text: largeText }),
+      JSON.stringify([{ path: "src/old.js", content: largeText }]),
+      JSON.stringify({ error_details: largeText }),
+    );
+    insertRun.run(
+      "run-page-new",
+      task.id,
+      2000,
+      2100,
+      "New page",
+      JSON.stringify({ final_text: largeText }),
+      JSON.stringify([{ path: "src/new.js", content: largeText }]),
+      JSON.stringify({ error_details: largeText }),
+    );
+
+    const first = await agent.get(`/api/tasks/${task.id}/runs?view=summary&limit=1`).expect(200);
+    expect(first.body.runs.map((run) => run.id)).toEqual(["run-page-new"]);
+    expect(first.body.runs[0].result).toBeUndefined();
+    expect(first.body.runs[0].artifacts).toBeUndefined();
+    expect(first.body.runs[0].diagnostics).toBeUndefined();
+    expect(first.body.nextCursor).toBe(2000);
+
+    const second = await agent.get(`/api/tasks/${task.id}/runs?view=summary&limit=1&cursor=2000`).expect(200);
+    expect(second.body.runs.map((run) => run.id)).toEqual(["run-page-old"]);
+    expect(second.body.nextCursor).toBeNull();
   });
 });
 
