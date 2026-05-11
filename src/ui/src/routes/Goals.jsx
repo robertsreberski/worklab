@@ -380,7 +380,7 @@ function GoalDetail({ goal, onChanged }) {
           </Card>
           <Card title="Links">
             {referenceLinks.length ? (
-              <div class="goal-link-list" role="list">
+              <Toolbar class="goal-link-list" align="start">
                 {referenceLinks.map((link) => (
                   <a
                     key={`${link.kind}:${link.href}`}
@@ -388,13 +388,12 @@ function GoalDetail({ goal, onChanged }) {
                     target={link.external ? "_blank" : undefined}
                     rel={link.external ? "noopener noreferrer" : undefined}
                     class={`goal-link-row is-${link.kind}`}
-                    role="listitem"
                   >
                     <Icon name={link.kind === "reference" ? "external" : "link"} size={13} />
                     <span>{link.label}</span>
                   </a>
                 ))}
-              </div>
+              </Toolbar>
             ) : (
               <p class="muted">No links attached.</p>
             )}
