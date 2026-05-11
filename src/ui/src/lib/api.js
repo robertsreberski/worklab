@@ -104,7 +104,13 @@ export const api = {
   getAssistantRun: (id, query, options) => request("GET", `/assistant/runs/${pathSegment(id)}${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   cancelAssistantRun: (id) => request("POST", `/assistant/runs/${pathSegment(id)}/cancel`),
   // agents
-  listAgents: (options) => request("GET", "/agents", null, options),
+  listAgents: (query, options) => {
+    if (query?.signal && !options) {
+      options = query;
+      query = null;
+    }
+    return request("GET", `/agents${query ? "?" + new URLSearchParams(query) : ""}`, null, options);
+  },
   getAgent: (name, options) => request("GET", `/agents/${pathSegment(name)}`, null, options),
   getAgentMemory: (name) => request("GET", `/agents/${pathSegment(name)}/memory`),
   listAgentMemories: (name, query, options) => request("GET", `/agents/${pathSegment(name)}/memories${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
