@@ -3933,32 +3933,68 @@ html.assistant-resizing * {
 .task-parent-reference {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   width: 100%;
+  min-height: 58px;
   min-width: 0;
   box-sizing: border-box;
-  padding: var(--sp-2) var(--sp-6);
+  padding: var(--sp-3) var(--sp-6);
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 7%, transparent), transparent 46%),
-    color-mix(in srgb, var(--surface-sunken) 78%, transparent);
+  background: color-mix(in srgb, var(--surface-sunken) 84%, transparent);
   color: var(--text-muted);
   font-size: var(--text-sm);
   line-height: 1.25;
   text-decoration: none;
-  white-space: nowrap;
   overflow: hidden;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .task-parent-reference:hover {
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 52%),
-    color-mix(in srgb, var(--surface-elevated) 54%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+  background: color-mix(in srgb, var(--surface-elevated) 74%, var(--accent-soft));
   color: var(--text);
+}
+.task-parent-reference:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.task-parent-reference-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.task-parent-reference-copy {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.task-parent-reference-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.task-parent-reference-arrow {
+  flex: 0 0 auto;
+  color: var(--text-subtle);
+}
+.task-parent-reference:hover .task-parent-reference-arrow {
+  color: var(--accent);
 }
 .task-parent-reference-icon,
 .task-parent-reference-label,
-.task-parent-reference-key {
+.task-parent-reference-key,
+.task-parent-reference-status {
   flex: 0 0 auto;
   white-space: nowrap;
 }
@@ -3968,12 +4004,20 @@ html.assistant-resizing * {
   font-size: var(--text-xs);
   color: var(--text-subtle);
 }
+.task-parent-reference-key {
+  color: var(--text-muted);
+}
 .task-parent-reference-title {
   flex: 1 1 auto;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 650;
+  line-height: 1.25;
 }
 .task-workflow-meta {
   display: flex;
@@ -12581,6 +12625,30 @@ button.settings-overview-card:focus-visible,
   .task-detail-head .id-prefix {
     display: none;
   }
+  .task-parent-reference {
+    align-items: flex-start;
+    min-height: 66px;
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .task-parent-reference-glyph {
+    width: 30px;
+    height: 30px;
+    margin-top: 1px;
+  }
+  .task-parent-reference-meta {
+    row-gap: var(--sp-1);
+    column-gap: var(--sp-2);
+  }
+  .task-parent-reference-title {
+    display: -webkit-box;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+  .task-parent-reference-arrow {
+    display: none;
+  }
   .editor-body,
   .task-detail,
   .task-detail-shell .task-detail,
@@ -12695,6 +12763,13 @@ button.settings-overview-card:focus-visible,
 }
 
 @media (max-width: 480px) {
+  .task-parent-reference {
+    padding-inline: var(--sp-3);
+  }
+  .task-parent-reference-glyph {
+    width: 28px;
+    height: 28px;
+  }
   .task-detail-shell .task-detail {
     padding-inline: var(--sp-3);
   }
