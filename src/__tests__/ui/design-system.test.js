@@ -860,6 +860,7 @@ describe("design system stylesheet", () => {
 
   it("docks the mobile assistant composer above the keyboard without shrinking the dock", () => {
     const css = readFileSync(stylesPath, "utf8");
+    const liftedDockRule = declarationsForSelector(css, ".assistant-dock.assistant-keyboard-lifted");
     const keyboardComposerRule = declarationsForSelector(css, "html.keyboard-open .assistant-composer");
     const liftedComposerRule = declarationsForSelector(css, ".assistant-dock.assistant-keyboard-lifted .assistant-composer");
     const keyboardThreadRule = declarationsForSelector(css, "html.keyboard-open .assistant-thread");
@@ -867,13 +868,14 @@ describe("design system stylesheet", () => {
     const keyboardThreadSpacerRule = declarationsForSelector(css, "html.keyboard-open .assistant-thread::after");
     const liftedThreadSpacerRule = declarationsForSelector(css, ".assistant-dock.assistant-keyboard-lifted .assistant-thread::after");
 
-    expect(keyboardComposerRule).toMatch(/transform:\s*translateY\(calc\(-1 \* var\(--assistant-keyboard-lift, var\(--worklab-keyboard-height, 0px\)\)\)\)/);
-    expect(liftedComposerRule).toBe(keyboardComposerRule);
-    expect(keyboardComposerRule).not.toMatch(/padding-bottom:\s*calc\(var\(--worklab-keyboard-height/);
-    expect(keyboardThreadRule).toMatch(/scroll-padding-bottom:\s*calc\(var\(--assistant-keyboard-lift, var\(--worklab-keyboard-height, 0px\)\) \+ 96px\)/);
-    expect(liftedThreadRule).toBe(keyboardThreadRule);
-    expect(keyboardThreadSpacerRule).toMatch(/flex:\s*0 0 calc\(var\(--assistant-keyboard-lift, var\(--worklab-keyboard-height, 0px\)\) \+ 96px\)/);
-    expect(liftedThreadSpacerRule).toBe(keyboardThreadSpacerRule);
+    expect(liftedDockRule).toMatch(/padding-bottom:\s*var\(--assistant-keyboard-lift, 0px\)/);
+    expect(keyboardComposerRule).not.toMatch(/transform:/);
+    expect(liftedComposerRule).not.toMatch(/transform:/);
+    expect(keyboardThreadRule).not.toMatch(/scroll-padding-bottom:/);
+    expect(liftedThreadRule).not.toMatch(/scroll-padding-bottom:/);
+    expect(keyboardThreadSpacerRule).not.toMatch(/flex:/);
+    expect(liftedThreadSpacerRule).not.toMatch(/flex:/);
+    expect(css).not.toContain("assistant-keyboard-fallback");
   });
 
   it("keeps bottom safe area inside mobile chrome only", () => {

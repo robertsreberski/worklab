@@ -163,7 +163,6 @@
   --vv-offset: 0px;
   --worklab-keyboard-height: 0px;
   --assistant-keyboard-lift: 0px;
-  --assistant-keyboard-fallback-lift: 0px;
   --worklab-safe-area-top: env(safe-area-inset-top, 0px);
   --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --worklab-safe-area-left: env(safe-area-inset-left, 0px);
@@ -11132,24 +11131,10 @@ button.settings-overview-card:focus-visible,
      focused composer into view. No --vv-height dependency means a stale value
      can no longer drive a layout dimension. */
 
-  /* Keep the fixed assistant dock full-height, but lift the composer above the
-     iOS keyboard as one unit while reserving enough thread scroll range for the
-     last message to remain visible above the lifted composer. */
-  html.keyboard-open .assistant-thread,
-  .assistant-dock.assistant-keyboard-lifted .assistant-thread {
-    scroll-padding-bottom: calc(var(--assistant-keyboard-lift, var(--worklab-keyboard-height, 0px)) + 96px);
-  }
-  html.keyboard-open .assistant-thread::after,
-  .assistant-dock.assistant-keyboard-lifted .assistant-thread::after {
-    content: "";
-    display: block;
-    flex: 0 0 calc(var(--assistant-keyboard-lift, var(--worklab-keyboard-height, 0px)) + 96px);
-  }
-  html.keyboard-open .assistant-composer,
-  .assistant-dock.assistant-keyboard-lifted .assistant-composer {
-    padding-bottom: max(var(--sp-3), var(--mobile-safe-bottom));
-    transform: translateY(calc(-1 * var(--assistant-keyboard-lift, var(--worklab-keyboard-height, 0px))));
-    will-change: transform;
+  /* When the focused composer actually overlaps the visual viewport, inset the
+     dock itself so the normal grid layout moves the thread and composer together. */
+  .assistant-dock.assistant-keyboard-lifted {
+    padding-bottom: var(--assistant-keyboard-lift, 0px);
   }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual

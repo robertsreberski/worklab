@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import {
-  ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR,
   ASSISTANT_KEYBOARD_LIFT_VAR,
   computeAssistantKeyboardLiftState,
   cssPx,
@@ -9,7 +8,6 @@ import {
   visualViewportBottom,
 } from "../lib/assistantKeyboardLift.js";
 import { assistantViewContextFromLocation } from "../lib/assistantViewContext.js";
-import { KEYBOARD_HEIGHT_VAR } from "../lib/mobileViewport.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
 import { subscribeSharedEventSource } from "../lib/sharedEventSource.js";
 import { Icon } from "./Icon.jsx";
@@ -165,14 +163,10 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     const clearLift = () => {
       const dock = dockRef.current;
       dock?.style?.removeProperty?.(ASSISTANT_KEYBOARD_LIFT_VAR);
-      dock?.style?.removeProperty?.(ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR);
       dock?.classList?.remove?.("assistant-keyboard-lifted");
-      dock?.classList?.remove?.("assistant-keyboard-fallback");
       dock?.classList?.remove?.("assistant-composer-focused");
       if (dock?.dataset) {
         delete dock.dataset.assistantKeyboardMode;
-        delete dock.dataset.assistantKeyboardEstimate;
-        delete dock.dataset.assistantKeyboardTargetBottom;
       }
     };
 
@@ -206,16 +200,10 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     const eventInComposer = (event) => (
       typeof event?.target?.closest === "function" && !!event.target.closest(".assistant-composer")
     );
-    const isMobileKeyboardLayout = () => (
-      win.matchMedia?.("(max-width: 860px)")?.matches === true
-      || win.matchMedia?.("(pointer: coarse)")?.matches === true
-      || Number(win.navigator?.maxTouchPoints || 0) > 0
-    );
     const measure = () => {
       frameRef.current = 0;
       const dock = dockRef.current;
       const composer = dock?.querySelector?.(".assistant-composer");
-      const header = dock?.querySelector?.(".assistant-dock-head");
       const textarea = textareaRef.current || composer?.querySelector?.(".textarea");
       const composerFocused = focusedInComposer();
       if (!dock || !composer || !composerFocused) {
@@ -223,45 +211,32 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
         return;
       }
 
-      const rootStyles = win.getComputedStyle?.(doc.documentElement);
       const dockStyles = win.getComputedStyle?.(dock);
-      const keyboardHeight = readCssPxValue(rootStyles?.getPropertyValue(KEYBOARD_HEIGHT_VAR));
       const currentLift = readCssPxValue(dockStyles?.getPropertyValue(ASSISTANT_KEYBOARD_LIFT_VAR));
       const dockRect = dock.getBoundingClientRect?.();
       const composerRect = composer.getBoundingClientRect?.();
-      const headerRect = header?.getBoundingClientRect?.();
       const textareaRect = textarea?.getBoundingClientRect?.();
       const liftState = computeAssistantKeyboardLiftState({
-        keyboardHeight,
         visibleBottom: visualViewportBottom(win),
         dockBottom: dockRect?.bottom,
-        dockHeight: dockRect?.height,
-        composerTop: composerRect?.top,
         composerBottom: composerRect?.bottom,
         textareaBottom: textareaRect?.bottom,
-        headerBottom: headerRect?.bottom,
         currentLift,
         composerFocused,
-        mobileLayout: isMobileKeyboardLayout(),
       });
       const lift = liftState.lift;
 
       dock.classList.add("assistant-composer-focused");
-      dock.style.setProperty(ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR, cssPx(liftState.fallbackLift));
       if (dock.dataset) {
         dock.dataset.assistantKeyboardMode = liftState.mode;
-        dock.dataset.assistantKeyboardEstimate = String(Math.round(liftState.estimatedKeyboardHeight || 0));
-        dock.dataset.assistantKeyboardTargetBottom = String(Math.round(liftState.fallbackTargetBottom || 0));
       }
       if (lift > 0) {
         dock.style.setProperty(ASSISTANT_KEYBOARD_LIFT_VAR, cssPx(lift));
         dock.classList.add("assistant-keyboard-lifted");
-        dock.classList.toggle("assistant-keyboard-fallback", liftState.mode === "fallback");
         scrollThreadToBottom();
       } else {
         dock.style.removeProperty?.(ASSISTANT_KEYBOARD_LIFT_VAR);
         dock.classList.remove("assistant-keyboard-lifted");
-        dock.classList.remove("assistant-keyboard-fallback");
       }
     };
     const scheduleFrame = () => {
@@ -300,7 +275,6 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     win.addEventListener?.("resize", scheduleIfFocused, { passive: true });
     win.addEventListener?.("orientationchange", scheduleIfFocused, { passive: true });
     win.visualViewport?.addEventListener?.("resize", scheduleIfFocused, { passive: true });
-    win.visualViewport?.addEventListener?.("scroll", scheduleIfFocused, { passive: true });
 
     return () => {
       if (frameRef.current && cancelFrame) cancelFrame(frameRef.current);
@@ -312,7 +286,6 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       win.removeEventListener?.("resize", scheduleIfFocused);
       win.removeEventListener?.("orientationchange", scheduleIfFocused);
       win.visualViewport?.removeEventListener?.("resize", scheduleIfFocused);
-      win.visualViewport?.removeEventListener?.("scroll", scheduleIfFocused);
       clearLift();
     };
   }, [open, dockRef, textareaRef, scrollRef]);
@@ -407,6 +380,7 @@ export function AssistantDock({
   }
 
   function handleComposerFocus() {
+    textareaRef.current?.scrollIntoView?.({ block: "nearest", behavior: "auto" });
     scheduleThreadScroll([0, 120, 360]);
   }
 
