@@ -116,13 +116,15 @@ export function applyMobileViewportMetrics(env = globalThis) {
     activeElement: doc?.activeElement,
   });
 
-  // --app-height / --worklab-viewport-height are NOT JS-set anymore. iOS reports
+  // --app-height / --worklab-viewport-height are NOT JS-set anymore — iOS reports
   // window.innerHeight and visualViewport.height inconsistently across minor versions
-  // of iOS 26 (Apple Dev Forums 800125 etc.); whatever we read here can render body
-  // shorter than the actual screen and produce a permanent empty band at the bottom.
-  // The :root chain in styles.css falls back to 100dvh, which iOS reports correctly
-  // in standalone PWA mode. We still compute appHeight in viewportState for the
-  // return value (callers may inspect it), but don't push it to CSS.
+  // of iOS 26 (Apple Dev Forums 800125 etc.), so writing those reads into CSS could
+  // render body shorter than the actual screen. The :root chain in styles.css falls
+  // back to 100vh; iOS in standalone PWA mode evaluates 100vh correctly at first
+  // paint, but then lazy-skips re-evaluating it when its own viewport metrics drift.
+  // The periodic forceViewportReflow tick below (installed in installMobileViewportMetrics)
+  // is what keeps body sized to the screen on iOS 26.2+. We still compute appHeight
+  // in viewportState for the return value (callers may inspect it).
   const appHeight = viewportState.appHeight;
 
   const wasOpen = root.classList?.contains?.("keyboard-open") === true;
@@ -216,6 +218,29 @@ function installTouchBoundaryGuard(env) {
 
 const WATCHDOG_INTERVAL_MS = 200;
 const WATCHDOG_MAX_ATTEMPTS = 25; // ~5s — bounded poll while keyboard-open is set
+
+// iOS 26.2+ in standalone PWA mode lazily evaluates `100vh` against a stale layout
+// viewport, leaving body shorter than the screen until something prompts a recalc.
+// A 1 Hz forced reflow + style read on the viewport-height chain keeps iOS in sync.
+// Discovered empirically: enabling the `?debug-viewport=1` overlay (commit 6a9fce3)
+// silently fixed the bug because its 1 Hz `setInterval(refresh, ...)` performed the
+// exact same reads. We replicate the minimum reads here, without a visible UI.
+const VIEWPORT_REFLOW_INTERVAL_MS = 1000;
+
+function forceViewportReflow(env) {
+  const root = rootForEnv(env);
+  const doc = documentForEnv(env);
+  const win = windowForEnv(env);
+  if (!root || !doc || !win) return;
+  void root.offsetHeight;
+  void doc.body?.getBoundingClientRect?.();
+  const computed = win.getComputedStyle?.(root);
+  if (computed) {
+    void computed.getPropertyValue?.("--shell-height");
+    void computed.getPropertyValue?.("--app-height");
+    void computed.getPropertyValue?.("--worklab-viewport-height");
+  }
+}
 
 export function installMobileViewportMetrics(env = globalThis) {
   const win = windowForEnv(env);
@@ -393,10 +418,24 @@ export function installMobileViewportMetrics(env = globalThis) {
   win.visualViewport?.addEventListener?.("scroll", scheduleVisualScroll, { passive: true });
   const removeTouchBoundaryGuard = installTouchBoundaryGuard(env);
 
+  let viewportReflowTimer = null;
+  const tickViewportReflow = () => {
+    viewportReflowTimer = null;
+    forceViewportReflow(env);
+    viewportReflowTimer = setTimer(tickViewportReflow, VIEWPORT_REFLOW_INTERVAL_MS);
+  };
+  if (isStandalonePwa(env)) {
+    viewportReflowTimer = setTimer(tickViewportReflow, VIEWPORT_REFLOW_INTERVAL_MS);
+  }
+
   return () => {
     if (frame && cancelFrame) cancelFrame(frame);
     frame = 0;
     stopWatchdog();
+    if (viewportReflowTimer != null) {
+      clearTimer(viewportReflowTimer);
+      viewportReflowTimer = null;
+    }
     for (const timeout of timeouts) clearTimer(timeout);
     timeouts.clear();
     win.removeEventListener?.("resize", scheduleSettled);
