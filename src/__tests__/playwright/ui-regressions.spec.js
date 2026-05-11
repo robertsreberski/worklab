@@ -4066,6 +4066,8 @@ test("assistant composer uses fallback lift when visualViewport gives no keyboar
       assistantFallbackClass: dock?.classList.contains("assistant-keyboard-fallback") || false,
       assistantFocusedClass: dock?.classList.contains("assistant-composer-focused") || false,
       assistantMode: dock?.dataset?.assistantKeyboardMode || "none",
+      assistantKeyboardEstimate: Math.round(parseFloat(dock?.dataset?.assistantKeyboardEstimate || "0") || 0),
+      assistantKeyboardTargetBottom: Math.round(parseFloat(dock?.dataset?.assistantKeyboardTargetBottom || "0") || 0),
       keyboardHeight,
       assistantLift,
       assistantFallbackLift,
@@ -4085,7 +4087,12 @@ test("assistant composer uses fallback lift when visualViewport gives no keyboar
   expect(metrics.assistantLiftedClass).toBe(true);
   expect(metrics.assistantFallbackClass).toBe(true);
   expect(metrics.assistantMode).toBe("fallback");
-  expect(metrics.assistantLift).toBeGreaterThanOrEqual(280);
+  expect(metrics.assistantKeyboardEstimate).toBeGreaterThanOrEqual(280);
+  expect(metrics.assistantKeyboardEstimate).toBeLessThanOrEqual(340);
+  expect(metrics.assistantKeyboardTargetBottom).toBeGreaterThanOrEqual(500);
+  expect(metrics.assistantKeyboardTargetBottom).toBeLessThanOrEqual(560);
+  expect(metrics.assistantLift).toBeGreaterThan(0);
+  expect(metrics.assistantLift).toBeLessThan(360);
   expect(metrics.assistantLift).toBe(metrics.assistantFallbackLift);
   expect(metrics.transformY).toBeLessThanOrEqual(-metrics.assistantLift + 1);
   expect(metrics.composerBottom).toBeLessThanOrEqual(metrics.syntheticKeyboardTop);
