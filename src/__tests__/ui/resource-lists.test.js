@@ -327,12 +327,16 @@ describe("resource list helpers", () => {
     const titleRule = styles.match(/\.task-parent-reference-title \{(?<body>[^}]+)\}/)?.groups?.body || "";
 
     expect(parentRule).toContain("display: flex");
-    expect(parentRule).toContain("width: 100%");
+    expect(parentRule).toContain("width: auto");
+    expect(parentRule).toContain("margin: var(--sp-4) var(--sp-6) 0");
     expect(parentRule).toContain("box-sizing: border-box");
+    expect(parentRule).toContain("border-radius: var(--radius-md)");
     expect(copyRule).toContain("flex-direction: column");
     expect(metaRule).toContain("flex-wrap: wrap");
     expect(titleRule).toContain("flex: 1 1 auto");
     expect(styles).toContain(".task-parent-reference-status");
+    expect(styles).not.toContain(".task-parent-reference-glyph");
+    expect(styles).toContain(".task-parent-reference + .task-detail");
     expect(styles).toMatch(/\.task-parent-reference-title\s*\{[^}]*white-space:\s*nowrap/);
     expect(styles).toContain("-webkit-line-clamp: 2");
   });

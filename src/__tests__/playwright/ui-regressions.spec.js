@@ -1767,14 +1767,14 @@ test("child task detail pins parent reference below the header", async ({ page }
     await page.setViewportSize({ width, height: 800 });
     await page.goto(`${baseUrl}/#/tasks/${childTaskId}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator(".task-hero-title", { hasText: "Nested child task" })).toBeVisible();
-    await expect(page.locator(".task-parent-reference", { hasText: "Parent task" })).toBeVisible();
+    await expect(page.locator(".task-parent-reference", { hasText: "Parent" })).toBeVisible();
     await expect(page.locator(".task-parent-reference", { hasText: "Parent with child task" })).toBeVisible();
     await expect(page.locator(".task-workflow-parent")).toHaveCount(0);
 
     const metrics = await page.locator(".task-detail-shell").evaluate((node) => {
       const head = node.querySelector(".detail-head");
       const parent = node.querySelector(".task-parent-reference");
-      const brief = node.querySelector("#task-brief");
+      const brief = node.querySelector(".task-brief-section");
       const label = parent?.querySelector(".task-parent-reference-label");
       const key = parent?.querySelector(".task-parent-reference-key");
       const title = parent?.querySelector(".task-parent-reference-title");
@@ -1792,13 +1792,17 @@ test("child task detail pins parent reference below the header", async ({ page }
         };
       };
       const parentRect = parent?.getBoundingClientRect();
+      const briefRect = brief?.getBoundingClientRect();
       return {
         missing: !head || !parent || !brief || !label || !key || !title || !status,
         parentAfterHeader: head && parent ? Math.round(parent.getBoundingClientRect().top - head.getBoundingClientRect().bottom) : -999,
         briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
         parentHeight: parentRect ? Math.round(parentRect.height) : 0,
+        parentLeft: parentRect ? Math.round(parentRect.left) : 0,
         parentRight: parentRect ? Math.ceil(parentRect.right) : 0,
+        briefLeft: briefRect ? Math.round(briefRect.left) : 0,
+        briefRight: briefRect ? Math.ceil(briefRect.right) : 0,
         viewportWidth: window.innerWidth,
         label: item(label),
         key: item(key),
@@ -1809,10 +1813,14 @@ test("child task detail pins parent reference below the header", async ({ page }
 
     expect(metrics.missing).toBe(false);
     expect(metrics.parentAfterHeader).toBeGreaterThanOrEqual(0);
+    expect(metrics.parentAfterHeader).toBeLessThanOrEqual(16);
     expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
+    expect(metrics.briefAfterParent).toBeLessThanOrEqual(28);
     expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
     expect(metrics.parentHeight).toBeGreaterThanOrEqual(44);
     expect(metrics.parentRight).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(Math.abs(metrics.parentLeft - metrics.briefLeft)).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.parentRight - metrics.briefRight)).toBeLessThanOrEqual(1);
     expect(metrics.label).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.status).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
