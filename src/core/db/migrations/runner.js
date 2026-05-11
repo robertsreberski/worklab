@@ -623,6 +623,12 @@ export function runMigrations(db) {
     addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
     addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   }
+  if (tableExists(db, "embeddings")) {
+    addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
+    if (hasColumn(db, "embeddings", "vector")) {
+      db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
+    }
+  }
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);

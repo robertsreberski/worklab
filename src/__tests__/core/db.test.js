@@ -75,6 +75,51 @@ describe("openDb + runMigrations", () => {
     ]));
   });
 
+  it("upgrades v36 embeddings before creating the vector-present index", () => {
+    const db = openDb(":memory:");
+    const now = Date.now();
+    db.exec(`
+      CREATE TABLE embeddings (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        ref TEXT NOT NULL,
+        source_ref TEXT NOT NULL,
+        agent TEXT,
+        title TEXT,
+        chunk_text TEXT NOT NULL,
+        vector BLOB,
+        model TEXT,
+        content_hash TEXT NOT NULL,
+        indexing_error TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(kind, source_ref)
+      );
+    `);
+    db.prepare(`
+      INSERT INTO embeddings
+        (id, kind, ref, source_ref, chunk_text, vector, content_hash, created_at, updated_at)
+      VALUES (?, 'kb', ?, ?, 'plain text', ?, 'hash', ?, ?)
+    `).run("plain", "plain", "plain", null, now, now);
+    db.prepare(`
+      INSERT INTO embeddings
+        (id, kind, ref, source_ref, chunk_text, vector, content_hash, created_at, updated_at)
+      VALUES (?, 'kb', ?, ?, 'vector text', ?, 'hash2', ?, ?)
+    `).run("vector", "vector", "vector", Buffer.from([1, 2, 3, 4]), now, now);
+
+    expect(() => runMigrations(db)).not.toThrow();
+
+    const columns = db.prepare("PRAGMA table_info(embeddings)").all().map((row) => row.name);
+    const vectorFlags = db.prepare("SELECT id, vector_present FROM embeddings ORDER BY id").all();
+    const index = db.prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_embeddings_vector_present'").get();
+    expect(columns).toContain("vector_present");
+    expect(vectorFlags).toEqual([
+      { id: "plain", vector_present: 0 },
+      { id: "vector", vector_present: 1 },
+    ]);
+    expect(index?.name).toBe("idx_embeddings_vector_present");
+  });
+
   it("clears stale task failure kind when the latest run succeeded", () => {
     const db = openDb(":memory:");
     runMigrations(db);
