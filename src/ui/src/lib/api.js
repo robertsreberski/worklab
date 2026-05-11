@@ -29,6 +29,10 @@ function pathSegment(value) {
   return encodeURIComponent(String(value ?? ""));
 }
 
+function withQuery(path, query) {
+  return `${path}${query ? `?${new URLSearchParams(query)}` : ""}`;
+}
+
 export const api = {
   // projects
   listProjects: (query, options) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
@@ -55,10 +59,17 @@ export const api = {
   runGoal: (id, body = {}) => request("POST", `/goals/${encodeURIComponent(id)}/run`, body),
   // tasks
   listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
-  getTask: (id, options) => request("GET", `/tasks/${pathSegment(id)}`, null, options),
+  getTask: (id, query, options) => {
+    if (query?.signal && !options) {
+      options = query;
+      query = null;
+    }
+    return request("GET", withQuery(`/tasks/${pathSegment(id)}`, query), null, options);
+  },
   createTask: (data) => request("POST", "/tasks", data),
   bulkTasks: (data) => request("POST", "/tasks/bulk", data),
   patchTask: (id, patch) => request("PATCH", `/tasks/${pathSegment(id)}`, patch),
+  listTaskRuns: (id, query, options) => request("GET", withQuery(`/tasks/${pathSegment(id)}/runs`, query), null, options),
   createSubtask: (id, data) => request("POST", `/tasks/${pathSegment(id)}/subtasks`, data),
   listTaskAutomations: (id, options) => request("GET", `/tasks/${pathSegment(id)}/automations`, null, options),
   createTaskAutomation: (id, data) => request("POST", `/tasks/${pathSegment(id)}/automations`, data),

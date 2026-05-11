@@ -182,6 +182,22 @@ describe("ui API client", () => {
       "/api/providers/provider%201",
     ]);
   });
+
+  it("supports summary task detail queries and explicit task run history loads", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+
+    await api.getTask("task 1", { runs: "summary", run_limit: "20" });
+    await api.listTaskRuns("task 1", { view: "full" });
+
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/tasks/task%201?runs=summary&run_limit=20",
+      "/api/tasks/task%201/runs?view=full",
+    ]);
+  });
 });
 
 describe("ui API call sites", () => {
@@ -197,5 +213,11 @@ describe("ui API call sites", () => {
     }
 
     expect(genericCalls).toEqual([]);
+  });
+
+  it("loads task detail with summary runs before explicit full history", () => {
+    const taskDetailSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskDetail.jsx"), "utf8");
+    expect(taskDetailSource).toMatch(/api\.getTask\(id,\s*\{\s*runs:\s*"summary",\s*run_limit:/);
+    expect(taskDetailSource).toMatch(/api\.listTaskRuns\(operationTaskId,\s*\{\s*view:\s*"full"/);
   });
 });
