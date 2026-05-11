@@ -27,6 +27,7 @@ import {
   insertTask,
   listFilteredTasks,
   listRuntimeTaskRows,
+  listTaskSummaryRows,
   markParentAwaitingChildren,
   touchTaskUpdatedAt,
 } from "../../core/db/queries/tasks.js";
@@ -311,7 +312,9 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     }
     const rows = scope === "runtime"
       ? listRuntimeTaskRows(db, { filters: where, params, includeTeamRoots })
-      : listFilteredTasks(db, { filters: where, params, includeTeamRoots });
+      : view === "summary"
+        ? listTaskSummaryRows(db, { filters: where, params, includeTeamRoots })
+        : listFilteredTasks(db, { filters: where, params, includeTeamRoots });
     const baseTasks = rows.map(rowToTask);
     const tasks = scope === "runtime" || view !== "summary"
       ? enrichTaskList(db, baseTasks, config, { compactRuns: scope === "runtime" })

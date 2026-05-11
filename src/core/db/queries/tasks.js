@@ -173,6 +173,18 @@ export function listRuntimeTaskRows(db, { filters, params, includeTeamRoots = fa
   `).all(...params);
 }
 
+export function listTaskSummaryRows(db, { filters, params, includeTeamRoots = false }) {
+  const allFilters = [...(filters || [])];
+  if (!includeTeamRoots) allFilters.push("is_team_root = 0");
+  const where = allFilters.length ? ` WHERE ${allFilters.join(" AND ")}` : "";
+  return db.prepare(`
+    SELECT ${RUNTIME_TASK_LIST_COLUMNS.join(", ")}
+    FROM tasks
+    ${where}
+    ORDER BY updated_at DESC
+  `).all(...params);
+}
+
 export function listTasksByIds(db, ids) {
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(", ");
