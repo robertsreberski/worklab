@@ -42,7 +42,11 @@ function seedDb(dataDir) {
 
 function readEvents(dataDir, runId) {
   const db = openDb(join(dataDir, "worklab.db"));
-  const row = db.prepare("SELECT events, events_compacted_at, events_original_count, events_original_bytes FROM agent_logs WHERE task_run_id = ?").get(runId);
+  const row = db.prepare(`
+    SELECT events, events_compacted_at, events_original_count, events_original_bytes,
+           events_compaction_strategy, events_compaction_version, events_compacted_bytes
+    FROM agent_logs WHERE task_run_id = ?
+  `).get(runId);
   db.close();
   return { ...row, events: JSON.parse(row.events) };
 }
@@ -78,6 +82,8 @@ describe("compact logs CLI helpers", () => {
     expect(report.candidates).toHaveLength(1);
     expect(report.candidates[0]).toMatchObject({ task_run_id: "run-apply", action: "compact" });
     expect(report.estimated_reclaimable_bytes).toBeGreaterThan(0);
+    expect(report.strategy).toBe("slim-db");
+    expect(report.event_blob_bytes_after).toBeLessThan(report.event_blob_bytes_before);
     expect(after.events).toEqual(before.events);
     expect(after.events_compacted_at).toBeNull();
   });
@@ -110,8 +116,47 @@ describe("compact logs CLI helpers", () => {
     expect(compacted.events_original_count).toBe(2);
     expect(compacted.events_original_bytes).toBeGreaterThan(0);
     expect(compacted.events_compacted_at).toBeGreaterThan(0);
+    expect(compacted.events_compaction_strategy).toBe("slim-db");
+    expect(compacted.events_compaction_version).toBe(2);
+    expect(compacted.events_compacted_bytes).toBeGreaterThan(0);
     expect(running.events).toHaveLength(2);
     expect(pinned.events).toHaveLength(2);
+  });
+
+  it("recompacts already compacted logs with slim tool payload storage", () => {
+    const dataDir = createDataDir();
+    dirs.push(dataDir);
+    const db = openDb(join(dataDir, "worklab.db"));
+    runMigrations(db);
+    const old = Date.now() - 10 * 24 * 60 * 60 * 1000;
+    db.prepare(`
+      INSERT INTO tasks (id, task_key, root_task_id, title, instructions, stage, run_policy, created_at, updated_at)
+      VALUES ('task-2', 'T-2', 'task-2', 'Compact logs', '', 'done', 'manual', ?, ?)
+    `).run(old, old);
+    db.prepare(`
+      INSERT INTO task_runs (id, task_id, mode, stage, agent_name, started_at, ended_at, status, process_status, raw_output_path)
+      VALUES ('run-recompact', 'task-2', 'execute', 'execute', 'alpha', ?, ?, 'complete', 'succeeded', ?)
+    `).run(old, old + 1, join(dataDir, "logs", "runs", "run-recompact.jsonl"));
+    db.prepare(`
+      INSERT INTO agent_logs (id, task_run_id, events, status, created_at, events_compacted_at, events_original_count, events_original_bytes)
+      VALUES ('log-recompact', 'run-recompact', ?, 'complete', ?, ?, 2, ?)
+    `).run(JSON.stringify([
+      { type: "assistant", message: { content: [{ type: "tool_use", id: "read-1", name: "Read", input: { file_path: "a.js", content: "x".repeat(20_000) } }] } },
+      { type: "user", message: { content: [{ type: "tool_result", tool_use_id: "read-1", content: "y".repeat(20_000), is_error: false }] } },
+    ]), old, old, 50_000);
+    db.close();
+
+    const skipped = compactLogs({ dataDir, apply: true, minAgeDays: 0, minBytes: 1 });
+    const report = compactLogs({ dataDir, apply: true, recompact: true, minAgeDays: 0, minBytes: 1 });
+    const compacted = readEvents(dataDir, "run-recompact");
+
+    expect(skipped.compacted_count).toBe(0);
+    expect(report.compacted_count).toBe(1);
+    expect(report.candidates[0]).toMatchObject({ already_compacted: true, has_raw_log: true });
+    expect(compacted.events[0].message.content[0].input).toBeUndefined();
+    expect(compacted.events[0].message.content[0].input_omitted).toBe(true);
+    expect(compacted.events[1].message.content[0].content).toBeUndefined();
+    expect(compacted.events[1].message.content[0].content_omitted).toBe(true);
   });
 
   it("refuses --apply while a coordinator pid is active", () => {

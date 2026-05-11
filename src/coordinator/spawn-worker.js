@@ -19,6 +19,7 @@ import { newCommentId } from "../core/ids.js";
 import { evaluateRunTurnBudget, loadRunTurnBudget } from "../core/run-turn-budget.js";
 import { readSettings } from "../core/settings.js";
 import { aggregateRunArtifacts, artifactPaths, extractRunArtifacts, runArtifactSummary } from "../core/run-artifacts.js";
+import { compactEventsForSqlite } from "../core/run-log-compaction.js";
 import { runTodoStateSummary } from "../core/run-todos.js";
 import {
   captureGitArtifactState,
@@ -808,6 +809,7 @@ export function spawnWorker({
 
       const firstTurnInputTokens = numberOrNull(promptDiagnostics?.first_turn_input_tokens);
       const firstTurnOverheadTokens = numberOrNull(promptDiagnostics?.first_turn_overhead_tokens);
+      const sqliteLog = compactEventsForSqlite(rawEvents);
 
       db.prepare(
         `UPDATE task_runs
@@ -850,10 +852,14 @@ export function spawnWorker({
         `UPDATE agent_logs
          SET events = ?, model = ?, effort = ?, input_tokens = ?,
              output_tokens = ?, cache_read_tokens = ?, cache_creation_tokens = ?,
-             cost_usd = ?, duration_ms = ?, num_turns = ?, status = ?
+             cost_usd = ?, duration_ms = ?, num_turns = ?, status = ?,
+             events_compacted_at = ?, events_original_count = COALESCE(events_original_count, ?),
+             events_original_bytes = COALESCE(events_original_bytes, ?),
+             events_compaction_strategy = ?, events_compaction_version = ?,
+             events_compacted_bytes = ?
          WHERE id = ?`,
       ).run(
-        JSON.stringify(events),
+        JSON.stringify(sqliteLog.events),
         finalPayload?.model || null,
         finalPayload?.effort || null,
         finalPayload?.usage?.input_tokens ?? finalPayload?.usage?.inputTokens ?? null,
@@ -864,6 +870,12 @@ export function spawnWorker({
         finalPayload?.durationMs ?? durationMs,
         finalPayload?.numTurns ?? null,
         status,
+        endedAt,
+        sqliteLog.original_count,
+        sqliteLog.original_bytes,
+        sqliteLog.strategy,
+        sqliteLog.version,
+        sqliteLog.bytes,
         logId,
       );
 

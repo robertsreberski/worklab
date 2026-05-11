@@ -232,7 +232,10 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   created_at INTEGER NOT NULL,
   events_compacted_at INTEGER,
   events_original_count INTEGER,
-  events_original_bytes INTEGER
+  events_original_bytes INTEGER,
+  events_compaction_strategy TEXT,
+  events_compaction_version INTEGER,
+  events_compacted_bytes INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_logs_run ON agent_logs(task_run_id);
 CREATE INDEX IF NOT EXISTS idx_logs_run_summary
