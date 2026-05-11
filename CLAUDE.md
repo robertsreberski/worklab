@@ -101,3 +101,7 @@ All R# / A# recommendations from the audit have landed (see `docs/audits/automat
 ## Commit Style
 
 Conventional commits: `type(scope): subject`. Keep commits focused and granular (commit after each logical change), include tests with behavior changes, and don't sweep up unrelated edits.
+
+## WORKFLOW RULES (important)
+
+After every change, make sure you commit code granularly. When building a specific feature, break the work into small logical commits as you go rather than batching everything into one commit at the end.
