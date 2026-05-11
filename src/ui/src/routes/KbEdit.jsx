@@ -7,6 +7,7 @@ import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { ProjectPicker } from "../components/ProjectPicker.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
@@ -142,15 +143,6 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
     Escape: () => cancel(),
   });
-
-  const projectOptions = useMemo(() => [
-    { value: "", label: "Global" },
-    ...projects.map((project) => ({
-      value: project.id,
-      label: project.name || project.slug,
-      description: project.slug,
-    })),
-  ], [projects]);
 
   if (!entry) return <LoadingState caption="Loading entry…" />;
   if (entry.notFound) return (
@@ -302,10 +294,11 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
                   />
                 </FormField>
                 <FormField label="Project">
-                  <Select
+                  <ProjectPicker
                     value={entry.project_id || ""}
-                    options={projectOptions}
+                    projects={projects}
                     onChange={(projectId) => setEntry({ ...entry, project_id: projectId || "" })}
+                    clearLabel="Global"
                     ariaLabel="Knowledge project"
                   />
                 </FormField>

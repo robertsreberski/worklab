@@ -794,7 +794,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
 export function ProvidersTab({ selectedId = null }) {
   const [providers, setProviders] = useState([]);
   const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState("enabled");
   const [typeFilter, setTypeFilter] = useState("all");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
@@ -829,11 +829,11 @@ export function ProvidersTab({ selectedId = null }) {
     type: typeFilter,
   }), [providers, query, stateFilter, typeFilter]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
-  const hasFilter = query.trim() || stateFilter !== "all" || typeFilter !== "all";
+  const hasFilter = query.trim() || stateFilter !== "enabled" || typeFilter !== "all";
   const stateTabs = useMemo(() => [
-    { value: "all", label: "All", count: providers.length },
     { value: "enabled", label: "Enabled", count: providers.filter((provider) => provider.enabled !== false).length },
     { value: "disabled", label: "Disabled", count: providers.filter((provider) => provider.enabled === false).length },
+    { value: "all", label: "All", count: providers.length },
   ], [providers]);
   const typeOptions = useMemo(() => [
     { value: "all", label: "All types" },
@@ -853,7 +853,7 @@ export function ProvidersTab({ selectedId = null }) {
       actionLabel="New provider"
       onAction={() => navigateHash("#/settings/providers/new")}
       configTitle="Providers configuration"
-      activeConfigCount={[stateFilter !== "all", typeFilter !== "all"].filter(Boolean).length}
+      activeConfigCount={[stateFilter !== "enabled", typeFilter !== "all"].filter(Boolean).length}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter providers by enabled state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={typeFilter} onChange={setTypeFilter} options={typeOptions} ariaLabel="Filter providers by type" />
@@ -862,7 +862,7 @@ export function ProvidersTab({ selectedId = null }) {
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No providers match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setTypeFilter("all"); }} />
+      <EmptyStateFiltered body="No providers match." onClearFilters={() => { setQuery(""); setStateFilter("enabled"); setTypeFilter("all"); }} />
     ) : (
       <EmptyState
         title="No providers yet"

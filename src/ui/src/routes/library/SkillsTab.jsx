@@ -31,7 +31,7 @@ function hasFileDrag(event) {
 export function SkillsTab({ selectedName = null, scopeTabs = null }) {
   const [skills, setSkills] = useState([]);
   const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState("enabled");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [usageFilter, setUsageFilter] = useState("all");
   const [importing, setImporting] = useState(false);
@@ -92,11 +92,11 @@ export function SkillsTab({ selectedName = null, scopeTabs = null }) {
     usage: usageFilter,
   }), [priorityFilter, query, skills, stateFilter, usageFilter]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
-  const hasFilter = query.trim() || stateFilter !== "all" || priorityFilter !== "all" || usageFilter !== "all";
+  const hasFilter = query.trim() || stateFilter !== "enabled" || priorityFilter !== "all" || usageFilter !== "all";
   const stateTabs = useMemo(() => [
-    { value: "all", label: "All", count: skills.length },
     { value: "enabled", label: "Enabled", count: skills.filter((skill) => skill.enabled !== false).length },
     { value: "disabled", label: "Disabled", count: skills.filter((skill) => skill.enabled === false).length },
+    { value: "all", label: "All", count: skills.length },
   ], [skills]);
   const priorityOptions = [
     { value: "all", label: "All priorities" },
@@ -120,7 +120,7 @@ export function SkillsTab({ selectedName = null, scopeTabs = null }) {
       actionLabel="New skill"
       onAction={() => { navigateHash("#/library/skills/new"); }}
       configTitle="Skills configuration"
-      activeConfigCount={[stateFilter !== "all", priorityFilter !== "all", usageFilter !== "all"].filter(Boolean).length}
+      activeConfigCount={[stateFilter !== "enabled", priorityFilter !== "all", usageFilter !== "all"].filter(Boolean).length}
       scopeTabs={scopeTabs}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter skills by enabled state" class="tabs-pills" />
@@ -151,7 +151,7 @@ export function SkillsTab({ selectedName = null, scopeTabs = null }) {
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No skills match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setPriorityFilter("all"); setUsageFilter("all"); }} />
+      <EmptyStateFiltered body="No skills match." onClearFilters={() => { setQuery(""); setStateFilter("enabled"); setPriorityFilter("all"); setUsageFilter("all"); }} />
     ) : (
       <EmptyState
         title="No skills yet"

@@ -173,6 +173,32 @@ describe("resource list helpers", () => {
     }
   });
 
+  it("defaults status-aware resource lists to active filters", () => {
+    const expectations = [
+      ["library/AgentsTab.jsx", "const [stateFilter, setStateFilter] = useState(\"enabled\");", "setStateFilter(\"enabled\")"],
+      ["library/SkillsTab.jsx", "const [stateFilter, setStateFilter] = useState(\"enabled\");", "setStateFilter(\"enabled\")"],
+      ["settings/ProvidersTab.jsx", "const [stateFilter, setStateFilter] = useState(\"enabled\");", "setStateFilter(\"enabled\")"],
+      ["Projects.jsx", "const [statusFilter, setStatusFilter] = useState(\"active\");", "setStatusFilter(\"active\")"],
+      ["library/TeamsTab.jsx", "const [statusFilter, setStatusFilter] = useState(\"active\");", "setStatusFilter(\"active\")"],
+      ["Goals.jsx", "const [stateFilter, setStateFilter] = useState(\"active\");", "setStateFilter(\"active\")"],
+    ];
+
+    for (const [route, initialState, clearState] of expectations) {
+      const contents = source(`src/ui/src/routes/${route}`);
+      expect(contents).toContain(initialState);
+      expect(contents).toContain(clearState);
+    }
+  });
+
+  it("uses the shared project picker for project assignments without changing filter dropdowns", () => {
+    for (const route of ["TaskEdit.jsx", "Goals.jsx", "KbEdit.jsx"]) {
+      const contents = source(`src/ui/src/routes/${route}`);
+      expect(contents).toContain("ProjectPicker");
+    }
+    expect(source("src/ui/src/routes/library/KnowledgeTab.jsx")).not.toContain("ProjectPicker");
+    expect(source("src/ui/src/routes/Projects.jsx")).not.toContain("ProjectPicker");
+  });
+
   it("shares resource-row metadata primitives across the primary resource screens", () => {
     const metaComponent = source("src/ui/src/components/ResourceRowMeta.jsx");
     expect(metaComponent).toContain("function ResourceRowTags");

@@ -4,6 +4,7 @@ import { Icon } from "../components/Icon.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { AgentLink, AgentReferenceText } from "../components/AgentLink.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { ProjectPicker } from "../components/ProjectPicker.jsx";
 import { TeamPicker } from "../components/TeamPicker.jsx";
 import { AgentEventTimeline } from "../components/AgentEventTimeline.jsx";
 import { AdvancedMeta } from "../components/AdvancedMeta.jsx";
@@ -206,6 +207,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "Modal", group: "component", coverage: "visible" },
   { name: "PaneLayout", group: "component", coverage: "visible" },
   { name: "PaneRow", group: "component", coverage: "visible" },
+  { name: "ProjectPicker", group: "component", coverage: "visible" },
   { name: "ResourceGroup", group: "component", coverage: "visible" },
   { name: "ResourceList", group: "component", coverage: "visible" },
   { name: "ResourceListToolbar", group: "component", coverage: "visible" },
@@ -251,6 +253,11 @@ const DEMO_AGENTS = [
 const DEMO_TEAMS = [
   { id: "product-team", slug: "product-team", name: "Product Team", member_count: 3, status: "active" },
   { id: "qa-team", slug: "qa-team", name: "QA Team", member_count: 2, status: "active" },
+];
+
+const DEMO_PROJECTS = [
+  { id: "mobile-shell", slug: "mobile-shell", name: "Mobile Shell", archived: false, workdir: "/repos/mobile-shell", worktree_mode: "auto" },
+  { id: "legacy-flow", slug: "legacy-flow", name: "Legacy Flow", archived: true, workdir: "/repos/legacy-flow", worktree_mode: "off" },
 ];
 
 const DEMO_EVENTS = [
@@ -332,6 +339,7 @@ export function DesignSystem() {
   const [provider, setProvider] = useState("codex");
   const [agent, setAgent] = useState("builder");
   const [team, setTeam] = useState("product-team");
+  const [project, setProject] = useState("mobile-shell");
   const [enabled, setEnabled] = useState(true);
   const [checked, setChecked] = useState(true);
   const [legacyChecked, setLegacyChecked] = useState(true);
@@ -757,6 +765,9 @@ export function DesignSystem() {
             </div>
             <FormField label="AgentPicker">
               <AgentPicker value={agent} onChange={setAgent} agents={DEMO_AGENTS} />
+            </FormField>
+            <FormField label="ProjectPicker">
+              <ProjectPicker value={project} onChange={setProject} projects={DEMO_PROJECTS} />
             </FormField>
             <FormField label="TeamPicker">
               <TeamPicker value={team} onChange={setTeam} teams={DEMO_TEAMS} />
