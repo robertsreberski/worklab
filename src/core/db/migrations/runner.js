@@ -48,6 +48,17 @@ function tableExists(db, table) {
   return !!db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','virtual table') AND name = ?").get(table);
 }
 
+function ensureEmbeddingVectorPresentColumn(db, { backfill = false } = {}) {
+  if (!tableExists(db, "embeddings")) return;
+  const added = !hasColumn(db, "embeddings", "vector_present");
+  if (added) {
+    addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
+  }
+  if ((added || backfill) && hasColumn(db, "embeddings", "vector")) {
+    db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
+  }
+}
+
 function normalizeMigratedTaskStage({ stage, status } = {}) {
   if (stage === "draft") return "plan";
   if (stage === "verify" || stage === "qa") return "review";
@@ -623,12 +634,7 @@ export function runMigrations(db) {
     addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
     addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   }
-  if (tableExists(db, "embeddings")) {
-    addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
-    if (hasColumn(db, "embeddings", "vector")) {
-      db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
-    }
-  }
+  ensureEmbeddingVectorPresentColumn(db);
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
@@ -786,10 +792,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, project_id, task_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_run ON agent_memories(run_id)");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memories_active_dedupe ON agent_memories(agent_name, kind, scope, content_key) WHERE status <> 'archived'");
-  addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
-  if (tableExists(db, "embeddings") && hasColumn(db, "embeddings", "vector_present")) {
-    db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
-  }
+  ensureEmbeddingVectorPresentColumn(db);
   db.exec("CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present)");
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
@@ -864,10 +867,7 @@ export function runMigrations(db) {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   ensureCurrentTaskRuntimeColumns(db);
-  addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
-  if (tableExists(db, "embeddings") && hasColumn(db, "embeddings", "vector_present")) {
-    db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
-  }
+  ensureEmbeddingVectorPresentColumn(db);
   db.exec("CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present)");
   backfillTeamGoalContracts(db);
   db.prepare(
