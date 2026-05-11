@@ -5964,13 +5964,63 @@ html.assistant-resizing * {
   gap: var(--sp-2);
   align-items: center;
 }
-.ds-toolbar.goal-link-list {
-  justify-content: flex-start;
+.goal-readiness-list,
+.goal-readiness-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.goal-readiness-list span,
+.goal-readiness-banner {
+  min-height: 28px;
+  align-items: center;
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--status-progress-border);
+  border-radius: var(--radius-sm);
+  background: var(--status-progress-bg-10);
+  color: var(--status-progress);
+  font-size: var(--text-sm);
+}
+.goal-readiness-banner {
+  margin: 0 0 var(--sp-3);
+}
+.goal-readiness-banner.is-ready {
+  border-color: var(--status-done-border);
+  background: var(--status-done-bg-10);
+  color: var(--status-done);
+}
+.goal-link-list {
+  display: grid;
   gap: var(--sp-2);
 }
 .goal-link-list a,
 .goal-latest-cycle a {
   font-size: var(--text-sm);
+}
+.goal-link-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  text-decoration: none;
+}
+.goal-link-row:hover {
+  background: var(--surface-elevated);
+}
+.goal-link-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.goal-link-row.is-reference {
+  border-color: var(--accent-line);
 }
 .team-picker-icon {
   display: inline-flex;
@@ -9504,6 +9554,18 @@ button.settings-overview-card:focus-visible,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.project-task-row-meta > .project-task-relation-chip {
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 700;
 }
 .project-task-row-age {
   text-align: right;

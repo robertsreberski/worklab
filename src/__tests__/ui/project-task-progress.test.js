@@ -4,6 +4,7 @@ import {
   isProjectChildTask,
   projectTaskAttentionItems,
   projectTaskGroupKey,
+  projectTaskRelationLabel,
 } from "../../ui/src/lib/projectTaskProgress.js";
 
 describe("project task progress helpers", () => {
@@ -168,5 +169,20 @@ describe("project task progress helpers", () => {
     expect(parent.child_counts).toEqual({ todo: 0, in_progress: 1, done: 1 });
     expect(parent.attention.map((item) => item.key)).toEqual(["child_attention"]);
     expect(progress.attention_tasks.map((task) => task.id)).toEqual(["parent"]);
+  });
+
+  it("keeps goal-related project tasks visually distinct without changing stage groups", () => {
+    const progress = buildProjectTaskProgress([
+      { id: "goal-child", title: "Build scoped milestone", stage: "execute", goal_relation: "goal_work", owner_agent: "owner" },
+      { id: "team-queue", title: "Needs team owner", stage: "plan", goal_relation: "team_queue", owner_agent: null },
+    ]);
+
+    expect(projectTaskRelationLabel(progress.groups[1].tasks[0])).toBe("Goal work");
+    expect(projectTaskRelationLabel(progress.groups[0].tasks[0])).toBe("Team queue");
+    expect(progress.groups.map((group) => [group.key, group.tasks.map((task) => task.id)])).toEqual([
+      ["todo", ["team-queue"]],
+      ["in_progress", ["goal-child"]],
+      ["done", []],
+    ]);
   });
 });

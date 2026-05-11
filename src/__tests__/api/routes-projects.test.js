@@ -250,4 +250,49 @@ describe("project API", () => {
     const detail = await agent.get(`/api/projects/${project.id}`).expect(200);
     expect(detail.body.project.stats).toMatchObject({ task_count: 0, by_stage: {} });
   });
+
+  it("marks project tasks that are related to the project goal", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { team } } = await agent.post("/api/teams").send({ name: "Goal Task Team" }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Goal Task Project",
+      team_id: team.id,
+    }).expect(201);
+    const root = ensureTeamRootTask(db, { teamId: team.id, projectId: project.id });
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO agents (name, display_name, sdk, model, enabled, created_at, updated_at)
+      VALUES ('plain-owner', 'Plain Owner', 'claude', 'claude:claude-sonnet-4-6', 1, ?, ?)
+    `).run(now, now);
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, parent_task_id, project_id, team_id, owner_agent, title, stage, run_policy, created_at, updated_at)
+      VALUES
+        ('goal-child', 'T-900', ?, ?, ?, ?, NULL, 'Build scoped milestone', 'execute', 'manual', ?, ?),
+        ('team-queue', 'T-901', 'team-queue', NULL, ?, NULL, NULL, 'Needs team owner', 'execute', 'manual', ?, ?),
+        ('plain-task', 'T-902', 'plain-task', NULL, ?, NULL, 'plain-owner', 'Independent follow-up', 'execute', 'manual', ?, ?)
+    `).run(
+      root.id, root.id, project.id, team.id, now, now,
+      project.id, now, now,
+      project.id, now, now,
+    );
+
+    const detail = await agent.get(`/api/projects/${project.id}`).expect(200);
+    const byId = Object.fromEntries(detail.body.project.tasks.map((task) => [task.id, task]));
+
+    expect(byId["goal-child"]).toMatchObject({
+      root_task_id: root.id,
+      parent_task_id: root.id,
+      team_id: team.id,
+      goal_relation: "goal_work",
+    });
+    expect(byId["team-queue"]).toMatchObject({
+      root_task_id: "team-queue",
+      team_id: null,
+      goal_relation: "team_queue",
+    });
+    expect(byId["plain-task"]).toMatchObject({
+      goal_relation: null,
+    });
+  });
 });

@@ -64,6 +64,39 @@ function normalizeCheckpointNotes(value) {
     .filter((item) => item && (item.checkpoint_note || item.validation_summary || item.goal_status || item.run_id));
 }
 
+function isAllowedGoalLinkUrl(value) {
+  const url = String(value || "").trim();
+  if (!url) return false;
+  if (/^https?:\/\//i.test(url)) return true;
+  if (url.startsWith("#/")) return true;
+  return url.startsWith("/") && !url.startsWith("//");
+}
+
+function normalizeGoalLinks(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    const rawUrl = typeof item === "string" ? item : item?.url;
+    const url = String(rawUrl || "").trim();
+    if (!isAllowedGoalLinkUrl(url) || seen.has(url)) continue;
+    seen.add(url);
+    const rawLabel = typeof item === "string" ? "" : item?.label;
+    const label = String(rawLabel || "").trim() || url;
+    out.push({ label: label.slice(0, 120), url });
+    if (out.length >= 20) break;
+  }
+  return out;
+}
+
+export function goalContractReadiness(contract = {}) {
+  const missing = [];
+  if (!String(contract?.objective || "").trim()) missing.push("objective");
+  if (!String(contract?.stopping_condition || "").trim()) missing.push("stopping_condition");
+  if (!String(contract?.validation_loop || "").trim()) missing.push("validation_loop");
+  return { ready: missing.length === 0, missing };
+}
+
 export function normalizeTeamGoalContract(value, { teamGoal = "", now = null } = {}) {
   const parsed = safeParseTeamGoalContract(value);
   const objective = "objective" in parsed ? parsed.objective : teamGoal;
@@ -72,6 +105,7 @@ export function normalizeTeamGoalContract(value, { teamGoal = "", now = null } =
     stopping_condition: String(parsed.stopping_condition || "").trim(),
     validation_loop: String(parsed.validation_loop || "").trim(),
     constraints: stringList(parsed.constraints),
+    links: normalizeGoalLinks(parsed.links),
     checkpoint_notes: normalizeCheckpointNotes(parsed.checkpoint_notes).slice(-20),
     paused_at: nullableTimestamp(parsed.paused_at),
     cleared_at: nullableTimestamp(parsed.cleared_at),
@@ -187,6 +221,7 @@ export function teamProjectGoalFromRows({ team, project, root, latestCycle = nul
     goal_status_reason: root.goal_status_reason || null,
     last_lead_at: root.last_lead_at || null,
     contract: normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" }),
+    readiness: goalContractReadiness(normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" })),
     project: {
       id: project.id,
       slug: project.slug,
@@ -259,6 +294,7 @@ export function updateTeamProjectGoal(db, {
     if ("stopping_condition" in patch) contract.stopping_condition = String(patch.stopping_condition || "").trim();
     if ("validation_loop" in patch) contract.validation_loop = String(patch.validation_loop || "").trim();
     if ("constraints" in patch) contract.constraints = stringList(patch.constraints);
+    if ("links" in patch) contract.links = normalizeGoalLinks(patch.links);
   }
   if (action === "pause") {
     contract.paused_at = now;

@@ -20,6 +20,12 @@ export function projectTaskGroupKey(task = {}) {
   return "in_progress";
 }
 
+export function projectTaskRelationLabel(task = {}) {
+  if (task.goal_relation === "goal_work") return "Goal work";
+  if (task.goal_relation === "team_queue") return "Team queue";
+  return null;
+}
+
 export function isProjectChildTask(task = {}) {
   return Boolean(task.parent_task_id);
 }
