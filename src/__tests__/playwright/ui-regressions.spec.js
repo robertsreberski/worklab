@@ -2438,7 +2438,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
 
-  for (const label of ["Tasks", "Agents", "Projects"]) {
+  for (const label of ["Tasks", "Agents", "Projects", "Knowledge"]) {
     await expect(page.locator(".app-tabbar a", { hasText: label })).toBeVisible();
   }
 
@@ -2450,6 +2450,10 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(page).toHaveURL(/#\/projects$/);
   await expect(page.locator(".pane-list")).toBeVisible();
 
+  await page.locator(".app-tabbar a", { hasText: "Knowledge" }).click();
+  await expect(page).toHaveURL(/#\/library\/knowledge$/);
+  await expect(page.locator(".pane-list")).toBeVisible();
+
   const more = page.locator(".app-tabbar button", { hasText: "More" });
   await expect(more).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "false");
@@ -2459,7 +2463,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Teams", "Skills", "Knowledge", "Goals", "Runs", "Settings"]) {
+  for (const label of ["Teams", "Skills", "Goals", "Runs", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2478,23 +2482,16 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
       sheetOverflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
-  expect(metrics.navCount).toBe(4);
-  expect(metrics.navColumns).toBe(4);
-  expect(metrics.navLabels).toEqual(["Tasks", "Agents", "Projects", "More"]);
+  expect(metrics.navCount).toBe(5);
+  expect(metrics.navColumns).toBe(5);
+  expect(metrics.navLabels).toEqual(["Tasks", "Agents", "Projects", "Knowledge", "More"]);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Skills", "Knowledge", "Goals", "Runs", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Skills", "Goals", "Runs", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Knowledge" }).click();
-  await expect(page).toHaveURL(/#\/library\/knowledge$/);
-  await expect(page.locator(".pane-list")).toBeVisible();
-  await expect(page.locator(".app-more-sheet")).toHaveCount(0);
-
-  await more.click();
-  await expect(page.locator(".app-more-sheet.open")).toBeVisible();
   await page.locator(".app-more-sheet.open").getByRole("link", { name: "Settings" }).click();
   await expect(page).toHaveURL(/#\/settings$/);
   await expect(page.locator(".settings-route-shell")).toBeVisible();
@@ -2519,12 +2516,16 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
     const metrics = await page.evaluate(() => {
       const shell = document.querySelector(".settings-route-shell");
       const tabs = document.querySelector(".settings-tabs");
+      const tabButtons = [...document.querySelectorAll(".settings-tabs .tab")];
       const content = document.querySelector(".settings-route-content");
       const head = document.querySelector(".settings-route-shell > .ds-page-head");
+      const title = document.querySelector(".settings-route-shell > .ds-page-head .ds-page-title");
       const shellRect = shell?.getBoundingClientRect();
       const tabsRect = tabs?.getBoundingClientRect();
+      const tabRects = tabButtons.map((tab) => tab.getBoundingClientRect());
       const contentRect = content?.getBoundingClientRect();
       const headRect = head?.getBoundingClientRect();
+      const titleRect = title?.getBoundingClientRect();
       const headStyles = head ? getComputedStyle(head) : null;
       const parsePx = (value) => Math.round(parseFloat(value) || 0);
       return {
@@ -2535,6 +2536,11 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
         headLeft: headRect ? Math.round(headRect.left) : -1,
         headContentLeft: headRect && headStyles ? Math.round(headRect.left + parsePx(headStyles.paddingLeft)) : -1,
         tabsLeft: tabsRect ? Math.round(tabsRect.left) : -1,
+        tabsTop: tabsRect ? Math.round(tabsRect.top) : -1,
+        tabsWidth: tabsRect ? Math.round(tabsRect.width) : 0,
+        tabsInsideHeader: !!tabs && !!tabs.closest(".ds-page-head"),
+        titleBottom: titleRect ? Math.round(titleRect.bottom) : -1,
+        tabWidths: tabRects.map((rect) => Math.round(rect.width)),
         contentLeft: contentRect ? Math.round(contentRect.left) : -1,
         contentTopAfterTabs: tabsRect && contentRect ? Math.round(contentRect.top) > Math.round(tabsRect.bottom) : false,
         contentWidth: contentRect ? Math.round(contentRect.width) : 0,
@@ -2547,6 +2553,10 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
     expect(metrics.shellRight, `${route.label} shell right`).toBe(390);
     expect(Math.abs(metrics.headLeft - metrics.contentLeft), `${route.label} head/content alignment`).toBeLessThanOrEqual(1);
     expect(Math.abs(metrics.headContentLeft - metrics.tabsLeft), `${route.label} head/tabs alignment`).toBeLessThanOrEqual(1);
+    expect(metrics.tabsInsideHeader, `${route.label} tabs inside header`).toBe(true);
+    expect(metrics.tabsTop, `${route.label} tabs below title`).toBeGreaterThan(metrics.titleBottom);
+    expect(metrics.tabsWidth, `${route.label} tabs width`).toBeGreaterThanOrEqual(350);
+    expect(Math.max(...metrics.tabWidths) - Math.min(...metrics.tabWidths), `${route.label} equal tab widths`).toBeLessThanOrEqual(1);
     expect(metrics.contentTopAfterTabs, `${route.label} content below tabs`).toBe(true);
     expect(metrics.contentWidth, `${route.label} content width`).toBeGreaterThanOrEqual(350);
   }
@@ -2611,10 +2621,12 @@ test("mobile route tabs are condensed into the owning header", async ({ page }) 
     const directTabs = document.querySelector(".settings-route-shell > .settings-tabs");
     const head = document.querySelector(".settings-route-shell > .ds-page-head");
     const headerTabs = document.querySelector(".settings-route-shell > .ds-page-head .settings-tabs");
+    const tabButtons = [...document.querySelectorAll(".settings-route-shell > .ds-page-head .settings-tabs .tab")];
     const content = document.querySelector(".settings-route-content");
     const shellRect = shell?.getBoundingClientRect();
     const headRect = head?.getBoundingClientRect();
     const tabsRect = headerTabs?.getBoundingClientRect();
+    const tabRects = tabButtons.map((tab) => tab.getBoundingClientRect());
     const contentRect = content?.getBoundingClientRect();
     const headStyles = head ? getComputedStyle(head) : null;
     const parsePx = (value) => Math.round(parseFloat(value) || 0);
@@ -2629,6 +2641,8 @@ test("mobile route tabs are condensed into the owning header", async ({ page }) 
       tabsInsideHeader: !!headerTabs && !!headerTabs.closest(".ds-page-head"),
       tabsTop: tabsRect ? Math.round(tabsRect.top) : -1,
       tabsBottom: tabsRect ? Math.round(tabsRect.bottom) : -1,
+      tabsWidth: tabsRect ? Math.round(tabsRect.width) : 0,
+      tabWidths: tabRects.map((rect) => Math.round(rect.width)),
       contentTop: contentRect ? Math.round(contentRect.top) : -1,
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
@@ -2643,6 +2657,8 @@ test("mobile route tabs are condensed into the owning header", async ({ page }) 
   expect(settingsMetrics.tabsInsideHeader).toBe(true);
   expect(settingsMetrics.tabsTop).toBeGreaterThanOrEqual(31);
   expect(settingsMetrics.tabsBottom).toBeLessThanOrEqual(settingsMetrics.headBottom);
+  expect(settingsMetrics.tabsWidth).toBeGreaterThanOrEqual(350);
+  expect(Math.max(...settingsMetrics.tabWidths) - Math.min(...settingsMetrics.tabWidths)).toBeLessThanOrEqual(1);
   expect(settingsMetrics.contentTop).toBeGreaterThan(settingsMetrics.headBottom);
   expect(settingsMetrics.overflow).toBeLessThanOrEqual(0);
 });
@@ -3728,18 +3744,34 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
   await page.goto(`${baseUrl}/#/tasks/new`);
   await expect(page.locator(".task-edit-head").first()).toBeVisible();
   await expect(page.locator(".app-mobile-action-dock .button").first()).toBeVisible();
+  await page.locator(".task-edit-body input[type='text']").first().fill("Create a compact mobile task header that stays readable while the title is being entered");
 
   const metrics = await page.evaluate(() => {
     const appBody = document.querySelector(".app-body");
+    const header = document.querySelector(".task-edit-task-head");
+    const title = document.querySelector(".task-edit-task-head .title-copy h2");
     const dock = document.querySelector(".app-mobile-action-dock");
     const tabbar = document.querySelector(".app-tabbar");
     const active = document.activeElement;
+    const headerRect = header?.getBoundingClientRect();
+    const titleRect = title?.getBoundingClientRect();
+    const titleStyles = title ? getComputedStyle(title) : null;
     const dockRect = dock?.getBoundingClientRect();
     const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    const lineHeight = titleStyles ? parseFloat(titleStyles.lineHeight) || 0 : 0;
     return {
       activeTag: active?.tagName || "",
       keyboardOpen: document.documentElement.classList.contains("keyboard-open"),
       bodyPaddingBottom: appBody ? parsePx(getComputedStyle(appBody).paddingBottom) : 0,
+      headerHeight: headerRect ? Math.round(headerRect.height) : 0,
+      titleText: title?.textContent?.trim() || "",
+      titleHeight: titleRect ? Math.round(titleRect.height) : 0,
+      titleLineHeight: Math.round(lineHeight),
+      titleWhiteSpace: titleStyles?.whiteSpace || "",
+      titleOverflow: titleStyles?.overflow || "",
+      titleInsideHeader: headerRect && titleRect
+        ? Math.round(titleRect.bottom) <= Math.round(headerRect.bottom)
+        : false,
       dockDisplay: dock ? getComputedStyle(dock).display : "",
       dockTransform: dock ? getComputedStyle(dock).transform : "",
       dockHeight: dockRect ? Math.round(dockRect.height) : 0,
@@ -3754,6 +3786,11 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
 
   expect(["INPUT", "TEXTAREA"]).toContain(metrics.activeTag);
   expect(metrics.keyboardOpen).toBe(false);
+  expect(metrics.titleText).toContain("Create a compact mobile task header");
+  expect(metrics.headerHeight).toBeGreaterThanOrEqual(92);
+  expect(metrics.titleHeight).toBeGreaterThanOrEqual(metrics.titleLineHeight * 2 - 2);
+  expect(metrics.titleInsideHeader).toBe(true);
+  expect(metrics.titleWhiteSpace).not.toBe("nowrap");
   expect(metrics.dockDisplay).toBe("flex");
   expect(metrics.dockTransform).toBe("none");
   expect(metrics.dockTop).toBeGreaterThanOrEqual(0);
@@ -3764,7 +3801,7 @@ test("mobile new task dock stays anchored when autofocus does not open the keybo
   expect(metrics.documentScrollHeight).toBeLessThanOrEqual(metrics.viewportHeight);
 });
 
-test("assistant composer keeps home-indicator padding at rest and drops it while keyboard is open", async ({ page }) => {
+test("assistant composer clears the keyboard while keeping input controls visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     try {
@@ -3778,10 +3815,22 @@ test("assistant composer keeps home-indicator padding at rest and drops it while
 
   const readState = () => page.evaluate(() => {
     const composer = document.querySelector(".assistant-composer");
+    const textarea = document.querySelector(".assistant-composer .textarea");
+    const submit = document.querySelector(".assistant-composer-submit");
+    const composerRect = composer?.getBoundingClientRect();
+    const textareaRect = textarea?.getBoundingClientRect();
+    const submitRect = submit?.getBoundingClientRect();
+    const keyboardHeight = Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--worklab-keyboard-height")) || 0);
+    const visibleBottom = window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : window.innerHeight;
     return {
       paddingBottom: composer ? Math.round(parseFloat(getComputedStyle(composer).paddingBottom) || 0) : -1,
       keyboardOpenClass: document.documentElement.classList.contains("keyboard-open"),
       activeTag: document.activeElement ? document.activeElement.tagName : "",
+      keyboardHeight,
+      visibleBottom,
+      composerBottom: composerRect ? Math.round(composerRect.bottom) : -1,
+      textareaBottom: textareaRect ? Math.round(textareaRect.bottom) : -1,
+      submitBottom: submitRect ? Math.round(submitRect.bottom) : -1,
     };
   });
 
@@ -3805,7 +3854,11 @@ test("assistant composer keeps home-indicator padding at rest and drops it while
 
   const open = await readState();
   expect(open.keyboardOpenClass).toBe(true);
-  expect(open.paddingBottom).toBe(8);
+  expect(open.keyboardHeight).toBeGreaterThan(150);
+  expect(open.paddingBottom).toBeGreaterThan(open.keyboardHeight);
+  expect(open.composerBottom).toBe(844);
+  expect(open.textareaBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
+  expect(open.submitBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
 
   // Synthesize the iOS keyboard collapsing.
   await page.evaluate(() => {
