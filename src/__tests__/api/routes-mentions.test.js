@@ -82,7 +82,7 @@ describe("GET /api/mentions/search", () => {
     for (const result of res.body.results) {
       expect(result.token).toMatch(/^@(agent|task|project|team|kb)\//);
       expect(result.label).toBeTypeOf("string");
-      expect(result.href).toMatch(/^#\/(agents|tasks|projects|teams|knowledge)\//);
+      expect(result.href).toMatch(/^#\/(tasks|projects|library\/(agents|teams|knowledge))\//);
     }
   });
 

@@ -28,7 +28,7 @@ function agentResolved(item, row) {
     id: row.name,
     label,
     sublabel: "agent",
-    href: `#/agents/${encodeURIComponent(row.name)}`,
+    href: `#/library/agents/${encodeURIComponent(row.name)}`,
     exists: true,
   };
 }
@@ -70,7 +70,7 @@ function teamResolved(item, row) {
     id: row.slug || row.id,
     label: row.name || row.slug || row.id,
     sublabel: "team",
-    href: `#/teams/${encodeURIComponent(row.id)}`,
+    href: `#/library/teams/${encodeURIComponent(row.id)}`,
     exists: true,
   };
 }
@@ -83,7 +83,7 @@ function kbResolved(item, meta) {
     id: meta.slug,
     label: meta.title || meta.slug,
     sublabel: "knowledge",
-    href: `#/knowledge/${encodeURIComponent(meta.slug)}`,
+    href: `#/library/knowledge/${encodeURIComponent(meta.slug)}`,
     exists: true,
   };
 }

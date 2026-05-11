@@ -50,9 +50,9 @@ export function runResultKbBody({ task, runId, stage, agentName, richText }) {
 
 export function appendKbLink(body, slug) {
   const clean = String(body || "").trim();
-  const link = `Full final answer: [Knowledge entry](#/knowledge/${slug})`;
+  const link = `Full final answer: [Knowledge entry](#/library/knowledge/${slug})`;
   if (!clean) return link;
-  if (clean.includes(`#/knowledge/${slug}`)) return clean;
+  if (clean.includes(`#/library/knowledge/${slug}`)) return clean;
   return `${clean}\n\n${link}`;
 }
 

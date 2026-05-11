@@ -11,7 +11,7 @@ function markdownEscape(value) {
 }
 
 export function agentHref(name) {
-  return `#/agents/${encodeURIComponent(String(name || ""))}`;
+  return `#/library/agents/${encodeURIComponent(String(name || ""))}`;
 }
 
 export function agentLabel(agent, fallbackName = "") {

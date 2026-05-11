@@ -8,7 +8,7 @@ const agents = [
 
 describe("agent link helpers", () => {
   it("builds agent edit links from slugs", () => {
-    expect(agentHref("automattic-sandbox-engineer")).toBe("#/agents/automattic-sandbox-engineer");
+    expect(agentHref("automattic-sandbox-engineer")).toBe("#/library/agents/automattic-sandbox-engineer");
   });
 
   it("replaces known agent slugs with display-name link parts", () => {
@@ -21,7 +21,7 @@ describe("agent link helpers", () => {
         type: "agent",
         name: "automattic-sandbox-engineer",
         label: "Automattic Sandbox Engineer",
-        href: "#/agents/automattic-sandbox-engineer",
+        href: "#/library/agents/automattic-sandbox-engineer",
       },
       " reached ($59.7195 of $50.00).",
     ]);
@@ -37,7 +37,7 @@ describe("agent link helpers", () => {
         type: "agent",
         name: "automattic-sandbox-engineer",
         label: "Automattic Sandbox Engineer",
-        href: "#/agents/automattic-sandbox-engineer",
+        href: "#/library/agents/automattic-sandbox-engineer",
       },
       " reached ($59.7195 of $50.00).",
     ]);
