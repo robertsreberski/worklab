@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_visible_updated ON tasks(is_team_root, updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_team_root_unique ON tasks(team_id, project_id) WHERE is_team_root = 1;
 CREATE INDEX IF NOT EXISTS idx_tasks_team ON tasks(team_id) WHERE team_id IS NOT NULL;
 
@@ -432,6 +433,7 @@ CREATE TABLE IF NOT EXISTS slack_triage_runs (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_triage_event ON slack_triage_runs(inbound_event_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_slack_triage_status ON slack_triage_runs(status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_slack_triage_started ON slack_triage_runs(started_at DESC);
 
 CREATE TABLE IF NOT EXISTS slack_agent_logs (
   id TEXT PRIMARY KEY,
@@ -460,6 +462,7 @@ CREATE TABLE IF NOT EXISTS slack_delivery_log (
 );
 CREATE INDEX IF NOT EXISTS idx_slack_delivery_run ON slack_delivery_log(slack_triage_run_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_slack_delivery_task_run ON slack_delivery_log(task_run_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_slack_delivery_created ON slack_delivery_log(created_at DESC);
 
 CREATE TABLE IF NOT EXISTS assistant_threads (
   id TEXT PRIMARY KEY,
