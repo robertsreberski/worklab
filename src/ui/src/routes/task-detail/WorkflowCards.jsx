@@ -92,18 +92,15 @@ export function TaskParentReference({ task }) {
       title={`Parent: ${parentKey} - ${parent.title}`}
       aria-label={`Open parent task ${parentKey}: ${parent.title}`}
     >
-      <span class="task-parent-reference-glyph">
-        <Icon name="corner-up-left" size={14} class="task-parent-reference-icon" />
-      </span>
       <span class="task-parent-reference-copy">
         <span class="task-parent-reference-meta">
-          <span class="task-parent-reference-label">Parent task</span>
+          <Icon name="corner-up-left" size={12} class="task-parent-reference-icon" />
+          <span class="task-parent-reference-label">Parent</span>
           <span class="task-parent-reference-key pane-row-mono">{parentKey}</span>
           <StatusPill status={parent.stage || "plan"} size="sm" class="task-parent-reference-status" />
         </span>
         <span class="task-parent-reference-title">{parent.title}</span>
       </span>
-      <Icon name="chevron-right" size={14} class="task-parent-reference-arrow" />
     </a>
   );
 }
