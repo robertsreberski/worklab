@@ -477,7 +477,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
   const cancel = useCallback(() => {
-    guard.requestNavigation("#/agents");
+    guard.requestNavigation("#/library/agents");
   }, [guard.requestNavigation]);
 
   useGlobalShortcuts({
@@ -825,7 +825,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         backLabel="All agents"
         onBack={cancel}
         crumbs={[
-          { label: "Agents", href: "#/agents" },
+          { label: "Agents", href: "#/library/agents" },
           { label: isNew ? "New" : "Edit" },
         ]}
         icon={!isNew ? <AgentAvatar name={agent.name} label={agent.display_name || agent.name} size={36} /> : null}

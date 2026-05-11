@@ -4,23 +4,20 @@ import { describe, expect, it } from "vitest";
 import { ROUTE_GROUPS, ROUTES } from "../../ui/src/components/AppShell.jsx";
 
 const appShellPath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
+const assistantDockPath = resolve(import.meta.dirname, "../../ui/src/components/AssistantDock.jsx");
 const entityChromeBridgePath = resolve(import.meta.dirname, "../../ui/src/components/EntityChromeBridge.jsx");
 const appPath = resolve(import.meta.dirname, "../../ui/src/App.jsx");
 const commanderPath = resolve(import.meta.dirname, "../../ui/src/routes/Commander.jsx");
 const primitiveIndexPath = resolve(import.meta.dirname, "../../ui/src/components/primitives/index.js");
 const lazyRouteModules = [
-  "Activity",
-  "Agents",
   "DesignSystem",
   "Goals",
-  "Knowledge",
+  "Library",
   "Projects",
-  "Providers",
+  "Runs",
   "Settings",
-  "Skills",
   "TaskDetail",
   "TaskEdit",
-  "Teams",
 ];
 
 function moreRouteIds() {
@@ -31,15 +28,13 @@ function moreRouteIds() {
 }
 
 describe("app shell routes", () => {
-  it("exposes Teams in the Library navigation group", () => {
-    const libraryGroup = ROUTE_GROUPS.find((group) => group.label === "Library");
-    const libraryIds = libraryGroup?.routes.map((route) => route.id) || [];
+  it("exposes the Library route inside the Build group", () => {
+    const buildGroup = ROUTE_GROUPS.find((group) => group.label === "Build");
+    const buildIds = buildGroup?.routes.map((route) => route.id) || [];
 
-    expect(libraryIds).toContain("teams");
-    expect(libraryIds.indexOf("teams")).toBeLessThan(libraryIds.indexOf("agents"));
-    expect(ROUTES.find((route) => route.id === "teams")).toMatchObject({
-      label: "Teams",
-      icon: "users",
+    expect(buildIds).toContain("library");
+    expect(ROUTES.find((route) => route.id === "library")).toMatchObject({
+      label: "Library",
     });
   });
 
@@ -56,11 +51,27 @@ describe("app shell routes", () => {
     });
   });
 
-  it("includes Teams in mobile More navigation", () => {
+  it("includes Library and Settings in mobile More navigation", () => {
     const ids = moreRouteIds();
 
-    expect(ids).toContain("teams");
-    expect(ids.indexOf("teams")).toBeLessThan(ids.indexOf("skills"));
+    expect(ids).toContain("library");
+    expect(ids).toContain("settings");
+  });
+
+  it("keeps the ambient assistant launcher owned by AssistantDock", () => {
+    const appShell = readFileSync(appShellPath, "utf8");
+    const assistantDock = readFileSync(assistantDockPath, "utf8");
+
+    expect(appShell).not.toContain('class="assistant-pill"');
+    expect(assistantDock).toContain('class="assistant-pill"');
+    expect(assistantDock).not.toContain('class="assistant-launcher"');
+  });
+
+  it("does not ship prototype rail identity copy", () => {
+    const source = readFileSync(appShellPath, "utf8");
+
+    expect(source).not.toContain("kael");
+    expect(source).not.toContain('aria-hidden="true">k</span>');
   });
 
   it("keeps secondary routes behind dynamic imports", () => {
@@ -94,9 +105,18 @@ describe("app shell routes", () => {
     expect(bridgeSource).toContain("useAppChrome");
     expect(bridgeSource).toContain("export function EntityChromeBridge");
 
-    for (const route of ["AgentEdit.jsx", "SkillEdit.jsx", "KbEdit.jsx", "KbDetail.jsx", "Projects.jsx", "Providers.jsx", "Goals.jsx"]) {
-      const routeSource = readFileSync(resolve(import.meta.dirname, `../../ui/src/routes/${route}`), "utf8");
-      expect(routeSource).toContain("../components/EntityChromeBridge.jsx");
+    const entityRoutes = [
+      { path: "AgentEdit.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "SkillEdit.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "KbEdit.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "KbDetail.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "Projects.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "Goals.jsx", importPath: "../components/EntityChromeBridge.jsx" },
+      { path: "settings/ProvidersTab.jsx", importPath: "../../components/EntityChromeBridge.jsx" },
+    ];
+    for (const { path, importPath } of entityRoutes) {
+      const routeSource = readFileSync(resolve(import.meta.dirname, `../../ui/src/routes/${path}`), "utf8");
+      expect(routeSource).toContain(importPath);
       expect(routeSource).not.toMatch(/function EntityChromeBridge/);
     }
   });

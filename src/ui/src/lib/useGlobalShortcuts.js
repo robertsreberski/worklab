@@ -50,6 +50,7 @@ export function useGlobalShortcuts(map = {}) {
       if (e.metaKey || e.ctrlKey) {
         if (key === "s" || key === "S") ref.current["cmds"]?.(e);
         else if (key === "Enter") ref.current["cmdenter"]?.(e);
+        else if (key === "\\") ref.current["cmdbackslash"]?.(e);
         return;
       }
       if (e.altKey) return;

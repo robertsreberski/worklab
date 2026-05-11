@@ -15,18 +15,14 @@ function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
 }
 
-const Activity = lazyNamed(() => import("./routes/Activity.jsx"), "Activity");
-const Agents = lazyNamed(() => import("./routes/Agents.jsx"), "Agents");
 const DesignSystem = lazyNamed(() => import("./routes/DesignSystem.jsx"), "DesignSystem");
 const Goals = lazyNamed(() => import("./routes/Goals.jsx"), "Goals");
-const Knowledge = lazyNamed(() => import("./routes/Knowledge.jsx"), "Knowledge");
+const Library = lazyNamed(() => import("./routes/Library.jsx"), "Library");
 const Projects = lazyNamed(() => import("./routes/Projects.jsx"), "Projects");
-const Providers = lazyNamed(() => import("./routes/Providers.jsx"), "Providers");
+const Runs = lazyNamed(() => import("./routes/Runs.jsx"), "Runs");
 const Settings = lazyNamed(() => import("./routes/Settings.jsx"), "Settings");
-const Skills = lazyNamed(() => import("./routes/Skills.jsx"), "Skills");
 const TaskDetail = lazyNamed(() => import("./routes/TaskDetail.jsx"), "TaskDetail");
 const TaskEdit = lazyNamed(() => import("./routes/TaskEdit.jsx"), "TaskEdit");
-const Teams = lazyNamed(() => import("./routes/Teams.jsx"), "Teams");
 
 function RouteFallback() {
   return <LoadingState caption="Loading route..." />;
@@ -37,6 +33,9 @@ export function App() {
 
   useEffect(() => {
     let currentHash = isAppRouteHash(window.location.hash) ? normalizeHash(window.location.hash) : "#/tasks";
+    if (window.location.hash !== currentHash) {
+      window.history.replaceState(null, "", currentHash);
+    }
 
     const handler = () => {
       if (!isAppRouteHash(window.location.hash)) return;
@@ -53,6 +52,9 @@ export function App() {
           window.location.hash = currentHash;
         }
         return;
+      }
+      if (window.location.hash !== nextHash) {
+        window.history.replaceState(null, "", nextHash);
       }
       currentHash = nextHash;
       setRoute(parseHashRoute(nextHash));
@@ -76,20 +78,12 @@ export function App() {
     body = <Projects selectedId={rest[0] || null} mode={rest[1] || null} />;
   } else if (route === "goals") {
     body = <Goals selectedId={rest[0] || null} mode={rest[1] || null} />;
-  } else if (route === "agents") {
-    body = <Agents selectedName={rest[0] || null} />;
-  } else if (route === "teams") {
-    body = <Teams selectedId={rest[0] || null} mode={rest[1] || null} />;
-  } else if (route === "skills") {
-    body = <Skills selectedName={rest[0] || null} />;
-  } else if (route === "knowledge") {
-    body = <Knowledge selectedSlug={rest[0] || null} mode={rest[1] || null} query={query} />;
-  } else if (route === "providers") {
-    body = <Providers selectedId={rest[0] || null} />;
-  } else if (route === "activity") {
-    body = <Activity />;
+  } else if (route === "library") {
+    body = <Library tab={rest[0] || "agents"} rest={rest.slice(1)} query={query} />;
+  } else if (route === "runs") {
+    body = <Runs />;
   } else if (route === "settings") {
-    body = <Settings />;
+    body = <Settings tab={rest[0] || "general"} rest={rest.slice(1)} />;
   } else if (route === "design-system") {
     body = <DesignSystem />;
   } else if (route === "automations") {

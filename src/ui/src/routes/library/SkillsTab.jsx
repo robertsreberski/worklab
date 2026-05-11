@@ -1,25 +1,24 @@
 // §6.6 Skills — pane layout.
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
-import { api } from "../lib/api.js";
-import { AppShell } from "../components/AppShell.jsx";
-import { Button } from "../components/primitives/Button.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { StatusDot } from "../components/primitives/StatusDot.jsx";
-import { Chip } from "../components/primitives/Chip.jsx";
-import { PaneLayout } from "../components/PaneLayout.jsx";
-import { PaneRow } from "../components/PaneRow.jsx";
-import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { SkillEdit } from "./SkillEdit.jsx";
-import { skillDisplayName } from "../lib/display.js";
-import { buildSkillResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
-import { navigateHash } from "../lib/navigation.js";
-import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { pushToast } from "../lib/toast.js";
-import { useAppResume } from "../lib/pageVisibility.js";
+import { api } from "../../lib/api.js";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Select } from "../../components/primitives/Select.jsx";
+import { Tabs } from "../../components/primitives/Tabs.jsx";
+import { Icon } from "../../components/Icon.jsx";
+import { StatusDot } from "../../components/primitives/StatusDot.jsx";
+import { Chip } from "../../components/primitives/Chip.jsx";
+import { PaneLayout } from "../../components/PaneLayout.jsx";
+import { PaneRow } from "../../components/PaneRow.jsx";
+import { EmptyState, EmptyStateFiltered } from "../../components/EmptyState.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../../components/ResourceRowMeta.jsx";
+import { SkillEdit } from "../SkillEdit.jsx";
+import { skillDisplayName } from "../../lib/display.js";
+import { buildSkillResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
+import { navigateHash } from "../../lib/navigation.js";
+import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
+import { pushToast } from "../../lib/toast.js";
+import { useAppResume } from "../../lib/pageVisibility.js";
 
 function isZipFile(file) {
   return /\.zip$/i.test(file?.name || "") || /zip/i.test(file?.type || "");
@@ -29,7 +28,7 @@ function hasFileDrag(event) {
   return Array.from(event.dataTransfer?.types || []).includes("Files");
 }
 
-export function Skills({ selectedName = null }) {
+export function SkillsTab({ selectedName = null }) {
   const [skills, setSkills] = useState([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
@@ -70,7 +69,7 @@ export function Skills({ selectedName = null }) {
         }
       }
       await reload();
-      if (lastImported) navigateHash(`#/skills/${encodeURIComponent(lastImported)}`);
+      if (lastImported) navigateHash(`#/library/skills/${encodeURIComponent(lastImported)}`);
     } finally {
       setImporting(false);
     }
@@ -119,7 +118,7 @@ export function Skills({ selectedName = null }) {
       searchRef={searchRef}
       countLabel={`${filtered.length} shown`}
       actionLabel="New skill"
-      onAction={() => { navigateHash("#/skills/new"); }}
+      onAction={() => { navigateHash("#/library/skills/new"); }}
       configTitle="Skills configuration"
       activeConfigCount={[stateFilter !== "all", priorityFilter !== "all", usageFilter !== "all"].filter(Boolean).length}
     >
@@ -156,7 +155,7 @@ export function Skills({ selectedName = null }) {
       <EmptyState
         title="No skills yet"
         body="Skills are reusable playbooks agents apply when their trigger matches."
-        cta={<Button variant="primary" onClick={() => { navigateHash("#/skills/new"); }}>New skill</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/library/skills/new"); }}>New skill</Button>}
       />
     )
   ) : (
@@ -169,12 +168,12 @@ export function Skills({ selectedName = null }) {
             return (
               <PaneRow
                 key={s.name}
-                href={`#/skills/${encodeURIComponent(s.name)}`}
+                href={`#/library/skills/${encodeURIComponent(s.name)}`}
                 active={s.name === selectedName}
                 class="skill-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/skills/${encodeURIComponent(s.name)}`);
+                  navigateHash(`#/library/skills/${encodeURIComponent(s.name)}`);
                 }}
                 leading={<StatusDot status={s.enabled !== false ? "enabled" : "disabled"} size={8} />}
                 title={skillDisplayName(s)}
@@ -205,65 +204,63 @@ export function Skills({ selectedName = null }) {
     <SkillEdit
       key={selectedName}
       name={selectedName}
-      onSaved={(name) => { reload(); if (selectedName === "new") window.location.hash = `#/skills/${encodeURIComponent(name)}`; }}
-      onDeleted={() => { reload(); window.location.hash = "#/skills"; }}
+      onSaved={(name) => { reload(); if (selectedName === "new") window.location.hash = `#/library/skills/${encodeURIComponent(name)}`; }}
+      onDeleted={() => { reload(); window.location.hash = "#/library/skills"; }}
     />
   ) : (
       <div class="pane-empty">
         <Icon name="sparkles" size={28} />
         <h3>Select a skill</h3>
         <p>Skills are reusable playbooks agents apply when their trigger matches.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/skills/new"); }}>New skill</Button>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/library/skills/new"); }}>New skill</Button>
       </div>
   );
 
   return (
-    <AppShell route="skills">
-      <div
-        class={`skill-import-surface ${dragActive ? "is-dragging" : ""}`.trim()}
-        onDragEnter={(event) => {
-          if (!hasFileDrag(event)) return;
-          event.preventDefault();
-          dragDepthRef.current += 1;
-          setDragActive(true);
-        }}
-        onDragOver={(event) => {
-          if (!hasFileDrag(event)) return;
-          event.preventDefault();
-          event.dataTransfer.dropEffect = "copy";
-          setDragActive(true);
-        }}
-        onDragLeave={(event) => {
-          if (!hasFileDrag(event)) return;
-          dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-          if (dragDepthRef.current === 0) setDragActive(false);
-        }}
-        onDrop={(event) => {
-          if (!hasFileDrag(event)) return;
-          event.preventDefault();
-          dragDepthRef.current = 0;
-          setDragActive(false);
-          importZipFiles(event.dataTransfer.files);
-        }}
-      >
-        {dragActive && (
-          <div class="skill-import-overlay" aria-hidden="true">
-            <Icon name="upload" size={18} />
-            <span>Drop ZIP files</span>
-          </div>
-        )}
-        <PaneLayout
-          listHeader={listHeader}
-          listBody={listBody}
-          detail={detail}
-          hasSelection={!!selectedName}
-          detailOwnsMobileBack={!!selectedName}
-          listFirst
-          class="resource-list-layout"
-          onBack={() => navigateHash("#/skills")}
-          backLabel="All skills"
-        />
-      </div>
-    </AppShell>
+    <div
+      class={`skill-import-surface ${dragActive ? "is-dragging" : ""}`.trim()}
+      onDragEnter={(event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setDragActive(true);
+      }}
+      onDragOver={(event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+        setDragActive(true);
+      }}
+      onDragLeave={(event) => {
+        if (!hasFileDrag(event)) return;
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setDragActive(false);
+      }}
+      onDrop={(event) => {
+        if (!hasFileDrag(event)) return;
+        event.preventDefault();
+        dragDepthRef.current = 0;
+        setDragActive(false);
+        importZipFiles(event.dataTransfer.files);
+      }}
+    >
+      {dragActive && (
+        <div class="skill-import-overlay" aria-hidden="true">
+          <Icon name="upload" size={18} />
+          <span>Drop ZIP files</span>
+        </div>
+      )}
+      <PaneLayout
+        listHeader={listHeader}
+        listBody={listBody}
+        detail={detail}
+        hasSelection={!!selectedName}
+        detailOwnsMobileBack={!!selectedName}
+        listFirst
+        class="resource-list-layout"
+        onBack={() => navigateHash("#/library/skills")}
+        backLabel="All skills"
+      />
+    </div>
   );
 }

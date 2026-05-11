@@ -268,7 +268,7 @@ function GoalDetail({ goal, onChanged }) {
           <Card title="Links">
             <Toolbar class="goal-link-list" align="start">
               <a href={`#/projects/${encodeURIComponent(goal.project?.slug || goal.project_id)}`}>Project</a>
-              <a href={`#/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
+              <a href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
               {goal.root_task_id && <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>}
             </Toolbar>
           </Card>

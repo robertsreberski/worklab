@@ -112,13 +112,13 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
       pushToast("Entry created", { variant: "success" });
       setBaseline(entry);
       onSaved?.(savedSlug);
-      if (navigateOnSuccess && savedSlug) proceedToHash(`#/knowledge/${savedSlug}`);
+      if (navigateOnSuccess && savedSlug) proceedToHash(`#/library/knowledge/${savedSlug}`);
     } else {
       await api.patchKb(slug, payload);
       pushToast("Saved.", { variant: "success" });
       setBaseline(entry);
       onSaved?.(slug);
-      if (navigateOnSuccess) proceedToHash(`#/knowledge/${slug}`);
+      if (navigateOnSuccess) proceedToHash(`#/library/knowledge/${slug}`);
     }
   });
   const isDirty = useMemo(() => baseline ? JSON.stringify(entry) !== JSON.stringify(baseline) : true, [entry, baseline]);
@@ -136,7 +136,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
     api.kbUsage(slug).then((r) => setUsage(r)).catch(() => {});
   });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save({ navigateOnSuccess: false }) });
-  const cancel = () => guard.requestNavigation(isNew ? "#/knowledge" : `#/knowledge/${slug}`);
+  const cancel = () => guard.requestNavigation(isNew ? "#/library/knowledge" : `#/library/knowledge/${slug}`);
 
   useGlobalShortcuts({
     cmds: (e) => { e.preventDefault(); formSave.save().catch(() => {}); },
@@ -378,7 +378,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
                       <ul class="usage-list">
                         {usage.agents.map((a) => (
                           <li key={a.name}>
-                            <a href={`#/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a>
+                            <a href={`#/library/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a>
                           </li>
                         ))}
                       </ul>

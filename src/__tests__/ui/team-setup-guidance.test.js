@@ -8,9 +8,9 @@ import {
   leadCycleRawLogHref,
   leadCycleTaskHref,
   teamSetupGaps,
-} from "../../ui/src/routes/Teams.jsx";
+} from "../../ui/src/routes/library/TeamsTab.jsx";
 
-const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Teams.jsx");
+const teamsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/library/TeamsTab.jsx");
 const stylesSourcePath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 
 describe("team setup guidance", () => {
@@ -93,8 +93,9 @@ describe("team setup guidance", () => {
     expect(teamsSource).toContain("#/goals/");
     expect(projectsSource).toContain("Project goal");
     expect(projectsSource).toContain("#/goals/");
-    expect(commanderSource).toContain("team-goal-chip");
-    expect(commanderSource).toContain("#/goals/");
+    // Critique §03: the team-goal chip moved into the inline-meta line and
+    // links to the Commander goal filter (?goal=) instead of the goal page.
+    expect(commanderSource).toMatch(/#\/tasks\?goal=/);
     expect(taskDetailSource).toContain("#/goals/");
   });
 

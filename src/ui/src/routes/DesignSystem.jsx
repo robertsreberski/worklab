@@ -430,8 +430,11 @@ export function DesignSystem() {
               <StageToken stage="review" variant="menu" />
               <StatusDot status="running" pulse />
               <LivePulse />
-              <Chip variant="accent">agent</Chip>
-              <Chip variant="warn">queued</Chip>
+              <Chip variant="muted">tag · infra-api</Chip>
+              <Chip variant="accent">link · goal</Chip>
+              <Chip variant="warn">pending · 3 actions</Chip>
+              <Chip variant="error">alert · stuck</Chip>
+              <Chip variant="inline">⚡ auto · daily 9am</Chip>
               <Badge>7</Badge>
               <Kbd>?</Kbd>
             </div>

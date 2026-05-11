@@ -7,6 +7,9 @@ import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { Tabs } from "../components/primitives/Tabs.jsx";
+import { ProvidersTab } from "./settings/ProvidersTab.jsx";
+import { navigateHash } from "../lib/navigation.js";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -138,7 +141,76 @@ function buildMcpHealthDraft(rows = []) {
   return { servers, rowByName, errors };
 }
 
-export function Settings() {
+const SETTINGS_TAB_ORDER = ["general", "providers", "about"];
+const SETTINGS_TAB_LABELS = { general: "General", providers: "Providers", about: "About" };
+
+function AboutTab() {
+  return (
+    <div class="settings-about">
+      <p>
+        <strong>Worklab</strong> — local agents.
+      </p>
+      <p class="soft-meta">
+        A single-user, local AI agent orchestration app. Everything runs on your
+        machine; the assistant dock is summoned with <kbd>⌘\</kbd>; press <kbd>?</kbd>
+        anywhere for keyboard shortcuts.
+      </p>
+    </div>
+  );
+}
+
+export function Settings({ tab = "general", rest = [] }) {
+  const activeTab = SETTINGS_TAB_ORDER.includes(tab) ? tab : "general";
+  if (activeTab === "providers") {
+    const [item] = rest;
+    return (
+      <AppShell route="settings">
+        <div class="settings-page">
+          <div class="ds-page-head">
+            <div class="ds-page-title">
+              <span class="form-section-kicker">Settings</span>
+              <h1>Settings</h1>
+              <p>Configure the local agent runtime, providers, and integrations.</p>
+            </div>
+          </div>
+          <Tabs
+            value={activeTab}
+            onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
+            tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
+            ariaLabel="Settings tabs"
+            class="settings-tabs tabs-pills"
+          />
+          <ProvidersTab selectedId={item || null} />
+        </div>
+      </AppShell>
+    );
+  }
+  if (activeTab === "about") {
+    return (
+      <AppShell route="settings">
+        <div class="settings-page">
+          <div class="ds-page-head">
+            <div class="ds-page-title">
+              <span class="form-section-kicker">Settings</span>
+              <h1>Settings</h1>
+            </div>
+          </div>
+          <Tabs
+            value={activeTab}
+            onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
+            tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
+            ariaLabel="Settings tabs"
+            class="settings-tabs tabs-pills"
+          />
+          <AboutTab />
+        </div>
+      </AppShell>
+    );
+  }
+  return <SettingsGeneral />;
+}
+
+function SettingsGeneral() {
   const [settings, setSettings] = useState(null);
   const [baseline, setBaseline] = useState(null);
   const [loadError, setLoadError] = useState(null);
@@ -596,6 +668,13 @@ export function Settings() {
         description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
         actions={pageActions}
       >
+        <Tabs
+          value="general"
+          onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
+          tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
+          ariaLabel="Settings tabs"
+          class="settings-tabs tabs-pills"
+        />
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}

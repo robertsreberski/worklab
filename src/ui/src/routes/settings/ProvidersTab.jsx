@@ -1,37 +1,37 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "preact/hooks";
-import { api } from "../lib/api.js";
-import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
-import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
-import { PaneLayout } from "../components/PaneLayout.jsx";
-import { PaneRow } from "../components/PaneRow.jsx";
-import { Button } from "../components/primitives/Button.jsx";
-import { Input } from "../components/primitives/Input.jsx";
-import { PathOrUrlInput, SecretInput } from "../components/primitives/index.js";
-import { Switch } from "../components/primitives/Switch.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
-import { Banner } from "../components/Banner.jsx";
-import { FormSection } from "../components/FormSection.jsx";
-import { FormGrid } from "../components/FormGrid.jsx";
-import { FormField } from "../components/FormField.jsx";
-import { StatusPill } from "../components/primitives/StatusPill.jsx";
-import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { LoadingState } from "../components/LoadingState.jsx";
-import { Card } from "../components/Card.jsx";
-import { Chip } from "../components/primitives/Chip.jsx";
-import { Modal } from "../components/Modal.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { ActionDock, DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack } from "../components/layout/index.js";
-import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { pushToast } from "../lib/toast.js";
-import { useFormSave } from "../lib/useFormSave.js";
-import { navigateHash, useUnsavedChangesGuard } from "../lib/navigation.js";
-import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
-import { useSSE } from "../lib/useSSE.js";
-import { useThrottledCallback } from "../lib/useThrottledCallback.js";
-import { useAppResume } from "../lib/pageVisibility.js";
-import { buildProviderResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
+import { api } from "../../lib/api.js";
+import { MobilePillRow, MobileTopbar } from "../../components/AppShell.jsx";
+import { EntityChromeBridge } from "../../components/EntityChromeBridge.jsx";
+import { PaneLayout } from "../../components/PaneLayout.jsx";
+import { PaneRow } from "../../components/PaneRow.jsx";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Input } from "../../components/primitives/Input.jsx";
+import { PathOrUrlInput, SecretInput } from "../../components/primitives/index.js";
+import { Switch } from "../../components/primitives/Switch.jsx";
+import { Select } from "../../components/primitives/Select.jsx";
+import { Tabs } from "../../components/primitives/Tabs.jsx";
+import { Banner } from "../../components/Banner.jsx";
+import { FormSection } from "../../components/FormSection.jsx";
+import { FormGrid } from "../../components/FormGrid.jsx";
+import { FormField } from "../../components/FormField.jsx";
+import { StatusPill } from "../../components/primitives/StatusPill.jsx";
+import { EmptyState, EmptyStateFiltered } from "../../components/EmptyState.jsx";
+import { LoadingState } from "../../components/LoadingState.jsx";
+import { Card } from "../../components/Card.jsx";
+import { Chip } from "../../components/primitives/Chip.jsx";
+import { Modal } from "../../components/Modal.jsx";
+import { Icon } from "../../components/Icon.jsx";
+import { ActionDock, DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack } from "../../components/layout/index.js";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowTags } from "../../components/ResourceRowMeta.jsx";
+import { pushToast } from "../../lib/toast.js";
+import { useFormSave } from "../../lib/useFormSave.js";
+import { navigateHash, useUnsavedChangesGuard } from "../../lib/navigation.js";
+import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
+import { useSSE } from "../../lib/useSSE.js";
+import { useThrottledCallback } from "../../lib/useThrottledCallback.js";
+import { useAppResume } from "../../lib/pageVisibility.js";
+import { buildProviderResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
 
 const PROVIDER_TYPE_OPTIONS = [
   { value: "ollama", label: "Ollama" },
@@ -404,7 +404,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   }, [loadModels, providerId]);
 
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
-  const cancel = () => guard.requestNavigation("#/providers");
+  const cancel = () => guard.requestNavigation("#/settings/providers");
 
   useGlobalShortcuts({
     cmds: (event) => {
@@ -518,7 +518,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
               <ul class="usage-list provider-agent-list">
                 {linkedAgents.map((agent) => (
                   <li key={agent.name}>
-                    <a href={`#/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
+                    <a href={`#/library/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
                     <StatusPill status={agent.enabled ? "enabled" : "disabled"} size="sm" />
                   </li>
                 ))}
@@ -791,7 +791,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
   );
 }
 
-export function Providers({ selectedId = null }) {
+export function ProvidersTab({ selectedId = null }) {
   const [providers, setProviders] = useState([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
@@ -851,7 +851,7 @@ export function Providers({ selectedId = null }) {
       searchRef={searchRef}
       countLabel={`${filtered.length} shown`}
       actionLabel="New provider"
-      onAction={() => navigateHash("#/providers/new")}
+      onAction={() => navigateHash("#/settings/providers/new")}
       configTitle="Providers configuration"
       activeConfigCount={[stateFilter !== "all", typeFilter !== "all"].filter(Boolean).length}
     >
@@ -867,7 +867,7 @@ export function Providers({ selectedId = null }) {
       <EmptyState
         title="No providers yet"
         body="Add a provider to use local or hosted models."
-        cta={<Button variant="primary" onClick={() => navigateHash("#/providers/new")}>New provider</Button>}
+        cta={<Button variant="primary" onClick={() => navigateHash("#/settings/providers/new")}>New provider</Button>}
       />
     )
   ) : (
@@ -877,12 +877,12 @@ export function Providers({ selectedId = null }) {
           {group.items.map((provider) => (
             <PaneRow
               key={provider.id}
-              href={`#/providers/${encodeURIComponent(provider.id)}`}
+              href={`#/settings/providers/${encodeURIComponent(provider.id)}`}
               active={provider.id === selectedId}
               class="provider-pane-row"
               onClick={(event) => {
                 event?.preventDefault?.();
-                navigateHash(`#/providers/${encodeURIComponent(provider.id)}`);
+                navigateHash(`#/settings/providers/${encodeURIComponent(provider.id)}`);
               }}
               leading={<Icon name={providerIcon(provider.provider_type)} size={16} />}
               title={provider.name}
@@ -914,11 +914,11 @@ export function Providers({ selectedId = null }) {
       providerId={selectedId}
       onSaved={(id) => {
         reload();
-        if (selectedId === "new" && id) navigateHash(`#/providers/${encodeURIComponent(id)}`);
+        if (selectedId === "new" && id) navigateHash(`#/settings/providers/${encodeURIComponent(id)}`);
       }}
       onDeleted={() => {
         reload();
-        navigateHash("#/providers");
+        navigateHash("#/settings/providers");
       }}
     />
   ) : (
@@ -926,25 +926,23 @@ export function Providers({ selectedId = null }) {
       <Icon name="terminal" size={28} />
       <h3>Select a provider</h3>
       <p>Choose a provider from the list to edit it, or create a new one.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => navigateHash("#/providers/new")}>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => navigateHash("#/settings/providers/new")}>
         New provider
       </Button>
     </div>
   );
 
   return (
-    <AppShell route="providers">
-      <PaneLayout
-        listHeader={listHeader}
-        listBody={listBody}
-        detail={detail}
-        hasSelection={!!selectedId}
-        detailOwnsMobileBack={!!selectedId}
-        listFirst
-        class="resource-list-layout"
-        onBack={() => navigateHash("#/providers")}
-        backLabel="All providers"
-      />
-    </AppShell>
+    <PaneLayout
+      listHeader={listHeader}
+      listBody={listBody}
+      detail={detail}
+      hasSelection={!!selectedId}
+      detailOwnsMobileBack={!!selectedId}
+      listFirst
+      class="resource-list-layout"
+      onBack={() => navigateHash("#/settings/providers")}
+      backLabel="All providers"
+    />
   );
 }

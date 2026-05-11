@@ -131,6 +131,7 @@ export function MentionableTextarea({
         open={!!trigger}
         query={trigger?.query || ""}
         types={types}
+        anchorRef={containerRef}
         onSelect={insertMention}
         onClose={closePicker}
       />

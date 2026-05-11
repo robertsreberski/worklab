@@ -10,7 +10,6 @@ import { AgentLink } from "./AgentLink.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
 import { statusMeta } from "./primitives/StatusPill.jsx";
-import { StageToken } from "./primitives/StageToken.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
@@ -314,41 +313,21 @@ export function CommanderRow({
       </span>
       <div class="commander-cell-title">
         <div class="commander-cell-title-row">
-          <span class="commander-title">{task.title}</span>
-          {task.project && (
-            <a
-              class="chip chip-muted commander-project-chip"
-              href={`#/projects/${encodeURIComponent(task.project.slug || task.project.id)}`}
-              title={`Project: ${task.project.name || task.project.slug}`}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
-            </a>
-          )}
-          {isTeamGoalRoot && (
-            <a
-              class={`chip ${commanderGoalChipClass(task)} team-goal-chip`}
-              href={`#/goals/${encodeURIComponent(task.id)}`}
-              title={task.goal_status_reason || "Synthetic team goal root"}
-              onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="check-circle" size={10} /> {commanderGoalStatusLabel(task)}
-            </a>
-          )}
+          <span class="commander-title h-entity">{task.title}</span>
           {metaChip}
-          {autoRun && (
-            <span class="chip">
-              <Icon name="zap" size={10} /> Auto-run
-            </span>
-          )}
-          {hasSchedule && (
-            <span class={`chip ${scheduleEnabled ? "chip-trigger" : "chip-muted"}`} title={scheduleTitle}>
-              <Icon name={scheduleEnabled ? "clock" : "minus-circle"} size={10} /> {scheduleEnabled ? "Scheduled" : "Schedule paused"}
-            </span>
-          )}
         </div>
       </div>
-      <div class="commander-cell-deps">{depsChip}</div>
+      <div class="commander-cell-inline-meta">
+        <CommanderInlineMeta
+          task={task}
+          isTeamGoalRoot={isTeamGoalRoot}
+          autoRun={autoRun}
+          hasSchedule={hasSchedule}
+          scheduleEnabled={scheduleEnabled}
+          scheduleTitle={scheduleTitle}
+          depsChip={depsChip}
+        />
+      </div>
       <div class="commander-cell-assignees">
         {task.planner_agent && (
           <>
@@ -401,12 +380,6 @@ export function CommanderRow({
           </>
         )}
       </div>
-      <div
-        class="commander-cell-pill"
-        title={task.stage_reason || undefined}
-      >
-        <StageToken stage={displayStage} pulse={isStreaming} />
-      </div>
       <div class="commander-cell-age">{formatAge(task.updated_at)}</div>
       {isStreaming && previewEvents.length > 0 && (
         <div class="commander-live-line">
@@ -418,5 +391,68 @@ export function CommanderRow({
         </div>
       )}
     </div>
+  );
+}
+
+function CommanderInlineMeta({
+  task,
+  isTeamGoalRoot,
+  autoRun,
+  hasSchedule,
+  scheduleEnabled,
+  scheduleTitle,
+  depsChip,
+}) {
+  // Critique §03: collapse project / goal / auto / schedule into one borderless
+  // inline-meta line ("infra-api · auto · scheduled daily 9am"), --text-subtle.
+  // Project + goal stay clickable to filter Commander; auto / schedule are static.
+  const parts = [];
+  if (task.project) {
+    parts.push(
+      <a
+        key="project"
+        class="commander-inline-meta-link"
+        href={`#/tasks?project=${encodeURIComponent(task.project.slug || task.project.id)}`}
+        title={`Filter tasks by project: ${task.project.name || task.project.slug}`}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {task.project.name || task.project.slug}
+      </a>,
+    );
+  }
+  if (isTeamGoalRoot) {
+    parts.push(
+      <a
+        key="goal"
+        class="commander-inline-meta-link"
+        href={`#/tasks?goal=${encodeURIComponent(task.id)}`}
+        title={task.goal_status_reason || "Filter by this team goal"}
+        onClick={(event) => event.stopPropagation()}
+      >
+        {commanderGoalStatusLabel(task).toLowerCase()}
+      </a>,
+    );
+  }
+  if (autoRun) parts.push(<span key="auto">auto</span>);
+  if (hasSchedule) {
+    parts.push(
+      <span key="sched" title={scheduleTitle}>
+        {scheduleEnabled ? "scheduled" : "schedule paused"}
+      </span>,
+    );
+  }
+  if (depsChip) {
+    parts.push(<span key="deps" class="commander-inline-meta-deps">{depsChip}</span>);
+  }
+  if (parts.length === 0) return null;
+  return (
+    <span class="commander-inline-meta">
+      {parts.map((part, index) => (
+        <span class="commander-inline-meta-cell" key={part.key || index}>
+          {part}
+          {index < parts.length - 1 && <span class="commander-inline-meta-sep" aria-hidden="true">·</span>}
+        </span>
+      ))}
+    </span>
   );
 }

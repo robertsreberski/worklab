@@ -701,10 +701,6 @@ test("desktop task list keeps every task state legible without clipped controls"
     for (const row of stateRows) {
       await expect(page.locator(".commander-row", { hasText: row.title })).toContainText(row.text);
     }
-    const runningStageLabel = page.locator(".commander-row", { hasText: "Desktop running task" }).locator(".commander-cell-pill .stage-token-label");
-    await expect(runningStageLabel).toHaveText("Execute");
-    await expect(runningStageLabel).toHaveCSS("text-transform", "none");
-
     const rowLayoutMetrics = await page.evaluate(() => {
       const reviewRow = [...document.querySelectorAll(".commander-row")]
         .find((row) => row.textContent?.includes("Desktop review task"));
@@ -718,9 +714,8 @@ test("desktop task list keeps every task state legible without clipped controls"
       const avatars = [...(assignees?.querySelectorAll(".agent-avatar") || [])];
       const assigneeRect = assignees?.getBoundingClientRect();
       const avatarBounds = avatars.map((avatar) => avatar.getBoundingClientRect());
-      const stage = reviewRow?.querySelector(".commander-cell-pill .stage-token")?.getBoundingClientRect();
       const title = reviewRow?.querySelector(".commander-cell-title")?.getBoundingClientRect();
-      const runningDeps = runningRow?.querySelector(".commander-cell-deps");
+      const runningInlineMeta = runningRow?.querySelector(".commander-cell-inline-meta");
       const runningAge = runningRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
       const blockedAge = blockedRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
       return {
@@ -731,21 +726,20 @@ test("desktop task list keeps every task state legible without clipped controls"
         assigneeWidth: assigneeRect ? Math.round(assigneeRect.width) : 0,
         avatarLeft: avatarBounds.length ? Math.round(Math.min(...avatarBounds.map((rect) => rect.left))) : 0,
         avatarRight: avatarBounds.length ? Math.round(Math.max(...avatarBounds.map((rect) => rect.right))) : 0,
-        stageLeft: stage ? Math.round(stage.left) : 0,
         titleRight: title ? Math.round(title.right) : 0,
-        runningDepsDisplay: runningDeps ? getComputedStyle(runningDeps).display : "",
+        runningInlineMetaText: (runningInlineMeta?.textContent || "").replace(/\s+/g, " ").trim(),
         runningAgeRight: runningAge ? Math.round(runningAge.right) : 0,
         blockedAgeRight: blockedAge ? Math.round(blockedAge.right) : 0,
       };
     });
-    expect(rowLayoutMetrics.visibleStateCells).toBe(0);
+    expect(rowLayoutMetrics.visibleStateCells).toBeGreaterThan(0);
     expect(rowLayoutMetrics.assigneeDisplay).toBe("flex");
     expect(rowLayoutMetrics.avatarCount).toBe(3);
     expect(rowLayoutMetrics.arrowCount).toBe(2);
     expect(rowLayoutMetrics.assigneeWidth).toBeGreaterThanOrEqual(84);
     expect(rowLayoutMetrics.avatarLeft).toBeGreaterThanOrEqual(rowLayoutMetrics.titleRight);
-    expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.stageLeft);
-    expect(rowLayoutMetrics.runningDepsDisplay).toBe("flex");
+    expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.runningAgeRight);
+    expect(rowLayoutMetrics.runningInlineMetaText).toContain("Waiting on 1");
     expect(Math.abs(rowLayoutMetrics.runningAgeRight - rowLayoutMetrics.blockedAgeRight)).toBeLessThanOrEqual(2);
 
     await expectNoHorizontalOverflow(page, `${viewport.label} task list states`);
@@ -780,7 +774,7 @@ test("desktop task list keeps every task state legible without clipped controls"
 });
 
 test("knowledge entry loads via the two-pane URL", async ({ page }) => {
-  await page.goto(`${baseUrl}/#/knowledge/welcome`);
+  await page.goto(`${baseUrl}/#/library/knowledge/welcome`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Welcome guide" })).toBeVisible();
   await expect(page.locator(".knowledge-read-markdown h1", { hasText: "Welcome" })).toBeVisible();
   await expect(page.locator(".knowledge-detail-body textarea")).toHaveCount(0);
@@ -791,13 +785,13 @@ test("knowledge entry loads via the two-pane URL", async ({ page }) => {
 });
 
 test("agents two-pane: clicking a list row selects inline editor via URL", async ({ page }) => {
-  await page.goto(`${baseUrl}/#/agents/new`);
+  await page.goto(`${baseUrl}/#/library/agents/new`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "New agent" })).toBeVisible();
 });
 
 test("agent profile availability stays grouped after identity fields", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${baseUrl}/#/agents/new`);
+  await page.goto(`${baseUrl}/#/library/agents/new`);
   await expect(page.locator(".agent-profile-grid")).toBeVisible();
 
   const fields = await page.locator(".agent-profile-grid").evaluate((grid) => {
@@ -1004,9 +998,9 @@ test("agent references in messages and avatars navigate to agent editor", async 
   await page.goto(`${baseUrl}/#/tasks/${taskId}`);
   const messageLink = page
     .locator(".activity-feed-entry.comment.system", { hasText: "Daily budget" })
-    .locator("a[href='#/agents/regression-agent']", { hasText: "Regression Agent" })
+    .locator("a[href='#/library/agents/regression-agent']", { hasText: "Regression Agent" })
     .first();
-  await expect(messageLink).toHaveAttribute("href", "#/agents/regression-agent");
+  await expect(messageLink).toHaveAttribute("href", "#/library/agents/regression-agent");
   await messageLink.click();
   await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
@@ -1015,7 +1009,7 @@ test("agent references in messages and avatars navigate to agent editor", async 
   const taskRow = page.locator(".commander-row", { hasText: "UI regression task" }).first();
   await expect(taskRow).toBeVisible();
   const avatarLink = taskRow.locator(".commander-cell-assignees .agent-link[aria-label='Regression Agent']").first();
-  await expect(avatarLink).toHaveAttribute("href", "#/agents/regression-agent");
+  await expect(avatarLink).toHaveAttribute("href", "#/library/agents/regression-agent");
   await avatarLink.click();
   await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
@@ -1517,7 +1511,7 @@ test("task detail deep-linked run opens highlighted history", async ({ page }) =
 
 test("activity open link scrolls to targeted task run", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 560 });
-  await page.goto(`${baseUrl}/#/activity`);
+  await page.goto(`${baseUrl}/#/runs`);
   const row = page.locator(".activity-row", { hasText: "UI regression task" }).first();
   await expect(row).toBeVisible();
 
@@ -1826,10 +1820,10 @@ test("settings dense layout controls stay grouped and unclipped", async ({ page 
 
 test("destructive pane actions stay behind disclosure", async ({ page }) => {
 	  for (const hash of [
-	    "#/agents/regression-agent",
-	    "#/knowledge/welcome/edit",
-	    `#/providers/${providerId}`,
-	    `#/skills/${skillName}`,
+	    "#/library/agents/regression-agent",
+	    "#/library/knowledge/welcome/edit",
+	    `#/settings/providers/${providerId}`,
+	    `#/library/skills/${skillName}`,
 	  ]) {
     await page.goto(`${baseUrl}/${hash}`);
     await expect(page.locator(".pane-detail-head")).toBeVisible();
@@ -1844,7 +1838,7 @@ test("destructive pane actions stay behind disclosure", async ({ page }) => {
 
 test("skill editor clears priority and keeps availability on its own row", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`${baseUrl}/#/skills/${skillName}`);
+  await page.goto(`${baseUrl}/#/library/skills/${skillName}`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Skill" })).toBeVisible();
 
   const layout = await page.evaluate(() => {
@@ -1891,7 +1885,7 @@ test("skill editor clears priority and keeps availability on its own row", async
 test("agents skills and knowledge panes keep polished rows and detail headers legible", async ({ page }) => {
   const routes = [
     {
-      hash: "#/agents/regression-agent",
+      hash: "#/library/agents/regression-agent",
       title: "Regression Agent",
       rowText: "Regression Agent",
       detailText: "regression-agent",
@@ -1899,14 +1893,14 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
       flatBody: true,
     },
     {
-      hash: `#/skills/${skillName}`,
+      hash: `#/library/skills/${skillName}`,
       title: "Regression Skill",
       rowText: "Regression Skill",
       detailText: "On demand",
       entityEditor: true,
     },
     {
-      hash: "#/knowledge/mobile-layout-reference",
+      hash: "#/library/knowledge/mobile-layout-reference",
       title: "Mobile layout reference",
       rowText: "Mobile layout reference",
       detailText: "mobile-layout-reference",
@@ -2021,10 +2015,10 @@ test("agents skills and knowledge panes keep polished rows and detail headers le
 test("mobile agents skills projects and knowledge panes preserve compact premium detail structure", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true, flatBody: true },
-    { hash: `#/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
+    { hash: "#/library/agents/regression-agent", title: "Regression Agent", back: "All agents", entityEditor: true, flatBody: true },
+    { hash: `#/library/skills/${skillName}`, title: "Regression Skill", back: "All skills", entityEditor: true },
     { hash: `#/projects/${projectSlug}`, title: "Mobile Layout Project", back: "Projects", readArticle: true, archiveAction: true },
-    { hash: "#/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", readArticle: true },
+    { hash: "#/library/knowledge/mobile-layout-reference", title: "Mobile layout reference", back: "Knowledge", readArticle: true },
   ];
 
   for (const route of routes) {
@@ -2149,10 +2143,10 @@ test("project detail surfaces AGENTS.md prompt injection status", async ({ page 
 test("mobile scroll containers keep final content above bottom chrome", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents", target: ".pane-row:last-child", scroller: ".pane-list-body" },
-    { hash: "#/knowledge/mobile-layout-reference", target: ".knowledge-read-section:last-child", scroller: ".pane-detail" },
+    { hash: "#/library/agents", target: ".pane-row:last-child", scroller: ".pane-list-body" },
+    { hash: "#/library/knowledge/mobile-layout-reference", target: ".knowledge-read-section:last-child", scroller: ".pane-detail" },
     { hash: `#/projects/${projectSlug}`, target: ".knowledge-read-section:last-child", scroller: ".pane-detail" },
-    { hash: "#/agents/regression-agent", target: ".entity-editor-main > .form-section:last-child", scroller: ".pane-detail" },
+    { hash: "#/library/agents/regression-agent", target: ".entity-editor-main > .form-section:last-child", scroller: ".pane-detail" },
   ];
 
   for (const route of routes) {
@@ -2230,22 +2224,22 @@ function responsiveRoutes(page, ids) {
     { hash: "#/projects", ready: () => page.locator(".pane-list") },
     { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
     { hash: "#/projects/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "Untitled project" }) },
-    { hash: "#/teams", ready: () => page.locator(".pane-list") },
-    { hash: `#/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
-    { hash: "#/teams/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New team" }) },
-    { hash: "#/agents", ready: () => page.locator(".pane-list") },
-    { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
-    { hash: "#/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
-    { hash: "#/skills", ready: () => page.locator(".pane-list") },
-    { hash: `#/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
-    { hash: "#/skills/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New skill" }) },
-    { hash: "#/knowledge", ready: () => page.locator(".pane-list") },
-    { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
-    { hash: "#/knowledge/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New entry" }) },
-    { hash: "#/providers", ready: () => page.locator(".pane-list") },
-    { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
-    { hash: "#/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
-    { hash: "#/activity", ready: () => page.locator(".activity-stats") },
+    { hash: "#/library/teams", ready: () => page.locator(".pane-list") },
+    { hash: `#/library/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
+    { hash: "#/library/teams/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New team" }) },
+    { hash: "#/library/agents", ready: () => page.locator(".pane-list") },
+    { hash: "#/library/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
+    { hash: "#/library/agents/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New agent" }) },
+    { hash: "#/library/skills", ready: () => page.locator(".pane-list") },
+    { hash: `#/library/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
+    { hash: "#/library/skills/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New skill" }) },
+    { hash: "#/library/knowledge", ready: () => page.locator(".pane-list") },
+    { hash: "#/library/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
+    { hash: "#/library/knowledge/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New entry" }) },
+    { hash: "#/settings/providers", ready: () => page.locator(".pane-list") },
+    { hash: `#/settings/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
+    { hash: "#/settings/providers/new", ready: () => page.locator(".pane-detail-head h2", { hasText: "New provider" }) },
+    { hash: "#/runs", ready: () => page.locator(".activity-stats") },
     { hash: "#/settings", ready: () => page.locator(".settings-sections") },
     { hash: "#/design-system", ready: () => page.locator(".ds-catalog") },
   ];
@@ -2283,17 +2277,17 @@ test("browser back walks through mapped app routes without anchor hash remounts"
     { hash: `#/goals/${goalId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
     { hash: "#/projects", ready: () => page.locator(".pane-list") },
     { hash: `#/projects/${projectSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Mobile Layout Project" }) },
-    { hash: "#/teams", ready: () => page.locator(".pane-list") },
-    { hash: `#/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
-    { hash: "#/agents", ready: () => page.locator(".pane-list") },
-    { hash: "#/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
-    { hash: "#/skills", ready: () => page.locator(".pane-list") },
-    { hash: `#/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
-    { hash: "#/knowledge", ready: () => page.locator(".pane-list") },
-    { hash: "#/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
-    { hash: "#/providers", ready: () => page.locator(".pane-list") },
-    { hash: `#/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
-    { hash: "#/activity", ready: () => page.locator(".activity-stats") },
+    { hash: "#/library/teams", ready: () => page.locator(".pane-list") },
+    { hash: `#/library/teams/${teamSlug}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Team" }) },
+    { hash: "#/library/agents", ready: () => page.locator(".pane-list") },
+    { hash: "#/library/agents/regression-agent", ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Agent" }) },
+    { hash: "#/library/skills", ready: () => page.locator(".pane-list") },
+    { hash: `#/library/skills/${skillName}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression Skill" }) },
+    { hash: "#/library/knowledge", ready: () => page.locator(".pane-list") },
+    { hash: "#/library/knowledge/welcome", ready: () => page.locator(".pane-detail-head h2", { hasText: "Welcome guide" }) },
+    { hash: "#/settings/providers", ready: () => page.locator(".pane-list") },
+    { hash: `#/settings/providers/${providerId}`, ready: () => page.locator(".pane-detail-head h2", { hasText: "Regression provider" }) },
+    { hash: "#/runs", ready: () => page.locator(".activity-stats") },
     { hash: "#/settings", ready: () => page.locator(".settings-sections") },
   ];
 
@@ -2326,7 +2320,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]) {
+  for (const label of ["Library", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2345,17 +2339,17 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   expect(metrics.navCount).toBe(5);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Library", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Skills" }).click();
-  await expect(page).toHaveURL(/#\/skills$/);
+  await sheet.getByRole("link", { name: "Library" }).click();
+  await expect(page).toHaveURL(/#\/library$/);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-more-sheet")).toHaveCount(0);
 
-  await page.goto(`${baseUrl}/#/providers`);
+  await page.goto(`${baseUrl}/#/settings/providers`);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-tabbar button", { hasText: "More" })).toHaveClass(/active/);
 });
@@ -2425,7 +2419,7 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
     const filter = document.querySelector(".commander-filter");
     const tabbar = document.querySelector(".app-tabbar");
     const fab = document.querySelector(".commander-new-task-fab");
-    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const assistantLauncher = document.querySelector(".assistant-pill");
     const topbarRect = topbar?.getBoundingClientRect();
     const filterRect = filter?.getBoundingClientRect();
     const tabbarRect = tabbar?.getBoundingClientRect();
@@ -2600,13 +2594,13 @@ test("mobile task list keeps search visible and moves configuration into a botto
 test("mobile resource list filters are available from the shared configuration sheet", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const route of [
-    { hash: "#/agents", label: "Agents" },
+    { hash: "#/library/agents", label: "Agents" },
     { hash: "#/goals", label: "Goals" },
     { hash: "#/projects", label: "Projects" },
-    { hash: "#/knowledge", label: "Knowledge" },
-    { hash: "#/skills", label: "Skills" },
-    { hash: "#/teams", label: "Teams" },
-    { hash: "#/providers", label: "Providers" },
+    { hash: "#/library/knowledge", label: "Knowledge" },
+    { hash: "#/library/skills", label: "Skills" },
+    { hash: "#/library/teams", label: "Teams" },
+    { hash: "#/settings/providers", label: "Providers" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
     await expect(page.locator(".resource-toolbar .search-field")).toBeVisible();
@@ -2631,13 +2625,13 @@ test("mobile resource list filters are available from the shared configuration s
 test("desktop resource list filters use the same compact configuration surface", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 820 });
   for (const route of [
-    { hash: "#/agents", label: "Agents" },
+    { hash: "#/library/agents", label: "Agents" },
     { hash: "#/goals", label: "Goals" },
     { hash: "#/projects", label: "Projects" },
-    { hash: "#/knowledge", label: "Knowledge" },
-    { hash: "#/skills", label: "Skills" },
-    { hash: "#/teams", label: "Teams" },
-    { hash: "#/providers", label: "Providers" },
+    { hash: "#/library/knowledge", label: "Knowledge" },
+    { hash: "#/library/skills", label: "Skills" },
+    { hash: "#/library/teams", label: "Teams" },
+    { hash: "#/settings/providers", label: "Providers" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
     const toolbar = page.locator(".resource-toolbar").first();
@@ -2758,7 +2752,7 @@ test("project detail keeps workdir metadata readable in the detail pane", async 
 test("resource editor rails collapse before form sections become cramped", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   for (const route of [
-    { label: "skill", hash: `#/skills/${skillName}`, title: "Regression Skill", layout: ".skill-editor-layout" },
+    { label: "skill", hash: `#/library/skills/${skillName}`, title: "Regression Skill", layout: ".skill-editor-layout" },
     { label: "project", hash: `#/projects/${projectSlug}/edit`, title: "Mobile Layout Project", layout: ".project-editor-layout" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
@@ -2790,13 +2784,13 @@ test("resource editor rails collapse before form sections become cramped", async
 test("mobile resource list create actions move to a floating FAB", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents", label: "New agent", target: /#\/agents\/new/, toolbar: "resource" },
+    { hash: "#/library/agents", label: "New agent", target: /#\/agents\/new/, toolbar: "resource" },
     { hash: "#/goals", label: "New goal", target: /#\/goals\/new/, toolbar: "resource" },
     { hash: "#/projects", label: "New project", target: /#\/projects\/new/, toolbar: "resource" },
-    { hash: "#/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
-    { hash: "#/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
-    { hash: "#/teams", label: "New team", target: /#\/teams\/new/, toolbar: "resource" },
-    { hash: "#/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "resource" },
+    { hash: "#/library/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
+    { hash: "#/library/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
+    { hash: "#/library/teams", label: "New team", target: /#\/teams\/new/, toolbar: "resource" },
+    { hash: "#/settings/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "resource" },
   ];
 
   for (const route of routes) {
@@ -2815,7 +2809,7 @@ test("mobile resource list create actions move to a floating FAB", async ({ page
       const inlineButtons = [...(toolbarRoot?.querySelectorAll(":scope > .button:not(.resource-list-fab)") || [])];
       const count = toolbarRoot?.querySelector(".resource-toolbar-count");
       const fab = document.querySelector(".resource-list-fab");
-      const assistantLauncher = document.querySelector(".assistant-launcher");
+      const assistantLauncher = document.querySelector(".assistant-pill");
       const nav = document.querySelector(".app-tabbar");
       const list = document.querySelector(".pane-list-body");
       const toolbarRect = toolbarRoot?.getBoundingClientRect();
@@ -2928,7 +2922,7 @@ test("goals missing detail degrades to a stable not-found state", async ({ page 
 
 test("mobile Activity filters collapse into a configuration sheet", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/#/activity`);
+  await page.goto(`${baseUrl}/#/runs`);
   await expect(page.locator(".activity-filter-card")).toBeVisible();
 
   await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
@@ -3225,11 +3219,11 @@ test("mobile task list stacks assistant launcher above new task", async ({ page 
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
   await expect(page.locator(".commander-new-task-fab")).toBeVisible();
-  await expect(page.locator(".assistant-launcher")).toBeVisible();
+  await expect(page.locator(".assistant-pill")).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const fab = document.querySelector(".commander-new-task-fab");
-    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const assistantLauncher = document.querySelector(".assistant-pill");
     const nav = document.querySelector(".app-tabbar");
     const fabRect = fab?.getBoundingClientRect();
     const assistantLauncherRect = assistantLauncher?.getBoundingClientRect();
@@ -3368,7 +3362,7 @@ test("mobile task detail review wraps idle dock actions into two rows", async ({
 
   const metrics = await page.evaluate(() => {
     const dock = document.querySelector(".app-mobile-action-dock");
-    const assistantLauncher = document.querySelector(".assistant-launcher");
+    const assistantLauncher = document.querySelector(".assistant-pill");
     const buttons = dock ? [...dock.querySelectorAll(".button")] : [];
     const rows = [];
     for (const button of buttons) {
@@ -3666,10 +3660,10 @@ test("mobile task edit uses compact header and sticky action dock", async ({ pag
 test("mobile create editors keep headers, actions, and forms usable", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/agents/new", title: "New agent", back: "All agents", entityEditor: true },
-    { hash: "#/skills/new", title: "New skill", back: "All skills", entityEditor: true },
-    { hash: "#/knowledge/new", title: "New entry", back: "Knowledge", entityEditor: true },
-    { hash: "#/providers/new", title: "New provider", back: "Providers", entityEditor: true },
+    { hash: "#/library/agents/new", title: "New agent", back: "All agents", entityEditor: true },
+    { hash: "#/library/skills/new", title: "New skill", back: "All skills", entityEditor: true },
+    { hash: "#/library/knowledge/new", title: "New entry", back: "Knowledge", entityEditor: true },
+    { hash: "#/settings/providers/new", title: "New provider", back: "Providers", entityEditor: true },
   ];
 
   for (const route of routes) {
@@ -3750,7 +3744,7 @@ test("mobile create editors keep headers, actions, and forms usable", async ({ p
 
 test("mobile activity screen uses stacked readable rows", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/#/activity`);
+  await page.goto(`${baseUrl}/#/runs`);
   await expect(page.locator(".activity-row").first()).toBeVisible();
   await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
   await expect(page.locator(".activity-filter-card .activity-filter-panel")).toBeHidden();
@@ -3812,8 +3806,12 @@ test("mobile assistant pane opens full width", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
 
-  await page.locator(".assistant-launcher").click();
+  await page.locator(".assistant-pill").click();
   await expect(page.locator(".assistant-dock.open")).toBeVisible();
+  await expect.poll(async () => page.locator(".assistant-dock.open").evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return Math.round(rect.left);
+  })).toBe(0);
 
   const metrics = await page.evaluate(() => {
     const dock = document.querySelector(".assistant-dock.open");
@@ -3960,7 +3958,7 @@ test("assistant thread remains scrollable with long history", async ({ page }) =
     await page.goto(`${baseUrl}/?assistant-scroll=${viewport.width}#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    const launcher = page.locator(".assistant-launcher");
+    const launcher = page.locator(".assistant-pill");
     if (await launcher.isVisible()) await launcher.click();
     await expect(page.locator(".assistant-dock.open")).toBeVisible();
     await expect(page.locator(".assistant-empty")).toBeVisible();
@@ -4003,7 +4001,7 @@ test("assistant thread remains scrollable with long history", async ({ page }) =
     expect(afterWheel, `${viewport.width} assistant thread wheel scroll`).toBeLessThan(beforeWheel);
 
     await page.locator(".assistant-dock.open [aria-label='Collapse assistant']").click();
-    await expect(page.locator(".assistant-launcher")).toBeVisible();
+    await expect(page.locator(".assistant-pill")).toBeVisible();
   }
 });
 
@@ -4097,7 +4095,7 @@ test("pressing N opens new-task form from the commander", async ({ page }) => {
 
 test("provider creation uses a simple mobile provider-type select", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/#/providers/new`);
+  await page.goto(`${baseUrl}/#/settings/providers/new`);
   await expect(page.locator(".pane-detail-head h2", { hasText: "New provider" })).toBeVisible();
   await expect(page.locator(".provider-type-segmented")).toBeHidden();
   await expect(page.locator(".provider-type-select select")).toBeVisible();
@@ -4106,7 +4104,7 @@ test("provider creation uses a simple mobile provider-type select", async ({ pag
 
 test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/#/activity`);
+  await page.goto(`${baseUrl}/#/runs`);
   await expect(page.locator(".activity-mobile-config-trigger")).toBeVisible();
   await page.locator(".activity-mobile-config-trigger").click();
 

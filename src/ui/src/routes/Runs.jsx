@@ -1,4 +1,4 @@
-// §6.9 Activity — premium run activity dashboard.
+// §6.9 Runs — run activity dashboard (formerly Activity; renamed per critique §07).
 import { useCallback, useEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { useSSE } from "../lib/useSSE.js";
@@ -117,7 +117,7 @@ function costChartDays(rows) {
   });
 }
 
-export function Activity() {
+export function Runs() {
   const [items, setItems] = useState(null);
   const [summary, setSummary] = useState(null);
   const [nextCursor, setNextCursor] = useState(null);
@@ -203,10 +203,10 @@ export function Activity() {
   const activeFilterCount = [agentFilter, statusFilter, dateRange.from, dateRange.to].filter(Boolean).length;
 
   return (
-    <AppShell route="activity">
+    <AppShell route="runs">
       <Page
-        kicker="Activity"
-        title="Activity"
+        kicker="Runs"
+        title="Runs"
         description="Recent task runs, automations, and consolidation events."
         actions={pageActions}
       >

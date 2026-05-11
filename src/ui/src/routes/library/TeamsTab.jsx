@@ -3,37 +3,36 @@
 // PaneLayout pattern from Agents/Projects.
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "preact/hooks";
-import { api } from "../lib/api.js";
-import { useSSE } from "../lib/useSSE.js";
-import { useThrottledCallback } from "../lib/useThrottledCallback.js";
-import { useAppResume } from "../lib/pageVisibility.js";
-import { AppShell } from "../components/AppShell.jsx";
-import { Button } from "../components/primitives/Button.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { PaneLayout } from "../components/PaneLayout.jsx";
-import { PaneRow } from "../components/PaneRow.jsx";
-import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { Input } from "../components/primitives/Input.jsx";
-import { Textarea } from "../components/primitives/Textarea.jsx";
-import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
-import { Switch } from "../components/primitives/Switch.jsx";
-import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
-import { FormField } from "../components/FormField.jsx";
-import { FormGrid } from "../components/FormGrid.jsx";
-import { FormSection } from "../components/FormSection.jsx";
-import { Card } from "../components/Card.jsx";
-import { Badge } from "../components/primitives/Badge.jsx";
-import { StatusDot } from "../components/primitives/StatusDot.jsx";
-import { AgentPicker } from "../components/AgentPicker.jsx";
-import { DetailHead, InlineHead, PanelGrid, SectionGroup, Toolbar } from "../components/layout/index.js";
-import { navigateHash } from "../lib/navigation.js";
-import { pushToast } from "../lib/toast.js";
-import { buildTeamResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
-import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { api } from "../../lib/api.js";
+import { useSSE } from "../../lib/useSSE.js";
+import { useThrottledCallback } from "../../lib/useThrottledCallback.js";
+import { useAppResume } from "../../lib/pageVisibility.js";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Select } from "../../components/primitives/Select.jsx";
+import { Tabs } from "../../components/primitives/Tabs.jsx";
+import { Icon } from "../../components/Icon.jsx";
+import { PaneLayout } from "../../components/PaneLayout.jsx";
+import { PaneRow } from "../../components/PaneRow.jsx";
+import { EmptyState, EmptyStateFiltered } from "../../components/EmptyState.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../../components/ResourceRowMeta.jsx";
+import { Input } from "../../components/primitives/Input.jsx";
+import { Textarea } from "../../components/primitives/Textarea.jsx";
+import { MentionableTextarea } from "../../components/MentionableTextarea.jsx";
+import { Switch } from "../../components/primitives/Switch.jsx";
+import { GoalContractDetails } from "../../components/GoalContractDetails.jsx";
+import { FormField } from "../../components/FormField.jsx";
+import { FormGrid } from "../../components/FormGrid.jsx";
+import { FormSection } from "../../components/FormSection.jsx";
+import { Card } from "../../components/Card.jsx";
+import { Badge } from "../../components/primitives/Badge.jsx";
+import { StatusDot } from "../../components/primitives/StatusDot.jsx";
+import { AgentPicker } from "../../components/AgentPicker.jsx";
+import { DetailHead, InlineHead, PanelGrid, SectionGroup, Toolbar } from "../../components/layout/index.js";
+import { navigateHash } from "../../lib/navigation.js";
+import { pushToast } from "../../lib/toast.js";
+import { buildTeamResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
+import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 
 const GOOD_TEAM_CHECKLIST = [
   "Team charter: define the kind of work this team owns.",
@@ -392,7 +391,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
       }
       pushToast(isNew ? "Team created" : "Team saved", { variant: "success" });
       onSaved?.(saved.team);
-      if (isNew) navigateHash(`#/teams/${encodeURIComponent(saved.team.slug)}`);
+      if (isNew) navigateHash(`#/library/teams/${encodeURIComponent(saved.team.slug)}`);
     } catch (err) {
       setError(err.message || "Save failed");
       pushToast(`Save failed: ${err.message}`, { variant: "error" });
@@ -405,7 +404,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
   const slugLabel = isNew ? "Slug after create" : (draft.slug || team?.slug || "");
   const headerActions = (
     <>
-      <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
+      <Button variant="ghost" onClick={() => navigateHash("#/library/teams")}>Cancel</Button>
       <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
     </>
   );
@@ -415,8 +414,8 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
       <DetailHead
         class="team-detail-head team-edit-head"
         backLabel="All teams"
-        onBack={() => navigateHash("#/teams")}
-        crumbs={[{ label: "Teams", href: "#/teams" }, { label: isNew ? "New" : "Edit" }]}
+        onBack={() => navigateHash("#/library/teams")}
+        crumbs={[{ label: "Teams", href: "#/library/teams" }, { label: isNew ? "New" : "Edit" }]}
         icon={<Icon name="users" size={16} />}
         kicker={isNew ? "Create team" : "Team editor"}
         title={title}
@@ -523,7 +522,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
           </FormSection>
           <Toolbar class="form-actions">
             <Button variant="primary" loading={saving} onClick={save}>{isNew ? "Create team" : "Save"}</Button>
-            <Button variant="ghost" onClick={() => navigateHash("#/teams")}>Cancel</Button>
+            <Button variant="ghost" onClick={() => navigateHash("#/library/teams")}>Cancel</Button>
           </Toolbar>
         </div>
       </div>
@@ -588,7 +587,7 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
     <>
       <Badge variant={statusTone(team.status)}>{team.status}</Badge>
       <Button variant="primary" loading={running} disabled={!team.lead_agent} onClick={runLeadNow}>Run lead now</Button>
-      <Button variant="secondary" onClick={() => navigateHash(`#/teams/${encodeURIComponent(team.slug)}/edit`)}>Edit</Button>
+      <Button variant="secondary" onClick={() => navigateHash(`#/library/teams/${encodeURIComponent(team.slug)}/edit`)}>Edit</Button>
     </>
   );
 
@@ -597,8 +596,8 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
       <DetailHead
         class="team-detail-head"
         backLabel="All teams"
-        onBack={() => navigateHash("#/teams")}
-        crumbs={[{ label: "Teams", href: "#/teams" }, { label: team.name }]}
+        onBack={() => navigateHash("#/library/teams")}
+        crumbs={[{ label: "Teams", href: "#/library/teams" }, { label: team.name }]}
         icon={<Icon name="users" size={16} />}
         kicker="Team"
         title={team.name}
@@ -698,7 +697,7 @@ function emptyState() {
   );
 }
 
-export function Teams({ selectedId = null, mode = null }) {
+export function TeamsTab({ selectedId = null, mode = null }) {
   const [teams, setTeams] = useState([]);
   const [goalsByTeamId, setGoalsByTeamId] = useState({});
   const [agents, setAgents] = useState([]);
@@ -889,12 +888,11 @@ export function Teams({ selectedId = null, mode = null }) {
   }
 
   return (
-    <AppShell route="teams">
-      <PaneLayout
-        hasSelection={!!selectedId}
-        onBack={() => navigateHash("#/teams")}
-        backLabel="Teams"
-        listHeader={(
+    <PaneLayout
+      hasSelection={!!selectedId}
+      onBack={() => navigateHash("#/library/teams")}
+      backLabel="Teams"
+      listHeader={(
           <ResourceListToolbar
             searchValue={query}
             onSearch={setQuery}
@@ -903,7 +901,7 @@ export function Teams({ selectedId = null, mode = null }) {
             searchRef={searchRef}
             countLabel={`${filtered.length} shown`}
             actionLabel="New team"
-            onAction={() => navigateHash("#/teams/new")}
+            onAction={() => navigateHash("#/library/teams/new")}
             configTitle="Teams configuration"
             activeConfigCount={[statusFilter !== "active", scheduleFilter !== "all", leadFilter !== "all"].filter(Boolean).length}
           >
@@ -930,7 +928,7 @@ export function Teams({ selectedId = null, mode = null }) {
                   <PaneRow
                     key={team.id}
                     active={team.id === selectedId || team.slug === selectedId}
-                    href={`#/teams/${encodeURIComponent(team.slug)}`}
+                    href={`#/library/teams/${encodeURIComponent(team.slug)}`}
                     leading={<span class="team-row-leading"><Icon name="users" size={12} /></span>}
                     title={team.name}
                     sub={(
@@ -959,10 +957,9 @@ export function Teams({ selectedId = null, mode = null }) {
             ))}
           </ResourceList>
         )}
-        detail={body}
-        listFirst
-        class="resource-list-layout"
-      />
-    </AppShell>
+      detail={body}
+      listFirst
+      class="resource-list-layout"
+    />
   );
 }
