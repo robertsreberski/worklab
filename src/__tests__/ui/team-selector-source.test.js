@@ -10,7 +10,7 @@ function source(path) {
 
 describe("team selector wiring", () => {
   it("uses agent pickers for team lead and member agents", () => {
-    const teamsSource = source("src/ui/src/routes/Teams.jsx");
+    const teamsSource = source("src/ui/src/routes/library/TeamsTab.jsx");
 
     expect(teamsSource).toContain("AgentPicker");
     expect(teamsSource).not.toContain("placeholder=\"agent name\"");

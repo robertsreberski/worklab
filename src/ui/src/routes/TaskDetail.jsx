@@ -742,7 +742,7 @@ export function TaskDetail({ id, runParam = null }) {
         </a>
       )}
       {task.team_id && (
-        <a class="chip chip-muted task-team-chip" href={`#/teams/${encodeURIComponent(task.team_id)}`} title={`Team: ${task.team_id}`}>
+        <a class="chip chip-muted task-team-chip" href={`#/library/teams/${encodeURIComponent(task.team_id)}`} title={`Team: ${task.team_id}`}>
           <Icon name="users" size={10} /> {task.team_id}
         </a>
       )}

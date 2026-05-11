@@ -6,7 +6,7 @@ import { DESIGN_SYSTEM_COMPONENT_COVERAGE } from "../../ui/src/routes/DesignSyst
 const repoRoot = resolve(import.meta.dirname, "../../..");
 const docsPath = resolve(repoRoot, "docs/ui-design-system.md");
 const designSystemPath = resolve(repoRoot, "src/ui/src/routes/DesignSystem.jsx");
-const activityPath = resolve(repoRoot, "src/ui/src/routes/Activity.jsx");
+const activityPath = resolve(repoRoot, "src/ui/src/routes/Runs.jsx");
 const agentEditPath = resolve(repoRoot, "src/ui/src/routes/AgentEdit.jsx");
 const stylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const bannerPath = resolve(repoRoot, "src/ui/src/components/Banner.jsx");
@@ -20,9 +20,9 @@ const liveRunPanelPath = resolve(repoRoot, "src/ui/src/components/LiveRunPanel.j
 const mobileConfigSheetPath = resolve(repoRoot, "src/ui/src/components/MobileConfigSheet.jsx");
 const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
 const projectsPath = resolve(repoRoot, "src/ui/src/routes/Projects.jsx");
-const providersPath = resolve(repoRoot, "src/ui/src/routes/Providers.jsx");
+const providersPath = resolve(repoRoot, "src/ui/src/routes/settings/ProvidersTab.jsx");
 const runCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunCards.jsx");
-const teamsPath = resolve(repoRoot, "src/ui/src/routes/Teams.jsx");
+const teamsPath = resolve(repoRoot, "src/ui/src/routes/library/TeamsTab.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
@@ -823,6 +823,7 @@ describe("design system stylesheet", () => {
       "--dot-size",
       "--indent",
       "--pill-color",
+      "--placement-max-height",
       "--pulse-color",
       "--select-menu-width",
       "--shimmer-h",
@@ -883,6 +884,6 @@ describe("design system stylesheet", () => {
   it("keeps typography responsive through tokens instead of viewport scaling", () => {
     const css = readFileSync(stylesPath, "utf8");
     expect(css).not.toMatch(/font-size:\s*clamp\(/);
-    expect(css).not.toMatch(/letter-spacing:\s*-/);
+    expect(css).not.toMatch(/letter-spacing:\s*-[^;]+;/);
   });
 });

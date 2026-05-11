@@ -29,22 +29,13 @@ export const ROUTE_GROUPS = [
       { id: "tasks", label: "Tasks", icon: "layout-list" },
       { id: "goals", label: "Goals", icon: "target" },
       { id: "projects", label: "Projects", icon: "folder" },
-      { id: "activity", label: "Activity", icon: "clock" },
     ],
   },
   {
-    label: "Library",
+    label: "Build",
     routes: [
-      { id: "teams", label: "Teams", icon: "users" },
-      { id: "agents", label: "Agents", icon: "user" },
-      { id: "skills", label: "Skills", icon: "sparkles" },
-      { id: "knowledge", label: "Knowledge", icon: "book" },
-    ],
-  },
-  {
-    label: "System",
-    routes: [
-      { id: "providers", label: "Providers", icon: "terminal" },
+      { id: "library", label: "Library", icon: "book" },
+      { id: "runs", label: "Runs", icon: "clock" },
       { id: "settings", label: "Settings", icon: "settings" },
     ],
   },
@@ -57,9 +48,9 @@ const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
   { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
-  { id: "activity", label: "Activity", icon: "clock", href: "#/activity" },
+  { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
 ];
-const MORE_ROUTE_IDS = ["teams", "agents", "skills", "knowledge", "providers", "settings"];
+const MORE_ROUTE_IDS = ["library", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
   .map((route) => ({ ...route, href: `#/${route.id}` }));
@@ -67,11 +58,12 @@ const EMPTY_SECTIONS = [];
 const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";
 
 function assistantInitialOpen() {
-  if (typeof window === "undefined") return true;
+  // Critique §08: assistant is ambient. Hidden by default; ⌘\ summons.
+  // Respect the user's stored preference if they've opened it explicitly.
+  if (typeof window === "undefined") return false;
   const stored = window.localStorage?.getItem?.(ASSISTANT_PREF_KEY);
   if (stored === "open") return true;
-  if (stored === "closed") return false;
-  return !window.matchMedia?.("(max-width: 860px)")?.matches;
+  return false;
 }
 
 export function useAppChrome(chrome, deps = []) {
@@ -361,7 +353,12 @@ export function AppShell({
   useGlobalShortcuts({
     "?": () => setHelpOpen(true),
     "N": () => { navigateHash("#/tasks/new"); },
-    "Escape": () => { if (helpOpen) setHelpOpen(false); },
+    // Critique §08: ⌘\ summons the ambient assistant. Esc collapses.
+    "cmdbackslash": (event) => { event?.preventDefault?.(); setAssistantOpen((open) => !open); },
+    "Escape": () => {
+      if (helpOpen) { setHelpOpen(false); return; }
+      if (assistantOpen) setAssistantOpen(false);
+    },
   });
   useEffect(() => {
     ensureNotificationServiceWorker().catch(() => {});
@@ -399,7 +396,6 @@ export function AppShell({
             </span>
             <span class="brand-copy">
               <strong>Worklab</strong>
-              <span>Local agents</span>
             </span>
           </a>
           <nav class="app-nav rail-nav" aria-label="Primary navigation">
@@ -428,12 +424,15 @@ export function AppShell({
           <div class="rail-footer">
             <button
               type="button"
-              class="rail-status"
-              onClick={() => setHelpOpen(true)}
-              aria-label="Show keyboard shortcuts"
+              class="rail-identity"
+              onClick={() => navigateHash("#/settings")}
+              aria-label="Open settings"
+              title="Settings · press ? for shortcuts"
             >
-              <Icon name="keyboard" size={12} />
-              <span>Shortcuts · ?</span>
+              <span class="rail-identity-avatar" aria-hidden="true">
+                <Icon name="user" size={13} />
+              </span>
+              <span class="rail-identity-handle">You</span>
             </button>
           </div>
         </aside>

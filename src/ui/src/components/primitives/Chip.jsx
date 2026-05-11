@@ -1,5 +1,11 @@
 // §3.10 Chip — inline metadata badge.
-// variant: tag | category | trigger | filter
+// Canonical variants (critique §09 — rule of one, no inventing):
+//   muted  · tag       — categorical identity (project, type)
+//   accent · link      — relationship to another entity; click implies navigate
+//   warn   · pending   — soft amber; non-blocking attention
+//   error  · alert     — coral; only one per row
+//   inline · meta      — borderless, transparent, --text-subtle
+// Existing aliases kept for backwards-compat: tag/category/trigger/filter/ghost.
 // Not a chip: StatusPill, PriorityChip, ToolToken.
 
 export function Chip({

@@ -1,24 +1,23 @@
 // §6.7 Knowledge — pane layout with filter Tabs.
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
-import { api } from "../lib/api.js";
-import { useSSE } from "../lib/useSSE.js";
-import { useThrottledCallback } from "../lib/useThrottledCallback.js";
-import { useAppResume } from "../lib/pageVisibility.js";
-import { AppShell } from "../components/AppShell.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
-import { Button } from "../components/primitives/Button.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { PaneLayout } from "../components/PaneLayout.jsx";
-import { PaneRow } from "../components/PaneRow.jsx";
-import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { KbEdit } from "./KbEdit.jsx";
-import { KbDetail } from "./KbDetail.jsx";
-import { buildKnowledgeResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
-import { navigateHash } from "../lib/navigation.js";
-import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { api } from "../../lib/api.js";
+import { useSSE } from "../../lib/useSSE.js";
+import { useThrottledCallback } from "../../lib/useThrottledCallback.js";
+import { useAppResume } from "../../lib/pageVisibility.js";
+import { Select } from "../../components/primitives/Select.jsx";
+import { Tabs } from "../../components/primitives/Tabs.jsx";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Icon } from "../../components/Icon.jsx";
+import { PaneLayout } from "../../components/PaneLayout.jsx";
+import { PaneRow } from "../../components/PaneRow.jsx";
+import { EmptyState, EmptyStateFiltered } from "../../components/EmptyState.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../../components/ResourceRowMeta.jsx";
+import { KbEdit } from "../KbEdit.jsx";
+import { KbDetail } from "../KbDetail.jsx";
+import { buildKnowledgeResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
+import { navigateHash } from "../../lib/navigation.js";
+import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 
 function tokenForBadge(category) {
   const c = (category || "").toLowerCase();
@@ -60,7 +59,7 @@ export function knowledgeTimestamp(value) {
   return Date.parse(value);
 }
 
-export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery = {} }) {
+export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {} }) {
   const [entries, setEntries] = useState([]);
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
@@ -146,7 +145,7 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
       searchRef={searchRef}
       countLabel={`${filtered.length} shown`}
       actionLabel="New entry"
-      onAction={() => { navigateHash("#/knowledge/new"); }}
+      onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
       activeConfigCount={[surface !== "canonical", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
     >
@@ -166,7 +165,7 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
       <EmptyState
         title="No entries yet"
         body="Save reusable context here so agents and teammates can find it later."
-        cta={<Button variant="primary" onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/library/knowledge/new"); }}>New entry</Button>}
       />
     )
   ) : (
@@ -178,12 +177,12 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
             return (
               <PaneRow
                 key={e.slug}
-                href={`#/knowledge/${encodeURIComponent(e.slug)}`}
+                href={`#/library/knowledge/${encodeURIComponent(e.slug)}`}
                 active={e.slug === selectedSlug}
                 class="knowledge-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/knowledge/${encodeURIComponent(e.slug)}`);
+                  navigateHash(`#/library/knowledge/${encodeURIComponent(e.slug)}`);
                 }}
                 leading={(
                   <span class={`knowledge-row-leading ${e.pinned ? "pinned" : ""}`.trim()}>
@@ -222,7 +221,7 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
         key={`${selectedSlug}:${mode || "create"}`}
         slug={selectedSlug}
         onSaved={() => { reload(); }}
-        onDeleted={() => { reload(); window.location.hash = "#/knowledge"; }}
+        onDeleted={() => { reload(); window.location.hash = "#/library/knowledge"; }}
         prefill={isEditing && selectedSlug === "new" ? routeQuery : null}
       />
     ) : (
@@ -233,23 +232,21 @@ export function Knowledge({ selectedSlug = null, mode = null, query: routeQuery 
         <Icon name="book" size={28} />
         <h3>Select an entry</h3>
         <p>Open an entry to read, edit, or see where it is used.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/knowledge/new"); }}>New entry</Button>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/library/knowledge/new"); }}>New entry</Button>
       </div>
   );
 
   return (
-    <AppShell route="knowledge">
-      <PaneLayout
-        listHeader={listHeader}
-        listBody={listBody}
-        detail={detail}
-        hasSelection={!!selectedSlug}
-        detailOwnsMobileBack={!!selectedSlug}
-        listFirst
-        class="resource-list-layout"
-        onBack={() => navigateHash("#/knowledge")}
-        backLabel="All entries"
-      />
-    </AppShell>
+    <PaneLayout
+      listHeader={listHeader}
+      listBody={listBody}
+      detail={detail}
+      hasSelection={!!selectedSlug}
+      detailOwnsMobileBack={!!selectedSlug}
+      listFirst
+      class="resource-list-layout"
+      onBack={() => navigateHash("#/library/knowledge")}
+      backLabel="All entries"
+    />
   );
 }

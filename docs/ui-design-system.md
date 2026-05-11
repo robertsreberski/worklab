@@ -27,13 +27,43 @@ All shared UI styles should use tokens from `:root` in `styles.css`.
 - Colors: use semantic tokens such as `--surface`, `--text`, `--accent`, and
   `--status-*`; do not add raw hex outside the token block.
 - Typography: use `--text-*` and family tokens. Do not scale font size with
-  viewport width and do not use negative letter spacing.
+  viewport width. Letter spacing must stay at zero or positive tracking,
+  including structural serif headings.
 - Spacing: use `--sp-*` tokens.
 - Radii: use `--radius-xs`, `--radius-sm`, `--radius-md`, or
   `--radius-pill`.
 - Motion: use `--dur-*`, `--ease-*`, and the shared keyframes.
 
 `scripts/guard-banned-tokens.sh` enforces the highest-risk token drift.
+
+## Typography Roles
+
+Three families, three jobs:
+
+- **Instrument Serif** (`--font-display`): every page H1 (`.h-page`) and every
+  entity title (`.h-entity` for cards / rows; `.h-entity-lg` for Task / Goal /
+  Project detail heros). Carries human-authored names.
+- **Manrope** (`--font-sans`): body, descriptions, dense UI lines, buttons.
+- **JetBrains Mono** (`--font-mono`): eyebrows, IDs, ages, the live-run stream,
+  `--text-subtle` metadata.
+
+Avoid inventing a fourth role — extend or rename the three above instead.
+
+## Chips
+
+Five canonical variants. One purpose each. If a new chip doesn't fit a rule,
+the rule changes — not a sixth variant.
+
+| Variant | `Chip variant=` | CSS class | Purpose |
+|---------|-----------------|-----------|---------|
+| Tag | `muted` | `chip-muted` | Categorical identity (project, type). |
+| Link | `accent` | `chip-accent` | Relationship to another entity; click implies navigate. |
+| Pending | `warn` | `chip-warn` | Soft amber; non-blocking attention. |
+| Alert | `error` | `chip-error` | Coral; only one per row. |
+| Inline meta | `inline` | `chip-inline` | Borderless, transparent, `--text-subtle`. Use for automation, schedule, secondary categorical info. |
+
+**Rule of one alert.** Per row / hero, surface only the highest-priority alert
+chip (`stuck > error > 2+ blocking > N actions > needs-owner`); tooltip the rest.
 
 ## Component Coverage
 

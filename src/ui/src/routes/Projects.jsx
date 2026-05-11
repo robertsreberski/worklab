@@ -157,7 +157,7 @@ function ProjectGoalSummary({ goal }) {
           <a href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}>Goal</a>
         ) : null}
         {goal.team_slug || goal.team_id ? (
-          <a href={`#/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
+          <a href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
         ) : null}
         {goal.root_task_id ? (
           <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>
@@ -782,7 +782,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                         >
                           <SectionStack class="project-knowledge-list">
                             {group.entries.map((entry) => (
-                              <a key={entry.slug} href={`#/knowledge/${encodeURIComponent(entry.slug)}`} class="project-knowledge-row">
+                              <a key={entry.slug} href={`#/library/knowledge/${encodeURIComponent(entry.slug)}`} class="project-knowledge-row">
                                 <span class="project-knowledge-title">{entry.title || entry.slug}</span>
                                 <span class="project-knowledge-meta">
                                   {entry.subcategory || entry.category || "uncategorized"}

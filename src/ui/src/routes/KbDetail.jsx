@@ -67,7 +67,7 @@ function UsageList({ usage }) {
           <ul class="usage-list knowledge-read-usage-list">
             {agents.map((agent) => (
               <li key={agent.name}>
-                <a href={`#/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
+                <a href={`#/library/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
               </li>
             ))}
           </ul>
@@ -85,7 +85,7 @@ function RelationSlugList({ label, slugs = [] }) {
       <ul class="usage-list knowledge-read-usage-list">
         {visible.map((relationSlug) => (
           <li key={relationSlug}>
-            <a href={`#/knowledge/${encodeURIComponent(relationSlug)}`}>{relationSlug}</a>
+            <a href={`#/library/knowledge/${encodeURIComponent(relationSlug)}`}>{relationSlug}</a>
           </li>
         ))}
       </ul>
@@ -180,7 +180,7 @@ export function KbDetail({ slug }) {
       <>
         <EntityChromeBridge
           chrome={{
-            mobileTopbar: <MobileTopbar title={slug} backLabel="Knowledge" onBack={() => navigateHash("#/knowledge")} overflow={false} />,
+            mobileTopbar: <MobileTopbar title={slug} backLabel="Knowledge" onBack={() => navigateHash("#/library/knowledge")} overflow={false} />,
           }}
         />
         <div class="pane-empty">
@@ -195,12 +195,12 @@ export function KbDetail({ slug }) {
     <>
       <EntityChromeBridge
         chrome={{
-          mobileTopbar: <MobileTopbar title={slug} backLabel="Knowledge" onBack={() => navigateHash("#/knowledge")} />,
+          mobileTopbar: <MobileTopbar title={slug} backLabel="Knowledge" onBack={() => navigateHash("#/library/knowledge")} />,
           mobileActionDock: (
             <Button
               variant="primary"
               iconLeft={<Icon name="edit-3" size={13} />}
-              onClick={() => navigateHash(`#/knowledge/${encodeURIComponent(slug)}/edit`)}
+              onClick={() => navigateHash(`#/library/knowledge/${encodeURIComponent(slug)}/edit`)}
             >
               Edit
             </Button>
@@ -214,9 +214,9 @@ export function KbDetail({ slug }) {
       <DetailHead
         class="knowledge-detail-head knowledge-read-head"
         backLabel="All entries"
-        onBack={() => navigateHash("#/knowledge")}
+        onBack={() => navigateHash("#/library/knowledge")}
         crumbs={[
-          { label: "Knowledge", href: "#/knowledge" },
+          { label: "Knowledge", href: "#/library/knowledge" },
           { label: title },
         ]}
         icon={<Icon name={entry.pinned ? "pin" : "book"} size={16} />}
@@ -256,7 +256,7 @@ export function KbDetail({ slug }) {
             <Button
               variant="secondary"
               iconLeft={<Icon name="edit-3" size={13} />}
-              onClick={() => navigateHash(`#/knowledge/${encodeURIComponent(slug)}/edit`)}
+              onClick={() => navigateHash(`#/library/knowledge/${encodeURIComponent(slug)}/edit`)}
             >
               Edit
             </Button>

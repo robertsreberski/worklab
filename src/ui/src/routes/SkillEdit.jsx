@@ -91,7 +91,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   });
   const guard = useUnsavedChangesGuard({ isDirty, onSave: () => formSave.save() });
   const cancel = useCallback(() => {
-    guard.requestNavigation("#/skills");
+    guard.requestNavigation("#/library/skills");
   }, [guard.requestNavigation]);
 
   useGlobalShortcuts({
@@ -177,7 +177,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           <Card variant="spacious" title="Used by agents" class="entity-rail-card">
             <ul class="usage-list">
               {usage.explicit.map((a) => (
-                <li key={a.name}><a href={`#/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a></li>
+                <li key={a.name}><a href={`#/library/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a></li>
               ))}
             </ul>
           </Card>
@@ -215,7 +215,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
         backLabel="All skills"
         onBack={cancel}
         crumbs={[
-          { label: "Skills", href: "#/skills" },
+          { label: "Skills", href: "#/library/skills" },
           { label: isNew ? "New" : "Edit" },
         ]}
         icon={<Icon name="sparkles" size={16} />}

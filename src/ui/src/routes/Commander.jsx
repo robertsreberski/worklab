@@ -11,6 +11,7 @@ import { pageIsVisible, useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { SearchField } from "../components/primitives/SearchField.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
+import { Kbd } from "../components/primitives/Kbd.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -218,6 +219,7 @@ const RUNTIME_TABS = [
   { value: "ready", label: "Ready" },
   { value: "waiting", label: "Waiting" },
   { value: "automated", label: "Automated" },
+  { value: "stream", label: "Stream" },
 ];
 
 const STAGE_FILTER_OPTIONS = [
@@ -464,7 +466,8 @@ export function Commander({ query: routeQuery = {} }) {
   const [showCompleted, setShowCompleted] = useState(() => initialShowCompleted);
   const [groupFilter, setGroupFilter] = useState(() => initialGroupFilter);
   const [stageFilter, setStageFilter] = useState("all");
-  const [projectFilter, setProjectFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState(() => routeQuery.project || "all");
+  const [goalFilter, setGoalFilter] = useState(() => routeQuery.goal || "all");
   const [query, setQuery] = useState("");
   const [error, setError] = useState(null);
   const [selectedTaskId, setSelectedTaskId] = useState(null);
@@ -486,7 +489,9 @@ export function Commander({ query: routeQuery = {} }) {
   useEffect(() => {
     setShowCompleted(showCompletedFromQuery(routeQuery));
     setGroupFilter(initialRuntimeGroupFilter(routeQuery));
-  }, [routeQuery.group, routeQuery.scope, routeQuery.show_completed]);
+    setProjectFilter(routeQuery.project || "all");
+    setGoalFilter(routeQuery.goal || "all");
+  }, [routeQuery.group, routeQuery.scope, routeQuery.show_completed, routeQuery.project, routeQuery.goal]);
 
   const taskListCacheKey = useMemo(() => commanderTaskListCacheKey({
     showCompleted,
@@ -658,10 +663,21 @@ export function Commander({ query: routeQuery = {} }) {
       if (groupFilter !== "all" && group !== groupFilter) return false;
       if (stageFilter !== "all" && (task.stage || "plan") !== stageFilter) return false;
       if (projectFilter === "__none__" && task.project_id) return false;
-      if (projectFilter !== "all" && projectFilter !== "__none__" && task.project_id !== projectFilter) return false;
+      if (projectFilter !== "all" && projectFilter !== "__none__") {
+        const projectMatch = task.project_id === projectFilter
+          || task.project?.slug === projectFilter
+          || task.project?.id === projectFilter;
+        if (!projectMatch) return false;
+      }
+      if (goalFilter !== "all" && goalFilter) {
+        const goalMatch = task.goal_id === goalFilter
+          || task.id === goalFilter
+          || task.parent_task_id === goalFilter;
+        if (!goalMatch) return false;
+      }
       return taskMatchesCommanderQuery(task, query);
     });
-  }, [groupFilter, projectFilter, query, stageFilter, withGroup]);
+  }, [goalFilter, groupFilter, projectFilter, query, stageFilter, withGroup]);
 
   const grouped = useMemo(() => {
     return RUNTIME_GROUPS
@@ -739,7 +755,7 @@ export function Commander({ query: routeQuery = {} }) {
     })),
   ], [projects]);
 
-  const hasFilter = groupFilter !== "all" || stageFilter !== "all" || projectFilter !== "all" || !!query.trim();
+  const hasFilter = groupFilter !== "all" || stageFilter !== "all" || projectFilter !== "all" || goalFilter !== "all" || !!query.trim();
 
   const taskCountLabel = tasks ? `${filtered.length || 0} shown` : null;
   const activeConfigCount = [groupFilter !== "all", stageFilter !== "all", projectFilter !== "all"].filter(Boolean).length;
@@ -751,6 +767,13 @@ export function Commander({ query: routeQuery = {} }) {
     : hiddenDoneCount > 0);
 
   function updateGroupFilter(nextGroup) {
+    // Stream tab is the renamed Activity surface (§07 critique). Selecting it
+    // routes to the standalone /runs page so the same chronological feed
+    // serves both the rail entry and the Commander tab.
+    if (nextGroup === "stream") {
+      navigateHash("#/runs");
+      return;
+    }
     const normalized = normalizeRuntimeGroup(nextGroup);
     setGroupFilter(normalized);
   }
@@ -850,10 +873,10 @@ export function Commander({ query: routeQuery = {} }) {
                 ariaLabel="Filter by project"
               />
               <Toolbar class="commander-filter-actions">
-                <DailyCostChip />
                 {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
                 <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
-                  New task
+                  <span>New task</span>
+                  <Kbd>N</Kbd>
                 </Button>
               </Toolbar>
             </MobileConfigSheet>
@@ -883,7 +906,7 @@ export function Commander({ query: routeQuery = {} }) {
             <EmptyStateFiltered
               title="No tasks match your filter"
               body="Try a different runtime state, exact stage, project, or search."
-              onClearFilters={() => { setGroupFilter("all"); setStageFilter("all"); setProjectFilter("all"); setQuery(""); }}
+              onClearFilters={() => { setGroupFilter("all"); setStageFilter("all"); setProjectFilter("all"); setGoalFilter("all"); setQuery(""); navigateHash("#/tasks"); }}
             />
           ) : (
             <EmptyState

@@ -3,7 +3,7 @@ import {
   hasModelPricingRates,
   modelPricingState,
   nextModelPricing,
-} from "../../ui/src/routes/Providers.jsx";
+} from "../../ui/src/routes/settings/ProvidersTab.jsx";
 
 describe("provider model pricing helpers", () => {
   it("normalizes entered rates and clears blank fields", () => {

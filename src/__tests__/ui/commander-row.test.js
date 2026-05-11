@@ -11,6 +11,12 @@ const commanderRowSource = readFileSync(
   resolve(import.meta.dirname, "../../ui/src/components/CommanderRow.jsx"),
   "utf8",
 );
+const stylesSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/styles.css"), "utf8");
+
+function ruleBody(selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return stylesSource.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]+)\\}`))?.groups?.body || "";
+}
 
 describe("commander row live preview", () => {
   it("keeps the workflow stage separate from running runtime state", () => {
@@ -34,8 +40,16 @@ describe("commander row live preview", () => {
     });
   });
 
-  it("pulses the displayed workflow stage while the task is streaming", () => {
-    expect(commanderRowSource).toMatch(/<StageToken\s+stage=\{displayStage\}\s+pulse=\{isStreaming\}/);
+  it("encodes streaming state on the row state dot (critique §03 — stage pill removed)", () => {
+    // The right-side stage pill was dropped per critique §03; stage now reads
+    // from the group header + the row state-dot pulse.
+    expect(commanderRowSource).toMatch(/<LivePulse\s+color=\{meta\.color\}/);
+    expect(commanderRowSource).not.toMatch(/commander-cell-pill/);
+  });
+
+  it("keeps the row state dot visible after removing the stage pill", () => {
+    expect(ruleBody(".commander-cell-state")).toContain("display: flex");
+    expect(stylesSource).not.toContain(".commander-row > .commander-cell-state       { display: none; }");
   });
 
   it("coalesces consecutive thinking fragments", () => {

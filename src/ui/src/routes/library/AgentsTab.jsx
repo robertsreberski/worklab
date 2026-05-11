@@ -1,29 +1,29 @@
-// §6.5 Agents — pane layout. Primary action: New agent.
+// §6.5 Library / Agents tab — pane layout body only.
+// AppShell + page chrome rendered by routes/Library.jsx.
 // PaneRow: avatar · name · sub (model) · status dot (pulse if recent activity).
 
 import { useEffect, useState, useCallback, useMemo, useRef } from "preact/hooks";
-import { api } from "../lib/api.js";
-import { useSSE } from "../lib/useSSE.js";
-import { useThrottledCallback } from "../lib/useThrottledCallback.js";
-import { useAppResume } from "../lib/pageVisibility.js";
-import { AppShell } from "../components/AppShell.jsx";
-import { AgentAvatar } from "../components/AgentAvatar.jsx";
-import { Button } from "../components/primitives/Button.jsx";
-import { Select } from "../components/primitives/Select.jsx";
-import { Tabs } from "../components/primitives/Tabs.jsx";
-import { Icon } from "../components/Icon.jsx";
-import { PaneLayout } from "../components/PaneLayout.jsx";
-import { PaneRow } from "../components/PaneRow.jsx";
-import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
-import { LivePulse } from "../components/primitives/LivePulse.jsx";
-import { StatusDot } from "../components/primitives/StatusDot.jsx";
-import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { AgentEdit } from "./AgentEdit.jsx";
-import { humanizeSlug, modelDisplayName } from "../lib/display.js";
-import { agentIsRecent, buildAgentResourceGroups, flattenResourceGroups } from "../lib/resourceLists.js";
-import { navigateHash } from "../lib/navigation.js";
-import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
+import { api } from "../../lib/api.js";
+import { useSSE } from "../../lib/useSSE.js";
+import { useThrottledCallback } from "../../lib/useThrottledCallback.js";
+import { useAppResume } from "../../lib/pageVisibility.js";
+import { AgentAvatar } from "../../components/AgentAvatar.jsx";
+import { Button } from "../../components/primitives/Button.jsx";
+import { Select } from "../../components/primitives/Select.jsx";
+import { Tabs } from "../../components/primitives/Tabs.jsx";
+import { Icon } from "../../components/Icon.jsx";
+import { PaneLayout } from "../../components/PaneLayout.jsx";
+import { PaneRow } from "../../components/PaneRow.jsx";
+import { EmptyState, EmptyStateFiltered } from "../../components/EmptyState.jsx";
+import { LivePulse } from "../../components/primitives/LivePulse.jsx";
+import { StatusDot } from "../../components/primitives/StatusDot.jsx";
+import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowTags } from "../../components/ResourceRowMeta.jsx";
+import { AgentEdit } from "../AgentEdit.jsx";
+import { humanizeSlug, modelDisplayName } from "../../lib/display.js";
+import { agentIsRecent, buildAgentResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
+import { navigateHash } from "../../lib/navigation.js";
+import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 
 function agentIsActive(agent) {
   return agentIsRecent(agent);
@@ -37,7 +37,7 @@ function formatAvgDuration(value) {
   return `${Math.round(ms / 60_000)}m avg`;
 }
 
-export function Agents({ selectedName = null }) {
+export function AgentsTab({ selectedName = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
@@ -110,7 +110,7 @@ export function Agents({ selectedName = null }) {
       searchRef={searchRef}
       countLabel={`${filtered.length} shown`}
       actionLabel="New agent"
-      onAction={() => { navigateHash("#/agents/new"); }}
+      onAction={() => { navigateHash("#/library/agents/new"); }}
       configTitle="Agents configuration"
       activeConfigCount={[stateFilter !== "all", activityFilter !== "all", modelFilter !== "all", effortFilter !== "all"].filter(Boolean).length}
     >
@@ -128,7 +128,7 @@ export function Agents({ selectedName = null }) {
       <EmptyState
         title="No agents yet"
         body="Create agents for the roles you want to assign to tasks."
-        cta={<Button variant="primary" onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>}
+        cta={<Button variant="primary" onClick={() => { navigateHash("#/library/agents/new"); }}>New agent</Button>}
       />
     )
   ) : (
@@ -150,12 +150,12 @@ export function Agents({ selectedName = null }) {
             return (
               <PaneRow
                 key={a.name}
-                href={`#/agents/${encodeURIComponent(a.name)}`}
+                href={`#/library/agents/${encodeURIComponent(a.name)}`}
                 active={a.name === selectedName}
                 class="agent-pane-row"
                 onClick={(event) => {
                   event?.preventDefault?.();
-                  navigateHash(`#/agents/${encodeURIComponent(a.name)}`);
+                  navigateHash(`#/library/agents/${encodeURIComponent(a.name)}`);
                 }}
                 leading={<AgentAvatar name={a.name} label={a.display_name || a.name} size={28} />}
                 title={a.display_name || humanizeSlug(a.name)}
@@ -185,11 +185,11 @@ export function Agents({ selectedName = null }) {
       name={selectedName}
       onSaved={(name) => {
         reload();
-        if (selectedName === "new") window.location.hash = `#/agents/${encodeURIComponent(name)}`;
+        if (selectedName === "new") window.location.hash = `#/library/agents/${encodeURIComponent(name)}`;
       }}
       onDeleted={() => {
         reload();
-        window.location.hash = "#/agents";
+        window.location.hash = "#/library/agents";
       }}
     />
   ) : (
@@ -197,23 +197,21 @@ export function Agents({ selectedName = null }) {
         <Icon name="user" size={28} />
         <h3>Select an agent</h3>
         <p>Open an agent to edit its model, instructions, and tools.</p>
-      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/agents/new"); }}>New agent</Button>
+      <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/library/agents/new"); }}>New agent</Button>
       </div>
   );
 
   return (
-    <AppShell route="agents">
-      <PaneLayout
-        listHeader={listHeader}
-        listBody={listBody}
-        detail={detail}
-        hasSelection={!!selectedName}
-        detailOwnsMobileBack={!!selectedName}
-        listFirst
-        class="resource-list-layout"
-        onBack={() => navigateHash("#/agents")}
-        backLabel="All agents"
-      />
-    </AppShell>
+    <PaneLayout
+      listHeader={listHeader}
+      listBody={listBody}
+      detail={detail}
+      hasSelection={!!selectedName}
+      detailOwnsMobileBack={!!selectedName}
+      listFirst
+      class="resource-list-layout"
+      onBack={() => navigateHash("#/library/agents")}
+      backLabel="All agents"
+    />
   );
 }

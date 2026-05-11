@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatKnowledgeAge, knowledgeTimestamp } from "../../ui/src/routes/Knowledge.jsx";
+import { formatKnowledgeAge, knowledgeTimestamp } from "../../ui/src/routes/library/KnowledgeTab.jsx";
 
 describe("knowledge date labels", () => {
   const now = Date.UTC(2026, 3, 25, 12, 0, 0);

@@ -155,7 +155,15 @@ describe("resource list helpers", () => {
     const listComponents = source("src/ui/src/components/ResourceListToolbar.jsx");
     expect(listComponents).toContain("export function ResourceList(");
     expect(source("src/ui/src/components/PaneLayout.jsx")).toContain("listFirst && !hasSelection");
-    for (const route of ["Agents.jsx", "Goals.jsx", "Teams.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx"]) {
+    for (const route of [
+      "library/AgentsTab.jsx",
+      "Goals.jsx",
+      "library/TeamsTab.jsx",
+      "library/KnowledgeTab.jsx",
+      "library/SkillsTab.jsx",
+      "Projects.jsx",
+      "settings/ProvidersTab.jsx",
+    ]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceList");
       expect(contents).toContain("ResourceListToolbar");
@@ -171,7 +179,15 @@ describe("resource list helpers", () => {
     expect(metaComponent).toContain("function ResourceRowChip");
     expect(metaComponent).toContain("function ResourceRowPath");
 
-    for (const route of ["Agents.jsx", "Goals.jsx", "Knowledge.jsx", "Skills.jsx", "Projects.jsx", "Providers.jsx", "Teams.jsx"]) {
+    for (const route of [
+      "library/AgentsTab.jsx",
+      "Goals.jsx",
+      "library/KnowledgeTab.jsx",
+      "library/SkillsTab.jsx",
+      "Projects.jsx",
+      "settings/ProvidersTab.jsx",
+      "library/TeamsTab.jsx",
+    ]) {
       const contents = source(`src/ui/src/routes/${route}`);
       expect(contents).toContain("ResourceRowTags");
       expect(contents).toContain("ResourceRowChip");
@@ -220,11 +236,11 @@ describe("resource list helpers", () => {
   });
 
   it("cross-links provider detail pages to agents that use their models", () => {
-    const contents = source("src/ui/src/routes/Providers.jsx");
+    const contents = source("src/ui/src/routes/settings/ProvidersTab.jsx");
 
     expect(contents).toContain("api.providerAgents");
     expect(contents).toContain("Used by agents");
-    expect(contents).toContain("#/agents/${encodeURIComponent(agent.name)}");
+    expect(contents).toContain("#/library/agents/${encodeURIComponent(agent.name)}");
   });
 
   it("keeps resource list filters behind a compact shared configuration surface", () => {
@@ -264,7 +280,8 @@ describe("resource list helpers", () => {
     expect(toolbar).toContain("resource-list-fab");
     expect(paneHeader).toContain("resource-list-fab");
     expect(styles).toContain(".resource-list-fab");
-    expect(styles).toContain(".app.responsive:has(.resource-list-fab) .assistant-launcher");
+    expect(styles).toContain(".app.responsive:has(.resource-list-fab) .assistant-pill");
+    expect(styles).not.toContain(".assistant-launcher");
     expect(styles).toMatch(/\.resource-toolbar-actions\s*\{[^}]*display:\s*none/);
   });
 
