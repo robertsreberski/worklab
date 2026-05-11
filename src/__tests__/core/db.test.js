@@ -64,9 +64,11 @@ describe("openDb + runMigrations", () => {
       .map((row) => row.name);
 
     expect(indexes).toEqual(expect.arrayContaining([
+      "idx_embeddings_vector_present",
       "idx_logs_run_summary",
       "idx_runs_agent_started",
       "idx_runs_started_cost_summary",
+      "idx_runs_task_status_started",
       "idx_slack_delivery_created",
       "idx_slack_triage_started",
       "idx_tasks_visible_updated",

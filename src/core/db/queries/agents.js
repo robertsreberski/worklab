@@ -112,6 +112,44 @@ export function listAgentsWithRunStats(db, since) {
   `).all(since);
 }
 
+export function listAgentSummariesWithRunStats(db, since) {
+  return db.prepare(`
+    SELECT
+      a.name,
+      a.display_name,
+      a.description,
+      a.sdk,
+      a.model,
+      a.effort,
+      a.context_window,
+      a.subagent_mode,
+      a.execution_mode,
+      a.enabled,
+      a.created_at,
+      a.updated_at,
+      last_runs.last_run_at,
+      COALESCE(recent_runs.run_count_30d, 0) AS run_count_30d,
+      recent_runs.avg_run_duration_ms
+    FROM agents a
+    LEFT JOIN (
+      SELECT agent_name, MAX(started_at) AS last_run_at
+      FROM task_runs
+      GROUP BY agent_name
+    ) last_runs ON last_runs.agent_name = a.name
+    LEFT JOIN (
+      SELECT
+        r.agent_name,
+        COUNT(*) AS run_count_30d,
+        AVG(l.duration_ms) AS avg_run_duration_ms
+      FROM task_runs r
+      LEFT JOIN agent_logs l ON l.task_run_id = r.id
+      WHERE r.started_at >= ?
+      GROUP BY r.agent_name
+    ) recent_runs ON recent_runs.agent_name = a.name
+    ORDER BY a.name
+  `).all(since);
+}
+
 export function insertAgent(db, {
   name,
   displayName,

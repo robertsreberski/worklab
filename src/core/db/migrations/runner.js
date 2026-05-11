@@ -739,6 +739,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_parent ON task_edges(parent_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_task_edges_child ON task_edges(child_task_id, edge_type)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_task_status_started ON task_runs(task_id, status, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status)");
@@ -779,6 +780,11 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_scope ON agent_memories(scope, project_id, task_id)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_agent_memories_run ON agent_memories(run_id)");
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_agent_memories_active_dedupe ON agent_memories(agent_name, kind, scope, content_key) WHERE status <> 'archived'");
+  addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
+  if (tableExists(db, "embeddings") && hasColumn(db, "embeddings", "vector_present")) {
+    db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present)");
   resetLegacyEmbeddings(db);
   normalizeWorkflowState(db);
   rebuildTaskWorkflowTables(db);
@@ -790,6 +796,7 @@ export function runMigrations(db) {
   db.exec(SCHEMA_SQL);
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_visible_updated ON tasks(is_team_root, updated_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_task_status_started ON task_runs(task_id, status, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status)");
@@ -851,6 +858,11 @@ export function runMigrations(db) {
   }
   db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL");
   ensureCurrentTaskRuntimeColumns(db);
+  addColumnIfMissing(db, "embeddings", "vector_present", "vector_present INTEGER NOT NULL DEFAULT 0");
+  if (tableExists(db, "embeddings") && hasColumn(db, "embeddings", "vector_present")) {
+    db.exec("UPDATE embeddings SET vector_present = CASE WHEN vector IS NULL THEN 0 ELSE 1 END");
+  }
+  db.exec("CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present)");
   backfillTeamGoalContracts(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

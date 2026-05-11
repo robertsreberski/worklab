@@ -1,5 +1,18 @@
 // task_dependencies queries — blocker edges between tasks.
 
+const TASK_SUMMARY_SELECT = `
+  t.id,
+  t.task_key,
+  t.title,
+  t.stage,
+  t.updated_at,
+  t.owner_agent,
+  t.planner_agent,
+  t.reviewer_agent,
+  t.run_policy,
+  t.project_id
+`;
+
 export function listDependentsOf(db, taskId) {
   return db
     .prepare(
@@ -37,7 +50,7 @@ export function listBlockedByForTasks(db, taskIds) {
   if (!taskIds.length) return [];
   const placeholders = taskIds.map(() => "?").join(", ");
   return db.prepare(`
-    SELECT d.task_id AS owner_task_id, t.*
+    SELECT d.task_id AS owner_task_id, ${TASK_SUMMARY_SELECT}
     FROM task_dependencies d
     JOIN tasks t ON t.id = d.depends_on_task_id
     WHERE d.task_id IN (${placeholders})
@@ -51,7 +64,7 @@ export function listBlocksForTasks(db, taskIds) {
   if (!taskIds.length) return [];
   const placeholders = taskIds.map(() => "?").join(", ");
   return db.prepare(`
-    SELECT d.depends_on_task_id AS owner_task_id, t.*
+    SELECT d.depends_on_task_id AS owner_task_id, ${TASK_SUMMARY_SELECT}
     FROM task_dependencies d
     JOIN tasks t ON t.id = d.task_id
     WHERE d.depends_on_task_id IN (${placeholders})
@@ -62,7 +75,7 @@ export function listBlocksForTasks(db, taskIds) {
 // Single-task variants for the per-task detail endpoint.
 export function listDirectDependencyRows(db, taskId) {
   return db.prepare(`
-    SELECT t.*
+    SELECT ${TASK_SUMMARY_SELECT}
     FROM task_dependencies d
     JOIN tasks t ON t.id = d.depends_on_task_id
     WHERE d.task_id = ?
@@ -72,7 +85,7 @@ export function listDirectDependencyRows(db, taskId) {
 
 export function listDirectDependentRows(db, taskId) {
   return db.prepare(`
-    SELECT t.*
+    SELECT ${TASK_SUMMARY_SELECT}
     FROM task_dependencies d
     JOIN tasks t ON t.id = d.task_id
     WHERE d.depends_on_task_id = ?

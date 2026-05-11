@@ -83,6 +83,45 @@ describe("agents CRUD", () => {
     expect(statsAgent.events).toBeUndefined();
   });
 
+  it("GET /api/agents?view=summary omits heavy editable agent fields", async () => {
+    const { agent, db } = makeTestServer();
+    const now = Date.now();
+    const largeInstructions = "keep this out of startup payloads ".repeat(5000);
+    db.prepare(`
+      INSERT INTO agents
+        (name, display_name, sdk, model, effort, instructions,
+         skills_allowlist, mcp_allowlist, builtin_allowlist, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      "summary-agent",
+      "Summary Agent",
+      "claude",
+      "claude:claude-sonnet-4-6",
+      "medium",
+      largeInstructions,
+      JSON.stringify(["worklab", "github"]),
+      JSON.stringify(["context-a8c"]),
+      JSON.stringify(["apply_patch"]),
+      now,
+      now,
+    );
+
+    const res = await agent.get("/api/agents?view=summary").expect(200);
+    const summaryAgent = res.body.agents.find((row) => row.name === "summary-agent");
+
+    expect(summaryAgent).toMatchObject({
+      name: "summary-agent",
+      display_name: "Summary Agent",
+      model: "claude:claude-sonnet-4-6",
+      enabled: true,
+    });
+    expect(summaryAgent.instructions).toBeUndefined();
+    expect(summaryAgent.skills_allowlist).toBeUndefined();
+    expect(summaryAgent.mcp_allowlist).toBeUndefined();
+    expect(summaryAgent.builtin_allowlist).toBeUndefined();
+    await agent.get("/api/agents?view=nope").expect(400);
+  });
+
   it("POST /api/agents creates with required fields", async () => {
     const { agent } = makeTestServer();
     const res = await agent.post("/api/agents").send({ name: "coder", display_name: "Coder", sdk: "claude", model: "claude:claude-sonnet-4-6" }).expect(201);
