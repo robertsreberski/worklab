@@ -86,7 +86,7 @@ describe("assistant keyboard lift", () => {
     expect(state).not.toHaveProperty("fallbackTargetBottom");
   });
 
-  it("does not invent a fallback lift when iOS reports a full-height visual viewport", () => {
+  it("uses bounded focus rescue when iOS reports a full-height viewport at the bottom", () => {
     expect(computeAssistantKeyboardLiftState({
       visibleBottom: 844,
       dockBottom: 844,
@@ -97,10 +97,55 @@ describe("assistant keyboard lift", () => {
       headerBottom: 76,
       composerFocused: true,
       mobileLayout: true,
+      textareaHeight: 44,
+      safeAreaBottom: 34,
+    })).toMatchObject({
+      lift: 90,
+      mode: "focus-rescue",
+      measuredLift: 0,
+      rescueLift: 90,
+    });
+  });
+
+  it("caps focus rescue to a small control-row lift", () => {
+    expect(computeAssistantKeyboardLiftState({
+      visibleBottom: 844,
+      dockBottom: 844,
+      dockHeight: 844,
+      composerTop: 720,
+      composerBottom: 844,
+      textareaBottom: 812,
+      headerBottom: 76,
+      composerFocused: true,
+      mobileLayout: true,
+      textareaHeight: 100,
+      safeAreaBottom: 34,
+    })).toMatchObject({
+      lift: 96,
+      mode: "focus-rescue",
+      measuredLift: 0,
+      rescueLift: 96,
+    });
+  });
+
+  it("does not use focus rescue when native iOS pan already moved the composer away from the bottom", () => {
+    expect(computeAssistantKeyboardLiftState({
+      visibleBottom: 844,
+      dockBottom: 844,
+      dockHeight: 844,
+      composerTop: 436,
+      composerBottom: 512,
+      textareaBottom: 500,
+      headerBottom: 76,
+      composerFocused: true,
+      mobileLayout: true,
+      textareaHeight: 44,
+      safeAreaBottom: 34,
     })).toMatchObject({
       lift: 0,
       mode: "none",
       measuredLift: 0,
+      rescueLift: 0,
     });
   });
 

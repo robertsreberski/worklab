@@ -674,6 +674,47 @@ test("commander returns from task detail without getting stuck on loading", asyn
   expect(pageErrors).toEqual([]);
 });
 
+test("commander marks child tasks and links to their parent", async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 900, label: "desktop" },
+    { width: 390, height: 844, label: "mobile" },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${baseUrl}/#/tasks`, { waitUntil: "domcontentloaded" });
+    const row = page.locator(".commander-row", { hasText: "Nested child task" }).first();
+    await expect(row).toBeVisible();
+    const childChip = row.locator(".commander-child-chip");
+    await expect(childChip).toBeVisible();
+    await expect(childChip).toContainText(/Child of T-\d+/);
+
+    const metrics = await row.evaluate((node) => {
+      const chip = node.querySelector(".commander-child-chip");
+      const rowRect = node.getBoundingClientRect();
+      const chipRect = chip?.getBoundingClientRect();
+      const chipStyles = chip ? getComputedStyle(chip) : null;
+      return {
+        chipVisible: !!chipRect && chipRect.width > 0 && chipRect.height > 0,
+        chipRight: chipRect ? Math.ceil(chipRect.right) : 0,
+        rowRight: Math.ceil(rowRect.right),
+        rowHeight: Math.round(rowRect.height),
+        chipWhiteSpace: chipStyles?.whiteSpace || "",
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(metrics.chipVisible).toBe(true);
+    expect(metrics.chipRight).toBeLessThanOrEqual(metrics.rowRight);
+    expect(metrics.chipWhiteSpace).toBe("nowrap");
+    expect(metrics.overflow).toBeLessThanOrEqual(0);
+    if (viewport.label === "mobile") {
+      expect(metrics.rowHeight).toBeGreaterThanOrEqual(60);
+      expect(metrics.rowHeight).toBeLessThanOrEqual(120);
+    }
+
+    await childChip.click();
+    await expect(page.locator(".task-hero-title", { hasText: "Parent with child task" })).toBeVisible();
+  }
+});
+
 test("desktop task list keeps every task state legible without clipped controls", async ({ page }) => {
   const viewports = [
     { width: 1440, height: 900, label: "desktop-1440" },
@@ -1779,6 +1820,7 @@ test("child task detail pins parent reference below the header", async ({ page }
       const key = parent?.querySelector(".task-parent-reference-key");
       const title = parent?.querySelector(".task-parent-reference-title");
       const status = parent?.querySelector(".status-pill");
+      const copy = parent?.querySelector(".task-parent-reference-copy");
       const item = (el) => {
         if (!el) return null;
         const style = getComputedStyle(el);
@@ -1793,14 +1835,20 @@ test("child task detail pins parent reference below the header", async ({ page }
       };
       const parentRect = parent?.getBoundingClientRect();
       const briefRect = brief?.getBoundingClientRect();
+      const copyRect = copy?.getBoundingClientRect();
+      const parentStyle = parent ? getComputedStyle(parent) : null;
       return {
         missing: !head || !parent || !brief || !label || !key || !title || !status,
         parentAfterHeader: head && parent ? Math.round(parent.getBoundingClientRect().top - head.getBoundingClientRect().bottom) : -999,
         briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
         parentHeight: parentRect ? Math.round(parentRect.height) : 0,
+        parentMinHeight: parentStyle?.minHeight || "",
+        parentPaddingTop: parentStyle ? Number.parseFloat(parentStyle.paddingTop) || 0 : 0,
+        parentPaddingBottom: parentStyle ? Number.parseFloat(parentStyle.paddingBottom) || 0 : 0,
         parentLeft: parentRect ? Math.round(parentRect.left) : 0,
         parentRight: parentRect ? Math.ceil(parentRect.right) : 0,
+        copyHeight: copyRect ? Math.round(copyRect.height) : 0,
         briefLeft: briefRect ? Math.round(briefRect.left) : 0,
         briefRight: briefRect ? Math.ceil(briefRect.right) : 0,
         viewportWidth: window.innerWidth,
@@ -1817,7 +1865,8 @@ test("child task detail pins parent reference below the header", async ({ page }
     expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
     expect(metrics.briefAfterParent).toBeLessThanOrEqual(28);
     expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
-    expect(metrics.parentHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.parentMinHeight).toBe("0px");
+    expect(metrics.parentHeight).toBeGreaterThanOrEqual(metrics.copyHeight + metrics.parentPaddingTop + metrics.parentPaddingBottom);
     expect(metrics.parentRight).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(Math.abs(metrics.parentLeft - metrics.briefLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(metrics.parentRight - metrics.briefRight)).toBeLessThanOrEqual(1);
@@ -1825,7 +1874,6 @@ test("child task detail pins parent reference below the header", async ({ page }
     expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.status).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.title.whiteSpace).toBe("normal");
-    expect(metrics.title.webkitLineClamp).toBe("2");
     expect(metrics.title.height).toBeLessThanOrEqual((metrics.title.lineHeight * 2) + 2);
   }
 
@@ -4018,7 +4066,7 @@ test("assistant composer uses measured lift when iOS underreports keyboard heigh
   expect(metrics.submitBottom).toBeLessThanOrEqual(metrics.visibleBottom - 8);
 });
 
-test("assistant composer does not invent fallback lift when visualViewport gives no keyboard signal", async ({ page }) => {
+test("assistant composer uses bounded focus rescue when visualViewport gives no keyboard signal", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     try {
@@ -4073,6 +4121,7 @@ test("assistant composer does not invent fallback lift when visualViewport gives
       assistantMode: dock?.dataset?.assistantKeyboardMode || "none",
       assistantKeyboardEstimate: Math.round(parseFloat(dock?.dataset?.assistantKeyboardEstimate || "0") || 0),
       assistantKeyboardTargetBottom: Math.round(parseFloat(dock?.dataset?.assistantKeyboardTargetBottom || "0") || 0),
+      assistantKeyboardRescue: Math.round(parseFloat(dock?.dataset?.assistantKeyboardRescue || "0") || 0),
       keyboardHeight,
       assistantLift,
       assistantFallbackLift,
@@ -4089,18 +4138,21 @@ test("assistant composer does not invent fallback lift when visualViewport gives
   expect(metrics.keyboardOpenClass).toBe(false);
   expect(metrics.visibleBottom).toBe(844);
   expect(metrics.assistantFocusedClass).toBe(true);
-  expect(metrics.assistantLiftedClass).toBe(false);
+  expect(metrics.assistantLiftedClass).toBe(true);
   expect(metrics.assistantFallbackClass).toBe(false);
-  expect(metrics.assistantMode).toBe("none");
+  expect(metrics.assistantMode).toBe("focus-rescue");
   expect(metrics.assistantKeyboardEstimate).toBe(0);
   expect(metrics.assistantKeyboardTargetBottom).toBe(0);
-  expect(metrics.assistantLift).toBe(0);
+  expect(metrics.assistantKeyboardRescue).toBeGreaterThanOrEqual(56);
+  expect(metrics.assistantKeyboardRescue).toBeLessThanOrEqual(96);
+  expect(metrics.assistantLift).toBe(metrics.assistantKeyboardRescue);
   expect(metrics.assistantFallbackLift).toBe(0);
-  expect(metrics.dockPaddingBottom).toBe(0);
+  expect(metrics.dockPaddingBottom).toBe(metrics.assistantLift);
   expect(metrics.transformY).toBe(0);
-  expect(metrics.composerBottom).toBeGreaterThan(800);
-  expect(metrics.textareaBottom).toBeGreaterThan(760);
-  expect(metrics.submitBottom).toBeGreaterThan(760);
+  expect(metrics.assistantLift).toBeLessThan(120);
+  expect(metrics.composerBottom).toBeLessThan(800);
+  expect(metrics.textareaBottom).toBeLessThan(760);
+  expect(metrics.submitBottom).toBeLessThan(760);
 });
 
 test("keyboard-open class clears on focusout even when visualViewport stays shrunk", async ({ page }) => {
