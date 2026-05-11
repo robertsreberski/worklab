@@ -7,17 +7,16 @@ import {
 } from "../../ui/src/lib/assistantKeyboardLift.js";
 
 describe("assistant keyboard lift", () => {
-  it("uses the global keyboard height when viewport metrics are trustworthy", () => {
+  it("does not lift from keyboard height alone when the composer is already visible", () => {
     expect(computeAssistantKeyboardLift({
       keyboardHeight: 324,
       visibleBottom: 520,
       composerBottom: 512,
       textareaBottom: 500,
-      currentLift: 324,
-    })).toBe(324);
+    })).toBe(0);
   });
 
-  it("lifts beyond underreported global keyboard height when the composer overlaps the visible viewport", () => {
+  it("lifts only the observed overlap when the composer crosses the visible viewport", () => {
     expect(computeAssistantKeyboardLift({
       keyboardHeight: 120,
       visibleBottom: 520,
@@ -26,7 +25,7 @@ describe("assistant keyboard lift", () => {
     })).toBe(332);
   });
 
-  it("accounts for the current transform so repeated measurement does not collapse the lift", () => {
+  it("accounts for the current dock inset so repeated measurement does not collapse the lift", () => {
     expect(computeAssistantKeyboardLift({
       keyboardHeight: 120,
       visibleBottom: 520,
@@ -34,6 +33,16 @@ describe("assistant keyboard lift", () => {
       textareaBottom: 480,
       currentLift: 332,
     })).toBe(332);
+  });
+
+  it("clears stale lift when native iOS pan already made the composer visible", () => {
+    expect(computeAssistantKeyboardLift({
+      keyboardHeight: 324,
+      visibleBottom: 520,
+      composerBottom: 180,
+      textareaBottom: 168,
+      currentLift: 332,
+    })).toBe(0);
   });
 
   it("does not lift at rest when the composer is already within the visible viewport", () => {
@@ -54,8 +63,8 @@ describe("assistant keyboard lift", () => {
     expect(readCssPxValue("none")).toBe(0);
   });
 
-  it("uses measured lift when the visual viewport exposes the hidden keyboard area", () => {
-    expect(computeAssistantKeyboardLiftState({
+  it("uses observed lift when the visual viewport exposes hidden composer controls", () => {
+    const state = computeAssistantKeyboardLiftState({
       visibleBottom: 520,
       dockBottom: 844,
       dockHeight: 844,
@@ -65,16 +74,19 @@ describe("assistant keyboard lift", () => {
       headerBottom: 76,
       composerFocused: true,
       mobileLayout: true,
-    })).toMatchObject({
+    });
+
+    expect(state).toMatchObject({
       lift: 332,
       mode: "measured",
-      fallbackLift: 329,
-      estimatedKeyboardHeight: 321,
-      fallbackTargetBottom: 523,
+      measuredLift: 332,
     });
+    expect(state).not.toHaveProperty("fallbackLift");
+    expect(state).not.toHaveProperty("estimatedKeyboardHeight");
+    expect(state).not.toHaveProperty("fallbackTargetBottom");
   });
 
-  it("uses supplemental fallback lift when iOS reports a full-height visual viewport while focused", () => {
+  it("does not invent a fallback lift when iOS reports a full-height visual viewport", () => {
     expect(computeAssistantKeyboardLiftState({
       visibleBottom: 844,
       dockBottom: 844,
@@ -86,17 +98,15 @@ describe("assistant keyboard lift", () => {
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 329,
-      mode: "fallback",
-      fallbackLift: 329,
-      estimatedKeyboardHeight: 321,
-      fallbackTargetBottom: 523,
+      lift: 0,
+      mode: "none",
+      measuredLift: 0,
     });
   });
 
-  it("does not add fallback when native iOS pan already clears the estimated keyboard", () => {
+  it("does not add lift when native iOS pan already clears the visible viewport", () => {
     expect(computeAssistantKeyboardLiftState({
-      visibleBottom: 844,
+      visibleBottom: 520,
       dockBottom: 844,
       dockHeight: 844,
       composerTop: 436,
@@ -108,15 +118,13 @@ describe("assistant keyboard lift", () => {
     })).toMatchObject({
       lift: 0,
       mode: "none",
-      fallbackLift: 0,
-      estimatedKeyboardHeight: 321,
-      fallbackTargetBottom: 523,
+      measuredLift: 0,
     });
   });
 
-  it("adds only the remaining fallback delta after partial native iOS pan", () => {
+  it("adds only the remaining observed delta after partial native iOS pan", () => {
     expect(computeAssistantKeyboardLiftState({
-      visibleBottom: 844,
+      visibleBottom: 520,
       dockBottom: 844,
       dockHeight: 844,
       composerTop: 544,
@@ -126,15 +134,13 @@ describe("assistant keyboard lift", () => {
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 105,
-      mode: "fallback",
-      fallbackLift: 105,
-      estimatedKeyboardHeight: 321,
-      fallbackTargetBottom: 523,
+      lift: 108,
+      mode: "measured",
+      measuredLift: 108,
     });
   });
 
-  it("uses supplemental fallback when the visible viewport shrink is below the measured threshold", () => {
+  it("uses observed overlap even when global keyboard height is below threshold", () => {
     expect(computeAssistantKeyboardLiftState({
       keyboardHeight: 120,
       visibleBottom: 700,
@@ -147,37 +153,33 @@ describe("assistant keyboard lift", () => {
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 329,
-      mode: "fallback",
-      fallbackLift: 329,
-      estimatedKeyboardHeight: 321,
-      fallbackTargetBottom: 523,
+      lift: 152,
+      mode: "measured",
+      measuredLift: 152,
     });
   });
 
-  it("caps fallback lift so the composer stays below the assistant header", () => {
+  it("keeps observed lift bounded by actual visible overlap", () => {
     expect(computeAssistantKeyboardLiftState({
       visibleBottom: 700,
       dockBottom: 700,
       dockHeight: 700,
       composerTop: 360,
-      composerBottom: 700,
+      composerBottom: 704,
       textareaBottom: 682,
       headerBottom: 100,
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 248,
-      mode: "fallback",
-      fallbackLift: 248,
-      estimatedKeyboardHeight: 280,
-      fallbackTargetBottom: 420,
+      lift: 12,
+      mode: "measured",
+      measuredLift: 12,
     });
   });
 
-  it("does not fallback outside focused mobile assistant input state", () => {
+  it("does not lift outside focused assistant input state", () => {
     expect(computeAssistantKeyboardLiftState({
-      visibleBottom: 844,
+      visibleBottom: 520,
       dockBottom: 844,
       dockHeight: 844,
       composerTop: 768,
@@ -187,8 +189,11 @@ describe("assistant keyboard lift", () => {
       composerFocused: false,
       mobileLayout: true,
     })).toMatchObject({ lift: 0, mode: "none" });
+  });
+
+  it("does not require mobile layout for an observed focused-input overlap", () => {
     expect(computeAssistantKeyboardLiftState({
-      visibleBottom: 844,
+      visibleBottom: 520,
       dockBottom: 844,
       dockHeight: 844,
       composerTop: 768,
@@ -197,6 +202,6 @@ describe("assistant keyboard lift", () => {
       headerBottom: 76,
       composerFocused: true,
       mobileLayout: false,
-    })).toMatchObject({ lift: 0, mode: "none" });
+    })).toMatchObject({ lift: 332, mode: "measured" });
   });
 });

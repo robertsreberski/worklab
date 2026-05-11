@@ -3860,6 +3860,7 @@ test("assistant composer clears the keyboard while keeping input controls visibl
     const visibleBottom = window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : window.innerHeight;
     return {
       paddingBottom: composerStyles ? Math.round(parseFloat(composerStyles.paddingBottom) || 0) : -1,
+      dockPaddingBottom: dockStyles ? Math.round(parseFloat(dockStyles.paddingBottom) || 0) : -1,
       transform,
       transformY,
       threadScrollPaddingBottom: threadStyles ? Math.round(parseFloat(threadStyles.scrollPaddingBottom) || 0) : -1,
@@ -3905,13 +3906,15 @@ test("assistant composer clears the keyboard while keeping input controls visibl
   expect(open.assistantFallbackClass).toBe(false);
   expect(open.assistantMode).toBe("measured");
   expect(open.keyboardHeight).toBeGreaterThan(150);
-  expect(open.assistantLift).toBeGreaterThanOrEqual(open.keyboardHeight);
+  expect(open.assistantLift).toBeGreaterThan(0);
+  expect(open.assistantLift).toBeLessThanOrEqual(open.keyboardHeight + 16);
+  expect(open.dockPaddingBottom).toBe(open.assistantLift);
   expect(open.paddingBottom).toBeLessThan(48);
-  expect(open.transform).not.toBe("none");
-  expect(open.transformY).toBeLessThanOrEqual(-open.assistantLift + 1);
+  expect(open.transform).toBe("none");
+  expect(open.transformY).toBe(0);
   expect(open.composerBottom).toBeLessThanOrEqual(open.visibleBottom + 1);
-  expect(open.threadScrollPaddingBottom).toBeGreaterThan(open.assistantLift);
-  expect(open.threadSpacerFlexBasis).toBeGreaterThan(open.assistantLift);
+  expect(open.threadScrollPaddingBottom).toBeLessThanOrEqual(96);
+  expect(open.threadSpacerFlexBasis).toBeLessThanOrEqual(96);
   expect(open.textareaBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
   expect(open.submitBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
 
@@ -3934,6 +3937,7 @@ test("assistant composer clears the keyboard while keeping input controls visibl
   expect(dismissed.assistantFocusedClass).toBe(false);
   expect(dismissed.assistantFallbackClass).toBe(false);
   expect(dismissed.assistantLift).toBe(0);
+  expect(dismissed.dockPaddingBottom).toBe(0);
   expect(dismissed.paddingBottom).toBe(rest.paddingBottom);
   expect(dismissed.transformY).toBe(0);
 });
@@ -3992,6 +3996,7 @@ test("assistant composer uses measured lift when iOS underreports keyboard heigh
       assistantMode: dock?.dataset?.assistantKeyboardMode || "none",
       keyboardHeight,
       assistantLift,
+      dockPaddingBottom: dockStyles ? Math.round(parseFloat(dockStyles.paddingBottom) || 0) : -1,
       transformY,
       visibleBottom,
       composerBottom: composerRect ? Math.round(composerRect.bottom) : -1,
@@ -4006,13 +4011,14 @@ test("assistant composer uses measured lift when iOS underreports keyboard heigh
   expect(metrics.assistantMode).toBe("measured");
   expect(metrics.assistantFallbackClass).toBe(false);
   expect(metrics.assistantLift).toBeGreaterThan(300);
-  expect(metrics.transformY).toBeLessThanOrEqual(-metrics.assistantLift + 1);
+  expect(metrics.dockPaddingBottom).toBe(metrics.assistantLift);
+  expect(metrics.transformY).toBe(0);
   expect(metrics.composerBottom).toBeLessThanOrEqual(metrics.visibleBottom);
   expect(metrics.textareaBottom).toBeLessThanOrEqual(metrics.visibleBottom - 8);
   expect(metrics.submitBottom).toBeLessThanOrEqual(metrics.visibleBottom - 8);
 });
 
-test("assistant composer uses fallback lift when visualViewport gives no keyboard signal", async ({ page }) => {
+test("assistant composer does not invent fallback lift when visualViewport gives no keyboard signal", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.addInitScript(() => {
     try {
@@ -4059,7 +4065,6 @@ test("assistant composer uses fallback lift when visualViewport gives no keyboar
     const keyboardHeight = Math.round(parseFloat(getComputedStyle(root).getPropertyValue("--worklab-keyboard-height")) || 0);
     const assistantLift = Math.round(parseFloat(dockStyles?.getPropertyValue("--assistant-keyboard-lift")) || 0);
     const assistantFallbackLift = Math.round(parseFloat(dockStyles?.getPropertyValue("--assistant-keyboard-fallback-lift")) || 0);
-    const syntheticKeyboardTop = 520;
     return {
       keyboardOpenClass: root.classList.contains("keyboard-open"),
       assistantLiftedClass: dock?.classList.contains("assistant-keyboard-lifted") || false,
@@ -4071,8 +4076,8 @@ test("assistant composer uses fallback lift when visualViewport gives no keyboar
       keyboardHeight,
       assistantLift,
       assistantFallbackLift,
+      dockPaddingBottom: dockStyles ? Math.round(parseFloat(dockStyles.paddingBottom) || 0) : -1,
       transformY,
-      syntheticKeyboardTop,
       visibleBottom: window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : window.innerHeight,
       composerBottom: composerRect ? Math.round(composerRect.bottom) : -1,
       textareaBottom: textareaRect ? Math.round(textareaRect.bottom) : -1,
@@ -4084,20 +4089,18 @@ test("assistant composer uses fallback lift when visualViewport gives no keyboar
   expect(metrics.keyboardOpenClass).toBe(false);
   expect(metrics.visibleBottom).toBe(844);
   expect(metrics.assistantFocusedClass).toBe(true);
-  expect(metrics.assistantLiftedClass).toBe(true);
-  expect(metrics.assistantFallbackClass).toBe(true);
-  expect(metrics.assistantMode).toBe("fallback");
-  expect(metrics.assistantKeyboardEstimate).toBeGreaterThanOrEqual(280);
-  expect(metrics.assistantKeyboardEstimate).toBeLessThanOrEqual(340);
-  expect(metrics.assistantKeyboardTargetBottom).toBeGreaterThanOrEqual(500);
-  expect(metrics.assistantKeyboardTargetBottom).toBeLessThanOrEqual(560);
-  expect(metrics.assistantLift).toBeGreaterThan(0);
-  expect(metrics.assistantLift).toBeLessThan(360);
-  expect(metrics.assistantLift).toBe(metrics.assistantFallbackLift);
-  expect(metrics.transformY).toBeLessThanOrEqual(-metrics.assistantLift + 1);
-  expect(metrics.composerBottom).toBeLessThanOrEqual(metrics.syntheticKeyboardTop);
-  expect(metrics.textareaBottom).toBeLessThanOrEqual(metrics.syntheticKeyboardTop - 8);
-  expect(metrics.submitBottom).toBeLessThanOrEqual(metrics.syntheticKeyboardTop - 8);
+  expect(metrics.assistantLiftedClass).toBe(false);
+  expect(metrics.assistantFallbackClass).toBe(false);
+  expect(metrics.assistantMode).toBe("none");
+  expect(metrics.assistantKeyboardEstimate).toBe(0);
+  expect(metrics.assistantKeyboardTargetBottom).toBe(0);
+  expect(metrics.assistantLift).toBe(0);
+  expect(metrics.assistantFallbackLift).toBe(0);
+  expect(metrics.dockPaddingBottom).toBe(0);
+  expect(metrics.transformY).toBe(0);
+  expect(metrics.composerBottom).toBeGreaterThan(800);
+  expect(metrics.textareaBottom).toBeGreaterThan(760);
+  expect(metrics.submitBottom).toBeGreaterThan(760);
 });
 
 test("keyboard-open class clears on focusout even when visualViewport stays shrunk", async ({ page }) => {
