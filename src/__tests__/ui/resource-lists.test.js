@@ -47,7 +47,7 @@ describe("resource list helpers", () => {
     ]);
   });
 
-  it("groups canonical knowledge by project first and category second", () => {
+  it("defaults canonical knowledge to a flat recent-updates list", () => {
     const groups = buildKnowledgeResourceGroups([
       {
         slug: "project-runbook",
@@ -70,10 +70,57 @@ describe("resource list helpers", () => {
       { slug: "global-note", title: "Global", category: "decision", updated_at: "2026-05-06T00:00:00Z" },
     ], { surface: "canonical" });
 
+    expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
+      ["recent", "Recent updates", ["global-note", "project-runbook", "project-research"]],
+    ]);
+  });
+
+  it("keeps project/category grouping available as a knowledge sort mode", () => {
+    const groups = buildKnowledgeResourceGroups([
+      {
+        slug: "project-runbook",
+        title: "Runbook",
+        project_id: "project-1",
+        project: { slug: "project-one", name: "Project One" },
+        category: "runbook",
+        updated_at: "2026-05-05T00:00:00Z",
+      },
+      {
+        slug: "project-research",
+        title: "Research",
+        project_id: "project-1",
+        project: { slug: "project-one", name: "Project One" },
+        category: "research",
+        pinned: true,
+        updated_at: "2026-05-04T00:00:00Z",
+      },
+      { slug: "run-output", title: "Run", category: "run-results", auto_promoted: true },
+      { slug: "global-note", title: "Global", category: "decision", updated_at: "2026-05-06T00:00:00Z" },
+    ], { surface: "canonical", sort: "project_category" });
+
     expect(groups.map((group) => [group.projectLabel, group.categoryLabel, group.items.map((entry) => entry.slug)])).toEqual([
       ["Project One", "Research", ["project-research"]],
       ["Project One", "Runbook", ["project-runbook"]],
       ["Global", "Decision", ["global-note"]],
+    ]);
+  });
+
+  it("supports pinned-first and title knowledge sort modes", () => {
+    const entries = [
+      { slug: "zebra", title: "Zebra", updated_at: "2026-05-03T00:00:00Z" },
+      { slug: "alpha", title: "Alpha", pinned: true, updated_at: "2026-05-01T00:00:00Z" },
+      { slug: "middle", title: "Middle", updated_at: "2026-05-02T00:00:00Z" },
+    ];
+
+    expect(buildKnowledgeResourceGroups(entries, { sort: "pinned_first" })[0].items.map((entry) => entry.slug)).toEqual([
+      "alpha",
+      "zebra",
+      "middle",
+    ]);
+    expect(buildKnowledgeResourceGroups(entries, { sort: "title_asc" })[0].items.map((entry) => entry.slug)).toEqual([
+      "alpha",
+      "middle",
+      "zebra",
     ]);
   });
 
@@ -171,6 +218,15 @@ describe("resource list helpers", () => {
       expect(contents).toContain("resource-list-layout");
       expect(contents).not.toMatch(/<div class="resource-list/);
     }
+  });
+
+  it("exposes knowledge sort modes through the compact configuration surface", () => {
+    const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
+
+    expect(contents).toContain("const [sort, setSort] = useState(\"updated_desc\");");
+    expect(contents).toContain("ariaLabel=\"Sort knowledge\"");
+    expect(contents).toContain("sort !== \"updated_desc\"");
+    expect(contents).toContain("setSort(\"updated_desc\")");
   });
 
   it("defaults status-aware resource lists to active filters", () => {

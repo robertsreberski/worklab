@@ -69,6 +69,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
   const [tag, setTag] = useState("all");
   const [pinned, setPinned] = useState("all");
   const [surface, setSurface] = useState("canonical");
+  const [sort, setSort] = useState("updated_desc");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -109,7 +110,8 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     tag,
     pinned,
     surface,
-  }), [category, entries, pinned, projectId, query, subcategory, surface, tag]);
+    sort,
+  }), [category, entries, pinned, projectId, query, sort, subcategory, surface, tag]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
 
   const projectOptions = useMemo(() => [
@@ -129,6 +131,12 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     { value: "pinned", label: "Pinned" },
     { value: "unpinned", label: "Unpinned" },
   ];
+  const sortOptions = [
+    { value: "updated_desc", label: "Recent update" },
+    { value: "pinned_first", label: "Pinned first" },
+    { value: "title_asc", label: "Title A-Z" },
+    { value: "project_category", label: "Project/category" },
+  ];
   const surfaceTabs = [
     { value: "canonical", label: "Canonical", count: entries.filter((entry) => !entry.auto_promoted).length },
     { value: "run_outputs", label: "Run outputs", count: entries.filter((entry) => entry.auto_promoted).length },
@@ -147,10 +155,11 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       actionLabel="New entry"
       onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
-      activeConfigCount={[surface !== "canonical", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
+      activeConfigCount={[surface !== "canonical", sort !== "updated_desc", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
       scopeTabs={scopeTabs}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
+      <Select class="resource-filter-select" value={sort} options={sortOptions} onChange={setSort} ariaLabel="Sort knowledge" />
       <Select class="resource-filter-select" value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />
       <Select class="resource-filter-select" value={category} options={categoryOptions} onChange={setCategory} ariaLabel="Filter knowledge by category" />
       <Select class="resource-filter-select" value={subcategory} options={subcategoryOptions} onChange={setSubcategory} ariaLabel="Filter knowledge by subcategory" />
@@ -161,7 +170,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("canonical"); }} />
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("canonical"); setSort("updated_desc"); }} />
     ) : (
       <EmptyState
         title="No entries yet"
