@@ -12462,7 +12462,7 @@ button.settings-overview-card:focus-visible,
   .assistant-composer {
     grid-template-columns: minmax(0, 1fr) 44px;
     gap: var(--sp-2);
-    padding: var(--sp-2) var(--sp-3) max(var(--sp-2), var(--mobile-safe-bottom));
+    padding: var(--sp-2) var(--sp-3) max(var(--sp-3), var(--mobile-safe-bottom));
   }
   .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
