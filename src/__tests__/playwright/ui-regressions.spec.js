@@ -3843,6 +3843,8 @@ test("assistant composer clears the keyboard while keeping input controls visibl
     const textareaRect = textarea?.getBoundingClientRect();
     const submitRect = submit?.getBoundingClientRect();
     const composerStyles = composer ? getComputedStyle(composer) : null;
+    const dock = document.querySelector(".assistant-dock");
+    const dockStyles = dock ? getComputedStyle(dock) : null;
     const threadStyles = thread ? getComputedStyle(thread) : null;
     const threadSpacerStyles = thread ? getComputedStyle(thread, "::after") : null;
     const transform = composerStyles?.transform || "none";
@@ -3853,6 +3855,7 @@ test("assistant composer clears the keyboard while keeping input controls visibl
       transformY = Math.round(parts.length === 16 ? parts[13] : parts[5] || 0);
     }
     const keyboardHeight = Math.round(parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--worklab-keyboard-height")) || 0);
+    const assistantLift = Math.round(parseFloat(dockStyles?.getPropertyValue("--assistant-keyboard-lift")) || 0);
     const visibleBottom = window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : window.innerHeight;
     return {
       paddingBottom: composerStyles ? Math.round(parseFloat(composerStyles.paddingBottom) || 0) : -1,
@@ -3861,8 +3864,10 @@ test("assistant composer clears the keyboard while keeping input controls visibl
       threadScrollPaddingBottom: threadStyles ? Math.round(parseFloat(threadStyles.scrollPaddingBottom) || 0) : -1,
       threadSpacerFlexBasis: threadSpacerStyles ? Math.round(parseFloat(threadSpacerStyles.flexBasis) || 0) : -1,
       keyboardOpenClass: document.documentElement.classList.contains("keyboard-open"),
+      assistantLiftedClass: dock?.classList.contains("assistant-keyboard-lifted") || false,
       activeTag: document.activeElement ? document.activeElement.tagName : "",
       keyboardHeight,
+      assistantLift,
       visibleBottom,
       composerBottom: composerRect ? Math.round(composerRect.bottom) : -1,
       textareaBottom: textareaRect ? Math.round(textareaRect.bottom) : -1,
@@ -3890,13 +3895,15 @@ test("assistant composer clears the keyboard while keeping input controls visibl
 
   const open = await readState();
   expect(open.keyboardOpenClass).toBe(true);
+  expect(open.assistantLiftedClass).toBe(true);
   expect(open.keyboardHeight).toBeGreaterThan(150);
+  expect(open.assistantLift).toBeGreaterThanOrEqual(open.keyboardHeight);
   expect(open.paddingBottom).toBeLessThan(48);
   expect(open.transform).not.toBe("none");
-  expect(open.transformY).toBeLessThanOrEqual(-open.keyboardHeight + 1);
+  expect(open.transformY).toBeLessThanOrEqual(-open.assistantLift + 1);
   expect(open.composerBottom).toBeLessThanOrEqual(open.visibleBottom + 1);
-  expect(open.threadScrollPaddingBottom).toBeGreaterThan(open.keyboardHeight);
-  expect(open.threadSpacerFlexBasis).toBeGreaterThan(open.keyboardHeight);
+  expect(open.threadScrollPaddingBottom).toBeGreaterThan(open.assistantLift);
+  expect(open.threadSpacerFlexBasis).toBeGreaterThan(open.assistantLift);
   expect(open.textareaBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
   expect(open.submitBottom).toBeLessThanOrEqual(open.visibleBottom - 8);
 
@@ -3913,8 +3920,80 @@ test("assistant composer clears the keyboard while keeping input controls visibl
 
   const dismissed = await readState();
   expect(dismissed.keyboardOpenClass).toBe(false);
+  expect(dismissed.assistantLiftedClass).toBe(false);
+  expect(dismissed.assistantLift).toBe(0);
   expect(dismissed.paddingBottom).toBe(rest.paddingBottom);
   expect(dismissed.transformY).toBe(0);
+});
+
+test("assistant composer uses measured lift when iOS underreports keyboard height", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => {
+    try {
+      window.localStorage.setItem("worklab.assistantDockOpen", "open");
+    } catch {}
+  });
+
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".assistant-dock.open")).toBeVisible();
+  await expect(page.locator(".assistant-composer")).toBeVisible();
+
+  await page.locator(".assistant-composer .textarea").focus();
+  await page.evaluate(() => {
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 640 });
+    Object.defineProperty(document.documentElement, "clientHeight", { configurable: true, value: 640 });
+    const vv = window.visualViewport;
+    if (vv) {
+      Object.defineProperty(vv, "height", { configurable: true, value: 520 });
+      Object.defineProperty(vv, "offsetTop", { configurable: true, value: 0 });
+      vv.dispatchEvent(new Event("resize"));
+    }
+    window.dispatchEvent(new Event("resize"));
+  });
+  await page.waitForTimeout(720);
+
+  const metrics = await page.evaluate(() => {
+    const root = document.documentElement;
+    const dock = document.querySelector(".assistant-dock");
+    const composer = document.querySelector(".assistant-composer");
+    const textarea = document.querySelector(".assistant-composer .textarea");
+    const submit = document.querySelector(".assistant-composer-submit");
+    const composerStyles = composer ? getComputedStyle(composer) : null;
+    const dockStyles = dock ? getComputedStyle(dock) : null;
+    const composerRect = composer?.getBoundingClientRect();
+    const textareaRect = textarea?.getBoundingClientRect();
+    const submitRect = submit?.getBoundingClientRect();
+    const transform = composerStyles?.transform || "none";
+    let transformY = 0;
+    if (transform && transform !== "none") {
+      const match = transform.match(/matrix(?:3d)?\(([^)]+)\)/);
+      const parts = match ? match[1].split(",").map((part) => parseFloat(part.trim())) : [];
+      transformY = Math.round(parts.length === 16 ? parts[13] : parts[5] || 0);
+    }
+    const keyboardHeight = Math.round(parseFloat(getComputedStyle(root).getPropertyValue("--worklab-keyboard-height")) || 0);
+    const assistantLift = Math.round(parseFloat(dockStyles?.getPropertyValue("--assistant-keyboard-lift")) || 0);
+    const visibleBottom = window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : window.innerHeight;
+    return {
+      keyboardOpenClass: root.classList.contains("keyboard-open"),
+      assistantLiftedClass: dock?.classList.contains("assistant-keyboard-lifted") || false,
+      keyboardHeight,
+      assistantLift,
+      transformY,
+      visibleBottom,
+      composerBottom: composerRect ? Math.round(composerRect.bottom) : -1,
+      textareaBottom: textareaRect ? Math.round(textareaRect.bottom) : -1,
+      submitBottom: submitRect ? Math.round(submitRect.bottom) : -1,
+    };
+  });
+
+  expect(metrics.keyboardHeight).toBeLessThanOrEqual(150);
+  expect(metrics.keyboardOpenClass).toBe(false);
+  expect(metrics.assistantLiftedClass).toBe(true);
+  expect(metrics.assistantLift).toBeGreaterThan(300);
+  expect(metrics.transformY).toBeLessThanOrEqual(-metrics.assistantLift + 1);
+  expect(metrics.composerBottom).toBeLessThanOrEqual(metrics.visibleBottom);
+  expect(metrics.textareaBottom).toBeLessThanOrEqual(metrics.visibleBottom - 8);
+  expect(metrics.submitBottom).toBeLessThanOrEqual(metrics.visibleBottom - 8);
 });
 
 test("keyboard-open class clears on focusout even when visualViewport stays shrunk", async ({ page }) => {
