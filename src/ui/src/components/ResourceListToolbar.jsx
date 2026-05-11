@@ -16,6 +16,7 @@ export function ResourceListToolbar({
   actionIcon = "plus",
   configTitle = "List configuration",
   activeConfigCount = 0,
+  scopeTabs = null,
   children,
 }) {
   const [configOpen, setConfigOpen] = useState(false);
@@ -23,6 +24,7 @@ export function ResourceListToolbar({
 
   return (
     <div class="resource-toolbar resource-toolbar-compact">
+      {scopeTabs && <div class="resource-toolbar-scope-tabs">{scopeTabs}</div>}
       <SearchField
         value={searchValue}
         onInput={(event) => onSearch?.(event.target.value, event)}

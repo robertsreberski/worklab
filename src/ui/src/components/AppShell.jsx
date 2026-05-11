@@ -55,11 +55,13 @@ const AppChromeContext = createContext(null);
 const TABBAR_ROUTES = [
   { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
   { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
-  { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
+  { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
 ];
-const MORE_ROUTE_IDS = ["projects", "teams", "skills", "goals", "runs", "settings"];
-const MORE_ROUTES = ROUTES
-  .filter((route) => MORE_ROUTE_IDS.includes(route.id))
+const MORE_ROUTE_IDS = ["teams", "skills", "knowledge", "goals", "runs", "settings"];
+const ROUTE_BY_ID = Object.fromEntries(ROUTES.map((route) => [route.id, route]));
+const MORE_ROUTES = MORE_ROUTE_IDS
+  .map((id) => ROUTE_BY_ID[id])
+  .filter(Boolean)
   .map((route) => ({ ...route, href: route.href || `#/${route.id}` }));
 const EMPTY_SECTIONS = [];
 const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";

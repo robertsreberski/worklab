@@ -59,7 +59,7 @@ export function knowledgeTimestamp(value) {
   return Date.parse(value);
 }
 
-export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {} }) {
+export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {}, scopeTabs = null }) {
   const [entries, setEntries] = useState([]);
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
@@ -148,6 +148,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
       activeConfigCount={[surface !== "canonical", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
+      scopeTabs={scopeTabs}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
       <Select class="resource-filter-select" value={projectId} options={projectOptions} onChange={setProjectId} ariaLabel="Filter knowledge by project" />

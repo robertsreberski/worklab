@@ -99,13 +99,13 @@ describe("app shell routes", () => {
   });
 
   it("keeps Work-first routes in the mobile tabbar", () => {
-    expect(tabbarRouteIds()).toEqual(["tasks", "agents", "knowledge"]);
+    expect(tabbarRouteIds()).toEqual(["tasks", "agents", "projects"]);
   });
 
   it("keeps Library and System routes in mobile More navigation", () => {
     const ids = moreRouteIds();
 
-    expect(ids).toEqual(["projects", "teams", "skills", "goals", "runs", "settings"]);
+    expect(ids).toEqual(["teams", "skills", "knowledge", "goals", "runs", "settings"]);
   });
 
   it("keeps the ambient assistant launcher icon-only and owned by AssistantDock", () => {

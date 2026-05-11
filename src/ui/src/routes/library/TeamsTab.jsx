@@ -697,7 +697,7 @@ function emptyState() {
   );
 }
 
-export function TeamsTab({ selectedId = null, mode = null }) {
+export function TeamsTab({ selectedId = null, mode = null, scopeTabs = null }) {
   const [teams, setTeams] = useState([]);
   const [goalsByTeamId, setGoalsByTeamId] = useState({});
   const [agents, setAgents] = useState([]);
@@ -904,6 +904,7 @@ export function TeamsTab({ selectedId = null, mode = null }) {
             onAction={() => navigateHash("#/library/teams/new")}
             configTitle="Teams configuration"
             activeConfigCount={[statusFilter !== "active", scheduleFilter !== "all", leadFilter !== "all"].filter(Boolean).length}
+            scopeTabs={scopeTabs}
           >
             <Tabs value={statusFilter} onChange={setStatusFilter} tabs={statusTabs} ariaLabel="Filter teams by status" class="tabs-pills" />
             <Select class="resource-filter-select" variant="menu" value={scheduleFilter} onChange={setScheduleFilter} options={scheduleOptions} ariaLabel="Filter teams by schedule" />

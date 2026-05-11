@@ -15,6 +15,7 @@ export function PageHeader({
   title,
   description,
   actions,
+  tabs,
   class: className = "",
 }) {
   return (
@@ -25,6 +26,7 @@ export function PageHeader({
         {description && <p>{description}</p>}
       </div>
       {actions && <Toolbar class="page-actions">{actions}</Toolbar>}
+      {tabs && <div class="ds-page-head-tabs">{tabs}</div>}
     </header>
   );
 }
@@ -34,6 +36,7 @@ export function Page({
   title,
   description,
   actions,
+  tabs,
   class: className = "",
   children,
 }) {
@@ -45,6 +48,7 @@ export function Page({
           title={title}
           description={description}
           actions={actions}
+          tabs={tabs}
         />
       )}
       {children}

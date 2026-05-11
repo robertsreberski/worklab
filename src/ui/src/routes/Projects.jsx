@@ -572,6 +572,7 @@ function ProjectEditor({ selectedId, onSaved }) {
 function ProjectDetail({ selectedId, onChanged }) {
   const [project, setProject] = useState(null);
   const [knowledgeEntries, setKnowledgeEntries] = useState([]);
+  const [mentions, setMentions] = useState(null);
   const [error, setError] = useState(null);
   const reloadAbortRef = useRef(null);
 
@@ -581,6 +582,7 @@ function ProjectDetail({ selectedId, onChanged }) {
     reloadAbortRef.current = controller;
     setProject(null);
     setKnowledgeEntries([]);
+    setMentions(null);
     setError(null);
     return Promise.all([
       api.getProject(selectedId, { signal: controller.signal }),
@@ -590,6 +592,7 @@ function ProjectDetail({ selectedId, onChanged }) {
         if (!controller.signal.aborted) {
           setProject(projectRes.project);
           setKnowledgeEntries(kbRes.entries || []);
+          setMentions(projectRes.mentions || null);
         }
       })
       .catch((err) => { if (err?.name !== "AbortError") setError(err.message || "Project not found"); });

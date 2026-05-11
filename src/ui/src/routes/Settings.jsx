@@ -173,8 +173,8 @@ function SettingsRouteShell({
           title={title}
           description={description}
           actions={actions}
+          tabs={<SettingsTabs activeTab={activeTab} />}
         />
-        <SettingsTabs activeTab={activeTab} />
         <div class="settings-route-content">
           {children}
         </div>
@@ -690,7 +690,7 @@ function SettingsGeneral() {
       activeTab="general"
       title="Settings"
       description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
-      actions={pageActions}
+      actions={isDirty || formSave.saving ? pageActions : null}
       mobileActionDock={isDirty || formSave.saving ? pageActions : null}
     >
         {formSave.error && (

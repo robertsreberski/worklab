@@ -5196,6 +5196,10 @@ html.assistant-resizing * {
   width: 100%;
   min-width: 0;
 }
+.resource-toolbar-scope-tabs {
+  display: none;
+  min-width: 0;
+}
 .resource-toolbar .mobile-config-trigger {
   display: inline-flex;
   grid-column: 2;
@@ -5215,6 +5219,19 @@ html.assistant-resizing * {
   scrollbar-width: none;
 }
 .resource-toolbar-filters .tabs::-webkit-scrollbar {
+  display: none;
+}
+.library-tabs-desktop {
+  display: flex;
+  min-width: 0;
+}
+.library-tabs-desktop .tabs {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.library-tabs-desktop .tabs::-webkit-scrollbar {
   display: none;
 }
 .resource-filter-select {
@@ -6788,6 +6805,25 @@ html.assistant-resizing * {
   height: 1px;
   background: repeating-linear-gradient(90deg, var(--accent-line) 0 8px, transparent 8px 18px);
   pointer-events: none;
+}
+.ds-page-head:has(.ds-page-head-tabs) {
+  flex-wrap: wrap;
+}
+.ds-page-head-tabs {
+  display: flex;
+  flex: 0 0 100%;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+.ds-page-head-tabs .tabs {
+  max-width: 100%;
+  width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.ds-page-head-tabs .tabs::-webkit-scrollbar {
+  display: none;
 }
 .ds-page-title {
   display: flex;
@@ -10359,7 +10395,8 @@ button.settings-overview-card:focus-visible,
   .goal-editor > .form-section { padding: var(--sp-4); }
   .pane-row-summary { justify-content: flex-start; }
   .resource-tab-page {
-    padding-inline: var(--sp-2);
+    gap: 0;
+    padding: 0;
   }
   .settings-route-shell {
     padding: 0 var(--sp-4) var(--sp-4);
@@ -10379,6 +10416,28 @@ button.settings-overview-card:focus-visible,
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--sp-2);
     padding: var(--sp-2);
+  }
+  .library-tabs-desktop {
+    display: none;
+  }
+  .resource-toolbar:has(.resource-toolbar-scope-tabs) {
+    padding: 0;
+    border-bottom: 0;
+    background: transparent;
+  }
+  .resource-toolbar-scope-tabs {
+    grid-column: 1 / -1;
+    display: flex;
+    min-width: 0;
+  }
+  .resource-toolbar-scope-tabs .tabs {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .resource-toolbar-scope-tabs .tabs::-webkit-scrollbar {
+    display: none;
   }
   .resource-toolbar .search-field {
     grid-column: 1;
@@ -11764,7 +11823,7 @@ button.settings-overview-card:focus-visible,
   z-index: 30;
   height: calc(56px + var(--mobile-safe-bottom));
   padding-bottom: var(--mobile-safe-bottom);
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   overflow-x: clip;
   border-top: 1px solid var(--border);
   background: var(--surface);
@@ -12649,7 +12708,8 @@ button.settings-overview-card:focus-visible,
     grid-template-columns: minmax(0, 1fr);
   }
   .app.responsive:has(.pane-list-head) .app-body,
-  .app.responsive:has(.page-wrap > .ds-page-head:first-child) .app-body {
+  .app.responsive:has(.page-wrap > .ds-page-head:first-child) .app-body,
+  .app.responsive:has(.settings-route-shell > .ds-page-head:first-child) .app-body {
     padding-top: 0;
   }
   .app.responsive .app-main {
@@ -12659,6 +12719,10 @@ button.settings-overview-card:focus-visible,
     padding-top: calc(var(--sp-2) + var(--mobile-safe-top));
     background: var(--surface);
     backdrop-filter: none;
+  }
+  .app.responsive .pane-list-head:has(.resource-toolbar-scope-tabs) {
+    padding-bottom: var(--sp-1);
+    gap: var(--sp-1);
   }
   .app.responsive .page-wrap {
     --mobile-page-inline: var(--sp-4);
@@ -12675,6 +12739,23 @@ button.settings-overview-card:focus-visible,
     border-left: 0;
     border-radius: 0;
     background: var(--surface);
+  }
+  .app.responsive .settings-route-shell > .ds-page-head:first-child {
+    padding-top: calc(var(--sp-4) + var(--mobile-safe-top));
+    padding-bottom: var(--sp-3);
+  }
+  .app.responsive .ds-page-head:has(.ds-page-head-tabs) {
+    gap: var(--sp-3);
+    flex-wrap: nowrap;
+  }
+  .app.responsive .ds-page-head:has(.ds-page-head-tabs) .ds-page-title p {
+    display: none;
+  }
+  .app.responsive .ds-page-head-tabs {
+    flex: 0 0 auto;
+  }
+  .app.responsive.has-mobile-action-dock .ds-page-head .page-actions {
+    display: none;
   }
   .assistant-dock {
     position: fixed;
