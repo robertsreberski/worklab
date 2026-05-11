@@ -2325,7 +2325,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]) {
+  for (const label of ["Library", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2344,19 +2344,64 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   expect(metrics.navCount).toBe(5);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Library", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Agents" }).click();
-  await expect(page).toHaveURL(/#\/library\/agents$/);
+  await sheet.getByRole("link", { name: "Library" }).click();
+  await expect(page).toHaveURL(/#\/library$/);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-more-sheet")).toHaveCount(0);
 
   await page.goto(`${baseUrl}/#/settings/providers`);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-tabbar button", { hasText: "More" })).toHaveClass(/active/);
+});
+
+test("mobile settings routes share aligned shell geometry", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const routes = [
+    { hash: "#/settings", ready: () => page.locator(".settings-sections"), label: "settings" },
+    { hash: "#/settings/providers", ready: () => page.locator(".pane-list"), label: "providers" },
+    { hash: "#/settings/about", ready: () => page.locator(".settings-about"), label: "about" },
+  ];
+
+  for (const route of routes) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(route.ready()).toBeVisible();
+
+    const metrics = await page.evaluate(() => {
+      const shell = document.querySelector(".settings-route-shell");
+      const tabs = document.querySelector(".settings-tabs");
+      const content = document.querySelector(".settings-route-content");
+      const head = document.querySelector(".settings-route-shell > .ds-page-head");
+      const shellRect = shell?.getBoundingClientRect();
+      const tabsRect = tabs?.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      const headRect = head?.getBoundingClientRect();
+      return {
+        shellClass: shell?.className || "",
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+        shellLeft: shellRect ? Math.round(shellRect.left) : -1,
+        shellRight: shellRect ? Math.round(shellRect.right) : -1,
+        headLeft: headRect ? Math.round(headRect.left) : -1,
+        tabsLeft: tabsRect ? Math.round(tabsRect.left) : -1,
+        contentLeft: contentRect ? Math.round(contentRect.left) : -1,
+        contentTopAfterTabs: tabsRect && contentRect ? Math.round(contentRect.top) > Math.round(tabsRect.bottom) : false,
+        contentWidth: contentRect ? Math.round(contentRect.width) : 0,
+      };
+    });
+
+    expect(metrics.shellClass, `${route.label} shell`).toContain("settings-route-shell");
+    expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
+    expect(metrics.shellLeft, `${route.label} shell left`).toBe(0);
+    expect(metrics.shellRight, `${route.label} shell right`).toBe(390);
+    expect(Math.abs(metrics.headLeft - metrics.tabsLeft), `${route.label} head/tabs alignment`).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.tabsLeft - metrics.contentLeft), `${route.label} tabs/content alignment`).toBeLessThanOrEqual(1);
+    expect(metrics.contentTopAfterTabs, `${route.label} content below tabs`).toBe(true);
+    expect(metrics.contentWidth, `${route.label} content width`).toBeGreaterThanOrEqual(350);
+  }
 });
 
 test("mobile tabbar does not create document scroll space below content", async ({ page }) => {
@@ -4096,6 +4141,39 @@ test("pressing N opens new-task form from the commander", async ({ page }) => {
   await page.keyboard.press("n");
   await expect(page).toHaveURL(/#\/tasks\/new/);
   await expect(page.locator(".task-edit-head").first()).toBeVisible();
+});
+
+test("desktop New Task CTA keeps the N shortcut visually separated", async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await page.goto(`${baseUrl}/#/tasks`);
+  await expect(page.locator(".commander-new-task-inline")).toBeVisible();
+
+  const metrics = await page.evaluate(() => {
+    const cta = document.querySelector(".commander-new-task-inline");
+    const label = cta?.querySelector(".button-label > span");
+    const kbd = cta?.querySelector(".kbd");
+    const labelRect = label?.getBoundingClientRect();
+    const kbdRect = kbd?.getBoundingClientRect();
+    const labelStyles = cta?.querySelector(".button-label")
+      ? getComputedStyle(cta.querySelector(".button-label"))
+      : null;
+    const kbdStyles = kbd ? getComputedStyle(kbd) : null;
+    return {
+      labelText: label?.textContent || "",
+      kbdText: kbd?.textContent || "",
+      labelDisplay: labelStyles?.display || "",
+      gap: labelRect && kbdRect ? Math.round(kbdRect.left - labelRect.right) : 0,
+      marginLeft: kbdStyles?.marginLeft || "",
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(metrics.labelText).toBe("New task");
+  expect(metrics.kbdText).toBe("N");
+  expect(["flex", "inline-flex"]).toContain(metrics.labelDisplay);
+  expect(metrics.gap).toBeGreaterThanOrEqual(4);
+  expect(metrics.marginLeft).toBe("4px");
+  expect(metrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("provider creation uses a simple mobile provider-type select", async ({ page }) => {

@@ -74,6 +74,28 @@ describe("settings UI duration conversions", () => {
     expect(styles).toContain(".settings-note-grid-paths");
   });
 
+  it("uses one aligned route shell for Settings, Providers, and About", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(source).toContain("function SettingsTabs");
+    expect(source).toContain("function SettingsRouteShell");
+    expect(source).toContain('class="settings-route-content"');
+    expect(source).toContain('title="Providers"');
+    expect(source).toContain('title="About Worklab"');
+    expect(source).not.toContain('<div class="ds-page-head">');
+    expect(styles).toContain(".settings-route-shell");
+    expect(styles).toContain(".settings-route-content");
+    expect(styles).toContain(".settings-about-grid");
+  });
+
+  it("scopes the New Task keyboard hint spacing to the Commander CTA", () => {
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(styles).toContain(".commander-new-task-inline .kbd");
+    expect(styles).toMatch(/\.commander-new-task-inline\s+\.kbd\s*\{[^}]*margin-left:\s*var\(--sp-1\)/);
+  });
+
   it("formats millisecond timeout values as minutes", () => {
     expect(minutesValue(30 * 60 * 1000)).toBe("30");
     expect(minutesValue(120 * 1000)).toBe("2");
