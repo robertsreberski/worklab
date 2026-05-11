@@ -2,6 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 let activeGuard = null;
 const allowedHashes = new Set();
+const LEGACY_ROUTE_ALIASES = {
+  activity: ["runs"],
+  agents: ["library", "agents"],
+  knowledge: ["library", "knowledge"],
+  providers: ["settings", "providers"],
+  skills: ["library", "skills"],
+  teams: ["library", "teams"],
+};
 
 function safeDecode(value) {
   try {
@@ -22,9 +30,21 @@ export function isAppRouteHash(hash) {
 
 export function normalizeHash(hash) {
   if (!hash) return "#/tasks";
-  if (hash.startsWith("#")) return hash;
-  if (hash.startsWith("/")) return `#${hash}`;
-  return `#/${hash.replace(/^#?\/?/, "")}`;
+  const value = String(hash);
+  let normalized;
+  if (value.startsWith("#")) normalized = value;
+  else if (value.startsWith("/")) normalized = `#${value}`;
+  else normalized = `#/${value.replace(/^#?\/?/, "")}`;
+  if (!normalized.startsWith("#/")) return normalized;
+
+  const raw = normalized.replace(/^#\/?/, "");
+  const queryIndex = raw.indexOf("?");
+  const pathPart = queryIndex === -1 ? raw : raw.slice(0, queryIndex);
+  const queryString = queryIndex === -1 ? "" : raw.slice(queryIndex);
+  const segments = pathPart.replace(/^\/+/, "").split("/").filter(Boolean);
+  const alias = LEGACY_ROUTE_ALIASES[segments[0]];
+  if (!alias) return normalized;
+  return `#/${[...alias, ...segments.slice(1)].join("/")}${queryString}`;
 }
 
 export function parseHashRoute(hash = "") {
