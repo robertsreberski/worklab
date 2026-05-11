@@ -14,7 +14,7 @@ import { StageToken } from "./primitives/StageToken.jsx";
 import { LivePulse } from "./primitives/LivePulse.jsx";
 import { normalizeToolTokenEvent, ToolToken } from "./primitives/ToolToken.jsx";
 import { Checkbox } from "./primitives/Checkbox.jsx";
-import { agentDisplayName, hasRunError, taskDisplayKey, taskRecoveryLabel } from "../lib/display.js";
+import { agentDisplayName, hasRunError, taskDisplayKey, taskRecoveryLabel, taskRouteId } from "../lib/display.js";
 import { hasFileEditChangesPayload, isMutationToolName, sourceToolIdForFileEditId, toolResultPayload } from "../lib/toolEventLinking.js";
 
 function formatAge(value) {
@@ -177,6 +177,12 @@ export function commanderRowStagePresentation(task) {
   return { displayStage, runtimeStatus };
 }
 
+export function commanderChildTaskLabel(task = {}) {
+  if (!task?.parent_task_id && !task?.parent?.id) return null;
+  const parentKey = task?.parent ? taskDisplayKey(task.parent) : "";
+  return parentKey ? `Child of ${parentKey}` : "Child task";
+}
+
 function commanderGoalStatusLabel(task = {}) {
   if (task?.goal_contract?.paused_at) return "Goal paused";
   const status = task?.goal_status || "in_progress";
@@ -233,6 +239,26 @@ export function CommanderRow({
     ? `Next scheduled run: ${new Date(schedule.next_fire_at).toLocaleString()}`
     : (hasSchedule ? "Task schedule is paused" : undefined);
   const isTeamGoalRoot = Boolean(task.is_team_root && task.team_id && task.project_id);
+  const childTaskLabel = commanderChildTaskLabel(task);
+  const parentTask = task.parent;
+  const childTaskChip = childTaskLabel
+    ? parentTask?.id
+      ? (
+        <a
+          class="chip chip-muted commander-child-chip"
+          href={`#/tasks/${taskRouteId(parentTask)}`}
+          title={`Parent: ${taskDisplayKey(parentTask)}${parentTask.title ? ` - ${parentTask.title}` : ""}`}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <Icon name="corner-up-left" size={10} /> {childTaskLabel}
+        </a>
+      )
+      : (
+        <span class="chip chip-muted commander-child-chip">
+          <Icon name="corner-up-left" size={10} /> {childTaskLabel}
+        </span>
+      )
+    : null;
 
   // Title-row chip — surfaces warnings without changing the stage grouping.
   // Order: stuck > error > needs-owner.
@@ -315,6 +341,7 @@ export function CommanderRow({
       <div class="commander-cell-title">
         <div class="commander-cell-title-row">
           <span class="commander-title">{task.title}</span>
+          {childTaskChip}
           {task.project && (
             <a
               class="chip chip-muted commander-project-chip"

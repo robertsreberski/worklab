@@ -36,6 +36,7 @@ let goalId;
 const liveLongToken = `live-unbroken-${"x".repeat(180)}`;
 const childLongToken = `child-unbroken-${"y".repeat(150)}`;
 const errorLongToken = `error-unbroken-${"z".repeat(180)}`;
+const parentWrapTitle = "Parent with child task needing a clean mobile wrap";
 
 async function findFreePort() {
   return await new Promise((resolvePort, reject) => {
@@ -316,7 +317,7 @@ test.beforeAll(async () => {
     owner_agent: "regression-agent",
     stage: "execute",
   });
-  parentWithChildTaskId = await createTask("Parent with child task", {
+  parentWithChildTaskId = await createTask(parentWrapTitle, {
     owner_agent: "regression-agent",
     stage: "execute",
   });
@@ -1829,6 +1830,8 @@ test("child task detail pins parent reference below the header", async ({ page }
           flexShrink: style.flexShrink,
           whiteSpace: style.whiteSpace,
           height: Math.round(rect.height),
+          top: Math.round(rect.top),
+          bottom: Math.ceil(rect.bottom),
           lineHeight: Number.parseFloat(style.lineHeight) || 0,
           webkitLineClamp: style.webkitLineClamp || "",
         };
@@ -1843,6 +1846,7 @@ test("child task detail pins parent reference below the header", async ({ page }
         briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
         pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
         parentHeight: parentRect ? Math.round(parentRect.height) : 0,
+        parentBottom: parentRect ? Math.ceil(parentRect.bottom) : 0,
         parentMinHeight: parentStyle?.minHeight || "",
         parentPaddingTop: parentStyle ? Number.parseFloat(parentStyle.paddingTop) || 0 : 0,
         parentPaddingBottom: parentStyle ? Number.parseFloat(parentStyle.paddingBottom) || 0 : 0,
@@ -1854,6 +1858,7 @@ test("child task detail pins parent reference below the header", async ({ page }
         viewportWidth: window.innerWidth,
         label: item(label),
         key: item(key),
+        meta: item(parent?.querySelector(".task-parent-reference-meta")),
         title: item(title),
         status: item(status),
       };
@@ -1865,8 +1870,10 @@ test("child task detail pins parent reference below the header", async ({ page }
     expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
     expect(metrics.briefAfterParent).toBeLessThanOrEqual(28);
     expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
-    expect(metrics.parentMinHeight).toBe("0px");
-    expect(metrics.parentHeight).toBeGreaterThanOrEqual(metrics.copyHeight + metrics.parentPaddingTop + metrics.parentPaddingBottom);
+    expect(["auto", "0px"]).toContain(metrics.parentMinHeight);
+    expect(metrics.parentHeight).toBeGreaterThanOrEqual(metrics.meta.height + metrics.title.height - 1);
+    expect(metrics.title.top).toBeGreaterThanOrEqual(metrics.meta.bottom - 1);
+    expect(metrics.title.bottom).toBeLessThanOrEqual(metrics.parentBottom + 1);
     expect(metrics.parentRight).toBeLessThanOrEqual(metrics.viewportWidth);
     expect(Math.abs(metrics.parentLeft - metrics.briefLeft)).toBeLessThanOrEqual(1);
     expect(Math.abs(metrics.parentRight - metrics.briefRight)).toBeLessThanOrEqual(1);
@@ -1874,7 +1881,7 @@ test("child task detail pins parent reference below the header", async ({ page }
     expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.status).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
     expect(metrics.title.whiteSpace).toBe("normal");
-    expect(metrics.title.height).toBeLessThanOrEqual((metrics.title.lineHeight * 2) + 2);
+    expect(metrics.title.height).toBeGreaterThan(metrics.title.lineHeight);
   }
 
   await page.locator(".task-parent-reference").click();

@@ -381,12 +381,16 @@ describe("resource list helpers", () => {
     const copyRule = styles.match(/\.task-parent-reference-copy \{(?<body>[^}]+)\}/)?.groups?.body || "";
     const metaRule = styles.match(/\.task-parent-reference-meta \{(?<body>[^}]+)\}/)?.groups?.body || "";
     const titleRule = styles.match(/\.task-parent-reference-title \{(?<body>[^}]+)\}/)?.groups?.body || "";
+    const titleRuleBodies = Array.from(styles.matchAll(/\.task-parent-reference-title \{(?<body>[^}]+)\}/g))
+      .map((match) => match.groups?.body || "");
 
     expect(parentRule).toContain("display: flex");
+    expect(parentRule).toContain("flex: 0 0 auto");
     expect(parentRule).toContain("width: auto");
     expect(parentRule).toContain("margin: var(--sp-4) var(--sp-6) 0");
     expect(parentRule).toContain("box-sizing: border-box");
     expect(parentRule).toContain("border-radius: var(--radius-md)");
+    expect(parentRule).not.toContain("min-height");
     expect(copyRule).toContain("flex-direction: column");
     expect(metaRule).toContain("flex-wrap: wrap");
     expect(titleRule).toContain("flex: 1 1 auto");
@@ -394,6 +398,9 @@ describe("resource list helpers", () => {
     expect(styles).not.toContain(".task-parent-reference-glyph");
     expect(styles).toContain(".task-parent-reference + .task-detail");
     expect(styles).toMatch(/\.task-parent-reference-title\s*\{[^}]*white-space:\s*nowrap/);
-    expect(styles).toContain("-webkit-line-clamp: 2");
+    expect(titleRuleBodies.some((body) => body.includes("overflow: visible") && body.includes("white-space: normal"))).toBe(true);
+    for (const body of titleRuleBodies) {
+      expect(body).not.toContain("-webkit-line-clamp");
+    }
   });
 });

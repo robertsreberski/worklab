@@ -3572,6 +3572,12 @@ html.assistant-resizing * {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.commander-child-chip {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .commander-title {
   flex: 1 1 auto;
   min-width: 0;
@@ -3933,10 +3939,10 @@ html.assistant-resizing * {
 /* §6.3 — parent breadcrumb plus workflow metadata on TaskDetail. */
 .task-parent-reference {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: var(--sp-3);
   width: auto;
-  min-height: 52px;
   min-width: 0;
   box-sizing: border-box;
   margin: var(--sp-4) var(--sp-6) 0;
@@ -12615,7 +12621,6 @@ button.settings-overview-card:focus-visible,
     display: none;
   }
   .task-parent-reference {
-    min-height: 44px;
     margin: var(--sp-3) var(--sp-4) 0;
     padding: var(--sp-3);
   }
@@ -12625,11 +12630,11 @@ button.settings-overview-card:focus-visible,
     column-gap: var(--sp-2);
   }
   .task-parent-reference-title {
-    display: -webkit-box;
+    display: block;
     overflow-wrap: anywhere;
+    overflow: visible;
+    text-overflow: clip;
     white-space: normal;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
   }
   .editor-body,
   .task-detail,
