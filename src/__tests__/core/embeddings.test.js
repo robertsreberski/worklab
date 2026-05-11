@@ -105,6 +105,26 @@ describe("embedding index", () => {
     expect(status.byKind.kb).toBe(1);
   });
 
+  it("preserves unchanged chunks instead of deleting and reinserting them", async () => {
+    const { db, dataDir } = fixture();
+    const source = {
+      kind: "kb",
+      source_ref: "knowledge/stable-runbook.md",
+      title: "Stable Runbook",
+      body: "Keep this content stable across startup scans.",
+    };
+
+    await indexSource({ db, dataDir, allowVector: false, source });
+    const first = db.prepare("SELECT id, updated_at FROM embeddings WHERE source_ref = ?").get("knowledge/stable-runbook.md#chunk-0");
+
+    await indexSource({ db, dataDir, allowVector: false, source });
+    const second = db.prepare("SELECT id, updated_at FROM embeddings WHERE source_ref = ?").get("knowledge/stable-runbook.md#chunk-0");
+    const ftsCount = db.prepare("SELECT COUNT(*) AS count FROM embeddings_fts WHERE source_ref = ?").get("knowledge/stable-runbook.md#chunk-0").count;
+
+    expect(second).toEqual(first);
+    expect(ftsCount).toBe(1);
+  });
+
   it("keeps FTS results when vector reranking sees null candidate vectors", async () => {
     const { db, dataDir } = fixture();
     db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)")

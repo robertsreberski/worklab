@@ -211,6 +211,20 @@ function deleteSourcePrefix(db, kind, sourceRef) {
   tx();
 }
 
+function deleteStaleSourceChunks(db, kind, sourceRef, keepRefs) {
+  const rows = db.prepare("SELECT id, source_ref FROM embeddings WHERE kind = ? AND source_ref LIKE ?").all(kind, `${sourceRef}#%`);
+  const delFts = db.prepare("DELETE FROM embeddings_fts WHERE id = ?");
+  const delEmb = db.prepare("DELETE FROM embeddings WHERE id = ?");
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      if (keepRefs.has(row.source_ref)) continue;
+      delFts.run(row.id);
+      delEmb.run(row.id);
+    }
+  });
+  tx();
+}
+
 export function removeSource({ db, kind, sourceRef }) {
   deleteSourcePrefix(db, kind, sourceRef);
 }
@@ -224,10 +238,27 @@ function sourceToChunks(source) {
   }));
 }
 
+function getExistingChunk(db, kind, sourceRef) {
+  return db.prepare("SELECT id, content_hash, model, indexing_error FROM embeddings WHERE kind = ? AND source_ref = ?").get(kind, sourceRef);
+}
+
+function unchangedChunk(existing, chunk, model) {
+  return Boolean(
+    existing
+    && existing.content_hash === chunk.content_hash
+    && (existing.model || null) === (model || null)
+    && !existing.indexing_error
+  );
+}
+
+function yieldToEventLoop() {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
 function upsertChunk(db, chunk, { vector, model, error }) {
   const now = Date.now();
-  const existing = db.prepare("SELECT id, content_hash, model FROM embeddings WHERE kind = ? AND source_ref = ?").get(chunk.kind, chunk.source_ref);
-  if (existing && existing.content_hash === chunk.content_hash && existing.model === model && !error) return existing.id;
+  const existing = getExistingChunk(db, chunk.kind, chunk.source_ref);
+  if (unchangedChunk(existing, chunk, model) && !error) return existing.id;
   const id = existing?.id || newEmbeddingId();
   const vectorBuf = vector ? floatArrayToBuffer(vector) : null;
   db.prepare(`
@@ -267,12 +298,18 @@ function upsertChunk(db, chunk, { vector, model, error }) {
 
 export async function indexSource({ db, dataDir, source, modelRef = getEmbeddingModel(db), fetchImpl = fetch, allowVector = true }) {
   const chunks = sourceToChunks(source);
-  deleteSourcePrefix(db, source.kind, source.source_ref);
+  const keepRefs = new Set(chunks.map((chunk) => chunk.source_ref));
   const out = [];
   let vectorEnabled = allowVector;
   for (const chunk of chunks) {
     let vector = null;
     let error = null;
+    const targetModel = vectorEnabled && modelRef ? modelRef : null;
+    const existing = getExistingChunk(db, chunk.kind, chunk.source_ref);
+    if (unchangedChunk(existing, chunk, targetModel)) {
+      out.push(existing.id);
+      continue;
+    }
     if (vectorEnabled) {
       const embedded = await generateEmbedding({ db, dataDir, modelRef, text: chunk.chunk_text, fetchImpl });
       vector = embedded.vector;
@@ -280,7 +317,9 @@ export async function indexSource({ db, dataDir, source, modelRef = getEmbedding
       if (error) vectorEnabled = false;
     }
     out.push(upsertChunk(db, chunk, { vector, model: vector ? modelRef : null, error }));
+    if (out.length % 25 === 0) await yieldToEventLoop();
   }
+  deleteStaleSourceChunks(db, source.kind, source.source_ref, keepRefs);
   return out;
 }
 
@@ -361,6 +400,7 @@ export async function indexAllSources({ db, dataDir, fetchImpl = fetch, shouldSt
     }
     stats.sources += 1;
     stats.chunks += ids.length;
+    await yieldToEventLoop();
   }
   return stats;
 }
