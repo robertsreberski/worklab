@@ -86,6 +86,70 @@ describe("spawnWorker", () => {
     });
   });
 
+  it("stores slim completed events in SQLite while keeping full tool payloads in the raw log", async () => {
+    const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-worker-logs-"));
+    const db = makeTestDb();
+    try {
+      const broker = stubBroker();
+      const { taskId, runId } = seedTaskAndRun(db);
+      const script = {
+        events: [
+          {
+            type: "sdk_event",
+            event: {
+              type: "assistant",
+              message: {
+                content: [{ type: "tool_use", id: "read-1", name: "Read", input: { file_path: "src/app.js", content: "x".repeat(20_000) } }],
+              },
+            },
+          },
+          {
+            type: "sdk_event",
+            event: {
+              type: "user",
+              message: {
+                content: [{ type: "tool_result", tool_use_id: "read-1", content: "y".repeat(20_000), is_error: false }],
+              },
+            },
+          },
+          { type: "final", text: "ok" },
+        ],
+        exitCode: 0,
+      };
+      const handle = spawnWorker({
+        binary: fakeBinary,
+        args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+        env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId, WORKLAB_DATA_DIR: dataDir },
+        dataDir,
+        runId, taskId, broker, db,
+        runIdleWarningMs: 0,
+      });
+
+      await handle.done;
+
+      const log = db.prepare(`
+        SELECT events, events_compaction_strategy, events_compaction_version, events_compacted_bytes
+        FROM agent_logs WHERE task_run_id = ?
+      `).get(runId);
+      const events = JSON.parse(log.events);
+      expect(log.events_compaction_strategy).toBe("slim-db");
+      expect(log.events_compaction_version).toBe(2);
+      expect(log.events_compacted_bytes).toBeLessThan(5000);
+      expect(events[0].event.message.content[0]).toMatchObject({ name: "Read", input_omitted: true });
+      expect(events[0].event.message.content[0].input).toBeUndefined();
+      expect(events[1].event.message.content[0]).toMatchObject({ tool_use_id: "read-1", content_omitted: true });
+      expect(events[1].event.message.content[0].content).toBeUndefined();
+
+      const run = db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
+      const rawLog = readFileSync(run.raw_output_path, "utf8");
+      expect(rawLog).toContain("\"content\":\"");
+      expect(rawLog).toContain("xxxxxxxxxx");
+      expect(rawLog).toContain("yyyyyyyyyy");
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("recovers valid structured_output worklab_result when no final event arrives", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
@@ -421,7 +485,7 @@ describe("spawnWorker", () => {
     expect(diag.custom_field).toBe("x");
   });
 
-  it("stores full raw events while truncating large tool results in display logs", async () => {
+  it("stores full raw events while slimming completed SQLite tool results", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-spawn-"));
@@ -456,16 +520,16 @@ describe("spawnWorker", () => {
       expect(readFileSync(run.raw_output_path, "utf8")).toContain(largeOutput);
       const displayEvents = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
       const resultBlock = displayEvents[0].event.message.content[0];
-      expect(resultBlock.content).toContain("[truncated");
-      expect(resultBlock.content.length).toBeLessThan(largeOutput.length);
-      expect(resultBlock.truncated).toBe(true);
-      expect(resultBlock.original_length).toBe(largeOutput.length);
+      expect(resultBlock.content).toBeUndefined();
+      expect(resultBlock.content_omitted).toBe(true);
+      expect(resultBlock.content_preview).toContain("x");
+      expect(resultBlock.content_omitted_bytes).toBe(largeOutput.length);
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }
   });
 
-  it("truncates large tool inputs and compacts raw_result payloads before storage", async () => {
+  it("strips completed SQLite tool inputs and compacts raw_result payloads in raw logs", async () => {
     const db = makeTestDb();
     const broker = stubBroker();
     const dataDir = mkdtempSync(resolve(tmpdir(), "worklab-spawn-"));
@@ -520,10 +584,15 @@ describe("spawnWorker", () => {
       const displayEvents = JSON.parse(db.prepare("SELECT events FROM agent_logs WHERE task_run_id = ?").get(runId).events);
       const inputBlock = displayEvents[0].event.message.content[0];
       const resultBlock = displayEvents[1].event.message.content[0];
-      expect(inputBlock.input_truncated).toBe(true);
-      expect(inputBlock.input.preview).toContain("[truncated");
-      expect(resultBlock.raw_result.truncated).toBe(true);
-      expect(resultBlock.raw_result.preview).toContain("[truncated");
+      expect(inputBlock.input).toBeUndefined();
+      expect(inputBlock.input_omitted).toBe(true);
+      expect(inputBlock.input_preview).toContain("body");
+      expect(resultBlock.content).toBeUndefined();
+      expect(resultBlock.content_omitted).toBe(true);
+      expect(resultBlock.content_preview).toBe("ok");
+      expect(resultBlock.raw_result).toBeUndefined();
+      expect(resultBlock.raw_result_omitted).toBe(true);
+      expect(resultBlock.raw_result_preview).toContain("original_length");
     } finally {
       rmSync(dataDir, { recursive: true, force: true });
     }

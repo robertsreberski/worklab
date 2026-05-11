@@ -22,9 +22,13 @@ describe("CLI help", () => {
 
     expect(help).toContain("Usage: worklab compact-logs [options]");
     expect(help).toContain("--apply");
+    expect(help).toContain("--strategy NAME");
+    expect(help).toContain("--recompact");
     expect(help).toContain("--min-age-days DAYS");
     expect(help).toContain("--min-bytes BYTES");
     expect(help).toContain("--keep-events COUNT");
+    expect(help).toContain("--max-event-bytes BYTES");
+    expect(help).toContain("--max-log-bytes BYTES");
     expect(help).toContain("--vacuum");
     expect(help).toContain("--json");
   });
