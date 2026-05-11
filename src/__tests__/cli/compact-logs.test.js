@@ -77,6 +77,7 @@ describe("compact logs CLI helpers", () => {
     expect(report.dry_run).toBe(true);
     expect(report.candidates).toHaveLength(1);
     expect(report.candidates[0]).toMatchObject({ task_run_id: "run-apply", action: "compact" });
+    expect(report.estimated_reclaimable_bytes).toBeGreaterThan(0);
     expect(after.events).toEqual(before.events);
     expect(after.events_compacted_at).toBeNull();
   });

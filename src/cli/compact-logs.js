@@ -108,6 +108,10 @@ function compactRow(db, row, events, { keepEvents, now }) {
   return Buffer.byteLength(nextJson);
 }
 
+function compactedEventBytes(events, keepEvents) {
+  return Buffer.byteLength(JSON.stringify(events.slice(-keepEvents)));
+}
+
 export function compactLogs({
   dataDir = loadConfig().dataDir,
   apply = false,
@@ -155,7 +159,9 @@ export function compactLogs({
         continue;
       }
       const before = Number(row.bytes || 0);
-      const after = apply ? compactRow(db, row, decision.events, { keepEvents, now }) : before;
+      const after = apply
+        ? compactRow(db, row, decision.events, { keepEvents, now })
+        : compactedEventBytes(decision.events, keepEvents);
       bytesBefore += before;
       bytesAfter += after;
       compactedCount += apply ? 1 : 0;
