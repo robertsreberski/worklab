@@ -14,6 +14,8 @@ import { dirname, join } from "node:path";
 
 const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
+export const DEFAULT_KB_SORT = "updated_desc";
+export const KB_SORT_MODES = Object.freeze(["updated_desc", "pinned_first", "title_asc", "project_category"]);
 
 // Stable order for frontmatter keys.
 const FRONTMATTER_ORDER = [
@@ -348,6 +350,85 @@ function normalizeNullableString(value) {
   return text || null;
 }
 
+export function normalizeKbSort(sort = DEFAULT_KB_SORT) {
+  const value = String(sort || DEFAULT_KB_SORT).trim();
+  if (KB_SORT_MODES.includes(value)) return value;
+  const err = new Error(`invalid sort: ${value}`);
+  err.status = 400;
+  err.code = "validation";
+  throw err;
+}
+
+function timestampForSort(value) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const raw = String(value || "").trim();
+  if (!raw) return 0;
+  const numeric = Number(raw);
+  if (Number.isFinite(numeric)) return numeric;
+  const parsed = Date.parse(raw);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function entryTimestamp(entry) {
+  return timestampForSort(entry.updated_at) || timestampForSort(entry.created_at);
+}
+
+function sortLabel(value, fallback = "") {
+  return String(value || fallback).trim();
+}
+
+function categorySortLabel(entry) {
+  return sortLabel(entry.category, "Uncategorized").replace(/[-_]+/g, " ");
+}
+
+function compareText(left, right) {
+  return sortLabel(left).localeCompare(sortLabel(right), undefined, { sensitivity: "base" });
+}
+
+function compareTitleAsc(left, right) {
+  const title = compareText(left.title || left.slug, right.title || right.slug);
+  if (title !== 0) return title;
+  return compareText(left.slug, right.slug);
+}
+
+function compareUpdatedDesc(left, right) {
+  const updated = entryTimestamp(right) - entryTimestamp(left);
+  if (updated !== 0) return updated;
+  return compareTitleAsc(left, right);
+}
+
+function comparePinnedFirst(left, right) {
+  if (left.pinned !== right.pinned) return left.pinned ? -1 : 1;
+  return compareUpdatedDesc(left, right);
+}
+
+function compareProjectCategory(left, right) {
+  const leftGlobal = !left.project_id;
+  const rightGlobal = !right.project_id;
+  if (leftGlobal !== rightGlobal) return leftGlobal ? 1 : -1;
+  if (!leftGlobal) {
+    const project = compareText(left.project_id, right.project_id);
+    if (project !== 0) return project;
+  }
+  const category = compareText(categorySortLabel(left), categorySortLabel(right));
+  if (category !== 0) return category;
+  return comparePinnedFirst(left, right);
+}
+
+function compareKbEntries(left, right, sort) {
+  switch (sort) {
+    case "pinned_first":
+      return comparePinnedFirst(left, right);
+    case "title_asc":
+      return compareTitleAsc(left, right);
+    case "project_category":
+      return compareProjectCategory(left, right);
+    case "updated_desc":
+    default:
+      return compareUpdatedDesc(left, right);
+  }
+}
+
 // --- List entry normalization ----------------------------------------------
 
 function normalizeMetaForList(meta) {
@@ -585,7 +666,8 @@ export function kbReadMeta({ dataDir, slug }) {
   return entry ? entry.meta : null;
 }
 
-export function kbList({ dataDir, tag, category, subcategory, project_id, pinned } = {}) {
+export function kbList({ dataDir, tag, category, subcategory, project_id, pinned, sort } = {}) {
+  const sortMode = normalizeKbSort(sort);
   const dir = knowledgeDir(dataDir);
   if (!existsSync(dir)) return [];
   const out = [];
@@ -615,14 +697,7 @@ export function kbList({ dataDir, tag, category, subcategory, project_id, pinned
     if (pinned !== undefined && meta.pinned !== pinned) continue;
     out.push(meta);
   }
-  // Sort: pinned first (true before false), then updated_at DESC.
-  out.sort((a, b) => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-    const au = a.updated_at ?? "";
-    const bu = b.updated_at ?? "";
-    if (au === bu) return 0;
-    return au < bu ? 1 : -1;
-  });
+  out.sort((a, b) => compareKbEntries(a, b, sortMode));
   return out;
 }
 

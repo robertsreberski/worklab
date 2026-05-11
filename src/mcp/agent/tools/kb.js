@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { withDb } from "./shared.js";
 import {
+  KB_SORT_MODES,
   indexPath,
   kbCreate,
   kbDelete,
@@ -72,6 +73,7 @@ export const kbListSchema = z.object({
   subcategory: z.string().optional(),
   project_id: z.string().optional(),
   pinned: z.boolean().optional(),
+  sort: z.enum(KB_SORT_MODES).optional(),
 });
 
 export const kbSearchSchema = z.object({
@@ -244,7 +246,7 @@ export const definitions = [
   {
     name: "kb_list",
     description:
-      "List Worklab Knowledge Base entries, optionally filtered by project, category, subcategory, tag, or pinned status. Returns metadata only (no body). Sorted: pinned first, then by updated_at descending.",
+      "List Worklab Knowledge Base entries, optionally filtered by project, category, subcategory, tag, or pinned status. Returns metadata only (no body). Default sort is recent update; available sort modes are updated_desc, pinned_first, title_asc, and project_category.",
     inputSchema: {
       type: "object",
       properties: {
@@ -253,6 +255,11 @@ export const definitions = [
         category: { type: "string", description: "Filter to entries with this category" },
         subcategory: { type: "string", description: "Filter to entries with this subcategory" },
         pinned: { type: "boolean", description: "Filter to pinned (true) or unpinned (false) entries" },
+        sort: {
+          type: "string",
+          enum: KB_SORT_MODES,
+          description: "Sort mode: updated_desc, pinned_first, title_asc, or project_category",
+        },
       },
     },
     annotations: { readOnlyHint: true },
@@ -344,8 +351,8 @@ export function buildHandlers(context) {
       return { meta: entry.meta, body: entry.body };
     },
     async kb_list(input) {
-      const { tag, category, subcategory, project_id, pinned } = kbListSchema.parse(input);
-      const entries = kbList({ dataDir, tag, category, subcategory, project_id, pinned });
+      const { tag, category, subcategory, project_id, pinned, sort } = kbListSchema.parse(input);
+      const entries = kbList({ dataDir, tag, category, subcategory, project_id, pinned, sort });
       return { entries };
     },
     async kb_search(input) {

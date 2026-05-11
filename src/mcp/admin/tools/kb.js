@@ -13,6 +13,8 @@ import {
 } from "../../shared/schema-helpers.js";
 import { apiRequest, buildSpecHandlers } from "../../shared/tool-registry.js";
 
+const KB_SORT_MODES = ["updated_desc", "pinned_first", "title_asc", "project_category"];
+
 export const definitions = [
   tool("worklab_kb_list", "List Worklab Knowledge Base entries. In Worklab tool names, `kb` means Knowledge Base, not kilobytes.", object({
     tag: string("Tag filter"),
@@ -20,6 +22,7 @@ export const definitions = [
     category: string("Category filter"),
     subcategory: string("Subcategory filter"),
     pinned: boolean("Pinned filter"),
+    sort: { ...string("Sort mode"), enum: KB_SORT_MODES },
   }), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"]), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_create", "Create a Worklab Knowledge Base entry.", object({
@@ -60,7 +63,7 @@ export const definitions = [
 ];
 
 const specs = [
-  ["worklab_kb_list", "GET", "/api/kb", ["tag", "project_id", "category", "subcategory", "pinned"]],
+  ["worklab_kb_list", "GET", "/api/kb", ["tag", "project_id", "category", "subcategory", "pinned", "sort"]],
   ["worklab_kb_read", "GET", "/api/kb/:slug"],
   ["worklab_kb_create", "POST", "/api/kb", [], "input"],
   ["worklab_kb_update", "PATCH", "/api/kb/:slug", [], "patch"],

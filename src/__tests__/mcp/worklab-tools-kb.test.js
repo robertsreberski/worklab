@@ -2,6 +2,7 @@ import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { kbCreate } from "../../core/kb.js";
 import { createToolHandlers, toolDefinitions } from "../../mcp/agent/tools/index.js";
 
 describe("worklab-tools KB handlers", () => {
@@ -260,6 +261,30 @@ describe("worklab-tools KB handlers", () => {
     const r = await h.kb_list({ pinned: true });
     expect(r.entries.length).toBe(1);
     expect(r.entries[0].slug).toBe("pinned-one");
+  });
+
+  it("kb_list accepts sort modes", async () => {
+    const c = ctx();
+    const h = createToolHandlers(c);
+    kbCreate({
+      dataDir: c.dataDir,
+      slug: "zebra",
+      title: "Zebra",
+      body: "z",
+      author: "alice",
+      now: new Date("2026-05-02T00:00:00Z"),
+    });
+    kbCreate({
+      dataDir: c.dataDir,
+      slug: "alpha",
+      title: "Alpha",
+      body: "a",
+      author: "alice",
+      now: new Date("2026-05-01T00:00:00Z"),
+    });
+
+    const r = await h.kb_list({ sort: "title_asc" });
+    expect(r.entries.map((entry) => entry.slug)).toEqual(["alpha", "zebra"]);
   });
 
   it("kb_list with no entries returns empty array", async () => {
