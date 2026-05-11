@@ -1,8 +1,16 @@
 import { watch } from "chokidar";
 import { join } from "node:path";
-import { getEmbeddingModel, indexAllSources, indexPath } from "../core/index.js";
+import { getEmbeddingModel, getIndexStatus, indexAllSources, indexPath } from "../core/index.js";
 
 const DEBOUNCE_MS = 500;
+const DEFAULT_STARTUP_SCAN_DELAY_MS = 60_000;
+
+export function searchStartupScanDelayMs({ indexed = 0, env = process.env } = {}) {
+  const value = Number(env.WORKLAB_SEARCH_STARTUP_SCAN_DELAY_MS);
+  if (Number.isFinite(value) && value >= 0) return value;
+  if (Number(indexed || 0) > 0) return null;
+  return DEFAULT_STARTUP_SCAN_DELAY_MS;
+}
 
 export function startSearchIndexer({ db, dataDir, broker, logger, events } = {}) {
   const timers = new Map();
@@ -50,10 +58,16 @@ export function startSearchIndexer({ db, dataDir, broker, logger, events } = {})
     return promise;
   }
 
-  startupScanTimer = setImmediate(() => {
-    startupScanTimer = null;
-    startScan("startup");
-  });
+  const startupScanDelay = searchStartupScanDelayMs({ indexed: getIndexStatus(db).total });
+  if (startupScanDelay != null) {
+    startupScanTimer = setTimeout(() => {
+      startupScanTimer = null;
+      startScan("startup");
+    }, startupScanDelay);
+    startupScanTimer.unref?.();
+  } else {
+    logger?.info?.("search startup scan skipped; existing index will be refreshed by file events");
+  }
 
   function onSettingsUpdated({ keys } = {}) {
     if (!keys?.includes?.("default_embedding_model")) return;
@@ -79,7 +93,7 @@ export function startSearchIndexer({ db, dataDir, broker, logger, events } = {})
   return {
     async shutdown() {
       stopped = true;
-      if (startupScanTimer) clearImmediate(startupScanTimer);
+      if (startupScanTimer) clearTimeout(startupScanTimer);
       startupScanTimer = null;
       events?.off?.("settings:updated", onSettingsUpdated);
       for (const timer of timers.values()) clearTimeout(timer);
