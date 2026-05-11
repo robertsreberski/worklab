@@ -66,6 +66,35 @@ function createEnv({
 
   const rootStyle = createStyle();
   const rootClassList = createClassList();
+  const documentElement = {
+    clientHeight: innerHeight,
+    style: rootStyle,
+    classList: rootClassList,
+    offsetHeightReads: 0,
+  };
+  Object.defineProperty(documentElement, "offsetHeight", {
+    get() {
+      documentElement.offsetHeightReads += 1;
+      return innerHeight;
+    },
+  });
+  const body = {
+    appendChild() {},
+    getBoundingClientRectCalls: 0,
+    getBoundingClientRect() {
+      body.getBoundingClientRectCalls += 1;
+      return {
+        x: 0,
+        y: 0,
+        width: 0,
+        height: innerHeight,
+        top: 0,
+        bottom: innerHeight,
+        left: 0,
+        right: 0,
+      };
+    },
+  };
   const addListener = (type, listener) => {
     if (!listeners.has(type)) listeners.set(type, new Set());
     listeners.get(type).add(listener);
@@ -89,12 +118,8 @@ function createEnv({
     document: {
       activeElement,
       visibilityState: "visible",
-      documentElement: {
-        clientHeight: innerHeight,
-        style: rootStyle,
-        classList: rootClassList,
-      },
-      body: { appendChild() {} },
+      documentElement,
+      body,
       addEventListener(type, listener) {
         addListener(`document:${type}`, listener);
       },
@@ -108,6 +133,19 @@ function createEnv({
     matchMedia(query) {
       if (query === "(display-mode: standalone)") return { matches: standalone };
       return { matches: false };
+    },
+    getComputedStyleCalls: 0,
+    computedReads: 0,
+    getComputedStyle(target) {
+      env.getComputedStyleCalls += 1;
+      const overflowY = target === documentElement ? "visible" : "auto";
+      return {
+        overflowY,
+        getPropertyValue(name) {
+          env.computedReads += 1;
+          return rootStyle.values[name] || "";
+        },
+      };
     },
     addEventListener(type, listener) {
       addListener(type, listener);
@@ -439,6 +477,62 @@ describe("mobile viewport metrics", () => {
     // target on the synthetic event the contains() check returns false → outside.)
     env.emitDocument("touchend");
     expect(blurredElement).toBe(textarea);
+
+    cleanup();
+  });
+
+  it("ticks a periodic viewport-reflow timer while in standalone PWA mode", () => {
+    // iOS 26.2+ standalone PWAs lazy-evaluate 100vh against a stale layout viewport;
+    // a 1Hz forced reflow + style read on the viewport-height chain keeps body sized
+    // to the screen. The empirical fix originally came from ?debug-viewport=1's
+    // setInterval(refresh, 1000); this test guards the productionized version.
+    const env = createEnv({ standalone: true });
+    const cleanup = installMobileViewportMetrics(env);
+
+    // Drain the synchronous initial schedule so we start from a clean tick state.
+    env.flushFrame();
+    const baselineOffsetReads = env.document.documentElement.offsetHeightReads;
+    const baselineRectCalls = env.document.body.getBoundingClientRectCalls;
+    const baselineComputed = env.getComputedStyleCalls;
+    const baselineTimers = env.timers.size;
+    expect(baselineTimers).toBeGreaterThan(0);
+
+    // The most recently enqueued timer at install time is the reflow tick.
+    const lastTimerId = Math.max(...env.timers.keys());
+    const tick = env.timers.get(lastTimerId);
+    env.timers.delete(lastTimerId);
+
+    tick();
+
+    expect(env.document.documentElement.offsetHeightReads).toBeGreaterThan(baselineOffsetReads);
+    expect(env.document.body.getBoundingClientRectCalls).toBeGreaterThan(baselineRectCalls);
+    expect(env.getComputedStyleCalls).toBeGreaterThan(baselineComputed);
+    // Tick re-schedules itself so the reflow keeps firing.
+    expect(env.timers.size).toBe(baselineTimers);
+
+    cleanup();
+    expect(env.timers.size).toBe(0);
+  });
+
+  it("does not start the viewport-reflow tick outside standalone PWA mode", () => {
+    const env = createEnv({ standalone: false });
+    env.flushFrame();
+    const offsetReadsBeforeInstall = env.document.documentElement.offsetHeightReads;
+    const rectCallsBeforeInstall = env.document.body.getBoundingClientRectCalls;
+    const computedBeforeInstall = env.getComputedStyleCalls;
+
+    const cleanup = installMobileViewportMetrics(env);
+    env.flushFrame();
+
+    // Run every pending timer at most once — none of them should be the reflow tick,
+    // which would call body.getBoundingClientRect + getComputedStyle on documentElement.
+    const callbacks = [...env.timers.values()];
+    env.timers.clear();
+    for (const cb of callbacks) cb();
+
+    expect(env.document.documentElement.offsetHeightReads).toBe(offsetReadsBeforeInstall);
+    expect(env.document.body.getBoundingClientRectCalls).toBe(rectCallsBeforeInstall);
+    expect(env.getComputedStyleCalls).toBe(computedBeforeInstall);
 
     cleanup();
   });
