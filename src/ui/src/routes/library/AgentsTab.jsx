@@ -40,7 +40,7 @@ function formatAvgDuration(value) {
 export function AgentsTab({ selectedName = null, scopeTabs = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
-  const [stateFilter, setStateFilter] = useState("all");
+  const [stateFilter, setStateFilter] = useState("enabled");
   const [activityFilter, setActivityFilter] = useState("all");
   const [modelFilter, setModelFilter] = useState("all");
   const [effortFilter, setEffortFilter] = useState("all");
@@ -77,11 +77,11 @@ export function AgentsTab({ selectedName = null, scopeTabs = null }) {
     effort: effortFilter,
   }), [activityFilter, agents, effortFilter, modelFilter, query, stateFilter]);
   const filtered = useMemo(() => flattenResourceGroups(groups), [groups]);
-  const hasFilter = query.trim() || stateFilter !== "all" || activityFilter !== "all" || modelFilter !== "all" || effortFilter !== "all";
+  const hasFilter = query.trim() || stateFilter !== "enabled" || activityFilter !== "all" || modelFilter !== "all" || effortFilter !== "all";
   const stateTabs = useMemo(() => [
-    { value: "all", label: "All", count: agents.length },
     { value: "enabled", label: "Enabled", count: agents.filter((agent) => agent.enabled !== false).length },
     { value: "disabled", label: "Disabled", count: agents.filter((agent) => agent.enabled === false).length },
+    { value: "all", label: "All", count: agents.length },
   ], [agents]);
   const modelOptions = useMemo(() => [
     { value: "all", label: "All models" },
@@ -112,7 +112,7 @@ export function AgentsTab({ selectedName = null, scopeTabs = null }) {
       actionLabel="New agent"
       onAction={() => { navigateHash("#/library/agents/new"); }}
       configTitle="Agents configuration"
-      activeConfigCount={[stateFilter !== "all", activityFilter !== "all", modelFilter !== "all", effortFilter !== "all"].filter(Boolean).length}
+      activeConfigCount={[stateFilter !== "enabled", activityFilter !== "all", modelFilter !== "all", effortFilter !== "all"].filter(Boolean).length}
       scopeTabs={scopeTabs}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter agents by enabled state" class="tabs-pills" />
@@ -124,7 +124,7 @@ export function AgentsTab({ selectedName = null, scopeTabs = null }) {
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No agents match." onClearFilters={() => { setQuery(""); setStateFilter("all"); setActivityFilter("all"); setModelFilter("all"); setEffortFilter("all"); }} />
+      <EmptyStateFiltered body="No agents match." onClearFilters={() => { setQuery(""); setStateFilter("enabled"); setActivityFilter("all"); setModelFilter("all"); setEffortFilter("all"); }} />
     ) : (
       <EmptyState
         title="No agents yet"

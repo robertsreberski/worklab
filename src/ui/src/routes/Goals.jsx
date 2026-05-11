@@ -16,6 +16,7 @@ import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { DetailHead, SectionStack, Toolbar } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
+import { ProjectPicker } from "../components/ProjectPicker.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
@@ -474,16 +475,6 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
 
   const assignment = goalAssignmentState({ draft, projects, teams, isNew });
   const readiness = goalReadiness(draft);
-  const projectOptions = projects.map((project) => ({
-    value: project.id,
-    label: project.name || project.slug || project.id,
-    description: [
-      project.slug,
-      project.team_id ? `team ${project.team_id}` : "unassigned",
-      project.archived ? "archived" : null,
-    ].filter(Boolean).join(" · "),
-    disabled: !!project.archived,
-  }));
 
   return (
     <>
@@ -527,16 +518,16 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
                 </div>
               </FormField>
               <FormField label="Project">
-                <Select
+                <ProjectPicker
                   value={draft.project_id}
                   onChange={(value) => {
                     const nextProject = projects.find((project) => project.id === value || project.slug === value);
                     update({ project_id: value, team_id: nextProject?.team_id ? "" : draft.team_id });
                   }}
-                  options={projectOptions}
+                  projects={projects}
+                  allowClear={false}
                   placeholder="Choose project"
                   disabled={!isNew}
-                  searchable
                 />
               </FormField>
             </FormGrid>

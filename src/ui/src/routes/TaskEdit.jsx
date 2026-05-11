@@ -19,6 +19,7 @@ import { Chip } from "../components/primitives/Chip.jsx";
 import { StageToken } from "../components/primitives/StageToken.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
 import { AgentPicker } from "../components/AgentPicker.jsx";
+import { ProjectPicker } from "../components/ProjectPicker.jsx";
 import { TeamPicker } from "../components/TeamPicker.jsx";
 import { FormField } from "../components/FormField.jsx";
 import { FormSection } from "../components/FormSection.jsx";
@@ -277,20 +278,6 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
       }));
   }, [draft.blocked_by_ids, id, loadedTask?.id, tasks]);
 
-  const projectOptions = useMemo(() => [
-    { value: "", label: "No project" },
-    ...projects.map((project) => ({
-      value: project.id,
-      label: project.name,
-      description: [
-        project.slug,
-        project.archived ? "archived" : null,
-        project.workdir ? "custom workdir" : null,
-        project.worktree_mode && project.worktree_mode !== "off" ? `worktrees ${project.worktree_mode}` : null,
-      ].filter(Boolean).join(" · "),
-    })),
-  ], [projects]);
-
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === draft.project_id) || null,
     [projects, draft.project_id],
@@ -314,13 +301,12 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
   function renderProjectField({ showPreview = false } = {}) {
     return (
       <FormField label="Project" hint={mode === "create" ? "Adds shared context and workdir to runs." : "Adds shared context and optional workdir to runs."}>
-        <Select
+        <ProjectPicker
           value={draft.project_id || ""}
           onChange={(value) => update({ project_id: value || null })}
-          options={projectOptions}
+          projects={projects}
           placeholder="No project"
           ariaLabel="Project"
-          searchable
         />
         {showPreview && selectedProject && (
           <div class="task-edit-project-preview">
