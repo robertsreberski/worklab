@@ -23,6 +23,14 @@ import { Toolbar } from "./layout/index.js";
 const HISTORY_PAGE_SIZE = 5;
 const ASSISTANT_KEYBOARD_LIFT_DELAYS = [0, 80, 160, 360, 720];
 
+function isMobileKeyboardLayout(win = globalThis) {
+  return (
+    win?.matchMedia?.("(max-width: 860px)")?.matches === true ||
+    win?.matchMedia?.("(pointer: coarse)")?.matches === true ||
+    Number(win?.navigator?.maxTouchPoints || 0) > 0
+  );
+}
+
 function messageKey(message) {
   return message?.id || `${message?.role}-${message?.created_at}`;
 }
@@ -167,6 +175,7 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       dock?.classList?.remove?.("assistant-composer-focused");
       if (dock?.dataset) {
         delete dock.dataset.assistantKeyboardMode;
+        delete dock.dataset.assistantKeyboardRescue;
       }
     };
 
@@ -212,7 +221,9 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       }
 
       const dockStyles = win.getComputedStyle?.(dock);
+      const rootStyles = win.getComputedStyle?.(doc.documentElement);
       const currentLift = readCssPxValue(dockStyles?.getPropertyValue(ASSISTANT_KEYBOARD_LIFT_VAR));
+      const safeAreaBottom = readCssPxValue(rootStyles?.getPropertyValue("--worklab-safe-area-bottom"));
       const dockRect = dock.getBoundingClientRect?.();
       const composerRect = composer.getBoundingClientRect?.();
       const textareaRect = textarea?.getBoundingClientRect?.();
@@ -223,12 +234,16 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
         textareaBottom: textareaRect?.bottom,
         currentLift,
         composerFocused,
+        mobileLayout: isMobileKeyboardLayout(win),
+        textareaHeight: textareaRect?.height,
+        safeAreaBottom,
       });
       const lift = liftState.lift;
 
       dock.classList.add("assistant-composer-focused");
       if (dock.dataset) {
         dock.dataset.assistantKeyboardMode = liftState.mode;
+        dock.dataset.assistantKeyboardRescue = String(Math.round(liftState.rescueLift || 0));
       }
       if (lift > 0) {
         dock.style.setProperty(ASSISTANT_KEYBOARD_LIFT_VAR, cssPx(lift));
@@ -275,6 +290,7 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     win.addEventListener?.("resize", scheduleIfFocused, { passive: true });
     win.addEventListener?.("orientationchange", scheduleIfFocused, { passive: true });
     win.visualViewport?.addEventListener?.("resize", scheduleIfFocused, { passive: true });
+    win.visualViewport?.addEventListener?.("scroll", scheduleIfFocused, { passive: true });
 
     return () => {
       if (frameRef.current && cancelFrame) cancelFrame(frameRef.current);
@@ -286,6 +302,7 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       win.removeEventListener?.("resize", scheduleIfFocused);
       win.removeEventListener?.("orientationchange", scheduleIfFocused);
       win.visualViewport?.removeEventListener?.("resize", scheduleIfFocused);
+      win.visualViewport?.removeEventListener?.("scroll", scheduleIfFocused);
       clearLift();
     };
   }, [open, dockRef, textareaRef, scrollRef]);
