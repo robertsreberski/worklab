@@ -163,6 +163,7 @@
   --vv-offset: 0px;
   --worklab-keyboard-height: 0px;
   --assistant-keyboard-lift: 0px;
+  --assistant-keyboard-fallback-lift: 0px;
   --worklab-safe-area-top: env(safe-area-inset-top, 0px);
   --worklab-safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --worklab-safe-area-left: env(safe-area-inset-left, 0px);

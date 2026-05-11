@@ -1,8 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
 import {
+  ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR,
   ASSISTANT_KEYBOARD_LIFT_VAR,
-  computeAssistantKeyboardLift,
+  computeAssistantKeyboardLiftState,
   cssPx,
   readCssPxValue,
   visualViewportBottom,
@@ -164,7 +165,11 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     const clearLift = () => {
       const dock = dockRef.current;
       dock?.style?.removeProperty?.(ASSISTANT_KEYBOARD_LIFT_VAR);
+      dock?.style?.removeProperty?.(ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR);
       dock?.classList?.remove?.("assistant-keyboard-lifted");
+      dock?.classList?.remove?.("assistant-keyboard-fallback");
+      dock?.classList?.remove?.("assistant-composer-focused");
+      if (dock?.dataset) delete dock.dataset.assistantKeyboardMode;
     };
 
     if (!open || typeof window === "undefined" || typeof document === "undefined") {
@@ -197,12 +202,19 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
     const eventInComposer = (event) => (
       typeof event?.target?.closest === "function" && !!event.target.closest(".assistant-composer")
     );
+    const isMobileKeyboardLayout = () => (
+      win.matchMedia?.("(max-width: 860px)")?.matches === true
+      || win.matchMedia?.("(pointer: coarse)")?.matches === true
+      || Number(win.navigator?.maxTouchPoints || 0) > 0
+    );
     const measure = () => {
       frameRef.current = 0;
       const dock = dockRef.current;
       const composer = dock?.querySelector?.(".assistant-composer");
+      const header = dock?.querySelector?.(".assistant-dock-head");
       const textarea = textareaRef.current || composer?.querySelector?.(".textarea");
-      if (!dock || !composer || !focusedInComposer()) {
+      const composerFocused = focusedInComposer();
+      if (!dock || !composer || !composerFocused) {
         clearLift();
         return;
       }
@@ -211,20 +223,37 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       const dockStyles = win.getComputedStyle?.(dock);
       const keyboardHeight = readCssPxValue(rootStyles?.getPropertyValue(KEYBOARD_HEIGHT_VAR));
       const currentLift = readCssPxValue(dockStyles?.getPropertyValue(ASSISTANT_KEYBOARD_LIFT_VAR));
-      const lift = computeAssistantKeyboardLift({
+      const dockRect = dock.getBoundingClientRect?.();
+      const composerRect = composer.getBoundingClientRect?.();
+      const headerRect = header?.getBoundingClientRect?.();
+      const textareaRect = textarea?.getBoundingClientRect?.();
+      const liftState = computeAssistantKeyboardLiftState({
         keyboardHeight,
         visibleBottom: visualViewportBottom(win),
-        composerBottom: composer.getBoundingClientRect?.().bottom,
-        textareaBottom: textarea?.getBoundingClientRect?.().bottom,
+        dockBottom: dockRect?.bottom,
+        dockHeight: dockRect?.height,
+        composerTop: composerRect?.top,
+        composerBottom: composerRect?.bottom,
+        textareaBottom: textareaRect?.bottom,
+        headerBottom: headerRect?.bottom,
         currentLift,
+        composerFocused,
+        mobileLayout: isMobileKeyboardLayout(),
       });
+      const lift = liftState.lift;
 
+      dock.classList.add("assistant-composer-focused");
+      dock.style.setProperty(ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR, cssPx(liftState.fallbackLift));
+      if (dock.dataset) dock.dataset.assistantKeyboardMode = liftState.mode;
       if (lift > 0) {
         dock.style.setProperty(ASSISTANT_KEYBOARD_LIFT_VAR, cssPx(lift));
         dock.classList.add("assistant-keyboard-lifted");
+        dock.classList.toggle("assistant-keyboard-fallback", liftState.mode === "fallback");
         scrollThreadToBottom();
       } else {
-        clearLift();
+        dock.style.removeProperty?.(ASSISTANT_KEYBOARD_LIFT_VAR);
+        dock.classList.remove("assistant-keyboard-lifted");
+        dock.classList.remove("assistant-keyboard-fallback");
       }
     };
     const scheduleFrame = () => {
