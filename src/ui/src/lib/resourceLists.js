@@ -27,6 +27,10 @@ function compareByLabel(left, right, labelOf) {
   return text(labelOf(left)).localeCompare(text(labelOf(right)), undefined, { sensitivity: "base" });
 }
 
+function compareText(left, right) {
+  return text(left).localeCompare(text(right), undefined, { sensitivity: "base" });
+}
+
 function groupFrom(items, definitions, classifier) {
   const buckets = new Map(definitions.map((definition) => [definition.key, { ...definition, items: [] }]));
   for (const item of items) {
@@ -156,6 +160,60 @@ function knowledgeProjectLabel(entry) {
   return entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
 }
 
+const KNOWLEDGE_SORT_MODES = new Set(["updated_desc", "pinned_first", "title_asc", "project_category"]);
+
+function knowledgeSortMode(sort) {
+  return KNOWLEDGE_SORT_MODES.has(sort) ? sort : "updated_desc";
+}
+
+function knowledgeEntryTimestamp(entry) {
+  return timestamp(entry?.updated_at) || timestamp(entry?.created_at);
+}
+
+function compareKnowledgeTitle(left, right) {
+  const title = compareText(left?.title || left?.slug, right?.title || right?.slug);
+  if (title !== 0) return title;
+  return compareText(left?.slug, right?.slug);
+}
+
+function compareKnowledgeRecent(left, right) {
+  const updated = knowledgeEntryTimestamp(right) - knowledgeEntryTimestamp(left);
+  if (updated !== 0) return updated;
+  return compareKnowledgeTitle(left, right);
+}
+
+function compareKnowledgePinned(left, right) {
+  if (!!left?.pinned !== !!right?.pinned) return left?.pinned ? -1 : 1;
+  return compareKnowledgeRecent(left, right);
+}
+
+function sortKnowledgeItems(items, sort) {
+  const mode = knowledgeSortMode(sort);
+  if (mode === "pinned_first") return [...items].sort(compareKnowledgePinned);
+  if (mode === "title_asc") return [...items].sort(compareKnowledgeTitle);
+  return [...items].sort(compareKnowledgeRecent);
+}
+
+function flatKnowledgeGroup(items, sort) {
+  if (!items.length) return [];
+  const mode = knowledgeSortMode(sort);
+  const labels = {
+    updated_desc: "Recent updates",
+    pinned_first: "Pinned first",
+    title_asc: "Title A-Z",
+  };
+  const keys = {
+    updated_desc: "recent",
+    pinned_first: "pinned-first",
+    title_asc: "title",
+  };
+  return [{
+    key: keys[mode] || "recent",
+    label: labels[mode] || "Recent updates",
+    items: sortKnowledgeItems(items, mode),
+  }];
+}
+
 export function buildKnowledgeResourceGroups(entries = [], {
   query = "",
   projectId = "all",
@@ -164,7 +222,10 @@ export function buildKnowledgeResourceGroups(entries = [], {
   tag = "all",
   pinned = "all",
   surface = "canonical",
+  sort = "updated_desc",
 } = {}) {
+  const mode = knowledgeSortMode(sort);
+  const items = [];
   const groups = new Map();
   for (const entry of entries || []) {
     if (projectId !== "all" && (entry.project_id || "") !== projectId) continue;
@@ -184,6 +245,8 @@ export function buildKnowledgeResourceGroups(entries = [], {
       entry.subcategory,
       ...(entry.tags || []),
     ], query)) continue;
+    items.push(entry);
+    if (mode !== "project_category") continue;
 
     const projectLabel = knowledgeProjectLabel(entry);
     const categoryLabel = labelize(entry.category);
@@ -193,14 +256,12 @@ export function buildKnowledgeResourceGroups(entries = [], {
     }
     groups.get(key).items.push(entry);
   }
+  if (mode !== "project_category") return flatKnowledgeGroup(items, mode);
 
   return [...groups.values()]
     .map((group) => ({
       ...group,
-      items: group.items.sort((left, right) => {
-        if (!!left.pinned !== !!right.pinned) return left.pinned ? -1 : 1;
-        return timestamp(right.updated_at) - timestamp(left.updated_at);
-      }),
+      items: sortKnowledgeItems(group.items, "pinned_first"),
     }))
     .sort((left, right) => {
       const leftGlobal = left.projectLabel === "Global";
