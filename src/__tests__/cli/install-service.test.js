@@ -40,8 +40,8 @@ describe("launchd service controls", () => {
     });
     expect(mocks.execFileSync.mock.calls).toEqual([
       ["launchctl", ["bootout", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "ignore" }],
-      ["launchctl", ["bootstrap", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "inherit" }],
       ["launchctl", ["enable", "gui/501/ai.worklab"], { stdio: "ignore" }],
+      ["launchctl", ["bootstrap", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "inherit" }],
       ["launchctl", ["kickstart", "-k", "gui/501/ai.worklab"], { stdio: "inherit" }],
     ]);
   });
@@ -51,8 +51,8 @@ describe("launchd service controls", () => {
 
     expect(mocks.execFileSync.mock.calls).toEqual([
       ["launchctl", ["bootout", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "ignore" }],
-      ["launchctl", ["bootstrap", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "inherit" }],
       ["launchctl", ["enable", "gui/501/ai.worklab"], { stdio: "ignore" }],
+      ["launchctl", ["bootstrap", "gui/501", "/Users/tester/Library/LaunchAgents/ai.worklab.plist"], { stdio: "inherit" }],
       ["launchctl", ["kickstart", "-k", "gui/501/ai.worklab"], { stdio: "inherit" }],
     ]);
   });
