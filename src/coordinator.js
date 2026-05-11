@@ -26,6 +26,7 @@ import { createWorklabPushNotificationService } from "./integrations/push/servic
 
 const DEFAULT_EVENT_LOOP_WARN_MS = 150;
 const DEFAULT_EVENT_LOOP_SAMPLE_MS = 15_000;
+const DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS = 5000;
 
 function eventLoopWarnThresholdMs() {
   const value = Number(process.env.WORKLAB_EVENT_LOOP_WARN_MS || DEFAULT_EVENT_LOOP_WARN_MS);
@@ -58,6 +59,76 @@ function startEventLoopMonitor(logger) {
   };
 }
 
+function optionalServiceStatus(service, reason) {
+  const base = service?.status?.() || {};
+  return {
+    ...base,
+    enabled: base.enabled !== false,
+    connected: false,
+    reason,
+  };
+}
+
+export function startDeferredService({
+  name,
+  service,
+  startTimeoutMs = DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS,
+  logger,
+} = {}) {
+  let override = optionalServiceStatus(service, "starting");
+  let timer = null;
+  let settled = false;
+
+  const clear = () => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+  };
+
+  let startPromise;
+  try {
+    startPromise = service?.start?.({ timeoutMs: startTimeoutMs });
+  } catch (err) {
+    startPromise = Promise.reject(err);
+  }
+
+  Promise.resolve(startPromise)
+    .then(() => {
+      if (settled) return;
+      settled = true;
+      clear();
+      override = null;
+    })
+    .catch((err) => {
+      if (settled) return;
+      settled = true;
+      clear();
+      override = optionalServiceStatus(service, "start_failed");
+      logger?.warn?.({ err, service: name }, "optional service failed to start");
+    });
+
+  if (Number.isFinite(Number(startTimeoutMs)) && Number(startTimeoutMs) > 0) {
+    timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      override = optionalServiceStatus(service, "start_timeout");
+      logger?.warn?.({ service: name, timeout_ms: Number(startTimeoutMs) }, "optional service start timed out");
+      service?.stop?.("start_timeout");
+    }, Number(startTimeoutMs));
+    timer.unref?.();
+  }
+
+  const wrapped = service ? Object.assign(Object.create(Object.getPrototypeOf(service)), service) : {};
+  wrapped.status = (...args) => override || service?.status?.(...args);
+  wrapped.shutdown = async (...args) => {
+    clear();
+    settled = true;
+    if (typeof service?.shutdown === "function") return service.shutdown(...args);
+    if (typeof service?.stop === "function") return service.stop("shutdown");
+    return undefined;
+  };
+  return wrapped;
+}
+
 export function createWatcherProxy(watcherHolder) {
   return {
     handleRunRequested: (...args) => watcherHolder.current.handleRunRequested(...args),
@@ -73,7 +144,21 @@ export function createWatcherProxy(watcherHolder) {
   };
 }
 
-export async function startCoordinator({ config = loadConfig() } = {}) {
+export async function startCoordinator({
+  config = loadConfig(),
+  services = {},
+  optionalStartTimeoutMs = DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS,
+} = {}) {
+  const deps = {
+    createTaskWatcher,
+    createConsolidationManager,
+    createAutomationManager,
+    createTeamLeadCron,
+    startSearchIndexer,
+    createWorklabSlackService,
+    createWorklabPushNotificationService,
+    ...services,
+  };
   mkdirSync(config.dataDir, { recursive: true });
   mkdirSync(config.workspace, { recursive: true });
 
@@ -130,6 +215,12 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     status: (...args) => slackHolder.current?.status?.(...args),
   };
   const events = new EventEmitter();
+  const pushNotifications = deps.createWorklabPushNotificationService({
+    db,
+    dataDir: config.dataDir,
+    events,
+    logger,
+  });
   const { app, broker } = createServer({
     db,
     logger,
@@ -141,9 +232,10 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     events,
     config,
     slack: slackProxy,
+    notifications: pushNotifications,
   });
 
-  watcherHolder.current = createTaskWatcher({
+  watcherHolder.current = deps.createTaskWatcher({
     db, broker, spawn: spawnWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
@@ -151,36 +243,28 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     logInlineLimit: config.logInlineLimit,
     events,
   });
-  consolidationHolder.current = createConsolidationManager({
+  consolidationHolder.current = deps.createConsolidationManager({
     db, broker, spawn: spawnWorker, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, config,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
   });
-  consolidationHolder.current.start();
-  automationManagerHolder.current = createAutomationManager({
+  automationManagerHolder.current = deps.createAutomationManager({
     db, broker, spawn: spawnWorker, watcher: watcherHolder.current, workerBinary, logger,
     repoRoot: config.repoRoot, dataDir: config.dataDir, workspace: config.workspace,
     runTimeoutMs: config.runTimeoutMs,
     runIdleWarningMs: config.runIdleWarningMs,
     logInlineLimit: config.logInlineLimit,
   });
-  automationManagerHolder.current.start();
-  teamLeadCronHolder.current = createTeamLeadCron({
+  teamLeadCronHolder.current = deps.createTeamLeadCron({
     db, watcher: watcherHolder.current, logger,
   });
-  teamLeadCronHolder.current.start();
-  const searchIndexer = startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
-  const eventLoopMonitor = startEventLoopMonitor(logger);
-  const pushNotifications = createWorklabPushNotificationService({
-    db,
-    dataDir: config.dataDir,
-    events,
-    logger,
-  }).start();
-  slackHolder.current = createWorklabSlackService({ db, config, logger, events });
-  await slackHolder.current.start();
+  let searchIndexer = { shutdown: async () => {}, reindexAll: async () => ({ skipped: true, reason: "not_started" }) };
+  let eventLoopMonitor = { shutdown() {} };
+  let optionalServicesStarted = false;
+  let optionalServicesHandle = null;
+  let shuttingDown = false;
 
   const uiDist = join(config.repoRoot, "src/ui/dist");
   if (existsSync(uiDist)) {
@@ -202,7 +286,34 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
 
   writeFileSync(pidFile, String(process.pid));
 
-  let shuttingDown = false;
+  function startOptionalServices() {
+    if (optionalServicesStarted || shuttingDown) return;
+    optionalServicesStarted = true;
+    try { consolidationHolder.current.start(); } catch (err) { logger.warn({ err }, "consolidation start error"); }
+    try { automationManagerHolder.current.start(); } catch (err) { logger.warn({ err }, "automation manager start error"); }
+    try { teamLeadCronHolder.current.start(); } catch (err) { logger.warn({ err }, "team-lead cron start error"); }
+    try { eventLoopMonitor = startEventLoopMonitor(logger); } catch (err) { logger.warn({ err }, "event loop monitor start error"); }
+    try { pushNotifications.start(); } catch (err) { logger.warn({ err }, "push notifications start error"); }
+    try {
+      slackHolder.current = startDeferredService({
+        name: "slack",
+        service: deps.createWorklabSlackService({ db, config, logger, events }),
+        startTimeoutMs: optionalStartTimeoutMs,
+        logger,
+      });
+    } catch (err) {
+      logger.warn({ err }, "slack service create error");
+    }
+    try {
+      searchIndexer = deps.startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
+    } catch (err) {
+      logger.warn({ err }, "search indexer start error");
+    }
+  }
+
+  optionalServicesHandle = setTimeout(startOptionalServices, 250);
+  optionalServicesHandle.unref?.();
+
   const closeHttp = promisify(http.close.bind(http));
 
   // R5: workers may be mid-tool-call when SIGTERM lands. Give them up to
@@ -217,12 +328,15 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     return 60_000;
   })();
 
-  async function shutdown() {
+  async function shutdown({ exit = true } = {}) {
     if (shuttingDown) {
       logger.warn("shutdown already in progress; forcing exit");
-      process.exit(1);
+      if (exit) process.exit(1);
+      return { alreadyShuttingDown: true };
     }
     shuttingDown = true;
+    process.off("SIGTERM", onSigterm);
+    process.off("SIGINT", onSigint);
     logger.info("shutdown");
 
     // The watchdog gives the in-process drain a hard ceiling. We give it a
@@ -230,11 +344,16 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     // time to settle (handle cleanup, DB UPDATE, transcript snapshot) before
     // the watchdog forces the process down.
     const watchdogMs = Math.min(600_000, drainTimeoutMs + 10_000);
-    const watchdog = setTimeout(() => {
-      logger.warn({ drainTimeoutMs, watchdogMs }, "shutdown watchdog fired; forcing exit");
-      process.exit(1);
-    }, watchdogMs);
-    watchdog.unref();
+    const watchdog = exit
+      ? setTimeout(() => {
+        logger.warn({ drainTimeoutMs, watchdogMs }, "shutdown watchdog fired; forcing exit");
+        process.exit(1);
+      }, watchdogMs)
+      : null;
+    watchdog?.unref?.();
+
+    if (optionalServicesHandle) clearTimeout(optionalServicesHandle);
+    optionalServicesHandle = null;
 
     try { await watcherHolder.current.shutdown({ drainTimeoutMs }); } catch (err) { logger.warn({ err }, "watcher shutdown error"); }
     try { await consolidationHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "consolidation shutdown error"); }
@@ -243,7 +362,7 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { await searchIndexer.shutdown(); } catch (err) { logger.warn({ err }, "search indexer shutdown error"); }
     try { eventLoopMonitor.shutdown(); } catch (err) { logger.warn({ err }, "event loop monitor shutdown error"); }
     try { pushNotifications.stop(); } catch (err) { logger.warn({ err }, "push notifications shutdown error"); }
-    try { await slackHolder.current.shutdown(); } catch (err) { logger.warn({ err }, "slack shutdown error"); }
+    try { await slackHolder.current?.shutdown?.(); } catch (err) { logger.warn({ err }, "slack shutdown error"); }
 
     try { broker.close(); } catch (err) { logger.warn({ err }, "broker close error"); }
     try { http.closeIdleConnections(); } catch {}
@@ -253,15 +372,20 @@ export async function startCoordinator({ config = loadConfig() } = {}) {
     try { closeDb(); } catch (err) { logger.warn({ err }, "db close error"); }
     try { unlinkSync(pidFile); } catch {}
 
-    clearTimeout(watchdog);
-    process.exit(0);
+    if (watchdog) clearTimeout(watchdog);
+    if (exit) process.exit(0);
+    return { ok: true };
   }
 
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+  const onSigterm = () => shutdown({ exit: true });
+  const onSigint = () => shutdown({ exit: true });
+  process.on("SIGTERM", onSigterm);
+  process.on("SIGINT", onSigint);
 
   return {
     http,
+    port: http.address()?.port || config.port,
+    shutdown: () => shutdown({ exit: false }),
     db,
     config,
     watcher: watcherHolder.current,

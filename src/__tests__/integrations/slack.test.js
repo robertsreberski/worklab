@@ -163,6 +163,25 @@ describe("slack integration", () => {
     }));
   });
 
+  it("reports start_timeout when Socket Mode startup never resolves", async () => {
+    const { service, app } = setupService();
+    app.start.mockImplementationOnce(() => new Promise(() => {}));
+
+    const status = await service.start({ timeoutMs: 10 });
+
+    expect(status).toMatchObject({
+      enabled: true,
+      connected: false,
+      reason: "start_timeout",
+    });
+    expect(service.status()).toMatchObject({
+      enabled: true,
+      connected: false,
+      reason: "start_timeout",
+    });
+    expect(app.stop).toHaveBeenCalledTimes(1);
+  });
+
   it("sends task completion DMs once and ignores intermediate successful runs", async () => {
     const { db, service, app } = setupService();
     await service.start();

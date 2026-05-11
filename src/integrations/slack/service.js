@@ -145,11 +145,57 @@ function slackMcpServers(config) {
   };
 }
 
-export function createSlackApp({ config }) {
+export function createThrottledSlackLogger(logger, { throttleMs = 30_000, now = Date.now } = {}) {
+  if (!logger) return undefined;
+  const lastByKey = new Map();
+  const write = (level, args) => {
+    const message = args.map((arg) => {
+      if (typeof arg === "string") return arg;
+      if (arg instanceof Error) return arg.message;
+      try { return JSON.stringify(arg); } catch { return String(arg); }
+    }).filter(Boolean).join(" ");
+    const key = `${level}:${message}`;
+    const time = now();
+    if (level === "warn" && time - (lastByKey.get(key) || 0) < throttleMs) return;
+    lastByKey.set(key, time);
+    const method = level === "error" ? "error" : level === "warn" ? "warn" : "debug";
+    logger?.[method]?.({ source: "slack-bolt" }, message || "slack log");
+  };
+  return {
+    debug: (...args) => write("debug", args),
+    info: (...args) => write("info", args),
+    warn: (...args) => write("warn", args),
+    error: (...args) => write("error", args),
+    setLevel: () => {},
+    getLevel: () => "INFO",
+    setName: () => {},
+  };
+}
+
+export function createSlackApp({ config, logger }) {
   return new App({
     token: config.slackBotToken,
     appToken: config.slackAppToken,
     socketMode: true,
+    logger: createThrottledSlackLogger(logger),
+  });
+}
+
+function timeoutError(reason) {
+  const err = new Error(reason);
+  err.code = reason;
+  return err;
+}
+
+function withTimeout(promise, timeoutMs, reason) {
+  if (!Number.isFinite(Number(timeoutMs)) || Number(timeoutMs) <= 0) return promise;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(timeoutError(reason)), Number(timeoutMs));
+    timer.unref?.();
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
   });
 }
 
@@ -205,7 +251,7 @@ export class WorklabSlackService {
     return !!(this.config.slackBotToken && this.config.slackAppToken);
   }
 
-  async start() {
+  async start({ timeoutMs = 5000 } = {}) {
     const settings = this.currentSettings();
     this.state.enabled = !!settings.slack_enabled;
     if (!settings.slack_enabled) {
@@ -219,7 +265,7 @@ export class WorklabSlackService {
     if (this.running) return this.status();
 
     try {
-      this.app = this.appFactory({ config: this.config });
+      this.app = this.appFactory({ config: this.config, logger: this.logger });
       this.slackClient = this.app.client;
       this.app.event("message", async ({ event, body }) => {
         await this.handleSlackMessage({ event, body });
@@ -230,17 +276,18 @@ export class WorklabSlackService {
       } catch (err) {
         this.logger?.warn?.({ err }, "slack auth.test failed");
       }
-      await this.app.start();
+      await withTimeout(this.app.start(), timeoutMs, "start_timeout");
     } catch (err) {
+      const timedOut = err?.code === "start_timeout";
       this.state = {
         ...this.state,
         enabled: true,
         connected: false,
-        reason: "start_failed",
+        reason: timedOut ? "start_timeout" : "start_failed",
         lastError: err.message || String(err),
       };
-      this.logger?.warn?.({ err }, "slack integration failed to start");
-      await this.stop("start_failed");
+      this.logger?.warn?.({ err }, timedOut ? "slack integration start timed out" : "slack integration failed to start");
+      await this.stop(timedOut ? "start_timeout" : "start_failed");
       return this.status();
     }
     this.running = true;
