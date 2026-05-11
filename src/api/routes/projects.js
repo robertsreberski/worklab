@@ -63,7 +63,12 @@ function safeJson(value, fallback) {
   }
 }
 
-function projectTaskSummary(row) {
+function projectTaskSummary(row, { projectTeamId = null, goalRootTaskId = null } = {}) {
+  const rootTaskId = row.root_task_id || row.id;
+  const effectiveTeamId = row.team_id || projectTeamId || null;
+  const goalRelation = goalRootTaskId && (rootTaskId === goalRootTaskId || row.parent_task_id === goalRootTaskId)
+    ? "goal_work"
+    : (projectTeamId && effectiveTeamId === projectTeamId && !row.owner_agent ? "team_queue" : null);
   return {
     id: row.id,
     task_key: row.task_key || null,
@@ -74,7 +79,10 @@ function projectTaskSummary(row) {
     owner_agent: row.owner_agent || null,
     planner_agent: row.planner_agent || null,
     reviewer_agent: row.reviewer_agent || null,
+    root_task_id: rootTaskId,
     parent_task_id: row.parent_task_id || null,
+    team_id: row.team_id || null,
+    goal_relation: goalRelation,
     pending_actions: safeJson(row.pending_actions_json, []),
     pending_questions: safeJson(row.pending_questions_json, []),
     blocking_issues: safeJson(row.blocking_issues_json, []),
@@ -255,10 +263,13 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
     try {
       const row = projectOr404(db, req.params.id);
       const project = projectFromRow(row);
-      const tasks = listProjectTasksWithRunSnapshots(db, row.id).map(projectTaskSummary);
       const teamGoal = project.team_id
         ? getTeamProjectGoal(db, { teamId: project.team_id, projectId: project.id, now: Date.now() })
         : null;
+      const tasks = listProjectTasksWithRunSnapshots(db, row.id).map((taskRow) => projectTaskSummary(taskRow, {
+        projectTeamId: project.team_id || null,
+        goalRootTaskId: teamGoal?.root_task_id || null,
+      }));
       const detailedProject = {
         ...project,
         stats: projectStats(db, row.id),

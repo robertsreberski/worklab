@@ -379,7 +379,7 @@ export function listProjectTasksWithRunSnapshots(db, projectId) {
   return db.prepare(`
     SELECT
       t.id, t.task_key, t.title, t.stage, t.stage_reason, t.run_policy,
-      t.owner_agent, t.planner_agent, t.reviewer_agent, t.parent_task_id,
+      t.owner_agent, t.planner_agent, t.reviewer_agent, t.root_task_id, t.parent_task_id, t.team_id,
       t.pending_actions_json, t.pending_questions_json, t.blocking_issues_json, t.failure_count,
       t.rejection_streak, t.last_failure_kind, t.error_text, t.updated_at,
       (

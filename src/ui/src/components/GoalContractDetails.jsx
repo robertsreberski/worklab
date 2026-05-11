@@ -13,7 +13,7 @@ export function GoalContractDetails({ goal }) {
         <strong>{contract.objective || "(not set)"}</strong>
       </div>
       <div>
-        <span>Stop when</span>
+        <span>Done when</span>
         <strong>{contract.stopping_condition || "(not set)"}</strong>
       </div>
       <div>

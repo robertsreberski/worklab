@@ -145,6 +145,50 @@ describe("/api/goals", () => {
     expect(resumed.body.goal.contract.paused_at).toBe(null);
   });
 
+  it("returns goal readiness and normalized reference links", async () => {
+    const { agent, db } = makeTestServer();
+    seedLead(db);
+    const { body: { team } } = await agent.post("/api/teams").send({
+      name: "Reference Team",
+      goal: "Keep references visible",
+      lead_agent: "lead",
+    }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Reference Project",
+      team_id: team.id,
+    }).expect(201);
+    const { body: { goals } } = await agent.get("/api/goals").expect(200);
+    const goalId = goals[0].goal_id;
+
+    const notReady = await agent.patch(`/api/goals/${goalId}`).send({
+      objective: "Ship better goal references",
+      stopping_condition: "",
+      validation_loop: "",
+      links: [
+        { label: "Spec", url: "https://example.com/spec" },
+        { label: "", url: "javascript:alert(1)" },
+        "https://example.com/plain",
+      ],
+    }).expect(200);
+
+    expect(notReady.body.goal.readiness).toEqual({
+      ready: false,
+      missing: ["stopping_condition", "validation_loop"],
+    });
+    expect(notReady.body.goal.contract.links).toEqual([
+      { label: "Spec", url: "https://example.com/spec" },
+      { label: "https://example.com/plain", url: "https://example.com/plain" },
+    ]);
+
+    const ready = await agent.patch(`/api/goals/${goalId}`).send({
+      stopping_condition: "The goal page shows structured links.",
+      validation_loop: "npx vitest run src/__tests__/api/routes-goals.test.js",
+    }).expect(200);
+
+    expect(ready.body.goal.readiness).toEqual({ ready: true, missing: [] });
+    expect(ready.body.goal.project_id).toBe(project.id);
+  });
+
   it("runs a lead cycle from the goal resource", async () => {
     const spawnLeadCycle = vi.fn(({ teamId, projectId }) => ({ ok: true, runId: `run-${teamId}-${projectId}`, taskId: `root-${teamId}-${projectId}` }));
     const { agent, db } = makeTestServer({ watcher: {

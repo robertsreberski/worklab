@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGoalResourceGroups,
+  goalAssignmentState,
   goalDraftFrom,
+  goalReadiness,
+  goalReferenceLinks,
   goalRouteHash,
   goalStatusLabel,
 } from "../../ui/src/routes/Goals.jsx";
@@ -55,7 +58,68 @@ describe("Goals route helpers", () => {
       objective: "",
       stopping_condition: "",
       validation_loop: "",
+      links_text: "",
       constraints_text: "",
     });
+  });
+
+  it("computes guided readiness from the required goal fields", () => {
+    expect(goalReadiness({
+      objective: "Ship native goals",
+      stopping_condition: "",
+      validation_loop: "npm run build:ui",
+    })).toEqual({
+      ready: false,
+      missing: ["stopping_condition"],
+    });
+    expect(goalReadiness({
+      objective: "Ship native goals",
+      stopping_condition: "The route is usable",
+      validation_loop: "npm run build:ui",
+    })).toEqual({ ready: true, missing: [] });
+  });
+
+  it("locks team selection to the selected project team", () => {
+    const state = goalAssignmentState({
+      draft: { project_id: "project-1", team_id: "" },
+      projects: [
+        { id: "project-1", name: "Project One", slug: "project-one", team_id: "team-a" },
+        { id: "project-2", name: "Project Two", slug: "project-two", team_id: "" },
+      ],
+      teams: [
+        { id: "team-a", name: "Team A" },
+        { id: "team-b", name: "Team B" },
+      ],
+      isNew: true,
+    });
+
+    expect(state.lockedTeam).toMatchObject({ id: "team-a", name: "Team A" });
+    expect(state.effectiveTeamId).toBe("team-a");
+    expect(state.teamLocked).toBe(true);
+    expect(state.teamOptions.map((option) => option.value)).toEqual(["team-a"]);
+  });
+
+  it("builds structured goal reference links", () => {
+    const links = goalReferenceLinks({
+      project: { slug: "journey", name: "Journey" },
+      team_slug: "journey-pwa-build",
+      root_task_id: "root-1",
+      latest_cycle: { id: "run-1", task_id: "root-1" },
+      contract: {
+        links: [
+          { label: "PRD", url: "https://example.com/prd" },
+          { label: "Local route", url: "#/settings" },
+        ],
+      },
+    });
+
+    expect(links.map((link) => [link.kind, link.label, link.href])).toEqual([
+      ["internal", "Project", "#/projects/journey"],
+      ["internal", "Team", "#/library/teams/journey-pwa-build"],
+      ["internal", "Latest lead cycle", "#/tasks/root-1?run=run-1"],
+      ["internal", "Lead-cycle anchor", "#/tasks/root-1"],
+      ["reference", "PRD", "https://example.com/prd"],
+      ["reference", "Local route", "#/settings"],
+    ]);
   });
 });

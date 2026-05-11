@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, useCallback, useRef } from "preact/hooks"
 import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
-import { buildProjectTaskProgress } from "../lib/projectTaskProgress.js";
+import { buildProjectTaskProgress, projectTaskRelationLabel } from "../lib/projectTaskProgress.js";
 import { buildKnowledgePromotionHash, groupProjectKnowledgeEntries, recentProjectTaskOutputs } from "../lib/projectKnowledge.js";
 import { useSSE } from "../lib/useSSE.js";
 import { useThrottledCallback } from "../lib/useThrottledCallback.js";
@@ -203,6 +203,7 @@ function ProjectTaskRow({ task, nested = false }) {
   const reason = task.stage_reason || task.error_text || task.last_run?.summary || "";
   const children = nested ? [] : (Array.isArray(task.child_tasks) ? task.child_tasks : []);
   const childSummary = formatChildTaskSummary(task);
+  const relationLabel = projectTaskRelationLabel(task);
   const row = (
     <a class={`project-task-row${nested ? " is-child" : ""}`} href={`#/tasks/${taskRouteId(task)}`}>
       <span class="project-task-row-key pane-row-mono">{taskDisplayKey(task)}</span>
@@ -210,6 +211,7 @@ function ProjectTaskRow({ task, nested = false }) {
         <span class="project-task-row-title">{task.title}</span>
         <span class="project-task-row-meta">
           <StatusPill status={displayStage} size="sm" />
+          {relationLabel && <span class="project-task-relation-chip">{relationLabel}</span>}
           {nested && <span>Child task</span>}
           {task.owner_agent && <span>{task.owner_agent}</span>}
           {reason && <span class="truncate">{reason}</span>}

@@ -140,6 +140,75 @@ function constraintsFromText(value) {
     .filter(Boolean);
 }
 
+function isAllowedGoalLinkHref(value) {
+  const href = text(value);
+  if (!href) return false;
+  if (/^https?:\/\//i.test(href)) return true;
+  if (href.startsWith("#/")) return true;
+  return href.startsWith("/") && !href.startsWith("//");
+}
+
+function normalizeGoalLinkDraft(value) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const out = [];
+  for (const item of value) {
+    const href = text(typeof item === "string" ? item : item?.url);
+    if (!isAllowedGoalLinkHref(href) || seen.has(href)) continue;
+    seen.add(href);
+    const label = text(typeof item === "string" ? "" : item?.label) || href;
+    out.push({ label, url: href });
+  }
+  return out;
+}
+
+function linksToText(value) {
+  return normalizeGoalLinkDraft(value)
+    .map((link) => (link.label && link.label !== link.url ? `${link.label} | ${link.url}` : link.url))
+    .join("\n");
+}
+
+function linksFromText(value) {
+  const lines = String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return normalizeGoalLinkDraft(lines.map((line) => {
+    const separator = line.includes("|") ? "|" : null;
+    if (!separator) return { label: "", url: line };
+    const [rawLabel, ...rest] = line.split(separator);
+    return { label: rawLabel.trim(), url: rest.join(separator).trim() };
+  }));
+}
+
+export function goalReadiness(value = {}) {
+  const contract = value?.contract || value || {};
+  const missing = [];
+  if (!text(contract.objective)) missing.push("objective");
+  if (!text(contract.stopping_condition)) missing.push("stopping_condition");
+  if (!text(contract.validation_loop)) missing.push("validation_loop");
+  return { ready: missing.length === 0, missing };
+}
+
+export function goalAssignmentState({ draft = {}, projects = [], teams = [], isNew = false } = {}) {
+  const selectedProject = projects.find((project) => project.id === draft.project_id || project.slug === draft.project_id) || null;
+  const lockedTeamId = selectedProject?.team_id || "";
+  const lockedTeam = lockedTeamId
+    ? teams.find((team) => team.id === lockedTeamId || team.slug === lockedTeamId) || { id: lockedTeamId, name: lockedTeamId }
+    : null;
+  const effectiveTeamId = lockedTeamId || draft.team_id || "";
+  const visibleTeams = lockedTeam ? [lockedTeam] : teams;
+  return {
+    selectedProject,
+    lockedTeam,
+    effectiveTeamId,
+    teamLocked: Boolean(isNew && lockedTeamId),
+    teamRequired: Boolean(isNew && !lockedTeamId),
+    teamOptions: visibleTeams.map((team) => ({
+      value: team.id,
+      label: team.name || team.slug || team.id,
+      description: team.goal || team.description || team.slug || (team.id === lockedTeamId ? "Project team" : ""),
+    })),
+  };
+}
+
 export function goalDraftFrom(goal = {}) {
   const contract = goal?.contract || {};
   return {
@@ -148,6 +217,7 @@ export function goalDraftFrom(goal = {}) {
     objective: contract.objective || "",
     stopping_condition: contract.stopping_condition || "",
     validation_loop: contract.validation_loop || "",
+    links_text: linksToText(contract.links),
     constraints_text: constraintsToText(contract.constraints),
   };
 }
@@ -158,6 +228,39 @@ function goalProjectLabel(goal = {}) {
 
 function goalTeamLabel(goal = {}) {
   return goal.team_name || goal.team_slug || goal.team_id || "Unassigned team";
+}
+
+export function goalReferenceLinks(goal = {}) {
+  const links = [];
+  const projectHrefId = text(goal.project?.slug || goal.project_id);
+  const teamHrefId = text(goal.team_slug || goal.team_id);
+  const rootTaskId = text(goal.root_task_id);
+  const latest = goal.latest_cycle || null;
+  if (projectHrefId) {
+    links.push({ kind: "internal", label: "Project", href: `#/projects/${encodeURIComponent(projectHrefId)}` });
+  }
+  if (teamHrefId) {
+    links.push({ kind: "internal", label: "Team", href: `#/library/teams/${encodeURIComponent(teamHrefId)}` });
+  }
+  if (latest?.id && latest?.task_id) {
+    links.push({
+      kind: "internal",
+      label: "Latest lead cycle",
+      href: `#/tasks/${encodeURIComponent(latest.task_id)}?run=${encodeURIComponent(latest.id)}`,
+    });
+  }
+  if (rootTaskId) {
+    links.push({ kind: "internal", label: "Lead-cycle anchor", href: `#/tasks/${encodeURIComponent(rootTaskId)}` });
+  }
+  for (const link of normalizeGoalLinkDraft(goal.contract?.links)) {
+    links.push({
+      kind: "reference",
+      label: link.label,
+      href: link.url,
+      external: /^https?:\/\//i.test(link.url),
+    });
+  }
+  return links;
 }
 
 function GoalRow({ goal, active }) {
@@ -187,6 +290,8 @@ function GoalDetail({ goal, onChanged }) {
   const [running, setRunning] = useState(false);
   const [updating, setUpdating] = useState(false);
   const paused = Boolean(goal?.contract?.paused_at);
+  const readiness = goal?.readiness || goalReadiness(goal);
+  const referenceLinks = goalReferenceLinks(goal);
 
   async function runLeadCycle() {
     setRunning(true);
@@ -259,18 +364,40 @@ function GoalDetail({ goal, onChanged }) {
           <Card title="Goal state">
             <div class="goal-state-card">
               <Chip variant={goalStatusVariant(goal)}>{goalStatusLabel(goal)}</Chip>
+              <Chip variant={readiness.ready ? "trigger" : "warn"}>{readiness.ready ? "Well defined" : `${readiness.missing.length} fields missing`}</Chip>
               {goal.last_lead_at ? <span>Last lead cycle {relativeTime(goal.last_lead_at)}</span> : <span>No lead cycle yet.</span>}
             </div>
+            {!readiness.ready && (
+              <div class="goal-readiness-list" role="status">
+                {readiness.missing.map((field) => (
+                  <span key={field}>{field === "stopping_condition" ? "Done when" : field === "validation_loop" ? "Validate with" : "Objective"}</span>
+                ))}
+              </div>
+            )}
           </Card>
           <Card title="Contract">
             <GoalContractDetails goal={goal} />
           </Card>
           <Card title="Links">
-            <Toolbar class="goal-link-list" align="start">
-              <a href={`#/projects/${encodeURIComponent(goal.project?.slug || goal.project_id)}`}>Project</a>
-              <a href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
-              {goal.root_task_id && <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>}
-            </Toolbar>
+            {referenceLinks.length ? (
+              <div class="goal-link-list" role="list">
+                {referenceLinks.map((link) => (
+                  <a
+                    key={`${link.kind}:${link.href}`}
+                    href={link.href}
+                    target={link.external ? "_blank" : undefined}
+                    rel={link.external ? "noopener noreferrer" : undefined}
+                    class={`goal-link-row is-${link.kind}`}
+                    role="listitem"
+                  >
+                    <Icon name={link.kind === "reference" ? "external" : "link"} size={13} />
+                    <span>{link.label}</span>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <p class="muted">No links attached.</p>
+            )}
           </Card>
           <Card title="Latest lead cycle">
             {latest ? (
@@ -303,7 +430,8 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
   }
 
   async function save() {
-    if (isNew && !draft.team_id) {
+    const assignment = goalAssignmentState({ draft, projects, teams, isNew });
+    if (isNew && !assignment.effectiveTeamId) {
       pushToast("Choose a team", { variant: "error" });
       return;
     }
@@ -314,11 +442,12 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
     setSaving(true);
     setError(null);
     const payload = {
-      team_id: draft.team_id || undefined,
+      team_id: assignment.effectiveTeamId || undefined,
       project_id: draft.project_id || undefined,
       objective: draft.objective,
       stopping_condition: draft.stopping_condition,
       validation_loop: draft.validation_loop,
+      links: linksFromText(draft.links_text),
       constraints: constraintsFromText(draft.constraints_text),
     };
     try {
@@ -344,11 +473,8 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
     </>
   );
 
-  const teamOptions = teams.map((team) => ({
-    value: team.id,
-    label: team.name || team.slug || team.id,
-    description: team.goal || team.description || team.slug,
-  }));
+  const assignment = goalAssignmentState({ draft, projects, teams, isNew });
+  const readiness = goalReadiness(draft);
   const projectOptions = projects.map((project) => ({
     value: project.id,
     label: project.name || project.slug || project.id,
@@ -390,18 +516,24 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
             <FormGrid columns={2}>
               <FormField label="Team">
                 <Select
-                  value={draft.team_id}
+                  value={assignment.effectiveTeamId}
                   onChange={(value) => update({ team_id: value })}
-                  options={teamOptions}
+                  options={assignment.teamOptions}
                   placeholder="Choose team"
-                  disabled={!isNew}
+                  disabled={!isNew || assignment.teamLocked}
                   searchable
                 />
+                <div class="field-hint">
+                  {assignment.teamLocked ? "This project already belongs to this team." : "Choose a team only for unassigned projects."}
+                </div>
               </FormField>
               <FormField label="Project">
                 <Select
                   value={draft.project_id}
-                  onChange={(value) => update({ project_id: value })}
+                  onChange={(value) => {
+                    const nextProject = projects.find((project) => project.id === value || project.slug === value);
+                    update({ project_id: value, team_id: nextProject?.team_id ? "" : draft.team_id });
+                  }}
                   options={projectOptions}
                   placeholder="Choose project"
                   disabled={!isNew}
@@ -411,15 +543,22 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
             </FormGrid>
           </FormSection>
           <FormSection kicker="Contract" title="Contract">
+            <div class={`goal-readiness-banner ${readiness.ready ? "is-ready" : "is-missing"}`}>
+              <Icon name={readiness.ready ? "check-circle" : "alert-triangle"} size={14} />
+              <span>{readiness.ready ? "Goal definition has an objective, completion condition, and validation loop." : `Missing: ${readiness.missing.map((field) => (field === "stopping_condition" ? "done when" : field === "validation_loop" ? "validate with" : "objective")).join(", ")}`}</span>
+            </div>
             <FormGrid columns={2}>
               <FormField label="Objective" class="span-2">
                 <MentionableTextarea rows={4} value={draft.objective} onInput={(event) => update({ objective: event.currentTarget.value })} />
               </FormField>
-              <FormField label="Stop when">
-                <Input value={draft.stopping_condition} onInput={(event) => update({ stopping_condition: event.currentTarget.value })} />
+              <FormField label="Done when">
+                <Textarea rows={3} value={draft.stopping_condition} onInput={(event) => update({ stopping_condition: event.currentTarget.value })} />
               </FormField>
               <FormField label="Validate with">
-                <Input value={draft.validation_loop} onInput={(event) => update({ validation_loop: event.currentTarget.value })} />
+                <Textarea rows={3} value={draft.validation_loop} onInput={(event) => update({ validation_loop: event.currentTarget.value })} />
+              </FormField>
+              <FormField label="Links" class="span-2">
+                <Textarea rows={3} value={draft.links_text} placeholder="Label | https://example.com/reference" onInput={(event) => update({ links_text: event.currentTarget.value })} />
               </FormField>
               <FormField label="Constraints" class="span-2">
                 <MentionableTextarea rows={4} value={draft.constraints_text} onInput={(event) => update({ constraints_text: event.currentTarget.value })} />

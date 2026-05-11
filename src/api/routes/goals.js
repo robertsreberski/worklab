@@ -54,6 +54,7 @@ function goalMatchesQuery(goal, query) {
     contract.validation_loop,
     goal?.goal_status_reason,
     ...(contract.constraints || []),
+    ...(contract.links || []).flatMap((link) => [link?.label, link?.url]),
   ].some((value) => String(value || "").toLowerCase().includes(q));
 }
 
