@@ -36,6 +36,13 @@ export async function waitForHealth(config = loadConfig(), { timeoutMs = 15000 }
   throw new Error(`Worklab service did not become healthy at ${url}: ${lastError?.message || "timeout"}${tail ? `\nRecent service stderr:\n${tail}` : ""}`);
 }
 
+export function restartHealthTimeoutMs(config = loadConfig()) {
+  const drainTimeoutMs = Number(config?.drainTimeoutMs);
+  const replacementSlackMs = 30_000;
+  if (!Number.isFinite(drainTimeoutMs) || drainTimeoutMs <= 0) return replacementSlackMs;
+  return Math.min(drainTimeoutMs + replacementSlackMs, 10 * 60_000 + replacementSlackMs);
+}
+
 export async function serve(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
