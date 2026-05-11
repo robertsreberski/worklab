@@ -1763,53 +1763,66 @@ test("task detail shows existing child tasks without manual add controls", async
 });
 
 test("child task detail pins parent reference below the header", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 800 });
-  await page.goto(`${baseUrl}/#/tasks/${childTaskId}`, { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".task-hero-title", { hasText: "Nested child task" })).toBeVisible();
-  await expect(page.locator(".task-parent-reference", { hasText: "Parent" })).toBeVisible();
-  await expect(page.locator(".task-parent-reference", { hasText: "Parent with child task" })).toBeVisible();
-  await expect(page.locator(".task-workflow-parent")).toHaveCount(0);
+  for (const width of [390, 320]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto(`${baseUrl}/#/tasks/${childTaskId}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator(".task-hero-title", { hasText: "Nested child task" })).toBeVisible();
+    await expect(page.locator(".task-parent-reference", { hasText: "Parent task" })).toBeVisible();
+    await expect(page.locator(".task-parent-reference", { hasText: "Parent with child task" })).toBeVisible();
+    await expect(page.locator(".task-workflow-parent")).toHaveCount(0);
 
-  const metrics = await page.locator(".task-detail-shell").evaluate((node) => {
-    const head = node.querySelector(".detail-head");
-    const parent = node.querySelector(".task-parent-reference");
-    const brief = node.querySelector("#task-brief");
-    const label = parent?.querySelector(".task-parent-reference-label");
-    const key = parent?.querySelector(".task-parent-reference-key");
-    const title = parent?.querySelector(".task-parent-reference-title");
-    const status = parent?.querySelector(".status-pill");
-    const item = (el) => {
-      if (!el) return null;
-      const style = getComputedStyle(el);
-      const rect = el.getBoundingClientRect();
-      return {
-        flexShrink: style.flexShrink,
-        whiteSpace: style.whiteSpace,
-        height: Math.round(rect.height),
-        scrollHeight: Math.round(el.scrollHeight),
+    const metrics = await page.locator(".task-detail-shell").evaluate((node) => {
+      const head = node.querySelector(".detail-head");
+      const parent = node.querySelector(".task-parent-reference");
+      const brief = node.querySelector("#task-brief");
+      const label = parent?.querySelector(".task-parent-reference-label");
+      const key = parent?.querySelector(".task-parent-reference-key");
+      const title = parent?.querySelector(".task-parent-reference-title");
+      const status = parent?.querySelector(".status-pill");
+      const item = (el) => {
+        if (!el) return null;
+        const style = getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        return {
+          flexShrink: style.flexShrink,
+          whiteSpace: style.whiteSpace,
+          height: Math.round(rect.height),
+          lineHeight: Number.parseFloat(style.lineHeight) || 0,
+          webkitLineClamp: style.webkitLineClamp || "",
+        };
       };
-    };
-    return {
-      missing: !head || !parent || !brief || !label || !key || !title || !status,
-      parentAfterHeader: head && parent ? Math.round(parent.getBoundingClientRect().top - head.getBoundingClientRect().bottom) : -999,
-      briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
-      pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
-      label: item(label),
-      key: item(key),
-      title: item(title),
-      status: item(status),
-    };
-  });
+      const parentRect = parent?.getBoundingClientRect();
+      return {
+        missing: !head || !parent || !brief || !label || !key || !title || !status,
+        parentAfterHeader: head && parent ? Math.round(parent.getBoundingClientRect().top - head.getBoundingClientRect().bottom) : -999,
+        briefAfterParent: parent && brief ? Math.round(brief.getBoundingClientRect().top - parent.getBoundingClientRect().bottom) : -999,
+        pageOverflow: document.documentElement.scrollWidth - window.innerWidth,
+        parentHeight: parentRect ? Math.round(parentRect.height) : 0,
+        parentRight: parentRect ? Math.ceil(parentRect.right) : 0,
+        viewportWidth: window.innerWidth,
+        label: item(label),
+        key: item(key),
+        title: item(title),
+        status: item(status),
+      };
+    });
 
-  expect(metrics.missing).toBe(false);
-  expect(metrics.parentAfterHeader).toBeGreaterThanOrEqual(0);
-  expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
-  expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
-  expect(metrics.label).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
-  expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
-  expect(metrics.status).toMatchObject({ flexShrink: "0" });
-  expect(metrics.title.whiteSpace).toBe("nowrap");
-  expect(metrics.title.scrollHeight).toBeLessThanOrEqual(metrics.title.height + 1);
+    expect(metrics.missing).toBe(false);
+    expect(metrics.parentAfterHeader).toBeGreaterThanOrEqual(0);
+    expect(metrics.briefAfterParent).toBeGreaterThanOrEqual(0);
+    expect(metrics.pageOverflow).toBeLessThanOrEqual(0);
+    expect(metrics.parentHeight).toBeGreaterThanOrEqual(44);
+    expect(metrics.parentRight).toBeLessThanOrEqual(metrics.viewportWidth);
+    expect(metrics.label).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
+    expect(metrics.key).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
+    expect(metrics.status).toMatchObject({ flexShrink: "0", whiteSpace: "nowrap" });
+    expect(metrics.title.whiteSpace).toBe("normal");
+    expect(metrics.title.webkitLineClamp).toBe("2");
+    expect(metrics.title.height).toBeLessThanOrEqual((metrics.title.lineHeight * 2) + 2);
+  }
+
+  await page.locator(".task-parent-reference").click();
+  await expect(page.locator(".task-hero-title", { hasText: "Parent with child task" })).toBeVisible();
 });
 
 test("multi-line selection controls center against their copy", async ({ page }) => {

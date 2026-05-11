@@ -296,11 +296,18 @@ describe("resource list helpers", () => {
   it("styles child task parent references as a full-width contextual strip", () => {
     const styles = source("src/ui/src/styles.css");
     const parentRule = styles.match(/\.task-parent-reference \{(?<body>[^}]+)\}/)?.groups?.body || "";
+    const copyRule = styles.match(/\.task-parent-reference-copy \{(?<body>[^}]+)\}/)?.groups?.body || "";
+    const metaRule = styles.match(/\.task-parent-reference-meta \{(?<body>[^}]+)\}/)?.groups?.body || "";
     const titleRule = styles.match(/\.task-parent-reference-title \{(?<body>[^}]+)\}/)?.groups?.body || "";
 
     expect(parentRule).toContain("display: flex");
     expect(parentRule).toContain("width: 100%");
     expect(parentRule).toContain("box-sizing: border-box");
+    expect(copyRule).toContain("flex-direction: column");
+    expect(metaRule).toContain("flex-wrap: wrap");
     expect(titleRule).toContain("flex: 1 1 auto");
+    expect(styles).toContain(".task-parent-reference-status");
+    expect(styles).toMatch(/\.task-parent-reference-title\s*\{[^}]*white-space:\s*nowrap/);
+    expect(styles).toContain("-webkit-line-clamp: 2");
   });
 });
