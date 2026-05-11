@@ -66,6 +66,7 @@ describe("openDb + runMigrations", () => {
     expect(indexes).toEqual(expect.arrayContaining([
       "idx_logs_run_summary",
       "idx_runs_agent_started",
+      "idx_runs_started_cost_summary",
     ]));
   });
 

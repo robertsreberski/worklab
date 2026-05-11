@@ -621,6 +621,7 @@ export function runMigrations(db) {
   if (tableExists(db, "task_runs")) {
     addColumnIfMissing(db, "task_runs", "team_id", "team_id TEXT");
     addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
+    addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   }
   db.exec(SCHEMA_SQL);
   ensureNullableTaskRunsTaskId(db);
@@ -739,6 +740,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status)");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_logs_run_summary
     ON agent_logs(task_run_id, id, model, effort, input_tokens, output_tokens,
                   cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms,
@@ -788,6 +790,7 @@ export function runMigrations(db) {
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status)");
   db.exec(`CREATE INDEX IF NOT EXISTS idx_logs_run_summary
     ON agent_logs(task_run_id, id, model, effort, input_tokens, output_tokens,
                   cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms,
