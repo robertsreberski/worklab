@@ -1,6 +1,6 @@
 import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { ensureServiceInstalled, restartUserService } from "./install-service.js";
-import { buildUi, waitForHealth } from "./start.js";
+import { buildUi, restartHealthTimeoutMs, waitForHealth } from "./start.js";
 import { applyConfigArgs, hasFlag } from "./args.js";
 import { assertServiceRuntimeReady } from "./service-runtime.js";
 
@@ -15,7 +15,7 @@ export async function restart(args = []) {
   const installed = await ensureServiceInstalled({ config });
   assertServiceRuntimeReady(config);
   await restartUserService({ config });
-  const health = await waitForHealth(config);
+  const health = await waitForHealth(config, { timeoutMs: restartHealthTimeoutMs(config) });
   console.log(`worklab: restarted at ${worklabBaseUrl(config)} (${installed.file})`);
   return health;
 }
