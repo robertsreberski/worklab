@@ -686,9 +686,15 @@ describe("GET /api/tasks/:id", () => {
       ]), now);
 
     const list = await agent.get("/api/tasks").expect(200);
+    const runtimeList = await agent.get("/api/tasks?scope=runtime").expect(200);
     const detail = await agent.get(`/api/tasks/${task.id}`).expect(200);
 
     expect(list.body.tasks[0].running_run).toMatchObject({
+      id: "run-active",
+      event_count: 2,
+      last_event: { type: "text", text: "latest", _event_seq: 2 },
+    });
+    expect(runtimeList.body.tasks[0].running_run).toMatchObject({
       id: "run-active",
       event_count: 2,
       last_event: { type: "text", text: "latest", _event_seq: 2 },

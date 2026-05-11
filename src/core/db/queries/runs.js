@@ -179,8 +179,14 @@ export function listRunningRunSummariesForTasks(db, taskIds) {
   if (!taskIds.length) return [];
   const placeholders = taskIds.map(() => "?").join(", ");
   return db.prepare(`
-    SELECT id, task_id, status, process_status, started_at,
-           parent_run_id, mode, stage, todo_state_json
+    SELECT r.id, r.task_id, r.status, r.process_status, r.started_at,
+           r.parent_run_id, r.mode, r.stage, r.todo_state_json,
+           json_array_length(l.events) AS event_count,
+           CASE
+             WHEN l.events IS NOT NULL AND json_valid(l.events) AND json_array_length(l.events) > 0
+             THEN json_extract(l.events, '$[' || (json_array_length(l.events) - 1) || ']')
+             ELSE NULL
+           END AS last_event_json
     FROM (
       SELECT
         id, task_id, status, process_status, started_at,
@@ -191,9 +197,10 @@ export function listRunningRunSummariesForTasks(db, taskIds) {
         ) AS rn
       FROM task_runs
       WHERE task_id IN (${placeholders}) AND status = 'running'
-    )
-    WHERE rn = 1
-    ORDER BY task_id
+    ) r
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    WHERE r.rn = 1
+    ORDER BY r.task_id
   `).all(...taskIds);
 }
 
