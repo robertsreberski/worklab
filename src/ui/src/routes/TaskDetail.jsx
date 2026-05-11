@@ -67,6 +67,8 @@ export {
   writeTaskDetailSummaryCache,
 } from "./task-detail/summaryCache.js";
 
+const TASK_DETAIL_INITIAL_RUN_LIMIT = 20;
+
 function dependencyContextLabel(dependency) {
   const latest = dependency?.latest_execute_run;
   const artifacts = dependency?.artifact_summary || {};
@@ -116,6 +118,8 @@ export function TaskDetail({ id, runParam = null }) {
   const [commentDeleting, setCommentDeleting] = useState(false);
   const [commentSaving, setCommentSaving] = useState(false);
   const [showOlderActivity, setShowOlderActivity] = useState(false);
+  const [runsNextCursor, setRunsNextCursor] = useState(() => readTaskDetailCache(id)?.runs_next_cursor || null);
+  const [runHistoryLoading, setRunHistoryLoading] = useState(false);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
   const [planDraft, setPlanDraft] = useState("");
   const [planEditing, setPlanEditing] = useState(false);
@@ -133,21 +137,27 @@ export function TaskDetail({ id, runParam = null }) {
   const automationsAbortRef = useRef(null);
   const hiddenDetailReloadRef = useRef(false);
   const hiddenAutomationsReloadRef = useRef(false);
+  const fullRunHistoryLoadedRef = useRef(false);
 
   const reload = useCallback(() => {
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
-    return api.getTask(id, { signal: controller.signal })
+    const taskRequest = fullRunHistoryLoadedRef.current
+      ? api.getTask(id, { runs: "full" }, { signal: controller.signal })
+      : api.getTask(id, { runs: "summary", run_limit: String(TASK_DETAIL_INITIAL_RUN_LIMIT) }, { signal: controller.signal });
+    return taskRequest
       .then((nextData) => {
         if (controller.signal.aborted) return;
         writeTaskDetailCache(nextData);
         setData(nextData);
+        setRunsNextCursor(nextData?.runs_next_cursor || null);
       })
       .catch((err) => {
         if (err?.name === "AbortError") return;
         const cached = readTaskDetailCache(id);
         setData(cached || { notFound: true });
+        setRunsNextCursor(cached?.runs_next_cursor || null);
       });
   }, [id]);
   const reloadAutomations = useCallback(() => {
@@ -187,10 +197,14 @@ export function TaskDetail({ id, runParam = null }) {
   useEffect(() => {
     const cached = readTaskDetailCache(id);
     if (cached) setData(cached);
+    fullRunHistoryLoadedRef.current = false;
+    setRunsNextCursor(cached?.runs_next_cursor || null);
+    setRunHistoryLoading(false);
     setHighlightedRunId(runParam || null);
     setExpandedRunIds(new Set());
     setRunError(null);
     setRunStarting(false);
+    setShowOlderActivity(false);
     setPlanEditing(false);
     setPlanDraft("");
     setTaskAutomations(null);
@@ -258,6 +272,28 @@ export function TaskDetail({ id, runParam = null }) {
   const comments = data?.comments || [];
   const mentions = data?.mentions || null;
   const stage = task?.stage || "plan";
+
+  const loadFullRunHistory = useCallback(async () => {
+    if (!operationTaskId || runHistoryLoading) return;
+    setRunHistoryLoading(true);
+    try {
+      const response = await api.listTaskRuns(operationTaskId, { view: "full" });
+      const nextRuns = Array.isArray(response?.runs) ? response.runs : [];
+      fullRunHistoryLoadedRef.current = true;
+      setData((current) => {
+        if (!current) return current;
+        const nextData = { ...current, runs: nextRuns, runs_next_cursor: null };
+        writeTaskDetailCache(nextData);
+        return nextData;
+      });
+      setRunsNextCursor(null);
+      setShowOlderActivity(true);
+    } catch (err) {
+      pushToast(`Could not load run history: ${err.message}`, { variant: "error" });
+    } finally {
+      setRunHistoryLoading(false);
+    }
+  }, [operationTaskId, runHistoryLoading]);
   const automationSummary = task?.automation_summary || {};
   const hasTaskSchedules = Number(automationSummary.count || 0) > 0;
   const hasEnabledSchedule = Number(automationSummary.enabled_count || 0) > 0;
@@ -1099,6 +1135,11 @@ export function TaskDetail({ id, runParam = null }) {
               <Card
                 title="Activity"
                 class="activity-card"
+                headerRight={runsNextCursor ? (
+                  <Button variant="ghost" size="sm" loading={runHistoryLoading} onClick={loadFullRunHistory}>
+                    Load full history
+                  </Button>
+                ) : null}
               >
             <div class="activity-composer">
               <form onSubmit={addComment} class="activity-composer-form">
