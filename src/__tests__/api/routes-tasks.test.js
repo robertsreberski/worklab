@@ -44,14 +44,22 @@ describe("GET /api/tasks", () => {
   });
 
   it("supports a lightweight summary view", async () => {
-    const { agent } = makeTestServer();
-    await agent.post("/api/tasks").send({ title: "summary task" }).expect(201);
+    const { agent, db } = makeTestServer();
+    const largeText = "heavy payload ".repeat(1000);
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "summary task",
+      instructions: largeText,
+    }).expect(201);
+    db.prepare("UPDATE tasks SET plan_body = ? WHERE id = ?").run(largeText, task.id);
 
     const res = await agent.get("/api/tasks?view=summary").expect(200);
 
     expect(res.body.tasks).toHaveLength(1);
     expect(res.body.tasks[0]).toMatchObject({ title: "summary task", stage: "plan" });
+    expect(res.body.tasks[0].instructions).toBeUndefined();
+    expect(res.body.tasks[0].plan_body).toBeUndefined();
     expect(res.body.tasks[0].blocked_by).toBeUndefined();
+    expect(JSON.stringify(res.body).length).toBeLessThan(5000);
     await agent.get("/api/tasks?view=nope").expect(400);
   });
 
