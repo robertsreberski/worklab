@@ -48,11 +48,16 @@ function snapshot() {
   const bodyStyles = body ? win.getComputedStyle(body) : null;
   const dock = doc.querySelector(".assistant-dock");
   const composer = doc.querySelector(".assistant-composer");
+  const textarea = composer?.querySelector(".textarea");
   const tabbar = doc.querySelector(".app-tabbar");
+  const dockStyles = dock ? win.getComputedStyle(dock) : null;
+  const composerStyles = composer ? win.getComputedStyle(composer) : null;
   const dockRect = dock?.getBoundingClientRect();
   const composerRect = composer?.getBoundingClientRect();
+  const textareaRect = textarea?.getBoundingClientRect();
   const bodyRect = body?.getBoundingClientRect();
   const tabbarRect = tabbar?.getBoundingClientRect();
+  const visibleBottom = (win.visualViewport?.height || win.innerHeight) + (win.visualViewport?.offsetTop || 0);
   return {
     innerH: win.innerHeight,
     screenH: win.screen?.height,
@@ -66,6 +71,8 @@ function snapshot() {
     rootShell: rootStyles?.getPropertyValue("--shell-height").trim(),
     rootApp: rootStyles?.getPropertyValue("--app-height").trim(),
     rootVv: rootStyles?.getPropertyValue("--vv-height").trim(),
+    rootKeyboard: rootStyles?.getPropertyValue("--worklab-keyboard-height").trim(),
+    assistantLift: dockStyles?.getPropertyValue("--assistant-keyboard-lift").trim(),
     rootSat: rootStyles?.getPropertyValue("--worklab-safe-area-top").trim(),
     rootSab: rootStyles?.getPropertyValue("--worklab-safe-area-bottom").trim(),
     bodyComputedH: bodyStyles?.height,
@@ -75,7 +82,13 @@ function snapshot() {
     iosStd: win.navigator?.standalone ? "Y" : "n",
     dockH: dockRect?.height,
     dockBot: dockRect?.bottom,
+    composerTop: composerRect?.top,
+    composerH: composerRect?.height,
     composerBot: composerRect?.bottom,
+    composerTransform: composerStyles?.transform,
+    textareaBot: textareaRect?.bottom,
+    visibleBottom,
+    composerOverlap: composerRect?.bottom == null ? null : Math.max(0, composerRect.bottom - visibleBottom),
     tabbarBot: tabbarRect?.bottom,
     pixelRatio: win.devicePixelRatio,
     orientation: win.screen?.orientation?.type || "?",
@@ -90,7 +103,10 @@ function renderRows(snap) {
     ["vview ", `h=${fmt(snap.vvH)}  offT=${fmt(snap.vvOffT)}  scale=${fmt(snap.vvScale)}`],
     ["css   ", `--shell=${fmt(snap.rootShell)}  --app=${fmt(snap.rootApp)}  --vv=${fmt(snap.rootVv)}`],
     ["safe  ", `--sat=${fmt(snap.rootSat)}  --sab=${fmt(snap.rootSab)}`],
-    ["dock  ", `h=${fmt(snap.dockH)}  bot=${fmt(snap.dockBot)}  composer.bot=${fmt(snap.composerBot)}  tabbar.bot=${fmt(snap.tabbarBot)}`],
+    ["keybd ", `root=${fmt(snap.rootKeyboard)}  lift=${fmt(snap.assistantLift)}  visible.bot=${fmt(snap.visibleBottom)}  overlap=${fmt(snap.composerOverlap)}`],
+    ["dock  ", `h=${fmt(snap.dockH)}  bot=${fmt(snap.dockBot)}  tabbar.bot=${fmt(snap.tabbarBot)}`],
+    ["comp  ", `top=${fmt(snap.composerTop)}  h=${fmt(snap.composerH)}  bot=${fmt(snap.composerBot)}  input.bot=${fmt(snap.textareaBot)}`],
+    ["trans ", `composer=${fmt(snap.composerTransform)}`],
     ["state ", `kb=${snap.keyboardOpen}  standalone=${snap.standalone}/${snap.iosStd}  dpr=${fmt(snap.pixelRatio)}  orient=${snap.orientation}`],
   ];
   return rows.map(([label, value]) => `${label}  ${value}`).join("\n");

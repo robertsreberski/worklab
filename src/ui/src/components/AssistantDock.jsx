@@ -1,6 +1,14 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import { api } from "../lib/api.js";
+import {
+  ASSISTANT_KEYBOARD_LIFT_VAR,
+  computeAssistantKeyboardLift,
+  cssPx,
+  readCssPxValue,
+  visualViewportBottom,
+} from "../lib/assistantKeyboardLift.js";
 import { assistantViewContextFromLocation } from "../lib/assistantViewContext.js";
+import { KEYBOARD_HEIGHT_VAR } from "../lib/mobileViewport.js";
 import { mergeRunEvents } from "../lib/useRunStream.js";
 import { subscribeSharedEventSource } from "../lib/sharedEventSource.js";
 import { Icon } from "./Icon.jsx";
@@ -14,6 +22,7 @@ import { LivePulse } from "./primitives/LivePulse.jsx";
 import { Toolbar } from "./layout/index.js";
 
 const HISTORY_PAGE_SIZE = 5;
+const ASSISTANT_KEYBOARD_LIFT_DELAYS = [0, 80, 160, 360, 720];
 
 function messageKey(message) {
   return message?.id || `${message?.role}-${message?.created_at}`;
@@ -147,6 +156,131 @@ function AssistantMessage({ message, active, onRunDone }) {
   );
 }
 
+function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
+  const frameRef = useRef(0);
+  const timeoutsRef = useRef(new Set());
+
+  useEffect(() => {
+    const clearLift = () => {
+      const dock = dockRef.current;
+      dock?.style?.removeProperty?.(ASSISTANT_KEYBOARD_LIFT_VAR);
+      dock?.classList?.remove?.("assistant-keyboard-lifted");
+    };
+
+    if (!open || typeof window === "undefined" || typeof document === "undefined") {
+      clearLift();
+      return undefined;
+    }
+
+    const win = window;
+    const doc = document;
+    const requestFrame = win.requestAnimationFrame?.bind(win) || ((callback) => win.setTimeout?.(callback, 16));
+    const cancelFrame = win.cancelAnimationFrame?.bind(win) || win.clearTimeout?.bind(win);
+    const setTimer = win.setTimeout?.bind(win) || setTimeout;
+    const clearTimer = win.clearTimeout?.bind(win) || clearTimeout;
+
+    const clearTimers = () => {
+      for (const timeout of timeoutsRef.current) clearTimer(timeout);
+      timeoutsRef.current.clear();
+    };
+    const scrollThreadToBottom = () => {
+      const node = scrollRef.current;
+      if (!node) return;
+      node.scrollTop = node.scrollHeight;
+    };
+    const focusedInComposer = () => {
+      const dock = dockRef.current;
+      const active = doc.activeElement;
+      if (!dock || !active || typeof dock.contains !== "function" || !dock.contains(active)) return false;
+      return typeof active.closest === "function" && !!active.closest(".assistant-composer");
+    };
+    const eventInComposer = (event) => (
+      typeof event?.target?.closest === "function" && !!event.target.closest(".assistant-composer")
+    );
+    const measure = () => {
+      frameRef.current = 0;
+      const dock = dockRef.current;
+      const composer = dock?.querySelector?.(".assistant-composer");
+      const textarea = textareaRef.current || composer?.querySelector?.(".textarea");
+      if (!dock || !composer || !focusedInComposer()) {
+        clearLift();
+        return;
+      }
+
+      const rootStyles = win.getComputedStyle?.(doc.documentElement);
+      const dockStyles = win.getComputedStyle?.(dock);
+      const keyboardHeight = readCssPxValue(rootStyles?.getPropertyValue(KEYBOARD_HEIGHT_VAR));
+      const currentLift = readCssPxValue(dockStyles?.getPropertyValue(ASSISTANT_KEYBOARD_LIFT_VAR));
+      const lift = computeAssistantKeyboardLift({
+        keyboardHeight,
+        visibleBottom: visualViewportBottom(win),
+        composerBottom: composer.getBoundingClientRect?.().bottom,
+        textareaBottom: textarea?.getBoundingClientRect?.().bottom,
+        currentLift,
+      });
+
+      if (lift > 0) {
+        dock.style.setProperty(ASSISTANT_KEYBOARD_LIFT_VAR, cssPx(lift));
+        dock.classList.add("assistant-keyboard-lifted");
+        scrollThreadToBottom();
+      } else {
+        clearLift();
+      }
+    };
+    const scheduleFrame = () => {
+      if (frameRef.current) return;
+      frameRef.current = requestFrame(measure);
+    };
+    const schedule = (delays = [0]) => {
+      for (const delay of delays) {
+        if (delay === 0) {
+          if (frameRef.current && cancelFrame) cancelFrame(frameRef.current);
+          frameRef.current = requestFrame(measure);
+          continue;
+        }
+        const timeout = setTimer(() => {
+          timeoutsRef.current.delete(timeout);
+          scheduleFrame();
+        }, delay);
+        timeoutsRef.current.add(timeout);
+      }
+    };
+    const scheduleIfFocused = () => {
+      if (focusedInComposer()) schedule(ASSISTANT_KEYBOARD_LIFT_DELAYS);
+    };
+    const handleFocusIn = (event) => {
+      if (eventInComposer(event)) schedule(ASSISTANT_KEYBOARD_LIFT_DELAYS);
+    };
+    const handleFocusOut = () => schedule([0, 120, 360]);
+    const handleInput = (event) => {
+      if (eventInComposer(event)) schedule([0, 80, 180]);
+    };
+
+    scheduleIfFocused();
+    doc.addEventListener?.("focusin", handleFocusIn, true);
+    doc.addEventListener?.("focusout", handleFocusOut, true);
+    doc.addEventListener?.("input", handleInput, true);
+    win.addEventListener?.("resize", scheduleIfFocused, { passive: true });
+    win.addEventListener?.("orientationchange", scheduleIfFocused, { passive: true });
+    win.visualViewport?.addEventListener?.("resize", scheduleIfFocused, { passive: true });
+    win.visualViewport?.addEventListener?.("scroll", scheduleIfFocused, { passive: true });
+
+    return () => {
+      if (frameRef.current && cancelFrame) cancelFrame(frameRef.current);
+      frameRef.current = 0;
+      clearTimers();
+      doc.removeEventListener?.("focusin", handleFocusIn, true);
+      doc.removeEventListener?.("focusout", handleFocusOut, true);
+      doc.removeEventListener?.("input", handleInput, true);
+      win.removeEventListener?.("resize", scheduleIfFocused);
+      win.removeEventListener?.("orientationchange", scheduleIfFocused);
+      win.visualViewport?.removeEventListener?.("resize", scheduleIfFocused);
+      win.visualViewport?.removeEventListener?.("scroll", scheduleIfFocused);
+      clearLift();
+    };
+  }, [open, dockRef, textareaRef, scrollRef]);
+}
+
 export function AssistantDock({
   open,
   onToggle,
@@ -167,6 +301,7 @@ export function AssistantDock({
   const [hasOlderHistory, setHasOlderHistory] = useState(false);
   const [historyCursor, setHistoryCursor] = useState(null);
   const [error, setError] = useState("");
+  const dockRef = useRef(null);
   const scrollRef = useRef(null);
   const resizeCleanupRef = useRef(null);
   const preserveScrollRef = useRef(null);
@@ -177,6 +312,8 @@ export function AssistantDock({
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
   const canSend = draft.trim().length > 0 && !sending && !activeRunId;
+
+  useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef });
 
   async function loadAssistant() {
     setLoading(true);
@@ -394,7 +531,7 @@ export function AssistantDock({
   }
 
   const body = (
-    <aside class={`assistant-dock ${open ? "open" : ""}`.trim()} aria-label="Worklab assistant" aria-hidden={!open}>
+    <aside ref={dockRef} class={`assistant-dock ${open ? "open" : ""}`.trim()} aria-label="Worklab assistant" aria-hidden={!open}>
       {onResize && (
         <span
           class="assistant-resize-handle"
