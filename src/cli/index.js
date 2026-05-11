@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { bootstrapWorklabEnv } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
+import {
+  commandNames,
+  formatCommandHelp,
+  formatGeneralHelp,
+  hasCommandHelp,
+  resolveHelpTopic,
+} from "./help.js";
 
 const cmd = process.argv[2];
 const args = process.argv.slice(3);
@@ -19,8 +26,19 @@ const commands = {
   "uninstall-service": async (argv) => (await import("./uninstall-service.js")).uninstallService(argv),
 };
 
+const helpTopic = resolveHelpTopic(cmd, args);
+if (helpTopic !== undefined) {
+  if (helpTopic && !hasCommandHelp(helpTopic)) {
+    console.error(formatCommandHelp(helpTopic));
+    process.exit(1);
+  }
+  console.log(helpTopic ? formatCommandHelp(helpTopic) : formatGeneralHelp());
+  process.exit(0);
+}
+
 if (!cmd || !(cmd in commands)) {
-  console.error("usage: worklab <start|restart|stop|status|serve|mcp|doctor|backup|compact-logs|install-service|uninstall-service> [--port PORT] [--host HOST] [--data-dir DIR]");
+  const commandList = commandNames().join("|");
+  console.error(`usage: worklab <${commandList}> [options]\n\nRun \`worklab --help\` for commands and \`worklab <command> --help\` for command options.`);
   process.exit(1);
 }
 
