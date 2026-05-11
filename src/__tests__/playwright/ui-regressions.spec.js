@@ -715,9 +715,11 @@ test("desktop task list keeps every task state legible without clipped controls"
       const assigneeRect = assignees?.getBoundingClientRect();
       const avatarBounds = avatars.map((avatar) => avatar.getBoundingClientRect());
       const title = reviewRow?.querySelector(".commander-cell-title")?.getBoundingClientRect();
-      const runningInlineMeta = runningRow?.querySelector(".commander-cell-inline-meta");
+      const runningStage = runningRow?.querySelector(".commander-cell-pill .stage-token");
+      const blockedDeps = blockedRow?.querySelector(".commander-cell-deps");
       const runningAge = runningRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
       const blockedAge = blockedRow?.querySelector(".commander-cell-age")?.getBoundingClientRect();
+      const runningStageRect = runningStage?.getBoundingClientRect();
       return {
         visibleStateCells: cells.filter((cell) => getComputedStyle(cell).display !== "none").length,
         assigneeDisplay: assignees ? getComputedStyle(assignees).display : "",
@@ -727,19 +729,22 @@ test("desktop task list keeps every task state legible without clipped controls"
         avatarLeft: avatarBounds.length ? Math.round(Math.min(...avatarBounds.map((rect) => rect.left))) : 0,
         avatarRight: avatarBounds.length ? Math.round(Math.max(...avatarBounds.map((rect) => rect.right))) : 0,
         titleRight: title ? Math.round(title.right) : 0,
-        runningInlineMetaText: (runningInlineMeta?.textContent || "").replace(/\s+/g, " ").trim(),
+        runningStageText: (runningStage?.textContent || "").replace(/\s+/g, " ").trim(),
+        blockedDepsText: (blockedDeps?.textContent || "").replace(/\s+/g, " ").trim(),
+        runningStageLeft: runningStageRect ? Math.round(runningStageRect.left) : 0,
         runningAgeRight: runningAge ? Math.round(runningAge.right) : 0,
         blockedAgeRight: blockedAge ? Math.round(blockedAge.right) : 0,
       };
     });
-    expect(rowLayoutMetrics.visibleStateCells).toBeGreaterThan(0);
+    expect(rowLayoutMetrics.visibleStateCells).toBe(0);
     expect(rowLayoutMetrics.assigneeDisplay).toBe("flex");
     expect(rowLayoutMetrics.avatarCount).toBe(3);
     expect(rowLayoutMetrics.arrowCount).toBe(2);
     expect(rowLayoutMetrics.assigneeWidth).toBeGreaterThanOrEqual(84);
     expect(rowLayoutMetrics.avatarLeft).toBeGreaterThanOrEqual(rowLayoutMetrics.titleRight);
-    expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.runningAgeRight);
-    expect(rowLayoutMetrics.runningInlineMetaText).toContain("Waiting on 1");
+    expect(rowLayoutMetrics.avatarRight).toBeLessThanOrEqual(rowLayoutMetrics.runningStageLeft);
+    expect(rowLayoutMetrics.runningStageText).toContain("Execute");
+    expect(rowLayoutMetrics.blockedDepsText).toContain("Waiting on 1");
     expect(Math.abs(rowLayoutMetrics.runningAgeRight - rowLayoutMetrics.blockedAgeRight)).toBeLessThanOrEqual(2);
 
     await expectNoHorizontalOverflow(page, `${viewport.label} task list states`);
@@ -2320,7 +2325,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Library", "Settings"]) {
+  for (const label of ["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2339,13 +2344,13 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   expect(metrics.navCount).toBe(5);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Library", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Agents", "Skills", "Knowledge", "Providers", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Library" }).click();
-  await expect(page).toHaveURL(/#\/library$/);
+  await sheet.getByRole("link", { name: "Agents" }).click();
+  await expect(page).toHaveURL(/#\/library\/agents$/);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-more-sheet")).toHaveCount(0);
 
@@ -2419,7 +2424,7 @@ test("mobile tasks header owns the opening route status safe area", async ({ pag
     const filter = document.querySelector(".commander-filter");
     const tabbar = document.querySelector(".app-tabbar");
     const fab = document.querySelector(".commander-new-task-fab");
-    const assistantLauncher = document.querySelector(".assistant-pill");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
     const topbarRect = topbar?.getBoundingClientRect();
     const filterRect = filter?.getBoundingClientRect();
     const tabbarRect = tabbar?.getBoundingClientRect();
@@ -2784,13 +2789,13 @@ test("resource editor rails collapse before form sections become cramped", async
 test("mobile resource list create actions move to a floating FAB", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const routes = [
-    { hash: "#/library/agents", label: "New agent", target: /#\/agents\/new/, toolbar: "resource" },
+    { hash: "#/library/agents", label: "New agent", target: /#\/library\/agents\/new/, toolbar: "resource" },
     { hash: "#/goals", label: "New goal", target: /#\/goals\/new/, toolbar: "resource" },
     { hash: "#/projects", label: "New project", target: /#\/projects\/new/, toolbar: "resource" },
-    { hash: "#/library/skills", label: "New skill", target: /#\/skills\/new/, toolbar: "resource" },
-    { hash: "#/library/knowledge", label: "New entry", target: /#\/knowledge\/new/, toolbar: "resource" },
-    { hash: "#/library/teams", label: "New team", target: /#\/teams\/new/, toolbar: "resource" },
-    { hash: "#/settings/providers", label: "New provider", target: /#\/providers\/new/, toolbar: "resource" },
+    { hash: "#/library/skills", label: "New skill", target: /#\/library\/skills\/new/, toolbar: "resource" },
+    { hash: "#/library/knowledge", label: "New entry", target: /#\/library\/knowledge\/new/, toolbar: "resource" },
+    { hash: "#/library/teams", label: "New team", target: /#\/library\/teams\/new/, toolbar: "resource" },
+    { hash: "#/settings/providers", label: "New provider", target: /#\/settings\/providers\/new/, toolbar: "resource" },
   ];
 
   for (const route of routes) {
@@ -2809,7 +2814,7 @@ test("mobile resource list create actions move to a floating FAB", async ({ page
       const inlineButtons = [...(toolbarRoot?.querySelectorAll(":scope > .button:not(.resource-list-fab)") || [])];
       const count = toolbarRoot?.querySelector(".resource-toolbar-count");
       const fab = document.querySelector(".resource-list-fab");
-      const assistantLauncher = document.querySelector(".assistant-pill");
+      const assistantLauncher = document.querySelector(".assistant-launcher");
       const nav = document.querySelector(".app-tabbar");
       const list = document.querySelector(".pane-list-body");
       const toolbarRect = toolbarRoot?.getBoundingClientRect();
@@ -3219,11 +3224,11 @@ test("mobile task list stacks assistant launcher above new task", async ({ page 
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
   await expect(page.locator(".commander-new-task-fab")).toBeVisible();
-  await expect(page.locator(".assistant-pill")).toBeVisible();
+  await expect(page.locator(".assistant-launcher")).toBeVisible();
 
   const metrics = await page.evaluate(() => {
     const fab = document.querySelector(".commander-new-task-fab");
-    const assistantLauncher = document.querySelector(".assistant-pill");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
     const nav = document.querySelector(".app-tabbar");
     const fabRect = fab?.getBoundingClientRect();
     const assistantLauncherRect = assistantLauncher?.getBoundingClientRect();
@@ -3362,7 +3367,7 @@ test("mobile task detail review wraps idle dock actions into two rows", async ({
 
   const metrics = await page.evaluate(() => {
     const dock = document.querySelector(".app-mobile-action-dock");
-    const assistantLauncher = document.querySelector(".assistant-pill");
+    const assistantLauncher = document.querySelector(".assistant-launcher");
     const buttons = dock ? [...dock.querySelectorAll(".button")] : [];
     const rows = [];
     for (const button of buttons) {
@@ -3806,7 +3811,7 @@ test("mobile assistant pane opens full width", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
 
-  await page.locator(".assistant-pill").click();
+  await page.locator(".assistant-launcher").click();
   await expect(page.locator(".assistant-dock.open")).toBeVisible();
   await expect.poll(async () => page.locator(".assistant-dock.open").evaluate((node) => {
     const rect = node.getBoundingClientRect();
@@ -3958,7 +3963,7 @@ test("assistant thread remains scrollable with long history", async ({ page }) =
     await page.goto(`${baseUrl}/?assistant-scroll=${viewport.width}#/tasks`);
     await expect(page.locator(".commander-row").first()).toBeVisible();
 
-    const launcher = page.locator(".assistant-pill");
+    const launcher = page.locator(".assistant-launcher");
     if (await launcher.isVisible()) await launcher.click();
     await expect(page.locator(".assistant-dock.open")).toBeVisible();
     await expect(page.locator(".assistant-empty")).toBeVisible();
@@ -4001,7 +4006,7 @@ test("assistant thread remains scrollable with long history", async ({ page }) =
     expect(afterWheel, `${viewport.width} assistant thread wheel scroll`).toBeLessThan(beforeWheel);
 
     await page.locator(".assistant-dock.open [aria-label='Collapse assistant']").click();
-    await expect(page.locator(".assistant-pill")).toBeVisible();
+    await expect(page.locator(".assistant-launcher")).toBeVisible();
   }
 });
 
