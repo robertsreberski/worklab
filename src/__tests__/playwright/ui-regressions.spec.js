@@ -2316,7 +2316,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
 
-  for (const label of ["Tasks", "Agents", "Knowledge"]) {
+  for (const label of ["Tasks", "Agents", "Projects"]) {
     await expect(page.locator(".app-tabbar a", { hasText: label })).toBeVisible();
   }
 
@@ -2324,8 +2324,8 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(page).toHaveURL(/#\/library\/agents$/);
   await expect(page.locator(".pane-list")).toBeVisible();
 
-  await page.locator(".app-tabbar a", { hasText: "Knowledge" }).click();
-  await expect(page).toHaveURL(/#\/library\/knowledge$/);
+  await page.locator(".app-tabbar a", { hasText: "Projects" }).click();
+  await expect(page).toHaveURL(/#\/projects$/);
   await expect(page.locator(".pane-list")).toBeVisible();
 
   const more = page.locator(".app-tabbar button", { hasText: "More" });
@@ -2337,15 +2337,18 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Projects", "Teams", "Skills", "Goals", "Runs", "Settings"]) {
+  for (const label of ["Teams", "Skills", "Knowledge", "Goals", "Runs", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
   const metrics = await page.evaluate(() => {
+    const nav = document.querySelector(".app-tabbar");
     const navItems = [...document.querySelectorAll(".app-tabbar > a, .app-tabbar > button")];
     const sheetLinks = [...document.querySelectorAll(".app-more-sheet-link")];
     return {
       navCount: navItems.length,
+      navColumns: nav ? getComputedStyle(nav).gridTemplateColumns.split(" ").filter(Boolean).length : 0,
+      navLabels: navItems.map((item) => (item.textContent || "").replace(/\s+/g, " ").trim()),
       navMinWidth: Math.min(...navItems.map((item) => Math.round(item.getBoundingClientRect().width))),
       navMaxWidth: Math.max(...navItems.map((item) => Math.round(item.getBoundingClientRect().width))),
       sheetLinkLabels: sheetLinks.map((link) => (link.textContent || "").replace(/\s+/g, " ").trim()),
@@ -2354,15 +2357,17 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
     };
   });
   expect(metrics.navCount).toBe(4);
+  expect(metrics.navColumns).toBe(4);
+  expect(metrics.navLabels).toEqual(["Tasks", "Agents", "Projects", "More"]);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Projects", "Teams", "Skills", "Goals", "Runs", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Teams", "Skills", "Knowledge", "Goals", "Runs", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Projects" }).click();
-  await expect(page).toHaveURL(/#\/projects$/);
+  await sheet.getByRole("link", { name: "Knowledge" }).click();
+  await expect(page).toHaveURL(/#\/library\/knowledge$/);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-more-sheet")).toHaveCount(0);
 
@@ -2398,12 +2403,15 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
       const tabsRect = tabs?.getBoundingClientRect();
       const contentRect = content?.getBoundingClientRect();
       const headRect = head?.getBoundingClientRect();
+      const headStyles = head ? getComputedStyle(head) : null;
+      const parsePx = (value) => Math.round(parseFloat(value) || 0);
       return {
         shellClass: shell?.className || "",
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         shellLeft: shellRect ? Math.round(shellRect.left) : -1,
         shellRight: shellRect ? Math.round(shellRect.right) : -1,
         headLeft: headRect ? Math.round(headRect.left) : -1,
+        headContentLeft: headRect && headStyles ? Math.round(headRect.left + parsePx(headStyles.paddingLeft)) : -1,
         tabsLeft: tabsRect ? Math.round(tabsRect.left) : -1,
         contentLeft: contentRect ? Math.round(contentRect.left) : -1,
         contentTopAfterTabs: tabsRect && contentRect ? Math.round(contentRect.top) > Math.round(tabsRect.bottom) : false,
@@ -2415,11 +2423,106 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
     expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
     expect(metrics.shellLeft, `${route.label} shell left`).toBe(0);
     expect(metrics.shellRight, `${route.label} shell right`).toBe(390);
-    expect(Math.abs(metrics.headLeft - metrics.tabsLeft), `${route.label} head/tabs alignment`).toBeLessThanOrEqual(1);
-    expect(Math.abs(metrics.tabsLeft - metrics.contentLeft), `${route.label} tabs/content alignment`).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.headLeft - metrics.contentLeft), `${route.label} head/content alignment`).toBeLessThanOrEqual(1);
+    expect(Math.abs(metrics.headContentLeft - metrics.tabsLeft), `${route.label} head/tabs alignment`).toBeLessThanOrEqual(1);
     expect(metrics.contentTopAfterTabs, `${route.label} content below tabs`).toBe(true);
     expect(metrics.contentWidth, `${route.label} content width`).toBeGreaterThanOrEqual(350);
   }
+});
+
+test("mobile route tabs are condensed into the owning header", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${baseUrl}/#/library/agents`);
+  await expect(page.locator(".pane-list")).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
+  });
+  await page.waitForTimeout(50);
+
+  const libraryMetrics = await page.evaluate(() => {
+    const outerTabs = document.querySelector(".library-page > .library-tabs");
+    const header = document.querySelector(".pane-list-head");
+    const headerTabs = document.querySelector(".pane-list-head .library-tabs");
+    const toolbar = document.querySelector(".pane-list-head .resource-toolbar");
+    const search = document.querySelector(".pane-list-head .search-field");
+    const headerRect = header?.getBoundingClientRect();
+    const tabsRect = headerTabs?.getBoundingClientRect();
+    const toolbarRect = toolbar?.getBoundingClientRect();
+    const searchRect = search?.getBoundingClientRect();
+    const headerStyles = header ? getComputedStyle(header) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      outerTabsDisplay: outerTabs ? getComputedStyle(outerTabs).display : "none",
+      headerTop: headerRect ? Math.round(headerRect.top) : -1,
+      headerHeight: headerRect ? Math.round(headerRect.height) : 0,
+      headerPaddingTop: headerStyles ? parsePx(headerStyles.paddingTop) : -1,
+      tabsInsideHeader: !!headerTabs && !!headerTabs.closest(".pane-list-head"),
+      tabsTop: tabsRect ? Math.round(tabsRect.top) : -1,
+      tabsBottom: tabsRect ? Math.round(tabsRect.bottom) : -1,
+      toolbarTop: toolbarRect ? Math.round(toolbarRect.top) : -1,
+      searchTop: searchRect ? Math.round(searchRect.top) : -1,
+      searchBottom: searchRect ? Math.round(searchRect.bottom) : -1,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(libraryMetrics.outerTabsDisplay).toBe("none");
+  expect(libraryMetrics.headerTop).toBe(0);
+  expect(libraryMetrics.headerPaddingTop).toBeGreaterThanOrEqual(31);
+  expect(libraryMetrics.headerHeight).toBeLessThanOrEqual(128);
+  expect(libraryMetrics.tabsInsideHeader).toBe(true);
+  expect(libraryMetrics.tabsTop).toBeGreaterThanOrEqual(31);
+  expect(libraryMetrics.toolbarTop).toBeGreaterThanOrEqual(libraryMetrics.headerPaddingTop);
+  expect(libraryMetrics.searchTop).toBeGreaterThanOrEqual(libraryMetrics.tabsBottom);
+  expect(libraryMetrics.searchBottom).toBeLessThanOrEqual(libraryMetrics.headerTop + libraryMetrics.headerHeight);
+  expect(libraryMetrics.overflow).toBeLessThanOrEqual(0);
+
+  await page.goto(`${baseUrl}/#/settings`);
+  await expect(page.locator(".settings-sections")).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.setProperty("--worklab-safe-area-top", "31px");
+  });
+  await page.waitForTimeout(50);
+
+  const settingsMetrics = await page.evaluate(() => {
+    const shell = document.querySelector(".settings-route-shell");
+    const directTabs = document.querySelector(".settings-route-shell > .settings-tabs");
+    const head = document.querySelector(".settings-route-shell > .ds-page-head");
+    const headerTabs = document.querySelector(".settings-route-shell > .ds-page-head .settings-tabs");
+    const content = document.querySelector(".settings-route-content");
+    const shellRect = shell?.getBoundingClientRect();
+    const headRect = head?.getBoundingClientRect();
+    const tabsRect = headerTabs?.getBoundingClientRect();
+    const contentRect = content?.getBoundingClientRect();
+    const headStyles = head ? getComputedStyle(head) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      shellLeft: shellRect ? Math.round(shellRect.left) : -1,
+      shellRight: shellRect ? Math.round(shellRect.right) : -1,
+      directTabsDisplay: directTabs ? getComputedStyle(directTabs).display : "none",
+      headTop: headRect ? Math.round(headRect.top) : -1,
+      headBottom: headRect ? Math.round(headRect.bottom) : -1,
+      headHeight: headRect ? Math.round(headRect.height) : 0,
+      headPaddingTop: headStyles ? parsePx(headStyles.paddingTop) : -1,
+      tabsInsideHeader: !!headerTabs && !!headerTabs.closest(".ds-page-head"),
+      tabsTop: tabsRect ? Math.round(tabsRect.top) : -1,
+      tabsBottom: tabsRect ? Math.round(tabsRect.bottom) : -1,
+      contentTop: contentRect ? Math.round(contentRect.top) : -1,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+
+  expect(settingsMetrics.shellLeft).toBe(0);
+  expect(settingsMetrics.shellRight).toBe(390);
+  expect(settingsMetrics.directTabsDisplay).toBe("none");
+  expect(settingsMetrics.headTop).toBe(0);
+  expect(settingsMetrics.headPaddingTop).toBeGreaterThanOrEqual(31);
+  expect(settingsMetrics.headHeight).toBeLessThanOrEqual(148);
+  expect(settingsMetrics.tabsInsideHeader).toBe(true);
+  expect(settingsMetrics.tabsTop).toBeGreaterThanOrEqual(31);
+  expect(settingsMetrics.tabsBottom).toBeLessThanOrEqual(settingsMetrics.headBottom);
+  expect(settingsMetrics.contentTop).toBeGreaterThan(settingsMetrics.headBottom);
+  expect(settingsMetrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("mobile tabbar does not create document scroll space below content", async ({ page }) => {
