@@ -28,13 +28,30 @@ function moreRouteIds() {
 }
 
 describe("app shell routes", () => {
-  it("exposes the Library route inside the Build group", () => {
-    const buildGroup = ROUTE_GROUPS.find((group) => group.label === "Build");
-    const buildIds = buildGroup?.routes.map((route) => route.id) || [];
+  it("exposes resource routes as individual nav entries with canonical hrefs", () => {
+    const workGroup = ROUTE_GROUPS.find((group) => group.label === "Work");
+    const libraryGroup = ROUTE_GROUPS.find((group) => group.label === "Library");
+    const systemGroup = ROUTE_GROUPS.find((group) => group.label === "System");
 
-    expect(buildIds).toContain("library");
-    expect(ROUTES.find((route) => route.id === "library")).toMatchObject({
-      label: "Library",
+    expect(workGroup?.routes.map((route) => [route.id, route.href])).toEqual([
+      ["tasks", "#/tasks"],
+      ["goals", "#/goals"],
+      ["projects", "#/projects"],
+      ["runs", "#/runs"],
+    ]);
+    expect(libraryGroup?.routes.map((route) => [route.id, route.href])).toEqual([
+      ["teams", "#/library/teams"],
+      ["agents", "#/library/agents"],
+      ["skills", "#/library/skills"],
+      ["knowledge", "#/library/knowledge"],
+    ]);
+    expect(systemGroup?.routes.map((route) => [route.id, route.href])).toEqual([
+      ["providers", "#/settings/providers"],
+      ["settings", "#/settings"],
+    ]);
+    expect(ROUTES.find((route) => route.id === "agents")).toMatchObject({
+      label: "Agents",
+      href: "#/library/agents",
     });
   });
 
@@ -51,20 +68,32 @@ describe("app shell routes", () => {
     });
   });
 
-  it("includes Library and Settings in mobile More navigation", () => {
+  it("includes individual resource routes in mobile More navigation", () => {
     const ids = moreRouteIds();
 
-    expect(ids).toContain("library");
-    expect(ids).toContain("settings");
+    expect(ids).toEqual(["teams", "agents", "skills", "knowledge", "providers", "settings"]);
   });
 
-  it("keeps the ambient assistant launcher owned by AssistantDock", () => {
+  it("keeps the ambient assistant launcher icon-only and owned by AssistantDock", () => {
     const appShell = readFileSync(appShellPath, "utf8");
     const assistantDock = readFileSync(assistantDockPath, "utf8");
 
-    expect(appShell).not.toContain('class="assistant-pill"');
-    expect(assistantDock).toContain('class="assistant-pill"');
-    expect(assistantDock).not.toContain('class="assistant-launcher"');
+    expect(appShell).not.toContain('class="assistant-launcher"');
+    expect(assistantDock).toContain('class="assistant-launcher"');
+    expect(assistantDock).not.toContain('class="assistant-pill"');
+  });
+
+  it("keeps the shortcuts affordance in the rail footer", () => {
+    const source = readFileSync(appShellPath, "utf8");
+
+    expect(source).toContain('class="rail-status"');
+    expect(source).toContain("Shortcuts · ?");
+  });
+
+  it("keeps settings available from mobile More navigation", () => {
+    const ids = moreRouteIds();
+
+    expect(ids).toContain("settings");
   });
 
   it("does not ship prototype rail identity copy", () => {

@@ -260,6 +260,15 @@ describe("resource list helpers", () => {
     expect(panelRule).toContain("width: min(360px, calc(100vw - 32px))");
   });
 
+  it("uses sans operational typography for resource list rows", () => {
+    const styles = source("src/ui/src/styles.css");
+    const titleRule = cssRule(styles, ".pane-row-title");
+
+    expect(titleRule).not.toContain("font-family: var(--font-display)");
+    expect(titleRule).toContain("font-weight: 800");
+    expect(titleRule).toContain("line-height: 1.2");
+  });
+
   it("builds resource list groups on the shared SectionGroup layout", () => {
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const styles = source("src/ui/src/styles.css");
@@ -280,8 +289,7 @@ describe("resource list helpers", () => {
     expect(toolbar).toContain("resource-list-fab");
     expect(paneHeader).toContain("resource-list-fab");
     expect(styles).toContain(".resource-list-fab");
-    expect(styles).toContain(".app.responsive:has(.resource-list-fab) .assistant-pill");
-    expect(styles).not.toContain(".assistant-launcher");
+    expect(styles).toContain(".app.responsive:has(.resource-list-fab) .assistant-launcher");
     expect(styles).toMatch(/\.resource-toolbar-actions\s*\{[^}]*display:\s*none/);
   });
 

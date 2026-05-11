@@ -165,14 +165,7 @@ export function Settings({ tab = "general", rest = [] }) {
     const [item] = rest;
     return (
       <AppShell route="settings">
-        <div class="settings-page">
-          <div class="ds-page-head">
-            <div class="ds-page-title">
-              <span class="form-section-kicker">Settings</span>
-              <h1>Settings</h1>
-              <p>Configure the local agent runtime, providers, and integrations.</p>
-            </div>
-          </div>
+        <div class="settings-page settings-route-compact">
           <Tabs
             value={activeTab}
             onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}

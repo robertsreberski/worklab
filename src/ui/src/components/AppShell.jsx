@@ -26,17 +26,26 @@ export const ROUTE_GROUPS = [
   {
     label: "Work",
     routes: [
-      { id: "tasks", label: "Tasks", icon: "layout-list" },
-      { id: "goals", label: "Goals", icon: "target" },
-      { id: "projects", label: "Projects", icon: "folder" },
+      { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
+      { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
+      { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
+      { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
     ],
   },
   {
-    label: "Build",
+    label: "Library",
     routes: [
-      { id: "library", label: "Library", icon: "book" },
-      { id: "runs", label: "Runs", icon: "clock" },
-      { id: "settings", label: "Settings", icon: "settings" },
+      { id: "teams", label: "Teams", icon: "users", href: "#/library/teams" },
+      { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
+      { id: "skills", label: "Skills", icon: "sparkles", href: "#/library/skills" },
+      { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
+    ],
+  },
+  {
+    label: "System",
+    routes: [
+      { id: "providers", label: "Providers", icon: "terminal", href: "#/settings/providers" },
+      { id: "settings", label: "Settings", icon: "settings", href: "#/settings" },
     ],
   },
 ];
@@ -50,12 +59,31 @@ const TABBAR_ROUTES = [
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
 ];
-const MORE_ROUTE_IDS = ["library", "settings"];
+const MORE_ROUTE_IDS = ["teams", "agents", "skills", "knowledge", "providers", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
-  .map((route) => ({ ...route, href: `#/${route.id}` }));
+  .map((route) => ({ ...route, href: route.href || `#/${route.id}` }));
 const EMPTY_SECTIONS = [];
 const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";
+
+function currentHash() {
+  return typeof window === "undefined" ? "" : window.location.hash || "";
+}
+
+function routeHref(item) {
+  return item.href || `#/${item.id}`;
+}
+
+function routeIsActive(item, route) {
+  const href = routeHref(item);
+  const hash = currentHash();
+  if (hash === href || hash.startsWith(`${href}/`) || hash.startsWith(`${href}?`)) return true;
+  if (!hash && route === item.id) return true;
+  if (item.id === "settings") return route === "settings" && !hash.startsWith("#/settings/providers");
+  if (item.id === "providers") return hash.startsWith("#/settings/providers");
+  if (["teams", "agents", "skills", "knowledge"].includes(item.id)) return hash.startsWith(`#/library/${item.id}`);
+  return route === item.id;
+}
 
 function assistantInitialOpen() {
   // Critique §08: assistant is ambient. Hidden by default; ⌘\ summons.
@@ -145,9 +173,9 @@ function MobileMoreSheet({ open, route, onClose, onNavigate }) {
           {MORE_ROUTES.map((item) => (
             <li key={item.id}>
               <a
-                class={`app-more-sheet-link ${route === item.id ? "active" : ""}`.trim()}
+                class={`app-more-sheet-link ${routeIsActive(item, route) ? "active" : ""}`.trim()}
                 href={item.href}
-                aria-current={route === item.id ? "page" : undefined}
+                aria-current={routeIsActive(item, route) ? "page" : undefined}
                 onClick={(event) => {
                   event.preventDefault();
                   onNavigate(item.href);
@@ -169,7 +197,7 @@ function MobileMoreSheet({ open, route, onClose, onNavigate }) {
 
 function AppTabbar({ route }) {
   const [moreOpen, setMoreOpen] = useState(false);
-  const moreActive = MORE_ROUTE_IDS.includes(route);
+  const moreActive = MORE_ROUTES.some((item) => routeIsActive(item, route));
 
   useEffect(() => {
     setMoreOpen(false);
@@ -186,7 +214,7 @@ function AppTabbar({ route }) {
         {TABBAR_ROUTES.map((item) => (
           <a
             key={item.id}
-            class={route === item.id ? "active" : ""}
+            class={routeIsActive(item, route) ? "active" : ""}
             href={item.href}
             aria-label={item.label}
             onClick={(event) => {
@@ -396,6 +424,7 @@ export function AppShell({
             </span>
             <span class="brand-copy">
               <strong>Worklab</strong>
+              <span>Local agents</span>
             </span>
           </a>
           <nav class="app-nav rail-nav" aria-label="Primary navigation">
@@ -405,13 +434,13 @@ export function AppShell({
                 {group.routes.map((item) => (
                   <a
                     key={item.id}
-                    href={`#/${item.id}`}
-                    class={route === item.id ? "active rail-link" : "rail-link"}
+                    href={routeHref(item)}
+                    class={routeIsActive(item, route) ? "active rail-link" : "rail-link"}
                     aria-label={item.label}
                     title={item.label}
                     onClick={(event) => {
                       event.preventDefault();
-                      navigateHash(`#/${item.id}`);
+                      navigateHash(routeHref(item));
                     }}
                   >
                     <Icon name={item.icon} size={16} class="nav-icon icon" />
@@ -424,15 +453,12 @@ export function AppShell({
           <div class="rail-footer">
             <button
               type="button"
-              class="rail-identity"
-              onClick={() => navigateHash("#/settings")}
-              aria-label="Open settings"
-              title="Settings · press ? for shortcuts"
+              class="rail-status"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Show keyboard shortcuts"
             >
-              <span class="rail-identity-avatar" aria-hidden="true">
-                <Icon name="user" size={13} />
-              </span>
-              <span class="rail-identity-handle">You</span>
+              <Icon name="keyboard" size={12} />
+              <span>Shortcuts · ?</span>
             </button>
           </div>
         </aside>

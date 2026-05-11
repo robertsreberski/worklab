@@ -93,9 +93,10 @@ describe("team setup guidance", () => {
     expect(teamsSource).toContain("#/goals/");
     expect(projectsSource).toContain("Project goal");
     expect(projectsSource).toContain("#/goals/");
-    // Critique §03: the team-goal chip moved into the inline-meta line and
-    // links to the Commander goal filter (?goal=) instead of the goal page.
-    expect(commanderSource).toMatch(/#\/tasks\?goal=/);
+    // Team-goal chips should stay native links to the goal page, not a
+    // Commander-only task filter.
+    expect(commanderSource).toContain("#/goals/");
+    expect(commanderSource).not.toMatch(/#\/tasks\?goal=/);
     expect(taskDetailSource).toContain("#/goals/");
   });
 

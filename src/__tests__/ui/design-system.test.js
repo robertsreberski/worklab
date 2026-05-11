@@ -107,6 +107,8 @@ describe("design system catalog", () => {
     const docs = readFileSync(docsPath, "utf8");
     expect(docs).toContain("# Worklab UI Design System");
     expect(docs).toContain("src/ui/src/routes/DesignSystem.jsx");
+    expect(docs).toContain("Operational rows use `--font-sans`");
+    expect(docs).not.toContain("entity title (`.h-entity` for cards / rows");
   });
 
   it("builds catalog demo grids on the shared PanelGrid layout", () => {

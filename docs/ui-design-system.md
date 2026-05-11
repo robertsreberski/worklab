@@ -40,10 +40,10 @@ All shared UI styles should use tokens from `:root` in `styles.css`.
 
 Three families, three jobs:
 
-- **Instrument Serif** (`--font-display`): every page H1 (`.h-page`) and every
-  entity title (`.h-entity` for cards / rows; `.h-entity-lg` for Task / Goal /
-  Project detail heros). Carries human-authored names.
+- **Instrument Serif** (`--font-display`): page and detail hero headings only
+  (`.h-page`, `.h-entity-lg`). It should not be used for dense list rows.
 - **Manrope** (`--font-sans`): body, descriptions, dense UI lines, buttons.
+  Operational rows use `--font-sans` so task and resource lists stay scannable.
 - **JetBrains Mono** (`--font-mono`): eyebrows, IDs, ages, the live-run stream,
   `--text-subtle` metadata.
 

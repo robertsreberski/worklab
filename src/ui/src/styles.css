@@ -1262,70 +1262,37 @@ select,
   color: var(--text-subtle);
 }
 
-/* Ambient assistant pill — bottom-right of viewport when dock is closed. */
-.assistant-pill {
+.assistant-launcher {
   position: fixed;
-  bottom: calc(var(--worklab-safe-area-bottom, 0px) + var(--sp-4));
-  right: calc(var(--worklab-safe-area-right, 0px) + var(--sp-4));
-  z-index: 18;
+  right: max(var(--sp-4), var(--mobile-safe-right));
+  bottom: max(var(--sp-4), var(--mobile-safe-bottom));
+  z-index: 70;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-2);
-  padding: 6px 12px 6px 10px;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--border-strong);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 8px 24px -10px var(--ink-shadow);
-  color: var(--text-muted);
-  font-size: var(--text-sm);
+  justify-content: center;
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--surface-elevated) 92%, transparent);
+  color: var(--accent);
+  box-shadow: var(--elev-float);
   cursor: pointer;
-  transition: color var(--dur-snap) var(--ease-snap), border-color var(--dur-snap) var(--ease-snap), transform var(--dur-snap) var(--ease-snap);
 }
-.assistant-pill:hover,
-.assistant-pill:focus-visible {
-  color: var(--text);
-  border-color: var(--accent-line);
+.assistant-launcher:hover,
+.assistant-launcher:focus-visible {
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
   outline: none;
-  transform: translateY(-1px);
 }
-.assistant-pill-dot {
+.assistant-launcher-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: var(--text-faint);
-}
-.assistant-pill-dot.active {
-  background: var(--accent);
-  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
-}
-.assistant-pill-icon {
-  color: var(--accent);
-}
-.assistant-pill-label {
-  font-weight: 500;
-}
-.assistant-pill-kbd {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  padding: 1px 5px;
-  background: var(--surface-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
-  color: var(--text-subtle);
-  margin-left: 2px;
-}
-@media (max-width: 860px) {
-  .assistant-pill {
-    bottom: calc(var(--worklab-safe-area-bottom, 0px) + var(--sp-6) + 56px);
-  }
-  .assistant-pill-label {
-    display: none;
-  }
-  .assistant-pill-kbd {
-    display: none;
-  }
+  border-radius: var(--radius-pill);
+  background: var(--status-progress);
 }
 
 /* §3.10.1 Inline meta — borderless, secondary text. Use for info that matters
@@ -3482,9 +3449,8 @@ html.assistant-resizing * {
 /* §4.4 CommanderRow — dense row:
    checkbox · id · title · deps-chip · planner→owner→reviewer · pill · age */
 .commander-row {
-  /* §03 critique grid: checkbox · id · dot · title+alert · inline-meta · agents · age */
   display: grid;
-  grid-template-columns: 18px 56px 14px minmax(0, 1fr) fit-content(220px) max-content 56px;
+  grid-template-columns: 18px 56px minmax(0, 1fr) fit-content(128px) max-content max-content 56px;
   grid-auto-rows: auto;
   align-items: center;
   column-gap: var(--sp-3);
@@ -3562,7 +3528,7 @@ html.assistant-resizing * {
   opacity: 0.92;
 }
 .commander-cell-state {
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   min-width: 0;
@@ -3601,8 +3567,7 @@ html.assistant-resizing * {
   min-width: 0;
   max-width: 100%;
   color: var(--text);
-  /* h-entity (Instrument Serif) is applied at the markup level; keep weight/clamp here. */
-  font-weight: 400;
+  font-weight: 600;
   letter-spacing: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -3610,50 +3575,6 @@ html.assistant-resizing * {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   white-space: normal;
-}
-.commander-cell-inline-meta {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  color: var(--text-subtle);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.02em;
-}
-.commander-cell-inline-meta:empty {
-  visibility: hidden;
-  pointer-events: none;
-}
-.commander-inline-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 0;
-  flex-wrap: nowrap;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.commander-inline-meta-cell {
-  display: inline-flex;
-  align-items: center;
-}
-.commander-inline-meta-sep {
-  margin: 0 6px;
-  color: var(--text-faint);
-}
-.commander-inline-meta-link {
-  color: var(--text-subtle);
-  text-decoration: none;
-  transition: color var(--dur-snap) var(--ease-snap);
-}
-.commander-inline-meta-link:hover,
-.commander-inline-meta-link:focus-visible {
-  color: var(--text);
-}
-.commander-inline-meta-deps {
-  margin-left: 6px;
 }
 .commander-live-line {
   grid-column: 3 / -1;
@@ -3711,6 +3632,7 @@ html.assistant-resizing * {
   min-width: max-content;
 }
 .commander-cell-arrow { color: var(--text-subtle); flex-shrink: 0; }
+.commander-cell-pill { min-width: 0; display: flex; justify-content: flex-end; }
 .commander-cell-age {
   display: flex;
   align-items: center;
@@ -5542,12 +5464,9 @@ html.assistant-resizing * {
   color: var(--text-muted);
 }
 .pane-row-title {
-  /* §4.1 entity titles use the structural serif (h-entity). */
-  font-family: var(--font-display);
   font-size: var(--text-md);
-  font-weight: 400;
-  letter-spacing: 0;
-  line-height: 1.15;
+  font-weight: 800;
+  line-height: 1.2;
   color: var(--text);
   overflow-wrap: anywhere;
 }
@@ -6761,6 +6680,27 @@ html.assistant-resizing * {
   max-width: var(--content-max);
   width: 100%;
   margin: 0 auto;
+}
+.resource-tab-page,
+.settings-route-compact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: var(--sp-5) var(--sp-6);
+}
+.library-tab-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.library-tab-body > .two-pane,
+.settings-route-compact > .two-pane {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .page-actions {
   justify-content: flex-end;
@@ -10122,12 +10062,10 @@ button.settings-overview-card:focus-visible,
     position: static;
   }
   .commander-row {
-    /* mobile collapse: hide id, hide inline-meta to keep title + alert + agents reachable */
-    grid-template-columns: 16px 12px minmax(0, 1fr) max-content 48px;
+    grid-template-columns: 16px minmax(0, 1fr) fit-content(112px) max-content max-content 48px;
     column-gap: var(--sp-2);
   }
   .commander-row > .commander-cell-id { display: none; }
-  .commander-row > .commander-cell-inline-meta { display: none; }
   .commander-live-line { grid-column: 2 / -1; }
 }
 
@@ -10285,6 +10223,10 @@ button.settings-overview-card:focus-visible,
   .pane-detail-body > .form-section,
   .goal-editor > .form-section { padding: var(--sp-4); }
   .pane-row-summary { justify-content: flex-start; }
+  .resource-tab-page,
+  .settings-route-compact {
+    padding-inline: var(--sp-2);
+  }
   .pane-list-head { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
   .pane-list-head > .button { width: 100%; }
   .pane-list-head .tabs { overflow-x: auto; max-width: 100%; scrollbar-width: none; gap: var(--sp-3); }
@@ -10293,7 +10235,7 @@ button.settings-overview-card:focus-visible,
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--sp-2);
-    padding: var(--sp-3);
+    padding: var(--sp-2);
   }
   .resource-toolbar .search-field {
     grid-column: 1;
@@ -10541,11 +10483,11 @@ button.settings-overview-card:focus-visible,
     flex-wrap: wrap;
     white-space: normal;
   }
-  /* Commander row follows the mobile mockup: check/state/title/age on line 1,
-     inline meta on line 2, live run on a full-width third line. */
+  /* Commander row follows the mobile mockup: check/title/stage on line 1,
+     deps/age on line 2, live run on a full-width third line. */
   .commander-row {
     display: grid;
-    grid-template-columns: 14px 12px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
     grid-template-rows: auto auto auto;
     align-items: center;
     gap: 6px var(--sp-3);
@@ -10557,16 +10499,17 @@ button.settings-overview-card:focus-visible,
     display: none;
   }
   .commander-row > .commander-cell-checkbox  { grid-column: 1; grid-row: 1 / span 2; align-self: center; }
-  .commander-row > .commander-cell-id          { display: none; }
-  .commander-row > .commander-cell-state       { grid-column: 2; grid-row: 1; display: flex; }
-  .commander-row > .commander-cell-title       { grid-column: 3; grid-row: 1; min-width: 0; }
-  .commander-row > .commander-cell-inline-meta { grid-column: 3; grid-row: 2; justify-content: flex-start; font-size: var(--text-xs); }
-  .commander-row > .commander-cell-inline-meta:empty {
+  .commander-row > .commander-cell-id        { display: none; }
+  .commander-row > .commander-cell-state     { display: none; }
+  .commander-row > .commander-cell-title     { grid-column: 2; grid-row: 1; min-width: 0; }
+  .commander-row > .commander-cell-pill      { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .commander-row > .commander-cell-deps      { grid-column: 2; grid-row: 2; justify-content: flex-start; font-size: var(--text-xs); }
+  .commander-row > .commander-cell-deps:empty {
     visibility: hidden;
     pointer-events: none;
   }
   .commander-row > .commander-cell-assignees { display: none; }
-  .commander-row > .commander-cell-age       { grid-column: 4; grid-row: 1; font-size: var(--text-xs); justify-content: flex-end; }
+  .commander-row > .commander-cell-age       { grid-column: 3; grid-row: 2; font-size: var(--text-xs); justify-content: flex-end; }
   .commander-live-line {
     grid-column: 1 / -1;
     grid-row: 3;
@@ -10930,7 +10873,7 @@ button.settings-overview-card:focus-visible,
   html.keyboard-open .app.responsive .task-mobile-action-dock,
   html.keyboard-open .entity-edit-mobile-dock,
   html.keyboard-open .app.responsive .entity-edit-mobile-dock,
-  html.keyboard-open .assistant-pill {
+  html.keyboard-open .assistant-launcher {
     display: none;
     pointer-events: none;
   }
@@ -11088,7 +11031,6 @@ button.settings-overview-card:focus-visible,
     flex-basis: auto;
     min-width: 0;
     font-size: var(--text-md);
-    /* h-entity already supplies serif weight; keep size tweak only. */
   }
   .commander-row > .commander-cell-assignees {
     min-width: 72px;
@@ -12456,7 +12398,7 @@ button.settings-overview-card:focus-visible,
   }
   .commander-row {
     display: grid;
-    grid-template-columns: 14px 12px minmax(0, 1fr) auto;
+    grid-template-columns: 14px minmax(0, 1fr) auto;
     grid-template-rows: auto auto auto;
     gap: 6px var(--sp-3);
     min-height: 64px;
@@ -12466,10 +12408,11 @@ button.settings-overview-card:focus-visible,
     display: none;
   }
   .commander-cell-checkbox { grid-column: 1; grid-row: 1 / span 2; }
-  .commander-cell-state { grid-column: 2; grid-row: 1; display: flex; }
-  .commander-cell-title { grid-column: 3; grid-row: 1; }
-  .commander-cell-age { grid-column: 4; grid-row: 1; }
-  .commander-cell-inline-meta { grid-column: 3; grid-row: 2; justify-content: flex-start; }
+  .commander-cell-state { display: none; }
+  .commander-cell-title { grid-column: 2; grid-row: 1; }
+  .commander-cell-pill { grid-column: 3; grid-row: 1; justify-content: flex-end; }
+  .commander-cell-deps { grid-column: 2; grid-row: 2; justify-content: flex-start; font-size: var(--text-xs); }
+  .commander-cell-age { grid-column: 3; grid-row: 2; font-size: var(--text-xs); justify-content: flex-end; }
   .commander-cell-title-row {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -12629,15 +12572,15 @@ button.settings-overview-card:focus-visible,
     gap: var(--sp-2);
     padding: var(--sp-2) var(--sp-3) max(var(--sp-3), var(--mobile-safe-bottom));
   }
-  .assistant-pill {
+  .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + var(--sp-4));
     z-index: 72;
   }
-  .app.responsive:has(.commander-new-task-fab) .assistant-pill,
-  .app.responsive:has(.resource-list-fab) .assistant-pill {
+  .app.responsive:has(.commander-new-task-fab) .assistant-launcher,
+  .app.responsive:has(.resource-list-fab) .assistant-launcher {
     bottom: calc(var(--mobile-tabbar-height) + 56px + var(--sp-4) + var(--sp-3));
   }
-  .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-pill {
+  .app.responsive:has(.task-mobile-action-dock.review-idle) .assistant-launcher {
     bottom: calc(var(--mobile-action-dock-height) + var(--sp-4));
   }
   .team-member-row {
