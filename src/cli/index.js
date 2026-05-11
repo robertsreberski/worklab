@@ -13,13 +13,14 @@ const commands = {
   status: async (argv) => (await import("./status.js")).status(argv),
   doctor: async (argv) => (await import("./doctor.js")).doctor(argv),
   backup: async (argv) => (await import("./backup.js")).backup(argv),
+  "compact-logs": async (argv) => (await import("./compact-logs.js")).compactLogsCli(argv),
   mcp: async (argv) => (await import("./mcp.js")).mcp(argv),
   "install-service": async (argv) => (await import("./install-service.js")).installService(argv),
   "uninstall-service": async (argv) => (await import("./uninstall-service.js")).uninstallService(argv),
 };
 
 if (!cmd || !(cmd in commands)) {
-  console.error("usage: worklab <start|restart|stop|status|serve|mcp|doctor|backup|install-service|uninstall-service> [--port PORT] [--host HOST] [--data-dir DIR]");
+  console.error("usage: worklab <start|restart|stop|status|serve|mcp|doctor|backup|compact-logs|install-service|uninstall-service> [--port PORT] [--host HOST] [--data-dir DIR]");
   process.exit(1);
 }
 
