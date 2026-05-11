@@ -73,7 +73,7 @@ import {
   enrichTask,
   enrichTaskList,
   rowToTask,
-  selectRunsWithLog,
+  selectTaskRunsWithLog,
 } from "./tasks/serialization.js";
 
 function safeArrayJson(value) {
@@ -83,6 +83,49 @@ function safeArrayJson(value) {
   } catch {
     return [];
   }
+}
+
+function parseRunView(value, { defaultView = "full", allowNone = false } = {}) {
+  const raw = value == null || value === "" ? defaultView : String(value);
+  const allowed = allowNone ? ["none", "summary", "full"] : ["summary", "full"];
+  if (!allowed.includes(raw)) {
+    throw routeError(400, "validation", `invalid runs view: ${raw}`);
+  }
+  return raw;
+}
+
+function parseRunLimit(value, { defaultLimit = null, max = 200 } = {}) {
+  if (value == null || value === "") return defaultLimit;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw routeError(400, "validation", "run_limit must be a positive integer");
+  }
+  return Math.min(parsed, max);
+}
+
+function parseRunCursor(value) {
+  if (value == null || value === "") return null;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    throw routeError(400, "validation", "cursor must be a numeric started_at value");
+  }
+  return parsed;
+}
+
+function taskRunsPayload({ db, taskId, watcher, view = "full", limit = null, cursor = null, includeCursor = false }) {
+  if (view === "none") {
+    return includeCursor ? { runs: [], nextCursor: null } : { runs: [] };
+  }
+  const hasLimit = limit !== null && limit !== undefined && Number.isFinite(Number(limit));
+  const queryLimit = hasLimit ? Number(limit) + 1 : null;
+  const rows = attachLiveInputState(
+    attachContinuationLinks(selectTaskRunsWithLog(db, taskId, { view, limit: queryLimit, cursor })),
+    watcher,
+  );
+  if (!queryLimit) return includeCursor ? { runs: rows, nextCursor: null } : { runs: rows };
+  const runs = rows.slice(0, Number(limit));
+  const nextCursor = rows.length > Number(limit) ? runs[runs.length - 1]?.started_at ?? null : null;
+  return { runs, nextCursor };
 }
 
 function normalizeQuestionAnswers(questions, rawAnswers) {
@@ -436,28 +479,40 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   });
 
   app.get("/api/tasks/:id", (req, res) => {
-    const row = resolveTaskRow(db, req.params.id);
-    if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const comments = enrichCommentRows(db, listTaskComments(db, row.id));
-    const runs = attachLiveInputState(
-      attachContinuationLinks(selectRunsWithLog(db, "WHERE r.task_id = ?", row.id)),
-      watcher,
-    );
-    const task = enrichTask(db, rowToTask(row), config);
-    const taskArtifacts = loadTaskArtifacts(db, row.id);
-    task.artifacts = taskArtifacts.artifacts;
-    task.artifact_summary = taskArtifacts.summary;
-    // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
-    // the watcher isn't wired so the UI can't falsely flag a stuck task.
-    task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
-    // R4: lifetime counters that survive `reset_failure_count`. The UI badge
-    // can render "needed N retries" without scanning task_runs.
-    task.health = getTaskHealth(db, row.id) || null;
-    res.json(withMentions(
-      { db, dataDir },
-      { task, comments, runs },
-      [task.title, task.instructions, comments.map((c) => c.body)],
-    ));
+    try {
+      const row = resolveTaskRow(db, req.params.id);
+      if (!row) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+      const runView = parseRunView(req.query.runs, { defaultView: "full", allowNone: true });
+      const runLimit = parseRunLimit(req.query.run_limit, { defaultLimit: null });
+      const comments = enrichCommentRows(db, listTaskComments(db, row.id));
+      const runPayload = taskRunsPayload({
+        db,
+        taskId: row.id,
+        watcher,
+        view: runView,
+        limit: runLimit,
+        includeCursor: runView !== "full" || runLimit != null,
+      });
+      const task = enrichTask(db, rowToTask(row), config);
+      const taskArtifacts = loadTaskArtifacts(db, row.id);
+      task.artifacts = taskArtifacts.artifacts;
+      task.artifact_summary = taskArtifacts.summary;
+      // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
+      // the watcher isn't wired so the UI can't falsely flag a stuck task.
+      task.is_locked = watcher?.isActive ? !!watcher.isActive(row.id) : null;
+      // R4: lifetime counters that survive `reset_failure_count`. The UI badge
+      // can render "needed N retries" without scanning task_runs.
+      task.health = getTaskHealth(db, row.id) || null;
+      const body = { task, comments, runs: runPayload.runs };
+      if (runPayload.nextCursor !== undefined) body.runs_next_cursor = runPayload.nextCursor;
+      res.json(withMentions(
+        { db, dataDir },
+        body,
+        [task.title, task.instructions, comments.map((c) => c.body)],
+      ));
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
   });
 
   app.patch("/api/tasks/:id", (req, res) => {
@@ -653,13 +708,18 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   });
 
   app.get("/api/tasks/:id/runs", (req, res) => {
-    const existing = resolveTaskRow(db, req.params.id);
-    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const runs = attachLiveInputState(
-      attachContinuationLinks(selectRunsWithLog(db, "WHERE r.task_id = ?", existing.id)),
-      watcher,
-    );
-    res.json({ runs });
+    try {
+      const existing = resolveTaskRow(db, req.params.id);
+      if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+      const view = parseRunView(req.query.view, { defaultView: "full" });
+      const limit = parseRunLimit(req.query.limit, { defaultLimit: null });
+      const cursor = parseRunCursor(req.query.cursor);
+      const includeCursor = limit != null || cursor != null || req.query.view != null;
+      const payload = taskRunsPayload({ db, taskId: existing.id, watcher, view, limit, cursor, includeCursor });
+      res.json(payload);
+    } catch (error) {
+      return sendRouteError(res, error);
+    }
   });
 
   app.get("/api/tasks/:id/run-preview", (req, res) => {

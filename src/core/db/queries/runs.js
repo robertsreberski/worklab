@@ -106,6 +106,51 @@ export function listRecentAgentRuns(db, agentName, limit) {
   `).all(agentName, limit);
 }
 
+const RUN_LOG_COLUMNS = `
+  l.id AS log_id,
+  l.model AS log_model,
+  l.effort AS log_effort,
+  l.input_tokens AS log_input_tokens,
+  l.output_tokens AS log_output_tokens,
+  l.cache_read_tokens AS log_cache_read_tokens,
+  l.cache_creation_tokens AS log_cache_creation_tokens,
+  l.cost_usd AS log_cost_usd,
+  l.duration_ms AS log_duration_ms,
+  l.num_turns AS log_num_turns,
+  l.status AS log_status
+`;
+
+const RUN_SUMMARY_COLUMNS = `
+  r.id,
+  r.task_id,
+  r.parent_run_id,
+  r.mode,
+  r.stage,
+  r.agent_name,
+  r.provider_kind,
+  r.status,
+  r.process_status,
+  r.decision,
+  r.failure_kind,
+  r.retry_stage,
+  r.started_at,
+  r.ended_at,
+  r.exit_code,
+  r.error_text,
+  r.summary,
+  r.details,
+  r.raw_output_path,
+  r.cost_usd,
+  r.artifact_summary_json,
+  r.todo_state_json,
+  r.workspace_mode,
+  r.source_workdir,
+  r.worktree_json,
+  r.parent_relationship,
+  r.team_id,
+  r.kind
+`;
+
 // Latest run summary for a task — used by compactChildTaskSummary.
 export function getLatestTaskRunSummary(db, taskId) {
   return db.prepare(`
@@ -245,17 +290,7 @@ export function selectRunsWithLogJoin(db, whereClause, ...params) {
   return db.prepare(`
     SELECT
       r.*,
-      l.id AS log_id,
-      l.model AS log_model,
-      l.effort AS log_effort,
-      l.input_tokens AS log_input_tokens,
-      l.output_tokens AS log_output_tokens,
-      l.cache_read_tokens AS log_cache_read_tokens,
-      l.cache_creation_tokens AS log_cache_creation_tokens,
-      l.cost_usd AS log_cost_usd,
-      l.duration_ms AS log_duration_ms,
-      l.num_turns AS log_num_turns,
-      l.status AS log_status,
+      ${RUN_LOG_COLUMNS},
       ar.automation_id,
       ar.trigger_type AS automation_trigger_type,
       ar.fired_at AS automation_fired_at,
@@ -267,6 +302,42 @@ export function selectRunsWithLogJoin(db, whereClause, ...params) {
     LEFT JOIN automations a ON a.id = ar.automation_id
     ${whereClause}
     ORDER BY r.started_at DESC, r.rowid DESC
+  `).all(...params);
+}
+
+export function listTaskRunsWithLogJoin(db, taskId, { view = "full", limit = null, cursor = null } = {}) {
+  const summary = view === "summary";
+  const columns = summary ? RUN_SUMMARY_COLUMNS : "r.*";
+  const filters = ["r.task_id = ?"];
+  const params = [taskId];
+  const hasCursor = cursor !== null && cursor !== undefined && cursor !== "";
+  const cursorNumber = Number(cursor);
+  if (hasCursor && Number.isFinite(cursorNumber)) {
+    filters.push("r.started_at < ?");
+    params.push(cursorNumber);
+  }
+  const hasLimit = limit !== null && limit !== undefined && limit !== "";
+  const cappedLimit = hasLimit && Number.isFinite(Number(limit))
+    ? Math.max(1, Math.min(Number(limit), 200))
+    : null;
+  const limitClause = cappedLimit ? "LIMIT ?" : "";
+  if (cappedLimit) params.push(cappedLimit);
+  return db.prepare(`
+    SELECT
+      ${columns},
+      ${RUN_LOG_COLUMNS},
+      ar.automation_id,
+      ar.trigger_type AS automation_trigger_type,
+      ar.fired_at AS automation_fired_at,
+      a.title AS automation_title,
+      a.task_id AS automation_task_id
+    FROM task_runs r
+    LEFT JOIN agent_logs l ON l.task_run_id = r.id
+    LEFT JOIN automation_runs ar ON ar.run_id = r.id
+    LEFT JOIN automations a ON a.id = ar.automation_id
+    WHERE ${filters.join(" AND ")}
+    ORDER BY r.started_at DESC, r.rowid DESC
+    ${limitClause}
   `).all(...params);
 }
 

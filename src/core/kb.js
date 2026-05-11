@@ -648,13 +648,15 @@ export function autoPromotedRunResultInfo(entry = {}) {
   const sourceTaskRef = safeDecode(meta.source_task_key || meta.source_task_id || taskMatch?.[1]);
   const sourceAgent = normalizeNullableString(meta.source_agent || agentMatch?.[1]);
   const slug = String(meta.slug || "").trim();
+  const bodyGeneratedShape = /\n---\r?\n/.test(body);
+  const metadataGeneratedShape = Boolean(meta.source_run_id && (meta.source_task_key || meta.source_task_id));
   const generatedShape = SLUG_RE.test(slug)
     && slug.startsWith("run-")
     && meta.category === "run-results"
     && tags.includes("run-result")
     && !!sourceRunId
     && !!sourceTaskRef
-    && /\n---\r?\n/.test(body);
+    && (bodyGeneratedShape || metadataGeneratedShape);
   return {
     auto_promoted: generatedShape,
     source_run_id: sourceRunId,
