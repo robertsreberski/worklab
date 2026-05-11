@@ -118,4 +118,58 @@ describe("coordinator startup services", () => {
       await coordinator?.shutdown?.();
     }
   });
+
+  it("logs startup phase timings for listener and optional service startup", async () => {
+    const root = mkdtempSync(join(tmpdir(), "worklab-startup-timing-"));
+    roots.push(root);
+    const config = {
+      ...loadConfig({
+        WORKLAB_PORT: "7878",
+        WORKLAB_HOST: "127.0.0.1",
+        WORKLAB_DATA_DIR: join(root, "data"),
+        WORKLAB_WORKSPACE: join(root, "workspace"),
+      }),
+      port: 0,
+    };
+    const testLogger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+
+    const coordinator = await startCoordinator({
+      config,
+      logger: testLogger,
+      optionalStartTimeoutMs: 10,
+      services: {
+        createTaskWatcher: vi.fn(() => watcherService()),
+        createConsolidationManager: vi.fn(() => lifecycleService()),
+        createAutomationManager: vi.fn(() => lifecycleService()),
+        createTeamLeadCron: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+        startSearchIndexer: vi.fn(() => ({ shutdown: vi.fn(async () => {}), reindexAll: vi.fn(async () => ({ sources: 0, chunks: 0 })) })),
+        createWorklabPushNotificationService: vi.fn(() => ({ start: vi.fn(), stop: vi.fn() })),
+        createWorklabSlackService: vi.fn(() => lifecycleService({ status: vi.fn(() => ({ enabled: true, connected: true })) })),
+      },
+    });
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      const phases = testLogger.info.mock.calls
+        .filter(([, message]) => message === "startup phase complete")
+        .map(([payload]) => payload.phase);
+      expect(phases).toEqual(expect.arrayContaining([
+        "database_ready",
+        "http_listen",
+        "optional_services_scheduled",
+        "consolidation_start",
+        "automation_start",
+        "team_lead_start",
+        "push_notifications_start",
+        "slack_start",
+        "search_indexer_start",
+      ]));
+      expect(testLogger.info.mock.calls).toContainEqual([
+        expect.objectContaining({ phase: "http_listen", duration_ms: expect.any(Number), since_start_ms: expect.any(Number) }),
+        "startup phase complete",
+      ]);
+    } finally {
+      await coordinator.shutdown();
+    }
+  });
 });

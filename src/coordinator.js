@@ -11,7 +11,7 @@ import {
   closeDb,
   getDb,
   loadConfig,
-  logger,
+  logger as defaultLogger,
   seedDataFromTemplate,
   seedDefaultAgents,
 } from "./core/index.js";
@@ -56,6 +56,24 @@ function startEventLoopMonitor(logger) {
       clearInterval(timer);
       histogram.disable();
     },
+  };
+}
+
+function createStartupTimer(logger) {
+  const start = process.hrtime.bigint();
+  let previous = start;
+  return (phase, extra = {}) => {
+    if (typeof logger?.info !== "function") return;
+    const now = process.hrtime.bigint();
+    const durationMs = Number(now - previous) / 1e6;
+    const sinceStartMs = Number(now - start) / 1e6;
+    previous = now;
+    logger.info({
+      phase,
+      duration_ms: Math.round(durationMs),
+      since_start_ms: Math.round(sinceStartMs),
+      ...extra,
+    }, "startup phase complete");
   };
 }
 
@@ -148,7 +166,9 @@ export async function startCoordinator({
   config = loadConfig(),
   services = {},
   optionalStartTimeoutMs = DEFAULT_OPTIONAL_SERVICE_START_TIMEOUT_MS,
+  logger = defaultLogger,
 } = {}) {
+  const markStartup = createStartupTimer(logger);
   const deps = {
     createTaskWatcher,
     createConsolidationManager,
@@ -190,6 +210,7 @@ export async function startCoordinator({
   // delete them without re-seeding on every boot.
   const agentSeedResult = seedDefaultAgents({ db, templateDir, logger });
   if (agentSeedResult.seeded > 0) logger.info({ seeded: agentSeedResult.seeded }, "seeded default agents");
+  markStartup("database_ready", { data_dir: config.dataDir });
 
   const workerBinary = join(config.repoRoot, "src", "worker.js");
 
@@ -283,6 +304,7 @@ export async function startCoordinator({
     });
   });
   logger.info({ host: config.host, port: config.port }, "coordinator listening");
+  markStartup("http_listen", { host: config.host, port: http.address()?.port || config.port });
 
   writeFileSync(pidFile, String(process.pid));
 
@@ -290,10 +312,15 @@ export async function startCoordinator({
     if (optionalServicesStarted || shuttingDown) return;
     optionalServicesStarted = true;
     try { consolidationHolder.current.start(); } catch (err) { logger.warn({ err }, "consolidation start error"); }
+    markStartup("consolidation_start");
     try { automationManagerHolder.current.start(); } catch (err) { logger.warn({ err }, "automation manager start error"); }
+    markStartup("automation_start");
     try { teamLeadCronHolder.current.start(); } catch (err) { logger.warn({ err }, "team-lead cron start error"); }
+    markStartup("team_lead_start");
     try { eventLoopMonitor = startEventLoopMonitor(logger); } catch (err) { logger.warn({ err }, "event loop monitor start error"); }
+    markStartup("event_loop_monitor_start");
     try { pushNotifications.start(); } catch (err) { logger.warn({ err }, "push notifications start error"); }
+    markStartup("push_notifications_start");
     try {
       slackHolder.current = startDeferredService({
         name: "slack",
@@ -304,15 +331,18 @@ export async function startCoordinator({
     } catch (err) {
       logger.warn({ err }, "slack service create error");
     }
+    markStartup("slack_start");
     try {
       searchIndexer = deps.startSearchIndexer({ db, dataDir: config.dataDir, broker, logger, events });
     } catch (err) {
       logger.warn({ err }, "search indexer start error");
     }
+    markStartup("search_indexer_start");
   }
 
   optionalServicesHandle = setTimeout(startOptionalServices, 250);
   optionalServicesHandle.unref?.();
+  markStartup("optional_services_scheduled");
 
   const closeHttp = promisify(http.close.bind(http));
 
