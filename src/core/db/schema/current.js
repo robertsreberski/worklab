@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 37;
+export const SCHEMA_VERSION = 38;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -229,7 +229,10 @@ CREATE TABLE IF NOT EXISTS agent_logs (
   duration_ms INTEGER,
   num_turns INTEGER,
   status TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  events_compacted_at INTEGER,
+  events_original_count INTEGER,
+  events_original_bytes INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_logs_run ON agent_logs(task_run_id);
 CREATE INDEX IF NOT EXISTS idx_logs_run_summary
