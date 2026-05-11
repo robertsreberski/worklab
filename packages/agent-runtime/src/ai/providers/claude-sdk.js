@@ -104,6 +104,36 @@ function structuredOutputEvent(value) {
   };
 }
 
+function structuredOutputToolUses(event) {
+  if (event?.type !== "assistant" || !Array.isArray(event.message?.content)) return [];
+  return event.message.content
+    .filter((block) => (
+      block?.type === "tool_use"
+      && block?.name === "StructuredOutput"
+      && block.input !== undefined
+      && (block.id || block.tool_use_id)
+    ))
+    .map((block) => ({
+      id: block.id || block.tool_use_id,
+      input: block.input,
+    }));
+}
+
+function acceptedStructuredOutputValues(event, pendingStructuredOutputById) {
+  if (event?.type !== "user" || !Array.isArray(event.message?.content)) return [];
+  const values = [];
+  for (const block of event.message.content) {
+    if (block?.type !== "tool_result") continue;
+    const id = block.tool_use_id || block.toolUseId;
+    if (!id || !pendingStructuredOutputById.has(id)) continue;
+    const value = pendingStructuredOutputById.get(id);
+    pendingStructuredOutputById.delete(id);
+    if (block.is_error === true) continue;
+    values.push(value);
+  }
+  return values;
+}
+
 function pickSessionId(...values) {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -171,7 +201,7 @@ function structuredOutputRejectionFromEvent(event) {
       if (/structured output|required schema|worklab/i.test(text)) return text;
     }
   }
-  const result = stringifyError(event.tool_use_result);
+  const result = event.is_error === true ? stringifyError(event.tool_use_result) : null;
   return /structured output|required schema|worklab/i.test(result) ? result : null;
 }
 
@@ -538,6 +568,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
   let structuredResult = undefined;
   let errorDetails = null;
   let lastStructuredOutputRejection = null;
+  const pendingStructuredOutputById = new Map();
 
   const rawFinalText = () => resultText || text;
 
@@ -570,8 +601,19 @@ export async function generateClaudeResponse(systemPrompt, options) {
       if (nextSessionId) providerSessionId = nextSessionId;
       emitEvent(event);
       if (event?.type === "tool_progress" && event.tool_name) noteToolUse(event.tool_name);
+      for (const toolUse of structuredOutputToolUses(event)) {
+        pendingStructuredOutputById.set(toolUse.id, toolUse.input);
+      }
       const structuredOutputRejection = structuredOutputRejectionFromEvent(event);
       if (structuredOutputRejection) lastStructuredOutputRejection = structuredOutputRejection;
+      for (const acceptedStructuredOutput of acceptedStructuredOutputValues(event, pendingStructuredOutputById)) {
+        structuredResult = acceptedStructuredOutput;
+        structuredResultSource = "StructuredOutput";
+        emitEvent({
+          ...structuredOutputEvent(acceptedStructuredOutput),
+          source: "StructuredOutput",
+        });
+      }
       const eventStructuredOutput = extractStructuredOutput(event);
       if (eventStructuredOutput !== undefined) {
         structuredResult = eventStructuredOutput;
@@ -613,6 +655,7 @@ export async function generateClaudeResponse(systemPrompt, options) {
           }
           if (hasPreservableFinalOutput()) {
             preservePostSuccessError(`Claude SDK emitted an error after final output; preserved final result. ${resultError.message}`);
+            successfulResultSeen = true;
           } else {
             usage = event.usage || usage;
             durationMs = event.duration_ms || durationMs;
@@ -639,8 +682,8 @@ export async function generateClaudeResponse(systemPrompt, options) {
           numTurns = event.num_turns || numTurns;
           resultText = extractResultText(event) || resultText;
           successfulResultSeen = true;
-          if (options.liveInput) break;
         }
+        if (options.liveInput) break;
       }
       if (cancelled) break;
     }

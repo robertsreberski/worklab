@@ -21,6 +21,23 @@ function mockStream(events) {
   };
 }
 
+function mockTrackedStream(events) {
+  const returnSpy = vi.fn(async () => ({ done: true }));
+  return {
+    return: returnSpy,
+    [Symbol.asyncIterator]() {
+      let index = 0;
+      return {
+        async next() {
+          if (index < events.length) return { value: events[index++], done: false };
+          return { value: undefined, done: true };
+        },
+        return: returnSpy,
+      };
+    },
+  };
+}
+
 function mockStreamWithThrow(events, error) {
   return {
     async *[Symbol.asyncIterator]() {
@@ -473,6 +490,86 @@ describe("generateClaudeResponse", () => {
     )).toBe(true);
   });
 
+  it("preserves accepted StructuredOutput when Claude reports retry exhaustion afterward", async () => {
+    const acceptedStructured = {
+      schema: "worklab.v2",
+      stage: "review",
+      decision: "approve",
+      summary: "Local journal persistence approved.",
+      details: "Tests and build passed.",
+      final_text: "Approve.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      parent_review_policy: null,
+    };
+    const stream = mockTrackedStream([
+      {
+        type: "assistant",
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "toolu_structured",
+            name: "StructuredOutput",
+            input: acceptedStructured,
+          }],
+        },
+      },
+      {
+        type: "user",
+        message: {
+          content: [{
+            type: "tool_result",
+            tool_use_id: "toolu_structured",
+            is_error: false,
+            content: "Structured output provided successfully",
+          }],
+        },
+      },
+      {
+        type: "result",
+        subtype: "error_max_structured_output_retries",
+        is_error: false,
+        errors: ["Failed to provide valid structured output after 5 attempts"],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 40,
+        session_id: "claude-session-structured-accepted",
+      },
+    ]);
+    mockQuery.mockReturnValue(stream);
+    const events = [];
+    const liveInput = createLiveInputQueue();
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "review this" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      effort: "high",
+      liveInput,
+      onEvent: (event) => events.push(event),
+    });
+    liveInput.close();
+
+    expect(r.error).toBeNull();
+    expect(r.structuredResult).toEqual(acceptedStructured);
+    expect(r.structuredResultSource).toBe("StructuredOutput");
+    expect(r.providerSessionId).toBe("claude-session-structured-accepted");
+    expect(r.runtimeWarnings).toEqual([
+      expect.objectContaining({
+        warning_kind: "claude_post_success_error",
+        message: expect.stringContaining("max structured output retries"),
+      }),
+    ]);
+    expect(events).toContainEqual({
+      type: "structured_output",
+      source: "StructuredOutput",
+      value: acceptedStructured,
+    });
+    expect(stream.return).toHaveBeenCalledTimes(1);
+  });
+
   it("classifies unrecoverable Claude structured-output retry exhaustion as invalid_result", async () => {
     mockQuery.mockReturnValue(mockStream([
       { type: "assistant", message: { content: [{ type: "text", text: "I have the answer but cannot format it." }] } },
@@ -503,6 +600,43 @@ describe("generateClaudeResponse", () => {
       provider_session_id: "claude-session-structured-failed",
       turn_count: 27,
     });
+  });
+
+  it("ends live-input runs after an unrecoverable structured-output retry result", async () => {
+    const stream = mockTrackedStream([
+      { type: "assistant", message: { content: [{ type: "text", text: "I have the answer but cannot format it." }] } },
+      {
+        type: "result",
+        subtype: "error_max_structured_output_retries",
+        is_error: false,
+        errors: ["Failed to provide valid structured output after 5 attempts"],
+        usage: { input_tokens: 10, output_tokens: 5 },
+        duration_ms: 100,
+        num_turns: 27,
+        session_id: "claude-session-live-structured-failed",
+      },
+    ]);
+    mockQuery.mockReturnValue(stream);
+    const liveInput = createLiveInputQueue();
+
+    const r = await generateClaudeResponse("sys", {
+      messages: [{ role: "user", content: "do the thing" }],
+      model: { sdk: "claude", model: "claude-opus-4-7" },
+      effort: "high",
+      liveInput,
+      onEvent: () => {},
+    });
+    liveInput.close();
+
+    expect(r.error).toBe("Claude result error (max structured output retries): Failed to provide valid structured output after 5 attempts");
+    expect(r.failureKind).toBe("invalid_result");
+    expect(r.errorDetails).toMatchObject({
+      claude_error_subtype: "error_max_structured_output_retries",
+      structured_output_retry_exhausted: true,
+      provider_session_id: "claude-session-live-structured-failed",
+      turn_count: 27,
+    });
+    expect(stream.return).toHaveBeenCalledTimes(1);
   });
 
   it("preserves successful final output when Claude emits a trailing execution error", async () => {
