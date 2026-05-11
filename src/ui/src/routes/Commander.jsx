@@ -271,6 +271,11 @@ function showCompletedFromQuery(query = {}) {
     || query.group === "completed";
 }
 
+function newTaskHashForProjectFilter(projectFilter) {
+  if (!projectFilter || projectFilter === "all" || projectFilter === "__none__") return "#/tasks/new";
+  return `#/tasks/new?project=${encodeURIComponent(projectFilter)}`;
+}
+
 function initialRuntimeGroupFilter(routeQuery = {}) {
   return normalizeRuntimeGroup(
     routeQuery.group === "done" || routeQuery.group === "completed" ? "all" : routeQuery.group || "all",
@@ -866,6 +871,7 @@ export function Commander({ query: routeQuery = {} }) {
   const canToggleCompleted = groupFilter === "all" && (showCompleted
     ? completedTotal > 0 || stageFilter === "done"
     : hiddenDoneCount > 0);
+  const newTaskHash = newTaskHashForProjectFilter(projectFilter);
 
   function updateGroupFilter(nextGroup) {
     // Stream tab is the renamed Activity surface (§07 critique). Selecting it
@@ -975,7 +981,7 @@ export function Commander({ query: routeQuery = {} }) {
               />
               <Toolbar class="commander-filter-actions">
                 {taskCountLabel && <span class="commander-filter-count">{taskCountLabel}</span>}
-                <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
+                <Button class="commander-new-task-inline" variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash(newTaskHash); }}>
                   <span>New task</span>
                   <Kbd>N</Kbd>
                 </Button>
@@ -1015,7 +1021,7 @@ export function Commander({ query: routeQuery = {} }) {
               title="No tasks yet"
               body="Create a task, assign an owner, and run it when ready."
               cta={
-                <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash("#/tasks/new"); }}>
+                <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => { navigateHash(newTaskHash); }}>
                   Create task
                 </Button>
               }
@@ -1083,7 +1089,7 @@ export function Commander({ query: routeQuery = {} }) {
           iconLeft={<Icon name="plus" size={22} />}
           aria-label="New task"
           title="New task"
-          onClick={() => { navigateHash("#/tasks/new"); }}
+          onClick={() => { navigateHash(newTaskHash); }}
         />
       </div>
       <Modal

@@ -654,6 +654,7 @@ function ProjectDetail({ selectedId, onChanged }) {
       pushToast(`Archive failed: ${err.message}`, { variant: "error" });
     }
   }
+  const newProjectTaskHash = `#/tasks/new?project=${encodeURIComponent(project.slug || project.id)}`;
 
   return (
     <>
@@ -662,7 +663,10 @@ function ProjectDetail({ selectedId, onChanged }) {
           mobileTopbar: <MobileTopbar title={project.slug} backLabel="Projects" onBack={() => navigateHash("#/projects")} />,
           mobileActionDock: (
             <>
-              <Button variant="primary" iconLeft={<Icon name="edit-3" size={13} />} onClick={() => navigateHash(`#/projects/${projectRouteId(project)}/edit`)}>
+              <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => navigateHash(newProjectTaskHash)}>
+                New task
+              </Button>
+              <Button variant="secondary" iconLeft={<Icon name="edit-3" size={13} />} onClick={() => navigateHash(`#/projects/${projectRouteId(project)}/edit`)}>
                 Edit
               </Button>
               {!project.archived && (
@@ -700,6 +704,9 @@ function ProjectDetail({ selectedId, onChanged }) {
         actions={(
           <>
             {project.archived && <Chip variant="muted">Archived</Chip>}
+            <Button variant="primary" iconLeft={<Icon name="plus" size={13} />} onClick={() => navigateHash(newProjectTaskHash)}>
+              New task
+            </Button>
             <Button variant="secondary" iconLeft={<Icon name="edit-3" size={13} />} onClick={() => navigateHash(`#/projects/${projectRouteId(project)}/edit`)}>
               Edit
             </Button>

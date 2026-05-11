@@ -98,7 +98,7 @@ export function App() {
 
   let body;
   if (route === "tasks") {
-    if (rest[0] === "new") body = <TaskEdit mode="create" />;
+    if (rest[0] === "new") body = <TaskEdit mode="create" query={query} />;
     else if (rest[1] === "edit") body = <TaskEdit mode="edit" id={rest[0]} />;
     else if (rest[0]) body = <TaskDetail key={rest[0]} id={rest[0]} runParam={query.run || null} />;
     else body = <Commander query={query} />;
