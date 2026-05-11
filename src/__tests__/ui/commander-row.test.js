@@ -40,16 +40,17 @@ describe("commander row live preview", () => {
     });
   });
 
-  it("encodes streaming state on the row state dot (critique §03 — stage pill removed)", () => {
-    // The right-side stage pill was dropped per critique §03; stage now reads
-    // from the group header + the row state-dot pulse.
-    expect(commanderRowSource).toMatch(/<LivePulse\s+color=\{meta\.color\}/);
-    expect(commanderRowSource).not.toMatch(/commander-cell-pill/);
+  it("keeps workflow stage visible as a right-side StageToken", () => {
+    expect(commanderRowSource).toContain("StageToken");
+    expect(commanderRowSource).toMatch(/<StageToken\s+stage=\{displayStage\}/);
+    expect(commanderRowSource).toContain("commander-cell-pill");
+    expect(commanderRowSource).not.toContain("CommanderInlineMeta");
   });
 
-  it("keeps the row state dot visible after removing the stage pill", () => {
-    expect(ruleBody(".commander-cell-state")).toContain("display: flex");
-    expect(stylesSource).not.toContain(".commander-row > .commander-cell-state       { display: none; }");
+  it("uses sans operational typography for task titles", () => {
+    expect(commanderRowSource).not.toContain('class="commander-title h-entity"');
+    expect(ruleBody(".commander-title")).toContain("font-weight: 600");
+    expect(ruleBody(".commander-title")).not.toContain("font-family: var(--font-display)");
   });
 
   it("coalesces consecutive thinking fragments", () => {

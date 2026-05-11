@@ -2,7 +2,6 @@
 // Per critique §06: tab order matches "doers → compositions → capabilities → knowledge".
 
 import { AppShell } from "../components/AppShell.jsx";
-import { Page } from "../components/layout/Page.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { AgentsTab } from "./library/AgentsTab.jsx";
@@ -36,12 +35,7 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
 
   return (
     <AppShell route="library">
-      <Page
-        kicker="Library"
-        title="Library"
-        description="Agents, teams, skills, and knowledge — everything your tasks reference."
-        class="library-page"
-      >
+      <div class="library-page resource-tab-page">
         <Tabs
           value={activeTab}
           onChange={(next) => navigateHash(`#/library/${next}`)}
@@ -50,7 +44,7 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
           class="library-tabs tabs-pills"
         />
         <div class="library-tab-body">{body}</div>
-      </Page>
+      </div>
     </AppShell>
   );
 }

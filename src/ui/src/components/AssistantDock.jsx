@@ -458,17 +458,9 @@ export function AssistantDock({
   return (
     <>
       {!open && (
-        <button
-          type="button"
-          class="assistant-pill"
-          aria-label="Open assistant"
-          title="Open assistant (⌘\\)"
-          onClick={onToggle}
-        >
-          <span class={`assistant-pill-dot ${activeRunId ? "active" : ""}`.trim()} aria-hidden="true" />
-          <Icon name="sparkles" size={13} class="assistant-pill-icon" />
-          <span class="assistant-pill-label">Assistant</span>
-          <span class="assistant-pill-kbd" aria-hidden="true">⌘\</span>
+        <button type="button" class="assistant-launcher" onClick={onToggle} aria-label="Open assistant" title="Open assistant (⌘\\)">
+          <Icon name="message-circle" size={18} />
+          {activeRunId && <span class="assistant-launcher-dot" aria-hidden="true" />}
         </button>
       )}
       {body}
