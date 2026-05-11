@@ -169,7 +169,11 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
       dock?.classList?.remove?.("assistant-keyboard-lifted");
       dock?.classList?.remove?.("assistant-keyboard-fallback");
       dock?.classList?.remove?.("assistant-composer-focused");
-      if (dock?.dataset) delete dock.dataset.assistantKeyboardMode;
+      if (dock?.dataset) {
+        delete dock.dataset.assistantKeyboardMode;
+        delete dock.dataset.assistantKeyboardEstimate;
+        delete dock.dataset.assistantKeyboardTargetBottom;
+      }
     };
 
     if (!open || typeof window === "undefined" || typeof document === "undefined") {
@@ -244,7 +248,11 @@ function useAssistantKeyboardLift({ open, dockRef, textareaRef, scrollRef }) {
 
       dock.classList.add("assistant-composer-focused");
       dock.style.setProperty(ASSISTANT_KEYBOARD_FALLBACK_LIFT_VAR, cssPx(liftState.fallbackLift));
-      if (dock.dataset) dock.dataset.assistantKeyboardMode = liftState.mode;
+      if (dock.dataset) {
+        dock.dataset.assistantKeyboardMode = liftState.mode;
+        dock.dataset.assistantKeyboardEstimate = String(Math.round(liftState.estimatedKeyboardHeight || 0));
+        dock.dataset.assistantKeyboardTargetBottom = String(Math.round(liftState.fallbackTargetBottom || 0));
+      }
       if (lift > 0) {
         dock.style.setProperty(ASSISTANT_KEYBOARD_LIFT_VAR, cssPx(lift));
         dock.classList.add("assistant-keyboard-lifted");

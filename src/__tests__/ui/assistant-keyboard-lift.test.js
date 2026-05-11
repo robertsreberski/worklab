@@ -68,11 +68,13 @@ describe("assistant keyboard lift", () => {
     })).toMatchObject({
       lift: 332,
       mode: "measured",
-      fallbackLift: 388,
+      fallbackLift: 329,
+      estimatedKeyboardHeight: 321,
+      fallbackTargetBottom: 523,
     });
   });
 
-  it("uses fallback lift when iOS reports a full-height visual viewport while focused", () => {
+  it("uses supplemental fallback lift when iOS reports a full-height visual viewport while focused", () => {
     expect(computeAssistantKeyboardLiftState({
       visibleBottom: 844,
       dockBottom: 844,
@@ -84,13 +86,55 @@ describe("assistant keyboard lift", () => {
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 388,
+      lift: 329,
       mode: "fallback",
-      fallbackLift: 388,
+      fallbackLift: 329,
+      estimatedKeyboardHeight: 321,
+      fallbackTargetBottom: 523,
     });
   });
 
-  it("uses fallback lift when the visible viewport shrink is below the measured threshold", () => {
+  it("does not add fallback when native iOS pan already clears the estimated keyboard", () => {
+    expect(computeAssistantKeyboardLiftState({
+      visibleBottom: 844,
+      dockBottom: 844,
+      dockHeight: 844,
+      composerTop: 436,
+      composerBottom: 512,
+      textareaBottom: 500,
+      headerBottom: 76,
+      composerFocused: true,
+      mobileLayout: true,
+    })).toMatchObject({
+      lift: 0,
+      mode: "none",
+      fallbackLift: 0,
+      estimatedKeyboardHeight: 321,
+      fallbackTargetBottom: 523,
+    });
+  });
+
+  it("adds only the remaining fallback delta after partial native iOS pan", () => {
+    expect(computeAssistantKeyboardLiftState({
+      visibleBottom: 844,
+      dockBottom: 844,
+      dockHeight: 844,
+      composerTop: 544,
+      composerBottom: 620,
+      textareaBottom: 600,
+      headerBottom: 76,
+      composerFocused: true,
+      mobileLayout: true,
+    })).toMatchObject({
+      lift: 105,
+      mode: "fallback",
+      fallbackLift: 105,
+      estimatedKeyboardHeight: 321,
+      fallbackTargetBottom: 523,
+    });
+  });
+
+  it("uses supplemental fallback when the visible viewport shrink is below the measured threshold", () => {
     expect(computeAssistantKeyboardLiftState({
       keyboardHeight: 120,
       visibleBottom: 700,
@@ -103,9 +147,11 @@ describe("assistant keyboard lift", () => {
       composerFocused: true,
       mobileLayout: true,
     })).toMatchObject({
-      lift: 388,
+      lift: 329,
       mode: "fallback",
-      fallbackLift: 388,
+      fallbackLift: 329,
+      estimatedKeyboardHeight: 321,
+      fallbackTargetBottom: 523,
     });
   });
 
@@ -115,8 +161,8 @@ describe("assistant keyboard lift", () => {
       dockBottom: 700,
       dockHeight: 700,
       composerTop: 360,
-      composerBottom: 430,
-      textareaBottom: 412,
+      composerBottom: 700,
+      textareaBottom: 682,
       headerBottom: 100,
       composerFocused: true,
       mobileLayout: true,
@@ -124,6 +170,8 @@ describe("assistant keyboard lift", () => {
       lift: 248,
       mode: "fallback",
       fallbackLift: 248,
+      estimatedKeyboardHeight: 280,
+      fallbackTargetBottom: 420,
     });
   });
 
