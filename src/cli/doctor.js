@@ -19,6 +19,12 @@ import { applyConfigArgs } from "./args.js";
 import { inspectServiceRuntime, serviceRuntimeProblems } from "./service-runtime.js";
 
 export async function doctor(args = []) {
+  if (args[0] === "performance") {
+    applyConfigArgs(args.slice(1));
+    const { doctorPerformance } = await import("./performance-doctor.js");
+    return doctorPerformance(args.slice(1));
+  }
+
   applyConfigArgs(args);
   const config = loadConfig();
   const problems = [];
