@@ -2316,6 +2316,18 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks`);
   await expect(page.locator(".commander-row").first()).toBeVisible();
 
+  for (const label of ["Tasks", "Agents", "Knowledge"]) {
+    await expect(page.locator(".app-tabbar a", { hasText: label })).toBeVisible();
+  }
+
+  await page.locator(".app-tabbar a", { hasText: "Agents" }).click();
+  await expect(page).toHaveURL(/#\/library\/agents$/);
+  await expect(page.locator(".pane-list")).toBeVisible();
+
+  await page.locator(".app-tabbar a", { hasText: "Knowledge" }).click();
+  await expect(page).toHaveURL(/#\/library\/knowledge$/);
+  await expect(page.locator(".pane-list")).toBeVisible();
+
   const more = page.locator(".app-tabbar button", { hasText: "More" });
   await expect(more).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "false");
@@ -2325,7 +2337,7 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
   await expect(sheet).toBeVisible();
   await expect(more).toHaveAttribute("aria-expanded", "true");
 
-  for (const label of ["Library", "Settings"]) {
+  for (const label of ["Projects", "Teams", "Skills", "Goals", "Runs", "Settings"]) {
     await expect(sheet.getByRole("link", { name: label })).toBeVisible();
   }
 
@@ -2341,18 +2353,24 @@ test("mobile More tab opens overflow navigation routes", async ({ page }) => {
       sheetOverflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
-  expect(metrics.navCount).toBe(5);
+  expect(metrics.navCount).toBe(4);
   expect(metrics.navMinWidth).toBeGreaterThanOrEqual(44);
   expect(metrics.navMaxWidth - metrics.navMinWidth).toBeLessThanOrEqual(1);
-  expect(metrics.sheetLinkLabels).toEqual(["Library", "Settings"]);
+  expect(metrics.sheetLinkLabels).toEqual(["Projects", "Teams", "Skills", "Goals", "Runs", "Settings"]);
   expect(metrics.minSheetLinkHeight).toBeGreaterThanOrEqual(44);
   expect(metrics.sheetOverflow).toBeLessThanOrEqual(0);
   await expectNoHorizontalOverflow(page, "mobile More sheet");
 
-  await sheet.getByRole("link", { name: "Library" }).click();
-  await expect(page).toHaveURL(/#\/library$/);
+  await sheet.getByRole("link", { name: "Projects" }).click();
+  await expect(page).toHaveURL(/#\/projects$/);
   await expect(page.locator(".pane-list")).toBeVisible();
   await expect(page.locator(".app-more-sheet")).toHaveCount(0);
+
+  await more.click();
+  await expect(page.locator(".app-more-sheet.open")).toBeVisible();
+  await page.locator(".app-more-sheet.open").getByRole("link", { name: "Settings" }).click();
+  await expect(page).toHaveURL(/#\/settings$/);
+  await expect(page.locator(".settings-route-shell")).toBeVisible();
 
   await page.goto(`${baseUrl}/#/settings/providers`);
   await expect(page.locator(".pane-list")).toBeVisible();
