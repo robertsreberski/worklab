@@ -29,22 +29,13 @@ export const ROUTE_GROUPS = [
       { id: "tasks", label: "Tasks", icon: "layout-list", href: "#/tasks" },
       { id: "goals", label: "Goals", icon: "target", href: "#/goals" },
       { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
+    ],
+  },
+  {
+    label: "Build",
+    routes: [
+      { id: "library", label: "Library", icon: "book", href: "#/library" },
       { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
-    ],
-  },
-  {
-    label: "Library",
-    routes: [
-      { id: "teams", label: "Teams", icon: "users", href: "#/library/teams" },
-      { id: "agents", label: "Agents", icon: "user", href: "#/library/agents" },
-      { id: "skills", label: "Skills", icon: "sparkles", href: "#/library/skills" },
-      { id: "knowledge", label: "Knowledge", icon: "book", href: "#/library/knowledge" },
-    ],
-  },
-  {
-    label: "System",
-    routes: [
-      { id: "providers", label: "Providers", icon: "terminal", href: "#/settings/providers" },
       { id: "settings", label: "Settings", icon: "settings", href: "#/settings" },
     ],
   },
@@ -59,7 +50,7 @@ const TABBAR_ROUTES = [
   { id: "projects", label: "Projects", icon: "folder", href: "#/projects" },
   { id: "runs", label: "Runs", icon: "clock", href: "#/runs" },
 ];
-const MORE_ROUTE_IDS = ["teams", "agents", "skills", "knowledge", "providers", "settings"];
+const MORE_ROUTE_IDS = ["library", "settings"];
 const MORE_ROUTES = ROUTES
   .filter((route) => MORE_ROUTE_IDS.includes(route.id))
   .map((route) => ({ ...route, href: route.href || `#/${route.id}` }));
@@ -79,9 +70,8 @@ function routeIsActive(item, route) {
   const hash = currentHash();
   if (hash === href || hash.startsWith(`${href}/`) || hash.startsWith(`${href}?`)) return true;
   if (!hash && route === item.id) return true;
-  if (item.id === "settings") return route === "settings" && !hash.startsWith("#/settings/providers");
-  if (item.id === "providers") return hash.startsWith("#/settings/providers");
-  if (["teams", "agents", "skills", "knowledge"].includes(item.id)) return hash.startsWith(`#/library/${item.id}`);
+  if (item.id === "settings") return route === "settings" || hash.startsWith("#/settings");
+  if (item.id === "library") return route === "library" || hash.startsWith("#/library");
   return route === item.id;
 }
 

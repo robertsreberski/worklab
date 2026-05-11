@@ -21,7 +21,7 @@ import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { Icon } from "../components/Icon.jsx";
-import { ControlGroup, ControlGroupStack, InlineHead, Page, PanelGrid, SectionStack, Toolbar } from "../components/layout/index.js";
+import { ControlGroup, ControlGroupStack, InlineHead, PageHeader, PanelGrid, SectionStack, Toolbar } from "../components/layout/index.js";
 import {
   disableNotifications,
   notificationSettings,
@@ -144,17 +144,63 @@ function buildMcpHealthDraft(rows = []) {
 const SETTINGS_TAB_ORDER = ["general", "providers", "about"];
 const SETTINGS_TAB_LABELS = { general: "General", providers: "Providers", about: "About" };
 
+function SettingsTabs({ activeTab }) {
+  return (
+    <Tabs
+      value={activeTab}
+      onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
+      tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
+      ariaLabel="Settings tabs"
+      class="settings-tabs tabs-pills"
+    />
+  );
+}
+
+function SettingsRouteShell({
+  activeTab,
+  title,
+  description,
+  actions = null,
+  mobileActionDock = null,
+  compact = false,
+  children,
+}) {
+  return (
+    <AppShell route="settings" mobileActionDock={mobileActionDock}>
+      <div class={`settings-page settings-route-shell ${compact ? "settings-route-compact" : ""}`.trim()}>
+        <PageHeader
+          kicker="Settings"
+          title={title}
+          description={description}
+          actions={actions}
+        />
+        <SettingsTabs activeTab={activeTab} />
+        <div class="settings-route-content">
+          {children}
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
 function AboutTab() {
   return (
     <div class="settings-about">
-      <p>
-        <strong>Worklab</strong> — local agents.
-      </p>
-      <p class="soft-meta">
-        A single-user, local AI agent orchestration app. Everything runs on your
-        machine; the assistant dock is summoned with <kbd>⌘\</kbd>; press <kbd>?</kbd>
-        anywhere for keyboard shortcuts.
-      </p>
+      <PanelGrid class="settings-about-grid">
+        <SettingPanel icon="sparkles" title="Worklab" meta="Local agent orchestration">
+          <p>
+            Worklab is a single-user local app for planning, running, reviewing,
+            and observing AI agent work on this machine.
+          </p>
+        </SettingPanel>
+        <SettingPanel icon="keyboard" title="Shortcuts" meta="Fast local controls">
+          <div class="settings-shortcut-list">
+            <span><kbd>⌘\</kbd> opens the assistant dock.</span>
+            <span><kbd>?</kbd> opens keyboard shortcuts.</span>
+            <span><kbd>N</kbd> creates a new task.</span>
+          </div>
+        </SettingPanel>
+      </PanelGrid>
     </div>
   );
 }
@@ -164,40 +210,25 @@ export function Settings({ tab = "general", rest = [] }) {
   if (activeTab === "providers") {
     const [item] = rest;
     return (
-      <AppShell route="settings">
-        <div class="settings-page settings-route-compact">
-          <Tabs
-            value={activeTab}
-            onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
-            tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
-            ariaLabel="Settings tabs"
-            class="settings-tabs tabs-pills"
-          />
-          <ProvidersTab selectedId={item || null} />
-        </div>
-      </AppShell>
+      <SettingsRouteShell
+        activeTab={activeTab}
+        title="Providers"
+        description="Model provider connections, availability, discovery, and pricing controls."
+        compact
+      >
+        <ProvidersTab selectedId={item || null} />
+      </SettingsRouteShell>
     );
   }
   if (activeTab === "about") {
     return (
-      <AppShell route="settings">
-        <div class="settings-page">
-          <div class="ds-page-head">
-            <div class="ds-page-title">
-              <span class="form-section-kicker">Settings</span>
-              <h1>Settings</h1>
-            </div>
-          </div>
-          <Tabs
-            value={activeTab}
-            onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
-            tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
-            ariaLabel="Settings tabs"
-            class="settings-tabs tabs-pills"
-          />
-          <AboutTab />
-        </div>
-      </AppShell>
+      <SettingsRouteShell
+        activeTab={activeTab}
+        title="About Worklab"
+        description="Local runtime identity, app shortcuts, and operating model."
+      >
+        <AboutTab />
+      </SettingsRouteShell>
     );
   }
   return <SettingsGeneral />;
@@ -545,20 +576,22 @@ function SettingsGeneral() {
 
   if (!settings || !runtimeDraft) {
     return (
-      <AppShell route="settings">
-        <Page>
-          {loadError ? (
-            <Banner
-              variant="error"
-              title="Settings failed to load"
-              detail={loadError}
-              actions={<Button size="sm" variant="secondary" onClick={() => loadSettings().catch((err) => setLoadError(err.message || "Settings failed"))}>Retry</Button>}
-            />
-          ) : (
-            <LoadingState caption="Loading settings..." />
-          )}
-        </Page>
-      </AppShell>
+      <SettingsRouteShell
+        activeTab="general"
+        title="Settings"
+        description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
+      >
+        {loadError ? (
+          <Banner
+            variant="error"
+            title="Settings failed to load"
+            detail={loadError}
+            actions={<Button size="sm" variant="secondary" onClick={() => loadSettings().catch((err) => setLoadError(err.message || "Settings failed"))}>Retry</Button>}
+          />
+        ) : (
+          <LoadingState caption="Loading settings..." />
+        )}
+      </SettingsRouteShell>
     );
   }
 
@@ -653,21 +686,13 @@ function SettingsGeneral() {
   ];
 
   return (
-    <AppShell route="settings" mobileActionDock={isDirty || formSave.saving ? pageActions : null}>
-      <Page
-        class="settings-page"
-        kicker="Settings"
-        title="Settings"
-        description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
-        actions={pageActions}
-      >
-        <Tabs
-          value="general"
-          onChange={(next) => navigateHash(next === "general" ? "#/settings" : `#/settings/${next}`)}
-          tabs={SETTINGS_TAB_ORDER.map((id) => ({ value: id, label: SETTINGS_TAB_LABELS[id] }))}
-          ariaLabel="Settings tabs"
-          class="settings-tabs tabs-pills"
-        />
+    <SettingsRouteShell
+      activeTab="general"
+      title="Settings"
+      description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
+      actions={pageActions}
+      mobileActionDock={isDirty || formSave.saving ? pageActions : null}
+    >
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
         )}
@@ -1256,7 +1281,6 @@ function SettingsGeneral() {
           </SettingsSection>
 
         </div>
-      </Page>
-    </AppShell>
+    </SettingsRouteShell>
   );
 }

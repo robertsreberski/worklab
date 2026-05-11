@@ -3309,6 +3309,15 @@ html.assistant-resizing * {
   min-width: 0;
   margin-left: auto;
 }
+.commander-new-task-inline .button-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+}
+.commander-new-task-inline .kbd {
+  flex: 0 0 auto;
+  margin-left: var(--sp-1);
+}
 .commander-filter-count {
   color: var(--text-muted);
   font-size: var(--text-sm);
@@ -6681,8 +6690,7 @@ html.assistant-resizing * {
   width: 100%;
   margin: 0 auto;
 }
-.resource-tab-page,
-.settings-route-compact {
+.resource-tab-page {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
@@ -6697,8 +6705,7 @@ html.assistant-resizing * {
   flex: 1 1 auto;
   min-height: 0;
 }
-.library-tab-body > .two-pane,
-.settings-route-compact > .two-pane {
+.library-tab-body > .two-pane {
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -7602,6 +7609,72 @@ html.assistant-resizing * {
 /* §6.10 Settings */
 .settings-page {
   max-width: 1200px;
+}
+.settings-route-shell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  min-height: 100%;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--sp-5) var(--sp-6);
+}
+.settings-route-shell.settings-route-compact {
+  max-width: none;
+}
+.settings-route-shell > .ds-page-head {
+  flex: 0 0 auto;
+}
+.settings-route-compact > .ds-page-head {
+  padding-block: var(--sp-4);
+}
+.settings-tabs {
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-route-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.settings-route-content > .two-pane {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.settings-about {
+  min-width: 0;
+}
+.ds-panel-grid.settings-about-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: var(--sp-4);
+}
+.settings-about p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  line-height: 1.5;
+}
+.settings-shortcut-list {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.settings-shortcut-list span {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .settings-page-head {
   display: flex;
@@ -10223,9 +10296,17 @@ button.settings-overview-card:focus-visible,
   .pane-detail-body > .form-section,
   .goal-editor > .form-section { padding: var(--sp-4); }
   .pane-row-summary { justify-content: flex-start; }
-  .resource-tab-page,
-  .settings-route-compact {
+  .resource-tab-page {
     padding-inline: var(--sp-2);
+  }
+  .settings-route-shell {
+    padding: 0 var(--sp-4) var(--sp-4);
+  }
+  .settings-route-shell.settings-route-compact {
+    padding-inline: var(--sp-2);
+  }
+  .settings-route-shell > .ds-page-head:first-child {
+    padding-top: var(--sp-4);
   }
   .pane-list-head { padding: var(--sp-2) var(--sp-3); gap: var(--sp-2); }
   .pane-list-head > .button { width: 100%; }
