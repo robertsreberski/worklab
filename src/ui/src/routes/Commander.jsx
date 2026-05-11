@@ -38,6 +38,8 @@ const HIDDEN_DONE_LIMIT = 0;
 const SHOWN_DONE_LIMIT = 200;
 const RUN_PROGRESS_PREVIEW_LIMIT = 12;
 const COMMANDER_TASK_LIST_CACHE_LIMIT = 4;
+const COMMANDER_TASK_LIST_STORAGE_PREFIX = "worklab:commander-task-list:";
+const COMMANDER_TASK_LIST_STORAGE_VERSION = 1;
 export const COMMANDER_COST_SUMMARY_INITIAL_DELAY_MS = 1200;
 export const COMMANDER_COST_SUMMARY_POLL_MS = 60_000;
 const commanderTaskListCache = new Map();
@@ -294,8 +296,7 @@ export function commanderTaskListCacheKey(filters = {}) {
   return `runtime:${commanderTaskListRequestQuery(filters).done_limit}`;
 }
 
-export function readCommanderTaskListCache(cacheKey) {
-  const snapshot = commanderTaskListCache.get(cacheKey);
+function cloneTaskListSnapshot(snapshot) {
   if (!snapshot) return null;
   return {
     tasks: [...(snapshot.tasks || [])],
@@ -303,13 +304,101 @@ export function readCommanderTaskListCache(cacheKey) {
   };
 }
 
+function commanderTaskListStorageKey(cacheKey) {
+  return `${COMMANDER_TASK_LIST_STORAGE_PREFIX}${cacheKey}`;
+}
+
+function commanderTaskListStorage() {
+  try {
+    return globalThis.localStorage || null;
+  } catch {
+    return null;
+  }
+}
+
+function readStoredCommanderTaskListCache(cacheKey) {
+  const storage = commanderTaskListStorage();
+  if (!storage) return null;
+  try {
+    const raw = storage.getItem(commanderTaskListStorageKey(cacheKey));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.version !== COMMANDER_TASK_LIST_STORAGE_VERSION || !Array.isArray(parsed.tasks)) return null;
+    return {
+      tasks: parsed.tasks,
+      summary: parsed.summary || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredCommanderTaskListCache(cacheKey, snapshot) {
+  const storage = commanderTaskListStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(commanderTaskListStorageKey(cacheKey), JSON.stringify({
+      version: COMMANDER_TASK_LIST_STORAGE_VERSION,
+      saved_at: Date.now(),
+      tasks: snapshot.tasks || [],
+      summary: snapshot.summary || null,
+    }));
+  } catch {
+    // Browser storage is an opportunistic first-paint cache.
+  }
+}
+
+function clearStoredCommanderTaskListCache() {
+  const storage = commanderTaskListStorage();
+  if (!storage) return;
+  try {
+    if (typeof storage.length === "number" && typeof storage.key === "function") {
+      const keys = [];
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(COMMANDER_TASK_LIST_STORAGE_PREFIX)) keys.push(key);
+      }
+      keys.forEach((key) => storage.removeItem(key));
+      return;
+    }
+    for (const key of [
+      commanderTaskListStorageKey("runtime:0"),
+      commanderTaskListStorageKey("runtime:200"),
+    ]) {
+      storage.removeItem?.(key);
+    }
+  } catch {
+    // Best effort cleanup for tests and browser storage.
+  }
+}
+
+function scheduleIdleWork(callback, timeout = 900) {
+  if (typeof window !== "undefined" && typeof window.requestIdleCallback === "function") {
+    const handle = window.requestIdleCallback(callback, { timeout });
+    return () => window.cancelIdleCallback?.(handle);
+  }
+  const handle = setTimeout(callback, Math.min(timeout, 250));
+  return () => clearTimeout(handle);
+}
+
+export function readCommanderTaskListCache(cacheKey) {
+  const snapshot = commanderTaskListCache.get(cacheKey);
+  if (snapshot) return cloneTaskListSnapshot(snapshot);
+  const stored = readStoredCommanderTaskListCache(cacheKey);
+  if (!stored) return null;
+  writeCommanderTaskListCache(cacheKey, stored);
+  return cloneTaskListSnapshot(stored);
+}
+
 export function writeCommanderTaskListCache(cacheKey, snapshot = {}) {
   if (!cacheKey) return;
   if (commanderTaskListCache.has(cacheKey)) commanderTaskListCache.delete(cacheKey);
-  commanderTaskListCache.set(cacheKey, {
+  const normalized = {
     tasks: [...(snapshot.tasks || [])],
     summary: snapshot.summary || null,
-  });
+  };
+  commanderTaskListCache.set(cacheKey, normalized);
+  writeStoredCommanderTaskListCache(cacheKey, normalized);
   while (commanderTaskListCache.size > COMMANDER_TASK_LIST_CACHE_LIMIT) {
     const oldestKey = commanderTaskListCache.keys().next().value;
     commanderTaskListCache.delete(oldestKey);
@@ -318,6 +407,7 @@ export function writeCommanderTaskListCache(cacheKey, snapshot = {}) {
 
 export function clearCommanderTaskListCache() {
   commanderTaskListCache.clear();
+  clearStoredCommanderTaskListCache();
 }
 
 function BulkTaskBar({
@@ -589,10 +679,21 @@ export function Commander({ query: routeQuery = {} }) {
   useEffect(() => { reload(); }, [reload]);
   useEffect(() => {
     const controller = new AbortController();
-    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((e) => { if (e?.name !== "AbortError") setAgents([]); });
-    api.listProjects(null, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
-    api.listTeams(null, { signal: controller.signal }).then((r) => setTeams(r.teams || [])).catch((e) => { if (e?.name !== "AbortError") setTeams([]); });
-    return () => controller.abort();
+    const cancelIdle = scheduleIdleWork(() => {
+      api.listAgents({ view: "summary" }, { signal: controller.signal })
+        .then((r) => setAgents(r.agents || []))
+        .catch((e) => { if (e?.name !== "AbortError") setAgents([]); });
+      api.listProjects(null, { signal: controller.signal })
+        .then((r) => setProjects(r.projects || []))
+        .catch((e) => { if (e?.name !== "AbortError") setProjects([]); });
+      api.listTeams(null, { signal: controller.signal })
+        .then((r) => setTeams(r.teams || []))
+        .catch((e) => { if (e?.name !== "AbortError") setTeams([]); });
+    });
+    return () => {
+      cancelIdle();
+      controller.abort();
+    };
   }, []);
   useEffect(() => () => {
     reloadAbortRef.current?.abort?.();

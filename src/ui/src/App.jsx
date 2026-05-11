@@ -15,14 +15,40 @@ function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
 }
 
-const DesignSystem = lazyNamed(() => import("./routes/DesignSystem.jsx"), "DesignSystem");
-const Goals = lazyNamed(() => import("./routes/Goals.jsx"), "Goals");
-const Library = lazyNamed(() => import("./routes/Library.jsx"), "Library");
-const Projects = lazyNamed(() => import("./routes/Projects.jsx"), "Projects");
-const Runs = lazyNamed(() => import("./routes/Runs.jsx"), "Runs");
-const Settings = lazyNamed(() => import("./routes/Settings.jsx"), "Settings");
-const TaskDetail = lazyNamed(() => import("./routes/TaskDetail.jsx"), "TaskDetail");
-const TaskEdit = lazyNamed(() => import("./routes/TaskEdit.jsx"), "TaskEdit");
+const routeLoaders = {
+  designSystem: () => import("./routes/DesignSystem.jsx"),
+  goals: () => import("./routes/Goals.jsx"),
+  library: () => import("./routes/Library.jsx"),
+  projects: () => import("./routes/Projects.jsx"),
+  runs: () => import("./routes/Runs.jsx"),
+  settings: () => import("./routes/Settings.jsx"),
+  taskDetail: () => import("./routes/TaskDetail.jsx"),
+  taskEdit: () => import("./routes/TaskEdit.jsx"),
+};
+
+const DesignSystem = lazyNamed(routeLoaders.designSystem, "DesignSystem");
+const Goals = lazyNamed(routeLoaders.goals, "Goals");
+const Library = lazyNamed(routeLoaders.library, "Library");
+const Projects = lazyNamed(routeLoaders.projects, "Projects");
+const Runs = lazyNamed(routeLoaders.runs, "Runs");
+const Settings = lazyNamed(routeLoaders.settings, "Settings");
+const TaskDetail = lazyNamed(routeLoaders.taskDetail, "TaskDetail");
+const TaskEdit = lazyNamed(routeLoaders.taskEdit, "TaskEdit");
+
+function preloadSecondaryRoutes() {
+  for (const loader of Object.values(routeLoaders)) {
+    loader().catch(() => {});
+  }
+}
+
+function scheduleIdlePreload(callback) {
+  if (typeof window.requestIdleCallback === "function") {
+    const handle = window.requestIdleCallback(callback, { timeout: 2500 });
+    return () => window.cancelIdleCallback?.(handle);
+  }
+  const handle = window.setTimeout(callback, 750);
+  return () => window.clearTimeout(handle);
+}
 
 function RouteFallback() {
   return <LoadingState caption="Loading route..." />;
@@ -65,6 +91,8 @@ export function App() {
   useEffect(() => {
     if (route === "automations") navigateHash("#/tasks");
   }, [route]);
+
+  useEffect(() => scheduleIdlePreload(preloadSecondaryRoutes), []);
 
   // Global keyboard shortcuts now live in AppShell via useGlobalShortcuts.
 

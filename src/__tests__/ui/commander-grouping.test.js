@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   RUNTIME_GROUPS,
   agentBulkOptions,
@@ -213,5 +213,27 @@ describe("commander task grouping", () => {
     firstRead.tasks.push({ id: "task-2", title: "Mutation attempt" });
     expect(readCommanderTaskListCache(key).tasks).toHaveLength(1);
     expect(readCommanderTaskListCache("runtime:200")).toBeNull();
+  });
+
+  it("persists task-list cache snapshots for reload-time first paint", () => {
+    const originalStorage = globalThis.localStorage;
+    const store = new Map();
+    globalThis.localStorage = {
+      getItem: vi.fn((key) => store.get(key) || null),
+      setItem: vi.fn((key, value) => { store.set(key, value); }),
+      removeItem: vi.fn((key) => { store.delete(key); }),
+    };
+    try {
+      const key = commanderTaskListCacheKey({ showCompleted: false });
+      writeCommanderTaskListCache(key, {
+        tasks: [{ id: "task-1", title: "Persisted task" }],
+        summary: { hidden_done_count: 3 },
+      });
+
+      expect(globalThis.localStorage.setItem).toHaveBeenCalled();
+      expect(store.size).toBeGreaterThan(0);
+    } finally {
+      globalThis.localStorage = originalStorage;
+    }
   });
 });

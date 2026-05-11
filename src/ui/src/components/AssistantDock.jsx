@@ -172,6 +172,7 @@ export function AssistantDock({
   const preserveScrollRef = useRef(null);
   const skipNextAutoScrollRef = useRef(false);
   const textareaRef = useRef(null);
+  const hasLoadedAssistantRef = useRef(false);
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
   const canSend = draft.trim().length > 0 && !sending && !activeRunId;
@@ -194,8 +195,10 @@ export function AssistantDock({
   }
 
   useEffect(() => {
+    if (!open || hasLoadedAssistantRef.current) return;
+    hasLoadedAssistantRef.current = true;
     loadAssistant();
-  }, []);
+  }, [open]);
 
   useEffect(() => () => resizeCleanupRef.current?.(), []);
 

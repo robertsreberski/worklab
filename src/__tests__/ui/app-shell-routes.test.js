@@ -105,10 +105,20 @@ describe("app shell routes", () => {
 
     expect(source).toContain('import { Commander } from "./routes/Commander.jsx";');
     expect(source).toContain("Suspense");
+    expect(source).toContain("preloadSecondaryRoutes");
+    expect(source).toContain("requestIdleCallback");
     for (const routeModule of lazyRouteModules) {
       expect(source).not.toContain(`import { ${routeModule} } from "./routes/${routeModule}.jsx";`);
       expect(source).toContain(`import("./routes/${routeModule}.jsx")`);
     }
+  });
+
+  it("defers assistant hydration until the dock is opened", () => {
+    const source = readFileSync(assistantDockPath, "utf8");
+
+    expect(source).toContain("hasLoadedAssistantRef");
+    expect(source).toContain("if (!open || hasLoadedAssistantRef.current) return");
+    expect(source).not.toContain("useEffect(() => {\n    loadAssistant();\n  }, [])");
   });
 
   it("keeps the task detail route out of the eager commander chunk", () => {
