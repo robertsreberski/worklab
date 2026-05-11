@@ -7,6 +7,11 @@
 // live numeric values for every dimension that could possibly explain a body /
 // dock height mismatch on iOS. Read them off the device and report — no
 // guessing required.
+//
+// NOTE: this overlay's side-effect (1 Hz forced layout + computed-style reads)
+// is what originally fixed the iOS 26.2+ empty-band bug. That fix has since been
+// productionized — see forceViewportReflow / the viewport-reflow tick in
+// `./mobileViewport.js`. This file remains purely opt-in diagnostics.
 
 const ENABLE_KEY = "worklab.debugViewport";
 
