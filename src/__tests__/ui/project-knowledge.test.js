@@ -77,7 +77,7 @@ describe("project knowledge helpers", () => {
       },
     });
 
-    expect(hash).toContain("#/knowledge/new?");
+    expect(hash).toContain("#/library/knowledge/new?");
     const params = new URLSearchParams(hash.split("?")[1]);
     expect(params.get("project_id")).toBe("project-1");
     expect(params.get("source_task_id")).toBe("task-1");

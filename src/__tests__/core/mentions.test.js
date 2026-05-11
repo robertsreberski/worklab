@@ -147,7 +147,7 @@ describe("resolveMentions", () => {
     expect(resolved.get("@agent/triager")).toMatchObject({
       type: "agent",
       label: "Triager Bot",
-      href: "#/agents/triager",
+      href: "#/library/agents/triager",
       exists: true,
     });
     expect(resolved.get("@task/T-42")).toMatchObject({
@@ -165,13 +165,13 @@ describe("resolveMentions", () => {
     expect(resolved.get("@team/t-platform")).toMatchObject({
       type: "team",
       label: "Platform",
-      href: "#/teams/team-uuid-1",
+      href: "#/library/teams/team-uuid-1",
       exists: true,
     });
     expect(resolved.get("@kb/auth-flow")).toMatchObject({
       type: "kb",
       label: "Auth flow",
-      href: "#/knowledge/auth-flow",
+      href: "#/library/knowledge/auth-flow",
       exists: true,
     });
   });

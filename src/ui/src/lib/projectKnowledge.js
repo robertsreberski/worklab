@@ -112,5 +112,5 @@ export function buildKnowledgePromotionHash({ project, taskOutput }) {
     source_agent: taskOutput?.agent_name || "",
     body,
   });
-  return `#/knowledge/new?${params.toString()}`;
+  return `#/library/knowledge/new?${params.toString()}`;
 }

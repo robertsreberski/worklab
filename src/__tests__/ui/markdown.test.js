@@ -9,12 +9,12 @@ describe("renderMarkdown mentions", () => {
           token: "@agent/triager",
           type: "agent",
           label: "Triager Bot",
-          href: "#/agents/triager",
+          href: "#/library/agents/triager",
           exists: true,
         },
       },
     });
-    expect(html).toContain('<a class="chip-mention chip-mention--agent" href="#/agents/triager"');
+    expect(html).toContain('<a class="chip-mention chip-mention--agent" href="#/library/agents/triager"');
     expect(html).toContain(">Triager Bot</a>");
     expect(html).toContain('title="@agent/triager"');
   });
@@ -44,7 +44,7 @@ describe("renderMarkdown mentions", () => {
           token: "@agent/triager",
           type: "agent",
           label: "Triager",
-          href: "#/agents/triager",
+          href: "#/library/agents/triager",
           exists: true,
         },
       },

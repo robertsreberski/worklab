@@ -127,7 +127,7 @@ test.afterAll(async () => {
 test("new user configures live Ollama provider and creates an agent with a runnable model", async ({ page }) => {
   const providerName = "Ollama LAN E2E";
 
-  await page.goto(`${baseUrl}/#/providers`);
+  await page.goto(`${baseUrl}/#/settings/providers`);
   await page.locator(".field", { hasText: "Name" }).locator("input").fill(providerName);
   await page.locator(".field", { hasText: "Base URL" }).locator("input").fill(ollamaUrl);
   await page.getByRole("button", { name: "Create provider" }).click();
@@ -149,7 +149,7 @@ test("new user configures live Ollama provider and creates an agent with a runna
   await chatRow.getByRole("button", { name: "Enable" }).click();
   await expect(chatRow.getByRole("button", { name: "Disable" })).toBeVisible();
 
-  await page.goto(`${baseUrl}/#/agents/new`);
+  await page.goto(`${baseUrl}/#/library/agents/new`);
   await page.locator(".field", { hasText: "Model" }).getByRole("combobox").click();
   await page.getByRole("option", { name: new RegExp(chatModel) }).click();
   await expect(page.locator(".field", { hasText: "Advanced model reference" }).locator("input")).toHaveValue(new RegExp(`:${chatModel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`));
@@ -159,16 +159,16 @@ test("new user configures live Ollama provider and creates an agent with a runna
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("heading", { name: "Ollama Smoke" })).toBeVisible();
 
-  await page.goto(`${baseUrl}/#/providers`);
+  await page.goto(`${baseUrl}/#/settings/providers`);
   await providerCard.locator(".provider-actions").getByRole("button", { name: "Disable" }).click();
-  await page.goto(`${baseUrl}/#/agents/new`);
+  await page.goto(`${baseUrl}/#/library/agents/new`);
   await page.locator(".field", { hasText: "Model" }).getByRole("combobox").click();
   await expect(page.getByRole("option", { name: new RegExp(chatModel) })).toHaveCount(0);
 });
 
 test("providers page does not create horizontal overflow on mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${baseUrl}/#/providers`);
+  await page.goto(`${baseUrl}/#/settings/providers`);
   const widths = await page.evaluate(() => ({
     innerWidth: window.innerWidth,
     scrollWidth: document.documentElement.scrollWidth,

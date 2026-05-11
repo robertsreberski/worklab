@@ -28,7 +28,7 @@ describe("withMentions", () => {
     expect(out.mentions["@agent/triager"]).toMatchObject({
       type: "agent",
       label: "Triager Bot",
-      href: "#/agents/triager",
+      href: "#/library/agents/triager",
       exists: true,
     });
   });

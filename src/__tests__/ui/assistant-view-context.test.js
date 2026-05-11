@@ -32,18 +32,18 @@ describe("assistant view context", () => {
       resource_type: "project",
       resource_id: "worklab",
     });
-    expect(assistantViewContextFromHash("#/agents/assistant")).toMatchObject({
+    expect(assistantViewContextFromHash("#/library/agents/assistant")).toMatchObject({
       view: "agent_detail",
       resource_type: "agent",
       resource_id: "assistant",
     });
-    expect(assistantViewContextFromHash("#/teams/core-platform/edit")).toMatchObject({
+    expect(assistantViewContextFromHash("#/library/teams/core-platform/edit")).toMatchObject({
       view: "team_edit",
       resource_type: "team",
       resource_id: "core-platform",
       mode: "edit",
     });
-    expect(assistantViewContextFromHash("#/knowledge/current-decisions/edit")).toMatchObject({
+    expect(assistantViewContextFromHash("#/library/knowledge/current-decisions/edit")).toMatchObject({
       view: "knowledge_edit",
       resource_type: "knowledge",
       resource_id: "current-decisions",
@@ -61,7 +61,7 @@ describe("assistant view context", () => {
 
   it("adds browser pathname when built from a location object", () => {
     expect(assistantViewContextFromLocation({
-      hash: "#/providers/provider-1",
+      hash: "#/settings/providers/provider-1",
       pathname: "/worklab",
     })).toMatchObject({
       view: "provider_detail",

@@ -173,7 +173,7 @@ describe("kb REST routes", () => {
       "task-1",
       project.body.project.id,
       "Runtime audit",
-      "See #/knowledge/runtime-note for the durable audit.",
+      "See #/library/knowledge/runtime-note for the durable audit.",
       now,
       now,
     );

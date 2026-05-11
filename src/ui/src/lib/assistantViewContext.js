@@ -39,40 +39,45 @@ export function assistantViewContextFromHash(hash = "") {
     return resourceContext(parsed, "project_detail", "project", first, { mode: second || null });
   }
 
-  if (parsed.route === "agents") {
-    if (!first) return baseContext(parsed, "agent_list");
-    if (first === "new") return baseContext(parsed, "agent_new");
-    return resourceContext(parsed, "agent_detail", "agent", first);
+  if (parsed.route === "library") {
+    const tab = first || "agents";
+    const [item, mode] = parsed.rest.slice(1);
+    if (tab === "agents") {
+      if (!item) return baseContext(parsed, "agent_list");
+      if (item === "new") return baseContext(parsed, "agent_new");
+      return resourceContext(parsed, "agent_detail", "agent", item);
+    }
+    if (tab === "teams") {
+      if (!item) return baseContext(parsed, "team_list");
+      if (item === "new") return baseContext(parsed, "team_new");
+      if (mode === "edit") return resourceContext(parsed, "team_edit", "team", item, { mode: "edit" });
+      return resourceContext(parsed, "team_detail", "team", item, { mode: mode || null });
+    }
+    if (tab === "skills") {
+      if (!item) return baseContext(parsed, "skill_list");
+      if (item === "new") return baseContext(parsed, "skill_new");
+      return resourceContext(parsed, "skill_detail", "skill", item);
+    }
+    if (tab === "knowledge") {
+      if (!item) return baseContext(parsed, "knowledge_list");
+      if (item === "new") return baseContext(parsed, "knowledge_new");
+      if (mode === "edit") return resourceContext(parsed, "knowledge_edit", "knowledge", item, { mode: "edit" });
+      return resourceContext(parsed, "knowledge_detail", "knowledge", item, { mode: mode || null });
+    }
+    return baseContext(parsed, "library");
   }
 
-  if (parsed.route === "teams") {
-    if (!first) return baseContext(parsed, "team_list");
-    if (first === "new") return baseContext(parsed, "team_new");
-    if (second === "edit") return resourceContext(parsed, "team_edit", "team", first, { mode: "edit" });
-    return resourceContext(parsed, "team_detail", "team", first, { mode: second || null });
+  if (parsed.route === "runs") return baseContext(parsed, "runs");
+  if (parsed.route === "settings") {
+    const tab = first || "general";
+    if (tab === "providers") {
+      const [item] = parsed.rest.slice(1);
+      if (!item) return baseContext(parsed, "provider_list");
+      if (item === "new") return baseContext(parsed, "provider_new");
+      return resourceContext(parsed, "provider_detail", "provider", item);
+    }
+    return baseContext(parsed, `settings_${tab}`);
   }
-
-  if (parsed.route === "skills") {
-    if (!first) return baseContext(parsed, "skill_list");
-    if (first === "new") return baseContext(parsed, "skill_new");
-    return resourceContext(parsed, "skill_detail", "skill", first);
-  }
-
-  if (parsed.route === "knowledge") {
-    if (!first) return baseContext(parsed, "knowledge_list");
-    if (first === "new") return baseContext(parsed, "knowledge_new");
-    if (second === "edit") return resourceContext(parsed, "knowledge_edit", "knowledge", first, { mode: "edit" });
-    return resourceContext(parsed, "knowledge_detail", "knowledge", first, { mode: second || null });
-  }
-
-  if (parsed.route === "providers") {
-    if (!first) return baseContext(parsed, "provider_list");
-    if (first === "new") return baseContext(parsed, "provider_new");
-    return resourceContext(parsed, "provider_detail", "provider", first);
-  }
-
-  if (parsed.route === "activity") return baseContext(parsed, "activity");
-  if (parsed.route === "settings") return baseContext(parsed, "settings");
   if (parsed.route === "design-system") return baseContext(parsed, "design_system");
   if (parsed.route === "automations") return baseContext(parsed, "automation_list");
 

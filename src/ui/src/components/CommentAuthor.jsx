@@ -49,7 +49,7 @@ export function CommentAuthor({ authorType, authorId, agents = [] }) {
   const type = (authorType || "system").toLowerCase();
   const Icon = ICONS[type] || SystemIcon;
   const label = type.charAt(0).toUpperCase() + type.slice(1);
-  const authorLink = type === "agent" && authorId ? `#/agents/${authorId}` : null;
+  const authorLink = type === "agent" && authorId ? `#/library/agents/${authorId}` : null;
   const agent = type === "agent" ? agentByName(agents, authorId) : null;
   const authorLabel = type === "agent" ? agentLabel(agent, authorId) : authorId;
   const href = type === "agent" && authorId ? agentHref(authorId) : null;

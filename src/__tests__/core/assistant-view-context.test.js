@@ -32,7 +32,7 @@ describe("assistant view context rendering", () => {
 
       const listContext = renderAssistantViewContext({
         db,
-        viewContext: { route: "teams", view: "team_list", hash: "#/teams" },
+        viewContext: { route: "teams", view: "team_list", hash: "#/library/teams" },
       });
       expect(listContext).toContain("Teams: total=1, active=1");
       expect(listContext).toContain("Core Platform (core-platform)");
@@ -44,7 +44,7 @@ describe("assistant view context rendering", () => {
           view: "team_detail",
           resource_type: "team",
           resource_id: "core-platform",
-          hash: "#/teams/core-platform",
+          hash: "#/library/teams/core-platform",
         },
       });
       expect(detailContext).toContain("Team: Core Platform (core-platform)");

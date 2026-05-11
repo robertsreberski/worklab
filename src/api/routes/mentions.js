@@ -80,7 +80,7 @@ function shapeAgent(row) {
     id,
     label,
     sublabel: description ? `agent · ${description}` : "agent",
-    href: `#/agents/${encodeURIComponent(id)}`,
+    href: `#/library/agents/${encodeURIComponent(id)}`,
     enabled: row.enabled !== 0,
   };
 }
@@ -121,7 +121,7 @@ function shapeTeam(row) {
     id,
     label: row.name || id,
     sublabel: "team",
-    href: `#/teams/${encodeURIComponent(row.id)}`,
+    href: `#/library/teams/${encodeURIComponent(row.id)}`,
   };
 }
 
@@ -132,7 +132,7 @@ function shapeKb(meta) {
     id: meta.slug,
     label: meta.title || meta.slug,
     sublabel: meta.category ? `knowledge · ${meta.category}` : "knowledge",
-    href: `#/knowledge/${encodeURIComponent(meta.slug)}`,
+    href: `#/library/knowledge/${encodeURIComponent(meta.slug)}`,
   };
 }
 

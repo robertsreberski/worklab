@@ -2239,7 +2239,7 @@ describe("task-watcher", () => {
     const { runId } = await watcher.handleRunRequested(taskId);
     const fullAnswer = richFinalAnswer();
     const explicitSlug = "restaurant-research";
-    const linkedFinalText = `Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${explicitSlug})`;
+    const linkedFinalText = `Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/library/knowledge/${explicitSlug})`;
     const worklabResult = {
       schema: "worklab.v2",
       stage: "execute",
@@ -2317,7 +2317,7 @@ describe("task-watcher", () => {
     const agentComment = db
       .prepare("SELECT body FROM task_comments WHERE task_id = ? AND author_type = 'agent'")
       .get(taskId);
-    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/knowledge/${explicitSlug})`);
+    expect(agentComment.body).toBe(`Research complete. Iharada is the top pick.\n\nFull final answer: [Knowledge entry](#/library/knowledge/${explicitSlug})`);
   });
 
   it("does not create fallback knowledge when the explicit KB write failed", async () => {

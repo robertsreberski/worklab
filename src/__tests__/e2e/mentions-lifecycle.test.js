@@ -80,7 +80,7 @@ describe("mentions end-to-end", () => {
       const search = await fetch(`${ctx.baseUrl}/api/mentions/search?q=triag&types=agent`).then((r) => r.json());
       expect(search.results[0]).toMatchObject({
         token: "@agent/triager",
-        href: "#/agents/triager",
+        href: "#/library/agents/triager",
         label: "Triager Bot",
       });
       const token = search.results[0].token;
@@ -101,7 +101,7 @@ describe("mentions end-to-end", () => {
       expect(detail.mentions["@agent/triager"]).toMatchObject({
         type: "agent",
         label: "Triager Bot",
-        href: "#/agents/triager",
+        href: "#/library/agents/triager",
         exists: true,
       });
 
