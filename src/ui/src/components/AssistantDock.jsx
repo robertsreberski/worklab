@@ -172,6 +172,7 @@ export function AssistantDock({
   const preserveScrollRef = useRef(null);
   const skipNextAutoScrollRef = useRef(false);
   const textareaRef = useRef(null);
+  const focusScrollTimeoutsRef = useRef(new Set());
   const hasLoadedAssistantRef = useRef(false);
   const activeRunId = activeRun?.id || messages.findLast?.((message) => message.role === "assistant" && message.run?.status === "running")?.run?.id;
   const activeMessageId = messages.findLast?.((message) => message.role === "assistant" && message.run?.id === activeRunId)?.id || null;
@@ -200,7 +201,40 @@ export function AssistantDock({
     loadAssistant();
   }, [open]);
 
-  useEffect(() => () => resizeCleanupRef.current?.(), []);
+  function clearFocusScrollTimeouts() {
+    for (const id of focusScrollTimeoutsRef.current) window.clearTimeout(id);
+    focusScrollTimeoutsRef.current.clear();
+  }
+
+  useEffect(() => () => {
+    resizeCleanupRef.current?.();
+    clearFocusScrollTimeouts();
+  }, []);
+
+  function scrollThreadToBottom() {
+    const node = scrollRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }
+
+  function scheduleThreadScroll(delays = [0]) {
+    clearFocusScrollTimeouts();
+    for (const delay of delays) {
+      if (delay === 0) {
+        scrollThreadToBottom();
+        continue;
+      }
+      const id = window.setTimeout(() => {
+        focusScrollTimeoutsRef.current.delete(id);
+        scrollThreadToBottom();
+      }, delay);
+      focusScrollTimeoutsRef.current.add(id);
+    }
+  }
+
+  function handleComposerFocus() {
+    scheduleThreadScroll([0, 120, 360]);
+  }
 
   useLayoutEffect(() => {
     const snapshot = preserveScrollRef.current;
@@ -440,6 +474,7 @@ export function AssistantDock({
           value={draft}
           onInput={(event) => setDraft(event.target.value)}
           onKeyDown={keyDown}
+          onFocus={handleComposerFocus}
           placeholder={activeRunId ? "Assistant is running..." : "Ask Worklab..."}
           disabled={sending || !!activeRunId}
           aria-label="Assistant message"
