@@ -192,6 +192,12 @@ describe("embedding index", () => {
       },
     });
 
+    const rows = db
+      .prepare("SELECT vector_present FROM embeddings ORDER BY source_ref")
+      .all()
+      .map((row) => row.vector_present);
+    expect(rows).toEqual([1, 1]);
+
     const results = await search({
       db,
       dataDir,

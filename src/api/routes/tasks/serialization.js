@@ -10,7 +10,7 @@ import {
 } from "../../../core/index.js";
 import {
   getTaskById,
-  listTasksByIds,
+  listTaskSummaryRowsByIds,
 } from "../../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../../core/db/queries/agent-logs.js";
 import {
@@ -18,7 +18,9 @@ import {
   getLatestExecuteRunSummary,
   getLatestTaskRunSummary,
   getRunningTaskRun,
+  listLastNonRunningRunSummariesForTasks,
   listLastNonRunningRunsForTasks,
+  listRunningRunSummariesForTasks,
   listRunningRunsWithEventsForTasks,
   selectRunsWithLogJoin,
 } from "../../../core/db/queries/runs.js";
@@ -54,6 +56,7 @@ function safeJsonObject(value) {
 export function rowToTask(row) {
   if (!row) return null;
   const stage = row.stage || "plan";
+  const hasPlanBody = Object.prototype.hasOwnProperty.call(row, "plan_body");
   return {
     ...row,
     stage,
@@ -73,7 +76,7 @@ export function rowToTask(row) {
     planner_agent: row.planner_agent || null,
     delegated_to_agent: row.delegated_to_agent || null,
     delegated_by_run_id: row.delegated_by_run_id || null,
-    plan_body: row.plan_body || "",
+    ...(hasPlanBody ? { plan_body: row.plan_body || "" } : {}),
     plan_updated_at: row.plan_updated_at || null,
     plan_updated_by: row.plan_updated_by || null,
     plan_source_run_id: row.plan_source_run_id || null,
@@ -214,7 +217,7 @@ function compactRunRecovery(lastRow, runningRow) {
   };
 }
 
-function compactLastRun(row, runningRow = null) {
+function compactLastRun(row, runningRow = null, { includeRecovery = true } = {}) {
   if (!row) return null;
   return {
     id: row.id,
@@ -225,7 +228,7 @@ function compactLastRun(row, runningRow = null) {
     stage: row.stage || (row.mode === "review" ? "review" : "execute"),
     decision: row.decision || null,
     summary: row.summary || null,
-    recovery: compactRunRecovery(row, runningRow),
+    recovery: includeRecovery ? compactRunRecovery(row, runningRow) : null,
   };
 }
 
@@ -343,7 +346,7 @@ function pushMapped(map, key, value) {
   map.set(key, list);
 }
 
-export function enrichTaskList(db, tasks, config = null) {
+export function enrichTaskList(db, tasks, config = null, { compactRuns = false } = {}) {
   if (!tasks.length) return [];
   const taskIds = tasks.map((task) => task.id);
   const output = tasks.map((task) => ({
@@ -362,7 +365,9 @@ export function enrichTaskList(db, tasks, config = null) {
   }));
   const byId = new Map(output.map((task) => [task.id, task]));
 
-  const runningRows = firstRowsByTask(listRunningRunsWithEventsForTasks(db, taskIds));
+  const runningRows = firstRowsByTask(compactRuns
+    ? listRunningRunSummariesForTasks(db, taskIds)
+    : listRunningRunsWithEventsForTasks(db, taskIds));
   for (const [taskId, row] of runningRows.entries()) {
     const task = byId.get(taskId);
     if (!task) continue;
@@ -373,16 +378,18 @@ export function enrichTaskList(db, tasks, config = null) {
       process_status: row.process_status || "running",
       started_at: row.started_at,
       event_count: Number(row.event_count || 0),
-      last_event: safeJson(row.last_event_json, null),
+      last_event: row.last_event_json ? safeJson(row.last_event_json, null) : null,
       todo_state: runTodoStateSummary(row.todo_state_json),
     };
   }
 
-  const lastRows = firstRowsByTask(listLastNonRunningRunsForTasks(db, taskIds));
+  const lastRows = firstRowsByTask(compactRuns
+    ? listLastNonRunningRunSummariesForTasks(db, taskIds)
+    : listLastNonRunningRunsForTasks(db, taskIds));
   for (const [taskId, row] of lastRows.entries()) {
     const task = byId.get(taskId);
     if (!task) continue;
-    task.last_run = compactLastRun(row, runningRows.get(taskId) || null);
+    task.last_run = compactLastRun(row, runningRows.get(taskId) || null, { includeRecovery: !compactRuns });
   }
 
   const blockedBy = new Map();
@@ -400,7 +407,7 @@ export function enrichTaskList(db, tasks, config = null) {
 
   const parentIds = [...new Set(output.map((task) => task.parent_task_id).filter(Boolean))];
   const parents = new Map();
-  for (const row of listTasksByIds(db, parentIds)) {
+  for (const row of listTaskSummaryRowsByIds(db, parentIds)) {
     parents.set(row.id, compactTaskSummary(row));
   }
   for (const task of output) {

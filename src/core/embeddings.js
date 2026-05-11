@@ -242,6 +242,10 @@ function getExistingChunk(db, kind, sourceRef) {
   return db.prepare("SELECT id, content_hash, model, indexing_error FROM embeddings WHERE kind = ? AND source_ref = ?").get(kind, sourceRef);
 }
 
+function hasEmbeddingColumn(db, column) {
+  return db.prepare("PRAGMA table_info(embeddings)").all().some((row) => row.name === column);
+}
+
 function unchangedChunk(existing, chunk, model) {
   return Boolean(
     existing
@@ -261,16 +265,18 @@ function upsertChunk(db, chunk, { vector, model, error }) {
   if (unchangedChunk(existing, chunk, model) && !error) return existing.id;
   const id = existing?.id || newEmbeddingId();
   const vectorBuf = vector ? floatArrayToBuffer(vector) : null;
+  const vectorPresent = vectorBuf ? 1 : 0;
   db.prepare(`
     INSERT INTO embeddings
-      (id, kind, ref, source_ref, agent, title, chunk_text, vector, model, content_hash, indexing_error, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (id, kind, ref, source_ref, agent, title, chunk_text, vector, vector_present, model, content_hash, indexing_error, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(kind, source_ref) DO UPDATE SET
       ref = excluded.ref,
       agent = excluded.agent,
       title = excluded.title,
       chunk_text = excluded.chunk_text,
       vector = excluded.vector,
+      vector_present = excluded.vector_present,
       model = excluded.model,
       content_hash = excluded.content_hash,
       indexing_error = excluded.indexing_error,
@@ -284,6 +290,7 @@ function upsertChunk(db, chunk, { vector, model, error }) {
     chunk.title || null,
     chunk.chunk_text,
     vectorBuf,
+    vectorPresent,
     model || null,
     chunk.content_hash,
     error || null,
@@ -578,7 +585,10 @@ export function getIndexStatus(db, { dataDir } = {}) {
   const total = db.prepare("SELECT COUNT(*) AS count FROM embeddings").get().count;
   const byKind = db.prepare("SELECT kind, COUNT(*) AS count FROM embeddings GROUP BY kind").all()
     .reduce((acc, row) => ({ ...acc, [row.kind]: row.count }), {});
-  const vectorized = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE vector IS NOT NULL").get().count;
+  const vectorizedWhere = hasEmbeddingColumn(db, "vector_present")
+    ? "vector_present = 1"
+    : "vector IS NOT NULL";
+  const vectorized = db.prepare(`SELECT COUNT(*) AS count FROM embeddings WHERE ${vectorizedWhere}`).get().count;
   const errors = db.prepare("SELECT COUNT(*) AS count FROM embeddings WHERE indexing_error IS NOT NULL").get().count;
   const model = getEmbeddingModel(db);
   const readiness = model ? isEmbeddingBackendReady({ db, dataDir, modelRef: model }) : { ready: false, reason: null };

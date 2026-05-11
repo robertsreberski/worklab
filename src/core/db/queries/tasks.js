@@ -116,10 +116,78 @@ export function listFilteredTasks(db, { filters, params, includeTeamRoots = fals
   return db.prepare(`SELECT * FROM tasks${where} ORDER BY updated_at DESC`).all(...params);
 }
 
+const RUNTIME_TASK_LIST_COLUMNS = [
+  "id",
+  "task_key",
+  "project_id",
+  "team_id",
+  "is_team_root",
+  "goal_status",
+  "goal_status_reason",
+  "goal_contract_json",
+  "last_lead_at",
+  "root_task_id",
+  "parent_task_id",
+  "delegated_by_run_id",
+  "delegated_to_agent",
+  "owner_agent",
+  "planner_agent",
+  "client_request_id",
+  "title",
+  "stage",
+  "stage_reason",
+  "run_policy",
+  "join_policy",
+  "subtask_order",
+  "required",
+  "pending_actions_json",
+  "pending_questions_json",
+  "blocking_issues_json",
+  "plan_updated_at",
+  "plan_updated_by",
+  "plan_source_run_id",
+  "reviewer_agent",
+  "parent_review_policy",
+  "tags",
+  "error_text",
+  "failure_count",
+  "rejection_streak",
+  "lifetime_failure_count",
+  "lifetime_rejection_count",
+  "lifetime_recovery_continuation_count",
+  "last_failure_kind",
+  "created_at",
+  "updated_at",
+  "completed_at",
+];
+
+export function listRuntimeTaskRows(db, { filters, params, includeTeamRoots = false }) {
+  const allFilters = [...(filters || [])];
+  if (!includeTeamRoots) allFilters.push("is_team_root = 0");
+  const where = allFilters.length ? ` WHERE ${allFilters.join(" AND ")}` : "";
+  return db.prepare(`
+    SELECT ${RUNTIME_TASK_LIST_COLUMNS.join(", ")}
+    FROM tasks
+    ${where}
+    ORDER BY updated_at DESC
+  `).all(...params);
+}
+
 export function listTasksByIds(db, ids) {
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(", ");
   return db.prepare(`SELECT * FROM tasks WHERE id IN (${placeholders})`).all(...ids);
+}
+
+export function listTaskSummaryRowsByIds(db, ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT id, task_key, title, stage, updated_at, owner_agent,
+           planner_agent, reviewer_agent, run_policy, project_id
+    FROM tasks
+    WHERE id IN (${placeholders})
+  `).all(...ids);
 }
 
 export function getMaxSubtaskOrder(db, parentTaskId) {

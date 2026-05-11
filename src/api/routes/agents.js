@@ -34,6 +34,7 @@ import {
   deleteAgentByName,
   getAgentByName,
   insertAgent,
+  listAgentSummariesWithRunStats,
   listAgentsWithRunStats,
   updateAgentFields,
 } from "../../core/db/queries/agents.js";
@@ -57,6 +58,17 @@ function rowToAgent(row) {
     builtin_allowlist_mode: storedAllowlistMode(row.builtin_allowlist_mode),
     allow_self_review: !!row.allow_self_review,
     browser_tools_review_only: !!row.browser_tools_review_only,
+    subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
+    execution_mode: row.execution_mode || "sdk",
+    context_window: normalizeContextWindow(row.context_window),
+  };
+}
+
+function rowToAgentSummary(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    enabled: !!row.enabled,
     subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
@@ -285,10 +297,16 @@ function patchAllowlist({ body, existing, listKey, dataDir, model }) {
 }
 
 export function registerAgentRoutes(app, { db, broker, consolidation, dataDir }) {
-  app.get("/api/agents", (_req, res) => {
+  app.get("/api/agents", (req, res) => {
+    const view = String(req.query.view || "full");
+    if (!["full", "summary"].includes(view)) {
+      return res.status(400).json({ error: { code: "validation", message: "invalid view" } });
+    }
     const since = Date.now() - (30 * 24 * 60 * 60 * 1000);
-    const rows = listAgentsWithRunStats(db, since);
-    res.json({ agents: rows.map(rowToAgent) });
+    const rows = view === "summary"
+      ? listAgentSummariesWithRunStats(db, since)
+      : listAgentsWithRunStats(db, since);
+    res.json({ agents: rows.map(view === "summary" ? rowToAgentSummary : rowToAgent) });
   });
 
   app.post("/api/agents", (req, res) => {

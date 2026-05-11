@@ -1,5 +1,20 @@
 // task_edges queries — parent/child delegation relationships.
 
+const CHILD_TASK_SUMMARY_SELECT = `
+  t.id,
+  t.task_key,
+  t.title,
+  t.stage,
+  t.updated_at,
+  t.created_at,
+  t.subtask_order,
+  t.owner_agent,
+  t.planner_agent,
+  t.reviewer_agent,
+  t.run_policy,
+  t.project_id
+`;
+
 export function deleteSubtaskEdgesForParent(db, parentTaskId) {
   db.prepare(
     "DELETE FROM task_edges WHERE parent_task_id = ? AND edge_type = 'subtask'",
@@ -26,7 +41,7 @@ export function insertSubtaskEdge(db, { parentTaskId, childTaskId, required, cre
 
 export function listSubtaskChildrenForParent(db, parentTaskId) {
   return db.prepare(`
-    SELECT t.*, e.required AS edge_required, e.edge_type
+    SELECT ${CHILD_TASK_SUMMARY_SELECT}, e.required AS edge_required, e.edge_type
     FROM task_edges e
     JOIN tasks t ON t.id = e.child_task_id
     WHERE e.parent_task_id = ? AND e.edge_type = 'subtask'
@@ -51,7 +66,7 @@ export function listSubtaskChildrenForParents(db, parentTaskIds) {
   if (!parentTaskIds.length) return [];
   const placeholders = parentTaskIds.map(() => "?").join(", ");
   return db.prepare(`
-    SELECT e.parent_task_id AS owner_task_id, e.required AS edge_required, e.edge_type, t.*
+    SELECT e.parent_task_id AS owner_task_id, e.required AS edge_required, e.edge_type, ${CHILD_TASK_SUMMARY_SELECT}
     FROM task_edges e
     JOIN tasks t ON t.id = e.child_task_id
     WHERE e.parent_task_id IN (${placeholders}) AND e.edge_type = 'subtask'

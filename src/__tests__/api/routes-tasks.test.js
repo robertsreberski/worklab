@@ -119,6 +119,53 @@ describe("GET /api/tasks", () => {
     expect(full.body.summary).toBeUndefined();
     expect(full.body.tasks.map((task) => task.id)).toContain(doneOld.id);
   });
+
+  it("keeps runtime task responses compact when stored task/run payloads are large", async () => {
+    const { agent, db } = makeTestServer();
+    seedAgent(db, "owner");
+    const now = Date.now();
+    const largeText = "heavy payload ".repeat(12_000);
+
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "visible runtime task",
+      instructions: largeText,
+      stage: "execute",
+      owner_agent: "owner",
+    }).expect(201);
+    db.prepare("UPDATE tasks SET plan_body = ? WHERE id = ?").run(largeText, task.id);
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, mode, stage, agent_name, status, process_status, started_at, ended_at, diagnostics_json, todo_state_json)
+      VALUES (?, ?, 'execute', 'execute', 'owner', 'error', 'failed', ?, ?, ?, ?)
+    `).run(
+      "compact-runtime-run",
+      task.id,
+      now - 1000,
+      now,
+      JSON.stringify({ error_details: largeText }),
+      JSON.stringify({ todos: [{ content: largeText, status: "done" }], updated_at: now, update_count: 1 }),
+    );
+    db.prepare(`
+      INSERT INTO agent_logs (id, task_run_id, events, status, created_at)
+      VALUES (?, ?, ?, 'error', ?)
+    `).run("compact-runtime-log", "compact-runtime-run", JSON.stringify([{ type: "tool_result", content: largeText }]), now);
+
+    const res = await agent.get("/api/tasks?scope=runtime&done_limit=0").expect(200);
+    const payload = JSON.stringify(res.body);
+    const runtimeTask = res.body.tasks.find((row) => row.id === task.id);
+
+    expect(runtimeTask).toMatchObject({
+      id: task.id,
+      title: "visible runtime task",
+      stage: "execute",
+      owner_agent: "owner",
+    });
+    expect(runtimeTask.instructions).toBeUndefined();
+    expect(runtimeTask.plan_body).toBeUndefined();
+    expect(runtimeTask.last_run?.diagnostics_json).toBeUndefined();
+    expect(runtimeTask.last_run?.todo_state_json).toBeUndefined();
+    expect(payload.length).toBeLessThan(25_000);
+  });
 });
 
 describe("GET /api/runs/cost-summary", () => {

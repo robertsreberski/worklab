@@ -175,6 +175,28 @@ export function listRunningRunsWithEventsForTasks(db, taskIds) {
   `).all(...taskIds);
 }
 
+export function listRunningRunSummariesForTasks(db, taskIds) {
+  if (!taskIds.length) return [];
+  const placeholders = taskIds.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT id, task_id, status, process_status, started_at,
+           parent_run_id, mode, stage, todo_state_json
+    FROM (
+      SELECT
+        id, task_id, status, process_status, started_at,
+        parent_run_id, mode, stage, todo_state_json, rowid,
+        ROW_NUMBER() OVER (
+          PARTITION BY task_id
+          ORDER BY started_at DESC, rowid DESC
+        ) AS rn
+      FROM task_runs
+      WHERE task_id IN (${placeholders}) AND status = 'running'
+    )
+    WHERE rn = 1
+    ORDER BY task_id
+  `).all(...taskIds);
+}
+
 // Bulk variant: most-recent non-running rows for many tasks.
 export function listLastNonRunningRunsForTasks(db, taskIds) {
   if (!taskIds.length) return [];
@@ -185,6 +207,28 @@ export function listLastNonRunningRunsForTasks(db, taskIds) {
     FROM task_runs
     WHERE task_id IN (${placeholders}) AND status <> 'running'
     ORDER BY task_id, started_at DESC, rowid DESC
+  `).all(...taskIds);
+}
+
+export function listLastNonRunningRunSummariesForTasks(db, taskIds) {
+  if (!taskIds.length) return [];
+  const placeholders = taskIds.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT id, task_id, status, process_status, failure_kind, ended_at,
+           stage, mode, decision, summary, parent_run_id
+    FROM (
+      SELECT
+        id, task_id, status, process_status, failure_kind, ended_at,
+        stage, mode, decision, summary, parent_run_id, started_at, rowid,
+        ROW_NUMBER() OVER (
+          PARTITION BY task_id
+          ORDER BY started_at DESC, rowid DESC
+        ) AS rn
+      FROM task_runs
+      WHERE task_id IN (${placeholders}) AND status <> 'running'
+    )
+    WHERE rn = 1
+    ORDER BY task_id
   `).all(...taskIds);
 }
 

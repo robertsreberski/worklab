@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 36;
+export const SCHEMA_VERSION = 37;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
   first_turn_overhead_tokens INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_runs_task ON task_runs(task_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_task_status_started ON task_runs(task_id, status, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_agent_started ON task_runs(agent_name, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, started_at DESC);
 CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status);
@@ -293,6 +294,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
   title TEXT,
   chunk_text TEXT NOT NULL,
   vector BLOB,
+  vector_present INTEGER NOT NULL DEFAULT 0,
   model TEXT,
   content_hash TEXT NOT NULL,
   indexing_error TEXT,
@@ -303,6 +305,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 CREATE INDEX IF NOT EXISTS idx_embeddings_kind ON embeddings(kind);
 CREATE INDEX IF NOT EXISTS idx_embeddings_source_ref ON embeddings(kind, source_ref);
 CREATE INDEX IF NOT EXISTS idx_embeddings_agent ON embeddings(kind, agent);
+CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_fts USING fts5(
   id UNINDEXED,

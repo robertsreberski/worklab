@@ -26,6 +26,7 @@ import {
   insertManualSubtask,
   insertTask,
   listFilteredTasks,
+  listRuntimeTaskRows,
   markParentAwaitingChildren,
   touchTaskUpdatedAt,
 } from "../../core/db/queries/tasks.js";
@@ -265,9 +266,13 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     if (!["all", "runtime"].includes(scope)) {
       return res.status(400).json({ error: { code: "validation", message: "invalid scope" } });
     }
-    const rows = listFilteredTasks(db, { filters: where, params, includeTeamRoots });
+    const rows = scope === "runtime"
+      ? listRuntimeTaskRows(db, { filters: where, params, includeTeamRoots })
+      : listFilteredTasks(db, { filters: where, params, includeTeamRoots });
     const baseTasks = rows.map(rowToTask);
-    const tasks = scope === "runtime" || view !== "summary" ? enrichTaskList(db, baseTasks, config) : baseTasks;
+    const tasks = scope === "runtime" || view !== "summary"
+      ? enrichTaskList(db, baseTasks, config, { compactRuns: scope === "runtime" })
+      : baseTasks;
     if (scope === "runtime") {
       const requestedDoneLimit = Number(req.query.done_limit ?? 0);
       const doneLimit = Math.max(0, Math.min(Number.isFinite(requestedDoneLimit) ? requestedDoneLimit : 0, 200));
