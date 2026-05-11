@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  commanderChildTaskLabel,
   commanderLivePreviewEvents,
   commanderRowStagePresentation,
   commanderRunningPreviewEvents,
@@ -51,6 +52,22 @@ describe("commander row live preview", () => {
     expect(commanderRowSource).not.toContain('class="commander-title h-entity"');
     expect(ruleBody(".commander-title")).toContain("font-weight: 600");
     expect(ruleBody(".commander-title")).not.toContain("font-family: var(--font-display)");
+  });
+
+  it("labels child tasks by their parent key", () => {
+    expect(commanderChildTaskLabel({
+      parent_task_id: "parent-1",
+      parent: { task_key: "T-42", title: "Parent task" },
+    })).toBe("Child of T-42");
+    expect(commanderChildTaskLabel({ parent_task_id: "parent-1" })).toBe("Child task");
+    expect(commanderChildTaskLabel({ id: "standalone" })).toBe(null);
+  });
+
+  it("renders child task hierarchy as a commander title-row chip", () => {
+    expect(commanderRowSource).toContain("commander-child-chip");
+    expect(commanderRowSource).toContain("commanderChildTaskLabel(task)");
+    expect(ruleBody(".commander-child-chip")).toContain("max-width");
+    expect(ruleBody(".commander-child-chip")).toContain("white-space: nowrap");
   });
 
   it("coalesces consecutive thinking fragments", () => {
