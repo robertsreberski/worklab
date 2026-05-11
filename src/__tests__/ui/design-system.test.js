@@ -858,6 +858,18 @@ describe("design system stylesheet", () => {
     expect(css).not.toMatch(/:has\(input:focus/);
   });
 
+  it("docks the mobile assistant composer above the keyboard without shrinking the dock", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const keyboardComposerRule = declarationsForSelector(css, "html.keyboard-open .assistant-composer");
+    const keyboardThreadRule = declarationsForSelector(css, "html.keyboard-open .assistant-thread");
+    const keyboardThreadSpacerRule = declarationsForSelector(css, "html.keyboard-open .assistant-thread::after");
+
+    expect(keyboardComposerRule).toMatch(/transform:\s*translateY\(calc\(-1 \* var\(--worklab-keyboard-height, 0px\)\)\)/);
+    expect(keyboardComposerRule).not.toMatch(/padding-bottom:\s*calc\(var\(--worklab-keyboard-height/);
+    expect(keyboardThreadRule).toMatch(/scroll-padding-bottom:\s*calc\(var\(--worklab-keyboard-height, 0px\) \+ 96px\)/);
+    expect(keyboardThreadSpacerRule).toMatch(/flex:\s*0 0 calc\(var\(--worklab-keyboard-height, 0px\) \+ 96px\)/);
+  });
+
   it("keeps bottom safe area inside mobile chrome only", () => {
     const css = readFileSync(stylesPath, "utf8");
     const tabbarRule = css.match(/\.app-tabbar\s*\{[^}]*\}/)?.[0] || "";

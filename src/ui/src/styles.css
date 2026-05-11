@@ -11130,10 +11130,21 @@ button.settings-overview-card:focus-visible,
      focused composer into view. No --vv-height dependency means a stale value
      can no longer drive a layout dimension. */
 
-  /* Keep the fixed assistant dock full-height, but lift the composer controls above
-     the iOS keyboard while keyboard-open owns the visual viewport shrink. */
+  /* Keep the fixed assistant dock full-height, but lift the composer above the
+     iOS keyboard as one unit while reserving enough thread scroll range for the
+     last message to remain visible above the lifted composer. */
+  html.keyboard-open .assistant-thread {
+    scroll-padding-bottom: calc(var(--worklab-keyboard-height, 0px) + 96px);
+  }
+  html.keyboard-open .assistant-thread::after {
+    content: "";
+    display: block;
+    flex: 0 0 calc(var(--worklab-keyboard-height, 0px) + 96px);
+  }
   html.keyboard-open .assistant-composer {
-    padding-bottom: calc(var(--worklab-keyboard-height, 0px) + var(--sp-3));
+    padding-bottom: max(var(--sp-3), var(--mobile-safe-bottom));
+    transform: translateY(calc(-1 * var(--worklab-keyboard-height, 0px)));
+    will-change: transform;
   }
 
   /* iOS Safari zooms when focused input font-size < 16px. Keep the visual

@@ -158,6 +158,14 @@ describe("app shell routes", () => {
     expect(source).not.toContain("useEffect(() => {\n    loadAssistant();\n  }, [])");
   });
 
+  it("scrolls the assistant thread when the composer receives focus", () => {
+    const source = readFileSync(assistantDockPath, "utf8");
+
+    expect(source).toContain("handleComposerFocus");
+    expect(source).toContain("onFocus={handleComposerFocus}");
+    expect(source).toMatch(/scheduleThreadScroll\(\[0,\s*120,\s*360\]\)/);
+  });
+
   it("keeps the task detail route out of the eager commander chunk", () => {
     const source = readFileSync(commanderPath, "utf8");
 
