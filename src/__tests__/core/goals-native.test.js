@@ -108,6 +108,14 @@ describe("native goals and lead cycles", () => {
         validation_summary: "Tests define the expected surface.",
         task_creations: [{ title: "Add native rows" }],
         task_assignments: [{ target_task_id: "task-1", owner_agent: "engineer", rationale: "Best owner." }],
+        task_deletions: [{
+          target_task_id: "lead-task-1",
+          task_key: "T-42",
+          title: "Obsolete lead task",
+          owner_agent: "engineer",
+          stage: "execute",
+          rationale: "No longer relevant.",
+        }],
         advisory_notes: [{ target_task_id: goal.root_task_id, kind: "suggestion", content: "Keep the timeline visible." }],
         next_review_hint: { after_minutes: 30, after_event: "task_completed" },
       },
@@ -116,6 +124,7 @@ describe("native goals and lead cycles", () => {
       costUsd: 0.05,
       tasksCreated: 1,
       tasksAssigned: 1,
+      tasksDeleted: 1,
       notesPosted: 1,
       endedAt: 4000,
     });
@@ -135,10 +144,17 @@ describe("native goals and lead cycles", () => {
       next_review_event: "task_completed",
       tasks_created: 1,
       tasks_assigned: 1,
+      tasks_deleted: 1,
       notes_posted: 1,
       cost_usd: 0.05,
     });
     expect(cycles[0].task_assignments[0].owner_agent).toBe("engineer");
+    expect(cycles[0].task_deletions[0]).toMatchObject({
+      target_task_id: "lead-task-1",
+      task_key: "T-42",
+      title: "Obsolete lead task",
+      rationale: "No longer relevant.",
+    });
     expect(cycles[0].advisory_notes[0].content).toBe("Keep the timeline visible.");
   });
 });

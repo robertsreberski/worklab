@@ -222,6 +222,7 @@ export function listRecentLeadCycles(db, teamId, limit = 50) {
              lc.summary,
              lc.checkpoint_note,
              lc.validation_summary,
+             lc.task_deletions_json,
              lc.goal_status,
              lc.goal_status_reason,
              lc.next_review_due_at,
@@ -229,6 +230,7 @@ export function listRecentLeadCycles(db, teamId, limit = 50) {
              lc.next_review_consumed_at,
              lc.tasks_created,
              lc.tasks_assigned,
+             lc.tasks_deleted,
              lc.notes_posted,
              t.title AS task_title
       FROM lead_cycles lc
@@ -251,6 +253,7 @@ export function listRecentLeadCycles(db, teamId, limit = 50) {
              r.summary,
              NULL AS checkpoint_note,
              NULL AS validation_summary,
+             '[]' AS task_deletions_json,
              NULL AS goal_status,
              NULL AS goal_status_reason,
              NULL AS next_review_due_at,
@@ -258,6 +261,7 @@ export function listRecentLeadCycles(db, teamId, limit = 50) {
              NULL AS next_review_consumed_at,
              0 AS tasks_created,
              0 AS tasks_assigned,
+             0 AS tasks_deleted,
              0 AS notes_posted,
              t.title AS task_title
       FROM task_runs r

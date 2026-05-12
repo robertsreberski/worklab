@@ -262,6 +262,12 @@ function ensureCurrentTaskRuntimeColumns(db) {
   addColumnIfMissing(db, "tasks", "last_lead_at", "last_lead_at INTEGER");
 }
 
+function ensureCurrentLeadCycleColumns(db) {
+  if (!tableExists(db, "lead_cycles")) return;
+  addColumnIfMissing(db, "lead_cycles", "task_deletions_json", "task_deletions_json TEXT NOT NULL DEFAULT '[]'");
+  addColumnIfMissing(db, "lead_cycles", "tasks_deleted", "tasks_deleted INTEGER NOT NULL DEFAULT 0");
+}
+
 function backfillTeamGoalContracts(db) {
   if (!tableExists(db, "tasks") || !tableExists(db, "teams") || !hasColumn(db, "tasks", "goal_contract_json")) return;
   const rows = db.prepare(`
@@ -372,10 +378,10 @@ function backfillNativeLeadCycles(db) {
     INSERT OR IGNORE INTO lead_cycles
       (id, goal_id, run_id, task_id, team_id, project_id, reason, process_status, status, failure_kind, error_text,
        goal_status, goal_status_reason, summary, checkpoint_note, validation_summary,
-       task_creations_json, task_assignments_json, advisory_notes_json,
+       task_creations_json, task_assignments_json, task_deletions_json, advisory_notes_json,
        next_review_hint_json, next_review_due_at, next_review_event,
-       cost_usd, started_at, ended_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       tasks_deleted, cost_usd, started_at, ended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = db.transaction(() => {
     for (const row of rows) {
@@ -414,10 +420,12 @@ function backfillNativeLeadCycles(db) {
         result.validation_summary || null,
         JSON.stringify(Array.isArray(result.task_creations) ? result.task_creations : []),
         JSON.stringify(Array.isArray(result.task_assignments) ? result.task_assignments : []),
+        JSON.stringify(Array.isArray(result.task_deletions) ? result.task_deletions : []),
         JSON.stringify(Array.isArray(result.advisory_notes) ? result.advisory_notes : []),
         JSON.stringify(hint || {}),
         dueAt,
         event,
+        Number(Array.isArray(result.task_deletions) ? result.task_deletions.length : 0),
         row.cost_usd ?? null,
         row.started_at || now,
         row.ended_at || null,
@@ -775,6 +783,7 @@ export function runMigrations(db) {
   }
   ensureEmbeddingVectorPresentColumn(db);
   db.exec(SCHEMA_SQL);
+  ensureCurrentLeadCycleColumns(db);
   ensureNullableTaskRunsTaskId(db);
   ensureWorkflowColumns(db);
   addColumnIfMissing(db, "tasks", "task_key", "task_key TEXT");
@@ -948,6 +957,7 @@ export function runMigrations(db) {
   db.exec("DROP TABLE IF EXISTS schedule_spawns");
   db.exec("DROP TABLE IF EXISTS schedules");
   db.exec(SCHEMA_SQL);
+  ensureCurrentLeadCycleColumns(db);
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_tasks_visible_updated ON tasks(is_team_root, updated_at DESC)");
   db.exec("CREATE INDEX IF NOT EXISTS idx_runs_task_status_started ON task_runs(task_id, status, started_at DESC)");

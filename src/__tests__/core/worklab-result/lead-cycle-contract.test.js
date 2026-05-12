@@ -16,6 +16,7 @@ const baseResult = {
   checkpoint_note: "Checked current work and assigned the next task.",
   validation_summary: "No validation run was needed this cycle.",
   task_creations: [],
+  task_deletions: [],
   advisory_notes: [],
   next_review_hint: null,
 };
@@ -41,6 +42,7 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("summary");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("checkpoint_note");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("validation_summary");
+    expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("task_deletions");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.schema.enum).toEqual([LEAD_CYCLE_SCHEMA]);
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.goal_status.enum).toEqual(["in_progress", "complete", "blocked"]);
   });
@@ -62,6 +64,7 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(result.result.validation_summary).toBe("No validation run was needed this cycle.");
     expect(result.result.task_creations).toEqual([]);
     expect(result.result.task_assignments).toEqual([]);
+    expect(result.result.task_deletions).toEqual([]);
   });
 
   it("defaults checkpoint and validation summaries for legacy lead-cycle results", () => {
@@ -140,6 +143,43 @@ describe("worklab.lead_cycle.v1 contract", () => {
     }, { rosterAgents: ["lead"], scopeTaskIds: ["t1"] });
     expect(v.ok).toBe(false);
     expect(v.error).toMatch(/outside team scope/);
+  });
+
+  it("validateLeadCycleSemantics rejects deletion targets outside deletableTaskIds", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      task_deletions: [{ target_task_id: "manual-task", rationale: "Superseded by current plan." }],
+    }, { deletableTaskIds: ["lead-task-1"] });
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/outside deletable task set/);
+  });
+
+  it("validateLeadCycleSemantics accepts deletion targets from deletableTaskIds", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      task_deletions: [{ target_task_id: "lead-task-1", rationale: "Superseded by a better split." }],
+    }, { deletableTaskIds: ["lead-task-1"] });
+    expect(v.ok).toBe(true);
+  });
+
+  it("validateLeadCycleSemantics rejects task creations duplicating in-scope work", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      task_creations: [{
+        title: "Implement local journal data model and IndexedDB persistence",
+        instructions: "",
+        suggested_agent: "lead",
+        depends_on: [],
+        acceptance_criteria: [],
+        expected_artifact: null,
+        priority: "normal",
+      }],
+    }, {
+      rosterAgents: ["lead"],
+      existingTaskTitles: ["Implement local journal data model and IndexedDB persistence"],
+    });
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/duplicates existing task/);
   });
 
   it("validateLeadCycleSemantics caps task_creations to the configured maximum", () => {

@@ -43,6 +43,11 @@ export const leadTaskAssignmentSchema = z.object({
   rationale: z.string().default(""),
 }).passthrough();
 
+export const leadTaskDeletionSchema = z.object({
+  target_task_id: z.string().trim().min(1),
+  rationale: z.string().trim().min(1),
+}).passthrough();
+
 const reviewHintSchema = z.object({
   after_minutes: z.number().int().positive().optional().nullable(),
   after_event: z.enum(LEAD_REVIEW_AFTER_EVENTS).optional().nullable(),
@@ -57,6 +62,7 @@ export const leadCycleResultSchema = z.object({
   validation_summary: z.string().default(""),
   task_creations: z.array(leadTaskCreationSchema).default([]),
   task_assignments: z.array(leadTaskAssignmentSchema).default([]),
+  task_deletions: z.array(leadTaskDeletionSchema).default([]),
   advisory_notes: z.array(leadAdvisoryNoteSchema).default([]),
   next_review_hint: reviewHintSchema,
 }).passthrough();
@@ -73,6 +79,7 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     "validation_summary",
     "task_creations",
     "task_assignments",
+    "task_deletions",
     "advisory_notes",
     "next_review_hint",
   ],
@@ -121,6 +128,18 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
         },
       },
     },
+    task_deletions: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["target_task_id", "rationale"],
+        properties: {
+          target_task_id: { type: "string" },
+          rationale: { type: "string" },
+        },
+      },
+    },
     advisory_notes: {
       type: "array",
       items: {
@@ -153,6 +172,15 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
 
 export const LEAD_CYCLE_MAX_TASK_CREATIONS = 8;
 
+export function normalizeLeadTaskTitle(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\W_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function maxTaskCreationsForContext(ctx = {}) {
   const value = Number(ctx.maxTaskCreations);
   return Number.isInteger(value) && value > 0 ? value : LEAD_CYCLE_MAX_TASK_CREATIONS;
@@ -162,6 +190,7 @@ export function normalizeLeadCycleResult(value, fallback = {}) {
   const parsed = leadCycleResultSchema.safeParse({
     task_creations: [],
     task_assignments: [],
+    task_deletions: [],
     advisory_notes: [],
     next_review_hint: null,
     ...fallback,
@@ -192,6 +221,7 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
   }
   const creations = Array.isArray(value.task_creations) ? value.task_creations : [];
   const assignments = Array.isArray(value.task_assignments) ? value.task_assignments : [];
+  const deletions = Array.isArray(value.task_deletions) ? value.task_deletions : [];
   const notes = Array.isArray(value.advisory_notes) ? value.advisory_notes : [];
   const maxTaskCreations = maxTaskCreationsForContext(ctx);
 
@@ -240,6 +270,34 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
       return {
         ok: false,
         error: `task_assignments target tasks outside assignable task queue: ${offenders.join(", ")}`,
+        offenders,
+      };
+    }
+  }
+
+  if (Array.isArray(ctx.deletableTaskIds)) {
+    const deletable = new Set(ctx.deletableTaskIds);
+    const offenders = deletions
+      .map((deletion) => String(deletion?.target_task_id || "").trim())
+      .filter((id) => id && !deletable.has(id));
+    if (offenders.length) {
+      return {
+        ok: false,
+        error: `task_deletions target tasks outside deletable task set: ${offenders.join(", ")}`,
+        offenders,
+      };
+    }
+  }
+
+  if (Array.isArray(ctx.existingTaskTitles) && ctx.existingTaskTitles.length) {
+    const existingTitles = new Set(ctx.existingTaskTitles.map(normalizeLeadTaskTitle).filter(Boolean));
+    const offenders = creations
+      .map((creation) => String(creation?.title || "").trim())
+      .filter((title) => existingTitles.has(normalizeLeadTaskTitle(title)));
+    if (offenders.length) {
+      return {
+        ok: false,
+        error: `task_creations duplicates existing task: ${offenders.join(", ")}`,
         offenders,
       };
     }
@@ -302,6 +360,7 @@ export function synthesizeLeadCycleFailure({ summary = "Lead cycle failed", reas
     summary,
     task_creations: [],
     task_assignments: [],
+    task_deletions: [],
     advisory_notes: [],
     next_review_hint: null,
   };
