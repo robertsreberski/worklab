@@ -1,6 +1,7 @@
 // src/ui/src/components/CommentAuthor.jsx
 
 import { agentByName, agentHref, agentLabel } from "../lib/agentLinks.js";
+import { EntityBadge } from "./EntityBadge.jsx";
 import { navigateHash } from "../lib/navigation.js";
 
 function HumanIcon() {
@@ -60,7 +61,7 @@ export function CommentAuthor({ authorType, authorId, agents = [] }) {
       <span>{label}</span>
       {authorId && (
         href || authorLink
-          ? <a class="author-id" href={href || authorLink} onClick={(event) => onAuthorLinkClick(event, href || authorLink)}>{authorLabel}</a>
+          ? <EntityBadge kind="agent" id={authorId} label={authorLabel} href={href || authorLink} class="author-id" onClick={(event) => onAuthorLinkClick(event, href || authorLink)} />
           : <span class="author-id">{authorId}</span>
       )}
     </span>

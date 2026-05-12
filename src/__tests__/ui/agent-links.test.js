@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { agentHref, splitAgentReferences } from "../../ui/src/lib/agentLinks.js";
+
+const agentLinkSource = readFileSync(
+  resolve(import.meta.dirname, "../../ui/src/components/AgentLink.jsx"),
+  "utf8",
+);
 
 const agents = [
   { name: "automattic-sandbox-engineer", display_name: "Automattic Sandbox Engineer" },
@@ -47,5 +54,10 @@ describe("agent link helpers", () => {
     expect(splitAgentReferences("xautomattic-sandbox-engineer is not a reference", agents)).toEqual([
       "xautomattic-sandbox-engineer is not a reference",
     ]);
+  });
+
+  it("renders text references through the shared entity badge", () => {
+    expect(agentLinkSource).toContain("EntityBadge");
+    expect(agentLinkSource).toContain('kind="agent"');
   });
 });

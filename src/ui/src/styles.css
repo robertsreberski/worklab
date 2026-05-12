@@ -1451,6 +1451,78 @@ a.badge-token:focus-visible {
   border-color: var(--border);
   text-decoration: line-through;
 }
+.chip.badge-token {
+  --badge-token-tone: var(--text-muted);
+  background: var(--surface-elevated);
+  border-color: var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-sans);
+  font-weight: 500;
+}
+.chip.badge-token.chip-accent {
+  --badge-token-tone: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.chip.badge-token.chip-error {
+  --badge-token-tone: var(--status-error);
+  color: var(--status-error);
+  background: var(--status-error-bg-10);
+  border-color: var(--status-error-border);
+}
+.chip.badge-token.chip-warn {
+  --badge-token-tone: var(--status-progress);
+  color: var(--status-progress);
+  background: var(--status-progress-bg-10);
+  border-color: var(--status-progress-border);
+}
+.chip.badge-token.chip-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.chip.badge-token.chip-muted {
+  background: var(--surface-sunken);
+  border-color: var(--border);
+  color: var(--text-subtle);
+}
+.chip.badge-token.chip-category {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chip.badge-token.chip-trigger {
+  --badge-token-tone: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.chip.badge-token.chip-inline {
+  height: auto;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+.chip.badge-token.chip-filter {
+  height: 28px;
+  padding: 0 var(--sp-3);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.chip.badge-token.chip-filter.selected,
+.chip.badge-token.chip-filter[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--accent);
+}
 
 /* Mention picker dropdown — anchored to a MentionableTextarea wrapper,
    appears just below the textarea. Matches the .select-menu look so it
@@ -1843,7 +1915,7 @@ a.badge-token:focus-visible {
 .agent-link.icon-only:focus-visible {
   text-decoration: none;
 }
-.agent-link > span:not(.agent-avatar) {
+.agent-link > span:not(.agent-avatar):not(.badge-token-glyph):not(.badge-token-label) {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6115,6 +6187,10 @@ html.assistant-resizing * {
   vertical-align: bottom;
   white-space: nowrap;
 }
+.team-goal-project.badge-token {
+  display: inline-flex;
+  color: var(--badge-token-tone);
+}
 .team-goal-meta {
   display: flex;
   flex-wrap: wrap;
@@ -7166,6 +7242,10 @@ html.assistant-resizing * {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
+}
+.usage-list a.badge-token {
+  color: var(--badge-token-tone);
+  overflow-wrap: normal;
 }
 .soft-meta { color: var(--text-muted); font-size: var(--text-sm); }
 

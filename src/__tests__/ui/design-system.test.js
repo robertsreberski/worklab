@@ -166,7 +166,7 @@ describe("design system stylesheet", () => {
 
   it("clips chip and badge text through shared primitives", () => {
     const css = readFileSync(stylesPath, "utf8");
-    for (const selector of [".chip", ".badge", ".kb-category-badge"]) {
+    for (const selector of [".badge-token", ".chip", ".badge", ".kb-category-badge"]) {
       const rule = css.match(new RegExp(`\\${selector}\\s*\\{[^}]*\\}`))?.[0] || "";
       expect(rule).toMatch(/max-width:\s*100%/);
       expect(rule).toMatch(/overflow:\s*hidden\b/);

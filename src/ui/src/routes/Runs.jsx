@@ -7,6 +7,7 @@ import { useAppResume } from "../lib/pageVisibility.js";
 import { AppShell } from "../components/AppShell.jsx";
 import { AgentAvatar } from "../components/AgentAvatar.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { Button } from "../components/primitives/Button.jsx";
@@ -395,12 +396,13 @@ export function Runs() {
                     <div class="activity-row-aside">
                       <span class="activity-time" title={fmtTime(item.started_at)}>{fmtAge(item.started_at)}</span>
                       {item.task_id && (
-                        <a
+                        <EntityBadge
+                          kind="run"
+                          label="Open"
+                          id={item.id}
                           class="activity-open-link"
                           href={`#/tasks/${taskRouteId({ id: item.task_id, task_key: item.task_key })}?run=${encodeURIComponent(item.id)}`}
-                        >
-                          Open
-                        </a>
+                        />
                       )}
                     </div>
                   </article>

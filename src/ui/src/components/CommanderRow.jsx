@@ -6,6 +6,7 @@
 
 import { useMemo } from "preact/hooks";
 import { mergeRunEvents } from "../lib/useRunStream.js";
+import { EntityBadge } from "./EntityBadge.jsx";
 import { AgentLink } from "./AgentLink.jsx";
 import { AgentAvatar } from "./AgentAvatar.jsx";
 import { Icon } from "./Icon.jsx";
@@ -244,19 +245,17 @@ export function CommanderRow({
   const childTaskChip = childTaskLabel
     ? parentTask?.id
       ? (
-        <a
-          class="chip chip-muted commander-child-chip"
+        <EntityBadge
+          kind="task"
+          label={childTaskLabel}
           href={`#/tasks/${taskRouteId(parentTask)}`}
+          class="chip chip-muted commander-child-chip"
           title={`Parent: ${taskDisplayKey(parentTask)}${parentTask.title ? ` - ${parentTask.title}` : ""}`}
           onClick={(event) => event.stopPropagation()}
-        >
-          <Icon name="corner-up-left" size={10} /> {childTaskLabel}
-        </a>
+        />
       )
       : (
-        <span class="chip chip-muted commander-child-chip">
-          <Icon name="corner-up-left" size={10} /> {childTaskLabel}
-        </span>
+        <EntityBadge kind="task" label={childTaskLabel} class="chip chip-muted commander-child-chip" />
       )
     : null;
 
@@ -343,24 +342,26 @@ export function CommanderRow({
           <span class="commander-title">{task.title}</span>
           {childTaskChip}
           {task.project && (
-            <a
-              class="chip chip-muted commander-project-chip"
+            <EntityBadge
+              kind="project"
+              label={task.project.name || task.project.slug}
+              id={task.project.slug || task.project.id}
               href={`#/projects/${encodeURIComponent(task.project.slug || task.project.id)}`}
+              class="chip chip-muted commander-project-chip"
               title={`Project: ${task.project.name || task.project.slug}`}
               onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
-            </a>
+            />
           )}
           {isTeamGoalRoot && (
-            <a
-              class={`chip ${commanderGoalChipClass(task)} team-goal-chip`}
+            <EntityBadge
+              kind="goal"
+              label={commanderGoalStatusLabel(task)}
+              id={task.id}
               href={`#/goals/${encodeURIComponent(task.id)}`}
+              class={`chip ${commanderGoalChipClass(task)} team-goal-chip`}
               title={task.goal_status_reason || "Synthetic team goal root"}
               onClick={(event) => event.stopPropagation()}
-            >
-              <Icon name="check-circle" size={10} /> {commanderGoalStatusLabel(task)}
-            </a>
+            />
           )}
           {metaChip}
           {autoRun && (

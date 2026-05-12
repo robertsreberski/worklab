@@ -13,6 +13,7 @@ import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
 import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { DetailHead, SectionStack, Toolbar } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -490,7 +491,7 @@ function LeadCycleTimeline({ goal }) {
             <div class="goal-cycle-foot">
               {row.impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
               {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
-              {row.href && <a href={row.href}>Open run</a>}
+              {row.href && <EntityBadge kind="run" label="Open run" id={row.run_id} href={row.href} />}
             </div>
             {row.deletions.length ? (
               <div class="goal-cycle-deletions">
@@ -547,7 +548,7 @@ function LeadCycleCockpit({ goal }) {
             <ul>
               {cockpit.leadTasks.map((task) => (
                 <li key={task.id}>
-                  <a href={`#/tasks/${encodeURIComponent(task.id)}`}>{task.task_key || task.title || task.id}</a>
+                  <EntityBadge kind="task" label={task.task_key || task.title || task.id} href={`#/tasks/${encodeURIComponent(task.id)}`} />
                   <span>{task.title}</span>
                   <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
                   {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}

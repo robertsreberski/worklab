@@ -1,4 +1,5 @@
 import { AgentAvatar } from "./AgentAvatar.jsx";
+import { EntityBadge } from "./EntityBadge.jsx";
 import { agentByName, agentHref, agentLabel, splitAgentReferences } from "../lib/agentLinks.js";
 import { navigateHash } from "../lib/navigation.js";
 
@@ -38,6 +39,19 @@ export function AgentLink({
     showLabel ? "" : "icon-only",
     className,
   ].filter(Boolean).join(" ");
+  if (!showAvatar && showLabel) {
+    return (
+      <EntityBadge
+        kind="agent"
+        id={name}
+        label={display}
+        href={href}
+        class={classes}
+        title={title || display}
+        onClick={(event) => followAgentLink(event, href)}
+      />
+    );
+  }
   return (
     <a
       class={classes}
@@ -59,7 +73,7 @@ export function AgentReferenceText({ text, agents = [] }) {
       {parts.map((part, index) => (
         typeof part === "string"
           ? part
-          : <AgentLink key={`${part.name}-${index}`} name={part.name} label={part.label} agents={agents} />
+          : <EntityBadge key={`${part.name}-${index}`} kind="agent" id={part.name} label={part.label} href={part.href} />
       ))}
     </>
   );
