@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
@@ -22,6 +22,8 @@ import {
 
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
 const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
+const providersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/ProvidersTab.jsx");
+const aboutHeroPath = resolve(import.meta.dirname, "../../ui/public/about/worklab-about-hero.png");
 
 describe("settings UI duration conversions", () => {
   it("keeps Run limits labels compact because the controls already show units", () => {
@@ -50,6 +52,16 @@ describe("settings UI duration conversions", () => {
     expect(source).toContain("SETTINGS_SECTION_LINKS.map");
     expect(source).toContain("active={activeSectionId === card.targetId}");
     expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
+  });
+
+  it("keeps the in-page Settings section nav sticky, readable, and label-safe", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(source).toContain('class="settings-section-nav-label"');
+    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*position:\s*sticky/);
+    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*top:\s*calc\(var\(--sp-3\) \+ var\(--mobile-safe-top\)\)/);
+    expect(styles).toContain(".settings-section-nav-label");
   });
 
   it("keeps dense Settings layout surfaces grouped and width-safe", () => {
@@ -87,6 +99,30 @@ describe("settings UI duration conversions", () => {
     expect(styles).toContain(".settings-route-shell");
     expect(styles).toContain(".settings-route-content");
     expect(styles).toContain(".settings-about-grid");
+  });
+
+  it("aligns the provider edit header and body inside Settings", () => {
+    const source = readFileSync(providersSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(source).toContain('class="provider-detail-head"');
+    expect(source).toContain('actionsClass="provider-detail-actions"');
+    expect(styles).toContain(".provider-detail-head");
+    expect(styles).toContain(".provider-detail-body");
+    expect(styles).toContain(".provider-editor-layout");
+  });
+
+  it("presents About as a polished visual surface with a project-local generated asset", () => {
+    const source = readFileSync(settingsSourcePath, "utf8");
+    const styles = readFileSync(settingsStylesPath, "utf8");
+
+    expect(source).toContain('class="settings-about-hero"');
+    expect(source).toContain('src="/about/worklab-about-hero.png"');
+    expect(source).toContain('class="settings-about-stat-grid"');
+    expect(styles).toContain(".settings-about-hero");
+    expect(styles).toContain(".settings-about-visual");
+    expect(styles).toContain(".settings-about-stat-grid");
+    expect(existsSync(aboutHeroPath)).toBe(true);
   });
 
   it("scopes the New Task keyboard hint spacing to the Commander CTA", () => {
