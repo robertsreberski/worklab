@@ -774,6 +774,35 @@ describe("buildReviewSystemPrompt", () => {
     expect(p).toContain("Direct workspace mode uses the shared project checkout, not an isolated per-task branch.");
     expect(p).toContain("In direct workspace mode, preserve unrelated shared-checkout history");
     expect(p).toContain("report task-specific commits and any remaining task-owned dirty state");
+    expect(p).not.toContain("worktree_sync");
+  });
+
+  it("tells worktree-mode executors to sync source drift before final output", () => {
+    const p = buildExecuteSystemPrompt({
+      agent: { name: "coder", instructions: "you are a coder" },
+      task: { id: "t1", title: "demo", stage: "execute", instructions: "do things" },
+      skills: [],
+      memory: "",
+      journalTail: "",
+      comments: [],
+      pinnedKb: [],
+      effectiveWorkdir: "/worktree",
+      repositoryGitRoot: "/source",
+      workspaceMode: "worktree",
+      sourceWorkdir: "/source",
+      worktree: {
+        branch: "worklab/run/run-1",
+        runtime_workdir: "/worktree",
+      },
+      mcpServers: { worklab: { command: "/worklab/src/mcp/launch-worklab-mcp.sh" } },
+      worklabToolSurfaceMarkdown: "- `worktree_sync` (action): Sync the current run worktree with current source checkout truth.",
+    });
+
+    expect(p).toContain("Workspace mode: `worktree`");
+    expect(p).toContain("AI worktree branch: `worklab/run/run-1`");
+    expect(p).toContain("call `worktree_sync` with `action: \"merge_source\"`");
+    expect(p).toContain("before returning the final `worklab.v2` result");
+    expect(p).toContain("If `worktree_sync` reports `merge_conflict`, resolve conflicts in the AI worktree");
   });
 
   it("does NOT contain the CADENCE instruction", () => {

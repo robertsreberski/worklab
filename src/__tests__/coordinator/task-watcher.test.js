@@ -11,6 +11,7 @@ import { writeSettings } from "../../core/settings.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
 import { kbList, kbRead } from "../../core/kb.js";
 import { slugify } from "../../core/slugs.js";
+import { syncRunWorktreeFromSource } from "../../core/worktrees.js";
 
 function stubBroker() {
   const broadcasts = [];
@@ -758,6 +759,75 @@ describe("task-watcher", () => {
       dirtyPaths: ["README.md"],
     });
     expect(readFileSync(rawLogPath, "utf8")).toContain("\"status\":\"blocked_dirty_source\"");
+  });
+
+  it("merges a worktree that resolved source drift during the live run without spawning conflict retry", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const source = makeGitRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-task-worktree-data-"));
+    const project = seedProject(db, { workdir: source, worktreeMode: "auto" });
+    const taskId = seedTask(db, { owner: "coder", projectId: project.id });
+    let resolveDone;
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise((resolve) => { resolveDone = resolve; }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db,
+      broker: stubBroker(),
+      spawn,
+      workerBinary: "/fake",
+      workspace: "/default-workspace",
+      repoRoot: "/repo",
+      dataDir,
+    });
+
+    const { runId } = await watcher.handleRunRequested(taskId);
+    seedRunLog(db, runId, dataDir);
+    const runRow = db.prepare("SELECT worktree_json FROM task_runs WHERE id = ?").get(runId);
+    const metadata = JSON.parse(runRow.worktree_json);
+    const runtimeWorkdir = spawn.mock.calls[0][0].env.WORKLAB_WORKSPACE;
+
+    writeFileSync(join(source, "README.md"), "Current source truth\n");
+    git(source, ["add", "README.md"]);
+    git(source, ["commit", "-m", "source update"]);
+    writeFileSync(join(runtimeWorkdir, "README.md"), "AI branch update\n");
+    git(runtimeWorkdir, ["add", "README.md"]);
+    git(runtimeWorkdir, ["commit", "-m", "ai update"]);
+
+    const conflict = syncRunWorktreeFromSource({ metadata, now: 2000 });
+    expect(conflict).toMatchObject({ ok: false, status: "merge_conflict", conflict_paths: ["README.md"] });
+    writeFileSync(join(runtimeWorkdir, "README.md"), "Current source truth\nAI branch update\n");
+    git(runtimeWorkdir, ["add", "README.md"]);
+    git(runtimeWorkdir, ["commit", "-m", "resolve source drift"]);
+    const synced = syncRunWorktreeFromSource({ metadata: conflict.metadata, now: 3000 });
+    expect(synced).toMatchObject({ ok: true, status: "synced", conflict_paths: [] });
+    db.prepare("UPDATE task_runs SET worktree_json = ? WHERE id = ?").run(JSON.stringify(synced.metadata), runId);
+
+    resolveDone({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      worklabResult: advanceResult,
+      finalText: "done",
+      events: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(readFileSync(join(source, "README.md"), "utf8")).toBe("Current source truth\nAI branch update\n");
+    const task = db.prepare("SELECT stage FROM tasks WHERE id = ?").get(taskId);
+    expect(task.stage).toBe("done");
+    const diagnostics = JSON.parse(db.prepare("SELECT diagnostics_json FROM task_runs WHERE id = ?").get(runId).diagnostics_json);
+    expect(diagnostics.worktree).toMatchObject({
+      status: "merged",
+      ok: true,
+      conflict_paths: [],
+    });
+    const retryRun = db.prepare("SELECT id FROM task_runs WHERE parent_run_id = ? AND parent_relationship = 'worktree_conflict_retry'").get(runId);
+    expect(retryRun).toBeUndefined();
   });
 
   it("auto-retries a worktree merge conflict once from the authoritative source checkout", async () => {

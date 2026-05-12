@@ -1,11 +1,13 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createProvider, upsertModel } from "../../core/providers.js";
 import { recordAgentMemoryCandidates } from "../../core/agent-learning.js";
+import { prepareRunWorktree } from "../../core/worktrees.js";
 import { createToolHandlers } from "../../mcp/agent/tools/index.js";
 
 describe("worklab-tools handlers", () => {
@@ -24,6 +26,26 @@ describe("worklab-tools handlers", () => {
     } finally {
       db.close();
     }
+  }
+
+  function git(cwd, args) {
+    return execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    }).trim();
+  }
+
+  function makeGitRepo() {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "worklab-tools-repo-")));
+    dirs.push(root);
+    git(root, ["init"]);
+    git(root, ["config", "user.email", "worklab@example.test"]);
+    git(root, ["config", "user.name", "Worklab Test"]);
+    writeFileSync(join(root, "README.md"), "Initial\n");
+    git(root, ["add", "README.md"]);
+    git(root, ["commit", "-m", "initial"]);
+    return root;
   }
 
   it("journal_append writes a bullet to the correct file", async () => {
@@ -317,6 +339,78 @@ describe("worklab-tools handlers", () => {
 
     await expect(handlers.run_log_read({ run_id: "missing" })).rejects.toThrow("run not found");
     await expect(handlers.run_log_read({ run_id: "run-outside" })).rejects.toThrow("outside data dir");
+  });
+
+  it("worktree_sync reports direct-workspace runs as not worktree mode", async () => {
+    const c = ctx();
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status, workspace_mode)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running', 'direct')
+      `).run();
+    });
+
+    const result = await createToolHandlers(c).worktree_sync({ action: "status" });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "not_worktree",
+      run_id: "r1",
+    });
+  });
+
+  it("worktree_sync merges current source into the current run worktree only", async () => {
+    const c = ctx();
+    const source = makeGitRepo();
+    const metadata = prepareRunWorktree({
+      sourceWorkdir: source,
+      runId: c.runId,
+      dataDir: c.dataDir,
+      now: 1234,
+    });
+    seedDb(c.dataDir, (db) => {
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES ('t1', 'demo', 1, 1)").run();
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status,
+           workdir, workspace_mode, source_workdir, worktree_json)
+        VALUES ('r1', 't1', 'execute', 'execute', 'a', 1, 'running', 'running',
+          ?, 'worktree', ?, ?)
+      `).run(metadata.runtime_workdir, metadata.source_workdir, JSON.stringify(metadata));
+    });
+
+    writeFileSync(join(source, "source.txt"), "Current source truth\n");
+    git(source, ["add", "source.txt"]);
+    git(source, ["commit", "-m", "source update"]);
+    const sourceHead = git(source, ["rev-parse", "HEAD"]);
+    writeFileSync(join(metadata.runtime_workdir, "feature.txt"), "AI work\n");
+    git(metadata.worktree_root, ["add", "feature.txt"]);
+    git(metadata.worktree_root, ["commit", "-m", "ai update"]);
+
+    const result = await createToolHandlers(c).worktree_sync({ action: "merge_source" });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "synced",
+      run_id: "r1",
+      source_head: sourceHead,
+      source_changed_paths: ["source.txt"],
+      conflict_paths: [],
+    });
+    expect(readFileSync(join(metadata.runtime_workdir, "source.txt"), "utf8")).toBe("Current source truth\n");
+    expect(readFileSync(join(metadata.runtime_workdir, "feature.txt"), "utf8")).toBe("AI work\n");
+    expect(existsSync(join(source, "feature.txt"))).toBe(false);
+
+    seedDb(c.dataDir, (db) => {
+      const stored = JSON.parse(db.prepare("SELECT worktree_json FROM task_runs WHERE id = 'r1'").get().worktree_json);
+      expect(stored).toMatchObject({
+        last_sync_status: "synced",
+        last_synced_source_head: sourceHead,
+        source_changed_paths: ["source.txt"],
+      });
+    });
   });
 
   it("list_children returns subtasks linked via task_edges", async () => {

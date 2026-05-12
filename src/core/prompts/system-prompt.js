@@ -414,6 +414,8 @@ function formatRepositoryWorkflow({ repositoryInstructions, repositoryGitRoot, m
   } else {
     lines.push("When commits are required, create granular commits before returning the final result.");
     if (usesWorktree) {
+      lines.push("In worktree mode, after committing and verification, call `worktree_sync` with `action: \"merge_source\"` before returning the final `worklab.v2` result.");
+      lines.push("If `worktree_sync` reports `merge_conflict`, resolve conflicts in the AI worktree, commit the resolution, rerun relevant verification, and call `worktree_sync` again before final output.");
       lines.push("In final_text, report commit hash(es), verification commands, and any remaining dirty worktree state.");
     } else {
       lines.push("In direct workspace mode, preserve unrelated shared-checkout history; report task-specific commits and any remaining task-owned dirty state instead of rewriting history to manufacture a task-only branch.");
