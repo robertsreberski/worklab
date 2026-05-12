@@ -344,11 +344,11 @@ export function CommanderRow({
           {task.project && (
             <EntityBadge
               kind="project"
-              label={task.project.name || "Unknown Project"}
+              label={task.project.name || "Unknown"}
               id={task.project.slug || task.project.id}
               href={`#/projects/${encodeURIComponent(task.project.slug || task.project.id)}`}
               class="chip chip-muted commander-project-chip"
-              title={`Project: ${task.project.name || "Unknown Project"}`}
+              title={`Project: ${task.project.name || "Unknown"}`}
               onClick={(event) => event.stopPropagation()}
             />
           )}

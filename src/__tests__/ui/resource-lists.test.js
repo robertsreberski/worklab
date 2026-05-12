@@ -306,6 +306,17 @@ describe("resource list helpers", () => {
     expect(responsiveRowRule).toContain("grid-template-columns: minmax(0, 1fr)");
   });
 
+  it("keeps resource-row chip labels concise because icons carry entity type", () => {
+    const projectsSource = source("src/ui/src/routes/Projects.jsx");
+    const goalsSource = source("src/ui/src/routes/Goals.jsx");
+    const teamsSource = source("src/ui/src/routes/library/TeamsTab.jsx");
+
+    expect(projectsSource).not.toContain("team {teamLabel}");
+    expect(goalsSource).not.toContain("team {goalTeamLabel(goal)}");
+    expect(goalsSource).not.toContain("lead {relativeTime(goal.last_lead_at)}");
+    expect(teamsSource).not.toContain("lead {agentLabels.get(team.lead_agent)");
+  });
+
   it("lets Library selected routes render full-width detail surfaces", () => {
     const paneLayout = source("src/ui/src/components/PaneLayout.jsx");
     const styles = source("src/ui/src/styles.css");

@@ -30,8 +30,9 @@ describe("UI mentions parser parity", () => {
   });
 
   it("uses generic badge labels when a resource name is not resolved", () => {
-    expect(entityBadgeLabel({ type: "agent", id: "triager" })).toBe("Unknown Agent");
-    expect(entityBadgeLabel({ type: "kb", token: "@kb/runbook" })).toBe("Unknown Knowledge");
+    expect(entityBadgeLabel({ type: "agent", id: "triager" })).toBe("Unknown");
+    expect(entityBadgeLabel({ type: "kb", token: "@kb/runbook" })).toBe("Unknown");
+    expect(entityBadgeLabel({ type: "team", token: "@team/core" })).toBe("Unknown");
     expect(entityBadgeLabel({ type: "task", label: "Fix login" })).toBe("Fix login");
   });
 

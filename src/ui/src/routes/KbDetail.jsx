@@ -82,7 +82,7 @@ function UsageList({ usage }) {
 function fallbackRelationEntry(slug) {
   const cleanSlug = String(slug || "").trim();
   if (!cleanSlug) return null;
-  return { slug: cleanSlug, title: "Unknown Knowledge", missing: true };
+  return { slug: cleanSlug, title: "Unknown", missing: true };
 }
 
 function relationEntries(entries = [], slugs = []) {
@@ -90,7 +90,7 @@ function relationEntries(entries = [], slugs = []) {
     .filter((entry) => entry?.slug)
     .map((entry) => ({
       slug: entry.slug,
-      title: entry.title || "Unknown Knowledge",
+      title: entry.title || "Unknown",
       missing: !!entry.missing,
     }));
   if (resolved.length) return resolved;
@@ -107,7 +107,7 @@ function RelationEntryList({ label, entries = [], slugs = [] }) {
           <li key={relation.slug}>
             <EntityBadge
               kind="kb"
-              label={relation.title || "Unknown Knowledge"}
+              label={relation.title || "Unknown"}
               href={relation.missing ? null : `#/library/knowledge/${encodeURIComponent(relation.slug)}`}
               missing={relation.missing}
               title={relation.missing ? "Knowledge entry no longer exists" : relation.title}

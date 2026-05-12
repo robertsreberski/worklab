@@ -284,7 +284,7 @@ export function TaskDetail({ id, runParam = null }) {
   const resolvedMentions = useMemo(() => mergeAgentReferenceMentions(mentions, agents), [mentions, agents]);
   const stage = task?.stage || "plan";
   const taskTeamRouteId = task?.team?.slug || task?.team_id || "";
-  const taskTeamDisplay = task?.team?.name || (taskTeamRouteId ? "Unknown Team" : "");
+  const taskTeamDisplay = task?.team?.name || (taskTeamRouteId ? "Unknown" : "");
 
   const loadFullRunHistory = useCallback(async () => {
     if (!operationTaskId || runHistoryLoading) return;
@@ -833,13 +833,13 @@ export function TaskDetail({ id, runParam = null }) {
     <span class="task-hero-status-row">
       <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
       {task.project && (
-        <EntityBadge kind="project" label={task.project.name || "Unknown Project"} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || "Unknown Project"}`} />
+        <EntityBadge kind="project" label={task.project.name || "Unknown"} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || "Unknown"}`} />
       )}
       {taskTeamRouteId && (
         <EntityBadge kind="team" label={taskTeamDisplay} href={`#/library/teams/${encodeURIComponent(taskTeamRouteId)}`} class="task-team-chip" title={`Team: ${taskTeamDisplay}`} />
       )}
       {task.is_team_root && (
-        <EntityBadge kind="goal" label="Goal" href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal" />
+        <EntityBadge kind="goal" label={task.goal_contract?.objective || "Unknown"} href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal" />
       )}
       {hasLastRunError && (
         <span class="chip chip-error">

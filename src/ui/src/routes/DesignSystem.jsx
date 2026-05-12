@@ -645,7 +645,7 @@ export function DesignSystem() {
                           <ResourceRowId>path-forward</ResourceRowId>
                           <ResourceRowPath label="workdir" value="/Users/worklab/path-forward" />
                           <ResourceRowWorktreeChip mode="auto" />
-                          <ResourceRowChip tone="entity" icon="users">team core</ResourceRowChip>
+                          <ResourceRowChip tone="entity" icon="users">core</ResourceRowChip>
                         </ResourceRowTags>
                       )}
                       trailing={<StatusPill status="done" size="sm" />}
@@ -821,7 +821,7 @@ export function DesignSystem() {
               <EntityBadge kind="skill" id="context-a8c" label="Automattic Context MCP" href="#/library/skills/context-a8c" />
               <EntityBadge kind="agent" id="planner" label="Planner" href="#/library/agents/planner" />
               <EntityBadge kind="goal" id="goal-1" label="Launch readiness" href="#/goals/goal-1" />
-              <EntityBadge kind="run" id="run-1" label="Run run-1" href="#/tasks/T-321?run=run-1" />
+              <EntityBadge kind="run" id="run-1" label="run-1" href="#/tasks/T-321?run=run-1" />
               <EntityBadge kind="task" id="missing" label="@task/missing" missing />
             </div>
             <div class="ds-catalog-row">
