@@ -193,6 +193,41 @@ function leadCycleDetailTexts(cycle = {}, decision = "") {
     .filter((item, index, items) => item !== decision && items.indexOf(item) === index);
 }
 
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function goalRefinementSummary(cycle = {}) {
+  const applied = objectValue(cycle.goal_refinement_applied);
+  const fields = Array.isArray(applied.applied_fields)
+    ? applied.applied_fields.map(text).filter(Boolean)
+    : [];
+  if (applied.applied === true) {
+    return {
+      status: "applied",
+      label: "Goal refined",
+      fields,
+      rationale: text(applied.rationale),
+      patch: objectValue(applied.patch_applied),
+    };
+  }
+  const skipped = Array.isArray(applied.skipped)
+    ? applied.skipped.map((item) => ({
+      field: text(item?.field || "goal_refinement"),
+      reason: text(item?.reason || "not applied"),
+    })).filter((item) => item.field || item.reason)
+    : [];
+  if (skipped.length) {
+    return {
+      status: "skipped",
+      label: "Refinement skipped",
+      skipped,
+      rationale: text(applied.rationale),
+    };
+  }
+  return null;
+}
+
 export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
   const source = Array.isArray(goal?.cycles) && goal.cycles.length
     ? goal.cycles
@@ -214,6 +249,9 @@ export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
       checkpoint_note: text(cycle.checkpoint_note),
       validation_summary: text(cycle.validation_summary),
       goal_status: text(cycle.goal_status),
+      goal_refinement: objectValue(cycle.goal_refinement),
+      goal_refinement_applied: objectValue(cycle.goal_refinement_applied),
+      refinement: goalRefinementSummary(cycle),
       review_label: reviewLabel,
       event_label: eventLabel(cycle.next_review_event),
       impact: leadCycleImpact(cycle),
@@ -343,6 +381,7 @@ export function goalDraftFrom(goal = {}) {
   return {
     team_id: goal?.team_id || "",
     project_id: goal?.project_id || "",
+    north_star: contract.north_star || "",
     objective: contract.objective || "",
     stopping_condition: contract.stopping_condition || "",
     validation_loop: contract.validation_loop || "",
@@ -438,6 +477,16 @@ function LeadCycleTimeline({ goal }) {
                 {row.validation_summary && <span>{row.validation_summary}</span>}
               </div>
             )}
+            {row.refinement ? (
+              <div class={`goal-cycle-refinement is-${row.refinement.status}`}>
+                <span>{row.refinement.label}</span>
+                {row.refinement.fields?.map((field) => <Chip key={field} variant="muted">{field.replace("_", " ")}</Chip>)}
+                {row.refinement.skipped?.map((item) => (
+                  <span key={`${item.field}:${item.reason}`}>{item.field}: {item.reason}</span>
+                ))}
+                {row.refinement.rationale ? <span>{row.refinement.rationale}</span> : null}
+              </div>
+            ) : null}
             <div class="goal-cycle-foot">
               {row.impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
               {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
@@ -659,6 +708,7 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
     const payload = {
       team_id: assignment.effectiveTeamId || undefined,
       project_id: draft.project_id || undefined,
+      north_star: draft.north_star,
       objective: draft.objective,
       stopping_condition: draft.stopping_condition,
       validation_loop: draft.validation_loop,
@@ -753,6 +803,9 @@ function GoalEditor({ goal = null, teams = [], projects = [], isNew = false, onS
               <span>{readiness.ready ? "Goal definition has an objective, completion condition, and validation loop." : `Missing: ${readiness.missing.map((field) => (field === "stopping_condition" ? "done when" : field === "validation_loop" ? "validate with" : "objective")).join(", ")}`}</span>
             </div>
             <FormGrid columns={2}>
+              <FormField label="North star" class="span-2">
+                <MentionableTextarea rows={3} value={draft.north_star} onInput={(event) => update({ north_star: event.currentTarget.value })} />
+              </FormField>
               <FormField label="Objective" class="span-2">
                 <MentionableTextarea rows={4} value={draft.objective} onInput={(event) => update({ objective: event.currentTarget.value })} />
               </FormField>

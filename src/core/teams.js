@@ -365,6 +365,8 @@ function leadCycleSummary(row) {
     validation_summary: row.validation_summary || null,
     task_deletions: safeJsonArray(row.task_deletions_json),
     task_creation_skips: safeJsonArray(row.task_creation_skips_json),
+    goal_refinement: safeParseTeamGoalContract(row.goal_refinement_json),
+    goal_refinement_applied: safeParseTeamGoalContract(row.goal_refinement_applied_json),
     goal_status: row.goal_status || null,
     next_review_due_at: row.next_review_due_at ?? null,
     next_review_event: row.next_review_event || null,

@@ -137,6 +137,44 @@ export function formatLeadCycleImpact(cycle = {}) {
   ].filter(Boolean);
 }
 
+function objectValue(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function compactText(value) {
+  return String(value || "").trim();
+}
+
+export function formatLeadCycleRefinement(cycle = {}) {
+  const applied = objectValue(cycle.goal_refinement_applied);
+  const fields = Array.isArray(applied.applied_fields)
+    ? applied.applied_fields.map(compactText).filter(Boolean)
+    : [];
+  if (applied.applied === true) {
+    return {
+      status: "applied",
+      label: "Goal refined",
+      fields,
+      rationale: compactText(applied.rationale),
+    };
+  }
+  const skipped = Array.isArray(applied.skipped)
+    ? applied.skipped.map((item) => ({
+      field: compactText(item?.field || "goal_refinement"),
+      reason: compactText(item?.reason || "not applied"),
+    })).filter((item) => item.field || item.reason)
+    : [];
+  if (skipped.length) {
+    return {
+      status: "skipped",
+      label: "Refinement skipped",
+      skipped,
+      rationale: compactText(applied.rationale),
+    };
+  }
+  return null;
+}
+
 export function teamSetupGaps(team = {}, members = [], projects = []) {
   const gaps = [];
   if (!String(team?.goal || "").trim()) {
@@ -575,6 +613,7 @@ function LeadCycleRow({ cycle }) {
   const status = cycle?.process_status || cycle?.status || "unknown";
   const statusVariant = cycle?.process_status === "succeeded" ? "primary" : cycle?.process_status === "failed" ? "warn" : "muted";
   const impact = formatLeadCycleImpact(cycle);
+  const refinement = formatLeadCycleRefinement(cycle);
   const nextReview = leadCycleNextReviewLabel(cycle);
 
   return (
@@ -597,6 +636,16 @@ function LeadCycleRow({ cycle }) {
         {impact.length ? (
           <div class="team-cycle-impact">
             {impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
+          </div>
+        ) : null}
+        {refinement ? (
+          <div class={`team-cycle-refinement is-${refinement.status}`}>
+            <span>{refinement.label}</span>
+            {refinement.fields?.map((field) => <Chip key={field} variant="muted">{field.replace("_", " ")}</Chip>)}
+            {refinement.skipped?.map((item) => (
+              <span key={`${item.field}:${item.reason}`}>{item.field}: {item.reason}</span>
+            ))}
+            {refinement.rationale ? <span>{refinement.rationale}</span> : null}
           </div>
         ) : null}
         {Array.isArray(cycle?.task_deletions) && cycle.task_deletions.length ? (

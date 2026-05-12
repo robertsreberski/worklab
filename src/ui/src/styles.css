@@ -5867,6 +5867,26 @@ html.assistant-resizing * {
   flex-wrap: wrap;
   gap: var(--sp-1);
 }
+.team-cycle-refinement,
+.goal-cycle-refinement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  align-items: center;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.team-cycle-refinement > span:first-child,
+.goal-cycle-refinement > span:first-child {
+  color: var(--text);
+  font-weight: 700;
+}
+.team-cycle-refinement.is-skipped > span:first-child,
+.goal-cycle-refinement.is-skipped > span:first-child {
+  color: var(--status-warning);
+}
 .team-cycle-tombstones {
   display: grid;
   gap: 3px;
