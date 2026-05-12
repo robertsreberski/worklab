@@ -24,6 +24,7 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
@@ -359,7 +360,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
                       <ul class="usage-list">
                         {usage.tasks.map((t) => (
                           <li key={t.id}>
-                            <a href={`#/tasks/${taskRouteId(t)}`}>{t.title}</a>{" "}
+                            <EntityBadge kind="task" label={t.title} href={`#/tasks/${taskRouteId(t)}`} />{" "}
                             <StatusPill status={t.stage || "plan"} size="sm" />
                           </li>
                         ))}
@@ -371,7 +372,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
                       <ul class="usage-list">
                         {usage.agents.map((a) => (
                           <li key={a.name}>
-                            <a href={`#/library/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a>
+                            <EntityBadge kind="agent" label={a.display_name || a.name} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
                           </li>
                         ))}
                       </ul>

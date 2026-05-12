@@ -21,6 +21,7 @@ import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../../components/MentionableTextarea.jsx";
 import { Switch } from "../../components/primitives/Switch.jsx";
 import { GoalContractDetails } from "../../components/GoalContractDetails.jsx";
+import { EntityBadge } from "../../components/EntityBadge.jsx";
 import { FormField } from "../../components/FormField.jsx";
 import { FormGrid } from "../../components/FormGrid.jsx";
 import { FormSection } from "../../components/FormSection.jsx";
@@ -241,9 +242,13 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
     <div class={`team-goal-card${compact ? " is-compact" : ""}`}>
       <InlineHead class="team-goal-card-head">
         <div>
-          <a class="team-goal-project" href={`#/projects/${encodeURIComponent(project.slug || project.id || "")}`}>
-            {project.name || project.slug || goal?.project_id}
-          </a>
+          <EntityBadge
+            kind="project"
+            label={project.name || project.slug || goal?.project_id}
+            id={project.slug || project.id}
+            href={`#/projects/${encodeURIComponent(project.slug || project.id || "")}`}
+            class="team-goal-project"
+          />
           <div class="team-goal-meta">
             {goal?.team_name && <span>{goal.team_name}</span>}
             {goal?.last_lead_at && <span>lead {relativeTime(goal.last_lead_at)}</span>}
@@ -263,16 +268,22 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
           Clear
         </Button>
         {goal?.root_task_id && (
-          <a class="team-cycle-link" href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}>
-            <Icon name="target" size={13} />
-            <span>Goal</span>
-          </a>
+          <EntityBadge
+            kind="goal"
+            label="Goal"
+            id={goal.goal_id || goal.root_task_id}
+            href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}
+            class="team-cycle-link"
+          />
         )}
         {goal?.root_task_id && (
-          <a class="team-cycle-link" href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>
-            <Icon name="arrow-right" size={13} />
-            <span>Root</span>
-          </a>
+          <EntityBadge
+            kind="task"
+            label="Root"
+            id={goal.root_task_id}
+            href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}
+            class="team-cycle-link"
+          />
         )}
       </Toolbar>
     </div>
@@ -661,10 +672,7 @@ function LeadCycleRow({ cycle }) {
       {(taskHref || rawLogHref) && (
         <Toolbar class="team-cycle-actions">
           {taskHref && (
-            <a class="team-cycle-link" href={taskHref}>
-              <Icon name="arrow-right" size={13} />
-              <span>Task</span>
-            </a>
+            <EntityBadge kind="task" label="Task" href={taskHref} class="team-cycle-link" />
           )}
           {rawLogHref && (
             <a class="team-cycle-link" href={rawLogHref} target="_blank" rel="noreferrer">
@@ -769,7 +777,7 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
               <ul>
                 {projects.map((p) => (
                   <li key={p.id}>
-                    <a href={`#/projects/${encodeURIComponent(p.slug)}`}>{p.name}</a> ({p.slug})
+                    <EntityBadge kind="project" label={p.name} id={p.slug} href={`#/projects/${encodeURIComponent(p.slug)}`} /> ({p.slug})
                     {p.archived ? <Badge variant="muted"> archived </Badge> : null}
                   </li>
                 ))}

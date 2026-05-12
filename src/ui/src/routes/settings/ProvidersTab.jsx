@@ -20,6 +20,7 @@ import { LoadingState } from "../../components/LoadingState.jsx";
 import { Card } from "../../components/Card.jsx";
 import { Chip } from "../../components/primitives/Chip.jsx";
 import { Modal } from "../../components/Modal.jsx";
+import { EntityBadge } from "../../components/EntityBadge.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { ActionDock, DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack } from "../../components/layout/index.js";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../../components/ResourceListToolbar.jsx";
@@ -518,7 +519,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
               <ul class="usage-list provider-agent-list">
                 {linkedAgents.map((agent) => (
                   <li key={agent.name}>
-                    <a href={`#/library/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
+                    <EntityBadge kind="agent" label={agent.display_name || agent.name} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
                     <StatusPill status={agent.enabled ? "enabled" : "disabled"} size="sm" />
                   </li>
                 ))}

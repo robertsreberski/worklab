@@ -24,6 +24,7 @@ import { Card } from "../components/Card.jsx";
 import { Banner } from "../components/Banner.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { EmptyState } from "../components/EmptyState.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
@@ -97,7 +98,7 @@ function DependencyLink({ dependency }) {
   return (
     <a key={dependency.id} class="blocked-link dependency-link" href={`#/tasks/${taskRouteId(dependency)}`}>
       <span class="dependency-link-copy">
-        <span class="truncate">{dependency.title}</span>
+        <EntityBadge kind="task" label={dependency.title} />
         {context && <span class="dependency-link-meta">{context}</span>}
       </span>
       <StatusPill status={dependency.stage || "plan"} size="sm" />
@@ -808,19 +809,13 @@ export function TaskDetail({ id, runParam = null }) {
     <span class="task-hero-status-row">
       <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
       {task.project && (
-        <a class="chip chip-muted task-project-chip" href={`#/projects/${projectRouteId(task.project)}`} title={`Project: ${task.project.name || task.project.slug}`}>
-          <Icon name="folder" size={10} /> {task.project.name || task.project.slug}
-        </a>
+        <EntityBadge kind="project" label={task.project.name || task.project.slug} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || task.project.slug}`} />
       )}
       {task.team_id && (
-        <a class="chip chip-muted task-team-chip" href={`#/library/teams/${encodeURIComponent(task.team_id)}`} title={`Team: ${task.team_id}`}>
-          <Icon name="users" size={10} /> {task.team_id}
-        </a>
+        <EntityBadge kind="team" label={task.team_id} href={`#/library/teams/${encodeURIComponent(task.team_id)}`} class="task-team-chip" title={`Team: ${task.team_id}`} />
       )}
       {task.is_team_root && (
-        <a class="chip chip-muted" href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal">
-          <Icon name="target" size={10} /> Goal
-        </a>
+        <EntityBadge kind="goal" label="Goal" href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal" />
       )}
       {hasLastRunError && (
         <span class="chip chip-error">

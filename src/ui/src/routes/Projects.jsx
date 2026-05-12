@@ -10,6 +10,7 @@ import { useAppResume } from "../lib/pageVisibility.js";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { AppShell, MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
@@ -154,13 +155,13 @@ function ProjectGoalSummary({ goal }) {
       </div>
       <div class="project-goal-links">
         {goal.goal_id || goal.root_task_id ? (
-          <a href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}>Goal</a>
+          <EntityBadge kind="goal" label="Goal" href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
         ) : null}
         {goal.team_slug || goal.team_id ? (
-          <a href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`}>Team</a>
+          <EntityBadge kind="team" label="Team" href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
         ) : null}
         {goal.root_task_id ? (
-          <a href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}>Root task</a>
+          <EntityBadge kind="task" label="Root task" href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
         ) : null}
       </div>
     </div>

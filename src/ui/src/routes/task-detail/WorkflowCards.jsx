@@ -2,6 +2,7 @@ import { useState } from "preact/hooks";
 
 import { AgentPicker } from "../../components/AgentPicker.jsx";
 import { Card } from "../../components/Card.jsx";
+import { EntityBadge } from "../../components/EntityBadge.jsx";
 import { FormSection } from "../../components/FormSection.jsx";
 import { Icon } from "../../components/Icon.jsx";
 import { MarkdownContent } from "../../components/Markdown.jsx";
@@ -45,10 +46,7 @@ export function TaskContextList({ task }) {
     task.project ? {
       label: "Project",
       value: (
-        <a href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link">
-          <Icon name="folder" size={12} />
-          <span>{task.project.name || task.project.slug}</span>
-        </a>
+        <EntityBadge kind="project" label={task.project.name || task.project.slug} href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link" />
       ),
       mono: false,
     } : null,
@@ -96,7 +94,7 @@ export function TaskParentReference({ task }) {
         <span class="task-parent-reference-meta">
           <Icon name="corner-up-left" size={12} class="task-parent-reference-icon" />
           <span class="task-parent-reference-label">Parent</span>
-          <span class="task-parent-reference-key pane-row-mono">{parentKey}</span>
+          <EntityBadge kind="task" label={parentKey} class="task-parent-reference-key pane-row-mono" />
           <StatusPill status={parent.stage || "plan"} size="sm" class="task-parent-reference-status" />
         </span>
         <span class="task-parent-reference-title">{parent.title}</span>

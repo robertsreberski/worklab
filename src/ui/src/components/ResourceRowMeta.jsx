@@ -1,4 +1,5 @@
 import { Icon } from "./Icon.jsx";
+import { BadgeToken } from "./primitives/BadgeToken.jsx";
 
 export function ResourceRowTags({ children, class: className = "" }) {
   return <span class={`resource-row-tags ${className}`.trim()}>{children}</span>;
@@ -11,7 +12,7 @@ export function ResourceRowId({ children, title }) {
 
 export function ResourceRowChip({ children, title, class: className = "", ...props }) {
   if (!children && children !== 0) return null;
-  return <span {...props} class={`resource-row-chip ${className}`.trim()} title={title}>{children}</span>;
+  return <BadgeToken {...props} size="xs" class={`resource-row-chip ${className}`.trim()} title={title}>{children}</BadgeToken>;
 }
 
 export function ResourceRowPath({ value, label = "path", icon = "folder" }) {

@@ -9,6 +9,7 @@ import { forwardRef } from "preact/compat";
 import { api } from "../../lib/api.js";
 import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
 import { PopoverPortal } from "./PopoverPortal.jsx";
+import { entityBadgeMeta } from "../../lib/entityBadges.js";
 
 const TYPE_ORDER = { task: 0, project: 1, kb: 2, skill: 3, agent: 4, goal: 5, team: 6, run: 7 };
 
@@ -150,7 +151,7 @@ export const MentionPicker = forwardRef(function MentionPicker(
             onMouseEnter={() => setActiveIndex(realIdx)}
           >
             <span class={`mention-picker-type badge-token badge-token-xs entity-badge entity-badge--${item.type}`} data-kind={item.type}>
-              <span class="badge-token-glyph" aria-hidden="true">{(item.type || "?").slice(0, 1).toUpperCase()}</span>
+              <span class="badge-token-glyph" aria-hidden="true">{entityBadgeMeta(item.type).glyph}</span>
               <span class="badge-token-label">
               {TYPE_BADGE[item.type] || item.type}
               </span>

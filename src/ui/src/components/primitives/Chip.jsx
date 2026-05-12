@@ -20,7 +20,7 @@ export function Chip({
   ...rest
 }) {
   const isFilter = variant === "filter";
-  const cls = `chip chip-${variant} ${isFilter && selected ? "selected" : ""} ${className}`.trim();
+  const cls = `badge-token chip chip-${variant} ${isFilter && selected ? "selected" : ""} ${className}`.trim();
   const commonProps = {
     class: cls,
     "aria-label": ariaLabel,

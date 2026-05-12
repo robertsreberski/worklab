@@ -19,6 +19,7 @@ import { Banner } from "../components/Banner.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { FileTree } from "../components/FileTree.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -177,7 +178,9 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           <Card variant="spacious" title="Used by agents" class="entity-rail-card">
             <ul class="usage-list">
               {usage.explicit.map((a) => (
-                <li key={a.name}><a href={`#/library/agents/${encodeURIComponent(a.name)}`}>{a.display_name || a.name}</a></li>
+                <li key={a.name}>
+                  <EntityBadge kind="agent" label={a.display_name || a.name} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
+                </li>
               ))}
             </ul>
           </Card>

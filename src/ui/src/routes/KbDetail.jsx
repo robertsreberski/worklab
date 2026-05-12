@@ -7,6 +7,7 @@ import { StatusPill } from "../components/primitives/StatusPill.jsx";
 import { MobilePillRow, MobileTopbar } from "../components/AppShell.jsx";
 import { EntityChromeBridge } from "../components/EntityChromeBridge.jsx";
 import { Card } from "../components/Card.jsx";
+import { EntityBadge } from "../components/EntityBadge.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { FormSection } from "../components/FormSection.jsx";
 import { Icon } from "../components/Icon.jsx";
@@ -55,7 +56,7 @@ function UsageList({ usage }) {
           <ul class="usage-list knowledge-read-usage-list">
             {tasks.map((task) => (
               <li key={task.id}>
-                <a href={`#/tasks/${taskRouteId(task)}`}>{task.title}</a>{" "}
+                <EntityBadge kind="task" label={task.title} href={`#/tasks/${taskRouteId(task)}`} />{" "}
                 <StatusPill status={task.stage || "plan"} size="sm" />
               </li>
             ))}
@@ -67,7 +68,7 @@ function UsageList({ usage }) {
           <ul class="usage-list knowledge-read-usage-list">
             {agents.map((agent) => (
               <li key={agent.name}>
-                <a href={`#/library/agents/${encodeURIComponent(agent.name)}`}>{agent.display_name || agent.name}</a>
+                <EntityBadge kind="agent" label={agent.display_name || agent.name} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
               </li>
             ))}
           </ul>
@@ -85,7 +86,7 @@ function RelationSlugList({ label, slugs = [] }) {
       <ul class="usage-list knowledge-read-usage-list">
         {visible.map((relationSlug) => (
           <li key={relationSlug}>
-            <a href={`#/library/knowledge/${encodeURIComponent(relationSlug)}`}>{relationSlug}</a>
+            <EntityBadge kind="kb" label={relationSlug} href={`#/library/knowledge/${encodeURIComponent(relationSlug)}`} />
           </li>
         ))}
       </ul>

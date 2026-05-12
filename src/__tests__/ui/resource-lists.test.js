@@ -346,6 +346,7 @@ describe("resource list helpers", () => {
 
   it("shares resource-row metadata primitives across the primary resource screens", () => {
     const metaComponent = source("src/ui/src/components/ResourceRowMeta.jsx");
+    expect(metaComponent).toContain("BadgeToken");
     expect(metaComponent).toContain("function ResourceRowTags");
     expect(metaComponent).toContain("function ResourceRowChip");
     expect(metaComponent).toContain("function ResourceRowPath");
