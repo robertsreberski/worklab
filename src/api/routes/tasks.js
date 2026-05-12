@@ -201,6 +201,25 @@ function taskBaseWorkdir(db, config, taskRow) {
   return project?.workdir || config?.workspace || config?.repoRoot || process.cwd();
 }
 
+function scheduleTaskCreatedSideEffects(res, { watcher, logger, taskId, taskKey, ownerAgent }) {
+  res.once("finish", () => {
+    setTimeout(() => {
+      if (!String(ownerAgent || "").trim()) {
+        try {
+          watcher?.maybeScheduleUnassignedTeamTask?.(taskId, "task_created_unassigned");
+        } catch (err) {
+          logger?.warn?.({ err: err.message, taskId, taskKey }, "created task team assignment scheduling failed");
+        }
+      }
+      try {
+        watcher?.maybeAutoStart?.(taskId);
+      } catch (err) {
+        logger?.warn?.({ err: err.message, taskId, taskKey }, "created task auto-start scheduling failed");
+      }
+    }, 0);
+  });
+}
+
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
   function startTaskRun(taskRow, { reason = "manual" } = {}) {
@@ -439,10 +458,13 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
     const row = getTaskById(db, id);
     const task = enrichTask(db, rowToTask(row), config);
     broker.broadcast("global", { type: "task_created", id, taskKey: task.task_key || null });
-    if (!String(owner_agent || "").trim()) {
-      watcher?.maybeScheduleUnassignedTeamTask?.(id, "task_created_unassigned");
-    }
-    watcher?.maybeAutoStart?.(id);
+    scheduleTaskCreatedSideEffects(res, {
+      watcher,
+      logger,
+      taskId: id,
+      taskKey: task.task_key || null,
+      ownerAgent: owner_agent,
+    });
     res.status(201).json({ task });
   });
 

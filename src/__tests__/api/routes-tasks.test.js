@@ -36,6 +36,10 @@ function seedAgent(db, name, patch = {}) {
   );
 }
 
+function waitForDeferredCreateSideEffects() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe("GET /api/tasks", () => {
   it("returns empty list initially", async () => {
     const { agent } = makeTestServer();
@@ -341,6 +345,7 @@ describe("POST /api/tasks", () => {
       title: "Needs owner",
       project_id: project.slug,
     }).expect(201);
+    await waitForDeferredCreateSideEffects();
 
     expect(maybeScheduleUnassignedTeamTask).toHaveBeenCalledWith(task.id, "task_created_unassigned");
   });
@@ -371,8 +376,36 @@ describe("POST /api/tasks", () => {
       project_id: project.slug,
       owner_agent: "owner",
     }).expect(201);
+    await waitForDeferredCreateSideEffects();
 
     expect(maybeScheduleUnassignedTeamTask).not.toHaveBeenCalled();
+  });
+
+  it("defers created task watcher side effects until after the response path", async () => {
+    const maybeAutoStart = vi.fn();
+    const { agent, db } = makeTestServer({ watcher: {
+      handleRunRequested: async () => ({ runId: "fake-run" }),
+      cancel: () => true,
+      shutdown: async () => {},
+      isActive: () => false,
+      isRunActive: () => false,
+      getRunLiveInputState: () => ({ supported: false, active: false, reason: "unsupported_provider" }),
+      sendRunMessage: async () => ({ ok: false, code: "run_not_active", message: "run is not active" }),
+      maybeAutoStart,
+      maybeAutoStartDependents: () => {},
+      maybeScheduleUnassignedTeamTask: () => {},
+    } });
+    seedAgent(db, "owner");
+
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Autostart after response",
+      owner_agent: "owner",
+      stage: "execute",
+    }).expect(201);
+
+    expect(maybeAutoStart).not.toHaveBeenCalled();
+    await waitForDeferredCreateSideEffects();
+    expect(maybeAutoStart).toHaveBeenCalledWith(task.id);
   });
 
   it("asks the team lead when an ownerless task is patched into team scope", async () => {
