@@ -1455,6 +1455,105 @@ a.chip-mention:hover { filter: brightness(1.1); }
 .mention-picker-type {
   font-size: var(--text-xs);
 }
+.path-picker .mention-picker-option {
+  align-items: flex-start;
+}
+.path-picker .mention-picker-token {
+  max-width: 32%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip-mention--path {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.attachment-tray {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.attachment-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: min(100%, 520px);
+  min-height: 32px;
+  padding: 4px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text);
+  font-size: var(--text-sm);
+}
+.attachment-chip.path {
+  background: color-mix(in srgb, var(--accent-soft) 46%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--accent) 18%, var(--border));
+}
+.attachment-chip.upload {
+  background: color-mix(in srgb, var(--status-done-bg-10) 70%, var(--surface-elevated));
+  border-color: color-mix(in srgb, var(--status-done) 20%, var(--border));
+}
+.attachment-chip.pending {
+  color: var(--text-muted);
+}
+.attachment-chip.error {
+  color: var(--status-error);
+  background: var(--status-error-bg-10);
+  border-color: var(--status-error-border);
+}
+.attachment-chip-copy {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.attachment-chip-title,
+.attachment-chip-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachment-chip-title {
+  font-weight: 650;
+}
+.attachment-chip-meta {
+  color: var(--text-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.attachment-chip-link {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  font-weight: 650;
+  text-decoration: none;
+}
+.attachment-chip-link:hover {
+  text-decoration: underline;
+}
+.attachment-add-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) auto;
+  gap: var(--sp-2);
+  align-items: center;
+}
+.attachment-path-input {
+  font-family: var(--font-mono);
+}
+.task-hero-attachments,
+.activity-item-attachments {
+  margin-top: var(--sp-3);
+}
 
 /* §3.11 StatusPill */
 .status-pill {
@@ -11044,6 +11143,15 @@ button.settings-overview-card:focus-visible,
     height: 40px;
     min-height: 40px;
     padding: 0 var(--sp-4);
+  }
+  .attachment-chip {
+    max-width: 100%;
+  }
+  .attachment-add-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .attachment-add-row .button {
+    justify-self: flex-start;
   }
   .activity-feed-entry {
     --activity-rail-width: 18px;

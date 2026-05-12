@@ -25,6 +25,20 @@ async function uploadZip(path, file) {
   return json;
 }
 
+async function uploadAttachment(file) {
+  const res = await fetch("/api/attachments/uploads", {
+    method: "POST",
+    headers: {
+      "Content-Type": file?.type || "application/octet-stream",
+      "X-Attachment-Filename": encodeURIComponent(file?.name || "clipboard-image.png"),
+    },
+    body: file,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(json?.error?.message || res.statusText), { code: json?.error?.code, status: res.status });
+  return json;
+}
+
 function pathSegment(value) {
   return encodeURIComponent(String(value ?? ""));
 }
@@ -78,7 +92,7 @@ export const api = {
   deleteTaskAutomation: (taskId, automationId) => request("DELETE", `/tasks/${pathSegment(taskId)}/automations/${pathSegment(automationId)}`),
   runTaskAutomation: (taskId, automationId) => request("POST", `/tasks/${pathSegment(taskId)}/automations/${pathSegment(automationId)}/run`),
   deleteTask: (id) => request("DELETE", `/tasks/${pathSegment(id)}`),
-  addComment: (id, body, options = {}) => request("POST", `/tasks/${pathSegment(id)}/comments`, { body, rerun: options.rerun === true }),
+  addComment: (id, body, options = {}) => request("POST", `/tasks/${pathSegment(id)}/comments`, { body, rerun: options.rerun === true, attachments: options.attachments || [] }),
   answerPendingQuestions: (id, answers) => request("POST", `/tasks/${pathSegment(id)}/pending-questions/answer`, { answers }),
   deleteComment: (id, commentId) => request("DELETE", `/tasks/${pathSegment(id)}/comments/${pathSegment(commentId)}`),
   previewTaskRun: (id) => request("GET", `/tasks/${pathSegment(id)}/run-preview`),
@@ -92,7 +106,9 @@ export const api = {
   listActivity: (query, options) => request("GET", `/activity${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   search: (query) => request("GET", `/search?${new URLSearchParams(query)}`),
   searchMentions: (query, options) => request("GET", `/mentions/search?${new URLSearchParams(query)}`, null, options),
+  suggestFiles: (query, options) => request("GET", `/files/suggest?${new URLSearchParams(query)}`, null, options),
   searchStatus: () => request("GET", "/search/status"),
+  uploadAttachment,
   // settings
   getSettings: (options) => request("GET", "/settings", null, options),
   patchSettings: (patch) => request("PATCH", "/settings", patch),

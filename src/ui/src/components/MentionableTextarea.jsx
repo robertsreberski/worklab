@@ -13,7 +13,9 @@
 import { useCallback, useRef, useState } from "preact/hooks";
 import { Textarea } from "./primitives/Textarea.jsx";
 import { MentionPicker } from "./primitives/MentionPicker.jsx";
+import { PathPicker } from "./PathPicker.jsx";
 import { findMentionTrigger } from "../lib/mentions.js";
+import { findPathTrigger, insertPathSuggestion } from "../lib/pathReferences.js";
 
 export function MentionableTextarea({
   value,
@@ -21,13 +23,16 @@ export function MentionableTextarea({
   onChange,
   onKeyDown,
   types,
+  pathContext,
   inputRef,
   ...rest
 }) {
   const containerRef = useRef(null);
   const pickerRef = useRef(null);
+  const pathPickerRef = useRef(null);
   const localTextareaRef = useRef(null);
   const [trigger, setTrigger] = useState(null);
+  const [pathTrigger, setPathTrigger] = useState(null);
 
   const setTextareaRef = useCallback((node) => {
     localTextareaRef.current = node;
@@ -45,10 +50,14 @@ export function MentionableTextarea({
     if (!textarea) return null;
     const next = findMentionTrigger(textarea.value, textarea.selectionStart);
     setTrigger(next);
+    setPathTrigger(next ? null : findPathTrigger(textarea.value, textarea.selectionStart));
     return next;
   }, []);
 
-  const closePicker = useCallback(() => setTrigger(null), []);
+  const closePicker = useCallback(() => {
+    setTrigger(null);
+    setPathTrigger(null);
+  }, []);
 
   const insertMention = useCallback((mention) => {
     const textarea = getTextarea();
@@ -70,6 +79,23 @@ export function MentionableTextarea({
     textarea.dispatchEvent(event);
     setTrigger(null);
   }, [trigger]);
+
+  const insertPath = useCallback((suggestion) => {
+    const textarea = getTextarea();
+    if (!textarea) return;
+    const current = pathTrigger || findPathTrigger(textarea.value, textarea.selectionStart);
+    if (!current) return;
+    const next = insertPathSuggestion(textarea.value, current, suggestion);
+    textarea.value = next.value;
+    textarea.setSelectionRange(next.caret, next.caret);
+    const event = new InputEvent("input", { bubbles: true, cancelable: true });
+    textarea.dispatchEvent(event);
+    if (suggestion?.kind === "directory") {
+      setPathTrigger(findPathTrigger(textarea.value, textarea.selectionStart));
+    } else {
+      setPathTrigger(null);
+    }
+  }, [pathTrigger]);
 
   const handleInput = useCallback((event) => {
     onInput?.(event);
@@ -101,8 +127,32 @@ export function MentionableTextarea({
         return;
       }
     }
+    if (pathTrigger && pathPickerRef.current) {
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        pathPickerRef.current.moveDown();
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        pathPickerRef.current.moveUp();
+        return;
+      }
+      if (event.key === "Enter") {
+        if (pathPickerRef.current.hasResults()) {
+          event.preventDefault();
+          pathPickerRef.current.selectActive();
+          return;
+        }
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePicker();
+        return;
+      }
+    }
     onKeyDown?.(event);
-  }, [trigger, onKeyDown, closePicker]);
+  }, [trigger, pathTrigger, onKeyDown, closePicker]);
 
   const handleSelect = useCallback((event) => {
     measureTrigger(event.currentTarget);
@@ -110,7 +160,10 @@ export function MentionableTextarea({
 
   const handleBlur = useCallback(() => {
     // Defer close so a click on a picker option still fires.
-    setTimeout(() => setTrigger(null), 120);
+    setTimeout(() => {
+      setTrigger(null);
+      setPathTrigger(null);
+    }, 120);
   }, []);
 
   return (
@@ -133,6 +186,15 @@ export function MentionableTextarea({
         types={types}
         anchorRef={containerRef}
         onSelect={insertMention}
+        onClose={closePicker}
+      />
+      <PathPicker
+        ref={pathPickerRef}
+        open={!!pathTrigger}
+        prefix={pathTrigger?.prefix || ""}
+        context={pathContext}
+        anchorRef={containerRef}
+        onSelect={insertPath}
         onClose={closePicker}
       />
     </div>
