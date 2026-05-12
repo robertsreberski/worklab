@@ -261,21 +261,41 @@ describe("resource list helpers", () => {
     }
   });
 
-  it("renders Library tabs through the shared resource toolbar instead of a separate tab band", () => {
+  it("renders Library tabs as route tabs instead of toolbar scope tabs", () => {
     const library = source("src/ui/src/routes/Library.jsx");
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const styles = source("src/ui/src/styles.css");
-    const scopeRule = cssRule(styles, ".resource-toolbar-scope-tabs");
     const libraryPageRule = cssRule(styles, ".resource-tab-page");
+    const libraryTabsRule = cssRule(styles, ".library-route-tabs");
 
-    expect(library).toContain("scopeTabs={scopeTabs}");
+    expect(library).toContain('class="library-route-tabs"');
+    expect(library).not.toContain("scopeTabs");
     expect(library).not.toContain("library-tabs-desktop");
-    expect(toolbar).toContain("resource-toolbar-has-scope-tabs");
-    expect(toolbar).toContain("resource-toolbar-scope-tabs");
-    expect(scopeRule).toContain("grid-area: scope");
-    expect(scopeRule).toContain("display: flex");
+    expect(toolbar).not.toContain("scopeTabs");
+    expect(toolbar).not.toContain("resource-toolbar-has-scope-tabs");
+    expect(toolbar).not.toContain("resource-toolbar-scope-tabs");
+    expect(styles).not.toContain(".resource-toolbar-scope-tabs");
+    expect(styles).not.toContain("resource-toolbar-has-scope-tabs");
+    expect(libraryTabsRule).toContain("display: flex");
     expect(libraryPageRule).toContain("gap: 0");
     expect(libraryPageRule).toContain("padding: 0");
+    for (const route of ["AgentsTab.jsx", "TeamsTab.jsx", "SkillsTab.jsx", "KnowledgeTab.jsx"]) {
+      expect(source(`src/ui/src/routes/library/${route}`)).not.toContain("scopeTabs");
+    }
+  });
+
+  it("lets Library selected routes render full-width detail surfaces", () => {
+    const paneLayout = source("src/ui/src/components/PaneLayout.jsx");
+    const styles = source("src/ui/src/styles.css");
+    const detailOnlyRule = cssRule(styles, ".two-pane-detail-only");
+
+    expect(paneLayout).toContain("fullDetail = false");
+    expect(paneLayout).toContain("two-pane-detail-only");
+    expect(detailOnlyRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    for (const route of ["AgentsTab.jsx", "TeamsTab.jsx", "SkillsTab.jsx", "KnowledgeTab.jsx"]) {
+      const contents = source(`src/ui/src/routes/library/${route}`);
+      expect(contents).toContain("fullDetail={!!");
+    }
   });
 
   it("exposes knowledge sort modes through the compact configuration surface", () => {
@@ -402,9 +422,8 @@ describe("resource list helpers", () => {
     const openSheetRule = cssRule(styles, ".resource-toolbar-config.mobile-config-sheet.open");
     const panelRule = cssRule(styles, ".resource-toolbar-config .mobile-config-sheet-panel");
 
-    expect(toolbar).toContain("\"resource-toolbar\"");
-    expect(toolbar).toContain("\"resource-toolbar-compact\"");
-    expect(toolbar).toContain("toolbarClass");
+    expect(toolbar).toContain('class="resource-toolbar resource-toolbar-compact"');
+    expect(toolbar).not.toContain("toolbarClass");
     expect(toolbar).toContain("resource-mobile-config-trigger");
     expect(toolbarRule).toContain("grid-template-columns: minmax(0, 1fr) auto auto");
     expect(toolbarRule).toContain('grid-template-areas: "search config actions"');

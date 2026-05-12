@@ -59,7 +59,7 @@ export function knowledgeTimestamp(value) {
   return Date.parse(value);
 }
 
-export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {}, scopeTabs = null }) {
+export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {} }) {
   const [entries, setEntries] = useState([]);
   const [taxonomy, setTaxonomy] = useState(null);
   const [projects, setProjects] = useState([]);
@@ -174,7 +174,6 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
       activeConfigCount={[surface !== "artifacts", sort !== "pinned_first", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
-      scopeTabs={scopeTabs}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
       <Select class="resource-filter-select" value={sort} options={sortOptions} onChange={setSort} ariaLabel="Sort knowledge" />
@@ -273,6 +272,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       hasSelection={!!selectedSlug}
       detailOwnsMobileBack={!!selectedSlug}
       listFirst
+      fullDetail={!!selectedSlug}
       class="resource-list-layout"
       onBack={() => navigateHash("#/library/knowledge")}
       backLabel="All entries"
