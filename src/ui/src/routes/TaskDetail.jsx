@@ -30,12 +30,14 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
+import { AttachmentTray } from "../components/AttachmentTray.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
+import { attachmentPayload, uploadedAttachmentDraft } from "../lib/attachments.js";
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
 import {
@@ -107,6 +109,9 @@ export function TaskDetail({ id, runParam = null }) {
   const [data, setData] = useState(() => readTaskDetailCache(id));
   const [agents, setAgents] = useState([]);
   const [newComment, setNewComment] = useState("");
+  const [commentAttachments, setCommentAttachments] = useState([]);
+  const [commentAttachmentUploading, setCommentAttachmentUploading] = useState(false);
+  const [commentAttachmentError, setCommentAttachmentError] = useState("");
   const [commentRerun, setCommentRerun] = useState(true);
   const [highlightedRunId, setHighlightedRunId] = useState(runParam);
   const [expandedRunIds, setExpandedRunIds] = useState(() => new Set());
@@ -208,6 +213,10 @@ export function TaskDetail({ id, runParam = null }) {
     setPlanEditing(false);
     setPlanDraft("");
     setTaskAutomations(null);
+    setNewComment("");
+    setCommentAttachments([]);
+    setCommentAttachmentError("");
+    setCommentAttachmentUploading(false);
     setCommentRerun(true);
     setCommentDeleteTarget(null);
     setCommentDeleting(false);
@@ -402,8 +411,13 @@ export function TaskDetail({ id, runParam = null }) {
     setCommentSaving(true);
     try {
       const shouldRerun = commentRerun && !runningRun;
-      const result = await api.addComment(operationTaskId, newComment.trim(), { rerun: shouldRerun });
+      const result = await api.addComment(operationTaskId, newComment.trim(), {
+        rerun: shouldRerun,
+        attachments: attachmentPayload(commentAttachments),
+      });
       setNewComment("");
+      setCommentAttachments([]);
+      setCommentAttachmentError("");
       setCommentRerun(true);
       if (result?.rerun?.started) {
         if (result.rerun.runId) {
@@ -420,6 +434,27 @@ export function TaskDetail({ id, runParam = null }) {
       pushToast(`Could not post comment: ${err.message}`, { variant: "error" });
     } finally {
       setCommentSaving(false);
+    }
+  }
+
+  async function handleCommentAttachmentPaste(event) {
+    const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type?.startsWith("image/"));
+    if (files.length === 0) return;
+    event.preventDefault();
+    setCommentAttachmentUploading(true);
+    setCommentAttachmentError("");
+    try {
+      const uploads = [];
+      for (const file of files) {
+        const result = await api.uploadAttachment(file);
+        const draftAttachment = uploadedAttachmentDraft(result.upload, file.name || "Clipboard image");
+        if (draftAttachment) uploads.push(draftAttachment);
+      }
+      setCommentAttachments((current) => [...current, ...uploads]);
+    } catch (err) {
+      setCommentAttachmentError(err?.message || "Image upload failed");
+    } finally {
+      setCommentAttachmentUploading(false);
     }
   }
 
@@ -1049,6 +1084,9 @@ export function TaskDetail({ id, runParam = null }) {
                     {instructionsExpanded ? "Show less" : "Show full"}
                   </Button>
                 )}
+                {task.attachments?.length > 0 && (
+                  <AttachmentTray attachments={task.attachments} disabled class="task-hero-attachments" />
+                )}
               </div>
             </FormSection>
 
@@ -1150,6 +1188,14 @@ export function TaskDetail({ id, runParam = null }) {
                   placeholder="Add a comment or instruction…"
                   value={newComment}
                   onInput={(e) => setNewComment(e.target.value)}
+                  onPaste={handleCommentAttachmentPaste}
+                  pathContext={{ taskId: task?.id, projectId: task?.project_id }}
+                />
+                <AttachmentTray
+                  attachments={commentAttachments}
+                  onChange={setCommentAttachments}
+                  uploading={commentAttachmentUploading}
+                  uploadError={commentAttachmentError}
                 />
                 <Toolbar class="activity-composer-actions">
                   <div class="activity-composer-options">
@@ -1214,6 +1260,9 @@ export function TaskDetail({ id, runParam = null }) {
                         </InlineHead>
                         {item.body && (
                           <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={mentions} /></div>
+                        )}
+                        {item.attachments?.length > 0 && (
+                          <AttachmentTray attachments={item.attachments} disabled class="activity-item-attachments" />
                         )}
                       </div>
                     </div>

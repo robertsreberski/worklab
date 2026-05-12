@@ -14,6 +14,7 @@ import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
+import { AttachmentTray } from "../components/AttachmentTray.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { StageToken } from "../components/primitives/StageToken.jsx";
@@ -30,6 +31,7 @@ import { DetailHead, PanelGrid, SectionMarker, Toolbar } from "../components/lay
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
+import { attachmentPayload, uploadedAttachmentDraft } from "../lib/attachments.js";
 
 // Stage grid in the right rail.
 const TASK_STAGE_OPTIONS = [
@@ -77,6 +79,7 @@ function emptyDraft() {
     team_id: null,
     tags: [],
     blocked_by_ids: [],
+    attachments: [],
   };
 }
 
@@ -96,6 +99,8 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
   const [loading, setLoading] = useState(mode === "edit");
   const [notFound, setNotFound] = useState(false);
   const [dependencyDraft, setDependencyDraft] = useState("");
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentError, setAttachmentError] = useState("");
   const formRef = useRef(null);
   const createRequestIdRef = useRef(mode === "create" ? newClientRequestId() : null);
   const appliedProjectPrefillIdRef = useRef(null);
@@ -135,6 +140,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
           team_id: data.task.team_id || null,
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
+          attachments: data.task.attachments || [],
         };
         setDraft(initial);
         setBaseline(initial);
@@ -184,6 +190,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
           team_id: data.task.team_id || null,
           tags: data.task.tags || [],
           blocked_by_ids: data.task.dependency_ids || [],
+          attachments: data.task.attachments || [],
         };
         setDraft(next);
         setBaseline(next);
@@ -223,6 +230,29 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
     setDraft((d) => ({ ...d, ...patch }));
   }
 
+  async function handleAttachmentPaste(event) {
+    const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type?.startsWith("image/"));
+    if (!files.length) return;
+    event.preventDefault();
+    setAttachmentUploading(true);
+    setAttachmentError("");
+    try {
+      const uploaded = [];
+      for (const file of files) {
+        const result = await api.uploadAttachment(file);
+        const draftAttachment = uploadedAttachmentDraft(result.upload, file.name || "Clipboard image");
+        if (draftAttachment) uploaded.push(draftAttachment);
+      }
+      if (uploaded.length) {
+        setDraft((current) => ({ ...current, attachments: [...(current.attachments || []), ...uploaded] }));
+      }
+    } catch (error) {
+      setAttachmentError(error.message || "Image upload failed");
+    } finally {
+      setAttachmentUploading(false);
+    }
+  }
+
   async function save({ navigateOnSuccess = true } = {}) {
     const payload = {
       title: draft.title.trim(),
@@ -236,6 +266,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
       team_id: draft.team_id || null,
       tags: draft.tags,
       blocked_by_ids: draft.blocked_by_ids || [],
+      attachments: attachmentPayload(draft.attachments),
     };
     if (mode === "create") payload.client_request_id = createRequestIdRef.current;
     if (!payload.title) {
@@ -579,6 +610,14 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
                       placeholder="Add any context, constraints, references, or notes for the owner."
                       value={draft.instructions}
                       onInput={(e) => update({ instructions: e.target.value })}
+                      onPaste={handleAttachmentPaste}
+                      pathContext={{ taskId: id, projectId: draft.project_id }}
+                    />
+                    <AttachmentTray
+                      attachments={draft.attachments || []}
+                      onChange={(attachments) => update({ attachments })}
+                      uploading={attachmentUploading}
+                      uploadError={attachmentError}
                     />
                   </FormField>
                 </FormSection>

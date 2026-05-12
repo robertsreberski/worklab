@@ -50,6 +50,7 @@ export function buildActivity({ comments = [], runs = [] }) {
       authorType: c.author_type || c.author?.type || "human",
       authorId: c.author_id || c.author?.id || null,
       body: normalizeCommentText(c.body || c.content || ""),
+      attachments: c.attachments || [],
       commentId: c.id || null,
       id: `c-${c.id || c.created_at}`,
     });
