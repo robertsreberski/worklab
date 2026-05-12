@@ -1,6 +1,7 @@
 import {
   artifactPaths,
   artifactsForRunRow,
+  compactTeam,
   compactProject,
   loadTaskArtifacts,
   resolveProjectRow,
@@ -43,6 +44,7 @@ import {
   listLatestAutomationTriggersForTasks,
 } from "../../../core/db/queries/automations.js";
 import { listProjectsByIds } from "../../../core/db/queries/projects.js";
+import { getTeamById, listTeamsByIds } from "../../../core/db/queries/teams.js";
 import { DEFAULT_RUN_POLICY } from "./constants.js";
 
 function safeJsonObject(value) {
@@ -312,6 +314,15 @@ function attachProject(db, task, config = null) {
   };
 }
 
+function attachTeam(db, task) {
+  if (!task) return task;
+  const teamRow = task.team_id ? getTeamById(db, task.team_id) : null;
+  return {
+    ...task,
+    team: compactTeam(teamRow),
+  };
+}
+
 function attachTaskAttachments(db, task) {
   if (!task) return task;
   return {
@@ -321,7 +332,7 @@ function attachTaskAttachments(db, task) {
 }
 
 export function enrichTask(db, task, config = null) {
-  return attachTaskAttachments(db, attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config));
+  return attachTaskAttachments(db, attachTeam(db, attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config)));
 }
 
 function defaultAutomationSummary() {
@@ -371,6 +382,7 @@ export function enrichTaskList(db, tasks, config = null, { compactRuns = false }
     last_run: null,
     automation_summary: defaultAutomationSummary(),
     project: null,
+    team: null,
     effective_workdir: config?.workspace || null,
   }));
   const byId = new Map(output.map((task) => [task.id, task]));
@@ -457,6 +469,15 @@ export function enrichTaskList(db, tasks, config = null, { compactRuns = false }
   for (const task of output) {
     task.project = projects.get(task.project_id) || null;
     task.effective_workdir = task.project?.workdir || config?.workspace || null;
+  }
+
+  const teamIds = [...new Set(output.map((task) => task.team_id).filter(Boolean))];
+  const teams = new Map();
+  for (const row of listTeamsByIds(db, teamIds)) {
+    teams.set(row.id, compactTeam(row));
+  }
+  for (const task of output) {
+    task.team = teams.get(task.team_id) || null;
   }
 
   return output;

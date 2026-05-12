@@ -6,6 +6,12 @@ export function getTeamById(db, id) {
   return db.prepare("SELECT * FROM teams WHERE id = ?").get(id);
 }
 
+export function listTeamsByIds(db, ids) {
+  if (!ids.length) return [];
+  const placeholders = ids.map(() => "?").join(", ");
+  return db.prepare(`SELECT * FROM teams WHERE id IN (${placeholders})`).all(...ids);
+}
+
 export function resolveTeamByIdOrSlug(db, value) {
   return db.prepare("SELECT * FROM teams WHERE id = ? OR slug = ?").get(value, value);
 }

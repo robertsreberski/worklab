@@ -20,6 +20,26 @@ describe("renderMarkdown mentions", () => {
     expect(html).toContain('title="@agent/triager"');
   });
 
+  it("renders a known team mention with an icon instead of the old letter glyph", () => {
+    const html = renderMarkdown("Route to @team/routing.", {
+      mentions: {
+        "@team/routing": {
+          token: "@team/routing",
+          type: "team",
+          label: "Routing Team",
+          href: "#/library/teams/routing",
+          exists: true,
+        },
+      },
+    });
+
+    expect(html).toContain("entity-badge--team");
+    expect(html).toContain('<span class="badge-token-leading" aria-hidden="true">');
+    expect(html).toContain("<svg");
+    expect(html).not.toContain('<span class="badge-token-glyph" aria-hidden="true">M</span>');
+    expect(html).toContain('<span class="badge-token-label">Routing Team</span>');
+  });
+
   it("renders unknown / deleted mentions as a struck-through chip", () => {
     const html = renderMarkdown("ping @agent/missing", { mentions: {} });
     expect(html).toContain("entity-badge--missing");

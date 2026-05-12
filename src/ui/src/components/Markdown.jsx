@@ -6,6 +6,7 @@
 // clickable badges via the same hash routes as the rest of the app.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { iconSvgMarkup } from "./Icon.jsx";
 import { entityBadgeLabel, entityBadgeMeta, normalizeEntityBadgeKind } from "../lib/entityBadges.js";
 import { MENTION_TOKEN_RE } from "../lib/mentions.js";
 
@@ -236,7 +237,12 @@ function renderMentionBadge(token, type, id, mentions) {
   const badgeMeta = entityBadgeMeta(normalizedType);
   const label = entityBadgeLabel({ label: meta?.label, token: meta?.label ? null : token, type: normalizedType, id });
   const cls = `badge-token badge-token-sm entity-badge entity-badge--${normalizedType}${isMissing ? " entity-badge--missing" : ""}`;
-  const body = `<span class="badge-token-glyph" aria-hidden="true">${escapeHtml(badgeMeta.glyph)}</span><span class="badge-token-label">${escapeHtml(label)}</span>`;
+  const icon = badgeMeta.icon ? iconSvgMarkup(badgeMeta.icon, { size: 12, className: "badge-token-icon" }) : "";
+  const leading = icon ? `<span class="badge-token-leading" aria-hidden="true">${icon}</span>` : "";
+  const glyph = !leading && badgeMeta.glyph
+    ? `<span class="badge-token-glyph" aria-hidden="true">${escapeHtml(badgeMeta.glyph)}</span>`
+    : "";
+  const body = `${leading || glyph}<span class="badge-token-label">${escapeHtml(label)}</span>`;
   if (isMissing || !meta?.href) {
     const tooltip = isMissing ? "Mention target no longer exists" : token;
     return `<span class="${cls}" data-kind="${escapeHtml(normalizedType)}" title="${escapeHtml(tooltip)}">${body}</span>`;

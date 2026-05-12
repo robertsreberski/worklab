@@ -467,6 +467,12 @@ describe("design system stylesheet", () => {
     expect(runCardsSource).not.toMatch(/<div\s+class="run-summary-result-head"/);
   });
 
+  it("keeps run result inline heads left aligned over shared InlineHead defaults", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const resultHeadRule = declarationsForSelector(css, ".ds-inline-head.run-summary-result-head");
+    expect(resultHeadRule).toMatch(/justify-content:\s*flex-start\b/);
+  });
+
   it("builds task-detail support heads on the shared InlineHead layout", () => {
     const taskDetailSource = readFileSync(taskDetailPath, "utf8");
     const runInputPreviewSource = readFileSync(runInputPreviewPath, "utf8");

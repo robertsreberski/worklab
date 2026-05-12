@@ -282,6 +282,8 @@ export function TaskDetail({ id, runParam = null }) {
   const comments = data?.comments || [];
   const mentions = data?.mentions || null;
   const stage = task?.stage || "plan";
+  const taskTeamRouteId = task?.team?.slug || task?.team_id || "";
+  const taskTeamDisplay = task?.team?.name || task?.team?.slug || task?.team_id || "";
 
   const loadFullRunHistory = useCallback(async () => {
     if (!operationTaskId || runHistoryLoading) return;
@@ -811,8 +813,8 @@ export function TaskDetail({ id, runParam = null }) {
       {task.project && (
         <EntityBadge kind="project" label={task.project.name || task.project.slug} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || task.project.slug}`} />
       )}
-      {task.team_id && (
-        <EntityBadge kind="team" label={task.team_id} href={`#/library/teams/${encodeURIComponent(task.team_id)}`} class="task-team-chip" title={`Team: ${task.team_id}`} />
+      {taskTeamRouteId && (
+        <EntityBadge kind="team" label={taskTeamDisplay} href={`#/library/teams/${encodeURIComponent(taskTeamRouteId)}`} class="task-team-chip" title={`Team: ${taskTeamDisplay}`} />
       )}
       {task.is_team_root && (
         <EntityBadge kind="goal" label="Goal" href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal" />

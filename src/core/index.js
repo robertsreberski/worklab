@@ -397,6 +397,7 @@ export { suggestLocalPaths } from "./path-suggestions.js";
 export {
   TEAM_STATUSES,
   appendTeamGoalCheckpoint,
+  compactTeam,
   effectiveTeamForTask,
   enforceTeamRoster,
   ensureTeamRootTask,
