@@ -338,25 +338,31 @@ function backfillNativeGoals(db) {
 
 function backfillNativeLeadCycles(db) {
   if (!tableExists(db, "lead_cycles") || !tableExists(db, "task_runs")) return;
+  const runColumns = db.prepare("PRAGMA table_info(task_runs)").all().map((row) => row.name);
+  const taskColumns = tableExists(db, "tasks")
+    ? db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name)
+    : [];
+  const runColumn = (name, fallback = "NULL") => runColumns.includes(name) ? `r.${name}` : fallback;
+  const taskColumn = (name, fallback = "NULL") => taskColumns.includes(name) ? `t.${name}` : fallback;
   const rows = db.prepare(`
     SELECT r.id AS run_id,
-           r.task_id,
-           r.team_id,
-           COALESCE(r.project_id, t.project_id) AS project_id,
-           r.process_status,
-           r.status,
-           r.failure_kind,
-           r.error_text,
-           r.started_at,
-           r.ended_at,
-           r.cost_usd,
-           r.summary,
-           r.details,
-           r.result_json,
-           r.diagnostics_json
+           ${runColumn("task_id")} AS task_id,
+           ${runColumn("team_id")} AS team_id,
+           COALESCE(${runColumn("project_id")}, ${taskColumn("project_id")}) AS project_id,
+           ${runColumn("process_status", "'running'")} AS process_status,
+           ${runColumn("status", "'running'")} AS status,
+           ${runColumn("failure_kind")} AS failure_kind,
+           ${runColumn("error_text")} AS error_text,
+           ${runColumn("started_at", "0")} AS started_at,
+           ${runColumn("ended_at")} AS ended_at,
+           ${runColumn("cost_usd")} AS cost_usd,
+           ${runColumn("summary")} AS summary,
+           ${runColumn("details")} AS details,
+           ${runColumn("result_json")} AS result_json,
+           ${runColumn("diagnostics_json")} AS diagnostics_json
     FROM task_runs r
-    LEFT JOIN tasks t ON t.id = r.task_id
-    WHERE r.kind = 'lead_cycle'
+    LEFT JOIN tasks t ON t.id = ${runColumn("task_id")}
+    WHERE ${runColumn("kind", "'task'")} = 'lead_cycle'
   `).all();
   if (!rows.length) return;
   const goalByRoot = tableExists(db, "goals")
