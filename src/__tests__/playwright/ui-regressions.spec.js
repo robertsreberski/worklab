@@ -2696,7 +2696,7 @@ test("mobile settings routes share aligned shell geometry", async ({ page }) => 
   }
 });
 
-test("mobile route tabs are condensed into the owning header", async ({ page }) => {
+test("mobile Library route tabs stay route-level while settings tabs use the owning header", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/library/agents`);
   await expect(page.locator(".pane-list")).toBeVisible();
@@ -2706,23 +2706,28 @@ test("mobile route tabs are condensed into the owning header", async ({ page }) 
   await page.waitForTimeout(50);
 
   const libraryMetrics = await page.evaluate(() => {
-    const outerTabs = document.querySelector(".library-page > .library-tabs");
+    const routeTabs = document.querySelector(".library-route-tabs");
     const header = document.querySelector(".pane-list-head");
     const headerTabs = document.querySelector(".pane-list-head .library-tabs");
+    const tabs = document.querySelector(".library-route-tabs .library-tabs");
     const toolbar = document.querySelector(".pane-list-head .resource-toolbar");
     const search = document.querySelector(".pane-list-head .search-field");
+    const routeTabsRect = routeTabs?.getBoundingClientRect();
     const headerRect = header?.getBoundingClientRect();
-    const tabsRect = headerTabs?.getBoundingClientRect();
+    const tabsRect = tabs?.getBoundingClientRect();
     const toolbarRect = toolbar?.getBoundingClientRect();
     const searchRect = search?.getBoundingClientRect();
-    const headerStyles = header ? getComputedStyle(header) : null;
+    const routeTabsStyles = routeTabs ? getComputedStyle(routeTabs) : null;
     const parsePx = (value) => Math.round(parseFloat(value) || 0);
     return {
-      outerTabsDisplay: outerTabs ? getComputedStyle(outerTabs).display : "none",
+      routeTabsVisible: !!routeTabs && getComputedStyle(routeTabs).display !== "none",
+      routeTabsTop: routeTabsRect ? Math.round(routeTabsRect.top) : -1,
+      routeTabsBottom: routeTabsRect ? Math.round(routeTabsRect.bottom) : -1,
+      routeTabsPaddingTop: routeTabsStyles ? parsePx(routeTabsStyles.paddingTop) : -1,
       headerTop: headerRect ? Math.round(headerRect.top) : -1,
       headerHeight: headerRect ? Math.round(headerRect.height) : 0,
-      headerPaddingTop: headerStyles ? parsePx(headerStyles.paddingTop) : -1,
-      tabsInsideHeader: !!headerTabs && !!headerTabs.closest(".pane-list-head"),
+      tabsInsideRoute: !!tabs && !!tabs.closest(".library-route-tabs"),
+      tabsInsideHeader: !!headerTabs,
       tabsTop: tabsRect ? Math.round(tabsRect.top) : -1,
       tabsBottom: tabsRect ? Math.round(tabsRect.bottom) : -1,
       toolbarTop: toolbarRect ? Math.round(toolbarRect.top) : -1,
@@ -2732,14 +2737,16 @@ test("mobile route tabs are condensed into the owning header", async ({ page }) 
     };
   });
 
-  expect(libraryMetrics.outerTabsDisplay).toBe("none");
-  expect(libraryMetrics.headerTop).toBe(0);
-  expect(libraryMetrics.headerPaddingTop).toBeGreaterThanOrEqual(31);
-  expect(libraryMetrics.headerHeight).toBeLessThanOrEqual(128);
-  expect(libraryMetrics.tabsInsideHeader).toBe(true);
+  expect(libraryMetrics.routeTabsVisible).toBe(true);
+  expect(libraryMetrics.routeTabsTop).toBe(0);
+  expect(libraryMetrics.routeTabsPaddingTop).toBeGreaterThanOrEqual(31);
+  expect(libraryMetrics.tabsInsideRoute).toBe(true);
+  expect(libraryMetrics.tabsInsideHeader).toBe(false);
   expect(libraryMetrics.tabsTop).toBeGreaterThanOrEqual(31);
-  expect(libraryMetrics.toolbarTop).toBeGreaterThanOrEqual(libraryMetrics.headerPaddingTop);
-  expect(libraryMetrics.searchTop).toBeGreaterThanOrEqual(libraryMetrics.tabsBottom);
+  expect(libraryMetrics.headerTop).toBeGreaterThanOrEqual(libraryMetrics.routeTabsBottom);
+  expect(libraryMetrics.headerHeight).toBeLessThanOrEqual(88);
+  expect(libraryMetrics.toolbarTop).toBeGreaterThanOrEqual(libraryMetrics.headerTop);
+  expect(libraryMetrics.searchTop).toBeGreaterThanOrEqual(libraryMetrics.toolbarTop);
   expect(libraryMetrics.searchBottom).toBeLessThanOrEqual(libraryMetrics.headerTop + libraryMetrics.headerHeight);
   expect(libraryMetrics.overflow).toBeLessThanOrEqual(0);
 
@@ -3068,12 +3075,12 @@ test("mobile resource list filters are available from the shared configuration s
 test("desktop resource list filters use the same compact configuration surface", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 820 });
   for (const route of [
-    { hash: "#/library/agents", label: "Agents", libraryTabs: true },
+    { hash: "#/library/agents", label: "Agents" },
     { hash: "#/goals", label: "Goals" },
     { hash: "#/projects", label: "Projects" },
-    { hash: "#/library/knowledge", label: "Knowledge", libraryTabs: true },
-    { hash: "#/library/skills", label: "Skills", libraryTabs: true },
-    { hash: "#/library/teams", label: "Teams", libraryTabs: true },
+    { hash: "#/library/knowledge", label: "Knowledge" },
+    { hash: "#/library/skills", label: "Skills" },
+    { hash: "#/library/teams", label: "Teams" },
     { hash: "#/settings/providers", label: "Providers" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
@@ -3081,37 +3088,24 @@ test("desktop resource list filters use the same compact configuration surface",
     await expect(toolbar.locator(".search-field")).toBeVisible();
     await expect(toolbar.locator(".resource-mobile-config-trigger")).toBeVisible();
     await expect(page.locator(".resource-toolbar-filters")).toBeHidden();
+    await expect(toolbar.locator(".resource-toolbar-scope-tabs")).toHaveCount(0);
 
     const compactMetrics = await toolbar.evaluate((node) => {
       const rect = node.getBoundingClientRect();
       const search = node.querySelector(".search-field")?.getBoundingClientRect();
       const trigger = node.querySelector(".resource-mobile-config-trigger")?.getBoundingClientRect();
-      const scope = node.querySelector(".resource-toolbar-scope-tabs")?.getBoundingClientRect();
       return {
         height: Math.round(rect.height),
         searchWidth: search ? Math.round(search.width) : 0,
-        hasScopeTabs: !!scope,
-        scopeInsideToolbar: scope
-          ? Math.round(scope.left) >= Math.round(rect.left)
-            && Math.round(scope.right) <= Math.round(rect.right)
-            && Math.round(scope.top) >= Math.round(rect.top)
-            && Math.round(scope.bottom) <= Math.round(rect.bottom)
-          : false,
-        searchBelowScope: scope && search ? Math.round(search.top) >= Math.round(scope.bottom) : true,
         searchAndTriggerSameRow: search && trigger
           ? Math.round(trigger.top) < Math.round(search.bottom)
             && Math.round(search.top) < Math.round(trigger.bottom)
           : false,
       };
     });
-    expect(compactMetrics.height, `${route.label} toolbar height`).toBeLessThanOrEqual(route.libraryTabs ? 92 : 58);
+    expect(compactMetrics.height, `${route.label} toolbar height`).toBeLessThanOrEqual(58);
     expect(compactMetrics.searchWidth, `${route.label} search width`).toBeGreaterThanOrEqual(240);
     expect(compactMetrics.searchAndTriggerSameRow, `${route.label} search/config row`).toBe(true);
-    expect(compactMetrics.hasScopeTabs, `${route.label} route tabs`).toBe(!!route.libraryTabs);
-    if (route.libraryTabs) {
-      expect(compactMetrics.scopeInsideToolbar, `${route.label} route tabs inside toolbar`).toBe(true);
-      expect(compactMetrics.searchBelowScope, `${route.label} search below route tabs`).toBe(true);
-    }
 
     await toolbar.locator(".resource-mobile-config-trigger").click();
     const sheet = page.getByRole("dialog", { name: `${route.label} configuration` });
@@ -4996,6 +4990,53 @@ test("desktop Library resource list routes align with Projects shell edges", asy
     expect(metrics.headRight, `${route.label} head right`).toBe(metrics.mainRight);
     expect(metrics.toolbarLeft, `${route.label} toolbar left`).toBe(metrics.mainLeft);
     expect(metrics.toolbarRight, `${route.label} toolbar right`).toBe(metrics.mainRight);
+    expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
+  }
+});
+
+test("desktop Library selected routes replace the list with full-width detail", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  for (const route of [
+    { hash: "#/library/agents/regression-agent", label: "agent" },
+    { hash: `#/library/teams/${teamSlug}`, label: "team" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-detail")).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const appMain = document.querySelector(".app-main");
+      const tabs = document.querySelector(".library-route-tabs");
+      const pane = document.querySelector(".two-pane");
+      const list = document.querySelector(".pane-list");
+      const detail = document.querySelector(".pane-detail");
+      const mainRect = appMain?.getBoundingClientRect();
+      const tabsRect = tabs?.getBoundingClientRect();
+      const paneRect = pane?.getBoundingClientRect();
+      const detailRect = detail?.getBoundingClientRect();
+      return {
+        hasRouteTabs: !!tabs,
+        listExists: !!list,
+        paneClass: pane?.className || "",
+        tabsLeft: tabsRect ? Math.round(tabsRect.left) : -1,
+        tabsRight: tabsRect ? Math.round(tabsRect.right) : -1,
+        mainLeft: mainRect ? Math.round(mainRect.left) : -1,
+        mainRight: mainRect ? Math.round(mainRect.right) : -1,
+        paneLeft: paneRect ? Math.round(paneRect.left) : -1,
+        paneRight: paneRect ? Math.round(paneRect.right) : -1,
+        detailLeft: detailRect ? Math.round(detailRect.left) : -1,
+        detailRight: detailRect ? Math.round(detailRect.right) : -1,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.hasRouteTabs, `${route.label} route tabs`).toBe(true);
+    expect(metrics.listExists, `${route.label} list column`).toBe(false);
+    expect(metrics.paneClass, `${route.label} full detail class`).toContain("two-pane-detail-only");
+    expect(metrics.tabsLeft, `${route.label} tabs left`).toBe(metrics.mainLeft);
+    expect(metrics.tabsRight, `${route.label} tabs right`).toBe(metrics.mainRight);
+    expect(metrics.paneLeft, `${route.label} pane left`).toBe(metrics.mainLeft);
+    expect(metrics.paneRight, `${route.label} pane right`).toBe(metrics.mainRight);
+    expect(metrics.detailLeft, `${route.label} detail left`).toBe(metrics.mainLeft);
+    expect(metrics.detailRight, `${route.label} detail right`).toBe(metrics.mainRight);
     expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
   }
 });

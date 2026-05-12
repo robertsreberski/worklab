@@ -16,20 +16,13 @@ export function ResourceListToolbar({
   actionIcon = "plus",
   configTitle = "List configuration",
   activeConfigCount = 0,
-  scopeTabs = null,
   children,
 }) {
   const [configOpen, setConfigOpen] = useState(false);
   const configId = `resource-config-${configTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list"}`;
-  const toolbarClass = [
-    "resource-toolbar",
-    "resource-toolbar-compact",
-    scopeTabs ? "resource-toolbar-has-scope-tabs" : "",
-  ].filter(Boolean).join(" ");
 
   return (
-    <div class={toolbarClass}>
-      {scopeTabs && <div class="resource-toolbar-scope-tabs">{scopeTabs}</div>}
+    <div class="resource-toolbar resource-toolbar-compact">
       <SearchField
         value={searchValue}
         onInput={(event) => onSearch?.(event.target.value, event)}

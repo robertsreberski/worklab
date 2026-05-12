@@ -14,6 +14,7 @@ export function PaneLayout({
   backLabel = "Back",
   detailOwnsMobileBack = false,
   listFirst = false,
+  fullDetail = false,
   class: className = "",
 }) {
   const [compactView, setCompactView] = useState(
@@ -65,6 +66,14 @@ export function PaneLayout({
           {listHeader && <div class="pane-list-head">{listHeader}</div>}
           <div class="pane-list-body wl-scrollbar">{listBody}</div>
         </section>
+      </div>
+    );
+  }
+
+  if (fullDetail && hasSelection) {
+    return (
+      <div class={`two-pane two-pane-detail-only ${className}`.trim()}>
+        <section class="pane-detail pane-detail-full">{detail}</section>
       </div>
     );
   }

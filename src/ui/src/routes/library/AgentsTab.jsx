@@ -37,7 +37,7 @@ function formatAvgDuration(value) {
   return `${Math.round(ms / 60_000)}m avg`;
 }
 
-export function AgentsTab({ selectedName = null, scopeTabs = null }) {
+export function AgentsTab({ selectedName = null }) {
   const [agents, setAgents] = useState([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("enabled");
@@ -113,7 +113,6 @@ export function AgentsTab({ selectedName = null, scopeTabs = null }) {
       onAction={() => { navigateHash("#/library/agents/new"); }}
       configTitle="Agents configuration"
       activeConfigCount={[stateFilter !== "enabled", activityFilter !== "all", modelFilter !== "all", effortFilter !== "all"].filter(Boolean).length}
-      scopeTabs={scopeTabs}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter agents by enabled state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={activityFilter} onChange={setActivityFilter} options={activityOptions} ariaLabel="Filter agents by activity" />
@@ -210,6 +209,7 @@ export function AgentsTab({ selectedName = null, scopeTabs = null }) {
       hasSelection={!!selectedName}
       detailOwnsMobileBack={!!selectedName}
       listFirst
+      fullDetail={!!selectedName}
       class="resource-list-layout"
       onBack={() => navigateHash("#/library/agents")}
       backLabel="All agents"

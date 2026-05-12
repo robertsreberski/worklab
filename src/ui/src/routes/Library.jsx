@@ -21,7 +21,7 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
   const activeTab = TAB_ORDER.includes(tab) ? tab : "agents";
   const [item, mode] = rest;
   const tabs = TAB_ORDER.map((id) => ({ value: id, label: TAB_LABELS[id] }));
-  const renderTabs = () => (
+  const routeTabs = (
     <Tabs
       value={activeTab}
       onChange={(next) => navigateHash(`#/library/${next}`)}
@@ -30,22 +30,22 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
       class="library-tabs tabs-pills"
     />
   );
-  const scopeTabs = renderTabs();
 
   let body;
   if (activeTab === "agents") {
-    body = <AgentsTab selectedName={item || null} scopeTabs={scopeTabs} />;
+    body = <AgentsTab selectedName={item || null} />;
   } else if (activeTab === "teams") {
-    body = <TeamsTab selectedId={item || null} mode={mode || null} scopeTabs={scopeTabs} />;
+    body = <TeamsTab selectedId={item || null} mode={mode || null} />;
   } else if (activeTab === "skills") {
-    body = <SkillsTab selectedName={item || null} scopeTabs={scopeTabs} />;
+    body = <SkillsTab selectedName={item || null} />;
   } else {
-    body = <KnowledgeTab selectedSlug={item || null} mode={mode || null} query={query} scopeTabs={scopeTabs} />;
+    body = <KnowledgeTab selectedSlug={item || null} mode={mode || null} query={query} />;
   }
 
   return (
     <AppShell route="library">
       <div class="library-page resource-tab-page">
+        <div class="library-route-tabs">{routeTabs}</div>
         <div class="library-tab-body">{body}</div>
       </div>
     </AppShell>

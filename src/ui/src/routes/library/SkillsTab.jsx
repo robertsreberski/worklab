@@ -28,7 +28,7 @@ function hasFileDrag(event) {
   return Array.from(event.dataTransfer?.types || []).includes("Files");
 }
 
-export function SkillsTab({ selectedName = null, scopeTabs = null }) {
+export function SkillsTab({ selectedName = null }) {
   const [skills, setSkills] = useState([]);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState("enabled");
@@ -121,7 +121,6 @@ export function SkillsTab({ selectedName = null, scopeTabs = null }) {
       onAction={() => { navigateHash("#/library/skills/new"); }}
       configTitle="Skills configuration"
       activeConfigCount={[stateFilter !== "enabled", priorityFilter !== "all", usageFilter !== "all"].filter(Boolean).length}
-      scopeTabs={scopeTabs}
     >
       <Tabs value={stateFilter} onChange={setStateFilter} tabs={stateTabs} ariaLabel="Filter skills by enabled state" class="tabs-pills" />
       <Select class="resource-filter-select" variant="menu" value={priorityFilter} onChange={setPriorityFilter} options={priorityOptions} ariaLabel="Filter skills by priority" />
@@ -258,6 +257,7 @@ export function SkillsTab({ selectedName = null, scopeTabs = null }) {
         hasSelection={!!selectedName}
         detailOwnsMobileBack={!!selectedName}
         listFirst
+        fullDetail={!!selectedName}
         class="resource-list-layout"
         onBack={() => navigateHash("#/library/skills")}
         backLabel="All skills"
