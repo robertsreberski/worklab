@@ -350,6 +350,10 @@ describe("resource list helpers", () => {
     expect(metaComponent).toContain("function ResourceRowTags");
     expect(metaComponent).toContain("function ResourceRowChip");
     expect(metaComponent).toContain("function ResourceRowPath");
+    expect(metaComponent).toContain("function ResourceRowWorktreeChip");
+    expect(metaComponent).toContain("tone = \"muted\"");
+    expect(metaComponent).toContain("glyph,");
+    expect(metaComponent).toContain("icon,");
 
     for (const route of [
       "library/AgentsTab.jsx",
@@ -368,7 +372,28 @@ describe("resource list helpers", () => {
 
     const projects = source("src/ui/src/routes/Projects.jsx");
     expect(projects).toContain("<ResourceRowPath label=\"workdir\" value={project.workdir} />");
+    expect(projects).toContain("<ResourceRowWorktreeChip mode={project.worktree_mode} />");
     expect(projects).not.toContain("project-row-workdir-chip");
+    expect(projects).not.toContain("worktrees {project.worktree_mode}");
+  });
+
+  it("uses semantic resource row chips for resource state instead of plain text chips", () => {
+    const expectations = [
+      ["Projects.jsx", "ResourceRowWorktreeChip", "tone=\"entity\"", "tone=\"neutral\"", "tone=\"warn\""],
+      ["library/AgentsTab.jsx", "icon=\"zap\"", "tone=\"accent\"", "tone=\"info\"", "tone=\"disabled\""],
+      ["library/KnowledgeTab.jsx", "icon=\"pin\"", "tone=\"accent\"", "tone=\"info\""],
+      ["library/SkillsTab.jsx", "tone=\"disabled\""],
+      ["library/TeamsTab.jsx", "icon=\"user\"", "icon=\"clock\"", "tone=\"entity\"", "tone=\"info\""],
+      ["Goals.jsx", "icon=\"users\"", "icon=\"clock\"", "tone=\"info\""],
+      ["settings/ProvidersTab.jsx", "icon={providerIcon(provider.provider_type)}", "tone=\"entity\"", "tone=\"accent\""],
+    ];
+
+    for (const [route, ...tokens] of expectations) {
+      const contents = source(`src/ui/src/routes/${route}`);
+      for (const token of tokens) {
+        expect(contents).toContain(token);
+      }
+    }
   });
 
   it("bounds resource row metadata so long chips do not widen list geometry", () => {
@@ -405,6 +430,28 @@ describe("resource list helpers", () => {
     expect(styles).toContain("@container project-detail");
     expect(metaRule).toContain("overflow: hidden");
     expect(summaryRule).toContain("max-width: 100%");
+  });
+
+  it("styles resource row chip semantics with commander-style tone classes", () => {
+    const styles = source("src/ui/src/styles.css");
+    const chipRule = cssRule(styles, ".resource-row-chip");
+    const iconRule = cssRule(styles, ".resource-row-chip-icon");
+
+    expect(chipRule).toContain("border-radius: var(--radius-sm)");
+    expect(chipRule).toContain("font-weight");
+    expect(iconRule).toContain("flex: 0 0 auto");
+    for (const selector of [
+      ".resource-row-chip-tone-muted",
+      ".resource-row-chip-tone-neutral",
+      ".resource-row-chip-tone-info",
+      ".resource-row-chip-tone-accent",
+      ".resource-row-chip-tone-warn",
+      ".resource-row-chip-tone-disabled",
+      ".resource-row-chip-tone-entity",
+    ]) {
+      const rule = cssRule(styles, selector);
+      expect(rule).toContain("--resource-row-chip-tone");
+    }
   });
 
   it("cross-links provider detail pages to agents that use their models", () => {

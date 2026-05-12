@@ -182,7 +182,7 @@ export function SkillsTab({ selectedName = null }) {
                     <span class="pane-row-description">{s.trigger || "No trigger defined"}</span>
                     <ResourceRowTags>
                       <ResourceRowId>{s.name}</ResourceRowId>
-                      {!enabled && <ResourceRowChip>disabled</ResourceRowChip>}
+                      {!enabled && <ResourceRowChip tone="disabled" icon="x-circle">disabled</ResourceRowChip>}
                     </ResourceRowTags>
                   </span>
                 )}

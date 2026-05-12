@@ -1056,10 +1056,10 @@ export function TeamsTab({ selectedId = null, mode = null }) {
                         {(team.goal || team.description) && <span class="pane-row-description">{team.goal || team.description}</span>}
                         <ResourceRowTags>
                           <ResourceRowId>{team.slug}</ResourceRowId>
-                          {team.lead_agent && <ResourceRowChip>lead {team.lead_agent}</ResourceRowChip>}
-                          {team.schedule_enabled && <ResourceRowChip>scheduled</ResourceRowChip>}
-                          <ResourceRowChip>{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</ResourceRowChip>
-                          {Number(team.project_count || 0) > 0 && <ResourceRowChip>{team.project_count} project{team.project_count === 1 ? "" : "s"}</ResourceRowChip>}
+                          {team.lead_agent && <ResourceRowChip tone="entity" icon="user">lead {team.lead_agent}</ResourceRowChip>}
+                          {team.schedule_enabled && <ResourceRowChip tone="accent" icon="clock">scheduled</ResourceRowChip>}
+                          <ResourceRowChip tone="info" icon="users">{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</ResourceRowChip>
+                          {Number(team.project_count || 0) > 0 && <ResourceRowChip tone="info" icon="folder">{team.project_count} project{team.project_count === 1 ? "" : "s"}</ResourceRowChip>}
                         </ResourceRowTags>
                       </span>
                     )}

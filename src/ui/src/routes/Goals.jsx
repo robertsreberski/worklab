@@ -445,9 +445,9 @@ function GoalRow({ goal, active }) {
         <span class="pane-row-substack">
           <span class="pane-row-description">{goal.contract?.objective || "(no objective set)"}</span>
           <ResourceRowTags>
-            <ResourceRowChip>team {goalTeamLabel(goal)}</ResourceRowChip>
-            {goal.last_lead_at && <ResourceRowChip>lead {relativeTime(goal.last_lead_at)}</ResourceRowChip>}
-            {checkpoint && <ResourceRowChip>checkpoint</ResourceRowChip>}
+            <ResourceRowChip tone="entity" icon="users">team {goalTeamLabel(goal)}</ResourceRowChip>
+            {goal.last_lead_at && <ResourceRowChip tone="info" icon="clock">lead {relativeTime(goal.last_lead_at)}</ResourceRowChip>}
+            {checkpoint && <ResourceRowChip tone="accent" icon="check-circle">checkpoint</ResourceRowChip>}
           </ResourceRowTags>
         </span>
       )}

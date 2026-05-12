@@ -892,9 +892,9 @@ export function ProvidersTab({ selectedId = null }) {
               sub={(
                 <span class="pane-row-substack">
                   <ResourceRowTags>
-                    <ResourceRowChip>{providerTypeLabel(provider.provider_type)}</ResourceRowChip>
-                    {provider.base_url && <ResourceRowChip class="pane-row-mono" title={provider.base_url}>{provider.base_url}</ResourceRowChip>}
-                    {provider.trust_public_url && <ResourceRowChip>trusted public URL</ResourceRowChip>}
+                    <ResourceRowChip tone="entity" icon={providerIcon(provider.provider_type)}>{providerTypeLabel(provider.provider_type)}</ResourceRowChip>
+                    {provider.base_url && <ResourceRowChip tone="neutral" icon="link" class="pane-row-mono" title={provider.base_url}>{provider.base_url}</ResourceRowChip>}
+                    {provider.trust_public_url && <ResourceRowChip tone="accent" icon="check-circle">trusted public URL</ResourceRowChip>}
                   </ResourceRowTags>
                 </span>
               )}
