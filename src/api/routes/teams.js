@@ -64,6 +64,17 @@ function safeJsonArray(value) {
   }
 }
 
+function safeJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (value == null || value === "") return {};
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function leadCycleOut(row) {
   return {
     id: row.id,
@@ -83,6 +94,8 @@ function leadCycleOut(row) {
     validation_summary: row.validation_summary || null,
     task_deletions: safeJsonArray(row.task_deletions_json),
     task_creation_skips: safeJsonArray(row.task_creation_skips_json),
+    goal_refinement: safeJsonObject(row.goal_refinement_json),
+    goal_refinement_applied: safeJsonObject(row.goal_refinement_applied_json),
     goal_status: row.goal_status || null,
     goal_status_reason: row.goal_status_reason || null,
     next_review_due_at: row.next_review_due_at ?? null,

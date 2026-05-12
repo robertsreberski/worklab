@@ -9,6 +9,10 @@ export function GoalContractDetails({ goal }) {
   return (
     <div class="team-goal-contract">
       <div>
+        <span>North star</span>
+        <strong>{contract.north_star || "(not set)"}</strong>
+      </div>
+      <div>
         <span>Objective</span>
         <strong>{contract.objective || "(not set)"}</strong>
       </div>

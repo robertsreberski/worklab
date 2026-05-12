@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTeamGoalDashboardGroups,
   formatLeadCycleImpact,
+  formatLeadCycleRefinement,
   formatTeamLeadRunToast,
   goalStatusLabel,
   leadCycleNextReviewLabel,
@@ -75,6 +76,32 @@ describe("team setup guidance", () => {
     ]);
     expect(leadCycleNextReviewLabel({ next_review_due_at: 61_000 }, { now: 1000 })).toBe("due in 1m");
     expect(leadCycleNextReviewLabel({ next_review_event: "task_blocked" }, { now: 1000 })).toBe("after task blocked");
+  });
+
+  it("formats lead-cycle goal refinement metadata", () => {
+    expect(formatLeadCycleRefinement({
+      goal_refinement_applied: {
+        applied: true,
+        applied_fields: ["north_star"],
+        rationale: "Aim at a more polished project cockpit.",
+      },
+    })).toEqual({
+      status: "applied",
+      label: "Goal refined",
+      fields: ["north_star"],
+      rationale: "Aim at a more polished project cockpit.",
+    });
+
+    expect(formatLeadCycleRefinement({
+      goal_refinement_applied: {
+        applied: false,
+        skipped: [{ field: "objective", reason: "does not preserve enough of the current goal wording" }],
+      },
+    })).toMatchObject({
+      status: "skipped",
+      label: "Refinement skipped",
+      skipped: [{ field: "objective", reason: "does not preserve enough of the current goal wording" }],
+    });
   });
 
   it("groups team-project goals for the Teams dashboard", () => {

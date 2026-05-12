@@ -49,6 +49,7 @@ function goalMatchesQuery(goal, query) {
     goal?.team_slug,
     goal?.project?.name,
     goal?.project?.slug,
+    contract.north_star,
     contract.objective,
     contract.stopping_condition,
     contract.validation_loop,

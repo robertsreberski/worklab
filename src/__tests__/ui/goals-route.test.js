@@ -57,6 +57,7 @@ describe("Goals route helpers", () => {
     expect(goalDraftFrom(null)).toEqual({
       team_id: "",
       project_id: "",
+      north_star: "",
       objective: "",
       stopping_condition: "",
       validation_loop: "",
@@ -145,6 +146,15 @@ describe("Goals route helpers", () => {
         tasks_skipped: 1,
         notes_posted: 1,
         task_deletions: [{ task_key: "T-42", title: "Obsolete lead task", rationale: "Superseded." }],
+        goal_refinement_applied: {
+          applied: true,
+          applied_fields: ["north_star", "objective"],
+          rationale: "The project should aim higher without changing scope.",
+          patch_applied: {
+            north_star: "Autonomous project cockpit.",
+            objective: "Ship the native goal cockpit.",
+          },
+        },
       }],
     }, { now: 1000 });
 
@@ -158,6 +168,11 @@ describe("Goals route helpers", () => {
       event_label: "after task completed",
       impact: ["2 created", "1 assigned", "1 deleted", "1 skipped", "1 noted"],
       deletions: [{ task_key: "T-42", title: "Obsolete lead task", rationale: "Superseded." }],
+      refinement: {
+        status: "applied",
+        label: "Goal refined",
+        fields: ["north_star", "objective"],
+      },
     });
   });
 
