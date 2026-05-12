@@ -3068,12 +3068,12 @@ test("mobile resource list filters are available from the shared configuration s
 test("desktop resource list filters use the same compact configuration surface", async ({ page }) => {
   await page.setViewportSize({ width: 1180, height: 820 });
   for (const route of [
-    { hash: "#/library/agents", label: "Agents" },
+    { hash: "#/library/agents", label: "Agents", libraryTabs: true },
     { hash: "#/goals", label: "Goals" },
     { hash: "#/projects", label: "Projects" },
-    { hash: "#/library/knowledge", label: "Knowledge" },
-    { hash: "#/library/skills", label: "Skills" },
-    { hash: "#/library/teams", label: "Teams" },
+    { hash: "#/library/knowledge", label: "Knowledge", libraryTabs: true },
+    { hash: "#/library/skills", label: "Skills", libraryTabs: true },
+    { hash: "#/library/teams", label: "Teams", libraryTabs: true },
     { hash: "#/settings/providers", label: "Providers" },
   ]) {
     await page.goto(`${baseUrl}/${route.hash}`);
@@ -3086,18 +3086,32 @@ test("desktop resource list filters use the same compact configuration surface",
       const rect = node.getBoundingClientRect();
       const search = node.querySelector(".search-field")?.getBoundingClientRect();
       const trigger = node.querySelector(".resource-mobile-config-trigger")?.getBoundingClientRect();
+      const scope = node.querySelector(".resource-toolbar-scope-tabs")?.getBoundingClientRect();
       return {
         height: Math.round(rect.height),
         searchWidth: search ? Math.round(search.width) : 0,
+        hasScopeTabs: !!scope,
+        scopeInsideToolbar: scope
+          ? Math.round(scope.left) >= Math.round(rect.left)
+            && Math.round(scope.right) <= Math.round(rect.right)
+            && Math.round(scope.top) >= Math.round(rect.top)
+            && Math.round(scope.bottom) <= Math.round(rect.bottom)
+          : false,
+        searchBelowScope: scope && search ? Math.round(search.top) >= Math.round(scope.bottom) : true,
         searchAndTriggerSameRow: search && trigger
           ? Math.round(trigger.top) < Math.round(search.bottom)
             && Math.round(search.top) < Math.round(trigger.bottom)
           : false,
       };
     });
-    expect(compactMetrics.height, `${route.label} toolbar height`).toBeLessThanOrEqual(58);
+    expect(compactMetrics.height, `${route.label} toolbar height`).toBeLessThanOrEqual(route.libraryTabs ? 92 : 58);
     expect(compactMetrics.searchWidth, `${route.label} search width`).toBeGreaterThanOrEqual(240);
     expect(compactMetrics.searchAndTriggerSameRow, `${route.label} search/config row`).toBe(true);
+    expect(compactMetrics.hasScopeTabs, `${route.label} route tabs`).toBe(!!route.libraryTabs);
+    if (route.libraryTabs) {
+      expect(compactMetrics.scopeInsideToolbar, `${route.label} route tabs inside toolbar`).toBe(true);
+      expect(compactMetrics.searchBelowScope, `${route.label} search below route tabs`).toBe(true);
+    }
 
     await toolbar.locator(".resource-mobile-config-trigger").click();
     const sheet = page.getByRole("dialog", { name: `${route.label} configuration` });
@@ -4835,18 +4849,31 @@ test("providers settings route keeps search close and provider edit aligned", as
     const toolbar = document.querySelector(".resource-toolbar");
     const search = document.querySelector(".resource-toolbar .search-field");
     const pane = document.querySelector(".provider-pane-layout");
+    const firstRow = document.querySelector(".provider-pane-row");
     const headRect = head?.getBoundingClientRect();
     const toolbarRect = toolbar?.getBoundingClientRect();
     const searchRect = search?.getBoundingClientRect();
+    const paneRect = pane?.getBoundingClientRect();
+    const rowRect = firstRow?.getBoundingClientRect();
+    const toolbarStyles = toolbar ? getComputedStyle(toolbar) : null;
     return {
       gapAfterHeader: headRect && toolbarRect ? Math.round(toolbarRect.top - headRect.bottom) : -1,
       searchGapAfterHeader: headRect && searchRect ? Math.round(searchRect.top - headRect.bottom) : -1,
+      toolbarWidth: toolbarRect ? Math.round(toolbarRect.width) : 0,
+      paneWidth: paneRect ? Math.round(paneRect.width) : 0,
+      rowWidth: rowRect ? Math.round(rowRect.width) : 0,
+      toolbarBorderBottom: toolbarStyles?.borderBottomStyle || "",
+      toolbarBackground: toolbarStyles?.backgroundColor || "",
       paneClass: pane?.className || "",
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(listMetrics.gapAfterHeader).toBeLessThanOrEqual(12);
-  expect(listMetrics.searchGapAfterHeader).toBeLessThanOrEqual(10);
+  expect(listMetrics.searchGapAfterHeader).toBeLessThanOrEqual(14);
+  expect(Math.abs(listMetrics.toolbarWidth - listMetrics.paneWidth)).toBeLessThanOrEqual(1);
+  expect(Math.abs(listMetrics.rowWidth - listMetrics.paneWidth)).toBeLessThanOrEqual(1);
+  expect(listMetrics.toolbarBorderBottom).toBe("solid");
+  expect(listMetrics.toolbarBackground).not.toBe("rgba(0, 0, 0, 0)");
   expect(listMetrics.paneClass).toContain("provider-pane-layout");
   expect(listMetrics.overflow).toBeLessThanOrEqual(0);
 
@@ -4878,6 +4905,46 @@ test("providers settings route keeps search close and provider edit aligned", as
   expect(editMetrics.firstContentGap).toBeLessThanOrEqual(12);
   expect(editMetrics.actionsInsideHeader).toBe(true);
   expect(editMetrics.overflow).toBeLessThanOrEqual(0);
+});
+
+test("desktop Settings routes fill the available app body width", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  for (const route of [
+    { hash: "#/settings", ready: () => page.locator(".settings-sections"), label: "settings" },
+    { hash: "#/settings/providers", ready: () => page.locator(".provider-pane-layout"), label: "providers" },
+    { hash: "#/settings/about", ready: () => page.locator(".settings-about"), label: "about" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(route.ready()).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const body = document.querySelector(".app-body");
+      const shell = document.querySelector(".settings-route-shell");
+      const head = document.querySelector(".settings-route-shell > .ds-page-head");
+      const content = document.querySelector(".settings-route-content");
+      const bodyRect = body?.getBoundingClientRect();
+      const shellRect = shell?.getBoundingClientRect();
+      const headRect = head?.getBoundingClientRect();
+      const contentRect = content?.getBoundingClientRect();
+      return {
+        bodyLeft: bodyRect ? Math.round(bodyRect.left) : -1,
+        bodyRight: bodyRect ? Math.round(bodyRect.right) : -1,
+        shellLeft: shellRect ? Math.round(shellRect.left) : -1,
+        shellRight: shellRect ? Math.round(shellRect.right) : -1,
+        headLeft: headRect ? Math.round(headRect.left) : -1,
+        headRight: headRect ? Math.round(headRect.right) : -1,
+        contentLeft: contentRect ? Math.round(contentRect.left) : -1,
+        contentRight: contentRect ? Math.round(contentRect.right) : -1,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.shellLeft, `${route.label} shell left`).toBe(metrics.bodyLeft);
+    expect(metrics.shellRight, `${route.label} shell right`).toBeLessThanOrEqual(metrics.bodyRight);
+    expect(metrics.shellRight, `${route.label} shell right width`).toBeGreaterThan(metrics.bodyRight - 16);
+    expect(metrics.headLeft, `${route.label} header left`).toBe(metrics.contentLeft);
+    expect(metrics.headRight, `${route.label} header right`).toBe(metrics.contentRight);
+    expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
+  }
 });
 
 test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {
