@@ -188,6 +188,8 @@ Do not emit this JSON object for interim planning progress or status updates. Us
 
 Put the complete implementation plan directly in \`details\`. Do not write references like "see above", "the message above", or "mirrored in details" as a substitute for the actual plan text.
 
+Do not create or update Knowledge Base entries for plan output unless the current human instructions explicitly ask to save the plan to Knowledge.
+
 Use decision "advance" when the plan is ready and the task should move to work, "delegate" when bounded subtasks should be created, "pause" when explicit human input is required, and "block" when you cannot continue.`;
 }
 
