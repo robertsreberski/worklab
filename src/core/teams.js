@@ -10,7 +10,6 @@ import {
   getTeamRosterAgentNames,
   hasInFlightLeadCycle as hasInFlightLeadCycleRow,
   insertTeam,
-  listRecentLeadCycles,
   listTeamMembers,
   listProjectsForTeam,
   listTeams as listTeamsRow,
@@ -18,6 +17,13 @@ import {
   resolveTeamByIdOrSlug,
   updateTeamFields,
 } from "./db/queries/teams.js";
+import {
+  getGoalById as getNativeGoalById,
+  getGoalByTeamProject,
+  listLeadCyclesByGoal,
+  upsertGoal,
+  updateGoalFields,
+} from "./db/queries/goals.js";
 import { getProjectById } from "./db/queries/projects.js";
 import { getTaskById } from "./db/queries/tasks.js";
 import { newTaskId, newTeamId } from "./ids.js";
@@ -188,12 +194,11 @@ export function loadTeamRoster(db, teamId) {
   };
 }
 
-function latestLeadCycleForProject(db, { teamId, projectId }) {
-  if (!teamId || !projectId) return null;
-  const row = listRecentLeadCycles(db, teamId, 50).find((cycle) => cycle.project_id === projectId);
+function leadCycleSummary(row) {
   if (!row) return null;
   return {
-    id: row.id,
+    id: row.run_id || row.id,
+    run_id: row.run_id || row.id,
     task_id: row.task_id,
     project_id: row.project_id,
     process_status: row.process_status,
@@ -202,26 +207,63 @@ function latestLeadCycleForProject(db, { teamId, projectId }) {
     started_at: row.started_at,
     ended_at: row.ended_at,
     summary: row.summary || null,
+    checkpoint_note: row.checkpoint_note || null,
+    validation_summary: row.validation_summary || null,
+    goal_status: row.goal_status || null,
+    next_review_due_at: row.next_review_due_at ?? null,
+    next_review_event: row.next_review_event || null,
+    next_review_consumed_at: row.next_review_consumed_at ?? null,
+    tasks_created: row.tasks_created || 0,
+    tasks_assigned: row.tasks_assigned || 0,
+    notes_posted: row.notes_posted || 0,
     cost_usd: row.cost_usd ?? null,
   };
 }
 
-export function teamProjectGoalFromRows({ team, project, root, latestCycle = null } = {}) {
+function latestLeadCycleForGoal(db, goalId) {
+  if (!goalId) return null;
+  return leadCycleSummary(listLeadCyclesByGoal(db, goalId, { limit: 1 })[0]);
+}
+
+function leadCyclesForGoal(db, goalId, limit = 20) {
+  if (!goalId) return [];
+  return listLeadCyclesByGoal(db, goalId, { limit }).map(leadCycleSummary).filter(Boolean);
+}
+
+function ensureNativeGoalForRoot(db, { team, project, root, now = Date.now() } = {}) {
   if (!team || !project || !root) return null;
-  return {
+  const contract = normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "", now });
+  return upsertGoal(db, {
     id: root.id,
-    goal_id: root.id,
+    teamId: team.id,
+    projectId: project.id,
+    rootTaskId: root.id,
+    status: root.goal_status || "in_progress",
+    statusReason: root.goal_status_reason || null,
+    contractJson: serializeTeamGoalContract(contract),
+    lastLeadAt: root.last_lead_at || null,
+    createdAt: root.created_at || now,
+    updatedAt: root.updated_at || now,
+  });
+}
+
+export function teamProjectGoalFromRows({ team, project, root, goal = null, latestCycle = null, cycles = null } = {}) {
+  if (!team || !project || !root) return null;
+  const contract = normalizeTeamGoalContract(goal?.contract_json || root.goal_contract_json, { teamGoal: team.goal || "" });
+  return {
+    id: goal?.id || root.id,
+    goal_id: goal?.id || root.id,
     team_id: team.id,
     team_slug: team.slug,
     team_name: team.name,
     project_id: project.id,
     root_task_id: root.id,
     task_id: root.id,
-    goal_status: root.goal_status || "in_progress",
-    goal_status_reason: root.goal_status_reason || null,
-    last_lead_at: root.last_lead_at || null,
-    contract: normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" }),
-    readiness: goalContractReadiness(normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" })),
+    goal_status: goal?.status || root.goal_status || "in_progress",
+    goal_status_reason: goal?.status_reason || root.goal_status_reason || null,
+    last_lead_at: goal?.last_lead_at || root.last_lead_at || null,
+    contract,
+    readiness: goalContractReadiness(contract),
     project: {
       id: project.id,
       slug: project.slug,
@@ -229,6 +271,7 @@ export function teamProjectGoalFromRows({ team, project, root, latestCycle = nul
       archived: !!project.archived,
     },
     latest_cycle: latestCycle,
+    cycles: cycles || (latestCycle ? [latestCycle] : []),
   };
 }
 
@@ -241,16 +284,28 @@ export function getTeamProjectGoal(db, { teamId, projectId, now = Date.now(), en
     ? ensureTeamRootTask(db, { teamId, projectId, now })
     : getTeamRootTask(db, { teamId, projectId });
   if (!root) return null;
+  const goal = ensureNativeGoalForRoot(db, { team, project, root, now });
   return teamProjectGoalFromRows({
     team,
     project,
     root,
-    latestCycle: latestLeadCycleForProject(db, { teamId, projectId }),
+    goal,
+    latestCycle: latestLeadCycleForGoal(db, goal?.id || root.id),
+    cycles: leadCyclesForGoal(db, goal?.id || root.id, 20),
   });
 }
 
 export function getTeamProjectGoalById(db, goalId, { now = Date.now() } = {}) {
   if (!goalId) return null;
+  const goal = getNativeGoalById(db, goalId);
+  if (goal?.team_id && goal?.project_id) {
+    return getTeamProjectGoal(db, {
+      teamId: goal.team_id,
+      projectId: goal.project_id,
+      now,
+      ensureRoot: !goal.root_task_id,
+    });
+  }
   const root = getTaskById(db, goalId);
   if (!root || !root.is_team_root || !root.team_id || !root.project_id) return null;
   return getTeamProjectGoal(db, {
@@ -268,11 +323,14 @@ export function listTeamProjectGoals(db, teamId, { includeArchived = true, now =
     .filter((project) => includeArchived || !project.archived)
     .map((project) => {
       const root = ensureTeamRootTask(db, { teamId, projectId: project.id, now });
+      const goal = ensureNativeGoalForRoot(db, { team, project, root, now });
       return teamProjectGoalFromRows({
         team,
         project,
         root,
-        latestCycle: latestLeadCycleForProject(db, { teamId, projectId: project.id }),
+        goal,
+        latestCycle: latestLeadCycleForGoal(db, goal?.id || root?.id),
+        cycles: leadCyclesForGoal(db, goal?.id || root?.id, 10),
       });
     })
     .filter(Boolean);
@@ -286,7 +344,8 @@ export function updateTeamProjectGoal(db, {
   now = Date.now(),
 } = {}) {
   const resolvedProject = listProjectsForTeam(db, teamId).find((project) => project.id === projectId || project.slug === projectId);
-  const current = getTeamProjectGoal(db, { teamId, projectId: resolvedProject?.id || projectId, now });
+  const resolvedProjectId = resolvedProject?.id || projectId;
+  const current = getTeamProjectGoal(db, { teamId, projectId: resolvedProjectId, now });
   if (!current) return { ok: false, error: "team/project goal not found" };
   let contract = { ...current.contract };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
@@ -308,11 +367,13 @@ export function updateTeamProjectGoal(db, {
     return { ok: false, error: `unsupported goal action: ${action}` };
   }
   contract.updated_at = now;
+  const serialized = serializeTeamGoalContract(contract);
   db.prepare("UPDATE tasks SET goal_contract_json = ?, updated_at = ? WHERE id = ?")
-    .run(serializeTeamGoalContract(contract), now, current.root_task_id);
+    .run(serialized, now, current.root_task_id);
+  updateGoalFields(db, current.goal_id, ["contract_json = ?", "updated_at = ?"], [serialized, now]);
   return {
     ok: true,
-    goal: getTeamProjectGoal(db, { teamId, projectId, now, ensureRoot: false }),
+    goal: getTeamProjectGoal(db, { teamId, projectId: current.project_id, now, ensureRoot: false }),
   };
 }
 
@@ -339,20 +400,24 @@ export function appendTeamGoalCheckpoint(db, {
     contract.checkpoint_notes = [...contract.checkpoint_notes, note].slice(-20);
   }
   contract.updated_at = now;
+  const serialized = serializeTeamGoalContract(contract);
   db.prepare("UPDATE tasks SET goal_contract_json = ?, updated_at = ? WHERE id = ?")
-    .run(serializeTeamGoalContract(contract), now, rootTaskId);
+    .run(serialized, now, rootTaskId);
+  const goal = db.prepare("SELECT id FROM goals WHERE root_task_id = ?").get(rootTaskId);
+  if (goal?.id) updateGoalFields(db, goal.id, ["contract_json = ?", "updated_at = ?"], [serialized, now]);
   return contract;
 }
 
 export function leadCycleBlockedByGoal(db, { teamId, projectId, reason = "manual" } = {}) {
   if (!teamId || !projectId || reason === "manual") return null;
   const root = getTeamRootTask(db, { teamId, projectId });
-  if (!root) return null;
-  const contract = normalizeTeamGoalContract(root.goal_contract_json);
+  const goal = getGoalByTeamProject(db, { teamId, projectId });
+  if (!root && !goal) return null;
+  const contract = normalizeTeamGoalContract(goal?.contract_json || root?.goal_contract_json);
   if (contract.paused_at) {
     return { skipped: "goal_paused", error: "team-project goal is paused" };
   }
-  if ((root.goal_status || "in_progress") === "complete") {
+  if ((goal?.status || root?.goal_status || "in_progress") === "complete") {
     return { skipped: "goal_complete", error: "team-project goal is complete" };
   }
   return null;
@@ -420,10 +485,13 @@ export { hasInFlightLeadCycleRow as hasInFlightLeadCycle };
 export function ensureTeamRootTask(db, { teamId, projectId, now = Date.now() } = {}) {
   if (!teamId || !projectId) return null;
   const existing = getTeamRootTask(db, { teamId, projectId });
-  if (existing) return existing;
   const team = getTeamById(db, teamId);
   const project = getProjectById(db, projectId);
   if (!team || !project) return null;
+  if (existing) {
+    ensureNativeGoalForRoot(db, { team, project, root: existing, now });
+    return existing;
+  }
   const id = newTaskId();
   const title = `[team] ${team.name} → ${project.name}`;
   const instructions = team.goal
@@ -439,7 +507,9 @@ export function ensureTeamRootTask(db, { teamId, projectId, now = Date.now() } =
     serializeTeamGoalContract(initialTeamGoalContract(team, now)),
     now, now,
   );
-  return getTeamRootTask(db, { teamId, projectId });
+  const root = getTeamRootTask(db, { teamId, projectId });
+  ensureNativeGoalForRoot(db, { team, project, root, now });
+  return root;
 }
 
 // Ensure roots for every project this team is currently assigned to. Called
