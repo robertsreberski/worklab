@@ -4,9 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  inspectRunWorktree,
   inspectWorktreeSupport,
   prepareRunWorktree,
   reconcileRunWorktree,
+  syncRunWorktreeFromSource,
 } from "../../core/worktrees.js";
 
 const roots = [];
@@ -104,6 +106,104 @@ describe("worktree runtime helpers", () => {
     expect(readFileSync(join(repo, "feature.txt"), "utf8")).toBe("AI work\n");
     expect(git(repo, ["rev-parse", "HEAD"])).toBe(result.branch_head);
     expect(existsSync(metadata.worktree_root)).toBe(false);
+  });
+
+  it("reports source drift and changed-path overlap without mutating either checkout", () => {
+    const repo = makeRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-worktrees-data-"));
+    roots.push(dataDir);
+    const metadata = prepareRunWorktree({ sourceWorkdir: repo, runId: "run-status", dataDir });
+
+    writeFileSync(join(repo, "README.md"), "Current source truth\n");
+    git(repo, ["add", "README.md"]);
+    git(repo, ["commit", "-m", "source update"]);
+    const sourceHead = git(repo, ["rev-parse", "HEAD"]);
+
+    writeFileSync(join(metadata.runtime_workdir, "README.md"), "AI branch update\n");
+    git(metadata.worktree_root, ["add", "README.md"]);
+    git(metadata.worktree_root, ["commit", "-m", "ai update"]);
+    const branchHead = git(metadata.worktree_root, ["rev-parse", "HEAD"]);
+
+    const result = inspectRunWorktree({ metadata });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "source_drift",
+      source_head: sourceHead,
+      branch_head: branchHead,
+      base_head: metadata.base_head,
+      source_drift: true,
+      source_changed_paths: ["README.md"],
+      worktree_changed_paths: ["README.md"],
+      overlap_paths: ["README.md"],
+      dirty_paths: [],
+      worktree_dirty_paths: [],
+      conflict_paths: [],
+    });
+    expect(readFileSync(join(repo, "README.md"), "utf8")).toBe("Current source truth\n");
+    expect(readFileSync(join(metadata.runtime_workdir, "README.md"), "utf8")).toBe("AI branch update\n");
+  });
+
+  it("merges current source drift into the AI worktree without changing source", () => {
+    const repo = makeRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-worktrees-data-"));
+    roots.push(dataDir);
+    const metadata = prepareRunWorktree({ sourceWorkdir: repo, runId: "run-sync", dataDir });
+
+    writeFileSync(join(repo, "source.txt"), "Current source truth\n");
+    git(repo, ["add", "source.txt"]);
+    git(repo, ["commit", "-m", "source update"]);
+    const sourceHead = git(repo, ["rev-parse", "HEAD"]);
+
+    writeFileSync(join(metadata.runtime_workdir, "feature.txt"), "AI work\n");
+    git(metadata.worktree_root, ["add", "feature.txt"]);
+    git(metadata.worktree_root, ["commit", "-m", "ai update"]);
+    const previousBranchHead = git(metadata.worktree_root, ["rev-parse", "HEAD"]);
+
+    const result = syncRunWorktreeFromSource({ metadata, now: 3000 });
+
+    expect(result).toMatchObject({
+      ok: true,
+      status: "synced",
+      source_head: sourceHead,
+      previous_branch_head: previousBranchHead,
+      synced_at: 3000,
+      conflict_paths: [],
+    });
+    expect(git(repo, ["rev-parse", "HEAD"])).toBe(sourceHead);
+    expect(existsSync(join(repo, "feature.txt"))).toBe(false);
+    expect(readFileSync(join(metadata.runtime_workdir, "source.txt"), "utf8")).toBe("Current source truth\n");
+    expect(readFileSync(join(metadata.runtime_workdir, "feature.txt"), "utf8")).toBe("AI work\n");
+    expect(result.branch_head).toBe(git(metadata.worktree_root, ["rev-parse", "HEAD"]));
+    expect(result.branch_head).not.toBe(previousBranchHead);
+  });
+
+  it("leaves source unchanged when in-run source sync hits a conflict", () => {
+    const repo = makeRepo();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-worktrees-data-"));
+    roots.push(dataDir);
+    const metadata = prepareRunWorktree({ sourceWorkdir: repo, runId: "run-sync-conflict", dataDir });
+
+    writeFileSync(join(repo, "README.md"), "Current source truth\n");
+    git(repo, ["add", "README.md"]);
+    git(repo, ["commit", "-m", "source update"]);
+    const sourceHead = git(repo, ["rev-parse", "HEAD"]);
+
+    writeFileSync(join(metadata.runtime_workdir, "README.md"), "AI branch update\n");
+    git(metadata.worktree_root, ["add", "README.md"]);
+    git(metadata.worktree_root, ["commit", "-m", "ai update"]);
+
+    const result = syncRunWorktreeFromSource({ metadata, now: 3000 });
+
+    expect(result).toMatchObject({
+      ok: false,
+      status: "merge_conflict",
+      source_head: sourceHead,
+      conflict_paths: ["README.md"],
+    });
+    expect(git(repo, ["rev-parse", "HEAD"])).toBe(sourceHead);
+    expect(readFileSync(join(repo, "README.md"), "utf8")).toBe("Current source truth\n");
+    expect(readFileSync(join(metadata.runtime_workdir, "README.md"), "utf8")).toContain("<<<<<<<");
   });
 
   it("keeps the source checkout unchanged when current source truth conflicts with AI work", () => {

@@ -9,6 +9,7 @@ import * as todos from "./todos.js";
 import * as taskGraph from "./tasks.js";
 import * as agentMgmt from "./agents.js";
 import * as kb from "./kb.js";
+import * as worktrees from "./worktrees.js";
 
 // Definition order is preserved from the original monolithic file so
 // printed surface listings (and any future snapshot tests) remain stable.
@@ -20,6 +21,7 @@ export const toolDefinitions = [
   ...journalCore,
   ...todos.definitions,
   ...taskGraph.definitions,
+  ...worktrees.definitions,
   ...agentMgmt.definitions,
   ...kb.definitions,
   ...memorySearch,
@@ -30,6 +32,7 @@ export function createToolHandlers(context) {
     ...memory.buildHandlers(context),
     ...todos.buildHandlers(context),
     ...taskGraph.buildHandlers(context),
+    ...worktrees.buildHandlers(context),
     ...agentMgmt.buildHandlers(context),
     ...kb.buildHandlers(context),
   };

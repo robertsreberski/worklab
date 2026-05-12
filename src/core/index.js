@@ -465,10 +465,12 @@ export {
 export {
   conflictPaths,
   gitStatusShort,
+  inspectRunWorktree,
   inspectWorktreeSupport,
   prepareRunWorktree,
   reconcileRunWorktree,
   runWorktreeRoot,
+  syncRunWorktreeFromSource,
   worktreeBranchForRun,
 } from "./worktrees.js";
 

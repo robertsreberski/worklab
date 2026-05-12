@@ -36,6 +36,21 @@ function parseDirtyPaths(statusShort) {
     .filter(Boolean)
 }
 
+function uniqueSortedPaths(paths) {
+  return [...new Set((paths || []).map((path) => String(path || "").trim()).filter(Boolean))].sort();
+}
+
+function listChangedPaths(workdir, fromRef, toRef) {
+  if (!workdir || !fromRef || !toRef || fromRef === toRef) return [];
+  const output = git(workdir, ["diff", "--name-only", `${fromRef}..${toRef}`, ...STATUS_PATHSPEC], { allowFailure: true }) || "";
+  return uniqueSortedPaths(output.split("\n"));
+}
+
+function intersectPaths(a, b) {
+  const right = new Set(b || []);
+  return uniqueSortedPaths((a || []).filter((path) => right.has(path)));
+}
+
 function sanitizeBranchPart(value) {
   const text = String(value || "").trim().replace(/[^A-Za-z0-9._-]/g, "-");
   if (!text) throw new Error("runId is required for worktree branch creation");
@@ -60,6 +75,54 @@ export function gitStatusShort(workdir) {
 export function conflictPaths(workdir) {
   const output = git(workdir, ["diff", "--name-only", "--diff-filter=U"], { allowFailure: true }) || "";
   return output.split("\n").map((line) => line.trim()).filter(Boolean).sort();
+}
+
+export function inspectRunWorktree({ metadata } = {}) {
+  if (!metadata?.worktree_root || !metadata?.source_git_root || !metadata?.branch) {
+    return { ok: false, status: "missing_worktree_metadata", metadata };
+  }
+  if (!existsSync(metadata.worktree_root)) {
+    return { ok: false, status: "missing_worktree", metadata };
+  }
+
+  const sourceStatus = gitStatusShort(metadata.source_git_root);
+  const worktreeStatus = gitStatusShort(metadata.worktree_root);
+  const sourceDirtyPaths = parseDirtyPaths(sourceStatus);
+  const worktreeDirtyPaths = parseDirtyPaths(worktreeStatus);
+  const existingConflicts = conflictPaths(metadata.worktree_root);
+  const sourceHead = git(metadata.source_git_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null;
+  const branchHead = git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null;
+  const baseHead = metadata.base_head || metadata.source_head || null;
+  const lastSyncedSourceHead = metadata.source_head || metadata.base_head || null;
+  const sourceChangedPaths = listChangedPaths(metadata.source_git_root, lastSyncedSourceHead, sourceHead);
+  const worktreeChangedPaths = listChangedPaths(metadata.worktree_root, baseHead, branchHead);
+  const sourceDrift = !!(lastSyncedSourceHead && sourceHead && sourceHead !== lastSyncedSourceHead);
+  const status = existingConflicts.length
+    ? "merge_conflict"
+    : sourceDirtyPaths.length
+      ? "blocked_dirty_source"
+      : worktreeDirtyPaths.length
+        ? "blocked_uncommitted_worktree"
+        : sourceDrift
+          ? "source_drift"
+          : "ready";
+
+  return {
+    ok: true,
+    status,
+    source_head: sourceHead,
+    branch_head: branchHead,
+    base_head: baseHead,
+    source_drift: sourceDrift,
+    source_changed_paths: sourceChangedPaths,
+    worktree_changed_paths: worktreeChangedPaths,
+    overlap_paths: intersectPaths(sourceChangedPaths, worktreeChangedPaths),
+    dirty_paths: sourceDirtyPaths,
+    source_dirty_paths: sourceDirtyPaths,
+    worktree_dirty_paths: worktreeDirtyPaths,
+    conflict_paths: existingConflicts,
+    metadata,
+  };
 }
 
 export function inspectWorktreeSupport(workdir) {
@@ -153,101 +216,177 @@ export function prepareRunWorktree({
   };
 }
 
+export function syncRunWorktreeFromSource({
+  metadata,
+  now = Date.now(),
+} = {}) {
+  const inspection = inspectRunWorktree({ metadata });
+  if (!inspection.ok) return inspection;
+  if (inspection.status === "blocked_dirty_source") {
+    return { ...inspection, ok: false, dirty_paths: inspection.source_dirty_paths };
+  }
+  if (inspection.status === "merge_conflict") {
+    return { ...inspection, ok: false };
+  }
+  if (inspection.status === "blocked_uncommitted_worktree") {
+    return { ...inspection, ok: false, dirty_paths: inspection.worktree_dirty_paths };
+  }
+
+  const previousBranchHead = inspection.branch_head;
+  if (!inspection.source_drift) {
+    return {
+      ...inspection,
+      ok: true,
+      status: "already_synced",
+      previous_branch_head: previousBranchHead,
+      synced_at: now,
+      metadata: {
+        ...metadata,
+        status: "already_synced",
+        branch_head: previousBranchHead,
+        last_sync_status: "already_synced",
+        last_sync_at: now,
+        last_synced_source_head: inspection.source_head,
+        source_changed_paths: inspection.source_changed_paths,
+        overlap_paths: inspection.overlap_paths,
+      },
+    };
+  }
+
+  const mergeOutput = git(metadata.worktree_root, ["merge", "--no-edit", inspection.source_head], { allowFailure: true });
+  const conflicts = conflictPaths(metadata.worktree_root);
+  if (conflicts.length) {
+    return {
+      ...inspection,
+      ok: false,
+      status: "merge_conflict",
+      conflict_paths: conflicts,
+      previous_branch_head: previousBranchHead,
+      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || previousBranchHead,
+      merge_output: mergeOutput || "",
+      metadata: {
+        ...metadata,
+        status: "merge_conflict",
+        last_sync_status: "merge_conflict",
+        last_sync_at: now,
+        last_synced_source_head: inspection.source_head,
+        source_changed_paths: inspection.source_changed_paths,
+        overlap_paths: inspection.overlap_paths,
+        conflict_paths: conflicts,
+      },
+    };
+  }
+
+  const afterMergeStatus = gitStatusShort(metadata.worktree_root);
+  if (afterMergeStatus) {
+    const dirtyPaths = parseDirtyPaths(afterMergeStatus);
+    return {
+      ...inspection,
+      ok: false,
+      status: "blocked_uncommitted_worktree",
+      dirty_paths: dirtyPaths,
+      worktree_dirty_paths: dirtyPaths,
+      previous_branch_head: previousBranchHead,
+      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || previousBranchHead,
+      merge_output: mergeOutput || "",
+      metadata: {
+        ...metadata,
+        status: "blocked_uncommitted_worktree",
+        last_sync_status: "blocked_uncommitted_worktree",
+        last_sync_at: now,
+        last_synced_source_head: inspection.source_head,
+        source_changed_paths: inspection.source_changed_paths,
+        overlap_paths: inspection.overlap_paths,
+        dirty_paths: dirtyPaths,
+      },
+    };
+  }
+
+  const branchHead = git(metadata.worktree_root, ["rev-parse", "HEAD"]);
+  return {
+    ...inspection,
+    ok: true,
+    status: "synced",
+    source_head: inspection.source_head,
+    previous_branch_head: previousBranchHead,
+    branch_head: branchHead,
+    conflict_paths: [],
+    synced_at: now,
+    merge_output: mergeOutput || "",
+    metadata: {
+      ...metadata,
+      status: "synced",
+      source_head: inspection.source_head,
+      branch_head: branchHead,
+      last_sync_status: "synced",
+      last_sync_at: now,
+      last_synced_source_head: inspection.source_head,
+      source_changed_paths: inspection.source_changed_paths,
+      overlap_paths: inspection.overlap_paths,
+      conflict_paths: [],
+      synced_at: now,
+    },
+  };
+}
+
 export function reconcileRunWorktree({
   metadata,
   cleanup = true,
   now = Date.now(),
 } = {}) {
-  if (!metadata?.worktree_root || !metadata?.source_git_root || !metadata?.branch) {
-    return { ok: false, status: "missing_worktree_metadata" };
-  }
-  if (!existsSync(metadata.worktree_root)) {
-    return { ok: false, status: "missing_worktree", metadata };
-  }
-
-  const sourceStatus = gitStatusShort(metadata.source_git_root);
-  if (sourceStatus) {
+  const inspection = inspectRunWorktree({ metadata });
+  if (!inspection.ok) return inspection;
+  if (inspection.status === "blocked_dirty_source") {
     return {
-      ok: false,
+      ...inspection,
       status: "blocked_dirty_source",
-      dirty_paths: parseDirtyPaths(sourceStatus),
-      source_head: git(metadata.source_git_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      metadata,
+      ok: false,
+      dirty_paths: inspection.source_dirty_paths,
     };
   }
-
-  const existingConflicts = conflictPaths(metadata.worktree_root);
-  if (existingConflicts.length) {
+  if (inspection.status === "merge_conflict") {
     return {
-      ok: false,
+      ...inspection,
       status: "merge_conflict",
-      conflict_paths: existingConflicts,
-      source_head: git(metadata.source_git_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      metadata,
-    };
-  }
-
-  const worktreeStatus = gitStatusShort(metadata.worktree_root);
-  if (worktreeStatus) {
-    return {
       ok: false,
+    };
+  }
+  if (inspection.status === "blocked_uncommitted_worktree") {
+    return {
+      ...inspection,
       status: "blocked_uncommitted_worktree",
-      dirty_paths: parseDirtyPaths(worktreeStatus),
-      source_head: git(metadata.source_git_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-      metadata,
+      ok: false,
+      dirty_paths: inspection.worktree_dirty_paths,
     };
   }
 
-  const sourceHead = git(metadata.source_git_root, ["rev-parse", "HEAD"]);
-  if (metadata.source_head && sourceHead !== metadata.source_head) {
-    const mergeOutput = git(metadata.worktree_root, ["merge", "--no-edit", sourceHead], { allowFailure: true });
-    const conflicts = conflictPaths(metadata.worktree_root);
-    if (conflicts.length) {
-      return {
-        ok: false,
-        status: "merge_conflict",
-        conflict_paths: conflicts,
-        source_head: sourceHead,
-        branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-        merge_output: mergeOutput || "",
-        metadata,
-      };
-    }
-    const afterMergeStatus = gitStatusShort(metadata.worktree_root);
-    if (afterMergeStatus) {
-      return {
-        ok: false,
-        status: "blocked_uncommitted_worktree",
-        dirty_paths: parseDirtyPaths(afterMergeStatus),
-        source_head: sourceHead,
-        branch_head: git(metadata.worktree_root, ["rev-parse", "HEAD"], { allowFailure: true }) || null,
-        merge_output: mergeOutput || "",
-        metadata,
-      };
-    }
+  let reconcileMetadata = metadata;
+  let sourceHead = inspection.source_head;
+  if (inspection.source_drift) {
+    const sync = syncRunWorktreeFromSource({ metadata, now });
+    if (!sync.ok) return sync;
+    reconcileMetadata = sync.metadata || metadata;
+    sourceHead = sync.source_head;
   }
 
-  const sourceHeadBeforeFf = git(metadata.source_git_root, ["rev-parse", "HEAD"]);
+  const sourceHeadBeforeFf = git(reconcileMetadata.source_git_root, ["rev-parse", "HEAD"]);
   if (sourceHeadBeforeFf !== sourceHead) {
     return {
       ok: false,
       status: "source_moved",
       source_head: sourceHeadBeforeFf,
       expected_source_head: sourceHead,
-      metadata,
+      metadata: reconcileMetadata,
     };
   }
 
-  const branchHead = git(metadata.worktree_root, ["rev-parse", "HEAD"]);
-  git(metadata.source_git_root, ["merge", "--ff-only", branchHead]);
+  const branchHead = git(reconcileMetadata.worktree_root, ["rev-parse", "HEAD"]);
+  git(reconcileMetadata.source_git_root, ["merge", "--ff-only", branchHead]);
 
   let cleaned = false;
   if (cleanup) {
-    const removed = git(metadata.source_git_root, ["worktree", "remove", "--force", metadata.worktree_root], { allowFailure: true });
-    cleaned = removed !== null || !existsSync(metadata.worktree_root);
+    const removed = git(reconcileMetadata.source_git_root, ["worktree", "remove", "--force", reconcileMetadata.worktree_root], { allowFailure: true });
+    cleaned = removed !== null || !existsSync(reconcileMetadata.worktree_root);
   }
 
   return {
@@ -259,7 +398,7 @@ export function reconcileRunWorktree({
     merged_at: now,
     cleaned,
     metadata: {
-      ...metadata,
+      ...reconcileMetadata,
       status: branchHead === sourceHead ? "already_up_to_date" : "merged",
       source_head: sourceHead,
       branch_head: branchHead,
