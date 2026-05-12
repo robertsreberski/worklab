@@ -31,6 +31,7 @@ import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { EMPTY_KB_FORM_ENTRY, kbFormEntryFromQuery, normalizeKbFormEntry } from "./kb-entry-form.js";
 import { proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskRouteId } from "../lib/display.js";
+import { agentLabel } from "../lib/agentLinks.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
 const KB_EDIT_SECTIONS = [
@@ -372,7 +373,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
                       <ul class="usage-list">
                         {usage.agents.map((a) => (
                           <li key={a.name}>
-                            <EntityBadge kind="agent" label={a.display_name || a.name} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
+                            <EntityBadge kind="agent" label={agentLabel(a, a.name)} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
                           </li>
                         ))}
                       </ul>

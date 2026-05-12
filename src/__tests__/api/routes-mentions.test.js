@@ -164,6 +164,34 @@ describe("GET /api/mentions/search", () => {
     expect(task.token).toBe("@task/T-42");
     expect(task.href).toBe("#/tasks/task-uuid-1");
   });
+
+  it("does not expose ids or slugs as labels for unnamed search results", async () => {
+    const { agent, db, dataDir } = mkServer();
+    seedTask(db, { id: "task-uuid-1", task_key: "T-42", title: "Orphan root task" });
+    seedProject(db, { id: "proj-orphan", slug: "orphan-project", name: "" });
+    seedTeam(db, { id: "team-orphan", slug: "orphan-team", name: "" });
+    seedGoal(db, {
+      id: "orphan-goal",
+      teamId: "team-orphan",
+      projectId: "proj-orphan",
+      rootTaskId: "task-uuid-1",
+    });
+    kbCreate({
+      dataDir,
+      slug: "orphan-doc",
+      title: "",
+      body: "doc",
+      author: "human",
+    });
+
+    const res = await agent.get("/api/mentions/search?q=orphan&types=project,team,kb,goal").expect(200);
+    const byType = new Map(res.body.results.map((result) => [result.type, result]));
+
+    expect(byType.get("project")).toMatchObject({ label: "Unknown Project" });
+    expect(byType.get("team")).toMatchObject({ label: "Unknown Team" });
+    expect(byType.get("kb")).toMatchObject({ label: "Unknown Knowledge" });
+    expect(byType.get("goal")).toMatchObject({ label: "Unknown Project", sublabel: "goal" });
+  });
 });
 
 describe("mentions sidecar on read endpoints", () => {
@@ -173,6 +201,21 @@ describe("mentions sidecar on read endpoints", () => {
     seedTask(db, { id: "task-uuid-1", task_key: "T-7", title: "Triage" });
     db.prepare("UPDATE tasks SET instructions = ? WHERE id = ?")
       .run("Hand off to @agent/triager when ready.", "task-uuid-1");
+
+    const res = await agent.get("/api/tasks/task-uuid-1").expect(200);
+    expect(res.body.mentions["@agent/triager"]).toMatchObject({
+      type: "agent",
+      label: "Triager Bot",
+      exists: true,
+    });
+  });
+
+  it("attaches mentions[] to GET /api/tasks/:id from the task plan body", async () => {
+    const { agent, db } = mkServer();
+    seedAgent(db, "triager", "Triager Bot");
+    seedTask(db, { id: "task-uuid-1", task_key: "T-7", title: "Triage" });
+    db.prepare("UPDATE tasks SET plan_body = ? WHERE id = ?")
+      .run("Plan review with @agent/triager.", "task-uuid-1");
 
     const res = await agent.get("/api/tasks/task-uuid-1").expect(200);
     expect(res.body.mentions["@agent/triager"]).toMatchObject({

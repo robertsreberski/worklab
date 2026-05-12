@@ -25,6 +25,7 @@ import { FileTree } from "../components/FileTree.jsx";
 import { Icon } from "../components/Icon.jsx";
 import { DetailHead, SectionMarker } from "../components/layout/index.js";
 import { humanizeSlug, skillDisplayName } from "../lib/display.js";
+import { agentLabel } from "../lib/agentLinks.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
@@ -179,7 +180,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
             <ul class="usage-list">
               {usage.explicit.map((a) => (
                 <li key={a.name}>
-                  <EntityBadge kind="agent" label={a.display_name || a.name} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
+                  <EntityBadge kind="agent" label={agentLabel(a, a.name)} id={a.name} href={`#/library/agents/${encodeURIComponent(a.name)}`} />
                 </li>
               ))}
             </ul>

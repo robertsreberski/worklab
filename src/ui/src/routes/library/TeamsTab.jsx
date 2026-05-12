@@ -33,6 +33,7 @@ import { AgentPicker } from "../../components/AgentPicker.jsx";
 import { DetailHead, InlineHead, PanelGrid, SectionGroup, Toolbar } from "../../components/layout/index.js";
 import { navigateHash } from "../../lib/navigation.js";
 import { pushToast } from "../../lib/toast.js";
+import { agentLabel } from "../../lib/agentLinks.js";
 import { buildTeamResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
 import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 
@@ -960,7 +961,7 @@ export function TeamsTab({ selectedId = null, mode = null }) {
   const agentLabels = useMemo(() => {
     const labels = new Map();
     for (const agent of agents) {
-      if (agent?.name) labels.set(agent.name, agent.display_name || agent.name);
+      if (agent?.name) labels.set(agent.name, agentLabel(agent, agent.name));
     }
     return labels;
   }, [agents]);

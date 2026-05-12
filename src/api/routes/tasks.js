@@ -549,7 +549,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       res.json(withMentions(
         { db, dataDir },
         body,
-        [task.title, task.instructions, comments.map((c) => c.body)],
+        [task.title, task.instructions, task.plan_body, comments.map((c) => c.body)],
       ));
     } catch (error) {
       return sendRouteError(res, error);

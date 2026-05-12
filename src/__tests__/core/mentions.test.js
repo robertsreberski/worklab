@@ -248,6 +248,39 @@ describe("resolveMentions", () => {
     expect(resolved.get("@agent/triage-lead").label).toBe("Triage Lead");
   });
 
+  it("uses unknown labels instead of ids for resolved resources without display names", () => {
+    const db = makeTestDb();
+    const dataDir = makeKbDir();
+    seedTask(db, { id: "task-uuid-1", task_key: "T-42", title: "Fix login bug" });
+    seedProject(db, { id: "proj-uuid-1", slug: "orphan-project", name: "" });
+    seedTeam(db, { id: "team-uuid-1", slug: "orphan-team", name: "" });
+    seedGoal(db, {
+      id: "goal-uuid-1",
+      teamId: "team-uuid-1",
+      projectId: "proj-uuid-1",
+      rootTaskId: "task-uuid-1",
+    });
+    kbCreate({
+      dataDir,
+      slug: "orphan-doc",
+      title: "",
+      body: "doc",
+      author: "human",
+      now: new Date("2026-04-22T10:00:00Z"),
+    });
+
+    const resolved = resolveMentions(
+      db,
+      "@project/orphan-project @team/orphan-team @kb/orphan-doc @goal/goal-uuid-1",
+      { dataDir },
+    );
+
+    expect(resolved.get("@project/orphan-project").label).toBe("Unknown Project");
+    expect(resolved.get("@team/orphan-team").label).toBe("Unknown Team");
+    expect(resolved.get("@kb/orphan-doc").label).toBe("Unknown Knowledge");
+    expect(resolved.get("@goal/goal-uuid-1").label).toBe("Unknown Project");
+  });
+
   it("marks unknown tokens as deleted", () => {
     const db = makeTestDb();
     const resolved = resolveMentions(db, "@agent/missing", { dataDir: makeKbDir() });

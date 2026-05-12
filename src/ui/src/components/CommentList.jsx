@@ -2,11 +2,12 @@
 import { CommentAuthor } from "./CommentAuthor.jsx";
 import { StructuredContent } from "./StructuredContent.jsx";
 import { SectionStack } from "./layout/index.js";
-import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
+import { linkAgentReferencesInMarkdown, mergeAgentReferenceMentions } from "../lib/agentLinks.js";
 import { normalizeCommentText, parseVerdictComment, shouldHideComment } from "../lib/commentFormatting.js";
 
 export function CommentList({ comments, agents = [], mentions = null }) {
   const visibleComments = (comments || []).filter((c) => !shouldHideComment(c));
+  const resolvedMentions = mergeAgentReferenceMentions(mentions, agents);
   if (!visibleComments.length) return <div class="meta">No comments yet.</div>;
   return (
     <SectionStack class="comment-list">
@@ -24,7 +25,7 @@ export function CommentList({ comments, agents = [], mentions = null }) {
                 {new Date(c.created_at).toLocaleString()}
               </span>
             </div>
-            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" mentions={mentions} />}
+            {displayBody && <StructuredContent content={linkAgentReferencesInMarkdown(displayBody, agents)} className="comment-body doc-content" mentions={resolvedMentions} />}
           </div>
         );
       })}
