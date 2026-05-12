@@ -72,8 +72,14 @@ describe("doctor performance", () => {
     dirs.push(dataDir);
     seedLargeLog(dataDir);
     const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("", { status: 503 });
 
-    await doctor(["performance", "--data-dir", dataDir, "--json"]);
+    try {
+      await doctor(["performance", "--data-dir", dataDir, "--json"]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     const printed = JSON.parse(log.mock.calls[0][0]);
     expect(printed.database.path).toBe(join(dataDir, "worklab.db"));
