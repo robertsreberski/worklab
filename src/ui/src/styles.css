@@ -5885,7 +5885,7 @@ html.assistant-resizing * {
 }
 .team-cycle-refinement.is-skipped > span:first-child,
 .goal-cycle-refinement.is-skipped > span:first-child {
-  color: var(--status-warning);
+  color: var(--status-progress);
 }
 .team-cycle-tombstones {
   display: grid;
