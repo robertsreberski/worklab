@@ -46,7 +46,7 @@ export function TaskContextList({ task }) {
     task.project ? {
       label: "Project",
       value: (
-        <EntityBadge kind="project" label={task.project.name || task.project.slug} href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link" />
+        <EntityBadge kind="project" label={task.project.name || "Unknown Project"} href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link" />
       ),
       mono: false,
     } : null,
@@ -286,6 +286,7 @@ export function TaskPlanCard({
   onEdit,
   onCancel,
   onSave,
+  mentions = null,
 }) {
   const planBody = task?.plan_body || "";
   const displayPlanBody = collapseDuplicateParagraphs(planBody);
@@ -327,7 +328,7 @@ export function TaskPlanCard({
         />
       ) : hasPlan ? (
         <div class="task-plan-body">
-          <MarkdownContent content={displayPlanBody} maxHeight={360} />
+          <MarkdownContent content={displayPlanBody} maxHeight={360} mentions={mentions} />
         </div>
       ) : (
         <div class="task-plan-empty">No plan yet. Run plan or write one.</div>

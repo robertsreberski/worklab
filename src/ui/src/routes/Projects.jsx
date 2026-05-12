@@ -87,7 +87,7 @@ function worktreeModeLabel(value) {
 }
 
 function projectTeamLabel(project) {
-  return project?.team?.name || project?.team_name || project?.team_slug || project?.team_id || "";
+  return project?.team?.name || project?.team_name || "";
 }
 
 function projectGoalStatusLabel(goal = {}) {
@@ -129,7 +129,7 @@ function ProjectGoalSummary({ goal }) {
       <InlineHead class="project-goal-summary-head">
         <div>
           <span class="soft-meta">Project goal</span>
-          <strong>{goal.team_name || goal.team_slug || "Assigned team"}</strong>
+          <strong>{goal.team_name || "Assigned team"}</strong>
         </div>
         <Chip variant={projectGoalChipVariant(goal)}>{projectGoalStatusLabel(goal)}</Chip>
       </InlineHead>
@@ -388,6 +388,11 @@ function ProjectEditor({ selectedId, onSaved }) {
   const slugTrimmed = draft.slug.trim();
   const slugValid = slugLooksValid(slugTrimmed);
   const canSave = !!draft.name.trim() && slugValid;
+  const draftTeam = useMemo(
+    () => teams.find((team) => team.id === draft.team_id || team.slug === draft.team_id) || null,
+    [draft.team_id, teams],
+  );
+  const draftTeamLabel = draft.team_id ? draftTeam?.name || "Unknown Team" : "(none)";
 
   function update(patch) {
     setDraft((current) => ({ ...current, ...patch }));
@@ -457,7 +462,7 @@ function ProjectEditor({ selectedId, onSaved }) {
             { label: "Workdir", value: draft.workdir || "Default workspace", mono: false },
             { label: "Worktrees", value: worktreeModeLabel(draft.worktree_mode), mono: false },
             { label: "Tags", value: `${(draft.tags || []).length}`, mono: false },
-            { label: "Team", value: draft.team_id ? draft.team_id : "(none)", mono: false },
+            { label: "Team", value: draftTeamLabel, mono: false },
             { label: "Archived", value: draft.archived ? "Yes" : "No", mono: false },
           ]} />
         </Card>
@@ -617,7 +622,7 @@ function ProjectDetail({ selectedId, onChanged }) {
               : null,
             { label: "Tasks", value: String(project.stats?.task_count || 0), mono: false },
             { label: "Tags", value: project.tags?.length ? project.tags.join(", ") : "None", mono: false },
-            { label: "Team", value: project.team_id || "(none)", mono: false },
+            { label: "Team", value: project.team?.name || (project.team_id ? "Unknown Team" : "(none)"), mono: false },
             { label: "Updated", value: formatProjectAge(project.updated_at), mono: false },
             { label: "Archived", value: project.archived ? "Yes" : "No", mono: false },
           ]} />
@@ -909,7 +914,7 @@ export function Projects({ selectedId = null, mode = null }) {
   const teamOptions = useMemo(() => {
     const teams = new Map();
     for (const project of projects) {
-      if (project.team_id) teams.set(project.team_id, projectTeamLabel(project) || project.team_id);
+      if (project.team_id) teams.set(project.team_id, projectTeamLabel(project) || "Unknown Team");
     }
     return [
       { value: "all", label: "All teams" },

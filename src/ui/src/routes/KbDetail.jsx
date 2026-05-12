@@ -16,6 +16,7 @@ import { MarkdownContent } from "../components/Markdown.jsx";
 import { DetailHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { normalizeKbEntry } from "./kb-entry-form.js";
 import { taskRouteId } from "../lib/display.js";
+import { agentLabel } from "../lib/agentLinks.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
 const KB_READ_SECTIONS = [
@@ -68,7 +69,7 @@ function UsageList({ usage }) {
           <ul class="usage-list knowledge-read-usage-list">
             {agents.map((agent) => (
               <li key={agent.name}>
-                <EntityBadge kind="agent" label={agent.display_name || agent.name} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
+                <EntityBadge kind="agent" label={agentLabel(agent, agent.name)} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
               </li>
             ))}
           </ul>
@@ -157,7 +158,7 @@ export function KbDetail({ slug }) {
   const title = entry?.notFound ? "Entry not found" : (entry?.title || slug);
   const categoryAttr = categoryToken(entry?.category);
   const tagCount = entry?.tags?.length || 0;
-  const projectLabel = entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
+  const projectLabel = entry?.project?.name || (entry?.project_id ? "Unknown Project" : "Global");
   const sourceTaskLabel = entry?.source_task_key || entry?.source_task_id || "";
   const usageCount = (usage?.tasks?.length || 0) + (usage?.agents?.length || 0);
   const relationCount = (

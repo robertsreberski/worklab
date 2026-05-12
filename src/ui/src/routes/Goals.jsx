@@ -131,7 +131,7 @@ export function buildGoalResourceGroups(goals = [], { query = "", state = "all" 
       items: (buckets.get(group.key)?.items || []).sort((left, right) => {
         const project = text(left.project?.name || left.project?.slug).localeCompare(text(right.project?.name || right.project?.slug));
         if (project !== 0) return project;
-        return text(left.team_name || left.team_slug).localeCompare(text(right.team_name || right.team_slug));
+        return text(left.team_name).localeCompare(text(right.team_name));
       }),
     }))
     .filter((group) => group.items.length > 0);
@@ -359,7 +359,7 @@ export function goalAssignmentState({ draft = {}, projects = [], teams = [], isN
   const selectedProject = projects.find((project) => project.id === draft.project_id || project.slug === draft.project_id) || null;
   const lockedTeamId = selectedProject?.team_id || "";
   const lockedTeam = lockedTeamId
-    ? teams.find((team) => team.id === lockedTeamId || team.slug === lockedTeamId) || { id: lockedTeamId, name: lockedTeamId }
+    ? teams.find((team) => team.id === lockedTeamId || team.slug === lockedTeamId) || { id: lockedTeamId, name: "Unknown Team" }
     : null;
   const effectiveTeamId = lockedTeamId || draft.team_id || "";
   const visibleTeams = lockedTeam ? [lockedTeam] : teams;
@@ -371,7 +371,7 @@ export function goalAssignmentState({ draft = {}, projects = [], teams = [], isN
     teamRequired: Boolean(isNew && !lockedTeamId),
     teamOptions: visibleTeams.map((team) => ({
       value: team.id,
-      label: team.name || team.slug || team.id,
+      label: team.name || "Unknown Team",
       description: team.goal || team.description || team.slug || (team.id === lockedTeamId ? "Project team" : ""),
     })),
   };
@@ -392,11 +392,11 @@ export function goalDraftFrom(goal = {}) {
 }
 
 function goalProjectLabel(goal = {}) {
-  return goal.project?.name || goal.project?.slug || goal.project_id || "Untitled project";
+  return goal.project?.name || "Untitled project";
 }
 
 function goalTeamLabel(goal = {}) {
-  return goal.team_name || goal.team_slug || goal.team_id || "Unassigned team";
+  return goal.team_name || "Unassigned team";
 }
 
 export function goalReferenceLinks(goal = {}) {

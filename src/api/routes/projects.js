@@ -9,10 +9,11 @@ import {
   loadRepositoryInstructions,
   repositoryInstructionsPromptMetadata,
   getTeamProjectGoal,
+  compactTeam,
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/index.js";
-import { resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
+import { listTeamsByIds, resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
 import {
   archiveProject,
   getProjectById,
@@ -110,6 +111,20 @@ function projectTaskSummary(row, { projectTeamId = null, goalRootTaskId = null }
     } : null,
     updated_at: row.updated_at,
   };
+}
+
+function attachTeams(db, projects) {
+  const rows = Array.isArray(projects) ? projects : [projects].filter(Boolean);
+  const teamIds = [...new Set(rows.map((project) => project?.team_id).filter(Boolean))];
+  const teams = new Map(listTeamsByIds(db, teamIds).map((row) => [row.id, compactTeam(row)]));
+  const attach = (project) => {
+    if (!project) return project;
+    return {
+      ...project,
+      team: project.team_id ? teams.get(project.team_id) || null : null,
+    };
+  };
+  return Array.isArray(projects) ? projects.map(attach) : attach(projects);
 }
 
 function projectStats(db, projectId) {
@@ -211,7 +226,7 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
     }
     const limit = Math.max(1, Math.min(Number(req.query.limit) || 200, 500));
     const rows = listProjectsWithTaskCounts(db, { filters: where, params, limit });
-    res.json({ projects: rows.map(projectFromRow), limit });
+    res.json({ projects: attachTeams(db, rows.map(projectFromRow)), limit });
   });
 
   app.post("/api/projects", (req, res) => {
@@ -252,7 +267,7 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
       }
       const row = getProjectById(db, id);
       broker?.broadcast?.("global", { type: "project_created", id, slug: row.slug });
-      res.status(201).json({ project: projectFromRow(row) });
+      res.status(201).json({ project: attachTeams(db, projectFromRow(row)) });
     } catch (error) {
       if (error?.status) return sendRouteError(res, error);
       throw error;
@@ -270,13 +285,13 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
         projectTeamId: project.team_id || null,
         goalRootTaskId: teamGoal?.root_task_id || null,
       }));
-      const detailedProject = {
+      const detailedProject = attachTeams(db, {
         ...project,
         stats: projectStats(db, row.id),
         tasks,
         team_goal: teamGoal,
         repository_instructions: repositoryInstructionsPromptMetadata(loadRepositoryInstructions(project.workdir)),
-      };
+      });
       res.json(withMentions(
         { db, dataDir },
         { project: detailedProject },
@@ -320,7 +335,7 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
       } else {
         broker?.broadcast?.("global", { type: "project_updated", id: row.id, slug: row.slug });
       }
-      res.json({ project: projectFromRow(row) });
+      res.json({ project: attachTeams(db, projectFromRow(row)) });
     } catch (error) {
       if (error?.status) return sendRouteError(res, error);
       throw error;

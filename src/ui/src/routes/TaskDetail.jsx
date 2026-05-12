@@ -37,7 +37,7 @@ import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, Sectio
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
-import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
+import { linkAgentReferencesInMarkdown, mergeAgentReferenceMentions } from "../lib/agentLinks.js";
 import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAttachmentDraft } from "../lib/attachments.js";
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
@@ -281,9 +281,10 @@ export function TaskDetail({ id, runParam = null }) {
   const runs = data?.runs || [];
   const comments = data?.comments || [];
   const mentions = data?.mentions || null;
+  const resolvedMentions = useMemo(() => mergeAgentReferenceMentions(mentions, agents), [mentions, agents]);
   const stage = task?.stage || "plan";
   const taskTeamRouteId = task?.team?.slug || task?.team_id || "";
-  const taskTeamDisplay = task?.team?.name || task?.team?.slug || task?.team_id || "";
+  const taskTeamDisplay = task?.team?.name || (taskTeamRouteId ? "Unknown Team" : "");
 
   const loadFullRunHistory = useCallback(async () => {
     if (!operationTaskId || runHistoryLoading) return;
@@ -1115,6 +1116,7 @@ export function TaskDetail({ id, runParam = null }) {
                 draft={planDraft}
                 editing={planEditing}
                 saving={planSaving}
+                mentions={resolvedMentions}
                 onDraft={setPlanDraft}
                 onEdit={() => setPlanEditing(true)}
                 onCancel={cancelPlanEdit}
@@ -1279,7 +1281,7 @@ export function TaskDetail({ id, runParam = null }) {
                           )}
                         </InlineHead>
                         {item.body && (
-                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={mentions} /></div>
+                          <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={resolvedMentions} /></div>
                         )}
                         {item.attachments?.length > 0 && (
                           <AttachmentChips attachments={item.attachments} disabled class="activity-item-attachments" />

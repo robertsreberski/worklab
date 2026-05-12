@@ -32,6 +32,7 @@ import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 import { useSSE } from "../../lib/useSSE.js";
 import { useThrottledCallback } from "../../lib/useThrottledCallback.js";
 import { useAppResume } from "../../lib/pageVisibility.js";
+import { agentLabel } from "../../lib/agentLinks.js";
 import { buildProviderResourceGroups, flattenResourceGroups } from "../../lib/resourceLists.js";
 
 const PROVIDER_TYPE_OPTIONS = [
@@ -519,7 +520,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
               <ul class="usage-list provider-agent-list">
                 {linkedAgents.map((agent) => (
                   <li key={agent.name}>
-                    <EntityBadge kind="agent" label={agent.display_name || agent.name} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
+                    <EntityBadge kind="agent" label={agentLabel(agent, agent.name)} id={agent.name} href={`#/library/agents/${encodeURIComponent(agent.name)}`} />
                     <StatusPill status={agent.enabled ? "enabled" : "disabled"} size="sm" />
                   </li>
                 ))}

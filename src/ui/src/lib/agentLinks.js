@@ -25,6 +25,36 @@ export function agentByName(agents = [], name) {
   return (agents || []).find((agent) => agent?.name === name) || null;
 }
 
+export function agentReferenceMentions(agents = []) {
+  const mentions = {};
+  for (const agent of agents || []) {
+    if (!agent?.name) continue;
+    const href = agentHref(agent.name);
+    const label = agentLabel(agent, agent.name);
+    const mention = {
+      token: `@agent/${agent.name}`,
+      type: "agent",
+      id: agent.name,
+      label,
+      sublabel: "agent",
+      href,
+      exists: true,
+    };
+    mentions[mention.token] = mention;
+    mentions[href] = mention;
+  }
+  return mentions;
+}
+
+export function mergeAgentReferenceMentions(mentions = null, agents = []) {
+  const generated = agentReferenceMentions(agents);
+  if (!mentions && Object.keys(generated).length === 0) return null;
+  return {
+    ...generated,
+    ...(mentions || {}),
+  };
+}
+
 function referenceEntries(agents = []) {
   const out = [];
   for (const agent of agents || []) {

@@ -251,6 +251,33 @@ describe("project API", () => {
     expect(detail.body.project.stats).toMatchObject({ task_count: 0, by_stage: {} });
   });
 
+  it("returns resolved team objects for assigned project rows and details", async () => {
+    const { agent } = makeTestServer();
+    const { body: { team } } = await agent.post("/api/teams").send({
+      name: "Resolution Team",
+      slug: "resolution-team",
+    }).expect(201);
+    const { body: { project } } = await agent.post("/api/projects").send({
+      name: "Resolved Project",
+      team_id: team.id,
+    }).expect(201);
+
+    const list = await agent.get("/api/projects").expect(200);
+    const row = list.body.projects.find((item) => item.id === project.id);
+    expect(row.team).toMatchObject({
+      id: team.id,
+      slug: "resolution-team",
+      name: "Resolution Team",
+    });
+
+    const detail = await agent.get(`/api/projects/${project.id}`).expect(200);
+    expect(detail.body.project.team).toMatchObject({
+      id: team.id,
+      slug: "resolution-team",
+      name: "Resolution Team",
+    });
+  });
+
   it("marks project tasks that are related to the project goal", async () => {
     const { agent, db } = makeTestServer();
     const { body: { team } } = await agent.post("/api/teams").send({ name: "Goal Task Team" }).expect(201);

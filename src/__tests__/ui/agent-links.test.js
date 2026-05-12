@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { renderMarkdown } from "../../ui/src/components/Markdown.jsx";
+import * as agentLinks from "../../ui/src/lib/agentLinks.js";
 import { agentHref, splitAgentReferences } from "../../ui/src/lib/agentLinks.js";
 
 const agentLinkSource = readFileSync(
@@ -59,5 +61,15 @@ describe("agent link helpers", () => {
   it("renders text references through the shared entity badge", () => {
     expect(agentLinkSource).toContain("EntityBadge");
     expect(agentLinkSource).toContain('kind="agent"');
+  });
+
+  it("builds mention metadata for generated markdown agent links", () => {
+    const markdown = agentLinks.linkAgentReferencesInMarkdown("Ask code-reviewer to check this.", agents);
+    const mentions = agentLinks.agentReferenceMentions?.(agents) || {};
+    const html = renderMarkdown(markdown, { mentions });
+
+    expect(html).toContain('entity-badge--agent" data-kind="agent" href="#/library/agents/code-reviewer"');
+    expect(html).toContain('<span class="badge-token-label">Code Reviewer</span>');
+    expect(html).not.toContain('<span class="badge-token-label">Unknown Agent</span>');
   });
 });

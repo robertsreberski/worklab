@@ -109,7 +109,7 @@ function shapeProject(row) {
     token: serializeMention({ type: "project", id }),
     type: "project",
     id,
-    label: row.name || id,
+    label: row.name || "Unknown Project",
     sublabel: "project",
     href: `#/projects/${encodeURIComponent(row.id)}`,
   };
@@ -121,7 +121,7 @@ function shapeTeam(row) {
     token: serializeMention({ type: "team", id }),
     type: "team",
     id,
-    label: row.name || id,
+    label: row.name || "Unknown Team",
     sublabel: "team",
     href: `#/library/teams/${encodeURIComponent(row.id)}`,
   };
@@ -132,7 +132,7 @@ function shapeKb(meta) {
     token: serializeMention({ type: "kb", id: meta.slug }),
     type: "kb",
     id: meta.slug,
-    label: meta.title || meta.slug,
+    label: meta.title || "Unknown Knowledge",
     sublabel: meta.category ? `knowledge · ${meta.category}` : "knowledge",
     href: `#/library/knowledge/${encodeURIComponent(meta.slug)}`,
   };
@@ -153,8 +153,8 @@ function shapeSkill(skill) {
 
 function shapeGoal(row) {
   const id = row.id;
-  const project = row.project_name || row.project_slug || row.project_id || id;
-  const team = row.team_name || row.team_slug || row.team_id;
+  const project = row.project_name || "Unknown Project";
+  const team = row.team_name;
   return {
     token: serializeMention({ type: "goal", id }),
     type: "goal",

@@ -114,7 +114,7 @@ export function buildTeamResourceGroups(teams = [], {
 }
 
 function projectTeamLabel(project) {
-  return project?.team?.name || project?.team_name || project?.team_slug || project?.team_id || "";
+  return project?.team?.name || project?.team_name || "";
 }
 
 export function buildProjectResourceGroups(projects = [], {
@@ -139,6 +139,8 @@ export function buildProjectResourceGroups(projects = [], {
         project?.description,
         project?.context,
         project?.workdir,
+        project?.team_id,
+        project?.team?.slug,
         projectTeamLabel(project),
         ...(project?.tags || []),
       ], query);
@@ -157,7 +159,7 @@ export function buildProjectResourceGroups(projects = [], {
 }
 
 function knowledgeProjectLabel(entry) {
-  return entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
+  return entry?.project?.name || (entry?.project_id ? "Unknown Project" : "Global");
 }
 
 function knowledgeCategory(entry) {

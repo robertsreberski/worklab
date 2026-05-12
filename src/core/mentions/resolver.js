@@ -58,7 +58,7 @@ function projectResolved(item, row) {
     token: item.token,
     type: "project",
     id: row.slug || row.id,
-    label: row.name || row.slug || row.id,
+    label: row.name || "Unknown Project",
     sublabel: "project",
     href: `#/projects/${encodeURIComponent(row.id)}`,
     exists: true,
@@ -71,7 +71,7 @@ function teamResolved(item, row) {
     token: item.token,
     type: "team",
     id: row.slug || row.id,
-    label: row.name || row.slug || row.id,
+    label: row.name || "Unknown Team",
     sublabel: "team",
     href: `#/library/teams/${encodeURIComponent(row.id)}`,
     exists: true,
@@ -84,7 +84,7 @@ function kbResolved(item, meta) {
     token: item.token,
     type: "kb",
     id: meta.slug,
-    label: meta.title || meta.slug,
+    label: meta.title || "Unknown Knowledge",
     sublabel: "knowledge",
     href: `#/library/knowledge/${encodeURIComponent(meta.slug)}`,
     exists: true,
@@ -106,7 +106,7 @@ function skillResolved(item, skill) {
 
 function goalResolved(item, row) {
   if (!row) return missing(item);
-  const label = row.project_name || row.project_slug || row.project_id || row.id;
+  const label = row.project_name || "Unknown Project";
   const sublabel = row.team_name ? `goal · ${row.team_name}` : "goal";
   return {
     token: item.token,
