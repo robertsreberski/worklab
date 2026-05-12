@@ -155,13 +155,13 @@ function ProjectGoalSummary({ goal }) {
       </div>
       <div class="project-goal-links">
         {goal.goal_id || goal.root_task_id ? (
-          <EntityBadge kind="goal" label={contract.objective || "Goal"} href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
+          <EntityBadge kind="goal" label={contract.objective || "Unknown"} href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
         ) : null}
         {goal.team_slug || goal.team_id ? (
-          <EntityBadge kind="team" label={goal.team_name || "Unknown Team"} href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
+          <EntityBadge kind="team" label={goal.team_name || "Unknown"} href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
         ) : null}
         {goal.root_task_id ? (
-          <EntityBadge kind="task" label={goal.root_task_title || contract.objective || "Root task"} href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
+          <EntityBadge kind="task" label={goal.root_task_title || contract.objective || "Unknown"} href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
         ) : null}
       </div>
     </div>
@@ -989,7 +989,7 @@ export function Projects({ selectedId = null, mode = null }) {
                       <ResourceRowId>{project.slug}</ResourceRowId>
                       <ResourceRowPath label="workdir" value={project.workdir} />
                       <ResourceRowWorktreeChip mode={project.worktree_mode} />
-                      {teamLabel && <ResourceRowChip tone="entity" icon="users">team {teamLabel}</ResourceRowChip>}
+                      {teamLabel && <ResourceRowChip tone="entity" icon="users" title={`Team: ${teamLabel}`}>{teamLabel}</ResourceRowChip>}
                       {tags.slice(0, 3).map((tag) => <ResourceRowChip key={tag} tone="neutral">{tag}</ResourceRowChip>)}
                       {tags.length > 3 && <ResourceRowChip tone="neutral">+{tags.length - 3}</ResourceRowChip>}
                       {project.archived && <ResourceRowChip tone="warn" icon="minus-circle">archived</ResourceRowChip>}

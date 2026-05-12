@@ -245,7 +245,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         <div>
           <EntityBadge
             kind="project"
-            label={project.name || "Unknown Project"}
+            label={project.name || "Unknown"}
             id={project.slug || project.id}
             href={`#/projects/${encodeURIComponent(project.slug || project.id || "")}`}
             class="team-goal-project"
@@ -271,7 +271,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         {goal?.root_task_id && (
           <EntityBadge
             kind="goal"
-            label={goal?.contract?.objective || "Goal"}
+            label={goal?.contract?.objective || "Unknown"}
             id={goal.goal_id || goal.root_task_id}
             href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}
             class="team-cycle-link"
@@ -280,7 +280,7 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         {goal?.root_task_id && (
           <EntityBadge
             kind="task"
-            label={goal?.contract?.objective || "Root task"}
+            label={goal?.contract?.objective || "Unknown"}
             id={goal.root_task_id}
             href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}
             class="team-cycle-link"
@@ -673,7 +673,7 @@ function LeadCycleRow({ cycle }) {
       {(taskHref || rawLogHref) && (
         <Toolbar class="team-cycle-actions">
           {taskHref && (
-            <EntityBadge kind="task" label={cycle?.task_title || "Task"} href={taskHref} class="team-cycle-link" />
+            <EntityBadge kind="task" label={cycle?.task_title || cycle?.task_key || "Unknown"} href={taskHref} class="team-cycle-link" />
           )}
           {rawLogHref && (
             <a class="team-cycle-link" href={rawLogHref} target="_blank" rel="noreferrer">
@@ -1064,7 +1064,7 @@ export function TeamsTab({ selectedId = null, mode = null }) {
                         {(team.goal || team.description) && <span class="pane-row-description">{team.goal || team.description}</span>}
                         <ResourceRowTags>
                           <ResourceRowId>{team.slug}</ResourceRowId>
-                          {team.lead_agent && <ResourceRowChip tone="entity" icon="user">lead {agentLabels.get(team.lead_agent) || "Unknown Agent"}</ResourceRowChip>}
+                          {team.lead_agent && <ResourceRowChip tone="entity" icon="user" title={`Lead: ${agentLabels.get(team.lead_agent) || "Unknown"}`}>{agentLabels.get(team.lead_agent) || "Unknown"}</ResourceRowChip>}
                           {team.schedule_enabled && <ResourceRowChip tone="accent" icon="clock">scheduled</ResourceRowChip>}
                           <ResourceRowChip tone="info" icon="users">{team.member_count ?? 0} member{(team.member_count ?? 0) === 1 ? "" : "s"}</ResourceRowChip>
                           {Number(team.project_count || 0) > 0 && <ResourceRowChip tone="info" icon="folder">{team.project_count} project{team.project_count === 1 ? "" : "s"}</ResourceRowChip>}

@@ -21,8 +21,7 @@ export function entityBadgeMeta(kind) {
 }
 
 export function entityBadgeFallback(kind) {
-  const meta = entityBadgeMeta(kind);
-  return `Unknown ${meta.label || "Reference"}`;
+  return "Unknown";
 }
 
 export function entityBadgeLabel({ label, type } = {}) {

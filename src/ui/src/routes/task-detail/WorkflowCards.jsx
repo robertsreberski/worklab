@@ -46,7 +46,7 @@ export function TaskContextList({ task }) {
     task.project ? {
       label: "Project",
       value: (
-        <EntityBadge kind="project" label={task.project.name || "Unknown Project"} href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link" />
+        <EntityBadge kind="project" label={task.project.name || "Unknown"} href={`#/projects/${projectRouteId(task.project)}`} class="task-meta-project-link" />
       ),
       mono: false,
     } : null,

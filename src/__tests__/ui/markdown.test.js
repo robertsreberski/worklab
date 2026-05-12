@@ -59,7 +59,7 @@ describe("renderMarkdown mentions", () => {
   it("renders unknown / deleted mentions as a struck-through chip", () => {
     const html = renderMarkdown("ping @agent/missing", { mentions: {} });
     expect(html).toContain("entity-badge--missing");
-    expect(html).toContain('<span class="badge-token-label">Unknown Agent</span>');
+    expect(html).toContain('<span class="badge-token-label">Unknown</span>');
     expect(html).not.toContain('<span class="badge-token-label">agent/missing</span>');
     expect(html).toContain('title="Mention target no longer exists"');
   });
@@ -67,7 +67,7 @@ describe("renderMarkdown mentions", () => {
   it("renders a generic label instead of the bare token id when no mentions map is provided", () => {
     const html = renderMarkdown("@agent/triager");
     expect(html).toContain("entity-badge--agent");
-    expect(html).toContain('<span class="badge-token-label">Unknown Agent</span>');
+    expect(html).toContain('<span class="badge-token-label">Unknown</span>');
     expect(html).not.toContain('<span class="badge-token-label">agent/triager</span>');
   });
 
@@ -126,21 +126,15 @@ describe("renderMarkdown", () => {
     ].join(" "));
 
     expect(html).toContain('entity-badge--agent" data-kind="agent" href="#/library/agents/triager"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Agent</span>');
     expect(html).toContain('entity-badge--kb" data-kind="kb" href="#/library/knowledge/entry-1"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Knowledge</span>');
     expect(html).toContain('entity-badge--skill" data-kind="skill" href="#/library/skills/ui-polish"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Skill</span>');
     expect(html).toContain('entity-badge--team" data-kind="team" href="#/library/teams/core-platform"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Team</span>');
     expect(html).toContain('entity-badge--project" data-kind="project" href="#/projects/project-1"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Project</span>');
     expect(html).toContain('entity-badge--task" data-kind="task" href="#/tasks/task-1"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Task</span>');
     expect(html).toContain('entity-badge--goal" data-kind="goal" href="#/goals/goal-1"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Goal</span>');
     expect(html).toContain('entity-badge--run" data-kind="run" href="#/tasks/task-1?run=run-1"');
-    expect(html).toContain('<span class="badge-token-label">Unknown Run</span>');
+    expect(html.match(/<span class="badge-token-label">Unknown<\/span>/g)).toHaveLength(8);
+    expect(html).not.toMatch(/Unknown (Agent|Knowledge|Skill|Team|Project|Task|Goal|Run)/);
   });
 
   it("uses resolved entity labels for internal link badges instead of anchor text", () => {
@@ -170,7 +164,7 @@ describe("renderMarkdown", () => {
   it("falls back to generic labels for internal link badges without a sidecar", () => {
     const html = renderMarkdown("[Wrong label](#/library/agents/review-agent)");
 
-    expect(html).toContain('<span class="badge-token-label">Unknown Agent</span>');
+    expect(html).toContain('<span class="badge-token-label">Unknown</span>');
     expect(html).not.toContain('<span class="badge-token-label">Review Agent</span>');
     expect(html).not.toContain("Wrong label");
   });

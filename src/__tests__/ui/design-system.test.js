@@ -127,8 +127,17 @@ describe("design system catalog", () => {
     expect(docs).toContain("ResourceRowChip");
     expect(docs).toContain("ResourceRowWorktreeChip");
     expect(designSystemSource).toContain("<ResourceRowChip tone=\"accent\" icon=\"zap\">high effort</ResourceRowChip>");
+    expect(designSystemSource).toContain("<ResourceRowChip tone=\"entity\" icon=\"users\">core</ResourceRowChip>");
+    expect(designSystemSource).not.toContain(">team core<");
     expect(designSystemSource).toContain("<ResourceRowWorktreeChip mode=\"auto\" />");
     expect(designSystemSource).toContain("<ResourceRowWorktreeChip mode=\"required\" />");
+  });
+
+  it("keeps entity badge examples free of repeated kind words", () => {
+    const designSystemSource = readFileSync(designSystemPath, "utf8");
+
+    expect(designSystemSource).toContain('<EntityBadge kind="run" id="run-1" label="run-1" href="#/tasks/T-321?run=run-1" />');
+    expect(designSystemSource).not.toContain('label="Run run-1"');
   });
 
   it("represents every primitive export in the live catalog coverage", () => {

@@ -445,8 +445,8 @@ function GoalRow({ goal, active }) {
         <span class="pane-row-substack">
           <span class="pane-row-description">{goal.contract?.objective || "(no objective set)"}</span>
           <ResourceRowTags>
-            <ResourceRowChip tone="entity" icon="users">team {goalTeamLabel(goal)}</ResourceRowChip>
-            {goal.last_lead_at && <ResourceRowChip tone="info" icon="clock">lead {relativeTime(goal.last_lead_at)}</ResourceRowChip>}
+            <ResourceRowChip tone="entity" icon="users" title={`Team: ${goalTeamLabel(goal)}`}>{goalTeamLabel(goal)}</ResourceRowChip>
+            {goal.last_lead_at && <ResourceRowChip tone="info" icon="clock" title="Latest lead cycle">{relativeTime(goal.last_lead_at)}</ResourceRowChip>}
             {checkpoint && <ResourceRowChip tone="accent" icon="check-circle">checkpoint</ResourceRowChip>}
           </ResourceRowTags>
         </span>
@@ -491,7 +491,7 @@ function LeadCycleTimeline({ goal }) {
             <div class="goal-cycle-foot">
               {row.impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
               {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
-              {row.href && <EntityBadge kind="run" label="Open run" id={row.run_id} href={row.href} />}
+              {row.href && <EntityBadge kind="run" label={row.run_id || "Unknown"} id={row.run_id} href={row.href} />}
             </div>
             {row.deletions.length ? (
               <div class="goal-cycle-deletions">
@@ -548,7 +548,7 @@ function LeadCycleCockpit({ goal }) {
             <ul>
               {cockpit.leadTasks.map((task) => (
                 <li key={task.id}>
-                  <EntityBadge kind="task" label={task.title || "Unknown Task"} href={`#/tasks/${encodeURIComponent(task.id)}`} />
+                  <EntityBadge kind="task" label={task.title || "Unknown"} href={`#/tasks/${encodeURIComponent(task.id)}`} />
                   <span>{task.title}</span>
                   <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
                   {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}
