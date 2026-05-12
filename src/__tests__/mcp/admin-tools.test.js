@@ -33,10 +33,13 @@ describe("admin MCP tools", () => {
 
   it("marks KB admin tools with read/destructive annotations", () => {
     const listTool = adminToolDefinitions.find((tool) => tool.name === "worklab_kb_list");
+    const createTool = adminToolDefinitions.find((tool) => tool.name === "worklab_kb_create");
     expect(listTool?.annotations).toMatchObject({
       readOnlyHint: true,
     });
     expect(listTool?.inputSchema.properties).toHaveProperty("sort");
+    expect(createTool?.description).toContain("explicitly requested durable artifacts");
+    expect(createTool?.description).toContain("save plans only when the human explicitly asks");
     expect(adminToolDefinitions.find((tool) => tool.name === "worklab_kb_taxonomy")?.annotations).toMatchObject({
       readOnlyHint: true,
     });

@@ -339,6 +339,8 @@ describe("worklab-tools KB handlers", () => {
     }
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve durable, reusable deliverables");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("user-requested artifacts");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("Save plans only when the human explicitly asks");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).not.toContain("decisions, plans, and canonical analysis");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("reuse existing tags");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.inputSchema.properties).toHaveProperty("related_slugs");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.inputSchema.properties).toHaveProperty("artifact");

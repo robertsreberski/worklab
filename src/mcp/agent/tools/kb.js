@@ -117,7 +117,7 @@ export const definitions = [
   {
     name: "kb_create",
     description:
-      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables and user-requested artifacts such as communications, research reports, runbooks, decisions, plans, and canonical analysis. Do not create entries for routine run results or one-off status updates. Call kb_taxonomy/list/search first, reuse existing tags when possible, and prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
+      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables and user-requested artifacts such as communications, research reports, runbooks, decisions, and canonical analysis. Save plans only when the human explicitly asks to preserve that plan in Knowledge. Do not create entries for routine run results or one-off status updates. Call kb_taxonomy/list/search first, reuse existing tags when possible, and prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {

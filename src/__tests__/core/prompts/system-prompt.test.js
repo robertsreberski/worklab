@@ -239,6 +239,9 @@ describe("buildExecuteSystemPrompt", () => {
     expect(p).toContain("`kb_` = Knowledge Base, not kilobytes");
     expect(p).toContain("preserve the complete body via `kb_create` or `kb_update`");
     expect(p).toContain("Do not create Knowledge entries for routine run results");
+    expect(p).toContain("Save implementation plans to Knowledge only when the current human instructions explicitly ask for Knowledge persistence.");
+    expect(p).toContain("Do not use category `plans` unless the human explicitly asked to save a plan to Knowledge.");
+    expect(p).not.toContain("`plans` / `research`");
     expect(p).toContain("reference the slug in `final_text`");
     expect(p).toContain("End each completed run with one terminal `worklab.v2` JSON object");
     expect(p).toContain("Never emit `worklab.v2` JSON for progress or status updates.");
@@ -530,6 +533,7 @@ describe("buildPlanSystemPrompt", () => {
     expect(p).toContain('"final_text": "Short human-facing plan status."');
     expect(p).toContain("Do not emit this JSON object for interim planning progress");
     expect(p).toContain("Do not write references like \"see above\"");
+    expect(p).toContain("Do not create or update Knowledge Base entries for plan output unless the current human instructions explicitly ask to save the plan to Knowledge.");
     expect(p).toContain('Use decision "advance" when the plan is ready');
     expect(p).not.toContain("Preserve durable deliverables in Knowledge");
   });
