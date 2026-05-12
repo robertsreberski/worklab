@@ -177,13 +177,23 @@ describe("kb REST routes", () => {
       category: "run result",
       author: "test",
     });
+    kbCreate({
+      dataDir,
+      slug: "rsm-style-guidance",
+      title: "RSM Style Guidance",
+      body: "body",
+      tags: ["rsm", "comms"],
+      category: "comms",
+      author: "test",
+    });
 
     const res = await agent.get("/api/kb/taxonomy").expect(200);
     expect(res.body.categories).toContainEqual({ category: "plans", count: 1 });
+    expect(res.body.categories).toContainEqual({ category: "communications", count: 1 });
     expect(res.body.categories).toContainEqual({ category: "run-results", count: 1 });
     expect(res.body.tags).toContainEqual({ tag: "jetpack-com", count: 1 });
     expect(res.body.tags).toContainEqual({ tag: "run-result", count: 1 });
-    expect(res.body.surfaces).toContainEqual({ surface: "plans", count: 1 });
+    expect(res.body.surfaces).toContainEqual({ surface: "artifacts", count: 2 });
     expect(res.body.surfaces).toContainEqual({ surface: "run_outputs", count: 1 });
   });
 
@@ -413,7 +423,24 @@ body
       .expect(201);
     expect(res.body.entry.meta.category).toBe("plans");
     expect(res.body.entry.meta.tags).toEqual(["jetpack-com", "run-result"]);
-    expect(res.body.entry.meta.meaningful_plan).toBe(true);
+    expect(res.body.entry.meta.meaningful_artifact).toBe(true);
+  });
+
+  it("POST /api/kb accepts artifact override metadata", async () => {
+    const { agent } = mkServer();
+    const res = await agent
+      .post("/api/kb")
+      .send({
+        slug: "scratch-research",
+        title: "Scratch Research",
+        body: "body",
+        category: "research",
+        artifact: false,
+      })
+      .expect(201);
+    expect(res.body.entry.meta.artifact).toBe(false);
+    expect(res.body.entry.meta.meaningful_artifact).toBe(false);
+    expect(res.body.entry.meta.surface).toBe("canonical");
   });
 
   it("POST /api/kb generates a unique slug from title when slug is omitted", async () => {

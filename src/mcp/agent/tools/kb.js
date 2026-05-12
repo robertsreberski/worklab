@@ -24,6 +24,7 @@ export const kbCreateSchema = z.object({
   tags: z.array(z.string()).optional(),
   category: z.string().nullable().optional(),
   subcategory: z.string().nullable().optional(),
+  artifact: z.boolean().nullable().optional(),
   project_id: z.string().nullable().optional(),
   source_task_id: z.string().nullable().optional(),
   source_task_key: z.string().nullable().optional(),
@@ -43,6 +44,7 @@ export const kbPatchSchema = z
     tags: z.array(z.string()).optional(),
     category: z.string().nullable().optional(),
     subcategory: z.string().nullable().optional(),
+    artifact: z.boolean().nullable().optional(),
     project_id: z.string().nullable().optional(),
     source_task_id: z.string().nullable().optional(),
     source_task_key: z.string().nullable().optional(),
@@ -115,7 +117,7 @@ export const definitions = [
   {
     name: "kb_create",
     description:
-      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables such as research reports, runbooks, decisions, and canonical analysis. Do not create entries for routine run results or one-off status updates. Call kb_taxonomy/list/search first, reuse existing tags when possible, and prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
+      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables and user-requested artifacts such as communications, research reports, runbooks, decisions, plans, and canonical analysis. Do not create entries for routine run results or one-off status updates. Call kb_taxonomy/list/search first, reuse existing tags when possible, and prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -135,6 +137,11 @@ export const definitions = [
           type: "string",
           nullable: true,
           description: "Optional topic/workstream within the category (null to omit)",
+        },
+        artifact: {
+          type: "boolean",
+          nullable: true,
+          description: "Optional override for the default Artifacts surface. Use true for durable requested artifacts, false for supporting notes.",
         },
         project_id: {
           type: "string",
@@ -186,20 +193,21 @@ export const definitions = [
   {
     name: "kb_update",
     description:
-      "Update fields of an existing Worklab Knowledge Base entry by slug. Only title, body, tags, category, subcategory, project_id, and pinned may be patched; unknown keys are rejected.",
+      "Update fields of an existing Worklab Knowledge Base entry by slug. Only title, body, tags, category, subcategory, artifact, project_id, and pinned may be patched; unknown keys are rejected.",
     inputSchema: {
       type: "object",
       properties: {
         slug: { type: "string", description: "Slug of the entry to update" },
         patch: {
           type: "object",
-          description: "Fields to update. Allowed keys: title, body, tags, category, subcategory, project_id, source metadata, relationships, and pinned.",
+          description: "Fields to update. Allowed keys: title, body, tags, category, subcategory, artifact, project_id, source metadata, relationships, and pinned.",
           properties: {
             title: { type: "string" },
             body: { type: "string" },
             tags: { type: "array", items: { type: "string" } },
             category: { type: "string", nullable: true },
             subcategory: { type: "string", nullable: true },
+            artifact: { type: "boolean", nullable: true },
             project_id: { type: "string", nullable: true },
             source_task_id: { type: "string", nullable: true },
             source_task_key: { type: "string", nullable: true },
@@ -306,6 +314,7 @@ export function buildHandlers(context) {
         tags,
         category,
         subcategory,
+        artifact,
         pinned,
         source_task_id,
         source_task_key,
@@ -327,6 +336,7 @@ export function buildHandlers(context) {
         tags,
         category,
         subcategory,
+        artifact,
         project_id,
         source_task_id,
         source_task_key,

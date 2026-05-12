@@ -25,6 +25,9 @@ const CATEGORY_ALIASES = new Map([
   ["execplans", "plans"],
   ["exec-plan", "plans"],
   ["execution-plan", "plans"],
+  ["communication", "communications"],
+  ["communications", "communications"],
+  ["comms", "communications"],
   ["run-result", "run-results"],
   ["run-results", "run-results"],
   ["run-output", "run-results"],
@@ -48,6 +51,7 @@ const FRONTMATTER_ORDER = [
   "tags",
   "category",
   "subcategory",
+  "artifact",
   "project_id",
   "source_task_id",
   "source_task_key",
@@ -410,6 +414,74 @@ function normalizeNullableString(value) {
   return text || null;
 }
 
+function normalizeArtifactOverride(value) {
+  if (value === true || value === false) return value;
+  return null;
+}
+
+const ARTIFACT_CATEGORIES = new Set([
+  "audit",
+  "audits",
+  "brief",
+  "briefs",
+  "communications",
+  "decision",
+  "decisions",
+  "guide",
+  "guides",
+  "guidance",
+  "howto",
+  "operations",
+  "plans",
+  "policy",
+  "reference",
+  "references",
+  "report",
+  "reports",
+  "research",
+  "runbook",
+  "runbooks",
+  "strategy",
+]);
+
+const ARTIFACT_SIGNALS = [
+  "acceptance",
+  "audit",
+  "brief",
+  "checklist",
+  "communication",
+  "communications",
+  "decision",
+  "execplan",
+  "guide",
+  "guidance",
+  "inventory",
+  "map",
+  "plan",
+  "reference",
+  "report",
+  "research",
+  "review",
+  "runbook",
+  "strategy",
+];
+
+function hasArtifactSignal(entry, category, tags) {
+  if (category && ARTIFACT_CATEGORIES.has(category)) return true;
+  const text = [
+    entry.slug,
+    entry.title,
+    category,
+    entry.subcategory,
+    ...tags,
+  ].map((value) => String(value || "").toLowerCase()).join(" ");
+  return ARTIFACT_SIGNALS.some((signal) => {
+    if (tags.includes(signal)) return true;
+    const escaped = signal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, "i").test(text);
+  });
+}
+
 export function kbEntryClassification(entry = {}, { autoPromoted } = {}) {
   const category = normalizeKbCategory(entry.display_category || entry.category);
   const tags = normalizeTags(entry.tags);
@@ -420,11 +492,17 @@ export function kbEntryClassification(entry = {}, { autoPromoted } = {}) {
     || entry.auto_promoted === true
     || category === "run-results"
     || generatedRunShape;
+  const artifactOverride = normalizeArtifactOverride(entry.artifact);
+  const meaningfulArtifact = !runOutput && (
+    artifactOverride === true
+    || (artifactOverride !== false && hasArtifactSignal(entry, category, tags))
+  );
   const meaningfulPlan = category === "plans" && !runOutput;
   return {
     display_category: category,
-    surface: runOutput ? "run_outputs" : (meaningfulPlan ? "plans" : "canonical"),
+    surface: runOutput ? "run_outputs" : (meaningfulArtifact ? "artifacts" : "canonical"),
     run_output: runOutput,
+    meaningful_artifact: meaningfulArtifact,
     meaningful_plan: meaningfulPlan,
   };
 }
@@ -524,6 +602,7 @@ function normalizeMetaForList(meta) {
     tags,
     category,
     subcategory,
+    artifact: normalizeArtifactOverride(meta.artifact),
     project_id: meta.project_id ?? null,
     source_task_id: meta.source_task_id ?? null,
     source_task_key: meta.source_task_key ?? null,
@@ -586,6 +665,7 @@ export function kbRead({ dataDir, slug }) {
     tags,
     category,
     subcategory,
+    artifact: normalizeArtifactOverride(meta.artifact),
     project_id: meta.project_id ?? null,
     source_task_id: meta.source_task_id ?? null,
     source_task_key: meta.source_task_key ?? null,
@@ -612,6 +692,7 @@ export function kbCreate({
   tags = [],
   category = null,
   subcategory = null,
+  artifact,
   project_id = null,
   source_task_id = null,
   source_task_key = null,
@@ -637,6 +718,7 @@ export function kbCreate({
     tags: normalizeTags(tags),
     category: normalizeKbCategory(category),
     subcategory: normalizeKbSubcategory(subcategory),
+    artifact: normalizeArtifactOverride(artifact),
     project_id: normalizeNullableString(project_id),
     source_task_id: normalizeNullableString(source_task_id),
     source_task_key: normalizeNullableString(source_task_key),
@@ -677,6 +759,7 @@ export function kbUpdate({ dataDir, slug, patch = {}, now = new Date() }) {
   merged.tags = normalizeTags(merged.tags);
   merged.category = normalizeKbCategory(merged.category);
   merged.subcategory = normalizeKbSubcategory(merged.subcategory);
+  merged.artifact = normalizeArtifactOverride(merged.artifact);
   merged.project_id = normalizeNullableString(merged.project_id);
   merged.source_task_id = normalizeNullableString(merged.source_task_id);
   merged.source_task_key = normalizeNullableString(merged.source_task_key);

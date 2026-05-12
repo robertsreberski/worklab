@@ -52,8 +52,8 @@ describe("kbCreate + kbRead (round trip)", () => {
     expect(out.meta.category).toBe("plans");
     expect(out.meta.subcategory).toBe("runtime-settings");
     expect(out.meta.tags).toEqual(["jetpack-com", "execplan"]);
-    expect(out.meta.meaningful_plan).toBe(true);
-    expect(out.meta.surface).toBe("plans");
+    expect(out.meta.meaningful_artifact).toBe(true);
+    expect(out.meta.surface).toBe("artifacts");
   });
 
   it("writes an entry and reads it back with flow-syntax tags", () => {
@@ -676,20 +676,44 @@ describe("KB taxonomy helpers", () => {
   it("normalizes category and tag aliases", () => {
     expect(normalizeKbCategory("Exec Plan")).toBe("plans");
     expect(normalizeKbCategory("execution-plan")).toBe("plans");
+    expect(normalizeKbCategory("comms")).toBe("communications");
     expect(normalizeKbCategory("run result")).toBe("run-results");
     expect(normalizeKbTag("Jetpack.com")).toBe("jetpack-com");
     expect(normalizeKbTag("run-results")).toBe("run-result");
   });
 
-  it("classifies plans separately from generated run outputs", () => {
+  it("classifies meaningful artifacts separately from generated run outputs", () => {
     expect(kbEntryClassification({
       slug: "path-forward-execplan",
       title: "Path Forward ExecPlan",
       category: "plans",
       tags: ["execplan"],
     })).toMatchObject({
-      surface: "plans",
-      meaningful_plan: true,
+      surface: "artifacts",
+      meaningful_artifact: true,
+      run_output: false,
+    });
+
+    expect(kbEntryClassification({
+      slug: "rsm-style-guidance",
+      title: "RSM Style Guidance",
+      category: "communications",
+      subcategory: "radical-speed-month",
+      tags: ["rsm", "communications"],
+    })).toMatchObject({
+      surface: "artifacts",
+      meaningful_artifact: true,
+      run_output: false,
+    });
+
+    expect(kbEntryClassification({
+      slug: "scratch-note",
+      title: "Scratch Note",
+      category: "research",
+      artifact: false,
+    })).toMatchObject({
+      surface: "canonical",
+      meaningful_artifact: false,
       run_output: false,
     });
 
@@ -701,7 +725,7 @@ describe("KB taxonomy helpers", () => {
       source_run_id: "abc",
     })).toMatchObject({
       surface: "run_outputs",
-      meaningful_plan: false,
+      meaningful_artifact: false,
       run_output: true,
     });
   });
@@ -732,6 +756,7 @@ body
     const taxonomy = kbTaxonomy({ dataDir: d });
     expect(taxonomy.categories).toContainEqual({ category: "plans", count: 1 });
     expect(taxonomy.tags).toContainEqual({ tag: "jetpack-com", count: 2 });
+    expect(taxonomy.surfaces).toContainEqual({ surface: "artifacts", count: 2 });
     expect(taxonomy.aliases.categories).toContainEqual({
       raw: "execution-plan",
       normalized: "plans",

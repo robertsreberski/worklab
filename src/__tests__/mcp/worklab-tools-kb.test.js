@@ -338,7 +338,10 @@ describe("worklab-tools KB handlers", () => {
       expect(names).toContain(name);
     }
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("preserve durable, reusable deliverables");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("user-requested artifacts");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("reuse existing tags");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.inputSchema.properties).toHaveProperty("related_slugs");
+    expect(toolDefinitions.find((t) => t.name === "kb_create")?.inputSchema.properties).toHaveProperty("artifact");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.description).toContain("Knowledge Base, not kilobytes");
     expect(toolDefinitions.find((t) => t.name === "kb_create")?.outputSchema?.required).toContain("slug");
     expect(toolDefinitions.find((t) => t.name === "kb_read")?.annotations).toMatchObject({ readOnlyHint: true });

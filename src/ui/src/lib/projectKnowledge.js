@@ -1,6 +1,6 @@
 import { taskRouteId } from "./display.js";
 
-const CATEGORY_ORDER = ["plans", "research", "decision", "runbook", "reference", "howto", "policy", "qa", "operations", "run-results"];
+const CATEGORY_ORDER = ["communications", "research", "decision", "runbook", "reference", "howto", "policy", "operations", "plans", "qa", "run-results"];
 
 function timestamp(value) {
   if (typeof value === "number") return value;
