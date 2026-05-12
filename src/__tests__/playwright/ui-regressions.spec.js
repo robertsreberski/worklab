@@ -1171,7 +1171,7 @@ test("agent references in messages and avatars navigate to agent editor", async 
     .first();
   await expect(messageLink).toHaveAttribute("href", "#/library/agents/regression-agent");
   await messageLink.click();
-  await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
+  await expect(page).toHaveURL(/#\/library\/agents\/regression-agent$/);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
 
   await page.goto(`${baseUrl}/#/tasks`);
@@ -1180,7 +1180,7 @@ test("agent references in messages and avatars navigate to agent editor", async 
   const avatarLink = taskRow.locator(".commander-cell-assignees .agent-link[aria-label='Regression Agent']").first();
   await expect(avatarLink).toHaveAttribute("href", "#/library/agents/regression-agent");
   await avatarLink.click();
-  await expect(page).toHaveURL(/#\/agents\/regression-agent$/);
+  await expect(page).toHaveURL(/#\/library\/agents\/regression-agent$/);
   await expect(page.locator(".pane-detail-head h2", { hasText: "Regression Agent" })).toBeVisible();
 });
 

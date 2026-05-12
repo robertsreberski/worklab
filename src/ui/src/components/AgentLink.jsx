@@ -73,7 +73,16 @@ export function AgentReferenceText({ text, agents = [] }) {
       {parts.map((part, index) => (
         typeof part === "string"
           ? part
-          : <EntityBadge key={`${part.name}-${index}`} kind="agent" id={part.name} label={part.label} href={part.href} />
+          : (
+            <EntityBadge
+              key={`${part.name}-${index}`}
+              kind="agent"
+              id={part.name}
+              label={part.label}
+              href={part.href}
+              onClick={(event) => followAgentLink(event, part.href)}
+            />
+          )
       ))}
     </>
   );
