@@ -107,6 +107,8 @@ export { getBuiltinProviderAvailability } from "./credentials.js";
 
 // ---------- IDs + slugs ----------
 export {
+  newAttachmentId,
+  newAttachmentUploadId,
   newAgentLogId,
   newAgentMemoryId,
   newAutomationId,
@@ -287,6 +289,20 @@ export {
 
 export { enrichCommentRows } from "./comments.js";
 
+export {
+  TASK_ATTACHMENT_KINDS,
+  TASK_ATTACHMENT_OWNER_COMMENT,
+  TASK_ATTACHMENT_OWNER_INSTRUCTIONS,
+  attachCommentAttachments,
+  attachmentFromRow,
+  attachmentStoredFilePath,
+  createAttachmentUpload,
+  formatAttachmentsForPrompt,
+  insertCommentAttachments,
+  replaceTaskInstructionAttachments,
+  taskInstructionAttachments,
+} from "./task-attachments.js";
+
 // ---------- Knowledge base ----------
 export {
   autoPromotedRunResultInfo,
@@ -374,6 +390,8 @@ export {
   resolveTaskProjectRunContext,
   uniqueProjectSlug,
 } from "./projects.js";
+
+export { suggestLocalPaths } from "./path-suggestions.js";
 
 // ---------- Teams ----------
 export {

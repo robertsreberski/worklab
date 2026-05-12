@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 42;
+export const SCHEMA_VERSION = 43;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -160,6 +160,26 @@ CREATE TABLE IF NOT EXISTS task_comments (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_comments_task ON task_comments(task_id, created_at);
+
+CREATE TABLE IF NOT EXISTS task_attachments (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  comment_id TEXT REFERENCES task_comments(id) ON DELETE CASCADE,
+  owner_type TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  source TEXT NOT NULL DEFAULT 'path',
+  label TEXT NOT NULL DEFAULT '',
+  path_text TEXT,
+  absolute_path TEXT,
+  filename TEXT,
+  mime_type TEXT,
+  size_bytes INTEGER,
+  stored_path TEXT,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_task_attachments_task_owner ON task_attachments(task_id, owner_type, created_at);
+CREATE INDEX IF NOT EXISTS idx_task_attachments_comment ON task_attachments(comment_id, created_at) WHERE comment_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS task_runs (
   id TEXT PRIMARY KEY,

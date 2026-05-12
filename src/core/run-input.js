@@ -26,6 +26,7 @@ import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
+import { taskInstructionAttachments } from "./task-attachments.js";
 import { buildDelegationContext } from "./delegation.js";
 import { buildNativeSubagentContext } from "./native-subagents.js";
 import { formatWorklabResultText } from "./worklab-result/contract.js";
@@ -311,7 +312,10 @@ export function loadTaskRunSetup({ config, db, taskId, agentName, runId, mode = 
   // before the task crosses the LLM boundary so the model never has
   // to know the raw token syntax. UI reads use the sidecar to render
   // badges from the same tokens.
-  const task = expandTaskMentions(db, config, taskRow);
+  const task = {
+    ...expandTaskMentions(db, config, taskRow),
+    attachments: taskInstructionAttachments(db, taskId),
+  };
   const agent = getAgentByName(db, agentName);
   if (!agent) throw runInputError(400, "invalid_state", `agent ${agentName} not found`);
   const settings = readSettings(db);
@@ -634,6 +638,15 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
       artifact.last_run_id || "",
       artifact.last_seen_at || "",
     ].join(":"));
+  const attachmentSignature = (setup.task?.attachments || [])
+    .map((attachment) => [
+      attachment.id,
+      attachment.kind,
+      attachment.path_text || "",
+      attachment.absolute_path || "",
+      attachment.stored_path || "",
+      attachment.label || "",
+    ].join(":"));
   const blockerSignature = (setup.resolvedBlockers || []).map((blocker) => {
     const latest = blocker.latest_execute_run || {};
     const summary = blocker.artifact_summary || {};
@@ -728,6 +741,7 @@ function makeSetupSignature(setup, { mode, priorRunId } = {}) {
     builtinHash: shortHash(builtinSignature.join("|")),
     kbHash: shortHash(pinnedSignature.join("|")),
     artifactsHash: shortHash(artifactSignature.join("|")),
+    attachmentsHash: shortHash(attachmentSignature.join("|")),
     resolvedBlockersHash: shortHash(blockerSignature.join("|")),
     delegationHash: shortHash(delegationSignature),
     nativeSubagentsHash: shortHash(nativeSubagentsSignature),
@@ -768,6 +782,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
       repositoryInstructions: setup.repositoryInstructions,
       repositoryGitRoot: setup.repositoryGitRoot,
       comments: commentRows, currentRunComments, pinnedKb, priorRuns, taskArtifacts, resolvedBlockers,
+      dataDir: config.dataDir,
       settings: setup.settings,
       resumeContext: setup.resumeContext,
       taskArtifactsMarkdown: formatTaskArtifactsForPrompt(taskArtifacts),
@@ -810,6 +825,7 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
     const prompt = cached || buildSystemPrompt({
       agent, task, skills, memory, learningMemoryContext, journalTail,
       comments: commentRows, currentRunComments, pinnedKb, execution, taskArtifacts,
+      dataDir: config.dataDir,
       resolvedBlockers,
       settings: setup.settings,
       resumeContext: setup.resumeContext,

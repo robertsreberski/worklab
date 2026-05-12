@@ -7,6 +7,7 @@ import {
   runArtifactSummary,
   runTodoStateSummary,
   supportsLiveInputProvider,
+  taskInstructionAttachments,
 } from "../../../core/index.js";
 import {
   getTaskById,
@@ -311,8 +312,16 @@ function attachProject(db, task, config = null) {
   };
 }
 
+function attachTaskAttachments(db, task) {
+  if (!task) return task;
+  return {
+    ...task,
+    attachments: taskInstructionAttachments(db, task.id),
+  };
+}
+
 export function enrichTask(db, task, config = null) {
-  return attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config);
+  return attachTaskAttachments(db, attachProject(db, attachAutomationSummary(db, attachTaskGraph(db, attachDerivedRunFields(db, task))), config));
 }
 
 function defaultAutomationSummary() {
