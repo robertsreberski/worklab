@@ -388,6 +388,48 @@ describe("run input assembly", () => {
     });
   });
 
+  it("injects task and current-run comment attachments into run context", () => {
+    withRunInputDb(({ db, config }) => {
+      seedAgent(db, "owner", "Execute as owner.");
+      const task = seedTask(db, { stage: "execute", owner_agent: "owner" });
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, stage, agent_name, started_at, status, process_status)
+        VALUES ('run-with-attachments', ?, 'execute', 'execute', 'owner', 3000, 'running', 'running')
+      `).run(task.id);
+      db.prepare(`
+        INSERT INTO task_comments
+          (id, task_id, author_type, body, created_at)
+        VALUES ('comment-with-attachment', ?, 'human', 'Use the pasted image.', 3000)
+      `).run(task.id);
+      db.prepare(`
+        INSERT INTO task_attachments
+          (id, task_id, comment_id, owner_type, kind, source, label, path_text, absolute_path, filename, mime_type, size_bytes, stored_path, metadata_json, created_at)
+        VALUES
+          ('attachment-path', ?, NULL, 'task_instructions', 'path', 'path', 'Local brief', 'docs/brief.md', '/tmp/project/docs/brief.md', NULL, NULL, NULL, NULL, '{}', 3000),
+          ('attachment-image', ?, 'comment-with-attachment', 'comment', 'upload', 'pasted_image', 'Clipboard image', NULL, NULL, 'clip.png', 'image/png', 8, 'attachments/tasks/task-1/attachment-image/clip.png', '{}', 3000)
+      `).run(task.id, task.id);
+
+      const input = buildTaskRunInput({
+        db,
+        config,
+        taskId: task.id,
+        agentName: "owner",
+        runId: "run-with-attachments",
+        mode: "execute",
+      });
+
+      expect(input.systemPrompt).toContain("## Task");
+      expect(input.systemPrompt).toContain("**Attachments:**");
+      expect(input.systemPrompt).toContain("Local brief");
+      expect(input.systemPrompt).toContain("docs/brief.md");
+      expect(input.systemPrompt).toContain("/tmp/project/docs/brief.md");
+      expect(input.systemPrompt).toContain("Clipboard image");
+      expect(input.systemPrompt).toContain("clip.png");
+      expect(input.systemPrompt).toContain("attachments/tasks/task-1/attachment-image/clip.png");
+    });
+  });
+
   it("injects prior task artifacts into run context", () => {
     withRunInputDb(({ db, config }) => {
       seedAgent(db, "owner", "Execute as owner.");

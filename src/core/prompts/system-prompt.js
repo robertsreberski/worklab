@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { buildSkillIndex } from "@worklab/agent-runtime/agent/prompt/skill-index.js";
 import { stripWorklabResultJson } from "../worklab-result/contract.js";
+import { formatAttachmentsForPrompt } from "../task-attachments.js";
 import { buildPlanningDirective, formatPlanningHarnessSection } from "../../core/planning-harness.js";
 
 const CADENCE = `Journal as you work — call \`journal_append\` for facts you discover, decisions you make, and corrections you learn. At the end of the task, optionally call \`journal_summary\` if anything rolls up.`;
@@ -117,7 +118,12 @@ function formatComments(comments) {
       const who = authorType === "agent" && displayName
         ? displayName
         : (authorId ? `${authorType} ${authorId}` : authorType);
-      return `### Comment ${index + 1} (${who})\n\n${formatContextText(c.body || c.content || "")}`;
+      return [
+        `### Comment ${index + 1} (${who})`,
+        "",
+        formatContextText(c.body || c.content || ""),
+        formatAttachmentsForPrompt(c.attachments || []),
+      ].filter(Boolean).join("\n");
     })
     .join("\n\n");
 }
@@ -341,10 +347,11 @@ function formatWorklabBaseGuardrails({ mode, delegation } = {}) {
   return sections.join("\n\n");
 }
 
-function buildTaskBody(task, comments) {
+function buildTaskBody(task, comments, { dataDir = null } = {}) {
   return [
     `**Title:** ${task.title}`,
     task.instructions ? `\n**Instructions:**\n${task.instructions}` : "",
+    formatAttachmentsForPrompt(task.attachments || [], { dataDir }),
     task.stage ? `\n**Workflow stage:** ${task.stage}` : "",
     task.stage_reason ? `\n**Stage reason:** ${task.stage_reason}` : "",
     comments?.length ? `\n**Comments:**\n${formatComments(comments)}` : "",
@@ -656,7 +663,7 @@ export function buildSystemPrompt(input, mode) {
     if (input.repositoryInstructions || input.repositoryGitRoot) sectionNames.push("Repository workflow");
     parts.push(section("Project", buildProjectBody(input.project, input.effectiveWorkdir)));
     if (input.project) sectionNames.push("Project");
-    parts.push(section("Task", buildTaskBody(input.task, input.comments)));
+    parts.push(section("Task", buildTaskBody(input.task, input.comments, { dataDir: input.dataDir })));
     sectionNames.push("Task");
     if (mode === "execute" || mode === "review") {
       parts.push(section("Plan artifact", formatPlanArtifact(input.task)));

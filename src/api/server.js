@@ -15,6 +15,8 @@ import { registerProviderRoutes } from "./routes/providers.js";
 import { registerModelRoutes } from "./routes/models.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerMentionRoutes } from "./routes/mentions.js";
+import { registerAttachmentRoutes } from "./routes/attachments.js";
+import { registerFileRoutes } from "./routes/files.js";
 import { registerAutomationRoutes } from "./routes/automations.js";
 import { registerGoalRoutes } from "./routes/goals.js";
 import { registerProjectRoutes } from "./routes/projects.js";
@@ -106,6 +108,8 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   if (dataDir) registerModelRoutes(app, { db, dataDir });
   if (dataDir) registerSearchRoutes(app, { db, dataDir });
   registerMentionRoutes(app, { db, dataDir });
+  registerAttachmentRoutes(app, { db, dataDir });
+  registerFileRoutes(app, { db, config });
   registerAutomationRoutes(app, { db, broker, automationManager });
   registerSlackRoutes(app, { db, config, slack });
   registerNotificationRoutes(app, { db, dataDir, notifications });

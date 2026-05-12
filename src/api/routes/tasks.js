@@ -7,7 +7,10 @@ import {
   newTaskId,
   nextStage,
   nextTaskKey,
+  insertCommentAttachments,
+  replaceTaskInstructionAttachments,
   resolveProjectId,
+  resolveProjectRow,
   resolveTaskRow,
   runtimeTaskVisibility,
   STAGES,
@@ -193,6 +196,11 @@ function formatQuestionAnswerComment(questions, answers) {
   return lines.join("\n");
 }
 
+function taskBaseWorkdir(db, config, taskRow) {
+  const project = taskRow?.project_id ? resolveProjectRow(db, taskRow.project_id) : null;
+  return project?.workdir || config?.workspace || config?.repoRoot || process.cwd();
+}
+
 
 export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, repoRoot, config }) {
   function startTaskRun(taskRow, { reason = "manual" } = {}) {
@@ -349,6 +357,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
       run_policy = DEFAULT_RUN_POLICY,
       tags = [],
       blocked_by_ids = [],
+      attachments = [],
       client_request_id = null,
       project_id = null,
       team_id: teamIdInput = undefined,
@@ -411,6 +420,13 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
           createdAt: now,
           updatedAt: now,
         });
+        replaceTaskInstructionAttachments(db, {
+          taskId: id,
+          attachments,
+          baseWorkdir: projectId ? (resolveProjectRow(db, projectId)?.workdir || config?.workspace || null) : config?.workspace || null,
+          dataDir,
+          now,
+        });
         replaceTaskDependencies(db, id, dependencyIds);
       })();
     } catch (error) {
@@ -418,7 +434,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         const existing = getTaskByClientRequestId(db, requestId);
         if (existing) return res.status(200).json({ task: enrichTask(db, rowToTask(existing), config) });
       }
-      throw error;
+      return sendRouteError(res, error);
     }
     const row = getTaskById(db, id);
     const task = enrichTask(db, rowToTask(row), config);
@@ -529,6 +545,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         taskId: taskRow.id,
         patch: req.body || {},
         config,
+        dataDir,
       });
       res.json({ task });
     } catch (error) {
@@ -615,30 +632,44 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
   });
 
   app.post("/api/tasks/:id/comments", async (req, res) => {
-    const existing = resolveTaskRow(db, req.params.id);
-    if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
-    const { body, rerun } = req.body || {};
-    if (!body || typeof body !== "string") {
-      return res.status(400).json({ error: { code: "validation", message: "body is required" } });
+    try {
+      const existing = resolveTaskRow(db, req.params.id);
+      if (!existing) return res.status(404).json({ error: { code: "not_found", message: "task not found" } });
+      const { body, rerun, attachments = [] } = req.body || {};
+      if (!body || typeof body !== "string") {
+        return res.status(400).json({ error: { code: "validation", message: "body is required" } });
+      }
+      const id = newCommentId();
+      const now = Date.now();
+      db.transaction(() => {
+        insertAuthoredComment(db, {
+          id,
+          taskId: existing.id,
+          authorType: "human",
+          authorId: null,
+          body,
+          createdAt: now,
+        });
+        insertCommentAttachments(db, {
+          taskId: existing.id,
+          commentId: id,
+          attachments,
+          baseWorkdir: taskBaseWorkdir(db, config, existing),
+          dataDir,
+          now,
+        });
+        touchTaskUpdatedAt(db, existing.id, now);
+      })();
+      broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
+      const row = enrichCommentRows(db, [getCommentById(db, id)])[0];
+      const payload = { comment: row };
+      if (rerun === true) {
+        payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
+      }
+      res.status(201).json(payload);
+    } catch (error) {
+      return sendRouteError(res, error);
     }
-    const id = newCommentId();
-    const now = Date.now();
-    insertAuthoredComment(db, {
-      id,
-      taskId: existing.id,
-      authorType: "human",
-      authorId: null,
-      body,
-      createdAt: now,
-    });
-    touchTaskUpdatedAt(db, existing.id, now);
-    broker.broadcast("global", { type: "task_updated", id: existing.id, taskKey: existing.task_key || null });
-    const row = enrichCommentRows(db, [getCommentById(db, id)])[0];
-    const payload = { comment: row };
-    if (rerun === true) {
-      payload.rerun = await requestCommentRerun({ db, broker, watcher, logger, taskId: existing.id });
-    }
-    res.status(201).json(payload);
   });
 
   app.post("/api/tasks/:id/pending-questions/answer", async (req, res) => {

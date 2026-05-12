@@ -2,6 +2,7 @@ import {
   applyTaskSideEffects,
   nextStage,
   resolveProjectId,
+  resolveProjectRow,
   resolveTaskId,
   resolveTaskRow,
   resumeWaitingParents,
@@ -34,6 +35,7 @@ import {
 } from "./constants.js";
 import { routeError, rerunResponseError } from "./errors.js";
 import { enrichTask, rowToTask } from "./serialization.js";
+import { replaceTaskInstructionAttachments } from "../../../core/task-attachments.js";
 
 function normaliseDependencyIds(value) {
   if (!Array.isArray(value)) return [];
@@ -158,7 +160,15 @@ export async function requestCommentRerun({ db, broker, watcher, logger, taskId 
   }
 }
 
-export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, config = null }) {
+function baseWorkdirForAttachmentPatch(db, config, taskRow, patch = {}) {
+  const projectId = "project_id" in patch
+    ? normalizeProjectPatchValue(db, patch.project_id)
+    : (taskRow.project_id || null);
+  const project = projectId ? resolveProjectRow(db, projectId) : null;
+  return project?.workdir || config?.workspace || config?.repoRoot || process.cwd();
+}
+
+export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch = {}, config = null, dataDir = null }) {
   const existing = getTaskById(db, taskId);
   if (!existing) throw routeError(404, "not_found", "task not found");
   if ("executor_agent" in (patch || {})) {
@@ -242,12 +252,14 @@ export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch 
     values.push(Date.now());
   }
 
-  if (fields.length === 0 && !stageTransition) {
+  const replacingAttachments = "attachments" in patch;
+
+  if (fields.length === 0 && !stageTransition && !replacingAttachments) {
     return enrichTask(db, rowToTask(existing), config);
   }
 
   let projectCascadeCount = 0;
-  if (fields.length > 0) {
+  if (fields.length > 0 || replacingAttachments) {
     const projectIdChanged = "project_id" in patch;
     const nextProjectId = projectIdChanged ? normalizeProjectPatchValue(db, patch.project_id) : null;
     const updatedAt = Date.now();
@@ -255,9 +267,18 @@ export function applyTaskPatchById({ db, broker, watcher, logger, taskId, patch 
       fields.push("updated_at = ?");
       values.push(updatedAt);
     }
-    values.push(taskId);
+    if (fields.length > 0) values.push(taskId);
     db.transaction(() => {
-      updateTaskFields(db, fields, values);
+      if (fields.length > 0) updateTaskFields(db, fields, values);
+      if (replacingAttachments) {
+        replaceTaskInstructionAttachments(db, {
+          taskId,
+          attachments: patch.attachments,
+          baseWorkdir: baseWorkdirForAttachmentPatch(db, config, existing, patch),
+          dataDir,
+          now: updatedAt,
+        });
+      }
       if (projectIdChanged && nextProjectId !== (existing.project_id || null)) {
         projectCascadeCount = cascadeProjectToEligibleDescendants(
           db,

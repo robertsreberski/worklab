@@ -20,7 +20,7 @@ describe("openDb + runMigrations", () => {
         "agent_consolidations", "task_dependencies", "automations", "automation_runs",
         "automation_triggers", "task_edges", "slack_inbound_events", "slack_triage_runs",
         "slack_agent_logs", "slack_delivery_log", "assistant_threads", "assistant_messages",
-        "assistant_runs", "assistant_agent_logs", "run_compactions",
+        "assistant_runs", "assistant_agent_logs", "run_compactions", "task_attachments",
       ]),
     );
   });
@@ -71,6 +71,8 @@ describe("openDb + runMigrations", () => {
       "idx_runs_task_status_started",
       "idx_slack_delivery_created",
       "idx_slack_triage_started",
+      "idx_task_attachments_comment",
+      "idx_task_attachments_task_owner",
       "idx_tasks_visible_updated",
     ]));
   });
