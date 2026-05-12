@@ -47,7 +47,7 @@ describe("resource list helpers", () => {
     ]);
   });
 
-  it("defaults canonical knowledge to pinned entries first", () => {
+  it("defaults artifact knowledge to pinned reusable entries without a list header", () => {
     const groups = buildKnowledgeResourceGroups([
       {
         slug: "project-runbook",
@@ -68,14 +68,14 @@ describe("resource list helpers", () => {
       },
       { slug: "run-output", title: "Run", category: "run-results", auto_promoted: true },
       { slug: "global-note", title: "Global", category: "decision", updated_at: "2026-05-06T00:00:00Z" },
-    ], { surface: "canonical" });
+    ], { surface: "artifacts" });
 
-    expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
-      ["pinned-first", "Pinned first", ["project-research", "global-note", "project-runbook"]],
+    expect(groups.map((group) => [group.key, group.label, group.showHeader, group.items.map((entry) => entry.slug)])).toEqual([
+      ["artifacts", "Artifacts", false, ["project-research", "global-note", "project-runbook"]],
     ]);
   });
 
-  it("filters the artifacts knowledge surface to meaningful requested artifacts", () => {
+  it("treats artifacts and reusable knowledge as the same non-run-output surface", () => {
     const groups = buildKnowledgeResourceGroups([
       {
         slug: "runtime-plan",
@@ -107,12 +107,12 @@ describe("resource list helpers", () => {
         slug: "research",
         title: "Research",
         category: "research",
-        updated_at: "2026-05-08T00:00:00Z",
+        updated_at: "2026-05-09T00:00:00Z",
       },
     ], { surface: "artifacts" });
 
-    expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
-      ["artifacts", "Meaningful artifacts", ["runtime-plan", "rsm-style-guidance"]],
+    expect(groups.map((group) => [group.key, group.label, group.showHeader, group.items.map((entry) => entry.slug)])).toEqual([
+      ["artifacts", "Artifacts", false, ["runtime-plan", "research", "rsm-style-guidance"]],
     ]);
   });
 
@@ -137,7 +137,7 @@ describe("resource list helpers", () => {
       },
       { slug: "run-output", title: "Run", category: "run-results", auto_promoted: true },
       { slug: "global-note", title: "Global", category: "decision", updated_at: "2026-05-06T00:00:00Z" },
-    ], { surface: "canonical", sort: "project_category" });
+    ], { surface: "artifacts", sort: "project_category" });
 
     expect(groups.map((group) => [group.projectLabel, group.categoryLabel, group.items.map((entry) => entry.slug)])).toEqual([
       ["Project One", "Research", ["project-research"]],
@@ -268,12 +268,15 @@ describe("resource list helpers", () => {
     expect(contents).toContain("ariaLabel=\"Sort knowledge\"");
     expect(contents).toContain("sort !== \"pinned_first\"");
     expect(contents).toContain("setSort(\"pinned_first\")");
+    expect(source("src/ui/src/lib/resourceLists.js")).not.toContain("Meaningful artifacts");
   });
 
-  it("defaults the knowledge route to artifacts first and loads taxonomy suggestions", () => {
+  it("defaults the knowledge route to artifacts first without a duplicate reusable tab", () => {
     const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
 
     expect(contents).toContain('useState("artifacts")');
+    expect(contents).toContain('label: "Artifacts"');
+    expect(contents).not.toContain('label: "Reusable"');
     expect(contents).toContain("api.kbTaxonomy");
     expect(contents).toContain("tagSuggestions");
   });

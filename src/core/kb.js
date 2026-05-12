@@ -500,7 +500,7 @@ export function kbEntryClassification(entry = {}, { autoPromoted } = {}) {
   const meaningfulPlan = category === "plans" && !runOutput;
   return {
     display_category: category,
-    surface: runOutput ? "run_outputs" : (meaningfulArtifact ? "artifacts" : "canonical"),
+    surface: runOutput ? "run_outputs" : "artifacts",
     run_output: runOutput,
     meaningful_artifact: meaningfulArtifact,
     meaningful_plan: meaningfulPlan,

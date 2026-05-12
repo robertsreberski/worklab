@@ -440,7 +440,7 @@ body
       .expect(201);
     expect(res.body.entry.meta.artifact).toBe(false);
     expect(res.body.entry.meta.meaningful_artifact).toBe(false);
-    expect(res.body.entry.meta.surface).toBe("canonical");
+    expect(res.body.entry.meta.surface).toBe("artifacts");
   });
 
   it("POST /api/kb generates a unique slug from title when slug is omitted", async () => {

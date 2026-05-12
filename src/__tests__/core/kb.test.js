@@ -712,7 +712,7 @@ describe("KB taxonomy helpers", () => {
       category: "research",
       artifact: false,
     })).toMatchObject({
-      surface: "canonical",
+      surface: "artifacts",
       meaningful_artifact: false,
       run_output: false,
     });

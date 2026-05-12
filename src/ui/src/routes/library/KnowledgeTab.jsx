@@ -156,8 +156,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     { value: "project_category", label: "Project/category" },
   ];
   const surfaceTabs = [
-    { value: "artifacts", label: "Artifacts", count: entries.filter((entry) => entry.meaningful_artifact).length },
-    { value: "canonical", label: "Reusable", count: entries.filter((entry) => !(entry.run_output || entry.auto_promoted)).length },
+    { value: "artifacts", label: "Artifacts", count: entries.filter((entry) => !(entry.run_output || entry.auto_promoted)).length },
     { value: "run_outputs", label: "Run outputs", count: entries.filter((entry) => entry.run_output || entry.auto_promoted).length },
     { value: "all", label: "All", count: entries.length },
   ];
