@@ -6147,12 +6147,24 @@ html.assistant-resizing * {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.goal-cockpit-decision strong {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+.goal-cockpit-decision p {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
 .goal-cockpit-ledger {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: var(--sp-2);
 }
-.goal-cockpit-ledger-item.is-deleted {
+.goal-cockpit-ledger-item.is-deleted.has-value {
   border-color: var(--status-error-border);
   background: var(--status-error-bg-10);
 }
