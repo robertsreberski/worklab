@@ -284,6 +284,28 @@ describe("resource list helpers", () => {
     }
   });
 
+  it("keeps mobile Library route tabs compact when entity detail topbars are active", () => {
+    const styles = source("src/ui/src/styles.css");
+    const rule = cssRule(styles, '.app.responsive.has-mobile-topbar[data-route="library"] .library-route-tabs');
+
+    expect(rule).toContain("padding-top: var(--sp-2)");
+    expect(rule).not.toContain("var(--mobile-safe-top)");
+  });
+
+  it("lets recent team lead cycle actions wrap without forcing wide rows", () => {
+    const styles = source("src/ui/src/styles.css");
+    const rowRule = cssRule(styles, ".team-cycle-row");
+    const actionsRule = cssRule(styles, ".team-cycle-actions");
+    const badgeLinkRule = cssRule(styles, ".team-cycle-actions .team-cycle-link.badge-token");
+    const responsiveRowRule = cssRule(styles, ".app.responsive .team-cycle-row");
+
+    expect(rowRule).toContain("min-width: 0");
+    expect(actionsRule).toContain("min-width: 0");
+    expect(actionsRule).toContain("max-width: 100%");
+    expect(badgeLinkRule).toContain("max-width");
+    expect(responsiveRowRule).toContain("grid-template-columns: minmax(0, 1fr)");
+  });
+
   it("lets Library selected routes render full-width detail surfaces", () => {
     const paneLayout = source("src/ui/src/components/PaneLayout.jsx");
     const styles = source("src/ui/src/styles.css");
