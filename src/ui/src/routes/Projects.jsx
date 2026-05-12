@@ -155,13 +155,13 @@ function ProjectGoalSummary({ goal }) {
       </div>
       <div class="project-goal-links">
         {goal.goal_id || goal.root_task_id ? (
-          <EntityBadge kind="goal" label="Goal" href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
+          <EntityBadge kind="goal" label={contract.objective || "Goal"} href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
         ) : null}
         {goal.team_slug || goal.team_id ? (
-          <EntityBadge kind="team" label="Team" href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
+          <EntityBadge kind="team" label={goal.team_name || "Unknown Team"} href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
         ) : null}
         {goal.root_task_id ? (
-          <EntityBadge kind="task" label="Root task" href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
+          <EntityBadge kind="task" label={goal.root_task_title || contract.objective || "Root task"} href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
         ) : null}
       </div>
     </div>

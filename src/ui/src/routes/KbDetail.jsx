@@ -78,15 +78,39 @@ function UsageList({ usage }) {
   );
 }
 
-function RelationSlugList({ label, slugs = [] }) {
-  const visible = Array.isArray(slugs) ? slugs.filter(Boolean) : [];
+function fallbackRelationEntry(slug) {
+  const cleanSlug = String(slug || "").trim();
+  if (!cleanSlug) return null;
+  return { slug: cleanSlug, title: "Unknown Knowledge", missing: true };
+}
+
+function relationEntries(entries = [], slugs = []) {
+  const resolved = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry?.slug)
+    .map((entry) => ({
+      slug: entry.slug,
+      title: entry.title || "Unknown Knowledge",
+      missing: !!entry.missing,
+    }));
+  if (resolved.length) return resolved;
+  return (Array.isArray(slugs) ? slugs : []).map(fallbackRelationEntry).filter(Boolean);
+}
+
+function RelationEntryList({ label, entries = [], slugs = [] }) {
+  const visible = relationEntries(entries, slugs);
   if (!visible.length) return null;
   return (
     <SectionGroup class="knowledge-usage-group" label={label} count={`(${visible.length})`}>
       <ul class="usage-list knowledge-read-usage-list">
-        {visible.map((relationSlug) => (
-          <li key={relationSlug}>
-            <EntityBadge kind="kb" label={relationSlug} href={`#/library/knowledge/${encodeURIComponent(relationSlug)}`} />
+        {visible.map((relation) => (
+          <li key={relation.slug}>
+            <EntityBadge
+              kind="kb"
+              label={relation.title || "Unknown Knowledge"}
+              href={relation.missing ? null : `#/library/knowledge/${encodeURIComponent(relation.slug)}`}
+              missing={relation.missing}
+              title={relation.missing ? "Knowledge entry no longer exists" : relation.title}
+            />
           </li>
         ))}
       </ul>
@@ -136,7 +160,11 @@ export function KbDetail({ slug }) {
   const projectLabel = entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
   const sourceTaskLabel = entry?.source_task_key || entry?.source_task_id || "";
   const usageCount = (usage?.tasks?.length || 0) + (usage?.agents?.length || 0);
-  const relationCount = (entry?.related_slugs?.length || 0) + (entry?.supersedes_slugs?.length || 0) + (entry?.canonical_slug ? 1 : 0);
+  const relationCount = (
+    relationEntries(entry?.related_entries, entry?.related_slugs).length +
+    relationEntries(entry?.supersedes_entries, entry?.supersedes_slugs).length +
+    relationEntries(entry?.canonical_entry ? [entry.canonical_entry] : [], entry?.canonical_slug ? [entry.canonical_slug] : []).length
+  );
   const rail = useMemo(() => {
     if (!entry || entry.notFound) return null;
     return (
@@ -162,11 +190,15 @@ export function KbDetail({ slug }) {
         </Card>
         <Card variant="spacious" title="References" class="entity-rail-card knowledge-read-usage-card">
           <SectionStack class="knowledge-usage-groups">
-            {entry.canonical_slug && (
-              <RelationSlugList label="Canonical entry" slugs={[entry.canonical_slug]} />
+            {(entry.canonical_entry || entry.canonical_slug) && (
+              <RelationEntryList
+                label="Canonical entry"
+                entries={entry.canonical_entry ? [entry.canonical_entry] : []}
+                slugs={entry.canonical_slug ? [entry.canonical_slug] : []}
+              />
             )}
-            <RelationSlugList label="Related entries" slugs={entry.related_slugs} />
-            <RelationSlugList label="Supersedes" slugs={entry.supersedes_slugs} />
+            <RelationEntryList label="Related entries" entries={entry.related_entries} slugs={entry.related_slugs} />
+            <RelationEntryList label="Supersedes" entries={entry.supersedes_entries} slugs={entry.supersedes_slugs} />
           </SectionStack>
           <UsageList usage={usage} />
         </Card>

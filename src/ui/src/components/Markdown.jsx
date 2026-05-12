@@ -231,22 +231,15 @@ function safeDecode(value) {
 function entityLink(type, id, href, mentions) {
   const normalizedType = normalizeEntityBadgeKind(type);
   const meta = mentions?.[href] || mentions?.[href.replace(/&amp;/g, "&")] || null;
-  const display = meta?.label || humanizeEntityId(id);
+  const display = entityBadgeLabel({ label: meta?.label, type: normalizedType });
+  const badgeKindLabel = entityBadgeMeta(normalizedType).label;
   return {
     type: normalizedType,
     id,
     href,
     labelHtml: escapeHtml(display),
-    title: [entityBadgeMeta(normalizedType).label, id].filter(Boolean).join(": "),
+    title: [badgeKindLabel, display].filter(Boolean).join(": "),
   };
-}
-
-function humanizeEntityId(value) {
-  return entityBadgeLabel({ id: String(value || "")
-    .replace(/[-_]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase()) });
 }
 
 function renderInline(text, ctx = {}) {
@@ -291,23 +284,23 @@ function linkifyMentions(text, mentions, stash) {
 }
 
 function renderMentionBadge(token, type, id, mentions) {
-  // When no resolved-mentions map is provided (legacy callers, optimistic
-  // local rendering before an API response), render a best-effort badge
-  // showing the bare id. When a map IS provided but this token is absent
-  // or marked exists=false, the entity has been deleted — render muted.
+  // When a resolved-mentions sidecar is missing, avoid inventing labels from
+  // ids. Badges should either show the resolved resource name or a neutral
+  // unknown label.
   const hasMap = mentions != null;
   const meta = hasMap ? mentions[token] : null;
   const isMissing = hasMap && (!meta || meta.exists === false);
   const normalizedType = normalizeEntityBadgeKind(type);
-  const label = entityBadgeLabel({ label: meta?.label, token: meta?.label ? null : token, type: normalizedType, id });
+  const label = entityBadgeLabel({ label: isMissing ? null : meta?.label, type: normalizedType });
   const cls = `badge-token badge-token-sm entity-badge entity-badge--${normalizedType}${isMissing ? " entity-badge--missing" : ""}`;
   const body = renderEntityBadgeBody(normalizedType, escapeHtml(label));
+  const badgeTitle = `${entityBadgeMeta(normalizedType).label}: ${label}`;
   if (isMissing || !meta?.href) {
-    const tooltip = isMissing ? "Mention target no longer exists" : token;
+    const tooltip = isMissing ? "Mention target no longer exists" : badgeTitle;
     return `<span class="${cls}" data-kind="${escapeHtml(normalizedType)}" title="${escapeHtml(tooltip)}">${body}</span>`;
   }
   const safe = safeHref(meta.href);
-  return `<a class="${cls}" data-kind="${escapeHtml(normalizedType)}" href="${safe}" title="${escapeHtml(token)}">${body}</a>`;
+  return `<a class="${cls}" data-kind="${escapeHtml(normalizedType)}" href="${safe}" title="${escapeHtml(badgeTitle)}">${body}</a>`;
 }
 
 function renderEntityBadge({ type, href, labelHtml, title }) {

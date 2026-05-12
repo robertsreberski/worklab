@@ -1,10 +1,16 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import {
   MENTION_TYPES,
   findMentionTrigger,
   parseMentionToken,
   parseMentions,
 } from "../../ui/src/lib/mentions.js";
+import { entityBadgeLabel, entityBadgeMeta } from "../../ui/src/lib/entityBadges.js";
+
+const repoRoot = resolve(import.meta.dirname, "../../..");
+const mentionPickerSource = readFileSync(resolve(repoRoot, "src/ui/src/components/primitives/MentionPicker.jsx"), "utf8");
 
 describe("UI mentions parser parity", () => {
   it("matches the same entity types core supports", () => {
@@ -21,6 +27,19 @@ describe("UI mentions parser parity", () => {
 
   it("parseMentions ignores tokens preceded by a word character", () => {
     expect(parseMentions("ping admin@agent/x for help")).toEqual([]);
+  });
+
+  it("uses generic badge labels when a resource name is not resolved", () => {
+    expect(entityBadgeLabel({ type: "agent", id: "triager" })).toBe("Unknown Agent");
+    expect(entityBadgeLabel({ type: "kb", token: "@kb/runbook" })).toBe("Unknown Knowledge");
+    expect(entityBadgeLabel({ type: "task", label: "Fix login" })).toBe("Fix login");
+  });
+
+  it("uses the Knowledge book icon in type badges instead of the K glyph", () => {
+    expect(entityBadgeMeta("kb")).toMatchObject({ label: "Knowledge", icon: "book" });
+    expect(entityBadgeMeta("kb").glyph).toBeUndefined();
+    expect(mentionPickerSource).toContain("badge-token-leading");
+    expect(mentionPickerSource).not.toContain("entityBadgeMeta(item.type).glyph");
   });
 
   it("parseMentionToken accepts well-formed tokens and rejects malformed ones", () => {

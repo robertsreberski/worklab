@@ -1,6 +1,6 @@
 import { BadgeToken } from "./primitives/BadgeToken.jsx";
 import { Icon } from "./Icon.jsx";
-import { entityBadgeLabel, entityBadgeMeta, normalizeEntityBadgeKind } from "../lib/entityBadges.js";
+import { entityBadgeFallback, entityBadgeLabel, entityBadgeMeta, normalizeEntityBadgeKind } from "../lib/entityBadges.js";
 
 export function EntityBadge({
   kind,
@@ -16,7 +16,9 @@ export function EntityBadge({
 }) {
   const normalized = normalizeEntityBadgeKind(kind);
   const meta = entityBadgeMeta(normalized);
-  const display = entityBadgeLabel({ label, token, type: normalized, id });
+  const display = missing
+    ? entityBadgeFallback(normalized)
+    : entityBadgeLabel({ label, type: normalized });
   const cls = `entity-badge entity-badge--${normalized} ${missing ? "entity-badge--missing" : ""} ${className}`.trim();
   const leading = meta.icon ? <Icon name={meta.icon} class="badge-token-icon" size={12} /> : null;
   return (
@@ -26,7 +28,7 @@ export function EntityBadge({
       href={missing ? null : href}
       size={size}
       class={cls}
-      title={title || token || display}
+      title={title || display}
       data-kind={normalized}
       {...rest}
     >

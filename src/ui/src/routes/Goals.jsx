@@ -548,7 +548,7 @@ function LeadCycleCockpit({ goal }) {
             <ul>
               {cockpit.leadTasks.map((task) => (
                 <li key={task.id}>
-                  <EntityBadge kind="task" label={task.task_key || task.title || task.id} href={`#/tasks/${encodeURIComponent(task.id)}`} />
+                  <EntityBadge kind="task" label={task.title || "Unknown Task"} href={`#/tasks/${encodeURIComponent(task.id)}`} />
                   <span>{task.title}</span>
                   <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
                   {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}

@@ -21,6 +21,19 @@ function normalizeSlugList(value) {
   return String(value || "").split(",").map((slug) => slug.trim()).filter(Boolean);
 }
 
+function normalizeRelationEntry(value) {
+  if (!value || typeof value !== "object") return null;
+  const slug = String(value.slug || "").trim();
+  if (!slug) return null;
+  const title = String(value.title || "").trim() || "Unknown Knowledge";
+  return value.missing ? { slug, title, missing: true } : { slug, title };
+}
+
+function normalizeRelationEntries(value) {
+  if (!Array.isArray(value)) return [];
+  return value.map(normalizeRelationEntry).filter(Boolean);
+}
+
 export function normalizeKbEntry(entry) {
   const source = entry?.meta && typeof entry.meta === "object"
     ? { ...entry.meta, body: entry.body, project: entry.project || null }
@@ -46,6 +59,9 @@ export function normalizeKbEntry(entry) {
     related_slugs: normalizeSlugList(source.related_slugs),
     supersedes_slugs: normalizeSlugList(source.supersedes_slugs),
     canonical_slug: source.canonical_slug || "",
+    canonical_entry: normalizeRelationEntry(source.canonical_entry),
+    related_entries: normalizeRelationEntries(source.related_entries),
+    supersedes_entries: normalizeRelationEntries(source.supersedes_entries),
     body: source.body || "",
     author: source.author || "",
     created_at: source.created_at || null,
