@@ -34,7 +34,7 @@ import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
-import { AttachmentTray } from "../components/AttachmentTray.jsx";
+import { AttachmentChips } from "../components/AttachmentChips.jsx";
 import { Metric } from "../components/Metric.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
@@ -175,7 +175,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "AgentReferenceText", group: "component", coverage: "visible" },
   { name: "AppShell", group: "component", coverage: "shell-hosted" },
   { name: "AssistantDock", group: "component", coverage: "shell-hosted" },
-  { name: "AttachmentTray", group: "component", coverage: "visible" },
+  { name: "AttachmentChips", group: "component", coverage: "visible" },
   { name: "Banner", group: "component", coverage: "visible" },
   { name: "Card", group: "component", coverage: "visible" },
   { name: "CheckboxField", group: "component", coverage: "visible" },
@@ -504,7 +504,7 @@ export function DesignSystem() {
                   <MentionableTextarea value="Hand off to @agent/triager when ready." readOnly />
                 </FormField>
                 <FormField label="Attachments" class="span-2">
-                  <AttachmentTray
+                  <AttachmentChips
                     attachments={[
                       { kind: "path", label: "Run input", path_text: "src/core/run-input.js" },
                       { kind: "upload", label: "Clipboard", filename: "clipboard.png", mime_type: "image/png", size_bytes: 1204 },

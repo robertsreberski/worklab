@@ -1,15 +1,3 @@
-export function pathAttachmentDraft(path, label = "") {
-  const cleanPath = String(path || "").trim();
-  if (!cleanPath) return null;
-  return {
-    client_id: `path-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-    kind: "path",
-    path: cleanPath,
-    path_text: cleanPath,
-    label: String(label || "").trim(),
-  };
-}
-
 export function uploadedAttachmentDraft(upload, label = "") {
   if (!upload?.id) return null;
   return {
@@ -22,6 +10,19 @@ export function uploadedAttachmentDraft(upload, label = "") {
     mime_type: upload.mime_type || "application/octet-stream",
     size_bytes: upload.size_bytes ?? null,
   };
+}
+
+export function transferFiles(transfer) {
+  return Array.from(transfer?.files || []).filter(Boolean);
+}
+
+export function imageFilesFromTransfer(transfer) {
+  return transferFiles(transfer).filter((file) => file.type?.startsWith("image/"));
+}
+
+export function transferHasFiles(transfer) {
+  if (transferFiles(transfer).length > 0) return true;
+  return Array.from(transfer?.items || []).some((item) => item.kind === "file");
 }
 
 export function attachmentPayload(attachments = []) {

@@ -1684,15 +1684,6 @@ a.badge-token:focus-visible {
 .attachment-chip-link:hover {
   text-decoration: underline;
 }
-.attachment-add-row {
-  display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(120px, 180px) auto;
-  gap: var(--sp-2);
-  align-items: center;
-}
-.attachment-path-input {
-  font-family: var(--font-mono);
-}
 .task-hero-attachments,
 .activity-item-attachments {
   margin-top: var(--sp-3);
@@ -11329,12 +11320,6 @@ button.settings-overview-card:focus-visible,
   }
   .attachment-chip {
     max-width: 100%;
-  }
-  .attachment-add-row {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .attachment-add-row .button {
-    justify-self: flex-start;
   }
   .activity-feed-entry {
     --activity-rail-width: 18px;

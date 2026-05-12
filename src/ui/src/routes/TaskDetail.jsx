@@ -31,14 +31,14 @@ import { StatusMenu } from "../components/StatusMenu.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
-import { AttachmentTray } from "../components/AttachmentTray.jsx";
+import { AttachmentChips } from "../components/AttachmentChips.jsx";
 import { Checkbox } from "../components/primitives/Checkbox.jsx";
 import { ActionDock, DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack, Toolbar } from "../components/layout/index.js";
 import { StructuredContent } from "../components/StructuredContent.jsx";
 import { AgentLink } from "../components/AgentLink.jsx";
 import { navigateHash } from "../lib/navigation.js";
 import { linkAgentReferencesInMarkdown } from "../lib/agentLinks.js";
-import { attachmentPayload, uploadedAttachmentDraft } from "../lib/attachments.js";
+import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAttachmentDraft } from "../lib/attachments.js";
 import { ActivityRailDot, buildActivity, commentAuthorLabel } from "./task-detail/activity.jsx";
 import { readTaskDetailCache, writeTaskDetailCache } from "./task-detail/summaryCache.js";
 import {
@@ -438,10 +438,8 @@ export function TaskDetail({ id, runParam = null }) {
     }
   }
 
-  async function handleCommentAttachmentPaste(event) {
-    const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type?.startsWith("image/"));
-    if (files.length === 0) return;
-    event.preventDefault();
+  async function attachCommentImageFiles(files) {
+    if (!files.length) return;
     setCommentAttachmentUploading(true);
     setCommentAttachmentError("");
     try {
@@ -457,6 +455,31 @@ export function TaskDetail({ id, runParam = null }) {
     } finally {
       setCommentAttachmentUploading(false);
     }
+  }
+
+  async function handleCommentAttachmentPaste(event) {
+    const files = imageFilesFromTransfer(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    await attachCommentImageFiles(files);
+  }
+
+  function handleCommentAttachmentDragOver(event) {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  async function handleCommentAttachmentDrop(event) {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const files = imageFilesFromTransfer(event.dataTransfer);
+    if (files.length === 0) {
+      setCommentAttachmentError("Drop images to attach. Type or select local paths in the field.");
+      return;
+    }
+    await attachCommentImageFiles(files);
   }
 
   function handlePendingQuestionsAnswered(result) {
@@ -1080,7 +1103,7 @@ export function TaskDetail({ id, runParam = null }) {
                   </Button>
                 )}
                 {task.attachments?.length > 0 && (
-                  <AttachmentTray attachments={task.attachments} disabled class="task-hero-attachments" />
+                  <AttachmentChips attachments={task.attachments} disabled class="task-hero-attachments" />
                 )}
               </div>
             </FormSection>
@@ -1184,9 +1207,11 @@ export function TaskDetail({ id, runParam = null }) {
                   value={newComment}
                   onInput={(e) => setNewComment(e.target.value)}
                   onPaste={handleCommentAttachmentPaste}
+                  onDragOver={handleCommentAttachmentDragOver}
+                  onDrop={handleCommentAttachmentDrop}
                   pathContext={{ taskId: task?.id, projectId: task?.project_id }}
                 />
-                <AttachmentTray
+                <AttachmentChips
                   attachments={commentAttachments}
                   onChange={setCommentAttachments}
                   uploading={commentAttachmentUploading}
@@ -1257,7 +1282,7 @@ export function TaskDetail({ id, runParam = null }) {
                           <div class="activity-item-body"><StructuredContent content={linkAgentReferencesInMarkdown(item.body, agents)} maxHeight={200} mentions={mentions} /></div>
                         )}
                         {item.attachments?.length > 0 && (
-                          <AttachmentTray attachments={item.attachments} disabled class="activity-item-attachments" />
+                          <AttachmentChips attachments={item.attachments} disabled class="activity-item-attachments" />
                         )}
                       </div>
                     </div>
