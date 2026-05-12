@@ -164,9 +164,9 @@ export function AgentsTab({ selectedName = null }) {
                     {description && <span class="pane-row-description">{description}</span>}
                     <ResourceRowTags>
                       <ResourceRowId>{modelDisplayName(a.model)}</ResourceRowId>
-                      {a.effort && <ResourceRowChip>{a.effort} effort</ResourceRowChip>}
-                      {a.context_window === "1m" && <ResourceRowChip>1M context</ResourceRowChip>}
-                      {a.enabled === false && <ResourceRowChip>disabled</ResourceRowChip>}
+                      {a.effort && <ResourceRowChip tone="accent" icon="zap">{a.effort} effort</ResourceRowChip>}
+                      {a.context_window === "1m" && <ResourceRowChip tone="info" icon="database">1M context</ResourceRowChip>}
+                      {a.enabled === false && <ResourceRowChip tone="disabled" icon="x-circle">disabled</ResourceRowChip>}
                     </ResourceRowTags>
                   </span>
                 )}

@@ -15,7 +15,7 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { DetailHead, InlineHead, SectionGroup, SectionMarker, SectionStack } from "../components/layout/index.js";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
-import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags, ResourceRowWorktreeChip } from "../components/ResourceRowMeta.jsx";
 import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Select } from "../components/primitives/Select.jsx";
@@ -983,13 +983,11 @@ export function Projects({ selectedId = null, mode = null }) {
                     <ResourceRowTags>
                       <ResourceRowId>{project.slug}</ResourceRowId>
                       <ResourceRowPath label="workdir" value={project.workdir} />
-                      {project.worktree_mode && project.worktree_mode !== "off" && (
-                        <ResourceRowChip>worktrees {project.worktree_mode}</ResourceRowChip>
-                      )}
-                      {teamLabel && <ResourceRowChip>team {teamLabel}</ResourceRowChip>}
-                      {tags.slice(0, 3).map((tag) => <ResourceRowChip key={tag}>{tag}</ResourceRowChip>)}
-                      {tags.length > 3 && <ResourceRowChip>+{tags.length - 3}</ResourceRowChip>}
-                      {project.archived && <ResourceRowChip>archived</ResourceRowChip>}
+                      <ResourceRowWorktreeChip mode={project.worktree_mode} />
+                      {teamLabel && <ResourceRowChip tone="entity" icon="users">team {teamLabel}</ResourceRowChip>}
+                      {tags.slice(0, 3).map((tag) => <ResourceRowChip key={tag} tone="neutral">{tag}</ResourceRowChip>)}
+                      {tags.length > 3 && <ResourceRowChip tone="neutral">+{tags.length - 3}</ResourceRowChip>}
+                      {project.archived && <ResourceRowChip tone="warn" icon="minus-circle">archived</ResourceRowChip>}
                     </ResourceRowTags>
                   </span>
                 )}

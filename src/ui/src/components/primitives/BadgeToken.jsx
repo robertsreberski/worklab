@@ -1,6 +1,7 @@
 export function BadgeToken({
   children,
   glyph,
+  leading,
   href,
   size = "sm",
   tone,
@@ -13,6 +14,7 @@ export function BadgeToken({
   const style = tone ? { "--badge-token-tone": tone } : undefined;
   const body = (
     <>
+      {leading && <span class="badge-token-leading">{leading}</span>}
       {glyph && <span class="badge-token-glyph" aria-hidden="true">{glyph}</span>}
       <span class="badge-token-label">{children}</span>
     </>

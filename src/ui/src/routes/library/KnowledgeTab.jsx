@@ -19,14 +19,6 @@ import { buildKnowledgeResourceGroups, flattenResourceGroups } from "../../lib/r
 import { navigateHash } from "../../lib/navigation.js";
 import { useGlobalShortcuts } from "../../lib/useGlobalShortcuts.js";
 
-function tokenForBadge(category) {
-  const c = (category || "").toLowerCase();
-  if (c.includes("how")) return "howto";
-  if (c.includes("policy")) return "policy";
-  if (c.includes("ref")) return "reference";
-  return c.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || null;
-}
-
 function optionLabel(value, fallback = "Uncategorized") {
   if (!value) return fallback;
   return String(value).replace(/[-_]+/g, " ").replace(/\b\w/g, (m) => m.toUpperCase());
@@ -200,7 +192,6 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       {groups.map((group) => (
         <ResourceGroup key={group.key} group={group}>
           {group.items.map((e) => {
-            const cat = tokenForBadge(e.category);
             return (
               <PaneRow
                 key={e.slug}
@@ -220,11 +211,11 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
                 sub={(
                   <ResourceRowTags>
                     {e.project?.slug && <ResourceRowId>{e.project.slug}</ResourceRowId>}
-                    {e.auto_promoted && <ResourceRowChip class="kb-category-badge" data-category="run-results">run output</ResourceRowChip>}
-                    {e.category && <ResourceRowChip class="kb-category-badge" data-category={cat}>{e.category}</ResourceRowChip>}
-                    {e.subcategory && <ResourceRowChip class="kb-category-badge" data-category={tokenForBadge(e.subcategory)}>{e.subcategory}</ResourceRowChip>}
-                    {e.pinned && <ResourceRowChip>pinned</ResourceRowChip>}
-                    {e.related_slugs?.length ? <ResourceRowChip>{e.related_slugs.length} related</ResourceRowChip> : null}
+                    {e.auto_promoted && <ResourceRowChip tone="info" icon="upload">run output</ResourceRowChip>}
+                    {e.category && <ResourceRowChip tone="info" icon="book">{e.category}</ResourceRowChip>}
+                    {e.subcategory && <ResourceRowChip tone="neutral">{e.subcategory}</ResourceRowChip>}
+                    {e.pinned && <ResourceRowChip tone="accent" icon="pin">pinned</ResourceRowChip>}
+                    {e.related_slugs?.length ? <ResourceRowChip tone="neutral" icon="link">{e.related_slugs.length} related</ResourceRowChip> : null}
                     <ResourceRowId>{e.slug}</ResourceRowId>
                   </ResourceRowTags>
                 )}
