@@ -4,13 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   autoPromotedRunResultInfo,
+  kbEntryClassification,
   kbPath,
   kbList,
   kbRead,
   kbCreate,
+  kbTaxonomy,
   kbUpdate,
   kbDelete,
   kbListPinned,
+  normalizeKbCategory,
+  normalizeKbTag,
 } from "../../core/kb.js";
 
 const dirs = [];
@@ -31,6 +35,27 @@ describe("kbPath", () => {
 });
 
 describe("kbCreate + kbRead (round trip)", () => {
+  it("normalizes reusable taxonomy on write", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "plan-note",
+      title: "Plan Note",
+      body: "body",
+      tags: ["Jetpack.com", " exec-plan ", "Jetpack Com"],
+      category: "execution-plan",
+      subcategory: "Runtime Settings",
+      author: "human",
+    });
+
+    const out = kbRead({ dataDir: d, slug: "plan-note" });
+    expect(out.meta.category).toBe("plans");
+    expect(out.meta.subcategory).toBe("runtime-settings");
+    expect(out.meta.tags).toEqual(["jetpack-com", "execplan"]);
+    expect(out.meta.meaningful_plan).toBe(true);
+    expect(out.meta.surface).toBe("plans");
+  });
+
   it("writes an entry and reads it back with flow-syntax tags", () => {
     const d = mk();
     const now = new Date("2026-04-22T10:00:00Z");
@@ -367,6 +392,36 @@ describe("kbList", () => {
     }
   });
 
+  it("filters with normalized tag and category aliases", () => {
+    const d = mk();
+    kbCreate({
+      dataDir: d,
+      slug: "runtime-plan",
+      title: "Runtime Plan",
+      body: "b",
+      tags: ["jetpack.com"],
+      category: "exec-plan",
+      author: "human",
+    });
+    kbCreate({
+      dataDir: d,
+      slug: "runtime-report",
+      title: "Runtime Report",
+      body: "b",
+      tags: ["jetpack.com"],
+      category: "research",
+      author: "human",
+    });
+
+    expect(kbList({ dataDir: d, tag: "jetpack.com" }).map((entry) => entry.slug).sort()).toEqual([
+      "runtime-plan",
+      "runtime-report",
+    ]);
+    expect(kbList({ dataDir: d, category: "execution-plan" }).map((entry) => entry.slug)).toEqual([
+      "runtime-plan",
+    ]);
+  });
+
   it("does NOT load body content (verified via large body)", () => {
     const d = mk();
     const big = "x".repeat(500_000);
@@ -617,6 +672,79 @@ describe("autoPromotedRunResultInfo", () => {
   });
 });
 
+describe("KB taxonomy helpers", () => {
+  it("normalizes category and tag aliases", () => {
+    expect(normalizeKbCategory("Exec Plan")).toBe("plans");
+    expect(normalizeKbCategory("execution-plan")).toBe("plans");
+    expect(normalizeKbCategory("run result")).toBe("run-results");
+    expect(normalizeKbTag("Jetpack.com")).toBe("jetpack-com");
+    expect(normalizeKbTag("run-results")).toBe("run-result");
+  });
+
+  it("classifies plans separately from generated run outputs", () => {
+    expect(kbEntryClassification({
+      slug: "path-forward-execplan",
+      title: "Path Forward ExecPlan",
+      category: "plans",
+      tags: ["execplan"],
+    })).toMatchObject({
+      surface: "plans",
+      meaningful_plan: true,
+      run_output: false,
+    });
+
+    expect(kbEntryClassification({
+      slug: "run-abc",
+      title: "T-1 final answer",
+      category: "run-results",
+      tags: ["run-result", "execute"],
+      source_run_id: "abc",
+    })).toMatchObject({
+      surface: "run_outputs",
+      meaningful_plan: false,
+      run_output: true,
+    });
+  });
+
+  it("returns taxonomy counts and raw alias cleanup candidates", () => {
+    const d = mk();
+    mkdirSync(join(d, "knowledge"), { recursive: true });
+    writeFileSync(join(d, "knowledge", "old-plan.md"), `---
+title: Old Plan
+slug: old-plan
+tags: [Jetpack.com, exec-plan]
+category: execution-plan
+updated_at: 2026-05-01T00:00:00Z
+---
+
+body
+`);
+    kbCreate({
+      dataDir: d,
+      slug: "research-note",
+      title: "Research",
+      body: "body",
+      tags: ["jetpack-com"],
+      category: "research",
+      author: "human",
+    });
+
+    const taxonomy = kbTaxonomy({ dataDir: d });
+    expect(taxonomy.categories).toContainEqual({ category: "plans", count: 1 });
+    expect(taxonomy.tags).toContainEqual({ tag: "jetpack-com", count: 2 });
+    expect(taxonomy.aliases.categories).toContainEqual({
+      raw: "execution-plan",
+      normalized: "plans",
+      count: 1,
+    });
+    expect(taxonomy.aliases.tags).toContainEqual({
+      raw: "Jetpack.com",
+      normalized: "jetpack-com",
+      count: 1,
+    });
+  });
+});
+
 describe("slug validation", () => {
   const bad = [
     ["uppercase", "My-Note"],
@@ -760,7 +888,7 @@ describe("string coercion round-trip (quoted strings)", () => {
     expect(out.meta.title).toBe(evil);
   });
 
-  it("round-trips tags array with coercible strings [\"true\", \"42\", \"a:b\"]", () => {
+  it("normalizes tags array with coercible strings [\"true\", \"42\", \"a:b\"]", () => {
     const d = mk();
     kbCreate({
       dataDir: d,
@@ -772,7 +900,7 @@ describe("string coercion round-trip (quoted strings)", () => {
     });
     const out = kbRead({ dataDir: d, slug: "tags-coerce" });
     expect(Array.isArray(out.meta.tags)).toBe(true);
-    expect(out.meta.tags).toEqual(["true", "42", "a:b"]);
+    expect(out.meta.tags).toEqual(["true", "42", "a-b"]);
     for (const t of out.meta.tags) expect(typeof t).toBe("string");
   });
 
@@ -809,7 +937,7 @@ Body.
     for (const t of out.meta.tags) expect(typeof t).toBe("string");
   });
 
-  it("round-trips flow-array tags containing commas", () => {
+  it("normalizes flow-array tags containing commas", () => {
     const d = mk();
     kbCreate({
       dataDir: d,
@@ -820,9 +948,9 @@ Body.
       author: "human",
     });
     const out = kbRead({ dataDir: d, slug: "comma-tags" });
-    expect(out.meta.tags).toEqual(["a, b", "c:d", "normal"]);
+    expect(out.meta.tags).toEqual(["a-b", "c-d", "normal"]);
     expect(out.meta.tags.length).toBe(3);
-    expect(out.meta.tags[0]).toBe("a, b");
+    expect(out.meta.tags[0]).toBe("a-b");
   });
 
   it("round-trips standalone string value with comma", () => {

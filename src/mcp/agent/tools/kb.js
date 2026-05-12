@@ -11,6 +11,7 @@ import {
   kbList,
   kbPath,
   kbRead,
+  kbTaxonomy,
   kbUpdate,
   removeSource,
   search,
@@ -114,7 +115,7 @@ export const definitions = [
   {
     name: "kb_create",
     description:
-      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables such as research reports, runbooks, decisions, and canonical analysis. Do not create entries for routine run results or one-off status updates. Prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
+      "Create a new Worklab Knowledge Base entry. In this tool name, `kb` means Knowledge Base, not kilobytes. Use this to preserve durable, reusable deliverables such as research reports, runbooks, decisions, and canonical analysis. Do not create entries for routine run results or one-off status updates. Call kb_taxonomy/list/search first, reuse existing tags when possible, and prefer kb_update when a related canonical entry already exists. The author is set automatically from the calling agent context.",
     inputSchema: {
       type: "object",
       properties: {
@@ -265,6 +266,17 @@ export const definitions = [
     annotations: { readOnlyHint: true },
   },
   {
+    name: "kb_taxonomy",
+    description:
+      "List current normalized Knowledge Base categories, subcategories, tags, surfaces, and raw aliases. Call this before kb_create/kb_update so you can reuse existing tags instead of inventing near-duplicates.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+      additionalProperties: false,
+    },
+    annotations: { readOnlyHint: true },
+  },
+  {
     name: "kb_search",
     description: "Search the Worklab Knowledge Base with hybrid FTS/semantic search. Returns compact snippets.",
     inputSchema: {
@@ -354,6 +366,9 @@ export function buildHandlers(context) {
       const { tag, category, subcategory, project_id, pinned, sort } = kbListSchema.parse(input);
       const entries = kbList({ dataDir, tag, category, subcategory, project_id, pinned, sort });
       return { entries };
+    },
+    async kb_taxonomy(_input = {}) {
+      return kbTaxonomy({ dataDir });
     },
     async kb_search(input) {
       const { query, limit, tag, category, subcategory, project_id } = kbSearchSchema.parse(input);

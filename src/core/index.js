@@ -292,6 +292,7 @@ export {
   autoPromotedRunResultInfo,
   DEFAULT_KB_SORT,
   KB_SORT_MODES,
+  kbEntryClassification,
   kbCreate,
   kbDelete,
   kbList,
@@ -300,7 +301,10 @@ export {
   kbPath,
   kbRead,
   kbReadMeta,
+  kbTaxonomy,
   kbUpdate,
+  normalizeKbCategory,
+  normalizeKbTag,
   normalizeKbSort,
 } from "./kb.js";
 

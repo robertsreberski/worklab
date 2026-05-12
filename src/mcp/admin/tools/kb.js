@@ -24,6 +24,7 @@ export const definitions = [
     pinned: boolean("Pinned filter"),
     sort: { ...string("Sort mode"), enum: KB_SORT_MODES },
   }), { annotations: { readOnlyHint: true } }),
+  tool("worklab_kb_taxonomy", "List normalized Knowledge Base categories, subcategories, tags, surfaces, and raw alias cleanup candidates.", object({}), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"]), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_create", "Create a Worklab Knowledge Base entry.", object({
     slug: slugSchema,
@@ -64,6 +65,7 @@ export const definitions = [
 
 const specs = [
   ["worklab_kb_list", "GET", "/api/kb", ["tag", "project_id", "category", "subcategory", "pinned", "sort"]],
+  ["worklab_kb_taxonomy", "GET", "/api/kb/taxonomy"],
   ["worklab_kb_read", "GET", "/api/kb/:slug"],
   ["worklab_kb_create", "POST", "/api/kb", [], "input"],
   ["worklab_kb_update", "PATCH", "/api/kb/:slug", [], "patch"],
