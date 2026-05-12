@@ -54,17 +54,20 @@ describe("settings UI duration conversions", () => {
     expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
   });
 
-  it("keeps the in-page Settings section nav sticky, roomy, and icon-only", () => {
+  it("keeps the in-page Settings section nav sticky, labeled on desktop, and compact on mobile", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
 
-    expect(source).not.toContain('class="settings-section-nav-label"');
+    expect(source).toContain("iconLeft={<Icon name={item.icon} size={18} />}");
+    expect(source).toContain("{item.label}");
     expect(source).toContain('title={item.label}');
     expect(source).toContain('aria-label={item.label}');
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*position:\s*sticky/);
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*top:\s*calc\(var\(--sp-2\) \+ var\(--mobile-safe-top\)\)/);
-    expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*width:\s*46px/);
-    expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*min-height:\s*46px/);
+    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*width:\s*100%/);
+    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*min-height:\s*40px/);
+    expect(styles).toMatch(/@media \(max-width:\s*860px\)\s*\{[\s\S]*\.settings-section-nav\s+\.button-label\s*\{[^}]*display:\s*none/);
     expect(styles).not.toContain(".settings-section-nav-label");
   });
 
