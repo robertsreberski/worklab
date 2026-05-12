@@ -14,27 +14,28 @@ describe("renderMarkdown mentions", () => {
         },
       },
     });
-    expect(html).toContain('<a class="chip-mention chip-mention--agent" href="#/library/agents/triager"');
-    expect(html).toContain(">Triager Bot</a>");
+    expect(html).toContain('<a class="badge-token badge-token-sm entity-badge entity-badge--agent" data-kind="agent" href="#/library/agents/triager"');
+    expect(html).toContain('<span class="badge-token-glyph" aria-hidden="true">A</span>');
+    expect(html).toContain('<span class="badge-token-label">Triager Bot</span>');
     expect(html).toContain('title="@agent/triager"');
   });
 
   it("renders unknown / deleted mentions as a struck-through chip", () => {
     const html = renderMarkdown("ping @agent/missing", { mentions: {} });
-    expect(html).toContain("chip-mention--missing");
+    expect(html).toContain("entity-badge--missing");
     expect(html).toContain("agent/missing");
     expect(html).toContain('title="Mention target no longer exists"');
   });
 
   it("renders the bare token id as a fallback when no mentions map is provided", () => {
     const html = renderMarkdown("@agent/triager");
-    expect(html).toContain("chip-mention--agent");
+    expect(html).toContain("entity-badge--agent");
     expect(html).toContain("agent/triager");
   });
 
   it("does not produce a mention badge for email-style @ in prose", () => {
     const html = renderMarkdown("Email admin@agent/x for help.");
-    expect(html).not.toContain("chip-mention");
+    expect(html).not.toContain("entity-badge");
   });
 
   it("renders mentions inside list items", () => {
@@ -49,7 +50,7 @@ describe("renderMarkdown mentions", () => {
         },
       },
     });
-    expect(html).toMatch(/<ul><li>assign <a class="chip-mention chip-mention--agent"/);
+    expect(html).toMatch(/<ul><li>assign <a class="badge-token badge-token-sm entity-badge entity-badge--agent"/);
   });
 });
 

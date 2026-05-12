@@ -6,6 +6,7 @@
 // clickable badges via the same hash routes as the rest of the app.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
+import { entityBadgeLabel, entityBadgeMeta, normalizeEntityBadgeKind } from "../lib/entityBadges.js";
 import { MENTION_TOKEN_RE } from "../lib/mentions.js";
 
 export function renderMarkdown(md, options = {}) {
@@ -231,14 +232,17 @@ function renderMentionBadge(token, type, id, mentions) {
   const hasMap = mentions != null;
   const meta = hasMap ? mentions[token] : null;
   const isMissing = hasMap && (!meta || meta.exists === false);
-  const label = meta?.label || `${type}/${id}`;
-  const cls = `chip-mention chip-mention--${type}${isMissing ? " chip-mention--missing" : ""}`;
+  const normalizedType = normalizeEntityBadgeKind(type);
+  const badgeMeta = entityBadgeMeta(normalizedType);
+  const label = entityBadgeLabel({ label: meta?.label, token: meta?.label ? null : token, type: normalizedType, id });
+  const cls = `badge-token badge-token-sm entity-badge entity-badge--${normalizedType}${isMissing ? " entity-badge--missing" : ""}`;
+  const body = `<span class="badge-token-glyph" aria-hidden="true">${escapeHtml(badgeMeta.glyph)}</span><span class="badge-token-label">${escapeHtml(label)}</span>`;
   if (isMissing || !meta?.href) {
     const tooltip = isMissing ? "Mention target no longer exists" : token;
-    return `<span class="${cls}" title="${escapeHtml(tooltip)}">${escapeHtml(label)}</span>`;
+    return `<span class="${cls}" data-kind="${escapeHtml(normalizedType)}" title="${escapeHtml(tooltip)}">${body}</span>`;
   }
   const safe = safeHref(meta.href);
-  return `<a class="${cls}" href="${safe}" title="${escapeHtml(token)}">${escapeHtml(label)}</a>`;
+  return `<a class="${cls}" data-kind="${escapeHtml(normalizedType)}" href="${safe}" title="${escapeHtml(token)}">${body}</a>`;
 }
 
 function restoreInlinePlaceholders(value, placeholders) {

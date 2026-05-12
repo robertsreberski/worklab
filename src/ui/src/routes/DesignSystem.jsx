@@ -19,6 +19,7 @@ import { ConfirmButton } from "../components/ConfirmButton.jsx";
 import { Drawer } from "../components/Drawer.jsx";
 import { EmptyState, EmptyStateFiltered } from "../components/EmptyState.jsx";
 import { EntityHeader } from "../components/EntityHeader.jsx";
+import { EntityBadge, EntityBadgeText } from "../components/EntityBadge.jsx";
 import { EntityMetaList } from "../components/EntityMetaList.jsx";
 import { ErrorState } from "../components/ErrorState.jsx";
 import { EventRow } from "../components/EventRow.jsx";
@@ -47,6 +48,7 @@ import { SwitchField } from "../components/SwitchField.jsx";
 import { ToolCallBlock } from "../components/ToolCallBlock.jsx";
 import {
   Badge,
+  BadgeToken,
   Breadcrumb,
   Button,
   Checkbox,
@@ -108,6 +110,7 @@ import {
 
 export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "Badge", group: "primitive", coverage: "visible" },
+  { name: "BadgeToken", group: "primitive", coverage: "visible" },
   { name: "Breadcrumb", group: "primitive", coverage: "visible" },
   { name: "Button", group: "primitive", coverage: "visible" },
   { name: "Checkbox", group: "primitive", coverage: "visible" },
@@ -184,6 +187,8 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "EmptyState", group: "component", coverage: "visible" },
   { name: "EmptyStateFiltered", group: "component", coverage: "visible" },
   { name: "EntityHeader", group: "component", coverage: "visible" },
+  { name: "EntityBadge", group: "component", coverage: "visible" },
+  { name: "EntityBadgeText", group: "component", coverage: "visible" },
   { name: "EntityChromeBridge", group: "component", coverage: "shell-hosted" },
   { name: "EntityMetaList", group: "component", coverage: "visible" },
   { name: "ErrorState", group: "component", coverage: "visible" },
@@ -440,6 +445,7 @@ export function DesignSystem() {
               <StageToken stage="review" variant="menu" />
               <StatusDot status="running" pulse />
               <LivePulse />
+              <BadgeToken glyph="R">reference</BadgeToken>
               <Chip variant="muted">tag · infra-api</Chip>
               <Chip variant="accent">link · goal</Chip>
               <Chip variant="warn">pending · 3 actions</Chip>
@@ -773,6 +779,25 @@ export function DesignSystem() {
               <AgentLink name="builder" agents={DEMO_AGENTS} showAvatar />
               <span class="soft-meta"><AgentReferenceText text="References @builder inline." agents={DEMO_AGENTS} /></span>
               <CommentAuthor authorType="agent" authorId="builder" agents={DEMO_AGENTS} />
+            </div>
+            <div class="ds-catalog-row">
+              <EntityBadge kind="task" id="T-321" label="T-321 Gather P2 evidence" href="#/tasks/T-321" />
+              <EntityBadge kind="project" id="p-7" label="Path Forward App" href="#/projects/p-7" />
+              <EntityBadge kind="kb" id="rsm-style" label="RSM Style Guidance" href="#/library/knowledge/rsm-style" />
+              <EntityBadge kind="skill" id="external-mcp" label="Automattic Context MCP" href="#/library/skills/external-mcp" />
+              <EntityBadge kind="agent" id="planner" label="Planner" href="#/library/agents/planner" />
+              <EntityBadge kind="goal" id="goal-1" label="Launch readiness" href="#/goals/goal-1" />
+              <EntityBadge kind="run" id="run-1" label="Run run-1" href="#/tasks/T-321?run=run-1" />
+              <EntityBadge kind="task" id="missing" label="@task/missing" missing />
+            </div>
+            <div class="ds-catalog-row">
+              <EntityBadgeText references={[
+                "Inline text with ",
+                { kind: "task", id: "T-7", label: "T-7 Review plan", href: "#/tasks/T-7" },
+                " and ",
+                { kind: "agent", id: "builder", label: "Builder", href: "#/library/agents/builder" },
+                ".",
+              ]} />
             </div>
             <FormField label="AgentPicker">
               <AgentPicker value={agent} onChange={setAgent} agents={DEMO_AGENTS} />

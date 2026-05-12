@@ -1,4 +1,5 @@
 export { Badge } from "./Badge.jsx";
+export { BadgeToken } from "./BadgeToken.jsx";
 export { Breadcrumb } from "./Breadcrumb.jsx";
 export { Button } from "./Button.jsx";
 export { Checkbox } from "./Checkbox.jsx";

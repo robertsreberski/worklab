@@ -65,6 +65,17 @@ the rule changes — not a sixth variant.
 **Rule of one alert.** Per row / hero, surface only the highest-priority alert
 chip (`stuck > error > 2+ blocking > N actions > needs-owner`); tooltip the rest.
 
+## Badge System
+
+`BadgeToken` is the shared visual base for compact references and small
+metadata. Entity references use `EntityBadge`, which adds the canonical entity
+glyph, kind tone, missing-target treatment, and optional navigation.
+
+Use entity badges for clickable or mention-like references to tasks, projects,
+Knowledge Base entries, skills, agents, goals, teams, and runs. Use `Chip` for
+non-reference metadata, `StatusPill` for state, `StageToken` for workflow
+stage, and `Badge` for counts.
+
 ## Component Coverage
 
 The design-system catalog should stay one-to-one with the shared component

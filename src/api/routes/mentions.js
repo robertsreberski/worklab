@@ -20,10 +20,12 @@ import {
 import {
   MENTION_TYPES,
   kbListByTitlePrefix,
+  loadSkills,
   serializeMention,
 } from "../../core/index.js";
+import { join } from "node:path";
 
-const DEFAULT_LIMIT = 8;
+const DEFAULT_LIMIT = 12;
 const MAX_LIMIT = 25;
 
 function parseLimit(value) {
@@ -136,6 +138,48 @@ function shapeKb(meta) {
   };
 }
 
+function shapeSkill(skill) {
+  const id = skill.name;
+  return {
+    token: serializeMention({ type: "skill", id }),
+    type: "skill",
+    id,
+    label: skill.display_name || humanize(id) || id,
+    sublabel: skill.trigger ? `skill · ${String(skill.trigger).slice(0, 120)}` : "skill",
+    href: `#/library/skills/${encodeURIComponent(id)}`,
+    enabled: skill.enabled !== false,
+  };
+}
+
+function shapeGoal(row) {
+  const id = row.id;
+  const project = row.project_name || row.project_slug || row.project_id || id;
+  const team = row.team_name || row.team_slug || row.team_id;
+  return {
+    token: serializeMention({ type: "goal", id }),
+    type: "goal",
+    id,
+    label: project,
+    sublabel: team ? `goal · ${team}` : "goal",
+    href: `#/goals/${encodeURIComponent(id)}`,
+  };
+}
+
+function shapeRun(row) {
+  const id = row.id;
+  const taskLabel = row.task_key || row.task_id || "no task";
+  return {
+    token: serializeMention({ type: "run", id }),
+    type: "run",
+    id,
+    label: `Run ${id} · ${taskLabel}`,
+    sublabel: row.process_status ? `run · ${row.process_status}` : "run",
+    href: row.task_id
+      ? `#/tasks/${encodeURIComponent(row.task_id)}?run=${encodeURIComponent(id)}`
+      : "#/runs",
+  };
+}
+
 function rankRow(type, row, q) {
   if (type === "agent") return rankAgent(row, q);
   if (type === "task") {
@@ -162,6 +206,29 @@ function rankRow(type, row, q) {
       rankPrefix(row.title, q) + 0.1,
     );
   }
+  if (type === "skill") {
+    return Math.min(
+      rankPrefix(row.name, q),
+      rankPrefix(row.display_name, q) + 0.1,
+      rankPrefix(row.trigger, q) + 0.2,
+    );
+  }
+  if (type === "goal") {
+    return Math.min(
+      rankPrefix(row.id, q),
+      rankPrefix(row.project_slug, q) + 0.1,
+      rankPrefix(row.project_name, q) + 0.1,
+      rankPrefix(row.team_slug, q) + 0.2,
+      rankPrefix(row.team_name, q) + 0.2,
+    );
+  }
+  if (type === "run") {
+    return Math.min(
+      rankPrefix(row.id, q),
+      rankPrefix(row.task_key, q) + 0.1,
+      rankPrefix(row.task_title, q) + 0.2,
+    );
+  }
   return 4;
 }
 
@@ -171,12 +238,76 @@ const SHAPERS = {
   project: shapeProject,
   team: shapeTeam,
   kb: shapeKb,
+  skill: shapeSkill,
+  goal: shapeGoal,
+  run: shapeRun,
 };
 
 function searchType(type, { db, dataDir, q, limit }) {
   if (type === "kb") {
     if (!dataDir) return [];
     return kbListByTitlePrefix({ dataDir, query: q, limit });
+  }
+  if (type === "skill") {
+    if (!dataDir) return [];
+    const needle = q.toLowerCase();
+    return loadSkills(join(dataDir, "skills"))
+      .filter((skill) => [
+        skill.name,
+        skill.display_name,
+        skill.trigger,
+      ].some((value) => String(value || "").toLowerCase().includes(needle)))
+      .slice(0, limit);
+  }
+  if (type === "goal") {
+    if (!db) return [];
+    const like = `%${q}%`;
+    return db.prepare(`
+      SELECT
+        g.id,
+        g.status,
+        g.project_id,
+        g.team_id,
+        g.root_task_id,
+        p.name AS project_name,
+        p.slug AS project_slug,
+        t.name AS team_name,
+        t.slug AS team_slug
+      FROM goals g
+      LEFT JOIN projects p ON p.id = g.project_id
+      LEFT JOIN teams t ON t.id = g.team_id
+      WHERE g.id LIKE ?
+         OR g.root_task_id LIKE ?
+         OR p.name LIKE ?
+         OR p.slug LIKE ?
+         OR t.name LIKE ?
+         OR t.slug LIKE ?
+      ORDER BY COALESCE(g.last_lead_at, g.updated_at) DESC
+      LIMIT ?
+    `).all(like, like, like, like, like, like, limit);
+  }
+  if (type === "run") {
+    if (!db) return [];
+    const like = `%${q}%`;
+    return db.prepare(`
+      SELECT
+        r.id,
+        r.task_id,
+        r.mode,
+        r.stage,
+        r.status,
+        r.process_status,
+        r.started_at,
+        t.task_key,
+        t.title AS task_title
+      FROM task_runs r
+      LEFT JOIN tasks t ON t.id = r.task_id
+      WHERE r.id LIKE ?
+         OR t.task_key LIKE ?
+         OR t.title LIKE ?
+      ORDER BY r.started_at DESC, r.rowid DESC
+      LIMIT ?
+    `).all(like, like, like, limit);
   }
   switch (type) {
     case "agent": return listAgentsByNamePrefix(db, q, limit);

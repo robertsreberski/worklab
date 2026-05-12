@@ -4,11 +4,11 @@
 // as a small duplicate; if it ever drifts, the test in
 // `src/__tests__/ui/mentions-token.test.js` will catch it.
 
-export const MENTION_TYPES = ["agent", "task", "project", "team", "kb"];
+export const MENTION_TYPES = ["agent", "task", "project", "team", "kb", "skill", "goal", "run"];
 
-export const MENTION_TOKEN_RE = /(?<![\w@])@(agent|task|project|team|kb)\/([A-Za-z0-9_-]+)/g;
+export const MENTION_TOKEN_RE = /(?<![\w@])@(agent|task|project|team|kb|skill|goal|run)\/([A-Za-z0-9_-]+)/g;
 
-const MENTION_TOKEN_FULL_RE = /^@(agent|task|project|team|kb)\/([A-Za-z0-9_-]+)$/;
+const MENTION_TOKEN_FULL_RE = /^@(agent|task|project|team|kb|skill|goal|run)\/([A-Za-z0-9_-]+)$/;
 
 export function parseMentionToken(token) {
   if (typeof token !== "string") return null;

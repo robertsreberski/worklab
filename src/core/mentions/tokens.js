@@ -7,15 +7,15 @@
 //
 // Pure module: no DB, no I/O.
 
-export const MENTION_TYPES = ["agent", "task", "project", "team", "kb"];
+export const MENTION_TYPES = ["agent", "task", "project", "team", "kb", "skill", "goal", "run"];
 
 // Lookbehind blocks matches inside emails or paths (`foo@agent/x`)
 // and prevents `@@` from being parsed. The id charset covers slugs,
 // task keys (`T-42`), uuids, and the lowercase + hyphen format used
 // by agents.
-export const MENTION_TOKEN_RE = /(?<![\w@])@(agent|task|project|team|kb)\/([A-Za-z0-9_-]+)/g;
+export const MENTION_TOKEN_RE = /(?<![\w@])@(agent|task|project|team|kb|skill|goal|run)\/([A-Za-z0-9_-]+)/g;
 
-const MENTION_TOKEN_FULL_RE = /^@(agent|task|project|team|kb)\/([A-Za-z0-9_-]+)$/;
+const MENTION_TOKEN_FULL_RE = /^@(agent|task|project|team|kb|skill|goal|run)\/([A-Za-z0-9_-]+)$/;
 
 export function parseMentions(text) {
   const out = [];
