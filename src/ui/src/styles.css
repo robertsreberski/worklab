@@ -11962,19 +11962,19 @@ button.settings-overview-card:focus-visible,
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: var(--accent);
+  color: var(--stage-tone);
   opacity: 0;
 }
 .stage-token-grid:hover:not(:disabled),
 .stage-token-grid.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--stage-tone);
+  background: color-mix(in srgb, var(--stage-tone) 12%, var(--surface-elevated));
   color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stage-tone) 30%, transparent);
 }
 .stage-token-grid.active .stage-token-glyph {
-  background: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 24%, transparent);
+  background: var(--stage-tone);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--stage-tone) 24%, transparent);
 }
 .stage-token-grid.active .stage-token-selection {
   opacity: 1;

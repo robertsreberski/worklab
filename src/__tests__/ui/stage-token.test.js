@@ -9,6 +9,12 @@ const stageTokenSource = readFileSync(
 );
 
 describe("taskStageMeta", () => {
+  it("uses distinct colors for plan and execute stages", () => {
+    expect(taskStageMeta("plan").tone).toBe("var(--accent)");
+    expect(taskStageMeta("execute").tone).toBe("var(--status-progress)");
+    expect(taskStageMeta("execute").tone).not.toBe(taskStageMeta("plan").tone);
+  });
+
   it("formats unknown stage labels with a capital first letter", () => {
     expect(taskStageMeta("waiting_on_external").label).toBe("Waiting on external");
   });
