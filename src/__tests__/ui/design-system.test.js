@@ -120,6 +120,17 @@ describe("design system catalog", () => {
     expect(designSystemSource).not.toMatch(/<div\s+class="ds-swatch-grid"/);
   });
 
+  it("documents and demonstrates semantic resource-row metadata chips", () => {
+    const docs = readFileSync(docsPath, "utf8");
+    const designSystemSource = readFileSync(designSystemPath, "utf8");
+
+    expect(docs).toContain("ResourceRowChip");
+    expect(docs).toContain("ResourceRowWorktreeChip");
+    expect(designSystemSource).toContain("<ResourceRowChip tone=\"accent\" icon=\"zap\">high effort</ResourceRowChip>");
+    expect(designSystemSource).toContain("<ResourceRowWorktreeChip mode=\"auto\" />");
+    expect(designSystemSource).toContain("<ResourceRowWorktreeChip mode=\"required\" />");
+  });
+
   it("represents every primitive export in the live catalog coverage", () => {
     expect(coverageNames("primitive")).toEqual(componentExportsFromBarrel(primitivesIndexPath).sort());
   });

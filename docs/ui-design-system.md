@@ -76,6 +76,12 @@ Knowledge Base entries, skills, agents, goals, teams, and runs. Use `Chip` for
 non-reference metadata, `StatusPill` for state, `StageToken` for workflow
 stage, and `Badge` for counts.
 
+Library and pane-list metadata should use `ResourceRowTags` with the shared
+row primitives. `ResourceRowId` is for stable IDs, `ResourceRowPath` is for
+workdirs and filesystem paths, `ResourceRowChip` is for compact semantic row
+metadata with `tone`, `icon`, or `glyph`, and `ResourceRowWorktreeChip`
+normalizes project worktree modes (`auto` / `required`) while hiding `off`.
+
 ## Component Coverage
 
 The design-system catalog should stay one-to-one with the shared component
