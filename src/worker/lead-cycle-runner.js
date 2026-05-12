@@ -6,6 +6,7 @@
 
 import { generateResponse, resolveModel } from "../core/index.js";
 import { loadTaskRunSetup } from "../core/run-input.js";
+import { normalizeTeamGoalContract } from "../core/teams.js";
 import { getTeamById, getTeamRosterAgentNames, listTeamMembers, listRecentLeadCycles } from "../core/db/queries/teams.js";
 import { getProjectById } from "../core/db/queries/projects.js";
 import { getAgentByName } from "../core/db/queries/agents.js";
@@ -21,8 +22,15 @@ import { maxTurnsForModel } from "./util.js";
 
 function listOpenChildTasks(db, rootTaskId) {
   return db.prepare(`
-    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.failure_count,
-           t.last_failure_kind, t.updated_at
+    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.instructions,
+           t.plan_body, t.failure_count, t.last_failure_kind, t.updated_at,
+           (
+             SELECT r.summary
+             FROM task_runs r
+             WHERE r.task_id = t.id
+             ORDER BY COALESCE(r.ended_at, r.started_at) DESC
+             LIMIT 1
+           ) AS last_run_summary
     FROM tasks t
     JOIN task_edges e ON e.child_task_id = t.id AND e.parent_task_id = ?
       AND e.edge_type = 'subtask'
@@ -47,7 +55,8 @@ function listUnassignedTeamTasks(db, { teamId, projectId }) {
 
 function listSameProjectTasks(db, { rootTaskId, teamId, projectId }) {
   return db.prepare(`
-    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.updated_at,
+    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.instructions,
+           t.plan_body, t.updated_at,
            (
              SELECT r.summary
              FROM task_runs r
@@ -112,13 +121,74 @@ function describeMembers(members) {
   }).join("\n");
 }
 
+function snippet(value, max = 240) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function describeGoalContract(goalContract, teamGoal = "") {
+  const contract = normalizeTeamGoalContract(goalContract || {}, { teamGoal });
+  const lines = [
+    `North star: ${contract.north_star || "(not set)"}`,
+    `Objective: ${contract.objective || "(not set)"}`,
+    `Done when: ${contract.stopping_condition || "(not set)"}`,
+    `Validate with: ${contract.validation_loop || "(not set)"}`,
+  ];
+  if (contract.constraints.length) {
+    lines.push("Constraints:");
+    for (const constraint of contract.constraints) lines.push(`- ${constraint}`);
+  }
+  if (contract.links.length) {
+    lines.push("Links:");
+    for (const link of contract.links) lines.push(`- ${link.label}: ${link.url}`);
+  }
+  return lines.join("\n");
+}
+
+function describeProjectOverview({ project, goalContract, teamGoal, effectiveWorkdir }) {
+  const context = String(project?.context || project?.context_markdown || "").trim();
+  const description = String(project?.description || "").trim();
+  const workdir = effectiveWorkdir || project?.workdir || "";
+  return [
+    `Project: ${project?.name || "(unknown project)"}`,
+    description ? `Description: ${description}` : "",
+    workdir ? `Workdir: ${workdir}` : "",
+    "",
+    describeGoalContract(goalContract, teamGoal),
+    context ? ["", "Project context:", context.slice(0, 6000)].join("\n") : "",
+  ].filter(Boolean).join("\n");
+}
+
+function describeRepositoryInstructions(repositoryInstructions) {
+  if (!repositoryInstructions?.content) return "(no repository instructions loaded)";
+  const lines = [
+    `Source: ${repositoryInstructions.path || repositoryInstructions.filename || "(unknown)"}`,
+    repositoryInstructions.truncated ? "Status: truncated; inspect the source file directly if the omitted portion may matter." : "",
+    "",
+    String(repositoryInstructions.content || "").slice(0, 8000),
+  ].filter(Boolean);
+  return lines.join("\n");
+}
+
+function describeTaskIntent(task) {
+  const parts = [];
+  const instructions = snippet(task.instructions, 260);
+  const plan = snippet(task.plan_body, 260);
+  const summary = snippet(task.last_run_summary, 220);
+  if (instructions) parts.push(`instructions: ${instructions}`);
+  if (plan) parts.push(`plan: ${plan}`);
+  if (summary) parts.push(`latest: ${summary}`);
+  return parts.length ? ` - ${parts.join(" - ")}` : "";
+}
+
 function describeChildren(children) {
   if (!children.length) return "(no child tasks under this root yet)";
   return children.map((c) => {
     const owner = c.owner_agent ? ` — owner: ${c.owner_agent}` : "";
     const failures = c.failure_count ? ` — failures: ${c.failure_count}` : "";
     const failureKind = c.last_failure_kind ? ` — last_failure: ${c.last_failure_kind}` : "";
-    return `- [${c.id}] ${c.task_key || ""} ${c.title} (stage: ${c.stage})${owner}${failures}${failureKind}`;
+    return `- [${c.id}] ${c.task_key || ""} ${c.title} (stage: ${c.stage})${owner}${failures}${failureKind}${describeTaskIntent(c)}`;
   }).join("\n");
 }
 
@@ -137,9 +207,7 @@ function describeProjectTasks(tasks) {
   return tasks.map((task) => {
     const key = task.task_key ? ` ${task.task_key}` : "";
     const owner = task.owner_agent ? ` - owner: ${task.owner_agent}` : "";
-    const summary = String(task.last_run_summary || "").trim();
-    const summaryText = summary ? ` - latest: ${summary.slice(0, 180)}` : "";
-    return `- [${task.id}]${key} ${task.title} (stage: ${task.stage})${owner}${summaryText}`;
+    return `- [${task.id}]${key} ${task.title} (stage: ${task.stage})${owner}${describeTaskIntent(task)}`;
   }).join("\n");
 }
 
@@ -167,6 +235,9 @@ export function buildLeadSystemPrompt({
   project,
   leadAgent,
   root,
+  goalContract,
+  repositoryInstructions,
+  effectiveWorkdir,
   members,
   children,
   unassignedTasks,
@@ -176,6 +247,9 @@ export function buildLeadSystemPrompt({
   maxTaskCreations,
   nativeSubagents,
 }) {
+  const normalizedGoalContract = normalizeTeamGoalContract(goalContract || root.goal_contract_json || {}, {
+    teamGoal: team.goal || "",
+  });
   const goalBlock = team.goal
     ? `\n## Team goal\n${team.goal}\n`
     : "\n## Team goal\n(not set — work toward broad team purpose)\n";
@@ -184,9 +258,21 @@ export function buildLeadSystemPrompt({
     : "\n## Current goal status\nin_progress\n";
   return [
     `You are the team lead for "${team.name}" working on project "${project.name}".`,
-    `Your role is to reason about the team's progress toward its goal and produce a structured lead-cycle decision.`,
+    `Lead cycles are project overview passes first; task changes are only gap-closing actions.`,
+    `Your role is to reason about the team's progress toward its end vision and produce a structured lead-cycle decision.`,
     `You DO NOT execute tasks yourself by default; team members do. You coordinate by assigning unowned tasks, creating new tasks for roster members, and observing existing tasks.`,
     `You may assign owner_agent for tasks in the unassigned queue below. You CANNOT change task state or reassign tasks that already have an owner.`,
+    "",
+    `## Project overview and end vision`,
+    describeProjectOverview({
+      project,
+      goalContract: normalizedGoalContract,
+      teamGoal: team.goal || "",
+      effectiveWorkdir,
+    }),
+    "",
+    `## Repository instructions`,
+    describeRepositoryInstructions(repositoryInstructions),
     "",
     `## Team roster (the only agents you may target via suggested_agent)`,
     describeMembers(members),
@@ -223,9 +309,15 @@ export function buildLeadSystemPrompt({
     `- task_assignments: array of { target_task_id, owner_agent, rationale }`,
     `- task_deletions: array of { target_task_id, rationale }`,
     `- advisory_notes: array of { target_task_id, kind ("warning"|"suggestion"|"blocker_observation"), content }`,
+    `- goal_refinement: { mode, confidence, compatible_expansion, rationale, patch }`,
     `- next_review_hint: { after_minutes?, after_event? } | null where after_event is only "task_completed" or "task_blocked"`,
     "",
     `Constraints:`,
+    `- Start from the project overview, goal contract, repository instructions, current roster, and prior cycle evidence before creating tasks.`,
+    `- Goal refinement is optional; use { "mode": "none", "confidence": "low", "compatible_expansion": false, "rationale": "", "patch": null } when no refinement is needed.`,
+    `- Only propose mode="apply" when the refinement is a high-confidence compatible expansion of the current goal.`,
+    `- goal_refinement.patch may include north_star, objective, stopping_condition, validation_loop, constraints_add, and links_add; it must not redefine the project into unrelated work.`,
+    `- North star is aspirational context; objective/stopping_condition/validation_loop still define concrete readiness.`,
     `- Every suggested_agent MUST be in the team roster above.`,
     `- Every task_assignments owner_agent MUST be in the team roster above, including yourself if you choose to own it.`,
     `- Every task_assignments target_task_id MUST be one of the unassigned tasks above.`,
@@ -264,6 +356,7 @@ export async function runLeadCycle(ctx) {
   const unassignedTasks = listUnassignedTeamTasks(db, { teamId: team.id, projectId: project.id });
   const projectTasks = listSameProjectTasks(db, { rootTaskId: root.id, teamId: team.id, projectId: project.id });
   const deletableTasks = listDeletableLeadCreatedTasks(db, root.id);
+  const goalContract = normalizeTeamGoalContract(root.goal_contract_json, { teamGoal: team.goal || "" });
   const scopeTaskIds = children.map((c) => c.id);
   for (const task of unassignedTasks) scopeTaskIds.push(task.id);
   for (const task of projectTasks) scopeTaskIds.push(task.id);
@@ -293,9 +386,12 @@ export async function runLeadCycle(ctx) {
 
   const systemPrompt = buildLeadSystemPrompt({
     team,
-    project,
+    project: setup.project || project,
     leadAgent,
     root,
+    goalContract,
+    repositoryInstructions: setup.repositoryInstructions,
+    effectiveWorkdir: setup.effectiveWorkdir,
     members,
     children,
     unassignedTasks,
@@ -320,7 +416,7 @@ export async function runLeadCycle(ctx) {
       skillDirs,
       messages: [{
         role: "user",
-        content: `Run a lead cycle now. Inspect the open child tasks and recent activity, then emit a worklab.lead_cycle.v1 result.`,
+        content: `Run a project overview lead cycle now. Inspect the end vision, goal contract, repository/project context, open work, same-project task roster, deletion candidates, and recent activity; then emit a worklab.lead_cycle.v1 result.`,
       }],
       cwd: config.workspace,
       mcpServers,
