@@ -189,7 +189,7 @@ export function TaskDetail({ id, runParam = null }) {
   useEffect(() => { reloadAutomations(); }, [reloadAutomations]);
   useEffect(() => {
     const controller = new AbortController();
-    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => {
+    api.listAgents({ view: "summary", signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => {
       if (err?.name !== "AbortError") setAgents([]);
     });
     return () => controller.abort();

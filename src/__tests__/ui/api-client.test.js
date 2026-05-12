@@ -220,4 +220,17 @@ describe("ui API call sites", () => {
     expect(taskDetailSource).toMatch(/api\.getTask\(id,\s*\{\s*runs:\s*"summary",\s*run_limit:/);
     expect(taskDetailSource).toMatch(/api\.listTaskRuns\(operationTaskId,\s*\{\s*view:\s*"full"/);
   });
+
+  it("keeps create-to-detail navigation on cached summary data", () => {
+    const taskEditSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskEdit.jsx"), "utf8");
+    expect(taskEditSource).toMatch(/writeTaskDetailSummaryCache/);
+    expect(taskEditSource).toMatch(/const r = await api\.createTask\(patch\);[\s\S]*writeTaskDetailSummaryCache\(r\.task\);[\s\S]*return taskRouteId\(r\.task\);/);
+  });
+
+  it("uses summary agent payloads on task create and detail surfaces", () => {
+    const taskEditSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskEdit.jsx"), "utf8");
+    const taskDetailSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskDetail.jsx"), "utf8");
+    expect(taskEditSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary",\s*signal:/);
+    expect(taskDetailSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary",\s*signal:/);
+  });
 });

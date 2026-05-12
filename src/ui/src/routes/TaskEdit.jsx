@@ -32,6 +32,7 @@ import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navi
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 import { attachmentPayload, uploadedAttachmentDraft } from "../lib/attachments.js";
+import { writeTaskDetailSummaryCache } from "./task-detail/summaryCache.js";
 
 // Stage grid in the right rail.
 const TASK_STAGE_OPTIONS = [
@@ -110,7 +111,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    api.listAgents({ signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
+    api.listAgents({ view: "summary", signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
     api.listProjects({ include_archived: "true" }, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
     api.listTeams({ include_archived: "true" }, { signal: controller.signal }).then((r) => setTeams(r.teams || [])).catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
     api.listTasks({ view: "summary" }, { signal: controller.signal }).then((r) => setTasks(r.tasks || [])).catch((err) => { if (err?.name !== "AbortError") setTasks([]); });
@@ -153,6 +154,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
   const formSave = useFormSave(async (patch) => {
     if (mode === "create") {
       const r = await api.createTask(patch);
+      writeTaskDetailSummaryCache(r.task);
       pushToast("Task created", { variant: "success" });
       return taskRouteId(r.task);
     } else {
@@ -169,7 +171,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
 
   const isDirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline]);
   useAppResume(() => {
-    api.listAgents().then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
+    api.listAgents({ view: "summary" }).then((r) => setAgents(r.agents || [])).catch(() => setAgents([]));
     api.listProjects({ include_archived: "true" }).then((r) => setProjects(r.projects || [])).catch(() => setProjects([]));
     api.listTeams({ include_archived: "true" }).then((r) => setTeams(r.teams || [])).catch(() => setTeams([]));
     api.listTasks({ view: "summary" }).then((r) => setTasks(r.tasks || [])).catch(() => setTasks([]));
