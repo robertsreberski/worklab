@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 41;
+export const SCHEMA_VERSION = 42;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -253,6 +253,8 @@ CREATE TABLE IF NOT EXISTS lead_cycles (
   task_assignments_json TEXT NOT NULL DEFAULT '[]',
   task_deletions_json TEXT NOT NULL DEFAULT '[]',
   task_creation_skips_json TEXT NOT NULL DEFAULT '[]',
+  goal_refinement_json TEXT NOT NULL DEFAULT '{}',
+  goal_refinement_applied_json TEXT NOT NULL DEFAULT '{}',
   advisory_notes_json TEXT NOT NULL DEFAULT '[]',
   next_review_hint_json TEXT NOT NULL DEFAULT '{}',
   next_review_due_at INTEGER,

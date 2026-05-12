@@ -268,6 +268,8 @@ function ensureCurrentLeadCycleColumns(db) {
   addColumnIfMissing(db, "lead_cycles", "tasks_deleted", "tasks_deleted INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "lead_cycles", "task_creation_skips_json", "task_creation_skips_json TEXT NOT NULL DEFAULT '[]'");
   addColumnIfMissing(db, "lead_cycles", "tasks_skipped", "tasks_skipped INTEGER NOT NULL DEFAULT 0");
+  addColumnIfMissing(db, "lead_cycles", "goal_refinement_json", "goal_refinement_json TEXT NOT NULL DEFAULT '{}'");
+  addColumnIfMissing(db, "lead_cycles", "goal_refinement_applied_json", "goal_refinement_applied_json TEXT NOT NULL DEFAULT '{}'");
 }
 
 function backfillTeamGoalContracts(db) {
@@ -285,6 +287,7 @@ function backfillTeamGoalContracts(db) {
     for (const row of rows) {
       update.run(JSON.stringify({
         objective: String(row.goal || "").trim(),
+        north_star: "",
         stopping_condition: "",
         validation_loop: "",
         constraints: [],
@@ -381,9 +384,9 @@ function backfillNativeLeadCycles(db) {
       (id, goal_id, run_id, task_id, team_id, project_id, reason, process_status, status, failure_kind, error_text,
        goal_status, goal_status_reason, summary, checkpoint_note, validation_summary,
        task_creations_json, task_assignments_json, task_deletions_json, task_creation_skips_json, advisory_notes_json,
-       next_review_hint_json, next_review_due_at, next_review_event,
+       goal_refinement_json, goal_refinement_applied_json, next_review_hint_json, next_review_due_at, next_review_event,
        tasks_deleted, tasks_skipped, cost_usd, started_at, ended_at, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   const tx = db.transaction(() => {
     for (const row of rows) {
@@ -425,6 +428,8 @@ function backfillNativeLeadCycles(db) {
         JSON.stringify(Array.isArray(result.task_deletions) ? result.task_deletions : []),
         JSON.stringify(Array.isArray(result.task_creation_skips) ? result.task_creation_skips : []),
         JSON.stringify(Array.isArray(result.advisory_notes) ? result.advisory_notes : []),
+        JSON.stringify(result.goal_refinement || {}),
+        JSON.stringify(result.goal_refinement_applied || {}),
         JSON.stringify(hint || {}),
         dueAt,
         event,
