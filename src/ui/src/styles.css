@@ -6098,6 +6098,7 @@ html.assistant-resizing * {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--sp-3);
+  min-width: 0;
   padding: var(--sp-2) 0;
   border-bottom: 1px solid var(--border);
 }
@@ -6110,6 +6111,7 @@ html.assistant-resizing * {
 }
 .team-cycle-main {
   display: grid;
+  flex: 1 1 auto;
   gap: var(--sp-1);
   min-width: 0;
 }
@@ -6177,11 +6179,18 @@ html.assistant-resizing * {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--text-sm);
 }
 .team-cycle-link {
   gap: 4px;
+  min-width: 0;
+  max-width: 100%;
   white-space: nowrap;
+}
+.team-cycle-actions .team-cycle-link.badge-token {
+  max-width: min(36ch, 100%);
 }
 .team-goal-dashboard {
   display: grid;
@@ -13519,8 +13528,19 @@ button.settings-overview-card:focus-visible,
     padding: calc(var(--sp-2) + var(--mobile-safe-top)) var(--sp-3) var(--sp-2);
     background: var(--surface);
   }
+  .app.responsive.has-mobile-topbar[data-route="library"] .library-route-tabs {
+    padding-top: var(--sp-2);
+  }
   .app.responsive[data-route="library"] .pane-list-head {
     padding-top: var(--sp-2);
+  }
+  .app.responsive .team-cycle-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-2);
+  }
+  .app.responsive .team-cycle-actions {
+    justify-content: flex-start;
   }
   .app.responsive .page-wrap {
     --mobile-page-inline: var(--sp-4);

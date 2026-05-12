@@ -314,18 +314,20 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         if (!team) {
           return res.status(400).json({ error: { code: "validation", message: `team not found: ${teamFilter}` } });
         }
+        const teamValues = [...new Set([team.id, team.slug].filter(Boolean))];
+        const teamPlaceholders = teamValues.map(() => "?").join(", ");
         where.push(`(
-          tasks.team_id = ?
+          tasks.team_id IN (${teamPlaceholders})
           OR (
             tasks.team_id IS NULL
             AND EXISTS (
               SELECT 1 FROM projects team_filter_project
               WHERE team_filter_project.id = tasks.project_id
-                AND team_filter_project.team_id = ?
+                AND team_filter_project.team_id IN (${teamPlaceholders})
             )
           )
         )`);
-        params.push(team.id, team.id);
+        params.push(...teamValues, ...teamValues);
       }
     }
     const includeTeamRoots = req.query.include_team_roots === "true" || req.query.include_team_roots === "1";

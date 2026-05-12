@@ -44,7 +44,7 @@ import {
   listLatestAutomationTriggersForTasks,
 } from "../../../core/db/queries/automations.js";
 import { listProjectsByIds } from "../../../core/db/queries/projects.js";
-import { getTeamById, listTeamsByIds } from "../../../core/db/queries/teams.js";
+import { listTeamsByIdsOrSlugs, resolveTeamByIdOrSlug } from "../../../core/db/queries/teams.js";
 import { DEFAULT_RUN_POLICY } from "./constants.js";
 
 function safeJsonObject(value) {
@@ -316,7 +316,7 @@ function attachProject(db, task, config = null) {
 
 function attachTeam(db, task) {
   if (!task) return task;
-  const teamRow = task.team_id ? getTeamById(db, task.team_id) : null;
+  const teamRow = task.team_id ? resolveTeamByIdOrSlug(db, task.team_id) : null;
   return {
     ...task,
     team: compactTeam(teamRow),
@@ -473,8 +473,10 @@ export function enrichTaskList(db, tasks, config = null, { compactRuns = false }
 
   const teamIds = [...new Set(output.map((task) => task.team_id).filter(Boolean))];
   const teams = new Map();
-  for (const row of listTeamsByIds(db, teamIds)) {
-    teams.set(row.id, compactTeam(row));
+  for (const row of listTeamsByIdsOrSlugs(db, teamIds)) {
+    const team = compactTeam(row);
+    teams.set(row.id, team);
+    teams.set(row.slug, team);
   }
   for (const task of output) {
     task.team = teams.get(task.team_id) || null;

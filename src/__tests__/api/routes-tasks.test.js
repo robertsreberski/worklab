@@ -329,6 +329,40 @@ describe("POST /api/tasks", () => {
     expect(none.body.tasks.map((row) => row.id)).not.toContain(explicit.id);
   });
 
+  it("resolves legacy slug-valued task team ids in filtered lists", async () => {
+    const { agent, db } = makeTestServer();
+    const { body: { team } } = await agent.post("/api/teams").send({
+      name: "Legacy Team",
+      slug: "legacy-team",
+    }).expect(201);
+    const { body: { task } } = await agent.post("/api/tasks").send({
+      title: "Legacy team task",
+      team_id: team.id,
+    }).expect(201);
+
+    db.pragma("foreign_keys = OFF");
+    try {
+      db.prepare("UPDATE tasks SET team_id = ? WHERE id = ?").run(team.slug, task.id);
+    } finally {
+      db.pragma("foreign_keys = ON");
+    }
+
+    const bySlug = await agent.get(`/api/tasks?team=${team.slug}`).expect(200);
+    const slugRow = bySlug.body.tasks.find((row) => row.id === task.id);
+    expect(slugRow).toMatchObject({
+      id: task.id,
+      team_id: team.slug,
+      team: {
+        id: team.id,
+        slug: team.slug,
+        name: "Legacy Team",
+      },
+    });
+
+    const byId = await agent.get(`/api/tasks?team_id=${team.id}`).expect(200);
+    expect(byId.body.tasks.map((row) => row.id)).toContain(task.id);
+  });
+
   it("asks the team lead to assign ownerless tasks created in team projects", async () => {
     const maybeScheduleUnassignedTeamTask = vi.fn();
     const { agent } = makeTestServer({ watcher: {

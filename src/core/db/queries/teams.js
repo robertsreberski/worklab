@@ -12,6 +12,17 @@ export function listTeamsByIds(db, ids) {
   return db.prepare(`SELECT * FROM teams WHERE id IN (${placeholders})`).all(...ids);
 }
 
+export function listTeamsByIdsOrSlugs(db, values) {
+  const idsOrSlugs = [...new Set((values || []).filter(Boolean))];
+  if (!idsOrSlugs.length) return [];
+  const placeholders = idsOrSlugs.map(() => "?").join(", ");
+  return db.prepare(`
+    SELECT *
+    FROM teams
+    WHERE id IN (${placeholders}) OR slug IN (${placeholders})
+  `).all(...idsOrSlugs, ...idsOrSlugs);
+}
+
 export function resolveTeamByIdOrSlug(db, value) {
   return db.prepare("SELECT * FROM teams WHERE id = ? OR slug = ?").get(value, value);
 }

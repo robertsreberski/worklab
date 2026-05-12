@@ -252,7 +252,7 @@ describe("project API", () => {
   });
 
   it("returns resolved team objects for assigned project rows and details", async () => {
-    const { agent } = makeTestServer();
+    const { agent, db } = makeTestServer();
     const { body: { team } } = await agent.post("/api/teams").send({
       name: "Resolution Team",
       slug: "resolution-team",
@@ -262,8 +262,11 @@ describe("project API", () => {
       team_id: team.id,
     }).expect(201);
 
+    db.prepare("UPDATE projects SET team_id = ? WHERE id = ?").run(team.slug, project.id);
+
     const list = await agent.get("/api/projects").expect(200);
     const row = list.body.projects.find((item) => item.id === project.id);
+    expect(row.team_id).toBe(team.slug);
     expect(row.team).toMatchObject({
       id: team.id,
       slug: "resolution-team",

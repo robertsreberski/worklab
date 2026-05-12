@@ -13,7 +13,7 @@ import {
   resolveProjectRow,
   uniqueProjectSlug,
 } from "../../core/index.js";
-import { listTeamsByIds, resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
+import { listTeamsByIdsOrSlugs, resolveTeamByIdOrSlug } from "../../core/db/queries/teams.js";
 import {
   archiveProject,
   getProjectById,
@@ -116,7 +116,12 @@ function projectTaskSummary(row, { projectTeamId = null, goalRootTaskId = null }
 function attachTeams(db, projects) {
   const rows = Array.isArray(projects) ? projects : [projects].filter(Boolean);
   const teamIds = [...new Set(rows.map((project) => project?.team_id).filter(Boolean))];
-  const teams = new Map(listTeamsByIds(db, teamIds).map((row) => [row.id, compactTeam(row)]));
+  const teams = new Map();
+  for (const row of listTeamsByIdsOrSlugs(db, teamIds)) {
+    const team = compactTeam(row);
+    teams.set(row.id, team);
+    teams.set(row.slug, team);
+  }
   const attach = (project) => {
     if (!project) return project;
     return {
