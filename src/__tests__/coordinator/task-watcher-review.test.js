@@ -1293,8 +1293,13 @@ describe("task-watcher v2 workflow", () => {
     expect(JSON.parse(child.tags)).toEqual(expect.arrayContaining(["delegated", "lead-cycle"]));
     await waitFor(() => spawn.mock.calls.length === 2);
     expect(calls[1].taskId).toBe(child.id);
-    const cycle = db.prepare("SELECT tasks_created FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    const cycle = db.prepare("SELECT tasks_created, tasks_skipped, task_creation_skips_json FROM lead_cycles WHERE run_id = ?").get(lead.runId);
     expect(cycle.tasks_created).toBe(1);
+    expect(cycle.tasks_skipped).toBe(1);
+    expect(JSON.parse(cycle.task_creation_skips_json)[0]).toMatchObject({
+      title: "Build existing Path Forward app shell",
+      reason: "duplicates existing task in this team/project",
+    });
     const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle task_creations skipped:%'").get(lead.taskId);
     expect(comment.body).toContain("duplicates existing task");
   });
