@@ -5220,6 +5220,7 @@ html.assistant-resizing * {
 .resource-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas: "search config actions";
   align-items: center;
   gap: var(--sp-2);
   min-width: 0;
@@ -5227,18 +5228,35 @@ html.assistant-resizing * {
   border-bottom: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
   background: color-mix(in srgb, var(--surface) 18%, transparent);
 }
+.resource-toolbar-has-scope-tabs {
+  grid-template-areas:
+    "scope scope scope"
+    "search config actions";
+}
 .resource-toolbar .search-field {
-  grid-column: 1;
+  grid-area: search;
   width: 100%;
   min-width: 0;
 }
 .resource-toolbar-scope-tabs {
-  display: none;
+  grid-area: scope;
+  display: flex;
+  align-items: center;
   min-width: 0;
+  max-width: 100%;
+}
+.resource-toolbar-scope-tabs .tabs {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.resource-toolbar-scope-tabs .tabs::-webkit-scrollbar {
+  display: none;
 }
 .resource-toolbar .mobile-config-trigger {
   display: inline-flex;
-  grid-column: 2;
+  grid-area: config;
   align-self: stretch;
 }
 .resource-toolbar-filters {
@@ -5255,19 +5273,6 @@ html.assistant-resizing * {
   scrollbar-width: none;
 }
 .resource-toolbar-filters .tabs::-webkit-scrollbar {
-  display: none;
-}
-.library-tabs-desktop {
-  display: flex;
-  min-width: 0;
-}
-.library-tabs-desktop .tabs {
-  min-width: 0;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.library-tabs-desktop .tabs::-webkit-scrollbar {
   display: none;
 }
 .resource-filter-select {
@@ -5374,6 +5379,7 @@ html.assistant-resizing * {
   justify-content: center;
 }
 .ds-toolbar.resource-toolbar-actions {
+  grid-area: actions;
   justify-content: flex-end;
   gap: var(--sp-3);
   flex: 0 0 auto;
@@ -7030,6 +7036,7 @@ html.assistant-resizing * {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   max-width: none;
@@ -8008,6 +8015,10 @@ html.assistant-resizing * {
   min-width: 0;
   flex-direction: column;
   gap: var(--sp-5);
+}
+.settings-route-shell.settings-route-general .settings-route-content {
+  flex: 0 0 auto;
+  min-height: auto;
 }
 .settings-route-content > .two-pane {
   flex: 1 1 auto;
@@ -10908,38 +10919,26 @@ button.settings-overview-card:focus-visible,
   .resource-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "search config";
     gap: var(--sp-2);
     padding: var(--sp-2);
   }
-  .library-tabs-desktop {
-    display: none;
-  }
-  .resource-toolbar:has(.resource-toolbar-scope-tabs) {
+  .resource-toolbar-has-scope-tabs {
+    grid-template-areas:
+      "scope scope"
+      "search config";
     padding: 0;
     border-bottom: 0;
     background: transparent;
   }
   .resource-toolbar-scope-tabs {
-    grid-column: 1 / -1;
-    display: flex;
     min-width: 0;
-  }
-  .resource-toolbar-scope-tabs .tabs {
-    min-width: 0;
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .resource-toolbar-scope-tabs .tabs::-webkit-scrollbar {
-    display: none;
   }
   .resource-toolbar .search-field {
-    grid-column: 1;
     width: 100%;
     flex-basis: auto;
   }
   .resource-mobile-config-trigger {
-    grid-column: 2;
     align-self: stretch;
   }
   .ds-toolbar.resource-toolbar-actions {

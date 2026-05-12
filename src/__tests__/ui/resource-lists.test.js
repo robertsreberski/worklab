@@ -261,6 +261,20 @@ describe("resource list helpers", () => {
     }
   });
 
+  it("renders Library tabs through the shared resource toolbar instead of a separate tab band", () => {
+    const library = source("src/ui/src/routes/Library.jsx");
+    const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
+    const styles = source("src/ui/src/styles.css");
+    const scopeRule = cssRule(styles, ".resource-toolbar-scope-tabs");
+
+    expect(library).toContain("scopeTabs={scopeTabs}");
+    expect(library).not.toContain("library-tabs-desktop");
+    expect(toolbar).toContain("resource-toolbar-has-scope-tabs");
+    expect(toolbar).toContain("resource-toolbar-scope-tabs");
+    expect(scopeRule).toContain("grid-area: scope");
+    expect(scopeRule).toContain("display: flex");
+  });
+
   it("exposes knowledge sort modes through the compact configuration surface", () => {
     const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
 
@@ -385,9 +399,12 @@ describe("resource list helpers", () => {
     const openSheetRule = cssRule(styles, ".resource-toolbar-config.mobile-config-sheet.open");
     const panelRule = cssRule(styles, ".resource-toolbar-config .mobile-config-sheet-panel");
 
-    expect(toolbar).toContain("resource-toolbar resource-toolbar-compact");
+    expect(toolbar).toContain("\"resource-toolbar\"");
+    expect(toolbar).toContain("\"resource-toolbar-compact\"");
+    expect(toolbar).toContain("toolbarClass");
     expect(toolbar).toContain("resource-mobile-config-trigger");
     expect(toolbarRule).toContain("grid-template-columns: minmax(0, 1fr) auto auto");
+    expect(toolbarRule).toContain('grid-template-areas: "search config actions"');
     expect(sheetRule).toContain("display: none");
     expect(openSheetRule).toContain("display: block");
     expect(panelRule).toContain("position: fixed");

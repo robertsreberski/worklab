@@ -21,9 +21,14 @@ export function ResourceListToolbar({
 }) {
   const [configOpen, setConfigOpen] = useState(false);
   const configId = `resource-config-${configTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "list"}`;
+  const toolbarClass = [
+    "resource-toolbar",
+    "resource-toolbar-compact",
+    scopeTabs ? "resource-toolbar-has-scope-tabs" : "",
+  ].filter(Boolean).join(" ");
 
   return (
-    <div class="resource-toolbar resource-toolbar-compact">
+    <div class={toolbarClass}>
       {scopeTabs && <div class="resource-toolbar-scope-tabs">{scopeTabs}</div>}
       <SearchField
         value={searchValue}

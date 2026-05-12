@@ -46,7 +46,6 @@ export function Library({ tab = "agents", rest = [], query = {} }) {
   return (
     <AppShell route="library">
       <div class="library-page resource-tab-page">
-        <div class="library-tabs-desktop">{renderTabs()}</div>
         <div class="library-tab-body">{body}</div>
       </div>
     </AppShell>
