@@ -1965,26 +1965,30 @@ test("settings overview cards, section nav, and sections stay connected", async 
   const desktopNavMetrics = await page.evaluate(() => {
     const nav = document.querySelector(".settings-section-nav");
     const buttons = [...document.querySelectorAll(".settings-section-nav button")];
-    const labels = [...document.querySelectorAll(".settings-section-nav-label")];
+    const labels = [...document.querySelectorAll(".settings-section-nav .button-label")];
     const navRect = nav?.getBoundingClientRect();
     const navStyles = nav ? getComputedStyle(nav) : null;
     return {
       navPosition: navStyles?.position || "",
       navTop: navStyles?.top || "",
       navRectTop: navRect ? Math.round(navRect.top) : -1,
+      navWidth: navRect ? Math.round(navRect.width) : 0,
       buttonSizes: buttons.map((button) => {
         const rect = button.getBoundingClientRect();
         return { width: Math.round(rect.width), height: Math.round(rect.height), text: button.textContent.trim() };
       }),
-      labelCount: labels.length,
+      labelTexts: labels.map((label) => label.textContent.trim()),
+      labelDisplays: labels.map((label) => getComputedStyle(label).display),
     };
   });
   expect(desktopNavMetrics.navPosition).toBe("sticky");
   expect(desktopNavMetrics.navTop).toContain("8px");
   expect(desktopNavMetrics.navRectTop).toBeLessThanOrEqual(12);
-  expect(desktopNavMetrics.buttonSizes.every((button) => button.width >= 44 && button.height >= 44)).toBe(true);
-  expect(desktopNavMetrics.buttonSizes.every((button) => button.text === "")).toBe(true);
-  expect(desktopNavMetrics.labelCount).toBe(0);
+  expect(desktopNavMetrics.navWidth).toBeGreaterThan(600);
+  expect(desktopNavMetrics.buttonSizes.every((button) => button.width >= 96 && button.height >= 40)).toBe(true);
+  expect(desktopNavMetrics.buttonSizes.map((button) => button.text)).toEqual(labels);
+  expect(desktopNavMetrics.labelTexts).toEqual(labels);
+  expect(desktopNavMetrics.labelDisplays.every((display) => display !== "none")).toBe(true);
   await expectNoHorizontalOverflow(page, "settings connected nav desktop");
 
   const collapseAssistant = page.getByRole("button", { name: "Collapse assistant" });
@@ -1999,7 +2003,7 @@ test("settings overview cards, section nav, and sections stay connected", async 
   const mobileNavMetrics = await page.evaluate(() => {
     const nav = document.querySelector(".settings-section-nav");
     const buttons = [...document.querySelectorAll(".settings-section-nav button")];
-    const labels = [...document.querySelectorAll(".settings-section-nav-label")];
+    const labels = [...document.querySelectorAll(".settings-section-nav .button-label")];
     const navRect = nav?.getBoundingClientRect();
     return {
       navWidth: navRect ? Math.round(navRect.width) : 0,
@@ -2007,13 +2011,15 @@ test("settings overview cards, section nav, and sections stay connected", async 
         const rect = button.getBoundingClientRect();
         return { width: Math.round(rect.width), height: Math.round(rect.height), text: button.textContent.trim() };
       }),
-      labelCount: labels.length,
+      labelTexts: labels.map((label) => label.textContent.trim()),
+      labelDisplays: labels.map((label) => getComputedStyle(label).display),
     };
   });
   expect(mobileNavMetrics.navWidth).toBeLessThanOrEqual(390);
   expect(mobileNavMetrics.buttonSizes.every((button) => button.width >= 44 && button.height >= 44)).toBe(true);
-  expect(mobileNavMetrics.buttonSizes.every((button) => button.text === "")).toBe(true);
-  expect(mobileNavMetrics.labelCount).toBe(0);
+  expect(mobileNavMetrics.buttonSizes.map((button) => button.text)).toEqual(labels);
+  expect(mobileNavMetrics.labelTexts).toEqual(labels);
+  expect(mobileNavMetrics.labelDisplays.every((display) => display === "none")).toBe(true);
   await expectNoHorizontalOverflow(page, "settings connected nav mobile");
 });
 

@@ -775,9 +775,10 @@ function SettingsGeneral() {
               aria-current={activeSectionId === item.id ? "location" : undefined}
               aria-label={item.label}
               title={item.label}
+              iconLeft={<Icon name={item.icon} size={18} />}
               onClick={() => selectSettingsSection(item.id)}
             >
-              <Icon name={item.icon} size={18} />
+              {item.label}
             </Button>
           ))}
         </nav>
