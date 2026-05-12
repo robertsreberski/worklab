@@ -1932,15 +1932,16 @@ test("settings overview cards, section nav, and sections stay connected", async 
   await page.goto(`${baseUrl}/#/settings`);
   await expect(page.locator(".settings-sections")).toBeVisible();
   await expect(page.locator(".settings-overview-card")).toHaveCount(labels.length);
-  await expect(page.locator(".settings-section-nav button")).toHaveCount(labels.length);
+  const sectionNav = page.locator(".settings-section-nav");
+  await expect(sectionNav.locator("button")).toHaveCount(labels.length);
   for (const label of labels) {
     await expect(page.locator(".settings-overview-card", { hasText: label })).toBeVisible();
-    await expect(page.locator(".settings-section-nav button", { hasText: label })).toBeVisible();
+    await expect(sectionNav.getByRole("button", { name: label })).toBeVisible();
   }
 
   await page.locator(".settings-overview-card", { hasText: "MCP tools" }).click();
   await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("MCP tools");
-  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("MCP tools");
+  await expect(sectionNav.getByRole("button", { name: "MCP tools" })).toHaveAttribute("aria-current", "location");
   await page.waitForFunction((id) => {
     const section = document.getElementById(id);
     if (!section) return false;
@@ -1948,33 +1949,42 @@ test("settings overview cards, section nav, and sections stay connected", async 
     return rect.top < window.innerHeight && rect.bottom > 0;
   }, "settings-tools");
 
-  await page.locator(".settings-section-nav button", { hasText: "Agent runs" }).click();
+  await sectionNav.getByRole("button", { name: "Agent runs" }).click();
   await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Agent runs");
-  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("Agent runs");
+  await expect(sectionNav.getByRole("button", { name: "Agent runs" })).toHaveAttribute("aria-current", "location");
   await page.waitForFunction((id) => {
     const section = document.getElementById(id);
     if (!section) return false;
     const rect = section.getBoundingClientRect();
     return rect.top < window.innerHeight && rect.bottom > 0;
   }, "settings-execution");
+  await page.waitForFunction(() => {
+    const nav = document.querySelector(".settings-section-nav");
+    return !!nav && Math.round(nav.getBoundingClientRect().top) <= 12;
+  });
   const desktopNavMetrics = await page.evaluate(() => {
     const nav = document.querySelector(".settings-section-nav");
     const buttons = [...document.querySelectorAll(".settings-section-nav button")];
     const labels = [...document.querySelectorAll(".settings-section-nav-label")];
+    const navRect = nav?.getBoundingClientRect();
     const navStyles = nav ? getComputedStyle(nav) : null;
     return {
       navPosition: navStyles?.position || "",
       navTop: navStyles?.top || "",
-      buttonMinHeights: buttons.map((button) => getComputedStyle(button).minHeight),
+      navRectTop: navRect ? Math.round(navRect.top) : -1,
+      buttonSizes: buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height), text: button.textContent.trim() };
+      }),
       labelCount: labels.length,
-      wrappedLabels: labels.filter((label) => label.getClientRects().length > 1).length,
     };
   });
   expect(desktopNavMetrics.navPosition).toBe("sticky");
-  expect(desktopNavMetrics.navTop).toContain("12px");
-  expect(desktopNavMetrics.buttonMinHeights.every((height) => height === "38px")).toBe(true);
-  expect(desktopNavMetrics.labelCount).toBe(labels.length);
-  expect(desktopNavMetrics.wrappedLabels).toBe(0);
+  expect(desktopNavMetrics.navTop).toContain("8px");
+  expect(desktopNavMetrics.navRectTop).toBeLessThanOrEqual(12);
+  expect(desktopNavMetrics.buttonSizes.every((button) => button.width >= 44 && button.height >= 44)).toBe(true);
+  expect(desktopNavMetrics.buttonSizes.every((button) => button.text === "")).toBe(true);
+  expect(desktopNavMetrics.labelCount).toBe(0);
   await expectNoHorizontalOverflow(page, "settings connected nav desktop");
 
   const collapseAssistant = page.getByRole("button", { name: "Collapse assistant" });
@@ -1985,20 +1995,25 @@ test("settings overview cards, section nav, and sections stay connected", async 
   await expect(page.locator(".settings-overview-card")).toHaveCount(labels.length);
   await page.locator(".settings-overview-card", { hasText: "Search" }).click();
   await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Search");
-  await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("Search");
+  await expect(page.locator(".settings-section-nav").getByRole("button", { name: "Search" })).toHaveAttribute("aria-current", "location");
   const mobileNavMetrics = await page.evaluate(() => {
     const nav = document.querySelector(".settings-section-nav");
+    const buttons = [...document.querySelectorAll(".settings-section-nav button")];
     const labels = [...document.querySelectorAll(".settings-section-nav-label")];
     const navRect = nav?.getBoundingClientRect();
     return {
       navWidth: navRect ? Math.round(navRect.width) : 0,
+      buttonSizes: buttons.map((button) => {
+        const rect = button.getBoundingClientRect();
+        return { width: Math.round(rect.width), height: Math.round(rect.height), text: button.textContent.trim() };
+      }),
       labelCount: labels.length,
-      wrappedLabels: labels.filter((label) => label.getClientRects().length > 1).length,
     };
   });
   expect(mobileNavMetrics.navWidth).toBeLessThanOrEqual(390);
-  expect(mobileNavMetrics.labelCount).toBe(labels.length);
-  expect(mobileNavMetrics.wrappedLabels).toBe(0);
+  expect(mobileNavMetrics.buttonSizes.every((button) => button.width >= 44 && button.height >= 44)).toBe(true);
+  expect(mobileNavMetrics.buttonSizes.every((button) => button.text === "")).toBe(true);
+  expect(mobileNavMetrics.labelCount).toBe(0);
   await expectNoHorizontalOverflow(page, "settings connected nav mobile");
 });
 
@@ -4806,14 +4821,21 @@ test("providers settings route keeps search close and provider edit aligned", as
   const listMetrics = await page.evaluate(() => {
     const head = document.querySelector(".settings-route-shell > .ds-page-head");
     const toolbar = document.querySelector(".resource-toolbar");
+    const search = document.querySelector(".resource-toolbar .search-field");
+    const pane = document.querySelector(".provider-pane-layout");
     const headRect = head?.getBoundingClientRect();
     const toolbarRect = toolbar?.getBoundingClientRect();
+    const searchRect = search?.getBoundingClientRect();
     return {
       gapAfterHeader: headRect && toolbarRect ? Math.round(toolbarRect.top - headRect.bottom) : -1,
+      searchGapAfterHeader: headRect && searchRect ? Math.round(searchRect.top - headRect.bottom) : -1,
+      paneClass: pane?.className || "",
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(listMetrics.gapAfterHeader).toBeLessThanOrEqual(12);
+  expect(listMetrics.searchGapAfterHeader).toBeLessThanOrEqual(10);
+  expect(listMetrics.paneClass).toContain("provider-pane-layout");
   expect(listMetrics.overflow).toBeLessThanOrEqual(0);
 
   await page.goto(`${baseUrl}/#/settings/providers/new`);
@@ -4833,13 +4855,15 @@ test("providers settings route keeps search close and provider edit aligned", as
     return {
       headContentLeft: headTitleRect ? Math.round(headTitleRect.left) : -1,
       bodyContentLeft: bodyRect && bodyStyles ? Math.round(bodyRect.left + parsePx(bodyStyles.paddingLeft)) : -1,
+      headHeight: headRect ? Math.round(headRect.height) : -1,
       firstContentGap: headRect && markerRect ? Math.round(markerRect.top - headRect.bottom) : -1,
       actionsInsideHeader: !!actions && !!actions.closest(".provider-detail-head"),
       overflow: document.documentElement.scrollWidth - window.innerWidth,
     };
   });
   expect(Math.abs(editMetrics.headContentLeft - editMetrics.bodyContentLeft)).toBeLessThanOrEqual(1);
-  expect(editMetrics.firstContentGap).toBeLessThanOrEqual(20);
+  expect(editMetrics.headHeight).toBeLessThanOrEqual(92);
+  expect(editMetrics.firstContentGap).toBeLessThanOrEqual(12);
   expect(editMetrics.actionsInsideHeader).toBe(true);
   expect(editMetrics.overflow).toBeLessThanOrEqual(0);
 });

@@ -942,7 +942,7 @@ export function ProvidersTab({ selectedId = null }) {
       hasSelection={!!selectedId}
       detailOwnsMobileBack={!!selectedId}
       listFirst
-      class="resource-list-layout"
+      class="resource-list-layout provider-pane-layout"
       onBack={() => navigateHash("#/settings/providers")}
       backLabel="All providers"
     />

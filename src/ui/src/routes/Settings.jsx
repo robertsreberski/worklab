@@ -163,11 +163,19 @@ function SettingsRouteShell({
   actions = null,
   mobileActionDock = null,
   compact = false,
+  class: className = "",
   children,
 }) {
+  const routeClass = [
+    "settings-page",
+    "settings-route-shell",
+    compact ? "settings-route-compact" : "",
+    className,
+  ].filter(Boolean).join(" ");
+
   return (
     <AppShell route="settings" mobileActionDock={mobileActionDock}>
-      <div class={`settings-page settings-route-shell ${compact ? "settings-route-compact" : ""}`.trim()}>
+      <div class={routeClass}>
         <PageHeader
           kicker="Settings"
           title={title}
@@ -248,6 +256,7 @@ export function Settings({ tab = "general", rest = [] }) {
         title="Providers"
         description="Model provider connections, availability, discovery, and pricing controls."
         compact
+        class="settings-route-providers"
       >
         <ProvidersTab selectedId={item || null} />
       </SettingsRouteShell>
@@ -764,10 +773,11 @@ function SettingsGeneral() {
               key={item.id}
               class={activeSectionId === item.id ? "is-active" : ""}
               aria-current={activeSectionId === item.id ? "location" : undefined}
+              aria-label={item.label}
+              title={item.label}
               onClick={() => selectSettingsSection(item.id)}
             >
-              <Icon name={item.icon} size={14} />
-              <span class="settings-section-nav-label">{item.label}</span>
+              <Icon name={item.icon} size={18} />
             </Button>
           ))}
         </nav>
