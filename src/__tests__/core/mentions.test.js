@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,6 +56,36 @@ function seedTeam(db, { id, slug, name }) {
     INSERT INTO teams (id, slug, name, status, created_at, updated_at)
     VALUES (?, ?, ?, 'active', ?, ?)
   `).run(id, slug, name, now, now);
+}
+
+function seedSkill(dataDir, { name, displayName, trigger = "Use for tests." }) {
+  const dir = join(dataDir, "skills", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), [
+    "---",
+    `name: ${name}`,
+    `display_name: ${displayName}`,
+    `trigger: ${trigger}`,
+    "---",
+    "",
+    "Skill body.",
+  ].join("\n"));
+}
+
+function seedGoal(db, { id, teamId, projectId, rootTaskId }) {
+  const now = 1700000000000;
+  db.prepare(`
+    INSERT INTO goals (id, team_id, project_id, root_task_id, status, contract_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'in_progress', '{}', ?, ?)
+  `).run(id, teamId, projectId, rootTaskId, now, now);
+}
+
+function seedRun(db, { id, taskId, agentName = "triager", mode = "execute", stage = "execute", status = "complete" }) {
+  const now = 1700000000000;
+  db.prepare(`
+    INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, taskId, mode, stage, agentName, status, status, now);
 }
 
 describe("parseMentions", () => {
@@ -125,13 +155,21 @@ describe("resolveMentions", () => {
     expect(resolveMentions(db, []).size).toBe(0);
   });
 
-  it("resolves agent, task, project, team, and kb tokens with display labels", () => {
+  it("resolves agent, task, project, team, kb, skill, goal, and run tokens with display labels", () => {
     const db = makeTestDb();
     const dataDir = makeKbDir();
     seedAgent(db, "triager", "Triager Bot");
     seedTask(db, { id: "task-uuid-1", task_key: "T-42", title: "Fix login bug" });
     seedProject(db, { id: "proj-uuid-1", slug: "p-mobile", name: "Mobile App" });
     seedTeam(db, { id: "team-uuid-1", slug: "t-platform", name: "Platform" });
+    seedSkill(dataDir, { name: "browser-use", displayName: "Browser Use" });
+    seedGoal(db, {
+      id: "goal-uuid-1",
+      teamId: "team-uuid-1",
+      projectId: "proj-uuid-1",
+      rootTaskId: "task-uuid-1",
+    });
+    seedRun(db, { id: "run-uuid-1", taskId: "task-uuid-1" });
     kbCreate({
       dataDir,
       slug: "auth-flow",
@@ -141,7 +179,7 @@ describe("resolveMentions", () => {
       now: new Date("2026-04-22T10:00:00Z"),
     });
 
-    const text = "Hey @agent/triager, look at @task/T-42 in @project/p-mobile for @team/t-platform per @kb/auth-flow";
+    const text = "Hey @agent/triager, look at @task/T-42 in @project/p-mobile for @team/t-platform per @kb/auth-flow, @skill/browser-use, @goal/goal-uuid-1, and @run/run-uuid-1";
     const resolved = resolveMentions(db, text, { dataDir });
 
     expect(resolved.get("@agent/triager")).toMatchObject({
@@ -172,6 +210,24 @@ describe("resolveMentions", () => {
       type: "kb",
       label: "Auth flow",
       href: "#/library/knowledge/auth-flow",
+      exists: true,
+    });
+    expect(resolved.get("@skill/browser-use")).toMatchObject({
+      type: "skill",
+      label: "Browser Use",
+      href: "#/library/skills/browser-use",
+      exists: true,
+    });
+    expect(resolved.get("@goal/goal-uuid-1")).toMatchObject({
+      type: "goal",
+      label: "Mobile App",
+      href: "#/goals/goal-uuid-1",
+      exists: true,
+    });
+    expect(resolved.get("@run/run-uuid-1")).toMatchObject({
+      type: "run",
+      label: "Run run-uuid-1 · T-42",
+      href: "#/tasks/task-uuid-1?run=run-uuid-1",
       exists: true,
     });
   });
@@ -234,7 +290,7 @@ describe("expandMentionsForLlm", () => {
 
   it("leaves unknown tokens untouched so dangling refs are visible", () => {
     const db = makeTestDb();
-    expect(expandMentionsForLlm(db, "see @agent/nope")).toBe("see @agent/nope");
+    expect(expandMentionsForLlm(db, "see @agent/nope @skill/nope @goal/nope @run/nope")).toBe("see @agent/nope @skill/nope @goal/nope @run/nope");
   });
 
   it("returns the input unchanged when there are no tokens", () => {

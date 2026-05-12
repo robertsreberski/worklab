@@ -7,8 +7,8 @@ import {
 } from "../../ui/src/lib/mentions.js";
 
 describe("UI mentions parser parity", () => {
-  it("matches the same five entity types core supports", () => {
-    expect(MENTION_TYPES).toEqual(["agent", "task", "project", "team", "kb"]);
+  it("matches the same entity types core supports", () => {
+    expect(MENTION_TYPES).toEqual(["agent", "task", "project", "team", "kb", "skill", "goal", "run"]);
   });
 
   it("parseMentions returns token, type, id, start, end", () => {
@@ -26,6 +26,15 @@ describe("UI mentions parser parity", () => {
   it("parseMentionToken accepts well-formed tokens and rejects malformed ones", () => {
     expect(parseMentionToken("@agent/triager")).toEqual({
       token: "@agent/triager", type: "agent", id: "triager",
+    });
+    expect(parseMentionToken("@skill/browser-use")).toEqual({
+      token: "@skill/browser-use", type: "skill", id: "browser-use",
+    });
+    expect(parseMentionToken("@goal/goal-1")).toEqual({
+      token: "@goal/goal-1", type: "goal", id: "goal-1",
+    });
+    expect(parseMentionToken("@run/run_123")).toEqual({
+      token: "@run/run_123", type: "run", id: "run_123",
     });
     expect(parseMentionToken("@user/foo")).toBeNull();
     expect(parseMentionToken("agent/foo")).toBeNull();

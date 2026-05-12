@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -50,6 +50,36 @@ function seedTeam(db, { id, slug, name }) {
   `).run(id, slug, name, now, now);
 }
 
+function seedSkill(dataDir, { name, displayName }) {
+  const dir = join(dataDir, "skills", name);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, "SKILL.md"), [
+    "---",
+    `name: ${name}`,
+    `display_name: ${displayName}`,
+    "trigger: Use for triage tests.",
+    "---",
+    "",
+    "Skill body.",
+  ].join("\n"));
+}
+
+function seedGoal(db, { id, teamId, projectId, rootTaskId }) {
+  const now = 1700000000000;
+  db.prepare(`
+    INSERT INTO goals (id, team_id, project_id, root_task_id, status, contract_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'in_progress', '{}', ?, ?)
+  `).run(id, teamId, projectId, rootTaskId, now, now);
+}
+
+function seedRun(db, { id, taskId, agentName = "triager" }) {
+  const now = 1700000000000;
+  db.prepare(`
+    INSERT INTO task_runs (id, task_id, mode, stage, agent_name, status, process_status, started_at)
+    VALUES (?, ?, 'execute', 'execute', ?, 'complete', 'complete', ?)
+  `).run(id, taskId, agentName, now);
+}
+
 describe("GET /api/mentions/search", () => {
   it("returns 400 when q is missing", async () => {
     const { agent } = mkServer();
@@ -57,12 +87,15 @@ describe("GET /api/mentions/search", () => {
     expect(res.body.error.code).toBe("validation");
   });
 
-  it("returns matching agent, task, project, team, and kb results", async () => {
+  it("returns matching agent, task, project, team, kb, skill, goal, and run results", async () => {
     const { agent, db, dataDir } = mkServer();
     seedAgent(db, "triager", "Triager Bot");
     seedTask(db, { id: "task-uuid-1", task_key: "T-42", title: "Triage support queue" });
     seedProject(db, { id: "proj-1", slug: "triage-app", name: "Triage App" });
     seedTeam(db, { id: "team-1", slug: "triage-team", name: "Triage Team" });
+    seedSkill(dataDir, { name: "triage-skill", displayName: "Triage Skill" });
+    seedGoal(db, { id: "triage-goal", teamId: "team-1", projectId: "proj-1", rootTaskId: "task-uuid-1" });
+    seedRun(db, { id: "triage-run", taskId: "task-uuid-1" });
     kbCreate({
       dataDir,
       slug: "triage-runbook",
@@ -78,11 +111,14 @@ describe("GET /api/mentions/search", () => {
     expect(types).toContain("project");
     expect(types).toContain("team");
     expect(types).toContain("kb");
+    expect(types).toContain("skill");
+    expect(types).toContain("goal");
+    expect(types).toContain("run");
 
     for (const result of res.body.results) {
-      expect(result.token).toMatch(/^@(agent|task|project|team|kb)\//);
+      expect(result.token).toMatch(/^@(agent|task|project|team|kb|skill|goal|run)\//);
       expect(result.label).toBeTypeOf("string");
-      expect(result.href).toMatch(/^#\/(tasks|projects|library\/(agents|teams|knowledge))\//);
+      expect(result.href).toMatch(/^#\/(tasks|projects|goals|library\/(agents|teams|knowledge|skills))\//);
     }
   });
 

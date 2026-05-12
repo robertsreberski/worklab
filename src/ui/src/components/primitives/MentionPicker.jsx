@@ -10,7 +10,7 @@ import { api } from "../../lib/api.js";
 import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
 import { PopoverPortal } from "./PopoverPortal.jsx";
 
-const TYPE_ORDER = { agent: 0, task: 1, project: 2, team: 3, kb: 4 };
+const TYPE_ORDER = { task: 0, project: 1, kb: 2, skill: 3, agent: 4, goal: 5, team: 6, run: 7 };
 
 const TYPE_BADGE = {
   agent: "Agent",
@@ -18,6 +18,9 @@ const TYPE_BADGE = {
   project: "Project",
   team: "Team",
   kb: "Knowledge",
+  skill: "Skill",
+  goal: "Goal",
+  run: "Run",
 };
 
 function debounce(fn, delay) {
@@ -146,8 +149,11 @@ export const MentionPicker = forwardRef(function MentionPicker(
             }}
             onMouseEnter={() => setActiveIndex(realIdx)}
           >
-            <span class={`mention-picker-type chip-mention chip-mention--${item.type}`}>
+            <span class={`mention-picker-type badge-token badge-token-xs entity-badge entity-badge--${item.type}`} data-kind={item.type}>
+              <span class="badge-token-glyph" aria-hidden="true">{(item.type || "?").slice(0, 1).toUpperCase()}</span>
+              <span class="badge-token-label">
               {TYPE_BADGE[item.type] || item.type}
+              </span>
             </span>
             <span class="mention-picker-body">
               <span class="mention-picker-label">{item.label}</span>
