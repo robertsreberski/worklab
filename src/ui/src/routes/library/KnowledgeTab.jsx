@@ -61,6 +61,7 @@ export function knowledgeTimestamp(value) {
 
 export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQuery = {}, scopeTabs = null }) {
   const [entries, setEntries] = useState([]);
+  const [taxonomy, setTaxonomy] = useState(null);
   const [projects, setProjects] = useState([]);
   const [query, setQuery] = useState("");
   const [projectId, setProjectId] = useState("all");
@@ -68,7 +69,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
   const [subcategory, setSubcategory] = useState("all");
   const [tag, setTag] = useState("all");
   const [pinned, setPinned] = useState("all");
-  const [surface, setSurface] = useState("canonical");
+  const [surface, setSurface] = useState("plans");
   const [sort, setSort] = useState("updated_desc");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
@@ -77,9 +78,22 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     reloadAbortRef.current?.abort?.();
     const controller = new AbortController();
     reloadAbortRef.current = controller;
-    api.listKb(null, { signal: controller.signal })
-      .then((r) => { if (!controller.signal.aborted) setEntries(r.entries || []); })
-      .catch((err) => { if (err?.name !== "AbortError") setEntries([]); });
+    Promise.all([
+      api.listKb(null, { signal: controller.signal }),
+      api.kbTaxonomy({ signal: controller.signal }).catch(() => null),
+    ])
+      .then(([r, nextTaxonomy]) => {
+        if (!controller.signal.aborted) {
+          setEntries(r.entries || []);
+          setTaxonomy(nextTaxonomy);
+        }
+      })
+      .catch((err) => {
+        if (err?.name !== "AbortError") {
+          setEntries([]);
+          setTaxonomy(null);
+        }
+      });
   }, []);
   const reloadSoon = useThrottledCallback(reload, 100);
 
@@ -122,10 +136,14 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
   const subcategoryOptions = useMemo(() => uniqueOptions(entries, "subcategory", "All subcategories", "None"), [entries]);
   const tagOptions = useMemo(() => [
     { value: "all", label: "All tags" },
-    ...[...new Set(entries.flatMap((entry) => entry.tags || []))]
+    ...[...new Set([
+      ...(taxonomy?.tags || []).map((row) => row.tag),
+      ...entries.flatMap((entry) => entry.tags || []),
+    ])]
       .sort((a, b) => a.localeCompare(b))
       .map((value) => ({ value, label: value })),
-  ], [entries]);
+  ], [entries, taxonomy]);
+  const tagSuggestions = useMemo(() => (taxonomy?.tags || []).map((row) => row.tag).filter(Boolean), [taxonomy]);
   const pinnedOptions = [
     { value: "all", label: "All pins" },
     { value: "pinned", label: "Pinned" },
@@ -138,11 +156,12 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     { value: "project_category", label: "Project/category" },
   ];
   const surfaceTabs = [
-    { value: "canonical", label: "Canonical", count: entries.filter((entry) => !entry.auto_promoted).length },
-    { value: "run_outputs", label: "Run outputs", count: entries.filter((entry) => entry.auto_promoted).length },
+    { value: "plans", label: "Plans", count: entries.filter((entry) => entry.meaningful_plan).length },
+    { value: "canonical", label: "Canonical", count: entries.filter((entry) => !(entry.run_output || entry.auto_promoted)).length },
+    { value: "run_outputs", label: "Run outputs", count: entries.filter((entry) => entry.run_output || entry.auto_promoted).length },
     { value: "all", label: "All", count: entries.length },
   ];
-  const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all" || surface !== "canonical";
+  const hasFilter = query.trim() || projectId !== "all" || category !== "all" || subcategory !== "all" || tag !== "all" || pinned !== "all" || surface !== "plans";
 
   const listHeader = (
     <ResourceListToolbar
@@ -155,7 +174,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       actionLabel="New entry"
       onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
-      activeConfigCount={[surface !== "canonical", sort !== "updated_desc", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
+      activeConfigCount={[surface !== "plans", sort !== "updated_desc", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
       scopeTabs={scopeTabs}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
@@ -170,7 +189,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("canonical"); setSort("updated_desc"); }} />
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("plans"); setSort("updated_desc"); }} />
     ) : (
       <EmptyState
         title="No entries yet"
@@ -233,6 +252,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
         onSaved={() => { reload(); }}
         onDeleted={() => { reload(); window.location.hash = "#/library/knowledge"; }}
         prefill={isEditing && selectedSlug === "new" ? routeQuery : null}
+        tagSuggestions={tagSuggestions}
       />
     ) : (
       <KbDetail key={selectedSlug} slug={selectedSlug} />

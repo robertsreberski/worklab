@@ -147,6 +147,7 @@ export const api = {
   putMcpConfig: (data) => request("PUT", "/mcp", data),
   // kb
   listKb: (query, options) => request("GET", `/kb${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
+  kbTaxonomy: (options) => request("GET", "/kb/taxonomy", null, options),
   getKb: (slug) => request("GET", `/kb/${encodeURIComponent(slug)}`),
   createKb: (data) => request("POST", "/kb", data),
   patchKb: (slug, patch) => request("PATCH", `/kb/${encodeURIComponent(slug)}`, patch),

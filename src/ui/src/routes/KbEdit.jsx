@@ -56,7 +56,7 @@ function cleanList(value) {
   return value.map((item) => String(item || "").trim()).filter(Boolean);
 }
 
-export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
+export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestions = [] }) {
   const isNew = slug === "new";
   const newEntry = useMemo(() => isNew ? kbFormEntryFromQuery(prefill || {}) : EMPTY_KB_FORM_ENTRY, [isNew, prefill]);
   const [entry, setEntry] = useState(isNew ? newEntry : null);
@@ -306,7 +306,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null }) {
                   <Input value={entry.subcategory} onInput={(e) => setEntry({ ...entry, subcategory: e.target.value })} placeholder="runtime, ui-audit, migration" />
                 </FormField>
                 <FormField label="Tags">
-                  <TagInput value={entry.tags || []} onChange={(tags) => setEntry({ ...entry, tags })} placeholder="Add tag..." />
+                  <TagInput value={entry.tags || []} onChange={(tags) => setEntry({ ...entry, tags })} placeholder="Add tag..." suggestions={tagSuggestions} />
                 </FormField>
                 <FormField switchInside>
                   <Switch

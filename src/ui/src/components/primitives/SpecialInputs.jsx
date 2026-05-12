@@ -100,10 +100,12 @@ export function TagInput({
   onChange,
   placeholder = "Add tag",
   disabled = false,
+  suggestions = [],
   class: className = "",
 }) {
   const [draft, setDraft] = useState("");
   const tags = Array.isArray(value) ? value : [];
+  const suggestionId = suggestions.length ? `tag-input-suggestions-${placeholder.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "tags"}` : undefined;
 
   function addTags(raw = draft) {
     const nextTags = String(raw || "")
@@ -140,6 +142,7 @@ export function TagInput({
           value={draft}
           placeholder={placeholder}
           disabled={disabled}
+          list={suggestionId}
           onInput={(event) => setDraft(event.currentTarget.value)}
           onBlur={() => addTags()}
           onKeyDown={(event) => {
@@ -151,6 +154,13 @@ export function TagInput({
             }
           }}
         />
+        {suggestionId && (
+          <datalist id={suggestionId}>
+            {suggestions
+              .filter((suggestion) => suggestion && !tags.includes(suggestion))
+              .map((suggestion) => <option key={suggestion} value={suggestion} />)}
+          </datalist>
+        )}
         <Button size="sm" variant="secondary" disabled={disabled || !draft.trim()} onClick={() => addTags()}>Add</Button>
       </div>
     </div>

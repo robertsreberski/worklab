@@ -9,12 +9,14 @@ describe("project knowledge helpers", () => {
   it("groups canonical knowledge by category and hides auto-promoted run assets", () => {
     const grouped = groupProjectKnowledgeEntries([
       { slug: "run-auto", title: "Run auto", category: "run-results", auto_promoted: true },
+      { slug: "plan", title: "Plan", category: "execution-plan", display_category: "plans", meaningful_plan: true },
       { slug: "runbook", title: "Runbook", category: "runbook", updated_at: "2026-05-04T00:00:00Z" },
       { slug: "decision", title: "Decision", category: "decision", updated_at: "2026-05-05T00:00:00Z" },
       { slug: "research", title: "Research", category: "research", pinned: true, updated_at: "2026-05-01T00:00:00Z" },
     ]);
 
     expect(grouped.map((group) => [group.key, group.entries.map((entry) => entry.slug)])).toEqual([
+      ["plans", ["plan"]],
       ["research", ["research"]],
       ["decision", ["decision"]],
       ["runbook", ["runbook"]],
