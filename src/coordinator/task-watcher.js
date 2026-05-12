@@ -66,7 +66,14 @@ import {
   looksLikePlanBody,
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
-import { appendTeamGoalCheckpoint, effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle, leadCycleBlockedByGoal } from "../core/teams.js";
+import {
+  appendTeamGoalCheckpoint,
+  applyTeamGoalRefinement,
+  effectiveTeamForTask,
+  ensureTeamRootTask,
+  hasInFlightLeadCycle,
+  leadCycleBlockedByGoal,
+} from "../core/teams.js";
 import {
   consumeLeadCycleFollowup,
   listDueLeadCycleFollowups,
@@ -2119,6 +2126,45 @@ export function createTaskWatcher({
       return;
     }
 
+    const now = Date.now();
+    const goalRefinementApplied = applyTeamGoalRefinement(db, {
+      teamId,
+      projectId,
+      rootTaskId: taskId,
+      runId,
+      refinement: finalLead.goal_refinement || null,
+      now,
+    });
+    if (goalRefinementApplied?.applied) {
+      const fields = goalRefinementApplied.applied_fields?.length
+        ? goalRefinementApplied.applied_fields.join(", ")
+        : "goal contract";
+      postSystemComment(taskId, [
+        `Lead cycle refined goal: ${fields}.`,
+        goalRefinementApplied.rationale ? `Rationale: ${goalRefinementApplied.rationale}` : "",
+        Object.keys(goalRefinementApplied.patch_applied || {}).length
+          ? `Applied patch: ${JSON.stringify(goalRefinementApplied.patch_applied)}`
+          : "",
+      ].filter(Boolean).join("\n"));
+      broker?.broadcast?.("global", {
+        type: "team_goal_updated",
+        team_id: teamId,
+        project_id: projectId,
+        run_id: runId,
+      });
+    } else if (
+      finalLead.goal_refinement?.mode === "apply"
+      && Array.isArray(goalRefinementApplied?.skipped)
+      && goalRefinementApplied.skipped.length
+    ) {
+      const lines = goalRefinementApplied.skipped.map((item) => {
+        const field = String(item?.field || "goal_refinement").trim();
+        const reason = String(item?.reason || "not applied").trim();
+        return `${field}: ${reason}`;
+      });
+      postSystemComment(taskId, `Lead cycle goal refinement skipped:\n- ${lines.join("\n- ")}`);
+    }
+
     const deletionResult = applyLeadCycleDeletions({ taskId, teamId, projectId, finalLead });
     const tasksAssigned = applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead });
     let tasksCreated = 0;
@@ -2193,7 +2239,6 @@ export function createTaskWatcher({
     // annotations the UI reads directly.
     const goalStatus = finalLead.goal_status;
     const goalReason = String(finalLead.goal_status_reason || "").trim() || null;
-    const now = Date.now();
     db.prepare(
       `UPDATE tasks SET goal_status = ?, goal_status_reason = ?, last_lead_at = ?, updated_at = ? WHERE id = ?`,
     ).run(goalStatus, goalReason, now, now, taskId);
@@ -2217,6 +2262,7 @@ export function createTaskWatcher({
         tasksDeleted: deletionResult.count,
         taskCreationSkips: skippedCreations,
         tasksSkipped: skippedCreations.length,
+        goalRefinementApplied,
         notesPosted,
         endedAt: now,
       });

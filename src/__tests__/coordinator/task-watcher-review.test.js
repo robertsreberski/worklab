@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newTaskId } from "../../core/ids.js";
-import { ensureTeamRootTask } from "../../core/teams.js";
+import { ensureTeamRootTask, updateTeamProjectGoal } from "../../core/teams.js";
 import { synthesizeWorklabResult } from "../../core/worklab-result/contract.js";
 
 function stubBroker() {
@@ -1526,6 +1526,137 @@ describe("task-watcher v2 workflow", () => {
       next_review_event: "task_completed",
     });
     expect(completed.next_review_due_at).toEqual(expect.any(Number));
+  });
+
+  it("applies compatible lead-cycle goal refinements before task side effects complete", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId, member } = seedTeamProject(db);
+    updateTeamProjectGoal(db, {
+      teamId,
+      projectId,
+      patch: {
+        objective: "Ship native goals",
+        stopping_condition: "Goal widgets are visible",
+        validation_loop: "Run npm test",
+      },
+      now: 1000,
+    });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const broker = stubBroker();
+    const watcher = createTaskWatcher({ db, broker, spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "refined",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Refined the project vision and created the next task.",
+        checkpoint_note: "Goal now has a stronger north star.",
+        validation_summary: "Compared the current goal and task roster.",
+        goal_refinement: {
+          mode: "apply",
+          confidence: "high",
+          compatible_expansion: true,
+          rationale: "The current native-goals work should aim at a more autonomous project cockpit.",
+          patch: {
+            north_star: "Make goals feel like an autonomous project cockpit.",
+            objective: "Ship native goals as an autonomous project cockpit.",
+          },
+        },
+        task_creations: [{
+          title: "Verify refined goal cockpit",
+          instructions: "Check the refined goal remains visible and actionable.",
+          suggested_agent: member,
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "normal",
+        }],
+        task_assignments: [],
+        task_deletions: [],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(lead.taskId).c === 1);
+    const rootContract = JSON.parse(db.prepare("SELECT goal_contract_json FROM tasks WHERE id = ?").get(lead.taskId).goal_contract_json);
+    expect(rootContract).toMatchObject({
+      north_star: "Make goals feel like an autonomous project cockpit.",
+      objective: "Ship native goals as an autonomous project cockpit.",
+    });
+    const cycle = db.prepare("SELECT goal_refinement_applied_json, tasks_created FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    expect(JSON.parse(cycle.goal_refinement_applied_json)).toMatchObject({
+      applied: true,
+      applied_fields: ["north_star", "objective"],
+    });
+    expect(cycle.tasks_created).toBe(1);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle refined goal:%'").get(lead.taskId);
+    expect(comment.body).toContain("north_star");
+    expect(broker.broadcasts.some((event) => event.p?.type === "team_goal_updated" && event.p?.project_id === projectId)).toBe(true);
+  });
+
+  it("audits skipped incompatible lead-cycle goal refinements without mutating the goal", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    updateTeamProjectGoal(db, {
+      teamId,
+      projectId,
+      patch: {
+        objective: "Ship native goals",
+        stopping_condition: "Goal widgets are visible",
+        validation_loop: "Run npm test",
+      },
+      now: 1000,
+    });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "skipped",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Rejected a drifted refinement.",
+        checkpoint_note: "Goal remains unchanged.",
+        validation_summary: "Compared existing goal wording.",
+        goal_refinement: {
+          mode: "apply",
+          confidence: "high",
+          compatible_expansion: true,
+          rationale: "This would be too broad.",
+          patch: { objective: "Launch a separate billing platform." },
+        },
+        task_creations: [],
+        task_assignments: [],
+        task_deletions: [],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT process_status FROM lead_cycles WHERE run_id = ?").get(lead.runId).process_status === "succeeded");
+    const rootContract = JSON.parse(db.prepare("SELECT goal_contract_json FROM tasks WHERE id = ?").get(lead.taskId).goal_contract_json);
+    expect(rootContract.objective).toBe("Ship native goals");
+    const applied = JSON.parse(db.prepare("SELECT goal_refinement_applied_json FROM lead_cycles WHERE run_id = ?").get(lead.runId).goal_refinement_applied_json);
+    expect(applied).toMatchObject({
+      applied: false,
+      skipped: [{ field: "objective", reason: "does not preserve enough of the current goal wording" }],
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle goal refinement skipped:%'").get(lead.taskId);
+    expect(comment.body).toContain("objective");
   });
 
   it("starts one follow-up lead cycle when a next_review_hint becomes due", async () => {
