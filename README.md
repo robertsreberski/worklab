@@ -1,12 +1,12 @@
 # Worklab
 
-![Worklab local AI agent workspace](docs/assets/worklab-featured.png)
+![Worklab local AI agent workspace](src/ui/public/about/worklab-about-hero.png)
 
 Worklab is a local, single-user workspace for coordinating AI agents across
-projects, tasks, knowledge, providers, and runtime controls. It runs on your
-machine, keeps its working data under your local data directory, and gives you a
-browser UI for managing agent work without turning every run into a terminal
-session.
+projects, tasks, goals, teams, knowledge, providers, and runtime controls. It
+runs on your machine, keeps its working data under your local data directory,
+and gives you a browser UI for managing agent work without turning every run
+into a terminal session.
 
 ## Start Worklab
 
@@ -46,12 +46,18 @@ Start in the UI, not in config files:
    models and custom OpenAI-compatible providers can be managed there.
 2. Open **Agents** and review the default planner, executor, and reviewer.
    Create additional agents only when you need a distinct role.
-3. Open **Projects** and add the repositories or work directories you want
+3. Open **Teams** when you want lead-cycle coordination across a roster of
+   agents, with a lead agent responsible for keeping the work pointed at the
+   outcome.
+4. Open **Projects** and add the repositories or work directories you want
    Worklab to operate on. If a repo has `AGENTS.md`, Worklab treats it as
    repository instructions for agent prompts.
-4. Open **Tasks** and create the work you want the agents to plan, execute, and
+5. Open **Goals** for longer-lived outcomes tied to a project and team. Goals
+   track the objective, north star, stopping condition, validation loop, and
+   lead-cycle context that should shape related work.
+6. Open **Tasks** and create the work you want the agents to plan, execute, and
    review.
-5. Use **Knowledge** for durable notes that agents should reuse, and **Settings**
+7. Use **Knowledge** for durable notes that agents should reuse, and **Settings**
    for runtime, search, Slack, MCP, notification, and assistant controls.
 
 Runtime data defaults to `~/.worklab`; task workspaces default to
@@ -60,9 +66,13 @@ Runtime data defaults to `~/.worklab`; task workspaces default to
 ## Daily Use
 
 - Use **Tasks** as the active work queue.
-- Use **Activity** to inspect completed runs and historical output.
+- Use **Goals** to keep larger project outcomes, north-star criteria, and
+  recurring lead-cycle decisions visible.
+- Use **Runs** to inspect completed runs and historical output.
 - Use **Projects** to keep repo context, allowed agents, task progress, and
   project knowledge together.
+- Use **Teams** to manage lead agents, member agents, budgets, and project goal
+  assignments.
 - Use the assistant dock in the UI for quick questions against the current
   Worklab view.
 
@@ -103,7 +113,7 @@ with the effective host, port, data directory, workspace, and log level.
 For a foreground API/static server from this checkout:
 
 ```bash
-npm start
+npm run dev:api
 ```
 
 For UI hot reload, run the API and Vite UI in separate terminals:
