@@ -1,4 +1,5 @@
 import { BadgeToken } from "./primitives/BadgeToken.jsx";
+import { Icon } from "./Icon.jsx";
 import { entityBadgeLabel, entityBadgeMeta, normalizeEntityBadgeKind } from "../lib/entityBadges.js";
 
 export function EntityBadge({
@@ -17,9 +18,11 @@ export function EntityBadge({
   const meta = entityBadgeMeta(normalized);
   const display = entityBadgeLabel({ label, token, type: normalized, id });
   const cls = `entity-badge entity-badge--${normalized} ${missing ? "entity-badge--missing" : ""} ${className}`.trim();
+  const leading = meta.icon ? <Icon name={meta.icon} class="badge-token-icon" size={12} /> : null;
   return (
     <BadgeToken
-      glyph={meta.glyph}
+      glyph={leading ? null : meta.glyph}
+      leading={leading}
       href={missing ? null : href}
       size={size}
       class={cls}

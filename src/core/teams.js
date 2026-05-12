@@ -303,6 +303,17 @@ export function teamFromRow(row) {
   };
 }
 
+export function compactTeam(row) {
+  const team = teamFromRow(row);
+  if (!team) return null;
+  return {
+    id: team.id,
+    slug: team.slug,
+    name: team.name,
+    status: team.status,
+  };
+}
+
 export function normalizeTeamSlug(value) {
   if (value === undefined || value === null || value === "") return null;
   const slug = String(value).trim().toLowerCase();

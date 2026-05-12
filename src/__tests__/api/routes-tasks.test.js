@@ -309,6 +309,14 @@ describe("POST /api/tasks", () => {
       title: "No team",
     }).expect(201);
 
+    expect(explicit.team_id).toBe(team.id);
+    expect(explicit.team).toMatchObject({
+      id: team.id,
+      slug: team.slug,
+      name: "Routing Team",
+      status: "active",
+    });
+
     const bySlug = await agent.get(`/api/tasks?team=${team.slug}`).expect(200);
     expect(bySlug.body.tasks.map((row) => row.id).sort()).toEqual([explicit.id, inherited.id].sort());
 

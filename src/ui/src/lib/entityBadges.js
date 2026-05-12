@@ -6,7 +6,7 @@ export const ENTITY_BADGE_META = {
   skill: { label: "Skill", glyph: "S" },
   agent: { label: "Agent", glyph: "A" },
   goal: { label: "Goal", glyph: "G" },
-  team: { label: "Team", glyph: "M" },
+  team: { label: "Team", icon: "users" },
   run: { label: "Run", glyph: "R" },
 };
 
