@@ -200,6 +200,9 @@ describe("Goals route helpers", () => {
       goal_status: "in_progress",
       readiness: { ready: true, missing: [] },
       cycles: [{
+        id: "run-2",
+        process_status: "running",
+      }, {
         id: "run-1",
         process_status: "succeeded",
         checkpoint_note: "Keep the existing owners moving; no new delegation.",
@@ -207,6 +210,8 @@ describe("Goals route helpers", () => {
       }],
     }, { now: 1000 });
 
+    expect(summary.latest.id).toBe("run-2");
+    expect(summary.decisionCycle.id).toBe("run-1");
     expect(summary.latestDecision).toBe("Keep the existing owners moving; no new delegation.");
     expect(summary.latestDetails).toEqual(["Checked child task state."]);
   });

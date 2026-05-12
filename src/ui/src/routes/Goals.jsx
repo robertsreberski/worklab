@@ -234,11 +234,13 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
   const readiness = goal?.readiness || goalReadiness(goal);
   const nextReview = latest?.review_label || "Not scheduled";
   const leadTasks = Array.isArray(goal?.lead_tasks) ? goal.lead_tasks : [];
-  const latestDecision = latest ? leadCycleDecisionText(latest) : "";
+  const decisionCycle = rows.find((row) => leadCycleDecisionText(row)) || null;
+  const latestDecision = decisionCycle ? leadCycleDecisionText(decisionCycle) : "";
   return {
     latest,
+    decisionCycle,
     latestDecision,
-    latestDetails: latest ? leadCycleDetailTexts(latest, latestDecision) : [],
+    latestDetails: decisionCycle ? leadCycleDetailTexts(decisionCycle, latestDecision) : [],
     leadTasks,
     stateStrip: [
       { label: "State", value: goalStatusLabel(goal) },
