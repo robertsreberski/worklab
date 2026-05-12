@@ -54,14 +54,18 @@ describe("settings UI duration conversions", () => {
     expect(source).toContain('aria-current={activeSectionId === item.id ? "location" : undefined}');
   });
 
-  it("keeps the in-page Settings section nav sticky, readable, and label-safe", () => {
+  it("keeps the in-page Settings section nav sticky, roomy, and icon-only", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
 
-    expect(source).toContain('class="settings-section-nav-label"');
+    expect(source).not.toContain('class="settings-section-nav-label"');
+    expect(source).toContain('title={item.label}');
+    expect(source).toContain('aria-label={item.label}');
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*position:\s*sticky/);
-    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*top:\s*calc\(var\(--sp-3\) \+ var\(--mobile-safe-top\)\)/);
-    expect(styles).toContain(".settings-section-nav-label");
+    expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*top:\s*calc\(var\(--sp-2\) \+ var\(--mobile-safe-top\)\)/);
+    expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*width:\s*46px/);
+    expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*min-height:\s*46px/);
+    expect(styles).not.toContain(".settings-section-nav-label");
   });
 
   it("keeps dense Settings layout surfaces grouped and width-safe", () => {
@@ -105,11 +109,15 @@ describe("settings UI duration conversions", () => {
     const source = readFileSync(providersSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
 
+    expect(source).toContain('class="resource-list-layout provider-pane-layout"');
     expect(source).toContain('class="provider-detail-head"');
     expect(source).toContain('actionsClass="provider-detail-actions"');
+    expect(styles).toContain(".provider-pane-layout");
+    expect(styles).toContain(".settings-route-providers");
     expect(styles).toContain(".provider-detail-head");
     expect(styles).toContain(".provider-detail-body");
     expect(styles).toContain(".provider-editor-layout");
+    expect(styles).toMatch(/\.provider-pane-layout\s+\.resource-toolbar\s*\{[^}]*padding:\s*var\(--sp-1\) var\(--sp-4\) var\(--sp-2\)/);
   });
 
   it("presents About as a polished visual surface with a project-local generated asset", () => {

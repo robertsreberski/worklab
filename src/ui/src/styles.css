@@ -7757,11 +7757,17 @@ html.assistant-resizing * {
   max-width: none;
   gap: var(--sp-2);
 }
+.settings-route-shell.settings-route-providers {
+  gap: var(--sp-1);
+}
 .settings-route-shell > .ds-page-head {
   flex: 0 0 auto;
 }
 .settings-route-compact > .ds-page-head {
   padding-block: var(--sp-4);
+}
+.settings-route-providers > .ds-page-head {
+  padding-block: var(--sp-3);
 }
 .settings-route-compact .settings-route-content {
   gap: 0;
@@ -8013,14 +8019,16 @@ button.settings-overview-card:focus-visible,
 }
 .settings-section-nav {
   position: sticky;
-  top: calc(var(--sp-3) + var(--mobile-safe-top));
+  top: calc(var(--sp-2) + var(--mobile-safe-top));
   z-index: 9;
   display: flex;
   align-items: center;
+  align-self: flex-start;
   gap: var(--sp-2);
+  width: max-content;
   max-width: 100%;
   overflow-x: auto;
-  padding: var(--sp-2) var(--sp-3);
+  padding: var(--sp-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--surface) 94%, transparent);
@@ -8033,25 +8041,20 @@ button.settings-overview-card:focus-visible,
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--sp-2);
   flex: 0 0 auto;
-  height: auto;
-  min-height: 38px;
-  padding: 0 var(--sp-4);
+  width: 46px;
+  height: 46px;
+  min-height: 46px;
+  padding: 0;
   color: var(--text-muted);
   background: transparent;
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
-  font: inherit;
-  font-size: var(--text-sm);
   box-shadow: none;
-  white-space: nowrap;
 }
-.settings-section-nav-label {
-  min-width: 0;
-  line-height: 1.2;
-  overflow-wrap: normal;
-  white-space: nowrap;
+.settings-section-nav .button svg {
+  width: 18px;
+  height: 18px;
 }
 .settings-section-nav .button:hover {
   color: var(--text);
@@ -8551,18 +8554,75 @@ button.settings-overview-card:focus-visible,
 }
 .provider-type-select { display: block; max-width: 360px; }
 .provider-type-select select { width: 100%; }
-.provider-detail-head {
-  padding-right: var(--sp-6);
-  padding-left: var(--sp-6);
+.provider-pane-layout .pane-list-head {
+  gap: 0;
+  padding: 0;
+}
+.provider-pane-layout .resource-toolbar {
+  padding: var(--sp-1) var(--sp-4) var(--sp-2);
+  background: color-mix(in srgb, var(--surface) 42%, transparent);
+}
+.provider-pane-layout .resource-group > .ds-section-group-head {
+  padding-right: var(--sp-4);
+  padding-left: var(--sp-4);
+}
+.provider-pane-layout.two-pane-list-first .pane-row {
+  padding-right: var(--sp-4);
+  padding-left: var(--sp-4);
+}
+.provider-detail-head.detail-head {
+  min-height: 0;
+  padding: var(--sp-2) var(--sp-4);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+}
+.provider-detail-head.detail-head::before,
+.provider-detail-head.detail-head::after {
+  content: none;
+}
+.detail-head.provider-detail-head .crumbs-row:empty {
+  display: none;
+}
+.detail-head.provider-detail-head .title-row {
+  align-items: center;
+  gap: var(--sp-2);
+}
+.detail-head.provider-detail-head .title-block {
+  align-items: center;
+  gap: var(--sp-2);
+}
+.detail-head.provider-detail-head .title-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+}
+.detail-head.provider-detail-head .title-icon::after {
+  display: none;
+}
+.detail-head.provider-detail-head .kicker::before {
+  width: 12px;
+}
+.detail-head.provider-detail-head .title-copy h2 {
+  font-size: var(--text-xl);
+  line-height: 1.08;
+}
+.detail-head.provider-detail-head .title-meta {
+  gap: var(--sp-1) var(--sp-2);
+  font-size: 11px;
+}
+.detail-head.provider-detail-head .sub-bar {
+  display: none;
+  margin-top: 0;
 }
 .provider-detail-actions {
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 .provider-detail-body {
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--sp-4) var(--sp-6) var(--sp-6);
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
+  gap: var(--sp-4);
 }
 .provider-editor-layout {
   gap: var(--sp-4);
@@ -10572,6 +10632,15 @@ button.settings-overview-card:focus-visible,
   .settings-route-shell.settings-route-compact {
     padding-inline: var(--sp-2);
   }
+  .settings-section-nav {
+    align-self: stretch;
+    width: 100%;
+  }
+  .settings-section-nav .button {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
   .settings-about-hero {
     grid-template-columns: 1fr;
     padding: var(--sp-4);
@@ -10586,9 +10655,11 @@ button.settings-overview-card:focus-visible,
   .settings-about-visual img {
     min-height: 220px;
   }
-  .provider-detail-head {
-    padding-right: var(--sp-4);
-    padding-left: var(--sp-4);
+  .provider-detail-head.detail-head {
+    padding: var(--sp-3) var(--sp-4);
+  }
+  .app.responsive .detail-head.provider-detail-head .sub-bar {
+    display: flex;
   }
   .provider-detail-body {
     padding: var(--sp-4);
