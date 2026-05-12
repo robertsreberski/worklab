@@ -1937,6 +1937,11 @@ a.badge-token:focus-visible {
 .comment-author .agent-link {
   color: inherit;
 }
+.activity-author-name.agent {
+  color: var(--status-todo);
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
 
 /* §3.18 Badge */
 .badge {

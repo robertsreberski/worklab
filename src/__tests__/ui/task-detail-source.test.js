@@ -14,3 +14,11 @@ describe("TaskDetail team metadata", () => {
     expect(taskDetailSource).not.toContain('label={task.team_id}');
   });
 });
+
+describe("TaskDetail comment author metadata", () => {
+  it("renders agent comment authors as plain names instead of badges", () => {
+    expect(taskDetailSource).toContain('class="activity-author-name agent"');
+    expect(taskDetailSource).toContain("badge={false}");
+    expect(taskDetailSource).not.toContain('<AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} />');
+  });
+});
