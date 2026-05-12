@@ -56,6 +56,7 @@ function memberOut(row) {
 function leadCycleOut(row) {
   return {
     id: row.id,
+    run_id: row.run_id || row.id,
     task_id: row.task_id,
     team_id: row.team_id,
     project_id: row.project_id,
@@ -67,6 +68,16 @@ function leadCycleOut(row) {
     ended_at: row.ended_at,
     cost_usd: row.cost_usd ?? null,
     summary: row.summary || null,
+    checkpoint_note: row.checkpoint_note || null,
+    validation_summary: row.validation_summary || null,
+    goal_status: row.goal_status || null,
+    goal_status_reason: row.goal_status_reason || null,
+    next_review_due_at: row.next_review_due_at ?? null,
+    next_review_event: row.next_review_event || null,
+    next_review_consumed_at: row.next_review_consumed_at ?? null,
+    tasks_created: row.tasks_created || 0,
+    tasks_assigned: row.tasks_assigned || 0,
+    notes_posted: row.notes_posted || 0,
     task_title: row.task_title || null,
   };
 }

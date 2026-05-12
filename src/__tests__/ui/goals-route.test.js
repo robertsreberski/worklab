@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGoalResourceGroups,
+  goalLeadCycleTimeline,
   goalAssignmentState,
   goalDraftFrom,
   goalReadiness,
@@ -121,5 +122,37 @@ describe("Goals route helpers", () => {
       ["reference", "PRD", "https://example.com/prd"],
       ["reference", "Local route", "#/settings"],
     ]);
+  });
+
+  it("builds polished lead-cycle timeline rows from native cycle history", () => {
+    const rows = goalLeadCycleTimeline({
+      root_task_id: "root-1",
+      cycles: [{
+        id: "run-1",
+        task_id: "root-1",
+        process_status: "succeeded",
+        goal_status: "in_progress",
+        summary: "Assigned the next implementation pass.",
+        checkpoint_note: "Keep ownership clear.",
+        validation_summary: "Unit tests define persistence.",
+        started_at: 1000,
+        next_review_due_at: 61_000,
+        next_review_event: "task_completed",
+        tasks_created: 2,
+        tasks_assigned: 1,
+        notes_posted: 1,
+      }],
+    }, { now: 1000 });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id: "run-1",
+      href: "#/tasks/root-1?run=run-1",
+      status: "succeeded",
+      status_variant: "primary",
+      review_label: "due in 1m",
+      event_label: "after task completed",
+      impact: ["2 created", "1 assigned", "1 noted"],
+    });
   });
 });

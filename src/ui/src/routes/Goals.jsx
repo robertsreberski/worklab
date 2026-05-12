@@ -52,6 +52,17 @@ function relativeTime(ts) {
   return `${Math.round(ms / 86_400_000)}d ago`;
 }
 
+function timeUntil(ts, { now = Date.now() } = {}) {
+  if (!ts) return null;
+  const ms = Number(ts) - now;
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return "due now";
+  if (ms < 60_000) return "due in <1m";
+  if (ms < 3_600_000) return `due in ${Math.round(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `due in ${Math.round(ms / 3_600_000)}h`;
+  return `due in ${Math.round(ms / 86_400_000)}d`;
+}
+
 export function goalId(goal = {}) {
   return text(goal.goal_id || goal.id || goal.root_task_id);
 }
@@ -128,6 +139,70 @@ export function buildGoalResourceGroups(goals = [], { query = "", state = "all" 
 function latestCheckpoint(goal = {}) {
   const notes = Array.isArray(goal?.contract?.checkpoint_notes) ? goal.contract.checkpoint_notes : [];
   return notes[notes.length - 1] || null;
+}
+
+function leadCycleRunId(cycle = {}) {
+  return text(cycle.run_id || cycle.id);
+}
+
+function leadCycleStatusVariant(cycle = {}) {
+  const status = cycle?.process_status || cycle?.status || "";
+  if (status === "succeeded" || status === "complete") return "primary";
+  if (status === "failed" || status === "error" || status === "cancelled") return "warn";
+  return "muted";
+}
+
+function leadCycleStatus(cycle = {}) {
+  return text(cycle.process_status || cycle.status || "unknown");
+}
+
+function eventLabel(event) {
+  if (event === "task_completed") return "after task completed";
+  if (event === "task_blocked") return "after task blocked";
+  return text(event) ? `after ${text(event)}` : null;
+}
+
+function formatImpactCount(value, singular, plural) {
+  const count = Number(value) || 0;
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function leadCycleImpact(cycle = {}) {
+  return [
+    formatImpactCount(cycle.tasks_created, "created", "created"),
+    formatImpactCount(cycle.tasks_assigned, "assigned", "assigned"),
+    formatImpactCount(cycle.notes_posted, "noted", "noted"),
+  ].filter(Boolean);
+}
+
+export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
+  const source = Array.isArray(goal?.cycles) && goal.cycles.length
+    ? goal.cycles
+    : goal?.latest_cycle ? [goal.latest_cycle] : [];
+  return source.map((cycle, index) => {
+    const runId = leadCycleRunId(cycle);
+    const taskId = text(cycle.task_id || goal.root_task_id);
+    const dueLabel = timeUntil(cycle.next_review_due_at, { now });
+    const reviewLabel = dueLabel || eventLabel(cycle.next_review_event);
+    return {
+      id: runId || `${cycle.started_at || index}`,
+      run_id: runId || null,
+      task_id: taskId || null,
+      href: runId && taskId ? `#/tasks/${encodeURIComponent(taskId)}?run=${encodeURIComponent(runId)}` : null,
+      status: leadCycleStatus(cycle),
+      status_variant: leadCycleStatusVariant(cycle),
+      started_label: cycle.started_at ? relativeTime(cycle.started_at) : null,
+      summary: text(cycle.summary),
+      checkpoint_note: text(cycle.checkpoint_note),
+      validation_summary: text(cycle.validation_summary),
+      goal_status: text(cycle.goal_status),
+      review_label: reviewLabel,
+      event_label: eventLabel(cycle.next_review_event),
+      impact: leadCycleImpact(cycle),
+      cost_usd: cycle.cost_usd ?? null,
+    };
+  });
 }
 
 function constraintsToText(value) {
@@ -243,11 +318,12 @@ export function goalReferenceLinks(goal = {}) {
   if (teamHrefId) {
     links.push({ kind: "internal", label: "Team", href: `#/library/teams/${encodeURIComponent(teamHrefId)}` });
   }
-  if (latest?.id && latest?.task_id) {
+  const latestRunId = leadCycleRunId(latest);
+  if (latestRunId && latest?.task_id) {
     links.push({
       kind: "internal",
       label: "Latest lead cycle",
-      href: `#/tasks/${encodeURIComponent(latest.task_id)}?run=${encodeURIComponent(latest.id)}`,
+      href: `#/tasks/${encodeURIComponent(latest.task_id)}?run=${encodeURIComponent(latestRunId)}`,
     });
   }
   if (rootTaskId) {
@@ -287,6 +363,40 @@ function GoalRow({ goal, active }) {
   );
 }
 
+function LeadCycleTimeline({ goal }) {
+  const rows = goalLeadCycleTimeline(goal);
+  if (!rows.length) return <p class="muted">No lead-cycle runs yet.</p>;
+  return (
+    <ol class="goal-cycle-timeline">
+      {rows.map((row) => (
+        <li key={row.id} class="goal-cycle-row">
+          <div class="goal-cycle-marker" aria-hidden="true" />
+          <div class="goal-cycle-content">
+            <div class="goal-cycle-head">
+              <Badge variant={row.status_variant}>{row.status}</Badge>
+              {row.goal_status ? <Chip variant="muted">{row.goal_status.replace("_", " ")}</Chip> : null}
+              {row.started_label ? <span class="muted">{row.started_label}</span> : null}
+              {row.review_label ? <span class="goal-cycle-review">{row.review_label}</span> : null}
+            </div>
+            <div class="goal-cycle-summary">{row.summary || row.checkpoint_note || "Lead cycle completed."}</div>
+            {(row.checkpoint_note || row.validation_summary) && (
+              <div class="goal-cycle-notes">
+                {row.checkpoint_note && <span>{row.checkpoint_note}</span>}
+                {row.validation_summary && <span>{row.validation_summary}</span>}
+              </div>
+            )}
+            <div class="goal-cycle-foot">
+              {row.impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
+              {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
+              {row.href && <a href={row.href}>Open run</a>}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 function GoalDetail({ goal, onChanged }) {
   const [running, setRunning] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -320,7 +430,7 @@ function GoalDetail({ goal, onChanged }) {
     }
   }
 
-  const latest = goal.latest_cycle || null;
+  const cycleTimeline = goalLeadCycleTimeline(goal);
   const detailActions = (
     <>
       <Button variant="primary" loading={running} onClick={runLeadCycle} iconLeft={<Icon name="play" size={13} />}>
@@ -399,16 +509,8 @@ function GoalDetail({ goal, onChanged }) {
               <p class="muted">No links attached.</p>
             )}
           </Card>
-          <Card title="Latest lead cycle">
-            {latest ? (
-              <div class="goal-latest-cycle">
-                <Badge variant={latest.process_status === "failed" ? "warn" : "muted"}>{latest.process_status || latest.status || "unknown"}</Badge>
-                {latest.summary ? <span>{latest.summary}</span> : <span>No summary.</span>}
-                {latest.id && <a href={`#/tasks/${encodeURIComponent(latest.task_id)}?run=${encodeURIComponent(latest.id)}`}>Open run</a>}
-              </div>
-            ) : (
-              <p class="muted">No lead-cycle runs yet.</p>
-            )}
+          <Card title={`Lead cycle timeline (${cycleTimeline.length})`}>
+            <LeadCycleTimeline goal={goal} />
           </Card>
         </SectionStack>
       </div>
