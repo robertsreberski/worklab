@@ -14,7 +14,7 @@ import { Button } from "../components/primitives/Button.jsx";
 import { Input } from "../components/primitives/Input.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
-import { AttachmentTray } from "../components/AttachmentTray.jsx";
+import { AttachmentChips } from "../components/AttachmentChips.jsx";
 import { Select } from "../components/primitives/Select.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { StageToken } from "../components/primitives/StageToken.jsx";
@@ -31,7 +31,7 @@ import { DetailHead, PanelGrid, SectionMarker, Toolbar } from "../components/lay
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
 import { taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { useAppResume } from "../lib/pageVisibility.js";
-import { attachmentPayload, uploadedAttachmentDraft } from "../lib/attachments.js";
+import { attachmentPayload, imageFilesFromTransfer, transferHasFiles, uploadedAttachmentDraft } from "../lib/attachments.js";
 import { writeTaskDetailSummaryCache } from "./task-detail/summaryCache.js";
 
 // Stage grid in the right rail.
@@ -232,10 +232,8 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
     setDraft((d) => ({ ...d, ...patch }));
   }
 
-  async function handleAttachmentPaste(event) {
-    const files = Array.from(event.clipboardData?.files || []).filter((file) => file.type?.startsWith("image/"));
+  async function attachImageFiles(files) {
     if (!files.length) return;
-    event.preventDefault();
     setAttachmentUploading(true);
     setAttachmentError("");
     try {
@@ -253,6 +251,31 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
     } finally {
       setAttachmentUploading(false);
     }
+  }
+
+  async function handleAttachmentPaste(event) {
+    const files = imageFilesFromTransfer(event.clipboardData);
+    if (!files.length) return;
+    event.preventDefault();
+    await attachImageFiles(files);
+  }
+
+  function handleAttachmentDragOver(event) {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  }
+
+  async function handleAttachmentDrop(event) {
+    if (!transferHasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const files = imageFilesFromTransfer(event.dataTransfer);
+    if (!files.length) {
+      setAttachmentError("Drop images to attach. Type or select local paths in the field.");
+      return;
+    }
+    await attachImageFiles(files);
   }
 
   async function save({ navigateOnSuccess = true } = {}) {
@@ -613,9 +636,11 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
                       value={draft.instructions}
                       onInput={(e) => update({ instructions: e.target.value })}
                       onPaste={handleAttachmentPaste}
+                      onDragOver={handleAttachmentDragOver}
+                      onDrop={handleAttachmentDrop}
                       pathContext={{ taskId: id, projectId: draft.project_id }}
                     />
-                    <AttachmentTray
+                    <AttachmentChips
                       attachments={draft.attachments || []}
                       onChange={(attachments) => update({ attachments })}
                       uploading={attachmentUploading}
