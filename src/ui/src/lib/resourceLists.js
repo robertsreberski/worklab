@@ -203,12 +203,13 @@ function sortKnowledgeItems(items, sort) {
   return [...items].sort(compareKnowledgeRecent);
 }
 
-function flatKnowledgeGroup(items, sort, surface = "canonical") {
+function flatKnowledgeGroup(items, sort, surface = "artifacts") {
   if (!items.length) return [];
   if (surface === "artifacts") {
     return [{
       key: "artifacts",
-      label: "Meaningful artifacts",
+      label: "Artifacts",
+      showHeader: false,
       items: sortKnowledgeItems(items, sort),
     }];
   }
@@ -237,7 +238,7 @@ export function buildKnowledgeResourceGroups(entries = [], {
   subcategory = "all",
   tag = "all",
   pinned = "all",
-  surface = "canonical",
+  surface = "artifacts",
   sort = DEFAULT_KNOWLEDGE_SORT,
 } = {}) {
   const mode = knowledgeSortMode(sort);
@@ -252,8 +253,7 @@ export function buildKnowledgeResourceGroups(entries = [], {
     if (tag !== "all" && !(entry.tags || []).includes(tag)) continue;
     if (pinned === "pinned" && !entry.pinned) continue;
     if (pinned === "unpinned" && entry.pinned) continue;
-    if (surface === "artifacts" && !entry.meaningful_artifact) continue;
-    if (surface === "canonical" && isRunOutput) continue;
+    if ((surface === "artifacts" || surface === "canonical") && isRunOutput) continue;
     if (surface === "run_outputs" && !isRunOutput) continue;
     if (!matchesQuery([
       entry.title,
@@ -275,7 +275,7 @@ export function buildKnowledgeResourceGroups(entries = [], {
     }
     groups.get(key).items.push(entry);
   }
-  if (mode !== "project_category" || surface === "artifacts") return flatKnowledgeGroup(items, mode, surface);
+  if (mode !== "project_category") return flatKnowledgeGroup(items, mode, surface);
 
   return [...groups.values()]
     .map((group) => ({

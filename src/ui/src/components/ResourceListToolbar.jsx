@@ -87,6 +87,9 @@ export function ResourceList({ children, class: className = "", ...props }) {
 }
 
 export function ResourceGroup({ group, children }) {
+  if (group.showHeader === false) {
+    return <div class="ds-section-group resource-group">{children}</div>;
+  }
   return (
     <SectionGroup
       as="div"
