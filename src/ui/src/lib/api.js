@@ -47,6 +47,14 @@ function withQuery(path, query) {
   return `${path}${query ? `?${new URLSearchParams(query)}` : ""}`;
 }
 
+function splitQueryAndOptions(query, options) {
+  if (query?.signal && !options) {
+    const { signal, ...rest } = query;
+    return [Object.keys(rest).length ? rest : null, { signal }];
+  }
+  return [query, options];
+}
+
 export const api = {
   // projects
   listProjects: (query, options) => request("GET", `/projects${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
@@ -74,10 +82,7 @@ export const api = {
   // tasks
   listTasks: (query, options) => request("GET", `/tasks${query ? "?" + new URLSearchParams(query) : ""}`, null, options),
   getTask: (id, query, options) => {
-    if (query?.signal && !options) {
-      options = query;
-      query = null;
-    }
+    [query, options] = splitQueryAndOptions(query, options);
     return request("GET", withQuery(`/tasks/${pathSegment(id)}`, query), null, options);
   },
   createTask: (data) => request("POST", "/tasks", data),
@@ -132,10 +137,7 @@ export const api = {
   cancelAssistantRun: (id) => request("POST", `/assistant/runs/${pathSegment(id)}/cancel`),
   // agents
   listAgents: (query, options) => {
-    if (query?.signal && !options) {
-      options = query;
-      query = null;
-    }
+    [query, options] = splitQueryAndOptions(query, options);
     return request("GET", `/agents${query ? "?" + new URLSearchParams(query) : ""}`, null, options);
   },
   getAgent: (name, options) => request("GET", `/agents/${pathSegment(name)}`, null, options),

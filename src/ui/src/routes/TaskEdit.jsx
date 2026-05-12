@@ -111,7 +111,7 @@ export function TaskEdit({ mode = "create", id = null, query = {} }) {
 
   useEffect(() => {
     const controller = new AbortController();
-    api.listAgents({ view: "summary", signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
+    api.listAgents({ view: "summary" }, { signal: controller.signal }).then((r) => setAgents(r.agents || [])).catch((err) => { if (err?.name !== "AbortError") setAgents([]); });
     api.listProjects({ include_archived: "true" }, { signal: controller.signal }).then((r) => setProjects(r.projects || [])).catch((err) => { if (err?.name !== "AbortError") setProjects([]); });
     api.listTeams({ include_archived: "true" }, { signal: controller.signal }).then((r) => setTeams(r.teams || [])).catch((err) => { if (err?.name !== "AbortError") setTeams([]); });
     api.listTasks({ view: "summary" }, { signal: controller.signal }).then((r) => setTasks(r.tasks || [])).catch((err) => { if (err?.name !== "AbortError") setTasks([]); });
