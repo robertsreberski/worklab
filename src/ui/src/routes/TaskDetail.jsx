@@ -352,9 +352,7 @@ export function TaskDetail({ id, runParam = null }) {
     const agentName = item.authorType === "agent" ? item.authorId || item.author?.id : null;
     if (agentName) {
       return (
-        <span class={`activity-author-badge ${item.authorType || "human"}`}>
-          <AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} />
-        </span>
+        <AgentLink name={agentName} label={commentAuthorLabel(item)} agents={agents} badge={false} class="activity-author-name agent" />
       );
     }
     return <span class={`activity-author-badge ${item.authorType || "human"}`}>{commentAuthorLabel(item)}</span>;

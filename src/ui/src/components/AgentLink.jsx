@@ -25,6 +25,7 @@ export function AgentLink({
   showLabel = true,
   size = 20,
   compact = false,
+  badge = true,
   role,
   title,
   class: className = "",
@@ -39,7 +40,7 @@ export function AgentLink({
     showLabel ? "" : "icon-only",
     className,
   ].filter(Boolean).join(" ");
-  if (!showAvatar && showLabel) {
+  if (!showAvatar && showLabel && badge) {
     return (
       <EntityBadge
         kind="agent"
