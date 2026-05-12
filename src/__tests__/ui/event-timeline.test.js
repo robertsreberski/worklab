@@ -453,6 +453,51 @@ describe("worklab event timeline normalization", () => {
     ]);
   });
 
+  it("hides compacted standalone worklab result assistant text before the terminal final event", () => {
+    const done = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Integrated the v0 flow.",
+      details: "Changed files and verified the app.",
+      final_text: "Done. The v0 flow is integrated.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      verification_evidence: [
+        { kind: "test", command_or_url: "npm test", exit_code_or_status: "0", snippet: "passed", reason: "" },
+      ],
+    };
+    const compactedText = `${JSON.stringify(done).slice(0, 420)}\n[truncated 277 chars; full raw log available]`;
+    const events = normalizeWorklabEvents([
+      { type: "started" },
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: { content: [{ type: "text", text: compactedText }] },
+        },
+      },
+      {
+        type: "final",
+        text: JSON.stringify(done),
+        worklab_result: done,
+        usage: {},
+      },
+    ]);
+
+    expect(events).toEqual([
+      { type: "started" },
+      {
+        type: "final",
+        text: "Done. The v0 flow is integrated.",
+        structured: done,
+      },
+    ]);
+  });
+
   it("keeps normalized structured output events visible", () => {
     const worklabResult = {
       schema: "worklab.v2",
