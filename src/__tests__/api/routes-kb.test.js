@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import supertest from "supertest";
@@ -157,6 +157,36 @@ describe("kb REST routes", () => {
     expect(pinnedFirst.body.entries.map((entry) => entry.slug)).toEqual(["old-pin", "new-note"]);
   });
 
+  it("GET /api/kb/taxonomy returns normalized category and tag counts", async () => {
+    const { agent, dataDir } = mkServer();
+    kbCreate({
+      dataDir,
+      slug: "old-plan",
+      title: "Old Plan",
+      body: "body",
+      tags: ["Jetpack.com", "exec-plan"],
+      category: "execution-plan",
+      author: "test",
+    });
+    kbCreate({
+      dataDir,
+      slug: "run-output",
+      title: "Run Output",
+      body: "body",
+      tags: ["run-results"],
+      category: "run result",
+      author: "test",
+    });
+
+    const res = await agent.get("/api/kb/taxonomy").expect(200);
+    expect(res.body.categories).toContainEqual({ category: "plans", count: 1 });
+    expect(res.body.categories).toContainEqual({ category: "run-results", count: 1 });
+    expect(res.body.tags).toContainEqual({ tag: "jetpack-com", count: 1 });
+    expect(res.body.tags).toContainEqual({ tag: "run-result", count: 1 });
+    expect(res.body.surfaces).toContainEqual({ surface: "plans", count: 1 });
+    expect(res.body.surfaces).toContainEqual({ surface: "run_outputs", count: 1 });
+  });
+
   it("GET /api/kb rejects unknown sort modes", async () => {
     const { agent } = mkServer();
     const res = await agent.get("/api/kb?sort=unknown").expect(400);
@@ -236,6 +266,44 @@ describe("kb REST routes", () => {
     expect(after.body.entry.meta.project_id).toBe(project.body.project.id);
     expect(after.body.entry.meta.category).toBe("research");
     expect(after.body.entry.meta.subcategory).toBe("runtime");
+  });
+
+  it("POST /api/kb/organize previews and applies taxonomy normalization", async () => {
+    const { agent, dataDir } = mkServer();
+    writeFileSync(join(dataDir, "knowledge", "legacy-plan.md"), `---
+title: Legacy Plan
+slug: legacy-plan
+tags: [Jetpack.com, exec-plan]
+category: execution-plan
+subcategory: Runtime Settings
+author: test
+created_at: 2026-05-01T00:00:00Z
+updated_at: 2026-05-01T00:00:00Z
+---
+
+body
+`);
+
+    const preview = await agent.post("/api/kb/organize").send({ apply: false }).expect(200);
+    expect(preview.body.proposals).toContainEqual(expect.objectContaining({
+      slug: "legacy-plan",
+      patch: expect.objectContaining({
+        category: "plans",
+        subcategory: "runtime-settings",
+        tags: ["jetpack-com", "execplan"],
+      }),
+      reasons: expect.arrayContaining(["category", "subcategory", "tags"]),
+    }));
+
+    const before = await agent.get("/api/kb/legacy-plan").expect(200);
+    expect(before.body.entry.meta.category).toBe("plans");
+    expect(before.body.entry.meta.raw_category).toBe("execution-plan");
+
+    await agent.post("/api/kb/organize").send({ apply: true }).expect(200);
+    const after = await agent.get("/api/kb/legacy-plan").expect(200);
+    expect(after.body.entry.meta.category).toBe("plans");
+    expect(after.body.entry.meta.raw_category).toBeNull();
+    expect(after.body.entry.meta.tags).toEqual(["jetpack-com", "execplan"]);
   });
 
   it("POST /api/kb/cleanup-auto-promoted previews and removes only generated run-result assets", async () => {
@@ -329,6 +397,23 @@ describe("kb REST routes", () => {
     expect(res.body.entry.meta.slug).toBe("new-entry");
     expect(res.body.entry.meta.title).toBe("New Entry");
     expect(res.body.entry.meta.author).toBe("human");
+  });
+
+  it("POST /api/kb normalizes category and tags before persisting", async () => {
+    const { agent } = mkServer();
+    const res = await agent
+      .post("/api/kb")
+      .send({
+        slug: "new-plan",
+        title: "New Plan",
+        body: "body",
+        category: "exec-plan",
+        tags: ["Jetpack.com", "run-results"],
+      })
+      .expect(201);
+    expect(res.body.entry.meta.category).toBe("plans");
+    expect(res.body.entry.meta.tags).toEqual(["jetpack-com", "run-result"]);
+    expect(res.body.entry.meta.meaningful_plan).toBe(true);
   });
 
   it("POST /api/kb generates a unique slug from title when slug is omitted", async () => {

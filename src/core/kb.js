@@ -17,6 +17,30 @@ const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 export const DEFAULT_KB_SORT = "updated_desc";
 export const KB_SORT_MODES = Object.freeze(["updated_desc", "pinned_first", "title_asc", "project_category"]);
 
+const CATEGORY_ALIASES = new Map([
+  ["plan", "plans"],
+  ["plans", "plans"],
+  ["planning", "plans"],
+  ["execplan", "plans"],
+  ["execplans", "plans"],
+  ["exec-plan", "plans"],
+  ["execution-plan", "plans"],
+  ["run-result", "run-results"],
+  ["run-results", "run-results"],
+  ["run-output", "run-results"],
+  ["run-outputs", "run-results"],
+  ["how-to", "howto"],
+]);
+
+const TAG_ALIASES = new Map([
+  ["exec-plan", "execplan"],
+  ["execution-plan", "execplan"],
+  ["execplans", "execplan"],
+  ["run-results", "run-result"],
+  ["run-output", "run-result"],
+  ["run-outputs", "run-result"],
+]);
+
 // Stable order for frontmatter keys.
 const FRONTMATTER_ORDER = [
   "title",
@@ -54,6 +78,42 @@ function knowledgeDir(dataDir) {
 
 export function kbPath(dataDir, slug) {
   return join(knowledgeDir(dataDir), `${slug}.md`);
+}
+
+function taxonomyToken(value) {
+  const text = String(value || "").trim().toLowerCase();
+  if (!text) return "";
+  return text
+    .replace(/&/g, " and ")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+export function normalizeKbCategory(value) {
+  const token = taxonomyToken(value);
+  if (!token) return null;
+  return CATEGORY_ALIASES.get(token) || token;
+}
+
+function normalizeKbSubcategory(value) {
+  const token = taxonomyToken(value);
+  return token || null;
+}
+
+export function normalizeKbTag(value) {
+  const token = taxonomyToken(value);
+  if (!token) return "";
+  return TAG_ALIASES.get(token) || token;
+}
+
+function rawStringList(values) {
+  if (!Array.isArray(values)) return [];
+  return values.map((value) => String(value || "").trim()).filter(Boolean);
+}
+
+function listsEqual(left = [], right = []) {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
 }
 
 // --- Frontmatter parsing ----------------------------------------------------
@@ -334,7 +394,7 @@ function ensureKnowledgeDir(dataDir) {
 
 function normalizeTags(tags) {
   if (!Array.isArray(tags)) return [];
-  return [...new Set(tags.map((tag) => String(tag || "").trim()).filter(Boolean))];
+  return [...new Set(tags.map(normalizeKbTag).filter(Boolean))];
 }
 
 function normalizeSlugList(slugs) {
@@ -348,6 +408,25 @@ function normalizeNullableString(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
   return text || null;
+}
+
+export function kbEntryClassification(entry = {}, { autoPromoted } = {}) {
+  const category = normalizeKbCategory(entry.display_category || entry.category);
+  const tags = normalizeTags(entry.tags);
+  const slug = String(entry.slug || "").trim();
+  const hasRunResultTag = tags.includes("run-result");
+  const generatedRunShape = slug.startsWith("run-") && hasRunResultTag && !!(entry.source_run_id || entry.source_task_id || entry.source_task_key);
+  const runOutput = autoPromoted === true
+    || entry.auto_promoted === true
+    || category === "run-results"
+    || generatedRunShape;
+  const meaningfulPlan = category === "plans" && !runOutput;
+  return {
+    display_category: category,
+    surface: runOutput ? "run_outputs" : (meaningfulPlan ? "plans" : "canonical"),
+    run_output: runOutput,
+    meaningful_plan: meaningfulPlan,
+  };
 }
 
 export function normalizeKbSort(sort = DEFAULT_KB_SORT) {
@@ -432,12 +511,19 @@ function compareKbEntries(left, right, sort) {
 // --- List entry normalization ----------------------------------------------
 
 function normalizeMetaForList(meta) {
-  return {
+  const rawTags = rawStringList(meta.tags);
+  const tags = normalizeTags(rawTags);
+  const rawCategory = normalizeNullableString(meta.category);
+  const category = normalizeKbCategory(rawCategory);
+  const rawSubcategory = normalizeNullableString(meta.subcategory);
+  const subcategory = normalizeKbSubcategory(rawSubcategory);
+  const rawCanonicalSlug = normalizeNullableString(meta.canonical_slug);
+  const base = {
     slug: meta.slug ?? null,
     title: meta.title ?? null,
-    tags: normalizeTags(meta.tags),
-    category: meta.category ?? null,
-    subcategory: meta.subcategory ?? null,
+    tags,
+    category,
+    subcategory,
     project_id: meta.project_id ?? null,
     source_task_id: meta.source_task_id ?? null,
     source_task_key: meta.source_task_key ?? null,
@@ -445,11 +531,18 @@ function normalizeMetaForList(meta) {
     source_agent: meta.source_agent ?? null,
     related_slugs: normalizeSlugList(meta.related_slugs),
     supersedes_slugs: normalizeSlugList(meta.supersedes_slugs),
-    canonical_slug: meta.canonical_slug ?? null,
+    canonical_slug: rawCanonicalSlug,
     pinned: meta.pinned === true,
     author: meta.author ?? null,
     created_at: meta.created_at ?? null,
     updated_at: meta.updated_at ?? null,
+  };
+  return {
+    ...base,
+    ...kbEntryClassification(base),
+    raw_category: rawCategory && rawCategory !== category ? rawCategory : null,
+    raw_subcategory: rawSubcategory && rawSubcategory !== subcategory ? rawSubcategory : null,
+    raw_tags: listsEqual(rawTags, tags) ? null : rawTags,
   };
 }
 
@@ -481,12 +574,18 @@ export function kbRead({ dataDir, slug }) {
   if (!existsSync(path)) return null;
   const raw = readFileSync(path, "utf8");
   const { meta, body } = parseFrontmatter(raw);
+  const rawTags = rawStringList(meta.tags);
+  const tags = normalizeTags(rawTags);
+  const rawCategory = normalizeNullableString(meta.category);
+  const category = normalizeKbCategory(rawCategory);
+  const rawSubcategory = normalizeNullableString(meta.subcategory);
+  const subcategory = normalizeKbSubcategory(rawSubcategory);
   const normalized = {
     ...meta,
     slug: meta.slug ?? slug,
-    tags: normalizeTags(meta.tags),
-    category: meta.category ?? null,
-    subcategory: meta.subcategory ?? null,
+    tags,
+    category,
+    subcategory,
     project_id: meta.project_id ?? null,
     source_task_id: meta.source_task_id ?? null,
     source_task_key: meta.source_task_key ?? null,
@@ -494,9 +593,14 @@ export function kbRead({ dataDir, slug }) {
     source_agent: meta.source_agent ?? null,
     related_slugs: normalizeSlugList(meta.related_slugs),
     supersedes_slugs: normalizeSlugList(meta.supersedes_slugs),
-    canonical_slug: meta.canonical_slug ?? null,
+    canonical_slug: normalizeNullableString(meta.canonical_slug),
     pinned: meta.pinned === true,
   };
+  Object.assign(normalized, kbEntryClassification(normalized), {
+    raw_category: rawCategory && rawCategory !== category ? rawCategory : null,
+    raw_subcategory: rawSubcategory && rawSubcategory !== subcategory ? rawSubcategory : null,
+    raw_tags: listsEqual(rawTags, tags) ? null : rawTags,
+  });
   return { meta: normalized, body };
 }
 
@@ -531,8 +635,8 @@ export function kbCreate({
     title,
     slug,
     tags: normalizeTags(tags),
-    category: normalizeNullableString(category),
-    subcategory: normalizeNullableString(subcategory),
+    category: normalizeKbCategory(category),
+    subcategory: normalizeKbSubcategory(subcategory),
     project_id: normalizeNullableString(project_id),
     source_task_id: normalizeNullableString(source_task_id),
     source_task_key: normalizeNullableString(source_task_key),
@@ -571,8 +675,8 @@ export function kbUpdate({ dataDir, slug, patch = {}, now = new Date() }) {
   merged.updated_at = isoTimestamp(now);
   // Normalize shapes.
   merged.tags = normalizeTags(merged.tags);
-  merged.category = normalizeNullableString(merged.category);
-  merged.subcategory = normalizeNullableString(merged.subcategory);
+  merged.category = normalizeKbCategory(merged.category);
+  merged.subcategory = normalizeKbSubcategory(merged.subcategory);
   merged.project_id = normalizeNullableString(merged.project_id);
   merged.source_task_id = normalizeNullableString(merged.source_task_id);
   merged.source_task_key = normalizeNullableString(merged.source_task_key);
@@ -668,6 +772,9 @@ export function kbReadMeta({ dataDir, slug }) {
 
 export function kbList({ dataDir, tag, category, subcategory, project_id, pinned, sort } = {}) {
   const sortMode = normalizeKbSort(sort);
+  const tagFilter = tag !== undefined ? normalizeKbTag(tag) : undefined;
+  const categoryFilter = category !== undefined ? normalizeKbCategory(category) : undefined;
+  const subcategoryFilter = subcategory !== undefined ? normalizeKbSubcategory(subcategory) : undefined;
   const dir = knowledgeDir(dataDir);
   if (!existsSync(dir)) return [];
   const out = [];
@@ -690,15 +797,80 @@ export function kbList({ dataDir, tag, category, subcategory, project_id, pinned
     }
     const meta = normalizeMetaForList({ ...parsed.meta, slug: parsed.meta.slug ?? slug });
     // Filters.
-    if (tag !== undefined && !meta.tags.includes(tag)) continue;
-    if (category !== undefined && meta.category !== category) continue;
-    if (subcategory !== undefined && meta.subcategory !== subcategory) continue;
+    if (tagFilter !== undefined && !meta.tags.includes(tagFilter)) continue;
+    if (categoryFilter !== undefined && meta.category !== categoryFilter) continue;
+    if (subcategoryFilter !== undefined && meta.subcategory !== subcategoryFilter) continue;
     if (project_id !== undefined && meta.project_id !== project_id) continue;
     if (pinned !== undefined && meta.pinned !== pinned) continue;
     out.push(meta);
   }
   out.sort((a, b) => compareKbEntries(a, b, sortMode));
   return out;
+}
+
+function incrementCount(map, key, by = 1) {
+  if (!key) return;
+  map.set(key, (map.get(key) || 0) + by);
+}
+
+function countList(map) {
+  return [...map.entries()]
+    .map(([key, count]) => ({ key, count }))
+    .sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count;
+      return left.key.localeCompare(right.key);
+    });
+}
+
+function renameCountKey(rows, keyName) {
+  return rows.map((row) => ({ [keyName]: row.key, count: row.count }));
+}
+
+export function kbTaxonomy({ dataDir } = {}) {
+  const entries = kbList({ dataDir });
+  const categories = new Map();
+  const subcategories = new Map();
+  const tags = new Map();
+  const surfaces = new Map();
+  const categoryAliases = new Map();
+  const subcategoryAliases = new Map();
+  const tagAliases = new Map();
+
+  for (const entry of entries) {
+    incrementCount(categories, entry.category || "uncategorized");
+    incrementCount(subcategories, entry.subcategory);
+    incrementCount(surfaces, entry.surface || "canonical");
+    for (const tag of entry.tags || []) incrementCount(tags, tag);
+    if (entry.raw_category) incrementCount(categoryAliases, `${entry.raw_category}\u0000${entry.category}`);
+    if (entry.raw_subcategory) incrementCount(subcategoryAliases, `${entry.raw_subcategory}\u0000${entry.subcategory}`);
+    for (const rawTag of entry.raw_tags || []) {
+      const normalized = normalizeKbTag(rawTag);
+      if (normalized && rawTag !== normalized) incrementCount(tagAliases, `${rawTag}\u0000${normalized}`);
+    }
+  }
+
+  const aliasRows = (map) => [...map.entries()]
+    .map(([compound, count]) => {
+      const [raw, normalized] = compound.split("\u0000");
+      return { raw, normalized, count };
+    })
+    .sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count;
+      return left.raw.localeCompare(right.raw);
+    });
+
+  return {
+    entries: entries.length,
+    categories: renameCountKey(countList(categories), "category"),
+    subcategories: renameCountKey(countList(subcategories), "subcategory"),
+    tags: renameCountKey(countList(tags), "tag"),
+    surfaces: renameCountKey(countList(surfaces), "surface"),
+    aliases: {
+      categories: aliasRows(categoryAliases),
+      subcategories: aliasRows(subcategoryAliases),
+      tags: aliasRows(tagAliases),
+    },
+  };
 }
 
 function safeDecode(value) {

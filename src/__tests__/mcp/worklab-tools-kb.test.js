@@ -312,10 +312,27 @@ describe("worklab-tools KB handlers", () => {
     });
   });
 
+  it("kb_taxonomy returns reusable normalized tags and categories", async () => {
+    const c = ctx();
+    const h = createToolHandlers(c);
+    await h.kb_create({
+      slug: "runtime-plan",
+      title: "Runtime Plan",
+      body: "body",
+      category: "exec-plan",
+      tags: ["Jetpack.com", "exec-plan"],
+    });
+
+    const r = await h.kb_taxonomy({});
+    expect(r.categories).toContainEqual({ category: "plans", count: 1 });
+    expect(r.tags).toContainEqual({ tag: "jetpack-com", count: 1 });
+    expect(r.tags).toContainEqual({ tag: "execplan", count: 1 });
+  });
+
   // ── toolDefinitions count ────────────────────────────────────────────────
 
   it("toolDefinitions includes run log, KB, and search tools", () => {
-    const kbTools = ["run_log_read", "worktree_sync", "kb_create", "kb_update", "kb_delete", "kb_read", "kb_list", "kb_search", "journal_search", "memory_search"];
+    const kbTools = ["run_log_read", "worktree_sync", "kb_create", "kb_update", "kb_delete", "kb_read", "kb_list", "kb_search", "kb_taxonomy", "journal_search", "memory_search"];
     const names = toolDefinitions.map((t) => t.name);
     for (const name of kbTools) {
       expect(names).toContain(name);
@@ -328,8 +345,8 @@ describe("worklab-tools KB handlers", () => {
     expect(toolDefinitions.find((t) => t.name === "kb_delete")?.annotations).toMatchObject({ destructiveHint: true });
   });
 
-  it("toolDefinitions has 18 total entries (4 existing + 2 todo + worktree sync + agent create + 5 KB + 3 search + 2 subtask graph)", () => {
-    expect(toolDefinitions.length).toBe(18);
+  it("toolDefinitions has 19 total entries (4 existing + 2 todo + worktree sync + agent create + 6 KB + 3 search + 2 subtask graph)", () => {
+    expect(toolDefinitions.length).toBe(19);
     // Snapshot-style guard against drift after the per-domain split.
     const names = toolDefinitions.map((tool) => tool.name);
     expect(new Set(names).size).toBe(toolDefinitions.length);

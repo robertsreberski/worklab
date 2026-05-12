@@ -2,10 +2,12 @@ import { z } from "zod";
 import {
   compactProject,
   autoPromotedRunResultInfo,
+  kbEntryClassification,
   kbCreate,
   kbDelete,
   kbList,
   kbRead,
+  kbTaxonomy,
   kbUpdate,
   normalizeKbSort,
   resolveProjectRow,
@@ -183,14 +185,18 @@ function attachAutoPromotedInfo(dataDir, entries) {
         ? entry
         : { meta: entry.meta || entry, body: "" };
       const info = autoPromotedRunResultInfo(full || entry);
+      const classification = kbEntryClassification(entry.meta ? { ...entry.meta, ...info } : { ...entry, ...info }, {
+        autoPromoted: info.auto_promoted,
+      });
       if (entry.meta) {
         return {
           ...entry,
-          meta: { ...entry.meta, ...info },
+          meta: { ...entry.meta, ...info, ...classification },
           auto_promoted: info.auto_promoted,
+          ...classification,
         };
       }
-      return { ...entry, ...info };
+      return { ...entry, ...info, ...classification };
     } catch {
       return { ...entry, auto_promoted: false };
     }
@@ -320,6 +326,18 @@ function organizeProposalForEntry({ db, entry }) {
   const meta = entry.meta || entry;
   const patch = {};
   const reasons = [];
+  if (Array.isArray(meta.raw_tags) && meta.raw_tags.length && JSON.stringify(meta.raw_tags) !== JSON.stringify(meta.tags || [])) {
+    patch.tags = meta.tags || [];
+    reasons.push("tags");
+  }
+  if (meta.raw_category && meta.category && meta.raw_category !== meta.category) {
+    patch.category = meta.category;
+    reasons.push("category");
+  }
+  if (meta.raw_subcategory && meta.subcategory && meta.raw_subcategory !== meta.subcategory) {
+    patch.subcategory = meta.subcategory;
+    reasons.push("subcategory");
+  }
   if (!meta.project_id) {
     const projectId = taskUsageProjectId(db, meta) || tagProjectId(db, meta);
     if (projectId) {
@@ -327,12 +345,12 @@ function organizeProposalForEntry({ db, entry }) {
       reasons.push("project");
     }
   }
-  const category = inferCategory(meta);
+  const category = inferCategory({ ...meta, ...patch });
   if (category && category !== meta.category) {
     patch.category = category;
     reasons.push("category");
   }
-  const subcategory = inferSubcategory(meta);
+  const subcategory = inferSubcategory({ ...meta, ...patch });
   if (subcategory && subcategory !== meta.subcategory) {
     patch.subcategory = subcategory;
     reasons.push("subcategory");
@@ -375,6 +393,11 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
 
     const entries = attachAutoPromotedInfo(dataDir, kbList({ dataDir, ...filter }));
     res.json({ entries: attachProjects(db, entries) });
+  });
+
+  // GET /api/kb/taxonomy
+  app.get("/api/kb/taxonomy", (_req, res) => {
+    res.json(kbTaxonomy({ dataDir }));
   });
 
   // POST /api/kb/organize
