@@ -168,10 +168,11 @@ function knowledgeIsRunOutput(entry) {
   return !!(entry?.run_output || entry?.auto_promoted);
 }
 
-const KNOWLEDGE_SORT_MODES = new Set(["updated_desc", "pinned_first", "title_asc", "project_category"]);
+const DEFAULT_KNOWLEDGE_SORT = "pinned_first";
+const KNOWLEDGE_SORT_MODES = new Set(["updated_desc", DEFAULT_KNOWLEDGE_SORT, "title_asc", "project_category"]);
 
 function knowledgeSortMode(sort) {
-  return KNOWLEDGE_SORT_MODES.has(sort) ? sort : "updated_desc";
+  return KNOWLEDGE_SORT_MODES.has(sort) ? sort : DEFAULT_KNOWLEDGE_SORT;
 }
 
 function knowledgeEntryTimestamp(entry) {
@@ -237,7 +238,7 @@ export function buildKnowledgeResourceGroups(entries = [], {
   tag = "all",
   pinned = "all",
   surface = "canonical",
-  sort = "updated_desc",
+  sort = DEFAULT_KNOWLEDGE_SORT,
 } = {}) {
   const mode = knowledgeSortMode(sort);
   const items = [];
