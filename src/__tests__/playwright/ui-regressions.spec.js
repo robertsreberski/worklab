@@ -1092,6 +1092,7 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   const runCard = page.locator(".activity-feed-entry.run .run-card").first();
   await expect(runCard.locator(".run-result-decision")).toContainText("advance");
   await expect(runCard.locator(".run-result-summary")).toContainText("Implemented regression run summary.");
+  await expect(runCard.locator(".run-summary-result-head")).toHaveCSS("justify-content", "flex-start");
   await expect(runCard.locator(".run-result-details")).toContainText("Changed seeded data");
   await expect(runCard.locator(".run-summary-side .run-summary-time")).toBeVisible();
   await expect(runCard.locator(".run-summary-status .status-pill")).toHaveCount(0);
