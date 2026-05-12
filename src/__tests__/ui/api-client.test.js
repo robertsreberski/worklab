@@ -198,6 +198,30 @@ describe("ui API client", () => {
       "/api/tasks/task%201/runs?view=full",
     ]);
   });
+
+  it("preserves query parameters when request signals are provided", async () => {
+    const controller = new AbortController();
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    }));
+
+    await api.getTask("task 1", { runs: "summary", run_limit: "20", signal: controller.signal });
+    await api.listAgents({ view: "summary", signal: controller.signal });
+    await api.listAgents({ view: "summary" }, { signal: controller.signal });
+
+    expect(global.fetch.mock.calls.map(([url]) => url)).toEqual([
+      "/api/tasks/task%201?runs=summary&run_limit=20",
+      "/api/agents?view=summary",
+      "/api/agents?view=summary",
+    ]);
+    expect(global.fetch.mock.calls.map(([, options]) => options.signal)).toEqual([
+      controller.signal,
+      controller.signal,
+      controller.signal,
+    ]);
+  });
 });
 
 describe("ui API call sites", () => {
@@ -230,7 +254,7 @@ describe("ui API call sites", () => {
   it("uses summary agent payloads on task create and detail surfaces", () => {
     const taskEditSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskEdit.jsx"), "utf8");
     const taskDetailSource = readFileSync(resolve(import.meta.dirname, "../../ui/src/routes/TaskDetail.jsx"), "utf8");
-    expect(taskEditSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary",\s*signal:/);
-    expect(taskDetailSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary",\s*signal:/);
+    expect(taskEditSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary"\s*\},\s*\{\s*signal:/);
+    expect(taskDetailSource).toMatch(/api\.listAgents\(\{\s*view:\s*"summary"\s*\},\s*\{\s*signal:/);
   });
 });
