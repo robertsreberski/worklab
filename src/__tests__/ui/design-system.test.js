@@ -398,6 +398,15 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("renders knowledge relation badges from resolved entry objects instead of slugs", () => {
+    const kbDetailSource = readFileSync(kbDetailPath, "utf8");
+
+    expect(kbDetailSource).toContain("RelationEntryList");
+    expect(kbDetailSource).toContain("entry.related_entries");
+    expect(kbDetailSource).toContain("entry.canonical_entry");
+    expect(kbDetailSource).not.toContain("label={relationSlug}");
+  });
+
   it("builds team and goal editor forms on shared form primitives", () => {
     for (const filePath of [goalsPath, teamsPath]) {
       const source = readFileSync(filePath, "utf8");

@@ -832,7 +832,7 @@ export function TaskDetail({ id, runParam = null }) {
     <span class="task-hero-status-row">
       <StatusMenu status={statusMenuState} displayStage={stage} pulse={Boolean(runningRun)} onChoose={onStatusChoose} />
       {task.project && (
-        <EntityBadge kind="project" label={task.project.name || task.project.slug} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || task.project.slug}`} />
+        <EntityBadge kind="project" label={task.project.name || "Unknown Project"} href={`#/projects/${projectRouteId(task.project)}`} class="task-project-chip" title={`Project: ${task.project.name || "Unknown Project"}`} />
       )}
       {taskTeamRouteId && (
         <EntityBadge kind="team" label={taskTeamDisplay} href={`#/library/teams/${encodeURIComponent(taskTeamRouteId)}`} class="task-team-chip" title={`Team: ${taskTeamDisplay}`} />

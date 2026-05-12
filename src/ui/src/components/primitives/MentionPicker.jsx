@@ -10,6 +10,7 @@ import { api } from "../../lib/api.js";
 import { useDropdownPlacement } from "../../hooks/useDropdownPlacement.js";
 import { PopoverPortal } from "./PopoverPortal.jsx";
 import { entityBadgeMeta } from "../../lib/entityBadges.js";
+import { Icon } from "../Icon.jsx";
 
 const TYPE_ORDER = { task: 0, project: 1, kb: 2, skill: 3, agent: 4, goal: 5, team: 6, run: 7 };
 
@@ -39,6 +40,21 @@ function debounce(fn, delay) {
   };
   wrapped.cancel = () => { if (timer) { clearTimeout(timer); timer = null; pending = null; } };
   return wrapped;
+}
+
+function TypeBadgeMarker({ type }) {
+  const meta = entityBadgeMeta(type);
+  if (meta.icon) {
+    return (
+      <span class="badge-token-leading" aria-hidden="true">
+        <Icon name={meta.icon} class="badge-token-icon" size={12} />
+      </span>
+    );
+  }
+  if (meta.glyph) {
+    return <span class="badge-token-glyph" aria-hidden="true">{meta.glyph}</span>;
+  }
+  return null;
 }
 
 export const MentionPicker = forwardRef(function MentionPicker(
@@ -151,7 +167,7 @@ export const MentionPicker = forwardRef(function MentionPicker(
             onMouseEnter={() => setActiveIndex(realIdx)}
           >
             <span class={`mention-picker-type badge-token badge-token-xs entity-badge entity-badge--${item.type}`} data-kind={item.type}>
-              <span class="badge-token-glyph" aria-hidden="true">{entityBadgeMeta(item.type).glyph}</span>
+              <TypeBadgeMarker type={item.type} />
               <span class="badge-token-label">
               {TYPE_BADGE[item.type] || item.type}
               </span>

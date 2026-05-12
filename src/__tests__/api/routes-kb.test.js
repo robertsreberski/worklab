@@ -217,6 +217,31 @@ describe("kb REST routes", () => {
     expect(res.body.entry.body).toContain("content here");
   });
 
+  it("GET /api/kb/:slug resolves relation badge labels to knowledge titles", async () => {
+    const { agent } = mkServer();
+    await agent.post("/api/kb").send({ slug: "canonical-note", title: "Canonical Note", body: "" }).expect(201);
+    await agent.post("/api/kb").send({ slug: "related-note", title: "Related Note", body: "" }).expect(201);
+    await agent.post("/api/kb").send({ slug: "old-note", title: "Old Note", body: "" }).expect(201);
+    await agent.post("/api/kb").send({
+      slug: "subject-note",
+      title: "Subject Note",
+      body: "",
+      canonical_slug: "canonical-note",
+      related_slugs: ["related-note"],
+      supersedes_slugs: ["old-note", "missing-note"],
+    }).expect(201);
+
+    const res = await agent.get("/api/kb/subject-note").expect(200);
+    expect(res.body.entry.meta.canonical_entry).toMatchObject({ slug: "canonical-note", title: "Canonical Note" });
+    expect(res.body.entry.meta.related_entries).toEqual([
+      expect.objectContaining({ slug: "related-note", title: "Related Note" }),
+    ]);
+    expect(res.body.entry.meta.supersedes_entries).toEqual([
+      expect.objectContaining({ slug: "old-note", title: "Old Note" }),
+      expect.objectContaining({ slug: "missing-note", title: "Unknown Knowledge", missing: true }),
+    ]);
+  });
+
   it("GET /api/kb/:slug returns 404 for missing entry", async () => {
     const { agent } = mkServer();
     const res = await agent.get("/api/kb/not-here").expect(404);

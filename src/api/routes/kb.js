@@ -110,6 +110,8 @@ const NOISY_SUBCATEGORY_TAGS = new Set([
   "wp-sandbox",
 ]);
 
+const UNKNOWN_KNOWLEDGE_TITLE = "Unknown Knowledge";
+
 function slugToken(value) {
   return String(value || "")
     .trim()
@@ -172,6 +174,46 @@ function attachProjects(db, entries) {
     if (!entry) return entry;
     const projectId = entry.project_id || entry.meta?.project_id || null;
     return { ...entry, project: projectId ? projects.get(projectId) || null : null };
+  };
+  return Array.isArray(entries) ? entries.map(attach) : attach(entries);
+}
+
+function resolveKnowledgeRelation(dataDir, slug) {
+  const cleanSlug = String(slug || "").trim();
+  if (!cleanSlug) return null;
+  try {
+    const entry = kbRead({ dataDir, slug: cleanSlug });
+    if (entry?.meta?.slug) {
+      return {
+        slug: entry.meta.slug,
+        title: entry.meta.title || UNKNOWN_KNOWLEDGE_TITLE,
+      };
+    }
+  } catch {
+    // Invalid or stale relation slugs should still render as unresolved badges.
+  }
+  return { slug: cleanSlug, title: UNKNOWN_KNOWLEDGE_TITLE, missing: true };
+}
+
+function resolveKnowledgeRelations(dataDir, slugs) {
+  return (Array.isArray(slugs) ? slugs : [])
+    .map((slug) => resolveKnowledgeRelation(dataDir, slug))
+    .filter(Boolean);
+}
+
+function attachKnowledgeRelations(dataDir, entries) {
+  const attach = (entry) => {
+    if (!entry?.meta) return entry;
+    const canonicalEntry = resolveKnowledgeRelation(dataDir, entry.meta.canonical_slug);
+    return {
+      ...entry,
+      meta: {
+        ...entry.meta,
+        canonical_entry: canonicalEntry,
+        related_entries: resolveKnowledgeRelations(dataDir, entry.meta.related_slugs),
+        supersedes_entries: resolveKnowledgeRelations(dataDir, entry.meta.supersedes_slugs),
+      },
+    };
   };
   return Array.isArray(entries) ? entries.map(attach) : attach(entries);
 }
@@ -476,7 +518,7 @@ export function registerKbRoutes(app, { dataDir, broker, db }) {
     if (!entry) {
       return res.status(404).json({ error: { code: "not_found", message: "kb entry not found" } });
     }
-    const enriched = attachProjects(db, attachAutoPromotedInfo(dataDir, entry));
+    const enriched = attachKnowledgeRelations(dataDir, attachProjects(db, attachAutoPromotedInfo(dataDir, entry)));
     res.json(withMentions(
       { db, dataDir },
       { entry: enriched },

@@ -107,8 +107,31 @@ describe("normalizeKbFormEntry", () => {
       related_slugs: ["related"],
       supersedes_slugs: [],
       canonical_slug: "",
+      canonical_entry: null,
+      related_entries: [],
+      supersedes_entries: [],
       body: "# Hello",
     });
+  });
+
+  it("preserves resolved relation entries for badge display labels", () => {
+    const entry = normalizeKbEntry({
+      meta: {
+        slug: "subject-note",
+        title: "Subject Note",
+        canonical_slug: "canonical-note",
+        canonical_entry: { slug: "canonical-note", title: "Canonical Note" },
+        related_slugs: ["related-note"],
+        related_entries: [{ slug: "related-note", title: "Related Note" }],
+        supersedes_slugs: ["old-note"],
+        supersedes_entries: [{ slug: "old-note", title: "Old Note" }],
+      },
+      body: "",
+    });
+
+    expect(entry.canonical_entry).toEqual({ slug: "canonical-note", title: "Canonical Note" });
+    expect(entry.related_entries).toEqual([{ slug: "related-note", title: "Related Note" }]);
+    expect(entry.supersedes_entries).toEqual([{ slug: "old-note", title: "Old Note" }]);
   });
 });
 
