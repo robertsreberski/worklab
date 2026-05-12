@@ -49,6 +49,37 @@ function seedTeamProject(db, { teamId = "team-alpha", lead = "lead", member = "e
   return { teamId, projectId: "project-alpha", lead, member };
 }
 
+function seedLeadCreatedChild(db, {
+  root,
+  teamId,
+  projectId,
+  lead = "lead",
+  owner = "engineer",
+  title = "Obsolete lead-created task",
+  stage = "execute",
+  runId = `lead-run-${newTaskId()}`,
+  childId = newTaskId(),
+  taskKey = "T-lead",
+} = {}) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO task_runs
+      (id, task_id, project_id, team_id, kind, mode, stage, agent_name, started_at, ended_at, status, process_status)
+    VALUES (?, ?, ?, ?, 'lead_cycle', 'execute', 'execute', ?, ?, ?, 'complete', 'succeeded')
+  `).run(runId, root.id, projectId, teamId, lead, now - 100, now - 50);
+  db.prepare(`
+    INSERT INTO tasks
+      (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
+       owner_agent, project_id, team_id, title, instructions, stage, run_policy, tags, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, 'auto_plan_execute', '["delegated","lead-cycle"]', ?, ?)
+  `).run(childId, taskKey, root.id, root.id, runId, owner, owner, projectId, teamId, title, stage, now, now);
+  db.prepare(`
+    INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
+    VALUES (?, ?, 'subtask', 1, ?, ?)
+  `).run(root.id, childId, runId, now);
+  return childId;
+}
+
 function makeDeferredSpawn() {
   const resolvers = [];
   const calls = [];
@@ -1079,13 +1110,14 @@ describe("task-watcher v2 workflow", () => {
       },
     });
     await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(first.taskId).c === 1);
+    await waitFor(() => spawn.mock.calls.length === 2);
     db.prepare("UPDATE task_runs SET process_status = 'succeeded', status = 'complete', ended_at = ? WHERE id = ?")
       .run(Date.now(), first.runId);
 
     const second = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
     expect(second.ok).toBe(true);
     expect(second.taskId).toBe(first.taskId);
-    resolvers[1]({
+    resolvers[2]({
       exitCode: 0,
       status: "complete",
       processStatus: "succeeded",
@@ -1195,6 +1227,205 @@ describe("task-watcher v2 workflow", () => {
     expect(calls[1].taskId).toBe(targetTaskId);
     expect(calls[1].args).toEqual(expect.arrayContaining(["--task", targetTaskId, "--agent", member]));
     expect(broker.broadcasts.some(({ p }) => p.type === "task_updated" && p.id === targetTaskId)).toBe(true);
+  });
+
+  it("lead-created tasks auto-start and skip duplicate same-project work", async () => {
+    const db = makeTestDb();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run("delegation_auto_run_children", JSON.stringify(false));
+    const { teamId, projectId, member } = seedTeamProject(db);
+    const now = Date.now();
+    const existingTaskId = newTaskId();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, root_task_id, project_id, team_id, title, stage, owner_agent, run_policy, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'Build existing Path Forward app shell', 'execute', ?, 'auto_plan_execute', ?, ?)
+    `).run(existingTaskId, existingTaskId, projectId, teamId, member, now, now);
+    const { spawn, calls, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "created",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Create only missing work.",
+        checkpoint_note: "Created one missing task and skipped one duplicate.",
+        validation_summary: "Compared same-project tasks.",
+        task_creations: [{
+          title: "Build existing Path Forward app shell",
+          instructions: "Duplicate of existing owned work.",
+          suggested_agent: member,
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "normal",
+        }, {
+          title: "Run missing acceptance smoke",
+          instructions: "Verify the app still boots.",
+          suggested_agent: member,
+          depends_on: [],
+          acceptance_criteria: [],
+          expected_artifact: null,
+          priority: "normal",
+        }],
+        task_assignments: [],
+        task_deletions: [],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM task_edges WHERE parent_task_id = ?").get(lead.taskId).c === 1);
+    const child = db.prepare(`
+      SELECT t.id, t.title, t.run_policy, t.tags
+      FROM task_edges e
+      JOIN tasks t ON t.id = e.child_task_id
+      WHERE e.parent_task_id = ?
+    `).get(lead.taskId);
+    expect(child.title).toBe("Run missing acceptance smoke");
+    expect(child.run_policy).toBe("auto_plan_execute");
+    expect(JSON.parse(child.tags)).toEqual(expect.arrayContaining(["delegated", "lead-cycle"]));
+    await waitFor(() => spawn.mock.calls.length === 2);
+    expect(calls[1].taskId).toBe(child.id);
+    const cycle = db.prepare("SELECT tasks_created FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    expect(cycle.tasks_created).toBe(1);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle task_creations skipped:%'").get(lead.taskId);
+    expect(comment.body).toContain("duplicates existing task");
+  });
+
+  it("lead cycles hard-delete eligible lead-created tasks with tombstones", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId, member, lead: leadAgent } = seedTeamProject(db);
+    const root = ensureTeamRootTask(db, { teamId, projectId, now: 1000 });
+    const obsoleteId = seedLeadCreatedChild(db, {
+      root,
+      teamId,
+      projectId,
+      lead: leadAgent,
+      owner: member,
+      title: "Obsolete split task",
+      taskKey: "T-900",
+    });
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "deleted",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Pruned obsolete task.",
+        checkpoint_note: "Removed obsolete lead-created task.",
+        validation_summary: "Checked lead-created task roster.",
+        task_creations: [],
+        task_assignments: [],
+        task_deletions: [{ target_task_id: obsoleteId, rationale: "Covered by the consolidated implementation task." }],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT process_status FROM lead_cycles WHERE run_id = ?").get(lead.runId).process_status === "succeeded");
+    expect(db.prepare("SELECT id FROM tasks WHERE id = ?").get(obsoleteId)).toBeUndefined();
+    const cycle = db.prepare("SELECT tasks_deleted, task_deletions_json FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    expect(cycle.tasks_deleted).toBe(1);
+    expect(JSON.parse(cycle.task_deletions_json)[0]).toMatchObject({
+      target_task_id: obsoleteId,
+      task_key: "T-900",
+      title: "Obsolete split task",
+      owner_agent: member,
+      stage: "execute",
+      rationale: "Covered by the consolidated implementation task.",
+    });
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle deleted%'").get(root.id);
+    expect(comment.body).toContain("T-900");
+  });
+
+  it("lead cycles skip unsafe deletion requests without failing the cycle", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId, member, lead: leadAgent } = seedTeamProject(db);
+    const root = ensureTeamRootTask(db, { teamId, projectId, now: 1000 });
+    const now = Date.now();
+    const manualId = newTaskId();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, parent_task_id, project_id, team_id, title, stage, owner_agent, run_policy, created_at, updated_at)
+      VALUES (?, 'T-901', ?, ?, ?, ?, 'Manual child', 'execute', ?, 'manual', ?, ?)
+    `).run(manualId, root.id, root.id, projectId, teamId, member, now, now);
+    db.prepare("INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at) VALUES (?, ?, 'subtask', 1, NULL, ?)")
+      .run(root.id, manualId, now);
+    const doneId = seedLeadCreatedChild(db, { root, teamId, projectId, lead: leadAgent, owner: member, title: "Done lead child", stage: "done", taskKey: "T-902" });
+    const runningId = seedLeadCreatedChild(db, { root, teamId, projectId, lead: leadAgent, owner: member, title: "Running lead child", taskKey: "T-903" });
+    const childfulId = seedLeadCreatedChild(db, { root, teamId, projectId, lead: leadAgent, owner: member, title: "Childful lead child", taskKey: "T-904" });
+    const grandchildId = newTaskId();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, parent_task_id, project_id, team_id, title, stage, owner_agent, run_policy, created_at, updated_at)
+      VALUES (?, 'T-905', ?, ?, ?, ?, 'Nested child', 'execute', ?, 'manual', ?, ?)
+    `).run(grandchildId, root.id, childfulId, projectId, teamId, member, now, now);
+    db.prepare("INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at) VALUES (?, ?, 'subtask', 1, 'nested-run', ?)")
+      .run(childfulId, grandchildId, now);
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, project_id, team_id, kind, mode, stage, agent_name, started_at, status, process_status)
+      VALUES ('running-child-run', ?, ?, ?, 'task', 'execute', 'execute', ?, ?, 'running', 'running')
+    `).run(runningId, projectId, teamId, member, now);
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "skipped deletions",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Skipped unsafe deletions.",
+        checkpoint_note: "No unsafe tasks removed.",
+        validation_summary: "Checked deletion safety.",
+        task_creations: [],
+        task_assignments: [],
+        task_deletions: [
+          { target_task_id: root.id, rationale: "Never delete root." },
+          { target_task_id: manualId, rationale: "Manual work is obsolete." },
+          { target_task_id: doneId, rationale: "Done work is stale." },
+          { target_task_id: runningId, rationale: "Running work is stale." },
+          { target_task_id: childfulId, rationale: "Nested work is stale." },
+        ],
+        advisory_notes: [],
+        next_review_hint: null,
+      },
+    });
+
+    await waitFor(() => db.prepare("SELECT process_status FROM lead_cycles WHERE run_id = ?").get(lead.runId).process_status === "succeeded");
+    for (const [label, id] of Object.entries({ root: root.id, manualId, doneId, runningId, childfulId, grandchildId })) {
+      expect(db.prepare("SELECT id FROM tasks WHERE id = ?").get(id)?.id, `${label} should remain`).toBe(id);
+    }
+    const cycle = db.prepare("SELECT tasks_deleted, task_deletions_json FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    expect(cycle.tasks_deleted).toBe(0);
+    expect(JSON.parse(cycle.task_deletions_json)).toEqual([]);
+    const comment = db.prepare("SELECT body FROM task_comments WHERE task_id = ? AND body LIKE 'Lead cycle task_deletions skipped:%'").get(root.id);
+    expect(comment.body).toContain("team root cannot be deleted");
+    expect(comment.body).toContain("not lead-cycle-created");
+    expect(comment.body).toContain("already done");
+    expect(comment.body).toContain("active run");
+    expect(comment.body).toContain("has child subtasks");
   });
 
   it("queues one follow-up lead cycle when an ownerless team task appears during a lead cycle", async () => {
