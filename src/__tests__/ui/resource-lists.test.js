@@ -75,21 +75,30 @@ describe("resource list helpers", () => {
     ]);
   });
 
-  it("filters the plans knowledge surface to meaningful plans only", () => {
+  it("filters the artifacts knowledge surface to meaningful requested artifacts", () => {
     const groups = buildKnowledgeResourceGroups([
       {
         slug: "runtime-plan",
         title: "Runtime Plan",
         category: "execution-plan",
         display_category: "plans",
-        meaningful_plan: true,
+        meaningful_artifact: true,
         updated_at: "2026-05-06T00:00:00Z",
+      },
+      {
+        slug: "rsm-style-guidance",
+        title: "RSM Style Guidance",
+        category: "communications",
+        display_category: "communications",
+        meaningful_artifact: true,
+        tags: ["rsm", "communications"],
+        updated_at: "2026-05-08T00:00:00Z",
       },
       {
         slug: "generated-plan-output",
         title: "Generated Plan Output",
         category: "plans",
-        meaningful_plan: false,
+        meaningful_artifact: false,
         run_output: true,
         updated_at: "2026-05-07T00:00:00Z",
       },
@@ -99,10 +108,10 @@ describe("resource list helpers", () => {
         category: "research",
         updated_at: "2026-05-08T00:00:00Z",
       },
-    ], { surface: "plans" });
+    ], { surface: "artifacts" });
 
     expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
-      ["plans", "Meaningful plans", ["runtime-plan"]],
+      ["artifacts", "Meaningful artifacts", ["rsm-style-guidance", "runtime-plan"]],
     ]);
   });
 
@@ -260,10 +269,10 @@ describe("resource list helpers", () => {
     expect(contents).toContain("setSort(\"updated_desc\")");
   });
 
-  it("defaults the knowledge route to plans first and loads taxonomy suggestions", () => {
+  it("defaults the knowledge route to artifacts first and loads taxonomy suggestions", () => {
     const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
 
-    expect(contents).toContain('useState("plans")');
+    expect(contents).toContain('useState("artifacts")');
     expect(contents).toContain("api.kbTaxonomy");
     expect(contents).toContain("tagSuggestions");
   });

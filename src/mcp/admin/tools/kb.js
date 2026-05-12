@@ -24,15 +24,16 @@ export const definitions = [
     pinned: boolean("Pinned filter"),
     sort: { ...string("Sort mode"), enum: KB_SORT_MODES },
   }), { annotations: { readOnlyHint: true } }),
-  tool("worklab_kb_taxonomy", "List normalized Knowledge Base categories, subcategories, tags, surfaces, and raw alias cleanup candidates.", object({}), { annotations: { readOnlyHint: true } }),
+  tool("worklab_kb_taxonomy", "List normalized Knowledge Base categories, subcategories, tags, surfaces, and raw alias cleanup candidates. Use this before creating Knowledge so agents reuse existing tags.", object({}), { annotations: { readOnlyHint: true } }),
   tool("worklab_kb_read", "Read a Worklab Knowledge Base entry.", object({ slug: slugSchema }, ["slug"]), { annotations: { readOnlyHint: true } }),
-  tool("worklab_kb_create", "Create a Worklab Knowledge Base entry.", object({
+  tool("worklab_kb_create", "Create a Worklab Knowledge Base entry for durable user-requested artifacts; search/taxonomy should be checked first so similar tags and entries are reused.", object({
     slug: slugSchema,
     title: string("Title"),
     body: string("Markdown body"),
     tags: arrayOfString("Tags"),
     category: string("Category"),
     subcategory: string("Subcategory"),
+    artifact: boolean("Override whether this appears in the default Artifacts surface"),
     project_id: string("Project id or slug"),
     source_task_id: string("Source task id"),
     source_task_key: string("Source task key"),
