@@ -2892,6 +2892,19 @@ a.badge-token:focus-visible {
   overflow-wrap: anywhere;
 }
 .doc-content a:hover { text-decoration: underline; }
+.markdown a.badge-token,
+.doc-content a.badge-token {
+  color: var(--badge-token-tone);
+  overflow-wrap: normal;
+  transform: translateY(-2px);
+}
+.markdown a.badge-token:hover,
+.markdown a.badge-token:focus-visible,
+.doc-content a.badge-token:hover,
+.doc-content a.badge-token:focus-visible {
+  color: color-mix(in srgb, var(--badge-token-tone) 88%, var(--text));
+  text-decoration: none;
+}
 .markdown-expandable { position: relative; }
 .markdown-expandable.clamped { max-height: 320px; overflow: hidden; }
 .markdown-expandable.clamped::after {
