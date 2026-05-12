@@ -125,6 +125,8 @@ describe("native goals and lead cycles", () => {
       tasksCreated: 1,
       tasksAssigned: 1,
       tasksDeleted: 1,
+      taskCreationSkips: [{ title: "Duplicate native rows", reason: "duplicates existing task" }],
+      tasksSkipped: 1,
       notesPosted: 1,
       endedAt: 4000,
     });
@@ -145,6 +147,7 @@ describe("native goals and lead cycles", () => {
       tasks_created: 1,
       tasks_assigned: 1,
       tasks_deleted: 1,
+      tasks_skipped: 1,
       notes_posted: 1,
       cost_usd: 0.05,
     });
@@ -155,6 +158,43 @@ describe("native goals and lead cycles", () => {
       title: "Obsolete lead task",
       rationale: "No longer relevant.",
     });
+    expect(cycles[0].task_creation_skips[0]).toMatchObject({
+      title: "Duplicate native rows",
+      reason: "duplicates existing task",
+    });
     expect(cycles[0].advisory_notes[0].content).toBe("Keep the timeline visible.");
+  });
+
+  it("exposes active lead-created child tasks on the goal cockpit payload", () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const goal = getTeamProjectGoal(db, { teamId, projectId, now: 1000 });
+    db.prepare(`
+      INSERT INTO task_runs
+        (id, task_id, project_id, team_id, kind, mode, stage, agent_name, started_at, ended_at, status, process_status)
+      VALUES ('lead-run-roster', ?, ?, ?, 'lead_cycle', 'execute', 'execute', 'lead', 2000, 3000, 'complete', 'succeeded')
+    `).run(goal.root_task_id, projectId, teamId);
+    db.prepare(`
+      INSERT INTO tasks
+        (id, task_key, root_task_id, parent_task_id, delegated_by_run_id, delegated_to_agent,
+         owner_agent, project_id, team_id, title, instructions, stage, run_policy, tags, created_at, updated_at)
+      VALUES ('lead-child-roster', 'T-77', ?, ?, 'lead-run-roster', 'engineer',
+        'engineer', ?, ?, 'Lead-created roster task', '', 'execute', 'auto_plan_execute',
+        '["delegated","lead-cycle"]', 3000, 3000)
+    `).run(goal.root_task_id, goal.root_task_id, projectId, teamId);
+    db.prepare(`
+      INSERT INTO task_edges (parent_task_id, child_task_id, edge_type, required, created_by_run_id, created_at)
+      VALUES (?, 'lead-child-roster', 'subtask', 1, 'lead-run-roster', 3000)
+    `).run(goal.root_task_id);
+
+    const refreshed = getTeamProjectGoal(db, { teamId, projectId, now: 4000, ensureRoot: false });
+
+    expect(refreshed.lead_tasks).toEqual([expect.objectContaining({
+      id: "lead-child-roster",
+      task_key: "T-77",
+      title: "Lead-created roster task",
+      owner_agent: "engineer",
+      stage: "execute",
+    })]);
   });
 });

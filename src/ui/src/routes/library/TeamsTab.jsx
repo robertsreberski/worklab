@@ -131,6 +131,8 @@ export function formatLeadCycleImpact(cycle = {}) {
   return [
     impactCount(cycle.tasks_created, "created", "created"),
     impactCount(cycle.tasks_assigned, "assigned", "assigned"),
+    impactCount(cycle.tasks_deleted, "deleted", "deleted"),
+    impactCount(cycle.tasks_skipped, "skipped", "skipped"),
     impactCount(cycle.notes_posted, "noted", "noted"),
   ].filter(Boolean);
 }
@@ -595,6 +597,15 @@ function LeadCycleRow({ cycle }) {
         {impact.length ? (
           <div class="team-cycle-impact">
             {impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
+          </div>
+        ) : null}
+        {Array.isArray(cycle?.task_deletions) && cycle.task_deletions.length ? (
+          <div class="team-cycle-tombstones">
+            {cycle.task_deletions.map((item) => (
+              <span key={`${cycle.run_id || cycle.id}:${item.target_task_id || item.task_key || item.title}`}>
+                {(item.task_key || item.target_task_id || "Task")} deleted: {item.title || "Untitled"}
+              </span>
+            ))}
           </div>
         ) : null}
       </div>

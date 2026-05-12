@@ -5867,6 +5867,12 @@ html.assistant-resizing * {
   flex-wrap: wrap;
   gap: var(--sp-1);
 }
+.team-cycle-tombstones {
+  display: grid;
+  gap: 3px;
+  color: var(--status-error);
+  font-size: var(--text-sm);
+}
 .team-cycle-review {
   color: var(--text);
   font-weight: 600;
@@ -6092,6 +6098,93 @@ html.assistant-resizing * {
 .goal-link-row.is-reference {
   border-color: var(--accent-line);
 }
+.goal-cockpit {
+  display: grid;
+  gap: var(--sp-4);
+}
+.goal-cockpit-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-2);
+}
+.goal-cockpit-stat,
+.goal-cockpit-ledger-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+.goal-cockpit-stat span,
+.goal-cockpit-ledger-item span,
+.goal-roster-head {
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+.goal-cockpit-stat strong,
+.goal-cockpit-ledger-item strong {
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--text-md);
+  overflow-wrap: anywhere;
+}
+.goal-cockpit-decision {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-left: 3px solid var(--accent-line);
+  background: var(--surface-elevated);
+}
+.goal-cockpit-decision div {
+  display: grid;
+  gap: 3px;
+}
+.goal-cockpit-decision strong,
+.goal-cockpit-decision p {
+  margin: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.goal-cockpit-ledger {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--sp-2);
+}
+.goal-cockpit-ledger-item.is-deleted {
+  border-color: var(--status-error-border);
+  background: var(--status-error-bg-10);
+}
+.goal-lead-roster {
+  display: grid;
+  gap: var(--sp-2);
+}
+.goal-roster-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.goal-lead-roster ul {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.goal-lead-roster li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  gap: var(--sp-2);
+  align-items: center;
+  padding: var(--sp-2) 0;
+  border-top: 1px solid var(--border);
+}
+.goal-lead-roster li > span:nth-child(2) {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .goal-cycle-timeline {
   display: grid;
   gap: 0;
@@ -6148,6 +6241,13 @@ html.assistant-resizing * {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.goal-cycle-deletions {
+  display: grid;
+  gap: 3px;
+  color: var(--status-error);
+  font-size: var(--text-sm);
+  line-height: 1.35;
+}
 .goal-cycle-review {
   color: var(--text);
   font-size: var(--text-sm);
@@ -6155,6 +6255,15 @@ html.assistant-resizing * {
 }
 .goal-cycle-foot a {
   font-size: var(--text-sm);
+}
+@media (max-width: 720px) {
+  .goal-cockpit-strip,
+  .goal-cockpit-ledger {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .goal-lead-roster li {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .team-picker-icon {
   display: inline-flex;

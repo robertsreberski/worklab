@@ -172,8 +172,14 @@ function leadCycleImpact(cycle = {}) {
   return [
     formatImpactCount(cycle.tasks_created, "created", "created"),
     formatImpactCount(cycle.tasks_assigned, "assigned", "assigned"),
+    formatImpactCount(cycle.tasks_deleted, "deleted", "deleted"),
+    formatImpactCount(cycle.tasks_skipped, "skipped", "skipped"),
     formatImpactCount(cycle.notes_posted, "noted", "noted"),
   ].filter(Boolean);
+}
+
+function deletionRows(cycle = {}) {
+  return Array.isArray(cycle.task_deletions) ? cycle.task_deletions : [];
 }
 
 export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
@@ -200,9 +206,40 @@ export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
       review_label: reviewLabel,
       event_label: eventLabel(cycle.next_review_event),
       impact: leadCycleImpact(cycle),
+      deletions: deletionRows(cycle),
+      tasks_created: Number(cycle.tasks_created) || 0,
+      tasks_assigned: Number(cycle.tasks_assigned) || 0,
+      tasks_deleted: Number(cycle.tasks_deleted) || 0,
+      tasks_skipped: Number(cycle.tasks_skipped) || 0,
+      notes_posted: Number(cycle.notes_posted) || 0,
       cost_usd: cycle.cost_usd ?? null,
     };
   });
+}
+
+export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
+  const rows = goalLeadCycleTimeline(goal, { now });
+  const latest = rows[0] || null;
+  const readiness = goal?.readiness || goalReadiness(goal);
+  const nextReview = latest?.review_label || "Not scheduled";
+  const leadTasks = Array.isArray(goal?.lead_tasks) ? goal.lead_tasks : [];
+  return {
+    latest,
+    leadTasks,
+    stateStrip: [
+      { label: "State", value: goalStatusLabel(goal) },
+      { label: "Definition", value: readiness.ready ? "Ready" : `${readiness.missing.length} missing` },
+      { label: "Last cycle", value: goal.last_lead_at ? relativeTime(goal.last_lead_at) : "None" },
+      { label: "Next review", value: nextReview },
+    ],
+    ledger: [
+      { key: "created", label: "Created", value: Number(latest?.tasks_created ?? goal?.latest_cycle?.tasks_created ?? 0) || 0 },
+      { key: "assigned", label: "Assigned", value: Number(latest?.tasks_assigned ?? goal?.latest_cycle?.tasks_assigned ?? 0) || 0 },
+      { key: "deleted", label: "Deleted", value: Number(latest?.tasks_deleted ?? goal?.latest_cycle?.tasks_deleted ?? 0) || 0 },
+      { key: "skipped", label: "Skipped", value: Number(latest?.tasks_skipped ?? goal?.latest_cycle?.tasks_skipped ?? 0) || 0 },
+      { key: "noted", label: "Noted", value: Number(latest?.notes_posted ?? goal?.latest_cycle?.notes_posted ?? 0) || 0 },
+    ],
+  };
 }
 
 function constraintsToText(value) {
@@ -390,10 +427,73 @@ function LeadCycleTimeline({ goal }) {
               {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
               {row.href && <a href={row.href}>Open run</a>}
             </div>
+            {row.deletions.length ? (
+              <div class="goal-cycle-deletions">
+                {row.deletions.map((item) => (
+                  <span key={`${row.id}:${item.target_task_id || item.task_key || item.title}`}>
+                    {(item.task_key || item.target_task_id || "Task")} deleted: {item.title || "Untitled"}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
         </li>
       ))}
     </ol>
+  );
+}
+
+function LeadCycleCockpit({ goal }) {
+  const cockpit = goalCockpitSummary(goal);
+  return (
+    <Card title="Lead cycle cockpit">
+      <div class="goal-cockpit">
+        <div class="goal-cockpit-strip">
+          {cockpit.stateStrip.map((item) => (
+            <div class="goal-cockpit-stat" key={item.label}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+        <div class="goal-cockpit-decision">
+          <div>
+            <span class="muted">Latest decision</span>
+            <strong>{cockpit.latest?.summary || "No lead-cycle decision yet."}</strong>
+          </div>
+          {cockpit.latest?.checkpoint_note ? <p>{cockpit.latest.checkpoint_note}</p> : null}
+          {cockpit.latest?.validation_summary ? <p class="muted">{cockpit.latest.validation_summary}</p> : null}
+        </div>
+        <div class="goal-cockpit-ledger" aria-label="Lead cycle task changes">
+          {cockpit.ledger.map((item) => (
+            <div class={`goal-cockpit-ledger-item is-${item.key}`} key={item.key}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+        <div class="goal-lead-roster">
+          <div class="goal-roster-head">
+            <span class="muted">Lead-created task roster</span>
+            <Chip variant="muted">{cockpit.leadTasks.length}</Chip>
+          </div>
+          {cockpit.leadTasks.length ? (
+            <ul>
+              {cockpit.leadTasks.map((task) => (
+                <li key={task.id}>
+                  <a href={`#/tasks/${encodeURIComponent(task.id)}`}>{task.task_key || task.title || task.id}</a>
+                  <span>{task.title}</span>
+                  <Chip variant="muted">{String(task.stage || "task").replace("_", " ")}</Chip>
+                  {task.owner_agent ? <span class="muted">{task.owner_agent}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p class="muted">No active lead-created tasks.</p>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -472,20 +572,16 @@ function GoalDetail({ goal, onChanged }) {
       />
       <div class="pane-detail-body entity-detail-body goal-detail-body">
         <SectionStack class="goal-detail-grid">
-          <Card title="Goal state">
-            <div class="goal-state-card">
-              <Chip variant={goalStatusVariant(goal)}>{goalStatusLabel(goal)}</Chip>
-              <Chip variant={readiness.ready ? "trigger" : "warn"}>{readiness.ready ? "Well defined" : `${readiness.missing.length} fields missing`}</Chip>
-              {goal.last_lead_at ? <span>Last lead cycle {relativeTime(goal.last_lead_at)}</span> : <span>No lead cycle yet.</span>}
-            </div>
-            {!readiness.ready && (
+          <LeadCycleCockpit goal={goal} />
+          {!readiness.ready && (
+            <Card title="Goal readiness">
               <div class="goal-readiness-list" role="status">
                 {readiness.missing.map((field) => (
                   <span key={field}>{field === "stopping_condition" ? "Done when" : field === "validation_loop" ? "Validate with" : "Objective"}</span>
                 ))}
               </div>
-            )}
-          </Card>
+            </Card>
+          )}
           <Card title="Contract">
             <GoalContractDetails goal={goal} />
           </Card>

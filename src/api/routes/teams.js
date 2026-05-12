@@ -82,6 +82,7 @@ function leadCycleOut(row) {
     checkpoint_note: row.checkpoint_note || null,
     validation_summary: row.validation_summary || null,
     task_deletions: safeJsonArray(row.task_deletions_json),
+    task_creation_skips: safeJsonArray(row.task_creation_skips_json),
     goal_status: row.goal_status || null,
     goal_status_reason: row.goal_status_reason || null,
     next_review_due_at: row.next_review_due_at ?? null,
@@ -90,6 +91,7 @@ function leadCycleOut(row) {
     tasks_created: row.tasks_created || 0,
     tasks_assigned: row.tasks_assigned || 0,
     tasks_deleted: row.tasks_deleted || 0,
+    tasks_skipped: row.tasks_skipped || 0,
     notes_posted: row.notes_posted || 0,
     task_title: row.task_title || null,
   };
