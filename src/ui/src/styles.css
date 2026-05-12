@@ -7970,7 +7970,7 @@ html.assistant-resizing * {
 
 /* §6.10 Settings */
 .settings-page {
-  max-width: 1200px;
+  max-width: none;
 }
 .settings-route-shell {
   display: flex;
@@ -7978,8 +7978,8 @@ html.assistant-resizing * {
   gap: var(--sp-4);
   min-height: 100%;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   padding: var(--sp-5) var(--sp-6);
 }
 .settings-route-shell.settings-route-compact {
@@ -8795,18 +8795,6 @@ button.settings-overview-card:focus-visible,
 .provider-pane-layout .pane-list-head {
   gap: 0;
   padding: 0;
-}
-.provider-pane-layout .resource-toolbar {
-  padding: var(--sp-1) var(--sp-4) var(--sp-2);
-  background: color-mix(in srgb, var(--surface) 42%, transparent);
-}
-.provider-pane-layout .resource-group > .ds-section-group-head {
-  padding-right: var(--sp-4);
-  padding-left: var(--sp-4);
-}
-.provider-pane-layout.two-pane-list-first .pane-row {
-  padding-right: var(--sp-4);
-  padding-left: var(--sp-4);
 }
 .provider-detail-head.detail-head {
   min-height: 0;
