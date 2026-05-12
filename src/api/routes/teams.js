@@ -53,6 +53,17 @@ function memberOut(row) {
   };
 }
 
+function safeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === "") return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function leadCycleOut(row) {
   return {
     id: row.id,
@@ -70,6 +81,7 @@ function leadCycleOut(row) {
     summary: row.summary || null,
     checkpoint_note: row.checkpoint_note || null,
     validation_summary: row.validation_summary || null,
+    task_deletions: safeJsonArray(row.task_deletions_json),
     goal_status: row.goal_status || null,
     goal_status_reason: row.goal_status_reason || null,
     next_review_due_at: row.next_review_due_at ?? null,
@@ -77,6 +89,7 @@ function leadCycleOut(row) {
     next_review_consumed_at: row.next_review_consumed_at ?? null,
     tasks_created: row.tasks_created || 0,
     tasks_assigned: row.tasks_assigned || 0,
+    tasks_deleted: row.tasks_deleted || 0,
     notes_posted: row.notes_posted || 0,
     task_title: row.task_title || null,
   };
