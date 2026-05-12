@@ -43,6 +43,7 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("checkpoint_note");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("validation_summary");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("task_deletions");
+    expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.required).toContain("goal_refinement");
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.schema.enum).toEqual([LEAD_CYCLE_SCHEMA]);
     expect(WORKLAB_LEAD_CYCLE_JSON_SCHEMA.properties.goal_status.enum).toEqual(["in_progress", "complete", "blocked"]);
   });
@@ -65,6 +66,13 @@ describe("worklab.lead_cycle.v1 contract", () => {
     expect(result.result.task_creations).toEqual([]);
     expect(result.result.task_assignments).toEqual([]);
     expect(result.result.task_deletions).toEqual([]);
+    expect(result.result.goal_refinement).toEqual({
+      mode: "none",
+      confidence: "low",
+      compatible_expansion: false,
+      rationale: "",
+      patch: null,
+    });
   });
 
   it("defaults checkpoint and validation summaries for legacy lead-cycle results", () => {
@@ -203,6 +211,42 @@ describe("worklab.lead_cycle.v1 contract", () => {
     );
     expect(v.ok).toBe(false);
     expect(v.error).toMatch(/max 3/);
+  });
+
+  it("validateLeadCycleSemantics accepts high-confidence compatible goal refinement", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      goal_refinement: {
+        mode: "apply",
+        confidence: "high",
+        compatible_expansion: true,
+        rationale: "The project has matured into an autonomous cockpit, but this keeps the same team/project aim.",
+        patch: {
+          north_star: "Make the project feel like an autonomous project cockpit.",
+          objective: "Ship native goals as an autonomous project cockpit.",
+          constraints_add: ["Keep Teams optional"],
+          links_add: [{ label: "PRD", url: "https://example.com/prd" }],
+        },
+      },
+    });
+
+    expect(v.ok).toBe(true);
+  });
+
+  it("validateLeadCycleSemantics rejects unguarded goal refinement", () => {
+    const v = validateLeadCycleSemantics({
+      ...baseResult,
+      goal_refinement: {
+        mode: "apply",
+        confidence: "medium",
+        compatible_expansion: true,
+        rationale: "Maybe bigger.",
+        patch: { objective: "Build a separate platform." },
+      },
+    });
+
+    expect(v.ok).toBe(false);
+    expect(v.error).toMatch(/goal_refinement/);
   });
 
   it("parseLeadCycleResultFromText handles fenced JSON output", () => {

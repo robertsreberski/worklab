@@ -118,6 +118,7 @@ export function normalizeTeamGoalContract(value, { teamGoal = "", now = null } =
   const parsed = safeParseTeamGoalContract(value);
   const objective = "objective" in parsed ? parsed.objective : teamGoal;
   return {
+    north_star: String(parsed.north_star || "").trim(),
     objective: String(objective || "").trim(),
     stopping_condition: String(parsed.stopping_condition || "").trim(),
     validation_loop: String(parsed.validation_loop || "").trim(),
@@ -132,6 +133,148 @@ export function normalizeTeamGoalContract(value, { teamGoal = "", now = null } =
 
 export function serializeTeamGoalContract(contract) {
   return JSON.stringify(normalizeTeamGoalContract(contract));
+}
+
+const GOAL_REFINEMENT_SCALAR_LIMITS = {
+  north_star: 600,
+  objective: 600,
+  stopping_condition: 1000,
+  validation_loop: 1000,
+};
+
+const GOAL_REFINEMENT_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "from", "into", "onto", "when",
+  "then", "than", "all", "are", "will", "should", "must", "have", "has",
+  "make", "feel", "like", "project", "goal", "goals",
+]);
+
+function meaningfulGoalTokens(value) {
+  return new Set(String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !GOAL_REFINEMENT_STOPWORDS.has(token)));
+}
+
+function preservesGoalAnchors(current, proposed) {
+  const currentTokens = meaningfulGoalTokens(current);
+  if (!currentTokens.size) return true;
+  const proposedTokens = meaningfulGoalTokens(proposed);
+  if (!proposedTokens.size) return false;
+  let overlap = 0;
+  for (const token of currentTokens) {
+    if (proposedTokens.has(token)) overlap += 1;
+  }
+  return overlap / currentTokens.size >= 0.3;
+}
+
+function noGoalRefinementAudit(refinement = null, reason = "no refinement requested") {
+  return {
+    mode: refinement?.mode || "none",
+    confidence: refinement?.confidence || "low",
+    compatible_expansion: refinement?.compatible_expansion === true,
+    rationale: String(refinement?.rationale || "").trim(),
+    applied: false,
+    applied_fields: [],
+    patch_applied: {},
+    skipped: reason ? [{ field: "goal_refinement", reason }] : [],
+  };
+}
+
+export function applyTeamGoalRefinement(db, {
+  teamId,
+  projectId,
+  rootTaskId = null,
+  runId = null,
+  refinement = null,
+  now = Date.now(),
+} = {}) {
+  if (!refinement || refinement.mode !== "apply") return noGoalRefinementAudit(refinement, "");
+  const audit = noGoalRefinementAudit(refinement, "");
+  audit.mode = "apply";
+  audit.run_id = runId || null;
+  if (refinement.confidence !== "high") {
+    audit.skipped.push({ field: "goal_refinement", reason: "confidence is not high" });
+    return audit;
+  }
+  if (refinement.compatible_expansion !== true) {
+    audit.skipped.push({ field: "goal_refinement", reason: "not marked as a compatible expansion" });
+    return audit;
+  }
+  if (!audit.rationale) {
+    audit.skipped.push({ field: "goal_refinement", reason: "missing rationale" });
+    return audit;
+  }
+  const patch = refinement.patch && typeof refinement.patch === "object" && !Array.isArray(refinement.patch)
+    ? refinement.patch
+    : null;
+  if (!patch) {
+    audit.skipped.push({ field: "goal_refinement", reason: "missing patch" });
+    return audit;
+  }
+  const current = getTeamProjectGoal(db, { teamId, projectId, now, ensureRoot: false });
+  if (!current) {
+    audit.skipped.push({ field: "goal_refinement", reason: "team/project goal not found" });
+    return audit;
+  }
+  const contract = { ...current.contract };
+  const appliedFields = [];
+  const patchApplied = {};
+
+  function applyScalar(field) {
+    const proposed = String(patch[field] || "").trim();
+    if (!proposed) return;
+    const max = GOAL_REFINEMENT_SCALAR_LIMITS[field] || 600;
+    if (proposed.length > max) {
+      audit.skipped.push({ field, reason: "too long" });
+      return;
+    }
+    if (field !== "north_star" && !preservesGoalAnchors(contract[field], proposed)) {
+      audit.skipped.push({ field, reason: "does not preserve enough of the current goal wording" });
+      return;
+    }
+    if (contract[field] === proposed) return;
+    contract[field] = proposed;
+    patchApplied[field] = proposed;
+    appliedFields.push(field);
+  }
+
+  applyScalar("north_star");
+  applyScalar("objective");
+  applyScalar("stopping_condition");
+  applyScalar("validation_loop");
+
+  const existingConstraints = stringList(contract.constraints);
+  const nextConstraints = stringList([...existingConstraints, ...stringList(patch.constraints_add)]);
+  if (nextConstraints.length > existingConstraints.length) {
+    contract.constraints = nextConstraints;
+    patchApplied.constraints_add = nextConstraints.slice(existingConstraints.length);
+    appliedFields.push("constraints_add");
+  }
+
+  const existingLinks = normalizeGoalLinks(contract.links);
+  const nextLinks = normalizeGoalLinks([...existingLinks, ...(Array.isArray(patch.links_add) ? patch.links_add : [])]);
+  if (nextLinks.length > existingLinks.length) {
+    contract.links = nextLinks;
+    patchApplied.links_add = nextLinks.slice(existingLinks.length);
+    appliedFields.push("links_add");
+  }
+
+  audit.applied_fields = appliedFields;
+  audit.patch_applied = patchApplied;
+  audit.applied = appliedFields.length > 0;
+  if (!audit.applied) return audit;
+
+  contract.updated_at = now;
+  const serialized = serializeTeamGoalContract(contract);
+  const rootId = current.root_task_id || rootTaskId;
+  if (rootId) {
+    db.prepare("UPDATE tasks SET goal_contract_json = ?, updated_at = ? WHERE id = ?")
+      .run(serialized, now, rootId);
+  }
+  updateGoalFields(db, current.goal_id, ["contract_json = ?", "updated_at = ?"], [serialized, now]);
+  return audit;
 }
 
 export function initialTeamGoalContract(team, now = Date.now()) {
@@ -401,6 +544,7 @@ export function updateTeamProjectGoal(db, {
   if (!current) return { ok: false, error: "team/project goal not found" };
   let contract = { ...current.contract };
   if (patch && typeof patch === "object" && !Array.isArray(patch)) {
+    if ("north_star" in patch) contract.north_star = String(patch.north_star || "").trim();
     if ("objective" in patch) contract.objective = String(patch.objective || "").trim();
     if ("stopping_condition" in patch) contract.stopping_condition = String(patch.stopping_condition || "").trim();
     if ("validation_loop" in patch) contract.validation_loop = String(patch.validation_loop || "").trim();

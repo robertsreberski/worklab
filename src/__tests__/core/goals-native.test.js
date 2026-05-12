@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { makeTestDb } from "../helpers/test-db.js";
-import { ensureTeamRootTask } from "../../core/teams.js";
+import { applyTeamGoalRefinement, ensureTeamRootTask } from "../../core/teams.js";
 import {
   getTeamProjectGoal,
   listLeadCyclesForGoal,
@@ -65,6 +65,7 @@ describe("native goals and lead cycles", () => {
       projectId,
       patch: {
         objective: "Run the polished native cockpit",
+        north_star: "Make Worklab goals feel like a project cockpit.",
         stopping_condition: "The goal timeline is durable",
         validation_loop: "npx vitest run src/__tests__/core/goals-native.test.js",
       },
@@ -74,6 +75,8 @@ describe("native goals and lead cycles", () => {
     expect(patched.ok).toBe(true);
     expect(db.prepare("SELECT contract_json FROM goals WHERE id = ?").get(goal.goal_id).contract_json)
       .toContain("Run the polished native cockpit");
+    expect(JSON.parse(db.prepare("SELECT contract_json FROM goals WHERE id = ?").get(goal.goal_id).contract_json).north_star)
+      .toBe("Make Worklab goals feel like a project cockpit.");
     expect(db.prepare("SELECT goal_contract_json FROM tasks WHERE id = ?").get(root.id).goal_contract_json)
       .toContain("Run the polished native cockpit");
   });
@@ -117,6 +120,13 @@ describe("native goals and lead cycles", () => {
           rationale: "No longer relevant.",
         }],
         advisory_notes: [{ target_task_id: goal.root_task_id, kind: "suggestion", content: "Keep the timeline visible." }],
+        goal_refinement: {
+          mode: "apply",
+          confidence: "high",
+          compatible_expansion: true,
+          rationale: "The goal needs a clearer north star.",
+          patch: { north_star: "Make goals feel like an autonomous cockpit." },
+        },
         next_review_hint: { after_minutes: 30, after_event: "task_completed" },
       },
       processStatus: "succeeded",
@@ -163,6 +173,106 @@ describe("native goals and lead cycles", () => {
       reason: "duplicates existing task",
     });
     expect(cycles[0].advisory_notes[0].content).toBe("Keep the timeline visible.");
+    expect(cycles[0].goal_refinement).toMatchObject({
+      mode: "apply",
+      confidence: "high",
+      compatible_expansion: true,
+    });
+  });
+
+  it("applies compatible lead goal refinements with an audit trail", () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const goal = getTeamProjectGoal(db, { teamId, projectId, now: 1000 });
+    updateTeamProjectGoal(db, {
+      teamId,
+      projectId,
+      patch: {
+        objective: "Ship native goals",
+        stopping_condition: "Goal widgets are visible",
+        validation_loop: "Run npm test",
+        constraints: ["Keep Teams optional"],
+      },
+      now: 1500,
+    });
+
+    const applied = applyTeamGoalRefinement(db, {
+      teamId,
+      projectId,
+      rootTaskId: goal.root_task_id,
+      runId: "lead-run-refine",
+      refinement: {
+        mode: "apply",
+        confidence: "high",
+        compatible_expansion: true,
+        rationale: "The same native-goals work should aim at an autonomous project cockpit.",
+        patch: {
+          north_star: "Make goals feel like an autonomous project cockpit.",
+          objective: "Ship native goals as an autonomous project cockpit.",
+          stopping_condition: "Goal widgets are visible and explain the next autonomous action.",
+          validation_loop: "Run npm test and browser-check the goal cockpit.",
+          constraints_add: ["Keep Teams optional", "Never hide ownerless work"],
+          links_add: [{ label: "Vision", url: "https://example.com/vision" }],
+        },
+      },
+      now: 2000,
+    });
+
+    expect(applied.applied).toBe(true);
+    expect(applied.applied_fields).toEqual([
+      "north_star",
+      "objective",
+      "stopping_condition",
+      "validation_loop",
+      "constraints_add",
+      "links_add",
+    ]);
+    const refreshed = getTeamProjectGoal(db, { teamId, projectId, now: 2500, ensureRoot: false });
+    expect(refreshed.contract).toMatchObject({
+      north_star: "Make goals feel like an autonomous project cockpit.",
+      objective: "Ship native goals as an autonomous project cockpit.",
+      constraints: ["Keep Teams optional", "Never hide ownerless work"],
+    });
+    expect(refreshed.contract.links).toEqual([{ label: "Vision", url: "https://example.com/vision" }]);
+  });
+
+  it("skips incompatible lead goal rewrites without mutating the saved contract", () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const goal = getTeamProjectGoal(db, { teamId, projectId, now: 1000 });
+    updateTeamProjectGoal(db, {
+      teamId,
+      projectId,
+      patch: {
+        objective: "Ship native goals",
+        stopping_condition: "Goal widgets are visible",
+        validation_loop: "Run npm test",
+      },
+      now: 1500,
+    });
+
+    const applied = applyTeamGoalRefinement(db, {
+      teamId,
+      projectId,
+      rootTaskId: goal.root_task_id,
+      runId: "lead-run-rewrite",
+      refinement: {
+        mode: "apply",
+        confidence: "high",
+        compatible_expansion: true,
+        rationale: "This would change the project.",
+        patch: { objective: "Launch a separate billing platform." },
+      },
+      now: 2000,
+    });
+
+    expect(applied.applied).toBe(false);
+    expect(applied.skipped).toEqual([{
+      field: "objective",
+      reason: "does not preserve enough of the current goal wording",
+    }]);
+    const refreshed = getTeamProjectGoal(db, { teamId, projectId, now: 2500, ensureRoot: false });
+    expect(refreshed.contract.objective).toBe("Ship native goals");
   });
 
   it("exposes active lead-created child tasks on the goal cockpit payload", () => {

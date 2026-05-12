@@ -13,6 +13,8 @@ export const LEAD_GOAL_STATUSES = ["in_progress", "complete", "blocked"];
 export const LEAD_TASK_PRIORITIES = ["high", "normal", "low"];
 export const LEAD_NOTE_KINDS = ["warning", "suggestion", "blocker_observation"];
 export const LEAD_REVIEW_AFTER_EVENTS = ["task_completed", "task_blocked"];
+export const LEAD_GOAL_REFINEMENT_MODES = ["none", "apply"];
+export const LEAD_GOAL_REFINEMENT_CONFIDENCES = ["low", "medium", "high"];
 
 const stringList = z.preprocess((value) => {
   if (value == null || value === "") return [];
@@ -48,6 +50,34 @@ export const leadTaskDeletionSchema = z.object({
   rationale: z.string().trim().min(1),
 }).passthrough();
 
+const leadGoalRefinementLinkSchema = z.object({
+  label: z.string().default(""),
+  url: z.string().default(""),
+}).passthrough();
+
+export const leadGoalRefinementPatchSchema = z.object({
+  north_star: z.string().default(""),
+  objective: z.string().default(""),
+  stopping_condition: z.string().default(""),
+  validation_loop: z.string().default(""),
+  constraints_add: stringList,
+  links_add: z.array(leadGoalRefinementLinkSchema).default([]),
+}).passthrough();
+
+export const leadGoalRefinementSchema = z.object({
+  mode: z.enum(LEAD_GOAL_REFINEMENT_MODES).default("none"),
+  confidence: z.enum(LEAD_GOAL_REFINEMENT_CONFIDENCES).default("low"),
+  compatible_expansion: z.boolean().default(false),
+  rationale: z.string().default(""),
+  patch: leadGoalRefinementPatchSchema.nullable().default(null),
+}).passthrough().default({
+  mode: "none",
+  confidence: "low",
+  compatible_expansion: false,
+  rationale: "",
+  patch: null,
+});
+
 const reviewHintSchema = z.object({
   after_minutes: z.number().int().positive().optional().nullable(),
   after_event: z.enum(LEAD_REVIEW_AFTER_EVENTS).optional().nullable(),
@@ -63,6 +93,7 @@ export const leadCycleResultSchema = z.object({
   task_creations: z.array(leadTaskCreationSchema).default([]),
   task_assignments: z.array(leadTaskAssignmentSchema).default([]),
   task_deletions: z.array(leadTaskDeletionSchema).default([]),
+  goal_refinement: leadGoalRefinementSchema,
   advisory_notes: z.array(leadAdvisoryNoteSchema).default([]),
   next_review_hint: reviewHintSchema,
 }).passthrough();
@@ -80,6 +111,7 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
     "task_creations",
     "task_assignments",
     "task_deletions",
+    "goal_refinement",
     "advisory_notes",
     "next_review_hint",
   ],
@@ -140,6 +172,41 @@ export const WORKLAB_LEAD_CYCLE_JSON_SCHEMA = {
         },
       },
     },
+    goal_refinement: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mode", "confidence", "compatible_expansion", "rationale", "patch"],
+      properties: {
+        mode: { type: "string", enum: LEAD_GOAL_REFINEMENT_MODES },
+        confidence: { type: "string", enum: LEAD_GOAL_REFINEMENT_CONFIDENCES },
+        compatible_expansion: { type: "boolean" },
+        rationale: { type: "string" },
+        patch: {
+          type: ["object", "null"],
+          additionalProperties: false,
+          required: ["north_star", "objective", "stopping_condition", "validation_loop", "constraints_add", "links_add"],
+          properties: {
+            north_star: { type: "string" },
+            objective: { type: "string" },
+            stopping_condition: { type: "string" },
+            validation_loop: { type: "string" },
+            constraints_add: { type: "array", items: { type: "string" } },
+            links_add: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["label", "url"],
+                properties: {
+                  label: { type: "string" },
+                  url: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     advisory_notes: {
       type: "array",
       items: {
@@ -191,6 +258,13 @@ export function normalizeLeadCycleResult(value, fallback = {}) {
     task_creations: [],
     task_assignments: [],
     task_deletions: [],
+    goal_refinement: {
+      mode: "none",
+      confidence: "low",
+      compatible_expansion: false,
+      rationale: "",
+      patch: null,
+    },
     advisory_notes: [],
     next_review_hint: null,
     ...fallback,
@@ -223,6 +297,7 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
   const assignments = Array.isArray(value.task_assignments) ? value.task_assignments : [];
   const deletions = Array.isArray(value.task_deletions) ? value.task_deletions : [];
   const notes = Array.isArray(value.advisory_notes) ? value.advisory_notes : [];
+  const refinement = value.goal_refinement || { mode: "none" };
   const maxTaskCreations = maxTaskCreationsForContext(ctx);
 
   if (creations.length > maxTaskCreations) {
@@ -235,6 +310,41 @@ export function validateLeadCycleSemantics(result, ctx = {}) {
 
   if (value.goal_status !== "in_progress" && !value.goal_status_reason) {
     return { ok: false, error: `goal_status="${value.goal_status}" requires goal_status_reason` };
+  }
+
+  if (refinement.mode === "apply") {
+    if (refinement.confidence !== "high") {
+      return { ok: false, error: "goal_refinement apply requires confidence=high" };
+    }
+    if (refinement.compatible_expansion !== true) {
+      return { ok: false, error: "goal_refinement apply requires compatible_expansion=true" };
+    }
+    if (!String(refinement.rationale || "").trim()) {
+      return { ok: false, error: "goal_refinement apply requires rationale" };
+    }
+    if (!refinement.patch || typeof refinement.patch !== "object" || Array.isArray(refinement.patch)) {
+      return { ok: false, error: "goal_refinement apply requires patch" };
+    }
+    const patch = refinement.patch;
+    const scalarFields = ["north_star", "objective", "stopping_condition", "validation_loop"];
+    const hasScalar = scalarFields.some((field) => String(patch[field] || "").trim());
+    const hasConstraints = Array.isArray(patch.constraints_add) && patch.constraints_add.some((item) => String(item || "").trim());
+    const hasLinks = Array.isArray(patch.links_add) && patch.links_add.some((item) => String(item?.url || "").trim());
+    if (!hasScalar && !hasConstraints && !hasLinks) {
+      return { ok: false, error: "goal_refinement apply patch is empty" };
+    }
+    for (const field of scalarFields) {
+      const value = String(patch[field] || "").trim();
+      if (value.length > 1200) return { ok: false, error: `goal_refinement ${field} is too long` };
+    }
+    const constraints = Array.isArray(patch.constraints_add) ? patch.constraints_add : [];
+    if (constraints.length > 20 || constraints.some((item) => String(item || "").trim().length > 240)) {
+      return { ok: false, error: "goal_refinement constraints_add is too large" };
+    }
+    const links = Array.isArray(patch.links_add) ? patch.links_add : [];
+    if (links.length > 20 || links.some((item) => String(item?.url || "").trim().length > 1000 || String(item?.label || "").trim().length > 120)) {
+      return { ok: false, error: "goal_refinement links_add is too large" };
+    }
   }
 
   if (Array.isArray(ctx.rosterAgents) && ctx.rosterAgents.length) {
