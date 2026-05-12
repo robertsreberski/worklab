@@ -47,7 +47,7 @@ describe("resource list helpers", () => {
     ]);
   });
 
-  it("defaults canonical knowledge to a flat recent-updates list", () => {
+  it("defaults canonical knowledge to pinned entries first", () => {
     const groups = buildKnowledgeResourceGroups([
       {
         slug: "project-runbook",
@@ -71,7 +71,7 @@ describe("resource list helpers", () => {
     ], { surface: "canonical" });
 
     expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
-      ["recent", "Recent updates", ["global-note", "project-runbook", "project-research"]],
+      ["pinned-first", "Pinned first", ["project-research", "global-note", "project-runbook"]],
     ]);
   });
 
@@ -83,6 +83,7 @@ describe("resource list helpers", () => {
         category: "execution-plan",
         display_category: "plans",
         meaningful_artifact: true,
+        pinned: true,
         updated_at: "2026-05-06T00:00:00Z",
       },
       {
@@ -111,7 +112,7 @@ describe("resource list helpers", () => {
     ], { surface: "artifacts" });
 
     expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
-      ["artifacts", "Meaningful artifacts", ["rsm-style-guidance", "runtime-plan"]],
+      ["artifacts", "Meaningful artifacts", ["runtime-plan", "rsm-style-guidance"]],
     ]);
   });
 
@@ -263,10 +264,10 @@ describe("resource list helpers", () => {
   it("exposes knowledge sort modes through the compact configuration surface", () => {
     const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
 
-    expect(contents).toContain("const [sort, setSort] = useState(\"updated_desc\");");
+    expect(contents).toContain("const [sort, setSort] = useState(\"pinned_first\");");
     expect(contents).toContain("ariaLabel=\"Sort knowledge\"");
-    expect(contents).toContain("sort !== \"updated_desc\"");
-    expect(contents).toContain("setSort(\"updated_desc\")");
+    expect(contents).toContain("sort !== \"pinned_first\"");
+    expect(contents).toContain("setSort(\"pinned_first\")");
   });
 
   it("defaults the knowledge route to artifacts first and loads taxonomy suggestions", () => {

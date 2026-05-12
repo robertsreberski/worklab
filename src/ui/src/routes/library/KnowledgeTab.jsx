@@ -70,7 +70,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
   const [tag, setTag] = useState("all");
   const [pinned, setPinned] = useState("all");
   const [surface, setSurface] = useState("artifacts");
-  const [sort, setSort] = useState("updated_desc");
+  const [sort, setSort] = useState("pinned_first");
   const searchRef = useRef(null);
   const reloadAbortRef = useRef(null);
 
@@ -150,8 +150,8 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
     { value: "unpinned", label: "Unpinned" },
   ];
   const sortOptions = [
-    { value: "updated_desc", label: "Recent update" },
     { value: "pinned_first", label: "Pinned first" },
+    { value: "updated_desc", label: "Recent update" },
     { value: "title_asc", label: "Title A-Z" },
     { value: "project_category", label: "Project/category" },
   ];
@@ -174,7 +174,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
       actionLabel="New entry"
       onAction={() => { navigateHash("#/library/knowledge/new"); }}
       configTitle="Knowledge configuration"
-      activeConfigCount={[surface !== "artifacts", sort !== "updated_desc", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
+      activeConfigCount={[surface !== "artifacts", sort !== "pinned_first", projectId !== "all", category !== "all", subcategory !== "all", tag !== "all", pinned !== "all"].filter(Boolean).length}
       scopeTabs={scopeTabs}
     >
       <Tabs value={surface} onChange={setSurface} tabs={surfaceTabs} ariaLabel="Filter knowledge surface" class="tabs-pills" />
@@ -189,7 +189,7 @@ export function KnowledgeTab({ selectedSlug = null, mode = null, query: routeQue
 
   const listBody = filtered.length === 0 ? (
     hasFilter ? (
-      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("artifacts"); setSort("updated_desc"); }} />
+      <EmptyStateFiltered body="No entries match." onClearFilters={() => { setQuery(""); setProjectId("all"); setCategory("all"); setSubcategory("all"); setTag("all"); setPinned("all"); setSurface("artifacts"); setSort("pinned_first"); }} />
     ) : (
       <EmptyState
         title="No entries yet"
