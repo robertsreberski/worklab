@@ -40,6 +40,7 @@ import { Modal } from "../components/Modal.jsx";
 import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
+import { ResourceRowChip, ResourceRowId, ResourceRowPath, ResourceRowTags, ResourceRowWorktreeChip } from "../components/ResourceRowMeta.jsx";
 import { RunHistoryNotice } from "../components/RunHistoryNotice.jsx";
 import { StatusMenu } from "../components/StatusMenu.jsx";
 import { StructuredContent } from "../components/StructuredContent.jsx";
@@ -222,6 +223,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "ResourceRowId", group: "component", coverage: "visible" },
   { name: "ResourceRowPath", group: "component", coverage: "visible" },
   { name: "ResourceRowTags", group: "component", coverage: "visible" },
+  { name: "ResourceRowWorktreeChip", group: "component", coverage: "visible" },
   { name: "RunHistoryNotice", group: "component", coverage: "visible" },
   { name: "RunTodoPanel", group: "component", coverage: "visible" },
   { name: "StatusMenu", group: "component", coverage: "visible" },
@@ -617,16 +619,48 @@ export function DesignSystem() {
                   onSearch={setSearch}
                   searchPlaceholder="Search resources"
                   searchAriaLabel="Search resources"
-                  countLabel="2 shown"
+                  countLabel="3 shown"
                   actionLabel="New"
                   onAction={() => {}}
                 >
                   <Tabs value={tab} onChange={setTab} tabs={STATUS_TABS} ariaLabel="Filter resources" class="tabs-pills" />
                 </ResourceListToolbar>
                 <ResourceList>
-                  <ResourceGroup group={{ label: "Active", items: [{ id: "one" }, { id: "two" }] }}>
-                    <PaneRow title="Agent builder" sub="Resource row inside shared list" trailing={<StatusPill status="running" size="sm" />} />
-                    <PaneRow title="Project docs" sub="Grouped by ResourceGroup" trailing={<StatusPill status="done" size="sm" />} />
+                  <ResourceGroup group={{ label: "Active", items: [{ id: "one" }, { id: "two" }, { id: "three" }] }}>
+                    <PaneRow
+                      title="Agent builder"
+                      sub={(
+                        <ResourceRowTags>
+                          <ResourceRowId>gpt-5.4</ResourceRowId>
+                          <ResourceRowChip tone="accent" icon="zap">high effort</ResourceRowChip>
+                          <ResourceRowChip tone="info" icon="database">1M context</ResourceRowChip>
+                        </ResourceRowTags>
+                      )}
+                      trailing={<StatusPill status="running" size="sm" />}
+                    />
+                    <PaneRow
+                      title="Project docs"
+                      sub={(
+                        <ResourceRowTags>
+                          <ResourceRowId>path-forward</ResourceRowId>
+                          <ResourceRowPath label="workdir" value="/Users/worklab/path-forward" />
+                          <ResourceRowWorktreeChip mode="auto" />
+                          <ResourceRowChip tone="entity" icon="users">team core</ResourceRowChip>
+                        </ResourceRowTags>
+                      )}
+                      trailing={<StatusPill status="done" size="sm" />}
+                    />
+                    <PaneRow
+                      title="Release workspace"
+                      sub={(
+                        <ResourceRowTags>
+                          <ResourceRowId>release-app</ResourceRowId>
+                          <ResourceRowWorktreeChip mode="required" />
+                          <ResourceRowChip tone="warn" icon="minus-circle">archived</ResourceRowChip>
+                        </ResourceRowTags>
+                      )}
+                      trailing={<StatusPill status="queued" size="sm" />}
+                    />
                   </ResourceGroup>
                 </ResourceList>
               </Card>
