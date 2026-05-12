@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildTeamGoalDashboardGroups,
+  formatLeadCycleImpact,
   formatTeamLeadRunToast,
   goalStatusLabel,
+  leadCycleNextReviewLabel,
   leadCycleRawLogHref,
   leadCycleTaskHref,
   teamSetupGaps,
@@ -51,7 +53,7 @@ describe("team setup guidance", () => {
   });
 
   it("builds encoded lead-cycle task and raw-log links", () => {
-    const cycle = { task_id: "task 1", id: "run/1" };
+    const cycle = { task_id: "task 1", run_id: "run/1" };
 
     expect(leadCycleTaskHref(cycle)).toBe("#/tasks/task%201?run=run%2F1");
     expect(leadCycleRawLogHref(cycle)).toBe("/api/runs/run%2F1/raw-log");
@@ -61,6 +63,16 @@ describe("team setup guidance", () => {
     expect(leadCycleTaskHref({ task_id: "task 1" })).toBe(null);
     expect(leadCycleTaskHref({ id: "run/1" })).toBe(null);
     expect(leadCycleRawLogHref({})).toBe(null);
+  });
+
+  it("formats native lead-cycle impact and follow-up timing", () => {
+    expect(formatLeadCycleImpact({ tasks_created: 2, tasks_assigned: 1, notes_posted: 1 })).toEqual([
+      "2 created",
+      "1 assigned",
+      "1 noted",
+    ]);
+    expect(leadCycleNextReviewLabel({ next_review_due_at: 61_000 }, { now: 1000 })).toBe("due in 1m");
+    expect(leadCycleNextReviewLabel({ next_review_event: "task_blocked" }, { now: 1000 })).toBe("after task blocked");
   });
 
   it("groups team-project goals for the Teams dashboard", () => {

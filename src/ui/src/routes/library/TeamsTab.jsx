@@ -26,6 +26,7 @@ import { FormGrid } from "../../components/FormGrid.jsx";
 import { FormSection } from "../../components/FormSection.jsx";
 import { Card } from "../../components/Card.jsx";
 import { Badge } from "../../components/primitives/Badge.jsx";
+import { Chip } from "../../components/primitives/Chip.jsx";
 import { StatusDot } from "../../components/primitives/StatusDot.jsx";
 import { AgentPicker } from "../../components/AgentPicker.jsx";
 import { DetailHead, InlineHead, PanelGrid, SectionGroup, Toolbar } from "../../components/layout/index.js";
@@ -87,15 +88,51 @@ function relativeTime(ts) {
 
 export function leadCycleTaskHref(cycle = {}) {
   const taskId = String(cycle?.task_id ?? "").trim();
-  const runId = String(cycle?.id ?? "").trim();
+  const runId = String(cycle?.run_id ?? cycle?.id ?? "").trim();
   if (!taskId || !runId) return null;
   return `#/tasks/${encodeURIComponent(taskId)}?run=${encodeURIComponent(runId)}`;
 }
 
 export function leadCycleRawLogHref(cycle = {}) {
-  const runId = String(cycle?.id ?? "").trim();
+  const runId = String(cycle?.run_id ?? cycle?.id ?? "").trim();
   if (!runId) return null;
   return `/api/runs/${encodeURIComponent(runId)}/raw-log`;
+}
+
+function timeUntil(ts, { now = Date.now() } = {}) {
+  if (!ts) return null;
+  const ms = Number(ts) - now;
+  if (!Number.isFinite(ms)) return null;
+  if (ms <= 0) return "due now";
+  if (ms < 60_000) return "due in <1m";
+  if (ms < 3_600_000) return `due in ${Math.round(ms / 60_000)}m`;
+  if (ms < 86_400_000) return `due in ${Math.round(ms / 3_600_000)}h`;
+  return `due in ${Math.round(ms / 86_400_000)}d`;
+}
+
+function leadCycleEventLabel(event) {
+  const value = String(event || "").trim();
+  if (value === "task_completed") return "after task completed";
+  if (value === "task_blocked") return "after task blocked";
+  return value ? `after ${value}` : null;
+}
+
+export function leadCycleNextReviewLabel(cycle = {}, { now = Date.now() } = {}) {
+  return timeUntil(cycle.next_review_due_at, { now }) || leadCycleEventLabel(cycle.next_review_event);
+}
+
+function impactCount(value, singular, plural) {
+  const count = Number(value) || 0;
+  if (count <= 0) return null;
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+export function formatLeadCycleImpact(cycle = {}) {
+  return [
+    impactCount(cycle.tasks_created, "created", "created"),
+    impactCount(cycle.tasks_assigned, "assigned", "assigned"),
+    impactCount(cycle.notes_posted, "noted", "noted"),
+  ].filter(Boolean);
 }
 
 export function teamSetupGaps(team = {}, members = [], projects = []) {
@@ -535,6 +572,8 @@ function LeadCycleRow({ cycle }) {
   const rawLogHref = leadCycleRawLogHref(cycle);
   const status = cycle?.process_status || cycle?.status || "unknown";
   const statusVariant = cycle?.process_status === "succeeded" ? "primary" : cycle?.process_status === "failed" ? "warn" : "muted";
+  const impact = formatLeadCycleImpact(cycle);
+  const nextReview = leadCycleNextReviewLabel(cycle);
 
   return (
     <li class="team-cycle-row">
@@ -542,9 +581,22 @@ function LeadCycleRow({ cycle }) {
         <div class="team-cycle-meta">
           <span>{relativeTime(cycle?.started_at)}</span>
           <Badge variant={statusVariant}>{status}</Badge>
+          {cycle?.goal_status ? <Chip variant="muted">{String(cycle.goal_status).replace("_", " ")}</Chip> : null}
           {cycle?.cost_usd ? <span class="muted">${Number(cycle.cost_usd).toFixed(4)}</span> : null}
+          {nextReview ? <span class="team-cycle-review">{nextReview}</span> : null}
         </div>
         {cycle?.summary ? <div class="team-cycle-summary">{cycle.summary}</div> : null}
+        {(cycle?.checkpoint_note || cycle?.validation_summary) && (
+          <div class="team-cycle-notes">
+            {cycle.checkpoint_note ? <span>{cycle.checkpoint_note}</span> : null}
+            {cycle.validation_summary ? <span>{cycle.validation_summary}</span> : null}
+          </div>
+        )}
+        {impact.length ? (
+          <div class="team-cycle-impact">
+            {impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
+          </div>
+        ) : null}
       </div>
       {(taskHref || rawLogHref) && (
         <Toolbar class="team-cycle-actions">
