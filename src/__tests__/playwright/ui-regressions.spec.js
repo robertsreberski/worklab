@@ -1957,6 +1957,24 @@ test("settings overview cards, section nav, and sections stay connected", async 
     const rect = section.getBoundingClientRect();
     return rect.top < window.innerHeight && rect.bottom > 0;
   }, "settings-execution");
+  const desktopNavMetrics = await page.evaluate(() => {
+    const nav = document.querySelector(".settings-section-nav");
+    const buttons = [...document.querySelectorAll(".settings-section-nav button")];
+    const labels = [...document.querySelectorAll(".settings-section-nav-label")];
+    const navStyles = nav ? getComputedStyle(nav) : null;
+    return {
+      navPosition: navStyles?.position || "",
+      navTop: navStyles?.top || "",
+      buttonMinHeights: buttons.map((button) => getComputedStyle(button).minHeight),
+      labelCount: labels.length,
+      wrappedLabels: labels.filter((label) => label.getClientRects().length > 1).length,
+    };
+  });
+  expect(desktopNavMetrics.navPosition).toBe("sticky");
+  expect(desktopNavMetrics.navTop).toContain("12px");
+  expect(desktopNavMetrics.buttonMinHeights.every((height) => height === "38px")).toBe(true);
+  expect(desktopNavMetrics.labelCount).toBe(labels.length);
+  expect(desktopNavMetrics.wrappedLabels).toBe(0);
   await expectNoHorizontalOverflow(page, "settings connected nav desktop");
 
   const collapseAssistant = page.getByRole("button", { name: "Collapse assistant" });
@@ -1968,6 +1986,19 @@ test("settings overview cards, section nav, and sections stay connected", async 
   await page.locator(".settings-overview-card", { hasText: "Search" }).click();
   await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Search");
   await expect(page.locator('.settings-section-nav button[aria-current="location"]')).toContainText("Search");
+  const mobileNavMetrics = await page.evaluate(() => {
+    const nav = document.querySelector(".settings-section-nav");
+    const labels = [...document.querySelectorAll(".settings-section-nav-label")];
+    const navRect = nav?.getBoundingClientRect();
+    return {
+      navWidth: navRect ? Math.round(navRect.width) : 0,
+      labelCount: labels.length,
+      wrappedLabels: labels.filter((label) => label.getClientRects().length > 1).length,
+    };
+  });
+  expect(mobileNavMetrics.navWidth).toBeLessThanOrEqual(390);
+  expect(mobileNavMetrics.labelCount).toBe(labels.length);
+  expect(mobileNavMetrics.wrappedLabels).toBe(0);
   await expectNoHorizontalOverflow(page, "settings connected nav mobile");
 });
 
@@ -4765,6 +4796,52 @@ test("provider creation uses a simple mobile provider-type select", async ({ pag
   await expect(page.locator(".provider-type-segmented")).toBeHidden();
   await expect(page.locator(".provider-type-select select")).toBeVisible();
   await expectNoHorizontalOverflow(page, "mobile provider new");
+});
+
+test("providers settings route keeps search close and provider edit aligned", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 820 });
+  await page.goto(`${baseUrl}/#/settings/providers`);
+  await expect(page.locator(".resource-toolbar .search-field")).toBeVisible();
+
+  const listMetrics = await page.evaluate(() => {
+    const head = document.querySelector(".settings-route-shell > .ds-page-head");
+    const toolbar = document.querySelector(".resource-toolbar");
+    const headRect = head?.getBoundingClientRect();
+    const toolbarRect = toolbar?.getBoundingClientRect();
+    return {
+      gapAfterHeader: headRect && toolbarRect ? Math.round(toolbarRect.top - headRect.bottom) : -1,
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(listMetrics.gapAfterHeader).toBeLessThanOrEqual(12);
+  expect(listMetrics.overflow).toBeLessThanOrEqual(0);
+
+  await page.goto(`${baseUrl}/#/settings/providers/new`);
+  await expect(page.locator(".provider-detail-head h2", { hasText: "New provider" })).toBeVisible();
+  const editMetrics = await page.evaluate(() => {
+    const head = document.querySelector(".provider-detail-head");
+    const headTitle = document.querySelector(".provider-detail-head .title-block");
+    const body = document.querySelector(".provider-detail-body");
+    const firstMarker = document.querySelector(".provider-detail-body .section-marker");
+    const actions = document.querySelector(".provider-detail-head .provider-detail-actions");
+    const headRect = head?.getBoundingClientRect();
+    const headTitleRect = headTitle?.getBoundingClientRect();
+    const bodyRect = body?.getBoundingClientRect();
+    const markerRect = firstMarker?.getBoundingClientRect();
+    const bodyStyles = body ? getComputedStyle(body) : null;
+    const parsePx = (value) => Math.round(parseFloat(value) || 0);
+    return {
+      headContentLeft: headTitleRect ? Math.round(headTitleRect.left) : -1,
+      bodyContentLeft: bodyRect && bodyStyles ? Math.round(bodyRect.left + parsePx(bodyStyles.paddingLeft)) : -1,
+      firstContentGap: headRect && markerRect ? Math.round(markerRect.top - headRect.bottom) : -1,
+      actionsInsideHeader: !!actions && !!actions.closest(".provider-detail-head"),
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(Math.abs(editMetrics.headContentLeft - editMetrics.bodyContentLeft)).toBeLessThanOrEqual(1);
+  expect(editMetrics.firstContentGap).toBeLessThanOrEqual(20);
+  expect(editMetrics.actionsInsideHeader).toBe(true);
+  expect(editMetrics.overflow).toBeLessThanOrEqual(0);
 });
 
 test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {

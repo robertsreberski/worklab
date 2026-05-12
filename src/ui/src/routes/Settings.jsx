@@ -186,11 +186,44 @@ function SettingsRouteShell({
 function AboutTab() {
   return (
     <div class="settings-about">
-      <PanelGrid class="settings-about-grid">
-        <SettingPanel icon="sparkles" title="Worklab" meta="Local agent orchestration">
+      <section class="settings-about-hero" aria-labelledby="settings-about-title">
+        <div class="settings-about-hero-copy">
+          <span class="form-section-kicker">Local command center</span>
+          <h2 id="settings-about-title">Worklab</h2>
           <p>
-            Worklab is a single-user local app for planning, running, reviewing,
-            and observing AI agent work on this machine.
+            A private workbench for planning, running, and reviewing agent work
+            against local projects and tools.
+          </p>
+          <div class="settings-about-stat-grid">
+            <div class="settings-about-stat">
+              <Icon name="lock" size={15} />
+              <span>Local runtime</span>
+            </div>
+            <div class="settings-about-stat">
+              <Icon name="terminal" size={15} />
+              <span>Full tool visibility</span>
+            </div>
+            <div class="settings-about-stat">
+              <Icon name="book" size={15} />
+              <span>Project memory</span>
+            </div>
+          </div>
+        </div>
+        <figure class="settings-about-visual">
+          <img src="/about/worklab-about-hero.png" alt="" loading="lazy" />
+        </figure>
+      </section>
+      <PanelGrid class="settings-about-grid">
+        <SettingPanel icon="sparkles" title="Operating model" meta="Single-user orchestration">
+          <p>
+            Runs, providers, agents, projects, memory, and MCP tools stay visible
+            from one local control surface.
+          </p>
+        </SettingPanel>
+        <SettingPanel icon="clock" title="Runtime posture" meta="Observable by default">
+          <p>
+            Worklab favors explicit state, live logs, saved artifacts, and
+            recoverable long-running work over hidden background automation.
           </p>
         </SettingPanel>
         <SettingPanel icon="keyboard" title="Shortcuts" meta="Fast local controls">
@@ -734,7 +767,7 @@ function SettingsGeneral() {
               onClick={() => selectSettingsSection(item.id)}
             >
               <Icon name={item.icon} size={14} />
-              <span>{item.label}</span>
+              <span class="settings-section-nav-label">{item.label}</span>
             </Button>
           ))}
         </nav>

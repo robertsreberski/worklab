@@ -597,6 +597,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
         }}
       />
       <DetailHead
+        class="provider-detail-head"
         icon={<Icon name="terminal" size={16} />}
         kicker={isNew ? "Create provider" : "Provider"}
         title={isNew ? "New provider" : provider.name}
@@ -612,6 +613,7 @@ function ProviderEdit({ providerId, onSaved, onDeleted }) {
           </>
         )}
         actions={headerActions}
+        actionsClass="provider-detail-actions"
         subBar={<MobilePillRow railLabel="Details" railCount={isNew ? 1 : 4} sections={PROVIDER_EDIT_SECTIONS} />}
       />
 
