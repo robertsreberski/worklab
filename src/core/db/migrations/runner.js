@@ -290,6 +290,139 @@ function backfillTeamGoalContracts(db) {
   tx();
 }
 
+function parseBackfillJson(value, fallback) {
+  if (!value) return fallback;
+  try {
+    const parsed = JSON.parse(String(value));
+    return parsed == null ? fallback : parsed;
+  } catch {
+    return fallback;
+  }
+}
+
+function backfillNativeGoals(db) {
+  if (!tableExists(db, "goals") || !tableExists(db, "tasks") || !tableExists(db, "teams") || !tableExists(db, "projects")) return;
+  db.exec(`
+    INSERT OR IGNORE INTO goals
+      (id, team_id, project_id, root_task_id, status, status_reason, contract_json, last_lead_at, created_at, updated_at)
+    SELECT t.id,
+           t.team_id,
+           t.project_id,
+           t.id,
+           COALESCE(NULLIF(t.goal_status, ''), 'in_progress'),
+           t.goal_status_reason,
+           COALESCE(NULLIF(t.goal_contract_json, ''), '{}'),
+           t.last_lead_at,
+           COALESCE(t.created_at, strftime('%s','now') * 1000),
+           COALESCE(t.updated_at, t.created_at, strftime('%s','now') * 1000)
+    FROM tasks t
+    JOIN teams tm ON tm.id = t.team_id
+    JOIN projects p ON p.id = t.project_id
+    WHERE COALESCE(t.is_team_root, 0) = 1
+      AND t.team_id IS NOT NULL
+      AND t.project_id IS NOT NULL;
+
+    UPDATE goals
+    SET root_task_id = COALESCE(root_task_id, (
+          SELECT t.id
+          FROM tasks t
+          WHERE COALESCE(t.is_team_root, 0) = 1
+            AND t.team_id = goals.team_id
+            AND t.project_id = goals.project_id
+          LIMIT 1
+        )),
+        updated_at = COALESCE(updated_at, created_at, strftime('%s','now') * 1000)
+    WHERE root_task_id IS NULL;
+  `);
+}
+
+function backfillNativeLeadCycles(db) {
+  if (!tableExists(db, "lead_cycles") || !tableExists(db, "task_runs")) return;
+  const rows = db.prepare(`
+    SELECT r.id AS run_id,
+           r.task_id,
+           r.team_id,
+           COALESCE(r.project_id, t.project_id) AS project_id,
+           r.process_status,
+           r.status,
+           r.failure_kind,
+           r.error_text,
+           r.started_at,
+           r.ended_at,
+           r.cost_usd,
+           r.summary,
+           r.details,
+           r.result_json,
+           r.diagnostics_json
+    FROM task_runs r
+    LEFT JOIN tasks t ON t.id = r.task_id
+    WHERE r.kind = 'lead_cycle'
+  `).all();
+  if (!rows.length) return;
+  const goalByRoot = tableExists(db, "goals")
+    ? db.prepare("SELECT id FROM goals WHERE root_task_id = ? OR (team_id = ? AND project_id = ?) LIMIT 1")
+    : null;
+  const insert = db.prepare(`
+    INSERT OR IGNORE INTO lead_cycles
+      (id, goal_id, run_id, task_id, team_id, project_id, reason, process_status, status, failure_kind, error_text,
+       goal_status, goal_status_reason, summary, checkpoint_note, validation_summary,
+       task_creations_json, task_assignments_json, advisory_notes_json,
+       next_review_hint_json, next_review_due_at, next_review_event,
+       cost_usd, started_at, ended_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      const result = parseBackfillJson(row.result_json, {});
+      const diagnostics = parseBackfillJson(row.diagnostics_json, {});
+      const hint = result?.next_review_hint && typeof result.next_review_hint === "object"
+        ? result.next_review_hint
+        : {};
+      const afterMinutes = Number(hint.after_minutes);
+      const dueAt = Number.isInteger(afterMinutes) && afterMinutes > 0 && row.ended_at
+        ? Number(row.ended_at) + afterMinutes * 60 * 1000
+        : null;
+      const event = typeof hint.after_event === "string" && hint.after_event.trim()
+        ? hint.after_event.trim()
+        : null;
+      const goalId = goalByRoot
+        ? goalByRoot.get(row.task_id || "", row.team_id || "", row.project_id || "")?.id || null
+        : null;
+      const now = row.ended_at || row.started_at || Date.now();
+      insert.run(
+        row.run_id,
+        goalId,
+        row.run_id,
+        row.task_id || null,
+        row.team_id || null,
+        row.project_id || null,
+        diagnostics.lead_cycle_reason || "manual",
+        row.process_status || "running",
+        row.status || "running",
+        row.failure_kind || null,
+        row.error_text || null,
+        result.goal_status || null,
+        result.goal_status_reason || row.details || null,
+        result.summary || row.summary || null,
+        result.checkpoint_note || null,
+        result.validation_summary || null,
+        JSON.stringify(Array.isArray(result.task_creations) ? result.task_creations : []),
+        JSON.stringify(Array.isArray(result.task_assignments) ? result.task_assignments : []),
+        JSON.stringify(Array.isArray(result.advisory_notes) ? result.advisory_notes : []),
+        JSON.stringify(hint || {}),
+        dueAt,
+        event,
+        row.cost_usd ?? null,
+        row.started_at || now,
+        row.ended_at || null,
+        row.started_at || now,
+        now,
+      );
+    }
+  });
+  tx();
+}
+
 function normalizeWorkflowState(db) {
   if (tableExists(db, "tasks")) {
     const columns = db.prepare("PRAGMA table_info(tasks)").all().map((row) => row.name);
@@ -882,6 +1015,8 @@ export function runMigrations(db) {
   ensureEmbeddingVectorPresentColumn(db);
   db.exec("CREATE INDEX IF NOT EXISTS idx_embeddings_vector_present ON embeddings(vector_present)");
   backfillTeamGoalContracts(db);
+  backfillNativeGoals(db);
+  backfillNativeLeadCycles(db);
   db.prepare(
     "INSERT INTO schema_meta (key, value) VALUES ('version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
   ).run(String(SCHEMA_VERSION));

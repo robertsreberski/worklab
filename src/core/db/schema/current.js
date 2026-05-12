@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 38;
+export const SCHEMA_VERSION = 39;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -214,6 +214,64 @@ CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, sta
 CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status);
 CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS goals (
+  id TEXT PRIMARY KEY,
+  team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  status_reason TEXT,
+  contract_json TEXT NOT NULL DEFAULT '{}',
+  last_lead_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  UNIQUE(team_id, project_id)
+);
+CREATE INDEX IF NOT EXISTS idx_goals_team_project ON goals(team_id, project_id);
+CREATE INDEX IF NOT EXISTS idx_goals_status_updated ON goals(status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_goals_root_task ON goals(root_task_id) WHERE root_task_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS lead_cycles (
+  id TEXT PRIMARY KEY,
+  goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL,
+  run_id TEXT UNIQUE REFERENCES task_runs(id) ON DELETE CASCADE,
+  task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL,
+  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  reason TEXT NOT NULL DEFAULT 'manual',
+  process_status TEXT NOT NULL DEFAULT 'queued',
+  status TEXT NOT NULL DEFAULT 'running',
+  failure_kind TEXT,
+  error_text TEXT,
+  goal_status TEXT,
+  goal_status_reason TEXT,
+  summary TEXT,
+  checkpoint_note TEXT,
+  validation_summary TEXT,
+  task_creations_json TEXT NOT NULL DEFAULT '[]',
+  task_assignments_json TEXT NOT NULL DEFAULT '[]',
+  advisory_notes_json TEXT NOT NULL DEFAULT '[]',
+  next_review_hint_json TEXT NOT NULL DEFAULT '{}',
+  next_review_due_at INTEGER,
+  next_review_event TEXT,
+  next_review_consumed_at INTEGER,
+  tasks_created INTEGER NOT NULL DEFAULT 0,
+  tasks_assigned INTEGER NOT NULL DEFAULT 0,
+  notes_posted INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL,
+  started_at INTEGER,
+  ended_at INTEGER,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_lead_cycles_goal_started ON lead_cycles(goal_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_cycles_team_project_started ON lead_cycles(team_id, project_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_lead_cycles_due ON lead_cycles(next_review_due_at, next_review_consumed_at)
+  WHERE next_review_due_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_lead_cycles_event ON lead_cycles(team_id, project_id, next_review_event, next_review_consumed_at)
+  WHERE next_review_event IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_lead_cycles_run ON lead_cycles(run_id) WHERE run_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS agent_logs (
   id TEXT PRIMARY KEY,

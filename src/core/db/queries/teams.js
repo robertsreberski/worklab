@@ -204,16 +204,71 @@ export function hasInFlightLeadCycle(db, { teamId, projectId } = {}) {
 
 export function listRecentLeadCycles(db, teamId, limit = 50) {
   return db.prepare(`
-    SELECT r.id, r.task_id, r.team_id, r.project_id, r.kind, r.mode,
-           r.process_status, r.status, r.failure_kind,
-           r.started_at, r.ended_at, r.cost_usd, r.summary,
-           t.title AS task_title
-    FROM task_runs r
-    LEFT JOIN tasks t ON t.id = r.task_id
-    WHERE r.kind = 'lead_cycle' AND r.team_id = ?
-    ORDER BY r.started_at DESC, r.rowid DESC
+    SELECT *
+    FROM (
+      SELECT COALESCE(lc.run_id, lc.id) AS id,
+             lc.run_id,
+             lc.task_id,
+             lc.team_id,
+             lc.project_id,
+             'lead_cycle' AS kind,
+             'execute' AS mode,
+             lc.process_status,
+             lc.status,
+             lc.failure_kind,
+             lc.started_at,
+             lc.ended_at,
+             lc.cost_usd,
+             lc.summary,
+             lc.checkpoint_note,
+             lc.validation_summary,
+             lc.goal_status,
+             lc.goal_status_reason,
+             lc.next_review_due_at,
+             lc.next_review_event,
+             lc.next_review_consumed_at,
+             lc.tasks_created,
+             lc.tasks_assigned,
+             lc.notes_posted,
+             t.title AS task_title
+      FROM lead_cycles lc
+      LEFT JOIN tasks t ON t.id = lc.task_id
+      WHERE lc.team_id = ?
+      UNION ALL
+      SELECT r.id AS id,
+             r.id AS run_id,
+             r.task_id,
+             r.team_id,
+             r.project_id,
+             r.kind,
+             r.mode,
+             r.process_status,
+             r.status,
+             r.failure_kind,
+             r.started_at,
+             r.ended_at,
+             r.cost_usd,
+             r.summary,
+             NULL AS checkpoint_note,
+             NULL AS validation_summary,
+             NULL AS goal_status,
+             NULL AS goal_status_reason,
+             NULL AS next_review_due_at,
+             NULL AS next_review_event,
+             NULL AS next_review_consumed_at,
+             0 AS tasks_created,
+             0 AS tasks_assigned,
+             0 AS notes_posted,
+             t.title AS task_title
+      FROM task_runs r
+      LEFT JOIN tasks t ON t.id = r.task_id
+      WHERE r.kind = 'lead_cycle'
+        AND r.team_id = ?
+        AND NOT EXISTS (SELECT 1 FROM lead_cycles lc WHERE lc.run_id = r.id)
+    )
+    ORDER BY started_at DESC, id DESC
     LIMIT ?
-  `).all(teamId, limit);
+  `).all(teamId, teamId, limit);
 }
 
 export function getLastLeadCycleAt(db, { teamId, projectId } = {}) {

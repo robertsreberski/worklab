@@ -66,6 +66,14 @@ import {
   resolveParentReviewPolicy,
 } from "./watcher/delegation-handler.js";
 import { appendTeamGoalCheckpoint, effectiveTeamForTask, ensureTeamRootTask, hasInFlightLeadCycle, leadCycleBlockedByGoal } from "../core/teams.js";
+import {
+  consumeLeadCycleFollowup,
+  listDueLeadCycleFollowups,
+  listMatchingLeadCycleEventFollowups,
+  recordLeadCycleCompleted,
+  recordLeadCycleFailed,
+  recordLeadCycleStarted,
+} from "../core/goals.js";
 import { getTeamById, getTeamRosterAgentNames } from "../core/db/queries/teams.js";
 import { compactRecoveryRunSummary } from "./watcher/failure-classifier.js";
 import {
@@ -122,6 +130,7 @@ export function createTaskWatcher({
   maxFailures = null,
   events,
   drainTimeoutMs = 60_000,
+  leadCycleFollowupIntervalMs = 60_000,
 }) {
   const active = new Map();
   const activeByRunId = new Map();
@@ -132,6 +141,7 @@ export function createTaskWatcher({
   const pendingStarts = new Set();
   const pendingLeadCycleRequests = new Map();
   const recoveryTimers = new Set();
+  let leadCycleFollowupTimer = null;
 
   function canAutoStart(taskId) {
     const task = getTaskById(db, taskId);
@@ -344,6 +354,7 @@ export function createTaskWatcher({
     const budget = checkBudget({ db, agentName: team.lead_agent, teamId });
     if (!budget.ok) return { ok: false, error: budget.message, scope: budget.scope };
     try {
+      const startedAt = Date.now();
       const handle = spawnRun({
         task: root,
         stage: "execute",
@@ -354,7 +365,20 @@ export function createTaskWatcher({
         diagnosticsSeed: { lead_cycle_reason: reason, lead_cycle_team_id: teamId, lead_cycle_project_id: projectId },
       });
       try {
-        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(Date.now(), teamId);
+        recordLeadCycleStarted(db, {
+          goalId: root.id,
+          runId: handle.runId,
+          taskId: root.id,
+          teamId,
+          projectId,
+          reason,
+          startedAt,
+        });
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId: handle.runId }, "lead cycle timeline start write failed");
+      }
+      try {
+        db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(startedAt, teamId);
       } catch (err) {
         logger?.warn?.({ err: err.message }, "team last_lead_cycle_at update failed");
       }
@@ -385,6 +409,7 @@ export function createTaskWatcher({
       const projectId = task.project_id;
       if (!projectId) return;
       const reason = taskStageValue === "blocked" ? "task_blocked" : "task_completed";
+      consumeMatchingLeadCycleEventHints({ teamId, projectId, event: reason });
       spawnLeadCycleRunInternal({ teamId, projectId, reason });
     } catch (err) {
       logger?.warn?.({ err: err.message, taskId }, "maybeScheduleLeadCycle failed");
@@ -411,6 +436,54 @@ export function createTaskWatcher({
       logger?.warn?.({ err: err.message, taskId }, "maybeScheduleUnassignedTeamTask failed");
       return { ok: false, error: err.message };
     }
+  }
+
+  function consumeMatchingLeadCycleEventHints({ teamId, projectId, event, now = Date.now() } = {}) {
+    const matches = listMatchingLeadCycleEventFollowups(db, { teamId, projectId, event, limit: 20 });
+    for (const cycle of matches) {
+      consumeLeadCycleFollowup(db, cycle.id, now);
+    }
+    return matches.length;
+  }
+
+  function tickLeadCycleFollowups(now = Date.now()) {
+    const due = listDueLeadCycleFollowups(db, { now, limit: 20 });
+    let started = 0;
+    let skipped = 0;
+    for (const cycle of due) {
+      consumeLeadCycleFollowup(db, cycle.id, now);
+      const out = spawnLeadCycleRunInternal({
+        teamId: cycle.team_id,
+        projectId: cycle.project_id,
+        reason: "review_due",
+      });
+      if (out?.ok) started += 1;
+      else skipped += 1;
+      if (!out?.ok && out?.skipped === "in_flight") {
+        queueLeadCycleRequest({
+          teamId: cycle.team_id,
+          projectId: cycle.project_id,
+          reason: "review_due",
+        });
+      } else if (!out?.ok) {
+        logger?.warn?.(
+          { teamId: cycle.team_id, projectId: cycle.project_id, cycleId: cycle.id, err: out?.error },
+          "due lead cycle follow-up skipped",
+        );
+      }
+    }
+    return { checked: due.length, started, skipped };
+  }
+
+  if (Number(leadCycleFollowupIntervalMs) > 0) {
+    leadCycleFollowupTimer = setInterval(() => {
+      try {
+        tickLeadCycleFollowups(Date.now());
+      } catch (err) {
+        logger?.warn?.({ err: err.message }, "lead cycle follow-up tick failed");
+      }
+    }, Number(leadCycleFollowupIntervalMs));
+    leadCycleFollowupTimer.unref?.();
   }
 
   async function handleRunRequested(taskId, options = {}) {
@@ -1863,6 +1936,19 @@ export function createTaskWatcher({
       db.prepare(
         `UPDATE task_runs SET failure_kind = COALESCE(failure_kind, ?), retry_stage = COALESCE(retry_stage, 'execute') WHERE id = ?`,
       ).run(failureKind, runId);
+      try {
+        recordLeadCycleFailed(db, {
+          runId,
+          processStatus,
+          status: res?.status || run?.status || "error",
+          failureKind,
+          errorText: res?.error || run?.error_text || null,
+          costUsd: res?.costUsd ?? res?.cost_usd ?? run?.cost_usd ?? null,
+          endedAt: Date.now(),
+        });
+      } catch (err) {
+        logger?.warn?.({ err: err.message, runId }, "lead cycle timeline failure write failed");
+      }
       postSystemComment(taskId, `Lead cycle did not produce a valid worklab.lead_cycle.v1 result (${failureKind}).`);
       broker?.broadcast?.("global", {
         type: "lead_cycle_failed",
@@ -1876,6 +1962,8 @@ export function createTaskWatcher({
     }
 
     const tasksAssigned = applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead });
+    let tasksCreated = 0;
+    let notesPosted = 0;
 
     // Apply task_creations as subtasks of the synthetic root. Reuse the
     // standard delegation pipeline so cycle detection, agent enablement,
@@ -1901,6 +1989,7 @@ export function createTaskWatcher({
             replaceExistingEdges: false,
             childTeamId: teamId,
           });
+          tasksCreated = children.length;
           maybeRunDelegatedChildren(taskId, children);
         }
       } catch (err) {
@@ -1925,6 +2014,7 @@ export function createTaskWatcher({
         : note.kind === "warning" ? "Lead cycle warning"
         : "Lead cycle suggestion";
       postSystemComment(target, `${prefix}: ${String(note.content || "").trim()}`);
+      notesPosted += 1;
     }
 
     // Update synthetic-root metadata. is_team_root rows aren't part of the
@@ -1944,6 +2034,21 @@ export function createTaskWatcher({
       validationSummary: finalLead.validation_summary || "",
       now,
     });
+    try {
+      recordLeadCycleCompleted(db, {
+        runId,
+        result: finalLead,
+        processStatus,
+        status: res?.status || run?.status || "complete",
+        costUsd: res?.costUsd ?? res?.cost_usd ?? run?.cost_usd ?? null,
+        tasksCreated,
+        tasksAssigned,
+        notesPosted,
+        endedAt: now,
+      });
+    } catch (err) {
+      logger?.warn?.({ err: err.message, runId }, "lead cycle timeline completion write failed");
+    }
     if (teamId) {
       try {
         db.prepare("UPDATE teams SET last_lead_cycle_at = ? WHERE id = ?").run(now, teamId);
@@ -1968,7 +2073,7 @@ export function createTaskWatcher({
       project_id: projectId,
       run_id: runId,
       goal_status: goalStatus,
-      tasks_created: creations.length,
+      tasks_created: tasksCreated,
       tasks_assigned: tasksAssigned,
     });
     drainQueuedLeadCycleRequest({ teamId, projectId });
@@ -2070,6 +2175,10 @@ export function createTaskWatcher({
   }
 
   async function shutdown({ drainTimeoutMs: overrideDrainMs } = {}) {
+    if (leadCycleFollowupTimer) {
+      clearInterval(leadCycleFollowupTimer);
+      leadCycleFollowupTimer = null;
+    }
     for (const timer of recoveryTimers) clearTimeout(timer);
     recoveryTimers.clear();
     pendingStarts.clear();
@@ -2230,6 +2339,7 @@ export function createTaskWatcher({
     maybeAutoStart: maybeAutoStartTask,
     maybeAutoStartDependents,
     maybeScheduleUnassignedTeamTask,
+    tickLeadCycleFollowups,
     scheduleCoordinatorResumeContinuations,
     get coordinatorResumeBootstrap() { return coordinatorResumeBootstrapPromise; },
     // v33: lead-cycle entry points used by /api/teams/:id/run-lead, the

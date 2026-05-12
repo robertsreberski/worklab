@@ -22,3 +22,5 @@ export const newAssistantMessageId = () => nid21();
 export const newAssistantThreadId = () => nid12();
 export const newPushSubscriptionId = () => nid21();
 export const newTeamId = () => nid12();
+export const newGoalId = () => nid21();
+export const newLeadCycleId = () => nid21();

@@ -113,6 +113,8 @@ export {
   newAutomationRunId,
   newAutomationTriggerId,
   newCommentId,
+  newGoalId,
+  newLeadCycleId,
   newProjectId,
   newRunId,
   newSlackDeliveryId,
@@ -388,6 +390,17 @@ export {
   updateTeamProjectGoal,
   uniqueTeamSlug,
 } from "./teams.js";
+
+export {
+  consumeLeadCycleFollowup,
+  leadCycleFromRow,
+  listDueLeadCycleFollowups,
+  listLeadCyclesForGoal,
+  listMatchingLeadCycleEventFollowups,
+  recordLeadCycleCompleted,
+  recordLeadCycleFailed,
+  recordLeadCycleStarted,
+} from "./goals.js";
 
 export {
   findRepositoryGitRoot,

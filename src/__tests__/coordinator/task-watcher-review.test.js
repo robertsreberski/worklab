@@ -1237,4 +1237,100 @@ describe("task-watcher v2 workflow", () => {
 
     await waitFor(() => spawn.mock.calls.length === 2);
   });
+
+  it("persists lead-cycle timeline rows and arms timed next review hints", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+
+    await waitFor(() => db.prepare("SELECT COUNT(*) AS c FROM lead_cycles WHERE run_id = ?").get(lead.runId).c === 1);
+    const started = db.prepare("SELECT goal_id, run_id, reason, process_status, status FROM lead_cycles WHERE run_id = ?").get(lead.runId);
+    expect(started).toMatchObject({
+      run_id: lead.runId,
+      reason: "manual",
+      process_status: "running",
+      status: "running",
+    });
+    expect(started.goal_id).toBe(lead.taskId);
+
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "cycle complete",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "Still moving.",
+        summary: "Reviewed the goal.",
+        checkpoint_note: "Next review should be automatic.",
+        validation_summary: "No verification yet.",
+        task_creations: [],
+        task_assignments: [],
+        advisory_notes: [],
+        next_review_hint: { after_minutes: 10, after_event: "task_completed" },
+      },
+    });
+    await waitFor(() => db.prepare("SELECT process_status FROM lead_cycles WHERE run_id = ?").get(lead.runId).process_status === "succeeded");
+
+    const completed = db.prepare(`
+      SELECT process_status, goal_status, summary, checkpoint_note, next_review_due_at, next_review_event
+      FROM lead_cycles
+      WHERE run_id = ?
+    `).get(lead.runId);
+    expect(completed).toMatchObject({
+      process_status: "succeeded",
+      goal_status: "in_progress",
+      summary: "Reviewed the goal.",
+      checkpoint_note: "Next review should be automatic.",
+      next_review_event: "task_completed",
+    });
+    expect(completed.next_review_due_at).toEqual(expect.any(Number));
+  });
+
+  it("starts one follow-up lead cycle when a next_review_hint becomes due", async () => {
+    const db = makeTestDb();
+    const { teamId, projectId } = seedTeamProject(db);
+    const { spawn, resolvers } = makeDeferredSpawn();
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    const lead = watcher.spawnLeadCycle({ teamId, projectId, reason: "manual" });
+    expect(lead.ok).toBe(true);
+    resolvers[0]({
+      exitCode: 0,
+      status: "complete",
+      processStatus: "succeeded",
+      finalText: "cycle complete",
+      leadCycleResult: {
+        schema: "worklab.lead_cycle.v1",
+        goal_status: "in_progress",
+        goal_status_reason: "",
+        summary: "Schedule a timed follow-up.",
+        task_creations: [],
+        task_assignments: [],
+        advisory_notes: [],
+        next_review_hint: { after_minutes: 1, after_event: null },
+      },
+    });
+    await waitFor(() => db.prepare("SELECT process_status FROM lead_cycles WHERE run_id = ?").get(lead.runId).process_status === "succeeded");
+    db.prepare("UPDATE task_runs SET process_status = 'succeeded', status = 'complete', ended_at = ? WHERE id = ?")
+      .run(Date.now(), lead.runId);
+    const due = db.prepare("SELECT next_review_due_at FROM lead_cycles WHERE run_id = ?").get(lead.runId).next_review_due_at;
+
+    const out = watcher.tickLeadCycleFollowups(due + 1);
+
+    expect(out).toMatchObject({ checked: 1, started: 1, skipped: 0 });
+    expect(spawn).toHaveBeenCalledTimes(2);
+    const followup = db.prepare("SELECT reason, process_status, next_review_consumed_at FROM lead_cycles WHERE run_id <> ?").get(lead.runId);
+    expect(followup).toMatchObject({
+      reason: "review_due",
+      process_status: "running",
+    });
+    expect(db.prepare("SELECT next_review_consumed_at FROM lead_cycles WHERE run_id = ?").get(lead.runId).next_review_consumed_at)
+      .toEqual(expect.any(Number));
+  });
 });
