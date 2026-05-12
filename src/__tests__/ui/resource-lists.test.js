@@ -266,6 +266,7 @@ describe("resource list helpers", () => {
     const toolbar = source("src/ui/src/components/ResourceListToolbar.jsx");
     const styles = source("src/ui/src/styles.css");
     const scopeRule = cssRule(styles, ".resource-toolbar-scope-tabs");
+    const libraryPageRule = cssRule(styles, ".resource-tab-page");
 
     expect(library).toContain("scopeTabs={scopeTabs}");
     expect(library).not.toContain("library-tabs-desktop");
@@ -273,6 +274,8 @@ describe("resource list helpers", () => {
     expect(toolbar).toContain("resource-toolbar-scope-tabs");
     expect(scopeRule).toContain("grid-area: scope");
     expect(scopeRule).toContain("display: flex");
+    expect(libraryPageRule).toContain("gap: 0");
+    expect(libraryPageRule).toContain("padding: 0");
   });
 
   it("exposes knowledge sort modes through the compact configuration surface", () => {

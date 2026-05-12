@@ -7035,13 +7035,13 @@ html.assistant-resizing * {
 .resource-tab-page {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
+  gap: 0;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
   max-width: none;
   margin: 0;
-  padding: var(--sp-5) var(--sp-6);
+  padding: 0;
 }
 .library-tab-body {
   display: flex;

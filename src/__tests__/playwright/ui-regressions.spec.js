@@ -4947,6 +4947,59 @@ test("desktop Settings routes fill the available app body width", async ({ page 
   }
 });
 
+test("desktop Library resource list routes align with Projects shell edges", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  for (const route of [
+    { hash: "#/projects", label: "projects" },
+    { hash: "#/library/agents", label: "agents" },
+    { hash: "#/library/teams", label: "teams" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-list")).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const appMain = document.querySelector(".app-main");
+      const shell = document.querySelector(".library-tab-body") || document.querySelector(".app-main > .two-pane");
+      const pane = document.querySelector(".two-pane");
+      const list = document.querySelector(".pane-list");
+      const head = document.querySelector(".pane-list-head");
+      const toolbar = document.querySelector(".resource-toolbar");
+      const mainRect = appMain?.getBoundingClientRect();
+      const shellRect = shell?.getBoundingClientRect();
+      const paneRect = pane?.getBoundingClientRect();
+      const listRect = list?.getBoundingClientRect();
+      const headRect = head?.getBoundingClientRect();
+      const toolbarRect = toolbar?.getBoundingClientRect();
+      return {
+        mainLeft: mainRect ? Math.round(mainRect.left) : -1,
+        mainRight: mainRect ? Math.round(mainRect.right) : -1,
+        shellLeft: shellRect ? Math.round(shellRect.left) : -1,
+        shellRight: shellRect ? Math.round(shellRect.right) : -1,
+        paneLeft: paneRect ? Math.round(paneRect.left) : -1,
+        paneRight: paneRect ? Math.round(paneRect.right) : -1,
+        listLeft: listRect ? Math.round(listRect.left) : -1,
+        listRight: listRect ? Math.round(listRect.right) : -1,
+        headLeft: headRect ? Math.round(headRect.left) : -1,
+        headRight: headRect ? Math.round(headRect.right) : -1,
+        toolbarLeft: toolbarRect ? Math.round(toolbarRect.left) : -1,
+        toolbarRight: toolbarRect ? Math.round(toolbarRect.right) : -1,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.shellLeft, `${route.label} shell left`).toBe(metrics.mainLeft);
+    expect(metrics.shellRight, `${route.label} shell right`).toBe(metrics.mainRight);
+    expect(metrics.paneLeft, `${route.label} pane left`).toBe(metrics.mainLeft);
+    expect(metrics.paneRight, `${route.label} pane right`).toBe(metrics.mainRight);
+    expect(metrics.listLeft, `${route.label} list left`).toBe(metrics.mainLeft);
+    expect(metrics.listRight, `${route.label} list right`).toBe(metrics.mainRight);
+    expect(metrics.headLeft, `${route.label} head left`).toBe(metrics.mainLeft);
+    expect(metrics.headRight, `${route.label} head right`).toBe(metrics.mainRight);
+    expect(metrics.toolbarLeft, `${route.label} toolbar left`).toBe(metrics.mainLeft);
+    expect(metrics.toolbarRight, `${route.label} toolbar right`).toBe(metrics.mainRight);
+    expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
+  }
+});
+
 test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/runs`);
