@@ -183,6 +183,7 @@ describe("Goals route helpers", () => {
     }, { now: 1000 });
 
     expect(summary.latest.summary).toBe("Pruned and focused the next pass.");
+    expect(summary.latestDecision).toBe("Pruned and focused the next pass.");
     expect(summary.stateStrip.map((item) => item.label)).toEqual(["State", "Definition", "Last cycle", "Next review"]);
     expect(summary.ledger.map((item) => [item.key, item.value])).toEqual([
       ["created", 2],
@@ -192,5 +193,21 @@ describe("Goals route helpers", () => {
       ["noted", 1],
     ]);
     expect(summary.leadTasks[0]).toMatchObject({ task_key: "T-42", title: "Run smoke" });
+  });
+
+  it("falls back to checkpoint text for the cockpit latest decision", () => {
+    const summary = goalCockpitSummary({
+      goal_status: "in_progress",
+      readiness: { ready: true, missing: [] },
+      cycles: [{
+        id: "run-1",
+        process_status: "succeeded",
+        checkpoint_note: "Keep the existing owners moving; no new delegation.",
+        validation_summary: "Checked child task state.",
+      }],
+    }, { now: 1000 });
+
+    expect(summary.latestDecision).toBe("Keep the existing owners moving; no new delegation.");
+    expect(summary.latestDetails).toEqual(["Checked child task state."]);
   });
 });

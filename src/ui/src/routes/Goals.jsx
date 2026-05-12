@@ -182,6 +182,17 @@ function deletionRows(cycle = {}) {
   return Array.isArray(cycle.task_deletions) ? cycle.task_deletions : [];
 }
 
+function leadCycleDecisionText(cycle = {}) {
+  return text(cycle.summary || cycle.checkpoint_note || cycle.validation_summary);
+}
+
+function leadCycleDetailTexts(cycle = {}, decision = "") {
+  return [cycle.checkpoint_note, cycle.validation_summary]
+    .map((item) => text(item))
+    .filter(Boolean)
+    .filter((item, index, items) => item !== decision && items.indexOf(item) === index);
+}
+
 export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
   const source = Array.isArray(goal?.cycles) && goal.cycles.length
     ? goal.cycles
@@ -223,8 +234,11 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
   const readiness = goal?.readiness || goalReadiness(goal);
   const nextReview = latest?.review_label || "Not scheduled";
   const leadTasks = Array.isArray(goal?.lead_tasks) ? goal.lead_tasks : [];
+  const latestDecision = latest ? leadCycleDecisionText(latest) : "";
   return {
     latest,
+    latestDecision,
+    latestDetails: latest ? leadCycleDetailTexts(latest, latestDecision) : [],
     leadTasks,
     stateStrip: [
       { label: "State", value: goalStatusLabel(goal) },
@@ -459,10 +473,11 @@ function LeadCycleCockpit({ goal }) {
         <div class="goal-cockpit-decision">
           <div>
             <span class="muted">Latest decision</span>
-            <strong>{cockpit.latest?.summary || "No lead-cycle decision yet."}</strong>
+            <strong>{cockpit.latestDecision || "No lead-cycle decision yet."}</strong>
           </div>
-          {cockpit.latest?.checkpoint_note ? <p>{cockpit.latest.checkpoint_note}</p> : null}
-          {cockpit.latest?.validation_summary ? <p class="muted">{cockpit.latest.validation_summary}</p> : null}
+          {cockpit.latestDetails.map((detail, index) => (
+            <p key={detail} class={index > 0 ? "muted" : undefined}>{detail}</p>
+          ))}
         </div>
         <div class="goal-cockpit-ledger" aria-label="Lead cycle task changes">
           {cockpit.ledger.map((item) => (
