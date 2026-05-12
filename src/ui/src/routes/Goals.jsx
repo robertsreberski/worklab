@@ -475,15 +475,15 @@ function LeadCycleCockpit({ goal }) {
         <div class="goal-cockpit-decision">
           <div>
             <span class="muted">Latest decision</span>
-            <strong>{cockpit.latestDecision || "No lead-cycle decision yet."}</strong>
+            <strong title={cockpit.latestDecision || undefined}>{cockpit.latestDecision || "No lead-cycle decision yet."}</strong>
           </div>
           {cockpit.latestDetails.map((detail, index) => (
-            <p key={detail} class={index > 0 ? "muted" : undefined}>{detail}</p>
+            <p key={detail} class={index > 0 ? "muted" : undefined} title={detail}>{detail}</p>
           ))}
         </div>
         <div class="goal-cockpit-ledger" aria-label="Lead cycle task changes">
           {cockpit.ledger.map((item) => (
-            <div class={`goal-cockpit-ledger-item is-${item.key}`} key={item.key}>
+            <div class={`goal-cockpit-ledger-item is-${item.key}${item.value > 0 ? " has-value" : ""}`} key={item.key}>
               <span>{item.label}</span>
               <strong>{item.value}</strong>
             </div>
