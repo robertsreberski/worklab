@@ -2,7 +2,7 @@ import { Icon } from "../Icon.jsx";
 
 export const TASK_STAGE_META = {
   plan: { label: "Plan", tone: "var(--accent)", icon: "circle-dot" },
-  execute: { label: "Execute", tone: "var(--status-todo)", icon: "circle" },
+  execute: { label: "Execute", tone: "var(--status-progress)", icon: "circle" },
   running: { label: "Running", tone: "var(--status-progress)", icon: "zap" },
   review: { label: "Review", tone: "var(--status-review)", icon: "diamond" },
   awaiting_user: { label: "Needs input", tone: "var(--status-error)", icon: "alert-triangle" },

@@ -135,7 +135,7 @@ function DailyCostChip() {
 
 export const STAGE_GROUPS = [
   { key: "plan",            label: "Plan",        color: "var(--accent)",          icon: "◉" },
-  { key: "execute",         label: "Execute",     color: "var(--status-todo)",     icon: "○" },
+  { key: "execute",         label: "Execute",     color: "var(--status-progress)", icon: "○" },
   { key: "review",          label: "Review",      color: "var(--status-review)",   icon: "◆" },
   { key: "awaiting_children", label: "Waiting",   color: "var(--status-progress)", icon: "□" },
   { key: "awaiting_user",   label: "Needs input", color: "var(--status-error)",    icon: "▲" },

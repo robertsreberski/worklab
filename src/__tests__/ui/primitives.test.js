@@ -11,7 +11,9 @@ describe("statusMeta", () => {
   });
 
   it("returns semantic colors", () => {
-    expect(statusMeta("execute").color).toBe("var(--status-todo)");
+    expect(statusMeta("plan").color).toBe("var(--accent)");
+    expect(statusMeta("execute").color).toBe("var(--status-progress)");
+    expect(statusMeta("execute").color).not.toBe(statusMeta("plan").color);
     expect(statusMeta("running").color).toBe("var(--status-progress)");
     expect(statusMeta("done").color).toBe("var(--status-done)");
     expect(statusMeta("error").color).toBe("var(--status-error)");

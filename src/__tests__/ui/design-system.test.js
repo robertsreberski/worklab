@@ -813,6 +813,18 @@ describe("design system stylesheet", () => {
     expect(css).not.toMatch(/\bpulse-dot\b/);
   });
 
+  it("keeps selected stage-grid styling tied to the stage tone", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const activeRule = declarationsForSelector(css, ".stage-token-grid.active");
+    const activeGlyphRule = declarationsForSelector(css, ".stage-token-grid.active .stage-token-glyph");
+    const selectionRule = declarationsForSelector(css, ".stage-token-selection");
+    expect(activeRule).toMatch(/border-color:\s*var\(--stage-tone\)/);
+    expect(activeRule).toMatch(/color-mix\(in srgb,\s*var\(--stage-tone\)/);
+    expect(activeGlyphRule).toMatch(/background:\s*var\(--stage-tone\)/);
+    expect(activeGlyphRule).toMatch(/color-mix\(in srgb,\s*var\(--stage-tone\)/);
+    expect(selectionRule).toMatch(/color:\s*var\(--stage-tone\)/);
+  });
+
   it("does not reference undefined static custom properties", () => {
     const css = readFileSync(stylesPath, "utf8");
     const declared = new Set([...css.matchAll(/(--[a-zA-Z0-9_-]+)\s*:/g)].map((match) => match[1]));
