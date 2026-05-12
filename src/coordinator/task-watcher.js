@@ -7,6 +7,7 @@ import { appendFileSync } from "node:fs";
 import { newCommentId, newTaskId } from "../core/ids.js";
 import { parseVerdict } from "../core/review.js";
 import { formatWorklabResultText, stripWorklabResultJson, synthesizeWorklabResult } from "../core/worklab-result/contract.js";
+import { normalizeLeadTaskTitle } from "../core/worklab-result/lead-cycle-contract.js";
 import { applyTaskSideEffects, taskStage } from "../core/task-side-effects.js";
 import {
   reconcileRequiredChildBlockedParents,
@@ -1416,6 +1417,10 @@ export function createTaskWatcher({
     const now = Date.now();
     const warnings = [];
     const replaceExistingEdges = options.replaceExistingEdges !== false;
+    const childRunPolicy = options.childRunPolicy || parentTask.run_policy || "manual";
+    const childTags = Array.isArray(options.childTags) && options.childTags.length
+      ? options.childTags
+      : ["delegated"];
     const childTeamId = Object.prototype.hasOwnProperty.call(options, "childTeamId")
       ? (options.childTeamId || null)
       : (parentTask.team_id || null);
@@ -1483,11 +1488,11 @@ export function createTaskWatcher({
           childTeamId,
           subtask.title.trim(),
           instructions,
-          parentTask.run_policy || "manual",
+          childRunPolicy,
           subtaskOrderOffset + index,
           required,
           parentTask.reviewer_agent || null,
-          JSON.stringify(["delegated"]),
+          JSON.stringify(childTags),
           now,
           now,
         );
@@ -1554,9 +1559,9 @@ export function createTaskWatcher({
     return !!db.prepare("SELECT 1 FROM task_runs WHERE task_id = ? LIMIT 1").get(taskId);
   }
 
-  function scheduleDelegatedChildren(parentTaskId, children = null) {
+  function scheduleDelegatedChildren(parentTaskId, children = null, options = {}) {
     const settings = readSettings(db);
-    if (settings.delegation_auto_run_children === false) return;
+    if (!options.force && settings.delegation_auto_run_children === false) return;
     const candidates = children || delegatedChildRows(parentTaskId);
     const childIds = new Set(delegatedChildRows(parentTaskId).map((child) => child.id));
     const activeCount = [...childIds].filter((id) => active.has(id) || pendingStarts.has(id)).length;
@@ -1577,8 +1582,8 @@ export function createTaskWatcher({
     }
   }
 
-  function maybeRunDelegatedChildren(parentTaskId, children) {
-    scheduleDelegatedChildren(parentTaskId, children);
+  function maybeRunDelegatedChildren(parentTaskId, children, options = {}) {
+    scheduleDelegatedChildren(parentTaskId, children, options);
   }
 
   function maybeRunMoreDelegatedSiblings(childTaskId) {
@@ -1589,8 +1594,10 @@ export function createTaskWatcher({
       WHERE e.child_task_id = ? AND e.edge_type = 'subtask'
     `).all(childTaskId);
     for (const parent of parents) {
-      const row = db.prepare("SELECT stage FROM tasks WHERE id = ?").get(parent.id);
-      if (taskStage(row) === "awaiting_children") scheduleDelegatedChildren(parent.id);
+      const row = db.prepare("SELECT stage, is_team_root FROM tasks WHERE id = ?").get(parent.id);
+      if (row?.is_team_root || taskStage(row) === "awaiting_children") {
+        scheduleDelegatedChildren(parent.id, null, { force: !!row?.is_team_root });
+      }
     }
   }
 
@@ -1682,6 +1689,157 @@ export function createTaskWatcher({
       postSystemComment(taskId, `Lead cycle task_assignments skipped:\n- ${skipped.join("\n- ")}`);
     }
     return assigned;
+  }
+
+  function leadCycleExistingTitleIndex({ taskId, teamId, projectId }) {
+    if (!projectId) return new Set();
+    const rows = db.prepare(`
+      SELECT title
+      FROM tasks
+      WHERE project_id = ?
+        AND COALESCE(is_team_root, 0) = 0
+        AND (? IS NULL OR team_id = ? OR team_id IS NULL)
+        AND id <> ?
+    `).all(projectId, teamId || null, teamId || null, taskId);
+    return new Set(rows.map((row) => normalizeLeadTaskTitle(row.title)).filter(Boolean));
+  }
+
+  function filterDuplicateLeadCreations({ taskId, teamId, projectId, creations }) {
+    const existingTitles = leadCycleExistingTitleIndex({ taskId, teamId, projectId });
+    const accepted = [];
+    const skipped = [];
+    for (const item of creations || []) {
+      const title = String(item?.title || "").trim();
+      if (!title) continue;
+      const normalized = normalizeLeadTaskTitle(title);
+      if (normalized && existingTitles.has(normalized)) {
+        skipped.push(`${title}: duplicates existing task in this team/project`);
+        continue;
+      }
+      if (normalized) existingTitles.add(normalized);
+      accepted.push(item);
+    }
+    return { accepted, skipped };
+  }
+
+  function taskHasActiveRun(taskId) {
+    if (active.has(taskId) || pendingStarts.has(taskId)) return true;
+    const rows = db.prepare(`
+      SELECT process_status, status, ended_at
+      FROM task_runs
+      WHERE task_id = ?
+    `).all(taskId);
+    return rows.some((row) => {
+      const processStatus = String(row.process_status || row.status || "running");
+      const status = String(row.status || row.process_status || "running");
+      return processStatus === "queued"
+        || processStatus === "running"
+        || (row.ended_at == null && (status === "queued" || status === "running"));
+    });
+  }
+
+  function applyLeadCycleDeletions({ taskId, teamId, projectId, finalLead }) {
+    const deletions = Array.isArray(finalLead?.task_deletions) ? finalLead.task_deletions : [];
+    if (!deletions.length) return { count: 0, tombstones: [] };
+
+    const skipped = [];
+    const tombstones = [];
+    const seen = new Set();
+
+    for (const deletion of deletions) {
+      const targetId = String(deletion?.target_task_id || "").trim();
+      const rationale = String(deletion?.rationale || "").trim();
+      if (!targetId || seen.has(targetId)) continue;
+      seen.add(targetId);
+
+      const target = getTaskById(db, targetId);
+      if (!target) {
+        skipped.push(`${targetId}: task not found`);
+        continue;
+      }
+      if (target.id === taskId || target.is_team_root) {
+        skipped.push(`${target.task_key || target.id}: team root cannot be deleted`);
+        continue;
+      }
+      if ((target.project_id || null) !== projectId) {
+        skipped.push(`${target.task_key || target.id}: outside lead-cycle project`);
+        continue;
+      }
+      if (teamId && effectiveTeamForTask(db, target) !== teamId) {
+        skipped.push(`${target.task_key || target.id}: outside team scope`);
+        continue;
+      }
+      const edge = db.prepare(`
+        SELECT e.created_by_run_id, r.kind AS creator_kind, r.task_id AS creator_task_id,
+               r.team_id AS creator_team_id, r.project_id AS creator_project_id
+        FROM task_edges e
+        LEFT JOIN task_runs r ON r.id = e.created_by_run_id
+        WHERE e.parent_task_id = ?
+          AND e.child_task_id = ?
+          AND e.edge_type = 'subtask'
+        LIMIT 1
+      `).get(taskId, targetId);
+      if (!edge || edge.creator_kind !== "lead_cycle" || edge.creator_task_id !== taskId
+        || (teamId && edge.creator_team_id !== teamId)
+        || (projectId && edge.creator_project_id !== projectId)) {
+        skipped.push(`${target.task_key || target.id}: not lead-cycle-created for this goal`);
+        continue;
+      }
+      if (taskStage(target) === "done") {
+        skipped.push(`${target.task_key || target.id}: already done`);
+        continue;
+      }
+      if (taskHasActiveRun(targetId)) {
+        skipped.push(`${target.task_key || target.id}: has active run`);
+        continue;
+      }
+      const childCount = Number(db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM task_edges
+        WHERE parent_task_id = ?
+          AND edge_type = 'subtask'
+      `).get(targetId)?.count || 0);
+      if (childCount > 0) {
+        skipped.push(`${target.task_key || target.id}: has child subtasks`);
+        continue;
+      }
+
+      tombstones.push({
+        target_task_id: target.id,
+        task_key: target.task_key || null,
+        title: target.title || "",
+        owner_agent: target.owner_agent || null,
+        stage: taskStage(target),
+        rationale,
+      });
+    }
+
+    if (tombstones.length) {
+      const tx = db.transaction(() => {
+        for (const tombstone of tombstones) {
+          db.prepare("DELETE FROM tasks WHERE id = ?").run(tombstone.target_task_id);
+        }
+      });
+      tx();
+      const lines = tombstones.map((item) => {
+        const ref = item.task_key || item.target_task_id;
+        return `- ${ref}: ${item.title}${item.rationale ? ` - ${item.rationale}` : ""}`;
+      });
+      postSystemComment(taskId, `Lead cycle deleted ${tombstones.length} lead-created task${tombstones.length === 1 ? "" : "s"}:\n${lines.join("\n")}`);
+      for (const tombstone of tombstones) {
+        broker?.broadcast?.("global", {
+          type: "task_deleted",
+          id: tombstone.target_task_id,
+          taskKey: tombstone.task_key || null,
+        });
+      }
+      broker?.broadcast?.("global", { type: "task_updated", id: taskId });
+    }
+
+    if (skipped.length) {
+      postSystemComment(taskId, `Lead cycle task_deletions skipped:\n- ${skipped.join("\n- ")}`);
+    }
+    return { count: tombstones.length, tombstones };
   }
 
   async function handleSuccessfulExit(taskId, runId, res, task, run) {
@@ -1961,6 +2119,7 @@ export function createTaskWatcher({
       return;
     }
 
+    const deletionResult = applyLeadCycleDeletions({ taskId, teamId, projectId, finalLead });
     const tasksAssigned = applyLeadCycleAssignments({ taskId, teamId, projectId, finalLead });
     let tasksCreated = 0;
     let notesPosted = 0;
@@ -1968,7 +2127,16 @@ export function createTaskWatcher({
     // Apply task_creations as subtasks of the synthetic root. Reuse the
     // standard delegation pipeline so cycle detection, agent enablement,
     // and parent-context wiring all behave identically to a normal delegate.
-    const creations = Array.isArray(finalLead.task_creations) ? finalLead.task_creations : [];
+    const rawCreations = Array.isArray(finalLead.task_creations) ? finalLead.task_creations : [];
+    const { accepted: creations, skipped: skippedCreations } = filterDuplicateLeadCreations({
+      taskId,
+      teamId,
+      projectId,
+      creations: rawCreations,
+    });
+    if (skippedCreations.length) {
+      postSystemComment(taskId, `Lead cycle task_creations skipped:\n- ${skippedCreations.join("\n- ")}`);
+    }
     if (creations.length) {
       const subtasks = creations.map((item) => ({
         title: String(item?.title || "").trim(),
@@ -1988,9 +2156,11 @@ export function createTaskWatcher({
             parentResult: { summary: finalLead.summary, details: finalLead.goal_status_reason || "" },
             replaceExistingEdges: false,
             childTeamId: teamId,
+            childRunPolicy: AUTO_RUN_POLICY,
+            childTags: ["delegated", "lead-cycle"],
           });
           tasksCreated = children.length;
-          maybeRunDelegatedChildren(taskId, children);
+          maybeRunDelegatedChildren(taskId, children, { force: true });
         }
       } catch (err) {
         logger?.warn?.({ err: err.message, runId }, "lead-cycle delegation failed");
@@ -2037,12 +2207,13 @@ export function createTaskWatcher({
     try {
       recordLeadCycleCompleted(db, {
         runId,
-        result: finalLead,
+        result: { ...finalLead, task_deletions: deletionResult.tombstones },
         processStatus,
         status: res?.status || run?.status || "complete",
         costUsd: res?.costUsd ?? res?.cost_usd ?? run?.cost_usd ?? null,
         tasksCreated,
         tasksAssigned,
+        tasksDeleted: deletionResult.count,
         notesPosted,
         endedAt: now,
       });
@@ -2075,6 +2246,7 @@ export function createTaskWatcher({
       goal_status: goalStatus,
       tasks_created: tasksCreated,
       tasks_assigned: tasksAssigned,
+      tasks_deleted: deletionResult.count,
     });
     drainQueuedLeadCycleRequest({ teamId, projectId });
   }
