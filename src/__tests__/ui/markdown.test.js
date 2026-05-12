@@ -75,6 +75,37 @@ describe("renderMarkdown mentions", () => {
 });
 
 describe("renderMarkdown", () => {
+  it("renders internal Worklab entity links as mention-style badges", () => {
+    const html = renderMarkdown([
+      "[Triager](#/library/agents/triager)",
+      "[Knowledge Entry](#/library/knowledge/entry-1)",
+      "[Skill](#/library/skills/ui-polish)",
+      "[Team](#/library/teams/core-platform)",
+      "[Project](#/projects/project-1)",
+      "[Task](#/tasks/task-1)",
+      "[Goal](#/goals/goal-1)",
+      "[Latest Run](#/tasks/task-1?run=run-1)",
+    ].join(" "));
+
+    expect(html).toContain('entity-badge--agent" data-kind="agent" href="#/library/agents/triager"');
+    expect(html).toContain('<span class="badge-token-label">Triager</span>');
+    expect(html).toContain('entity-badge--kb" data-kind="kb" href="#/library/knowledge/entry-1"');
+    expect(html).toContain('<span class="badge-token-label">Knowledge Entry</span>');
+    expect(html).toContain('entity-badge--skill" data-kind="skill" href="#/library/skills/ui-polish"');
+    expect(html).toContain('entity-badge--team" data-kind="team" href="#/library/teams/core-platform"');
+    expect(html).toContain('entity-badge--project" data-kind="project" href="#/projects/project-1"');
+    expect(html).toContain('entity-badge--task" data-kind="task" href="#/tasks/task-1"');
+    expect(html).toContain('entity-badge--goal" data-kind="goal" href="#/goals/goal-1"');
+    expect(html).toContain('entity-badge--run" data-kind="run" href="#/tasks/task-1?run=run-1"');
+  });
+
+  it("keeps non-entity hash links as normal anchors", () => {
+    const html = renderMarkdown("[Jump](#main)");
+
+    expect(html).toContain('<a href="#main">Jump</a>');
+    expect(html).not.toContain("entity-badge");
+  });
+
   it("renders headings, emphasis, lists, and tables used in task comments", () => {
     const html = renderMarkdown("# Heading\n\n**bold** text\n\n- one\n- two\n\n| A | B |\n| --- | --- |\n| 1 | 2 |");
 

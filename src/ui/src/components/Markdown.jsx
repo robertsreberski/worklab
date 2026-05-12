@@ -3,7 +3,8 @@
 //
 // Cross-entity mentions: pass `{ mentions: { token: ResolvedMention } }` to
 // renderMarkdown / MarkdownContent and `@agent/...`-style tokens swap for
-// clickable badges via the same hash routes as the rest of the app.
+// clickable badges via the same hash routes as the rest of the app. Markdown
+// links to Worklab entity routes render with the same badge treatment.
 
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { iconSvgMarkup } from "./Icon.jsx";
@@ -178,10 +179,65 @@ function safeHref(url) {
 
 function renderAnchor(href, label) {
   const safe = safeHref(href);
+  const entity = entityLinkFromHref(safe, label);
+  if (entity) return renderEntityBadge(entity);
   const externalAttrs = /^(https?:|mailto:|tel:)/i.test(safe)
     ? ' target="_blank" rel="noopener noreferrer"'
     : "";
   return `<a href="${safe}"${externalAttrs}>${label}</a>`;
+}
+
+function entityLinkFromHref(href, labelHtml) {
+  const safe = String(href || "").trim();
+  const routeHref = safe.startsWith("#/")
+    ? safe
+    : safe.startsWith("/#/")
+      ? safe.slice(1)
+      : null;
+  if (!routeHref) return null;
+
+  const raw = routeHref.replace(/^#\/?/, "").replace(/&amp;/g, "&");
+  const queryIndex = raw.indexOf("?");
+  const pathPart = queryIndex === -1 ? raw : raw.slice(0, queryIndex);
+  const queryString = queryIndex === -1 ? "" : raw.slice(queryIndex + 1);
+  const segments = pathPart.split("/").filter(Boolean).map(safeDecode);
+  const query = new URLSearchParams(queryString);
+
+  if (segments[0] === "library" && segments[2]) {
+    if (segments[1] === "agents") return entityLink("agent", segments[2], safe, labelHtml);
+    if (segments[1] === "knowledge") return entityLink("kb", segments[2], safe, labelHtml);
+    if (segments[1] === "skills") return entityLink("skill", segments[2], safe, labelHtml);
+    if (segments[1] === "teams") return entityLink("team", segments[2], safe, labelHtml);
+  }
+  if (segments[0] === "projects" && segments[1]) return entityLink("project", segments[1], safe, labelHtml);
+  if (segments[0] === "goals" && segments[1]) return entityLink("goal", segments[1], safe, labelHtml);
+  if (segments[0] === "tasks" && segments[1]) {
+    const runId = query.get("run");
+    if (runId) return entityLink("run", runId, safe, labelHtml);
+    return entityLink("task", segments[1], safe, labelHtml);
+  }
+  return null;
+}
+
+function safeDecode(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function entityLink(type, id, href, labelHtml) {
+  const normalizedType = normalizeEntityBadgeKind(type);
+  const display = String(labelHtml || "").trim()
+    || escapeHtml(entityBadgeLabel({ type: normalizedType, id }));
+  return {
+    type: normalizedType,
+    id,
+    href,
+    labelHtml: display,
+    title: [entityBadgeMeta(normalizedType).label, id].filter(Boolean).join(": "),
+  };
 }
 
 function renderInline(text, ctx = {}) {
@@ -234,21 +290,32 @@ function renderMentionBadge(token, type, id, mentions) {
   const meta = hasMap ? mentions[token] : null;
   const isMissing = hasMap && (!meta || meta.exists === false);
   const normalizedType = normalizeEntityBadgeKind(type);
-  const badgeMeta = entityBadgeMeta(normalizedType);
   const label = entityBadgeLabel({ label: meta?.label, token: meta?.label ? null : token, type: normalizedType, id });
   const cls = `badge-token badge-token-sm entity-badge entity-badge--${normalizedType}${isMissing ? " entity-badge--missing" : ""}`;
-  const icon = badgeMeta.icon ? iconSvgMarkup(badgeMeta.icon, { size: 12, className: "badge-token-icon" }) : "";
-  const leading = icon ? `<span class="badge-token-leading" aria-hidden="true">${icon}</span>` : "";
-  const glyph = !leading && badgeMeta.glyph
-    ? `<span class="badge-token-glyph" aria-hidden="true">${escapeHtml(badgeMeta.glyph)}</span>`
-    : "";
-  const body = `${leading || glyph}<span class="badge-token-label">${escapeHtml(label)}</span>`;
+  const body = renderEntityBadgeBody(normalizedType, escapeHtml(label));
   if (isMissing || !meta?.href) {
     const tooltip = isMissing ? "Mention target no longer exists" : token;
     return `<span class="${cls}" data-kind="${escapeHtml(normalizedType)}" title="${escapeHtml(tooltip)}">${body}</span>`;
   }
   const safe = safeHref(meta.href);
   return `<a class="${cls}" data-kind="${escapeHtml(normalizedType)}" href="${safe}" title="${escapeHtml(token)}">${body}</a>`;
+}
+
+function renderEntityBadge({ type, href, labelHtml, title }) {
+  const normalizedType = normalizeEntityBadgeKind(type);
+  const cls = `badge-token badge-token-sm entity-badge entity-badge--${normalizedType}`;
+  const body = renderEntityBadgeBody(normalizedType, labelHtml);
+  return `<a class="${cls}" data-kind="${escapeHtml(normalizedType)}" href="${href}" title="${escapeHtml(title || "")}">${body}</a>`;
+}
+
+function renderEntityBadgeBody(type, labelHtml) {
+  const badgeMeta = entityBadgeMeta(type);
+  const icon = badgeMeta.icon ? iconSvgMarkup(badgeMeta.icon, { size: 12, className: "badge-token-icon" }) : "";
+  const leading = icon ? `<span class="badge-token-leading" aria-hidden="true">${icon}</span>` : "";
+  const glyph = !leading && badgeMeta.glyph
+    ? `<span class="badge-token-glyph" aria-hidden="true">${escapeHtml(badgeMeta.glyph)}</span>`
+    : "";
+  return `${leading || glyph}<span class="badge-token-label">${labelHtml}</span>`;
 }
 
 function restoreInlinePlaceholders(value, placeholders) {
