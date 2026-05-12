@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildGoalResourceGroups,
+  goalCockpitSummary,
   goalLeadCycleTimeline,
   goalAssignmentState,
   goalDraftFrom,
@@ -140,7 +141,10 @@ describe("Goals route helpers", () => {
         next_review_event: "task_completed",
         tasks_created: 2,
         tasks_assigned: 1,
+        tasks_deleted: 1,
+        tasks_skipped: 1,
         notes_posted: 1,
+        task_deletions: [{ task_key: "T-42", title: "Obsolete lead task", rationale: "Superseded." }],
       }],
     }, { now: 1000 });
 
@@ -152,7 +156,41 @@ describe("Goals route helpers", () => {
       status_variant: "primary",
       review_label: "due in 1m",
       event_label: "after task completed",
-      impact: ["2 created", "1 assigned", "1 noted"],
+      impact: ["2 created", "1 assigned", "1 deleted", "1 skipped", "1 noted"],
+      deletions: [{ task_key: "T-42", title: "Obsolete lead task", rationale: "Superseded." }],
     });
+  });
+
+  it("builds a lead-cycle cockpit summary with ledger and lead-created roster", () => {
+    const summary = goalCockpitSummary({
+      goal_status: "in_progress",
+      last_lead_at: 61_000,
+      readiness: { ready: true, missing: [] },
+      lead_tasks: [
+        { id: "lead-task-1", task_key: "T-42", title: "Run smoke", stage: "execute", owner_agent: "engineer" },
+      ],
+      cycles: [{
+        id: "run-1",
+        process_status: "succeeded",
+        summary: "Pruned and focused the next pass.",
+        checkpoint_note: "One obsolete task removed.",
+        tasks_created: 2,
+        tasks_assigned: 1,
+        tasks_deleted: 1,
+        tasks_skipped: 1,
+        notes_posted: 1,
+      }],
+    }, { now: 1000 });
+
+    expect(summary.latest.summary).toBe("Pruned and focused the next pass.");
+    expect(summary.stateStrip.map((item) => item.label)).toEqual(["State", "Definition", "Last cycle", "Next review"]);
+    expect(summary.ledger.map((item) => [item.key, item.value])).toEqual([
+      ["created", 2],
+      ["assigned", 1],
+      ["deleted", 1],
+      ["skipped", 1],
+      ["noted", 1],
+    ]);
+    expect(summary.leadTasks[0]).toMatchObject({ task_key: "T-42", title: "Run smoke" });
   });
 });

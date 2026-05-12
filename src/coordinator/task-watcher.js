@@ -1713,7 +1713,7 @@ export function createTaskWatcher({
       if (!title) continue;
       const normalized = normalizeLeadTaskTitle(title);
       if (normalized && existingTitles.has(normalized)) {
-        skipped.push(`${title}: duplicates existing task in this team/project`);
+        skipped.push({ title, reason: "duplicates existing task in this team/project" });
         continue;
       }
       if (normalized) existingTitles.add(normalized);
@@ -2135,7 +2135,8 @@ export function createTaskWatcher({
       creations: rawCreations,
     });
     if (skippedCreations.length) {
-      postSystemComment(taskId, `Lead cycle task_creations skipped:\n- ${skippedCreations.join("\n- ")}`);
+      const lines = skippedCreations.map((item) => `${item.title}: ${item.reason}`);
+      postSystemComment(taskId, `Lead cycle task_creations skipped:\n- ${lines.join("\n- ")}`);
     }
     if (creations.length) {
       const subtasks = creations.map((item) => ({
@@ -2214,6 +2215,8 @@ export function createTaskWatcher({
         tasksCreated,
         tasksAssigned,
         tasksDeleted: deletionResult.count,
+        taskCreationSkips: skippedCreations,
+        tasksSkipped: skippedCreations.length,
         notesPosted,
         endedAt: now,
       });

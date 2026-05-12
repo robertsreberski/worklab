@@ -45,6 +45,64 @@ function listUnassignedTeamTasks(db, { teamId, projectId }) {
   `).all(projectId, teamId);
 }
 
+function listSameProjectTasks(db, { rootTaskId, teamId, projectId }) {
+  return db.prepare(`
+    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.updated_at,
+           (
+             SELECT r.summary
+             FROM task_runs r
+             WHERE r.task_id = t.id
+             ORDER BY COALESCE(r.ended_at, r.started_at) DESC
+             LIMIT 1
+           ) AS last_run_summary
+    FROM tasks t
+    WHERE COALESCE(t.is_team_root, 0) = 0
+      AND t.project_id = ?
+      AND (t.team_id = ? OR t.team_id IS NULL)
+      AND t.id <> ?
+    ORDER BY
+      CASE COALESCE(t.stage, 'plan')
+        WHEN 'execute' THEN 0
+        WHEN 'plan' THEN 1
+        WHEN 'review' THEN 2
+        WHEN 'blocked' THEN 3
+        WHEN 'done' THEN 4
+        ELSE 5
+      END,
+      t.updated_at DESC
+    LIMIT 50
+  `).all(projectId, teamId, rootTaskId);
+}
+
+function listDeletableLeadCreatedTasks(db, rootTaskId) {
+  return db.prepare(`
+    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.updated_at
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    JOIN task_runs r ON r.id = e.created_by_run_id
+    WHERE e.parent_task_id = ?
+      AND e.edge_type = 'subtask'
+      AND r.kind = 'lead_cycle'
+      AND r.task_id = ?
+      AND COALESCE(t.is_team_root, 0) = 0
+      AND COALESCE(t.stage, 'plan') <> 'done'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM task_runs active
+        WHERE active.task_id = t.id
+          AND COALESCE(active.process_status, active.status, 'running') IN ('queued', 'running')
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM task_edges child
+        WHERE child.parent_task_id = t.id
+          AND child.edge_type = 'subtask'
+      )
+    ORDER BY t.updated_at DESC
+    LIMIT 30
+  `).all(rootTaskId, rootTaskId);
+}
+
 function describeMembers(members) {
   if (!members.length) return "(no members configured)";
   return members.map((m) => {
@@ -74,6 +132,26 @@ function describeUnassignedTasks(tasks) {
   }).join("\n");
 }
 
+function describeProjectTasks(tasks) {
+  if (!tasks.length) return "(no same-project tasks outside the root roster)";
+  return tasks.map((task) => {
+    const key = task.task_key ? ` ${task.task_key}` : "";
+    const owner = task.owner_agent ? ` - owner: ${task.owner_agent}` : "";
+    const summary = String(task.last_run_summary || "").trim();
+    const summaryText = summary ? ` - latest: ${summary.slice(0, 180)}` : "";
+    return `- [${task.id}]${key} ${task.title} (stage: ${task.stage})${owner}${summaryText}`;
+  }).join("\n");
+}
+
+function describeDeletableTasks(tasks) {
+  if (!tasks.length) return "(no safe lead-created deletion candidates)";
+  return tasks.map((task) => {
+    const key = task.task_key ? ` ${task.task_key}` : "";
+    const owner = task.owner_agent ? ` - owner: ${task.owner_agent}` : "";
+    return `- [${task.id}]${key} ${task.title} (stage: ${task.stage})${owner}`;
+  }).join("\n");
+}
+
 function describeRecentCycles(cycles) {
   if (!cycles.length) return "(no prior cycles)";
   return cycles.slice(0, 8).map((r) => {
@@ -84,7 +162,20 @@ function describeRecentCycles(cycles) {
   }).join("\n");
 }
 
-function buildLeadSystemPrompt({ team, project, leadAgent, root, members, children, unassignedTasks, recentCycles, maxTaskCreations, nativeSubagents }) {
+export function buildLeadSystemPrompt({
+  team,
+  project,
+  leadAgent,
+  root,
+  members,
+  children,
+  unassignedTasks,
+  projectTasks = [],
+  deletableTasks = [],
+  recentCycles,
+  maxTaskCreations,
+  nativeSubagents,
+}) {
   const goalBlock = team.goal
     ? `\n## Team goal\n${team.goal}\n`
     : "\n## Team goal\n(not set — work toward broad team purpose)\n";
@@ -109,6 +200,12 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `## Unassigned task queue`,
     describeUnassignedTasks(unassignedTasks),
     "",
+    `## Same-project owned task roster`,
+    describeProjectTasks(projectTasks),
+    "",
+    `## Lead-created deletion candidates`,
+    describeDeletableTasks(deletableTasks),
+    "",
     `## Recent lead cycles (most recent first)`,
     describeRecentCycles(recentCycles),
     "",
@@ -124,6 +221,7 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `- validation_summary: what evidence, commands, or artifacts were checked this cycle (empty string if none)`,
     `- task_creations: array of { title, instructions, suggested_agent, depends_on, acceptance_criteria, expected_artifact, priority ("high"|"normal"|"low") }`,
     `- task_assignments: array of { target_task_id, owner_agent, rationale }`,
+    `- task_deletions: array of { target_task_id, rationale }`,
     `- advisory_notes: array of { target_task_id, kind ("warning"|"suggestion"|"blocker_observation"), content }`,
     `- next_review_hint: { after_minutes?, after_event? } | null where after_event is only "task_completed" or "task_blocked"`,
     "",
@@ -131,6 +229,9 @@ function buildLeadSystemPrompt({ team, project, leadAgent, root, members, childr
     `- Every suggested_agent MUST be in the team roster above.`,
     `- Every task_assignments owner_agent MUST be in the team roster above, including yourself if you choose to own it.`,
     `- Every task_assignments target_task_id MUST be one of the unassigned tasks above.`,
+    `- Every task_deletions target_task_id MUST be one of the lead-created deletion candidates above.`,
+    `- Use task_deletions only for obsolete lead-created tasks that are no longer relevant.`,
+    `- Do not create a task if same-project owned work already represents it.`,
     `- task_creations max ${maxTaskCreations} per cycle.`,
     `- If goal_status="complete", task_creations MUST be empty.`,
     `- advisory_notes target_task_id must be one of the open child tasks above (or another task currently scoped to this team).`,
@@ -161,10 +262,15 @@ export async function runLeadCycle(ctx) {
   const rosterAgents = getTeamRosterAgentNames(db, team.id);
   const children = listOpenChildTasks(db, root.id);
   const unassignedTasks = listUnassignedTeamTasks(db, { teamId: team.id, projectId: project.id });
+  const projectTasks = listSameProjectTasks(db, { rootTaskId: root.id, teamId: team.id, projectId: project.id });
+  const deletableTasks = listDeletableLeadCreatedTasks(db, root.id);
   const scopeTaskIds = children.map((c) => c.id);
   for (const task of unassignedTasks) scopeTaskIds.push(task.id);
+  for (const task of projectTasks) scopeTaskIds.push(task.id);
   scopeTaskIds.push(root.id);
   const assignableTaskIds = unassignedTasks.map((task) => task.id);
+  const deletableTaskIds = deletableTasks.map((task) => task.id);
+  const existingTaskTitles = projectTasks.map((task) => task.title);
   const recentCycles = listRecentLeadCycles(db, team.id, 10);
   const settings = readSettings(db);
   const configuredMaxTaskCreations = Number(settings.delegation_max_children_per_round);
@@ -193,6 +299,8 @@ export async function runLeadCycle(ctx) {
     members,
     children,
     unassignedTasks,
+    projectTasks,
+    deletableTasks,
     recentCycles,
     maxTaskCreations,
     nativeSubagents,
@@ -260,6 +368,8 @@ export async function runLeadCycle(ctx) {
         rosterAgents,
         scopeTaskIds,
         assignableTaskIds,
+        deletableTaskIds,
+        existingTaskTitles,
         maxTaskCreations,
       });
     }

@@ -48,6 +48,17 @@ function stringList(value) {
   return [...new Set(source.map((item) => String(item || "").trim()).filter(Boolean))];
 }
 
+function safeJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (value == null || value === "") return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function nullableTimestamp(value) {
   if (value == null || value === "") return null;
   const n = Number(value);
@@ -209,12 +220,16 @@ function leadCycleSummary(row) {
     summary: row.summary || null,
     checkpoint_note: row.checkpoint_note || null,
     validation_summary: row.validation_summary || null,
+    task_deletions: safeJsonArray(row.task_deletions_json),
+    task_creation_skips: safeJsonArray(row.task_creation_skips_json),
     goal_status: row.goal_status || null,
     next_review_due_at: row.next_review_due_at ?? null,
     next_review_event: row.next_review_event || null,
     next_review_consumed_at: row.next_review_consumed_at ?? null,
     tasks_created: row.tasks_created || 0,
     tasks_assigned: row.tasks_assigned || 0,
+    tasks_deleted: row.tasks_deleted || 0,
+    tasks_skipped: row.tasks_skipped || 0,
     notes_posted: row.notes_posted || 0,
     cost_usd: row.cost_usd ?? null,
   };
@@ -228,6 +243,40 @@ function latestLeadCycleForGoal(db, goalId) {
 function leadCyclesForGoal(db, goalId, limit = 20) {
   if (!goalId) return [];
   return listLeadCyclesByGoal(db, goalId, { limit }).map(leadCycleSummary).filter(Boolean);
+}
+
+function leadCreatedTasksForGoal(db, rootTaskId, limit = 30) {
+  if (!rootTaskId) return [];
+  return db.prepare(`
+    SELECT t.id, t.task_key, t.title, t.stage, t.owner_agent, t.run_policy,
+           t.created_at, t.updated_at,
+           CASE WHEN EXISTS (
+             SELECT 1
+             FROM task_runs r
+             WHERE r.task_id = t.id
+               AND COALESCE(r.process_status, r.status, 'running') IN ('queued', 'running')
+           ) THEN 1 ELSE 0 END AS has_active_run
+    FROM task_edges e
+    JOIN tasks t ON t.id = e.child_task_id
+    JOIN task_runs r ON r.id = e.created_by_run_id
+    WHERE e.parent_task_id = ?
+      AND e.edge_type = 'subtask'
+      AND r.kind = 'lead_cycle'
+      AND r.task_id = ?
+      AND COALESCE(t.stage, 'plan') <> 'done'
+    ORDER BY t.updated_at DESC
+    LIMIT ?
+  `).all(rootTaskId, rootTaskId, limit).map((row) => ({
+    id: row.id,
+    task_key: row.task_key || null,
+    title: row.title || "",
+    stage: row.stage || "plan",
+    owner_agent: row.owner_agent || null,
+    run_policy: row.run_policy || "manual",
+    has_active_run: !!row.has_active_run,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
 }
 
 function ensureNativeGoalForRoot(db, { team, project, root, now = Date.now() } = {}) {
@@ -247,7 +296,7 @@ function ensureNativeGoalForRoot(db, { team, project, root, now = Date.now() } =
   });
 }
 
-export function teamProjectGoalFromRows({ team, project, root, goal = null, latestCycle = null, cycles = null } = {}) {
+export function teamProjectGoalFromRows({ team, project, root, goal = null, latestCycle = null, cycles = null, leadTasks = [] } = {}) {
   if (!team || !project || !root) return null;
   const contract = normalizeTeamGoalContract(goal?.contract_json || root.goal_contract_json, { teamGoal: team.goal || "" });
   return {
@@ -272,6 +321,7 @@ export function teamProjectGoalFromRows({ team, project, root, goal = null, late
     },
     latest_cycle: latestCycle,
     cycles: cycles || (latestCycle ? [latestCycle] : []),
+    lead_tasks: leadTasks,
   };
 }
 
@@ -292,6 +342,7 @@ export function getTeamProjectGoal(db, { teamId, projectId, now = Date.now(), en
     goal,
     latestCycle: latestLeadCycleForGoal(db, goal?.id || root.id),
     cycles: leadCyclesForGoal(db, goal?.id || root.id, 20),
+    leadTasks: leadCreatedTasksForGoal(db, root.id),
   });
 }
 
@@ -331,6 +382,7 @@ export function listTeamProjectGoals(db, teamId, { includeArchived = true, now =
         goal,
         latestCycle: latestLeadCycleForGoal(db, goal?.id || root?.id),
         cycles: leadCyclesForGoal(db, goal?.id || root?.id, 10),
+        leadTasks: leadCreatedTasksForGoal(db, root?.id),
       });
     })
     .filter(Boolean);
