@@ -1948,6 +1948,12 @@ test("settings overview cards, section nav, and sections stay connected", async 
     const rect = section.getBoundingClientRect();
     return rect.top < window.innerHeight && rect.bottom > 0;
   }, "settings-tools");
+  await page.waitForFunction(() => {
+    const nav = document.querySelector(".settings-section-nav");
+    if (!nav) return false;
+    const top = Math.round(nav.getBoundingClientRect().top);
+    return top >= 0 && top <= 12;
+  });
 
   await sectionNav.getByRole("button", { name: "Agent runs" }).click();
   await expect(page.locator('.settings-overview-card[aria-current="location"]')).toContainText("Agent runs");

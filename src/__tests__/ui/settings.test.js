@@ -25,6 +25,11 @@ const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css
 const providersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/ProvidersTab.jsx");
 const aboutHeroPath = resolve(import.meta.dirname, "../../ui/public/about/worklab-about-hero.png");
 
+function cssRule(styles, selector) {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return styles.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]+)\\}`))?.groups?.body || "";
+}
+
 describe("settings UI duration conversions", () => {
   it("keeps Run limits labels compact because the controls already show units", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
@@ -62,10 +67,13 @@ describe("settings UI duration conversions", () => {
     expect(source).toContain("{item.label}");
     expect(source).toContain('title={item.label}');
     expect(source).toContain('aria-label={item.label}');
+    expect(source).toContain('class="settings-route-general"');
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*position:\s*sticky/);
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*top:\s*calc\(var\(--sp-2\) \+ var\(--mobile-safe-top\)\)/);
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*width:\s*100%/);
     expect(styles).toMatch(/\.settings-section-nav\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(styles).toMatch(/\.settings-route-shell\.settings-route-general\s+\.settings-route-content\s*\{[^}]*flex:\s*0 0 auto/);
+    expect(styles).toMatch(/\.settings-route-shell\.settings-route-general\s+\.settings-route-content\s*\{[^}]*min-height:\s*auto/);
     expect(styles).toMatch(/\.settings-section-nav\s+\.button\s*\{[^}]*min-height:\s*40px/);
     expect(styles).toMatch(/@media \(max-width:\s*860px\)\s*\{[\s\S]*\.settings-section-nav\s+\.button-label\s*\{[^}]*display:\s*none/);
     expect(styles).not.toContain(".settings-section-nav-label");
@@ -96,6 +104,8 @@ describe("settings UI duration conversions", () => {
   it("uses one aligned route shell for Settings, Providers, and About", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
+    const pageRule = cssRule(styles, ".settings-page");
+    const shellRule = cssRule(styles, ".settings-route-shell");
 
     expect(source).toContain("function SettingsTabs");
     expect(source).toContain("function SettingsRouteShell");
@@ -106,11 +116,15 @@ describe("settings UI duration conversions", () => {
     expect(styles).toContain(".settings-route-shell");
     expect(styles).toContain(".settings-route-content");
     expect(styles).toContain(".settings-about-grid");
+    expect(pageRule).not.toContain("max-width: 1200px");
+    expect(shellRule).toContain("max-width: none");
+    expect(shellRule).not.toContain("margin: 0 auto");
   });
 
   it("aligns the provider edit header and body inside Settings", () => {
     const source = readFileSync(providersSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
+    const providerToolbarRule = cssRule(styles, ".provider-pane-layout .resource-toolbar");
 
     expect(source).toContain('class="resource-list-layout provider-pane-layout"');
     expect(source).toContain('class="provider-detail-head"');
@@ -120,7 +134,8 @@ describe("settings UI duration conversions", () => {
     expect(styles).toContain(".provider-detail-head");
     expect(styles).toContain(".provider-detail-body");
     expect(styles).toContain(".provider-editor-layout");
-    expect(styles).toMatch(/\.provider-pane-layout\s+\.resource-toolbar\s*\{[^}]*padding:\s*var\(--sp-1\) var\(--sp-4\) var\(--sp-2\)/);
+    expect(providerToolbarRule).not.toContain("padding: var(--sp-1) var(--sp-4) var(--sp-2)");
+    expect(providerToolbarRule).not.toContain("background: color-mix(in srgb, var(--surface) 42%, transparent)");
   });
 
   it("presents About as a polished visual surface with a project-local generated asset", () => {

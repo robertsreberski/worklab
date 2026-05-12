@@ -622,6 +622,7 @@ function SettingsGeneral() {
         activeTab="general"
         title="Settings"
         description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
+        class="settings-route-general"
       >
         {loadError ? (
           <Banner
@@ -734,6 +735,7 @@ function SettingsGeneral() {
       description="Service runtime, agent runs, notifications, assistant behavior, Slack, search, and MCP tools."
       actions={isDirty || formSave.saving ? pageActions : null}
       mobileActionDock={isDirty || formSave.saving ? pageActions : null}
+      class="settings-route-general"
     >
         {formSave.error && (
           <Banner variant="error" title="Save failed" detail={formSave.error} actions={<Button size="sm" onClick={() => formSave.save().catch(() => {})}>Retry</Button>} />
