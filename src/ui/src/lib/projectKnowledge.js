@@ -1,6 +1,6 @@
 import { taskRouteId } from "./display.js";
 
-const CATEGORY_ORDER = ["research", "decision", "runbook", "reference", "howto", "policy", "qa", "operations", "run-results"];
+const CATEGORY_ORDER = ["plans", "research", "decision", "runbook", "reference", "howto", "policy", "qa", "operations", "run-results"];
 
 function timestamp(value) {
   if (typeof value === "number") return value;
@@ -21,8 +21,8 @@ function compareKnowledge(left, right) {
 export function groupProjectKnowledgeEntries(entries = []) {
   const groups = new Map();
   for (const entry of entries || []) {
-    if (entry?.auto_promoted) continue;
-    const key = String(entry?.category || "uncategorized").trim() || "uncategorized";
+    if (entry?.auto_promoted || entry?.run_output) continue;
+    const key = String(entry?.display_category || entry?.category || "uncategorized").trim() || "uncategorized";
     if (!groups.has(key)) {
       groups.set(key, { key, label: labelForCategory(key), entries: [] });
     }

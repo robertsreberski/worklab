@@ -75,6 +75,37 @@ describe("resource list helpers", () => {
     ]);
   });
 
+  it("filters the plans knowledge surface to meaningful plans only", () => {
+    const groups = buildKnowledgeResourceGroups([
+      {
+        slug: "runtime-plan",
+        title: "Runtime Plan",
+        category: "execution-plan",
+        display_category: "plans",
+        meaningful_plan: true,
+        updated_at: "2026-05-06T00:00:00Z",
+      },
+      {
+        slug: "generated-plan-output",
+        title: "Generated Plan Output",
+        category: "plans",
+        meaningful_plan: false,
+        run_output: true,
+        updated_at: "2026-05-07T00:00:00Z",
+      },
+      {
+        slug: "research",
+        title: "Research",
+        category: "research",
+        updated_at: "2026-05-08T00:00:00Z",
+      },
+    ], { surface: "plans" });
+
+    expect(groups.map((group) => [group.key, group.label, group.items.map((entry) => entry.slug)])).toEqual([
+      ["plans", "Meaningful plans", ["runtime-plan"]],
+    ]);
+  });
+
   it("keeps project/category grouping available as a knowledge sort mode", () => {
     const groups = buildKnowledgeResourceGroups([
       {
@@ -227,6 +258,14 @@ describe("resource list helpers", () => {
     expect(contents).toContain("ariaLabel=\"Sort knowledge\"");
     expect(contents).toContain("sort !== \"updated_desc\"");
     expect(contents).toContain("setSort(\"updated_desc\")");
+  });
+
+  it("defaults the knowledge route to plans first and loads taxonomy suggestions", () => {
+    const contents = source("src/ui/src/routes/library/KnowledgeTab.jsx");
+
+    expect(contents).toContain('useState("plans")');
+    expect(contents).toContain("api.kbTaxonomy");
+    expect(contents).toContain("tagSuggestions");
   });
 
   it("defaults status-aware resource lists to active filters", () => {

@@ -160,6 +160,14 @@ function knowledgeProjectLabel(entry) {
   return entry?.project?.name || entry?.project?.slug || (entry?.project_id ? entry.project_id : "Global");
 }
 
+function knowledgeCategory(entry) {
+  return entry?.display_category || entry?.category || "";
+}
+
+function knowledgeIsRunOutput(entry) {
+  return !!(entry?.run_output || entry?.auto_promoted);
+}
+
 const KNOWLEDGE_SORT_MODES = new Set(["updated_desc", "pinned_first", "title_asc", "project_category"]);
 
 function knowledgeSortMode(sort) {
@@ -194,8 +202,15 @@ function sortKnowledgeItems(items, sort) {
   return [...items].sort(compareKnowledgeRecent);
 }
 
-function flatKnowledgeGroup(items, sort) {
+function flatKnowledgeGroup(items, sort, surface = "canonical") {
   if (!items.length) return [];
+  if (surface === "plans") {
+    return [{
+      key: "plans",
+      label: "Meaningful plans",
+      items: sortKnowledgeItems(items, sort),
+    }];
+  }
   const mode = knowledgeSortMode(sort);
   const labels = {
     updated_desc: "Recent updates",
@@ -229,19 +244,22 @@ export function buildKnowledgeResourceGroups(entries = [], {
   const groups = new Map();
   for (const entry of entries || []) {
     if (projectId !== "all" && (entry.project_id || "") !== projectId) continue;
-    if (category !== "all" && (entry.category || "") !== category) continue;
+    const categoryValue = knowledgeCategory(entry);
+    const isRunOutput = knowledgeIsRunOutput(entry);
+    if (category !== "all" && categoryValue !== category) continue;
     if (subcategory !== "all" && (entry.subcategory || "") !== subcategory) continue;
     if (tag !== "all" && !(entry.tags || []).includes(tag)) continue;
     if (pinned === "pinned" && !entry.pinned) continue;
     if (pinned === "unpinned" && entry.pinned) continue;
-    if (surface === "canonical" && entry.auto_promoted) continue;
-    if (surface === "run_outputs" && !entry.auto_promoted) continue;
+    if (surface === "plans" && !entry.meaningful_plan) continue;
+    if (surface === "canonical" && isRunOutput) continue;
+    if (surface === "run_outputs" && !isRunOutput) continue;
     if (!matchesQuery([
       entry.title,
       entry.slug,
       entry.project?.name,
       entry.project?.slug,
-      entry.category,
+      categoryValue,
       entry.subcategory,
       ...(entry.tags || []),
     ], query)) continue;
@@ -249,14 +267,14 @@ export function buildKnowledgeResourceGroups(entries = [], {
     if (mode !== "project_category") continue;
 
     const projectLabel = knowledgeProjectLabel(entry);
-    const categoryLabel = labelize(entry.category);
+    const categoryLabel = labelize(categoryValue);
     const key = `${projectLabel}::${categoryLabel}`;
     if (!groups.has(key)) {
       groups.set(key, { key, label: `${projectLabel} / ${categoryLabel}`, projectLabel, categoryLabel, items: [] });
     }
     groups.get(key).items.push(entry);
   }
-  if (mode !== "project_category") return flatKnowledgeGroup(items, mode);
+  if (mode !== "project_category" || surface === "plans") return flatKnowledgeGroup(items, mode, surface);
 
   return [...groups.values()]
     .map((group) => ({
