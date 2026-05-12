@@ -177,9 +177,9 @@ function safeHref(url) {
   return "#";
 }
 
-function renderAnchor(href, label) {
+function renderAnchor(href, label, ctx = {}) {
   const safe = safeHref(href);
-  const entity = entityLinkFromHref(safe, label);
+  const entity = entityLinkFromHref(safe, ctx);
   if (entity) return renderEntityBadge(entity);
   const externalAttrs = /^(https?:|mailto:|tel:)/i.test(safe)
     ? ' target="_blank" rel="noopener noreferrer"'
@@ -187,7 +187,7 @@ function renderAnchor(href, label) {
   return `<a href="${safe}"${externalAttrs}>${label}</a>`;
 }
 
-function entityLinkFromHref(href, labelHtml) {
+function entityLinkFromHref(href, ctx = {}) {
   const safe = String(href || "").trim();
   const routeHref = safe.startsWith("#/")
     ? safe
@@ -202,19 +202,20 @@ function entityLinkFromHref(href, labelHtml) {
   const queryString = queryIndex === -1 ? "" : raw.slice(queryIndex + 1);
   const segments = pathPart.split("/").filter(Boolean).map(safeDecode);
   const query = new URLSearchParams(queryString);
+  const mentions = ctx?.mentions || null;
 
   if (segments[0] === "library" && segments[2]) {
-    if (segments[1] === "agents") return entityLink("agent", segments[2], safe, labelHtml);
-    if (segments[1] === "knowledge") return entityLink("kb", segments[2], safe, labelHtml);
-    if (segments[1] === "skills") return entityLink("skill", segments[2], safe, labelHtml);
-    if (segments[1] === "teams") return entityLink("team", segments[2], safe, labelHtml);
+    if (segments[1] === "agents") return entityLink("agent", segments[2], safe, mentions);
+    if (segments[1] === "knowledge") return entityLink("kb", segments[2], safe, mentions);
+    if (segments[1] === "skills") return entityLink("skill", segments[2], safe, mentions);
+    if (segments[1] === "teams") return entityLink("team", segments[2], safe, mentions);
   }
-  if (segments[0] === "projects" && segments[1]) return entityLink("project", segments[1], safe, labelHtml);
-  if (segments[0] === "goals" && segments[1]) return entityLink("goal", segments[1], safe, labelHtml);
+  if (segments[0] === "projects" && segments[1]) return entityLink("project", segments[1], safe, mentions);
+  if (segments[0] === "goals" && segments[1]) return entityLink("goal", segments[1], safe, mentions);
   if (segments[0] === "tasks" && segments[1]) {
     const runId = query.get("run");
-    if (runId) return entityLink("run", runId, safe, labelHtml);
-    return entityLink("task", segments[1], safe, labelHtml);
+    if (runId) return entityLink("run", runId, safe, mentions);
+    return entityLink("task", segments[1], safe, mentions);
   }
   return null;
 }
@@ -227,17 +228,25 @@ function safeDecode(value) {
   }
 }
 
-function entityLink(type, id, href, labelHtml) {
+function entityLink(type, id, href, mentions) {
   const normalizedType = normalizeEntityBadgeKind(type);
-  const display = String(labelHtml || "").trim()
-    || escapeHtml(entityBadgeLabel({ type: normalizedType, id }));
+  const meta = mentions?.[href] || mentions?.[href.replace(/&amp;/g, "&")] || null;
+  const display = meta?.label || humanizeEntityId(id);
   return {
     type: normalizedType,
     id,
     href,
-    labelHtml: display,
+    labelHtml: escapeHtml(display),
     title: [entityBadgeMeta(normalizedType).label, id].filter(Boolean).join(": "),
   };
+}
+
+function humanizeEntityId(value) {
+  return entityBadgeLabel({ id: String(value || "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase()) });
 }
 
 function renderInline(text, ctx = {}) {
@@ -259,7 +268,7 @@ function renderInline(text, ctx = {}) {
       .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
       .replace(/\*(.+?)\*/g, "<em>$1</em>")
       .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) =>
-        stash(renderAnchor(url, label))),
+        stash(renderAnchor(url, label, ctx))),
     stash,
   ).replace(/\n/g, "<br/>");
 

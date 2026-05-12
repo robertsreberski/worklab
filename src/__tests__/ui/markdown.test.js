@@ -1,5 +1,21 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { renderMarkdown } from "../../ui/src/components/Markdown.jsx";
+
+const repoRoot = resolve(import.meta.dirname, "../../..");
+const stylesPath = resolve(repoRoot, "src/ui/src/styles.css");
+
+function declarationsForSelector(css, selector) {
+  return [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)]
+    .filter((match) => match[1]
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split(",")
+      .map((item) => item.trim())
+      .includes(selector))
+    .map((match) => match[2])
+    .join("\n");
+}
 
 describe("renderMarkdown mentions", () => {
   it("renders a known agent mention as a clickable badge with the resolved label", () => {
@@ -90,13 +106,54 @@ describe("renderMarkdown", () => {
     expect(html).toContain('entity-badge--agent" data-kind="agent" href="#/library/agents/triager"');
     expect(html).toContain('<span class="badge-token-label">Triager</span>');
     expect(html).toContain('entity-badge--kb" data-kind="kb" href="#/library/knowledge/entry-1"');
-    expect(html).toContain('<span class="badge-token-label">Knowledge Entry</span>');
+    expect(html).toContain('<span class="badge-token-label">Entry 1</span>');
     expect(html).toContain('entity-badge--skill" data-kind="skill" href="#/library/skills/ui-polish"');
     expect(html).toContain('entity-badge--team" data-kind="team" href="#/library/teams/core-platform"');
     expect(html).toContain('entity-badge--project" data-kind="project" href="#/projects/project-1"');
     expect(html).toContain('entity-badge--task" data-kind="task" href="#/tasks/task-1"');
     expect(html).toContain('entity-badge--goal" data-kind="goal" href="#/goals/goal-1"');
     expect(html).toContain('entity-badge--run" data-kind="run" href="#/tasks/task-1?run=run-1"');
+  });
+
+  it("uses resolved entity labels for internal link badges instead of anchor text", () => {
+    const html = renderMarkdown("[Wrong label](#/library/knowledge/auth-flow) [Bad](#/library/agents/triager)", {
+      mentions: {
+        "#/library/knowledge/auth-flow": {
+          type: "kb",
+          label: "Authentication Flow",
+          href: "#/library/knowledge/auth-flow",
+          exists: true,
+        },
+        "#/library/agents/triager": {
+          type: "agent",
+          label: "Triager Bot",
+          href: "#/library/agents/triager",
+          exists: true,
+        },
+      },
+    });
+
+    expect(html).toContain('<span class="badge-token-label">Authentication Flow</span>');
+    expect(html).toContain('<span class="badge-token-label">Triager Bot</span>');
+    expect(html).not.toContain("Wrong label");
+    expect(html).not.toContain(">Bad<");
+  });
+
+  it("falls back to decoded route ids for internal link badge labels without a sidecar", () => {
+    const html = renderMarkdown("[Wrong label](#/library/agents/review-agent)");
+
+    expect(html).toContain('<span class="badge-token-label">Review Agent</span>');
+    expect(html).not.toContain("Wrong label");
+  });
+
+  it("keeps document entity badges aligned and colored as badges instead of links", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const docBadgeRule = declarationsForSelector(css, ".doc-content a.badge-token");
+    const markdownBadgeRule = declarationsForSelector(css, ".markdown a.badge-token");
+
+    expect(docBadgeRule).toContain("color: var(--badge-token-tone)");
+    expect(docBadgeRule).toContain("transform: translateY(-2px)");
+    expect(markdownBadgeRule).toContain("color: var(--badge-token-tone)");
   });
 
   it("keeps non-entity hash links as normal anchors", () => {

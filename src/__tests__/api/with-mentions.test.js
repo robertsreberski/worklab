@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { withMentions } from "../../api/lib/with-mentions.js";
+import { kbCreate } from "../../core/kb.js";
 import { makeTestDb } from "../helpers/test-db.js";
 
 function seedAgent(db, name, displayName = name) {
@@ -31,6 +35,41 @@ describe("withMentions", () => {
       href: "#/library/agents/triager",
       exists: true,
     });
+  });
+
+  it("collects Markdown entity links and resolves them by href key", () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-with-mentions-"));
+    mkdirSync(join(dataDir, "knowledge"), { recursive: true });
+    seedAgent(db, "triager", "Triager Bot");
+    kbCreate({
+      dataDir,
+      slug: "auth-flow",
+      title: "Authentication Flow",
+      body: "doc",
+      author: "human",
+      now: new Date("2026-05-12T12:00:00Z"),
+    });
+
+    try {
+      const text = "See [wrong agent](#/library/agents/triager) and [wrong note](#/library/knowledge/auth-flow).";
+      const out = withMentions({ db, dataDir }, { body: text }, [text]);
+
+      expect(out.mentions["#/library/agents/triager"]).toMatchObject({
+        type: "agent",
+        label: "Triager Bot",
+        href: "#/library/agents/triager",
+        exists: true,
+      });
+      expect(out.mentions["#/library/knowledge/auth-flow"]).toMatchObject({
+        type: "kb",
+        label: "Authentication Flow",
+        href: "#/library/knowledge/auth-flow",
+        exists: true,
+      });
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("walks arrays and nested objects to find tokens", () => {
