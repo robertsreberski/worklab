@@ -210,6 +210,32 @@ function structuredPayload(value, options) {
   return capStringsDeep(value, options);
 }
 
+function parseWorklabResultText(text) {
+  const raw = String(text || "").trim();
+  if (!raw || raw[0] !== "{") return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const result = parsed?.worklab_result || parsed;
+    return result?.schema === "worklab.v2" ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function standaloneWorklabResultFromAssistant(value) {
+  if (value?.type !== "assistant" && value?.type !== "message") return null;
+  const content = value?.message?.content || value?.content;
+  if (!Array.isArray(content) || content.length === 0) return null;
+  const results = [];
+  for (const block of content) {
+    if (block?.type !== "text") return null;
+    const result = parseWorklabResultText(block.text);
+    if (!result) return null;
+    results.push(result);
+  }
+  return results.at(-1) || null;
+}
+
 function attachPayloadPreview(next, key, value, options) {
   const summary = payloadSummary(value, options);
   next[`${key}_omitted`] = true;
@@ -271,6 +297,14 @@ function compactContentBlock(block, options) {
 
 function compactEventObject(value, options) {
   if (!value || typeof value !== "object") return capStringsDeep(value, options);
+  const standaloneWorklabResult = standaloneWorklabResultFromAssistant(value);
+  if (standaloneWorklabResult) {
+    return {
+      type: "worklab_result_candidate",
+      source: "agent_message",
+      worklab_result: structuredPayload(standaloneWorklabResult, options),
+    };
+  }
   if (isToolUseBlock(value)) return compactToolUseBlock(value, options);
   if (isToolResultBlock(value)) return compactToolResultBlock(value, options);
   const next = jsonClone(value);

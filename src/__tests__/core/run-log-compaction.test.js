@@ -49,6 +49,44 @@ describe("run log SQLite compaction", () => {
     expect(result.events[2].worklab_result).toMatchObject({ decision: "advance" });
   });
 
+  it("compacts standalone assistant worklab_result JSON before text truncation", () => {
+    const worklabResult = {
+      schema: "worklab.v2",
+      stage: "execute",
+      decision: "advance",
+      summary: "Integrated the v0 flow.",
+      details: "Changed files and verified the app.",
+      final_text: "Done. The v0 flow is integrated.",
+      artifacts: {},
+      blocking_issues: [],
+      pending_actions: [],
+      questions: [],
+      subtasks: [],
+      verification_evidence: [
+        { kind: "test", command_or_url: "npm test", exit_code_or_status: "0", snippet: "passed".repeat(200), reason: "" },
+      ],
+    };
+
+    const compacted = compactEventForSqlite({
+      type: "sdk_event",
+      event: {
+        type: "assistant",
+        message: { content: [{ type: "text", text: JSON.stringify(worklabResult) }] },
+      },
+      _event_seq: 12,
+    }, { maxTextChars: 120 });
+
+    expect(compacted.event).toEqual({
+      type: "worklab_result_candidate",
+      source: "agent_message",
+      worklab_result: expect.objectContaining({
+        schema: "worklab.v2",
+        decision: "advance",
+        final_text: "Done. The v0 flow is integrated.",
+      }),
+    });
+  });
+
   it("preserves file edit metadata needed for artifact extraction", () => {
     const event = {
       type: "sdk_event",

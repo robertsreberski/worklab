@@ -102,12 +102,21 @@ function standaloneWorklabResultText(text) {
   }
 }
 
+function looksLikeCompactedWorklabResultText(text) {
+  const raw = String(text || "").trim();
+  return raw.startsWith("{")
+    && raw.includes("\"schema\":\"worklab.v2\"")
+    && /\[truncated \d+ chars; full raw log available\]\s*$/.test(raw);
+}
+
 function isStandaloneWorklabResultTextEvent(ev) {
   if (ev?.type !== "assistant" && ev?.type !== "message") return false;
   const content = ev?.message?.content || ev?.content;
   return Array.isArray(content)
     && content.length > 0
-    && content.every((block) => block?.type === "text" && standaloneWorklabResultText(block.text));
+    && content.every((block) => block?.type === "text" && (
+      standaloneWorklabResultText(block.text) || looksLikeCompactedWorklabResultText(block.text)
+    ));
 }
 
 function normalizeStructuredOutputEvent(ev, source = "StructuredOutput") {
