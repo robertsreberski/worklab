@@ -744,6 +744,36 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("keeps comment and metadata text self-contained", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    for (const selector of [
+      ".comment",
+      ".comment-body",
+      ".activity-feed-content",
+      ".activity-item",
+      ".activity-item-body",
+      ".task-meta-list dd",
+      ".project-workdir-value",
+      ".attachment-chip-meta",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/min-width:\s*0\b/);
+      expect(declarations).toMatch(/max-width:\s*100%/);
+    }
+
+    for (const selector of [
+      ".comment-body",
+      ".activity-item-body",
+      ".task-meta-list dd",
+      ".project-workdir-value",
+      ".attachment-chip-meta",
+    ]) {
+      const declarations = declarationsForSelector(css, selector);
+      expect(declarations).toMatch(/overflow-wrap:\s*anywhere\b/);
+      expect(declarations).toMatch(/word-break:\s*normal\b/);
+    }
+  });
+
   it("bounds nested task row surfaces", () => {
     const css = readFileSync(stylesPath, "utf8");
     for (const selector of [".task-subtask-link", ".task-subtask-meta", ".project-task-row"]) {

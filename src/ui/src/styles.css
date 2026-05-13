@@ -1658,10 +1658,13 @@ a.badge-token:focus-visible {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  max-width: 100%;
   line-height: 1.25;
 }
 .attachment-chip-title,
 .attachment-chip-meta {
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1673,6 +1676,8 @@ a.badge-token:focus-visible {
   color: var(--text-subtle);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 .attachment-chip-link {
   flex: 0 0 auto;
@@ -2688,6 +2693,8 @@ a.badge-token:focus-visible {
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
+  min-width: 0;
+  max-width: 100%;
 }
 .structured-markdown p:last-child { margin-bottom: 0; }
 .structured-value {
@@ -2714,6 +2721,7 @@ a.badge-token:focus-visible {
   color: var(--text);
   white-space: pre-wrap;
   overflow: auto;
+  word-break: normal;
 }
 .ds-toolbar.structured-actions {
   justify-content: space-between;
@@ -2851,6 +2859,10 @@ a.badge-token:focus-visible {
   font-size: var(--text-md);
   color: var(--text);
   line-height: 1.55;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 .markdown h1 { font-size: var(--text-xl); font-weight: 600; margin: 0 0 var(--sp-4); }
 .markdown h2 { font-size: var(--text-lg); font-weight: 600; margin: var(--sp-5) 0 var(--sp-3); }
@@ -4691,13 +4703,18 @@ html.assistant-resizing * {
   background: color-mix(in srgb, var(--status-muted-bg-10) 48%, transparent);
   border-color: color-mix(in srgb, var(--status-muted-border) 42%, var(--border));
 }
-.activity-feed-content { min-width: 0; }
+.activity-feed-content {
+  min-width: 0;
+  max-width: 100%;
+}
 .activity-item {
   padding: 2px 0 var(--sp-2);
   background: transparent;
   border: 0;
   border-radius: 0;
   font-size: var(--text-sm);
+  min-width: 0;
+  max-width: 100%;
   box-shadow: none;
 }
 .activity-item-head {
@@ -4733,7 +4750,15 @@ html.assistant-resizing * {
     pointer-events: auto;
   }
 }
-.activity-item-body { color: var(--text); line-height: 1.58; white-space: pre-wrap; }
+.activity-item-body {
+  color: var(--text);
+  line-height: 1.58;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: normal;
+}
 .activity-author-badge {
   display: inline-flex;
   align-items: center;
@@ -5127,6 +5152,10 @@ html.assistant-resizing * {
   font-size: var(--text-sm);
   color: var(--text);
 }
+.comment {
+  min-width: 0;
+  max-width: 100%;
+}
 .comment + .comment { margin-top: var(--sp-2); }
 .comment-author { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-1); }
 .ds-section-stack.comment-list { gap: var(--sp-2); }
@@ -5139,7 +5168,17 @@ html.assistant-resizing * {
   color: var(--text-muted);
 }
 .comment-time { color: var(--text-subtle); margin-left: auto; font-family: var(--font-mono); font-size: var(--text-xs); }
-.comment-body { color: var(--text); white-space: pre-wrap; font-size: var(--text-sm); line-height: 1.5; }
+.comment-body {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  word-break: normal;
+}
 .comment-author.agent { color: var(--accent); }
 .comment-author.human { color: var(--text); }
 .comment-author.system { color: var(--text-muted); }
@@ -5747,6 +5786,7 @@ html.assistant-resizing * {
   color: var(--text-muted);
 }
 .resource-row-path-value {
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -9772,8 +9812,10 @@ button.settings-overview-card:focus-visible,
 .task-meta-list dd {
   margin: 0;
   min-width: 0;
+  max-width: 100%;
   color: var(--text);
   overflow-wrap: anywhere;
+  word-break: normal;
 }
 .task-meta-list dd.mono {
   color: var(--text-muted);
@@ -10464,9 +10506,14 @@ button.settings-overview-card:focus-visible,
   flex-shrink: 0;
 }
 .project-workdir-value {
+  display: block;
   min-width: 0;
+  max-width: 100%;
   color: var(--text);
+  overflow: hidden;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   word-break: normal;
 }
 .project-workdir-row > .button {

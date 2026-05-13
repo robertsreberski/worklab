@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "preact/hooks";
 import { api } from "../lib/api.js";
 import { navigateHash, proceedToHash, useUnsavedChangesGuard } from "../lib/navigation.js";
-import { taskDisplayKey, taskRouteId } from "../lib/display.js";
+import { middleTruncatePath, taskDisplayKey, taskRouteId } from "../lib/display.js";
 import { buildProjectTaskProgress, projectTaskRelationLabel } from "../lib/projectTaskProgress.js";
 import { buildKnowledgePromotionHash, groupProjectKnowledgeEntries, recentProjectTaskOutputs } from "../lib/projectKnowledge.js";
 import { useSSE } from "../lib/useSSE.js";
@@ -733,7 +733,9 @@ function ProjectDetail({ selectedId, onChanged }) {
               {project.description && <p class="soft-meta project-description">{project.description}</p>}
               <div class="project-workdir-row">
                 <span class="project-workdir-label">Workdir</span>
-                <span class="project-workdir-value mono">{project.workdir || "Default workspace"}</span>
+                <span class="project-workdir-value mono" title={project.workdir || undefined}>
+                  {project.workdir ? middleTruncatePath(project.workdir, 72) : "Default workspace"}
+                </span>
                 {project.workdir && (
                   <Button
                     variant="ghost"

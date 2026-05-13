@@ -36,6 +36,7 @@ let goalId;
 const liveLongToken = `live-unbroken-${"x".repeat(180)}`;
 const childLongToken = `child-unbroken-${"y".repeat(150)}`;
 const errorLongToken = `error-unbroken-${"z".repeat(180)}`;
+const commentLongToken = `comment-unbroken-${"c".repeat(220)}`;
 const parentWrapTitle = "Parent with child task needing a clean mobile wrap";
 
 async function findFreePort() {
@@ -392,7 +393,16 @@ test.beforeAll(async () => {
     ok: [201],
   });
   skillName = skill.skill.name;
-  const projectWorkdir = join(workspaceDir, "mobile-layout-project");
+  const projectWorkdir = join(
+    workspaceDir,
+    "repositories",
+    "with",
+    "intentionally",
+    "deep",
+    "path",
+    "metadata",
+    "mobile-layout-project",
+  );
   mkdirSync(projectWorkdir, { recursive: true });
   writeFileSync(join(projectWorkdir, "AGENTS.md"), "Use AGENTS.md guidance in task prompts.\n");
   const project = await requestJson("/api/projects", {
@@ -449,7 +459,7 @@ test.beforeAll(async () => {
     `INSERT INTO task_comments
       (id, task_id, author_type, author_id, body, created_at)
      VALUES (?, ?, 'human', NULL, ?, ?)`,
-  ).run("comment-newest-existing", taskId, "Newest seeded comment", now - 1_000);
+  ).run("comment-newest-existing", taskId, `Newest seeded comment ${commentLongToken}`, now - 1_000);
   db.prepare(
     `INSERT INTO task_comments
       (id, task_id, author_type, author_id, body, created_at)
@@ -1110,6 +1120,24 @@ test("task detail polish keeps details, agent picker, and newest-first comments 
   await expect(page.locator(".activity-composer")).toBeVisible();
   await expect(page.locator(".activity-rerun-checkbox input")).toBeChecked();
   await expect(page.locator(".activity-feed .activity-item").first()).toContainText("Newest seeded comment");
+  const commentMetrics = await page.locator(".activity-feed .activity-item").first().evaluate((node) => {
+    const body = node.querySelector(".activity-item-body");
+    const markdown = node.querySelector(".activity-item-body .markdown, .activity-item-body .structured-plain");
+    const bodyRect = body?.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    return {
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      itemScrollWidth: Math.ceil(node.scrollWidth),
+      itemClientWidth: Math.ceil(node.clientWidth),
+      bodyWidth: bodyRect ? Math.ceil(bodyRect.width) : 0,
+      itemWidth: Math.ceil(nodeRect.width),
+      text: markdown?.textContent || "",
+    };
+  });
+  expect(commentMetrics.text).toContain(commentLongToken);
+  expect(commentMetrics.overflow, "long comment page overflow").toBeLessThanOrEqual(0);
+  expect(commentMetrics.itemScrollWidth, "long comment item containment").toBeLessThanOrEqual(commentMetrics.itemClientWidth + 1);
+  expect(commentMetrics.bodyWidth, "long comment body width").toBeLessThanOrEqual(commentMetrics.itemWidth);
   await expect(page.locator(".run-summary-metrics").first()).toBeVisible();
   await expect(page.locator(".activity-feed-entry")).toHaveCount(4);
   const runCard = page.locator(".activity-feed-entry.run .run-card").first();
@@ -3189,6 +3217,8 @@ test("project list workdirs render as path metadata instead of badges", async ({
       return {
         oldWorkdirChipCount: node.querySelectorAll(".project-row-workdir-chip").length,
         pathText: value?.textContent?.trim() || "",
+        pathTitle: path?.getAttribute("title") || "",
+        pathAria: path?.getAttribute("aria-label") || "",
         pathWidth: pathRect ? Math.round(pathRect.width) : 0,
         rowWidth: Math.round(rowRect.width),
         pathBorderRadius: style?.borderRadius || "",
@@ -3199,6 +3229,9 @@ test("project list workdirs render as path metadata instead of badges", async ({
 
     expect(metrics.oldWorkdirChipCount, `${viewport.label} old workdir chip`).toBe(0);
     expect(metrics.pathText, `${viewport.label} workdir text`).toContain("mobile-layout-project");
+    expect(metrics.pathText, `${viewport.label} middle-truncated path`).toContain("..");
+    expect(metrics.pathTitle, `${viewport.label} full path title`).toContain("repositories");
+    expect(metrics.pathAria, `${viewport.label} full path aria`).toContain("repositories");
     expect(metrics.pathWidth, `${viewport.label} path width`).toBeGreaterThan(0);
     expect(metrics.pathWidth, `${viewport.label} bounded path width`).toBeLessThanOrEqual(metrics.rowWidth);
     expect(metrics.pathBorderRadius, `${viewport.label} path border radius`).toBe("0px");
@@ -3226,6 +3259,8 @@ test("project detail keeps workdir metadata readable in the detail pane", async 
         overflow: document.documentElement.scrollWidth - window.innerWidth,
         layoutColumns: layoutStyle?.gridTemplateColumns || "",
         rowHeight: rowRect ? Math.round(rowRect.height) : 0,
+        valueText: value?.textContent?.trim() || "",
+        valueTitle: value?.getAttribute("title") || "",
         valueWidth: valueRect ? Math.round(valueRect.width) : 0,
         valueLineCount: value ? value.getClientRects().length : 0,
       };
@@ -3233,6 +3268,8 @@ test("project detail keeps workdir metadata readable in the detail pane", async 
 
     expect(metrics.overflow, `${viewport.label} project detail overflow`).toBeLessThanOrEqual(0);
     expect(metrics.layoutColumns.split(" ").length, `${viewport.label} project detail columns`).toBe(1);
+    expect(metrics.valueText, `${viewport.label} project detail path`).toContain("..");
+    expect(metrics.valueTitle, `${viewport.label} project detail full path title`).toContain("repositories");
     expect(metrics.valueWidth, `${viewport.label} workdir value width`).toBeGreaterThan(140);
     expect(metrics.valueLineCount, `${viewport.label} workdir line count`).toBeLessThanOrEqual(3);
     expect(metrics.rowHeight, `${viewport.label} workdir row height`).toBeLessThanOrEqual(76);
