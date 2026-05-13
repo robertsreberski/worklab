@@ -46,7 +46,7 @@
     "examples/*"
   ],
   "bin": {
-    "worklab": "./src/cli/index.js"
+    "worklab": "src/cli/index.js"
   },
   "scripts": {
     "start": "npm run build:ui && node src/cli/index.js serve",
