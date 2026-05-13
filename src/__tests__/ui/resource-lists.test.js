@@ -317,7 +317,7 @@ describe("resource list helpers", () => {
     expect(teamsSource).not.toContain("lead {agentLabels.get(team.lead_agent)");
   });
 
-  it("lets Library selected routes render full-width detail surfaces", () => {
+  it("lets selected resource routes render full-width detail surfaces", () => {
     const paneLayout = source("src/ui/src/components/PaneLayout.jsx");
     const styles = source("src/ui/src/styles.css");
     const detailOnlyRule = cssRule(styles, ".two-pane-detail-only");
@@ -329,6 +329,10 @@ describe("resource list helpers", () => {
       const contents = source(`src/ui/src/routes/library/${route}`);
       expect(contents).toContain("fullDetail={!!");
     }
+    expect(source("src/ui/src/routes/Projects.jsx")).toContain("fullDetail={!!selectedId}");
+    expect(source("src/ui/src/routes/Projects.jsx")).not.toContain("fullDetail={detailOnly && !!selectedId}");
+    expect(source("src/ui/src/routes/Goals.jsx")).toContain("fullDetail={!!selectedId}");
+    expect(source("src/ui/src/routes/Goals.jsx")).not.toContain("fullDetail={detailOnly && !!selectedId}");
   });
 
   it("exposes knowledge sort modes through the compact configuration surface", () => {

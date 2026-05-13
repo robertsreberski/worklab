@@ -251,6 +251,8 @@ export function TaskDetail({ id, runParam = null }) {
   const stage = task?.stage || "plan";
   const taskTeamRouteId = task?.team?.slug || task?.team_id || "";
   const taskTeamDisplay = task?.team?.name || (taskTeamRouteId ? "Unknown" : "");
+  const taskGoalBadgeLabel = task?.project?.name ? `${task.project.name} goal` : "Open goal";
+  const taskGoalBadgeTitle = task?.goal_contract?.objective || task?.goal_status_reason || taskGoalBadgeLabel;
 
   const loadFullRunHistory = useCallback(async () => {
     if (!operationTaskId || runHistoryLoading) return;
@@ -826,7 +828,7 @@ export function TaskDetail({ id, runParam = null }) {
         <EntityBadge kind="team" label={taskTeamDisplay} href={`#/library/teams/${encodeURIComponent(taskTeamRouteId)}`} class="task-team-chip" title={`Team: ${taskTeamDisplay}`} />
       )}
       {task.is_team_root && (
-        <EntityBadge kind="goal" label={task.goal_contract?.objective || "Unknown"} href={`#/goals/${encodeURIComponent(task.id)}`} title="Open goal" />
+        <EntityBadge kind="goal" label={taskGoalBadgeLabel} href={`#/goals/${encodeURIComponent(task.id)}`} title={taskGoalBadgeTitle} />
       )}
       {hasLastRunError && (
         <span class="chip chip-error">

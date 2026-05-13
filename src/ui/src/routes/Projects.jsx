@@ -1077,7 +1077,7 @@ export function Projects({ selectedId = null, mode = null, detailOnly = false })
         hasSelection={!!selectedId}
         detailOwnsMobileBack={!!selectedId}
         listFirst
-        fullDetail={detailOnly && !!selectedId}
+        fullDetail={!!selectedId}
         class="resource-list-layout"
         onBack={() => navigateHash("#/projects")}
         backLabel="All projects"

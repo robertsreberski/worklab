@@ -176,11 +176,20 @@ describe("Goals route helpers", () => {
     expect(rows[0]).toMatchObject({
       id: "run-1",
       href: "#/tasks/root-1?run=run-1",
-      status: "succeeded",
+      status: "Completed",
       status_variant: "primary",
+      tone: "success",
       review_label: "due in 1m",
+      timeline_review_label: "after task completed",
       event_label: "after task completed",
-      impact: ["2 created", "1 assigned", "1 deleted", "1 skipped", "1 noted"],
+      goal_status_label: null,
+      impact: [
+        { key: "created", label: "2 tasks created", tone: "accent" },
+        { key: "assigned", label: "1 task assigned", tone: "accent" },
+        { key: "deleted", label: "1 task removed", tone: "warn" },
+        { key: "skipped", label: "1 task skipped", tone: "warn" },
+        { key: "comments", label: "1 comment", tone: "muted" },
+      ],
       deletions: [{ task_key: "T-42", title: "Obsolete lead task", rationale: "Superseded." }],
       refinement: {
         status: "applied",
@@ -188,6 +197,45 @@ describe("Goals route helpers", () => {
         fields: ["north_star", "objective"],
       },
     });
+  });
+
+  it("keeps completed lead-cycle rows from looking urgent or still active", () => {
+    const [row] = goalLeadCycleTimeline({
+      root_task_id: "root-1",
+      cycles: [{
+        id: "run-1",
+        task_id: "root-1",
+        process_status: "succeeded",
+        goal_status: "in_progress",
+        started_at: 500,
+        next_review_due_at: 1_000,
+        notes_posted: 4,
+      }],
+    }, { now: 2_000 });
+
+    expect(row).toMatchObject({
+      status: "Completed",
+      tone: "success",
+      review_label: "due now",
+      timeline_review_label: null,
+      goal_status_label: null,
+      impact: [{ key: "comments", label: "4 comments", tone: "muted" }],
+    });
+  });
+
+  it("only shows goal-state chips in lead-cycle rows when the state is additive", () => {
+    const rows = goalLeadCycleTimeline({
+      root_task_id: "root-1",
+      cycles: [
+        { id: "run-1", process_status: "succeeded", goal_status: "blocked" },
+        { id: "run-2", process_status: "succeeded", goal_status: "complete" },
+      ],
+    }, { now: 1_000 });
+
+    expect(rows.map((row) => [row.goal_status_label, row.goal_status_variant])).toEqual([
+      ["Goal blocked", "warn"],
+      ["Goal complete", "accent"],
+    ]);
   });
 
   it("builds a project goal cockpit summary with ledger and open goal work", () => {
@@ -219,7 +267,7 @@ describe("Goals route helpers", () => {
       ["assigned", 1],
       ["deleted", 1],
       ["skipped", 1],
-      ["noted", 1],
+      ["comments", 1],
     ]);
     expect(summary.leadTasks[0]).toMatchObject({ task_key: "T-42", title: "Run smoke" });
   });
