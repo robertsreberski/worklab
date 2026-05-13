@@ -42,4 +42,19 @@ describe("path reference textarea helpers", () => {
       caret: 17,
     });
   });
+
+  it("can insert the absolute path for fields that persist backend workdirs", () => {
+    const text = "src/co";
+    const trigger = findPathTrigger(text, text.length);
+    const suggestion = {
+      path: "src/core/",
+      absolute_path: "/Users/robert/Personal_Repositories/worklab/src/core",
+      kind: "directory",
+    };
+
+    expect(insertPathSuggestion(text, trigger, suggestion, { preferAbsolute: true })).toEqual({
+      value: "/Users/robert/Personal_Repositories/worklab/src/core",
+      caret: "/Users/robert/Personal_Repositories/worklab/src/core".length,
+    });
+  });
 });

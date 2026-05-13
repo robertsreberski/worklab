@@ -530,7 +530,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const effortOptions = reasoningLevels.map((level) => ({ value: level, label: level }));
   const useRadioForEffort = reasoningMode === "effort" && reasoningLevels.length >= 3 && reasoningLevels.length <= 5;
   const headerModelLabel = modelDisplayName(agent.model, modelOptions);
-  const headerSlug = isNew ? "Slug after create" : agent.name;
+  const headerSlug = isNew ? "" : agent.name;
 
   function setModel(model) {
     const opt = allModels.find((item) => item.value === model) || null;
@@ -632,7 +632,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     },
   ];
   const runtimeMeta = [
-    { label: "Slug", value: isNew ? "Generated after create" : agent.name },
+    !isNew ? { label: "Slug", value: agent.name } : null,
     { label: "Execution mode", value: (agent.execution_mode === "sdk" ? "sdk" : "cli").toUpperCase() },
     { label: "SDK", value: agent.sdk || String(agent.model || "").split(":", 1)[0] || "—" },
     { label: "Model ref", value: agent.model },
@@ -815,7 +815,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           mobileTopbar: <MobileTopbar title={isNew ? "New agent" : headerSlug} backLabel="Agents" onBack={cancel} />,
           mobileActionDock,
           drawerTitle: "Settings",
-          drawerKicker: headerSlug,
+          drawerKicker: isNew ? "New" : headerSlug,
           drawerContent: renderAgentRail(),
           sections: AGENT_EDIT_SECTIONS,
         }}
@@ -834,8 +834,12 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
         title={title}
         meta={(
           <>
-            <span class="pane-row-mono">{headerSlug}</span>
-            <span class="pane-row-dot">·</span>
+            {!isNew && (
+              <>
+                <span class="pane-row-mono">{headerSlug}</span>
+                <span class="pane-row-dot">·</span>
+              </>
+            )}
             <span>{headerModelLabel}</span>
             <span class="pane-row-dot">·</span>
             <span>{normalizedEffort} effort</span>

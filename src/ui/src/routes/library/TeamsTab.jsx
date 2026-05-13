@@ -447,7 +447,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
     try {
       const payload = {
         name: draft.name.trim(),
-        slug: draft.slug.trim() || undefined,
+        slug: isNew ? undefined : draft.slug.trim() || undefined,
         description: draft.description,
         goal: draft.goal,
         lead_agent: String(draft.lead_agent || "").trim() || null,
@@ -481,7 +481,7 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
   }
 
   const title = isNew ? "New team" : (draft.name || "Untitled team");
-  const slugLabel = isNew ? "Slug after create" : (draft.slug || team?.slug || "");
+  const slugLabel = draft.slug || team?.slug || "";
   const headerActions = (
     <>
       <Button variant="ghost" onClick={() => navigateHash("#/library/teams")}>Cancel</Button>
@@ -501,8 +501,12 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
         title={title}
         meta={(
           <>
-            <span class="pane-row-mono">{slugLabel}</span>
-            <span class="pane-row-dot">·</span>
+            {!isNew && (
+              <>
+                <span class="pane-row-mono">{slugLabel}</span>
+                <span class="pane-row-dot">·</span>
+              </>
+            )}
             <span>{draft.status || "active"}</span>
           </>
         )}
@@ -517,9 +521,11 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
               <FormField label="Name">
                 <Input value={draft.name} onInput={(e) => update({ name: e.currentTarget.value })} />
               </FormField>
-              <FormField label="Slug" hint={isNew ? "Leave blank to generate from name." : null}>
-                <Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" />
-              </FormField>
+              {!isNew && (
+                <FormField label="Slug">
+                  <Input value={draft.slug} onInput={(e) => update({ slug: e.currentTarget.value })} placeholder="generated-from-name" />
+                </FormField>
+              )}
               <FormField label="Description" class="span-2">
                 <Input value={draft.description} onInput={(e) => update({ description: e.currentTarget.value })} />
               </FormField>

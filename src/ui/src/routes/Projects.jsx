@@ -22,6 +22,7 @@ import { Select } from "../components/primitives/Select.jsx";
 import { Tabs } from "../components/primitives/Tabs.jsx";
 import { Textarea } from "../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
+import { PathSuggestInput } from "../components/PathSuggestInput.jsx";
 import { Switch } from "../components/primitives/Switch.jsx";
 import { Chip } from "../components/primitives/Chip.jsx";
 import { TagInput } from "../components/primitives/SpecialInputs.jsx";
@@ -392,7 +393,7 @@ function ProjectEditor({ selectedId, onSaved }) {
   });
 
   const slugTrimmed = draft.slug.trim();
-  const slugValid = slugLooksValid(slugTrimmed);
+  const slugValid = isNew || slugLooksValid(slugTrimmed);
   const canSave = !!draft.name.trim() && slugValid;
   const draftTeam = useMemo(
     () => teams.find((team) => team.id === draft.team_id || team.slug === draft.team_id) || null,
@@ -413,7 +414,7 @@ function ProjectEditor({ selectedId, onSaved }) {
     try {
       const payload = {
         name: draft.name.trim(),
-        slug: draft.slug.trim() || undefined,
+        slug: isNew ? undefined : draft.slug.trim() || undefined,
         description: draft.description,
         context: draft.context,
         workdir: draft.workdir.trim() || null,
@@ -464,13 +465,13 @@ function ProjectEditor({ selectedId, onSaved }) {
       <div class="entity-editor-rail-content">
         <Card variant="spacious" title="Project" class="entity-rail-card">
           <EntityMetaList items={[
-            { label: "Slug", value: isNew ? "Generated on create" : draft.slug },
+            !isNew ? { label: "Slug", value: draft.slug } : null,
             { label: "Workdir", value: draft.workdir || "Default workspace", mono: false },
             { label: "Worktrees", value: worktreeModeLabel(draft.worktree_mode), mono: false },
             { label: "Tags", value: `${(draft.tags || []).length}`, mono: false },
             { label: "Team", value: draftTeamLabel, mono: false },
             { label: "Archived", value: draft.archived ? "Yes" : "No", mono: false },
-          ]} />
+          ].filter(Boolean)} />
         </Card>
       </div>
     ),
@@ -509,23 +510,31 @@ function ProjectEditor({ selectedId, onSaved }) {
                 <FormField label="Name" required>
                   <Input value={draft.name} onInput={(event) => update({ name: event.currentTarget.value })} placeholder="Project name" autoFocus={isNew} />
                 </FormField>
-                <FormField
-                  label="Slug"
-                  hint={slugValid ? "Lowercase letters, digits, and hyphens." : null}
-                  error={slugValid ? null : "Slug must use lowercase letters, digits, and hyphens (no leading/trailing dash)."}
-                >
-                  <Input
-                    value={draft.slug}
-                    onInput={(event) => update({ slug: event.currentTarget.value })}
-                    placeholder="generated-from-name"
-                    aria-invalid={!slugValid}
-                  />
-                </FormField>
+                {!isNew && (
+                  <FormField
+                    label="Slug"
+                    hint={slugValid ? "Lowercase letters, digits, and hyphens." : null}
+                    error={slugValid ? null : "Slug must use lowercase letters, digits, and hyphens (no leading/trailing dash)."}
+                  >
+                    <Input
+                      value={draft.slug}
+                      onInput={(event) => update({ slug: event.currentTarget.value })}
+                      placeholder="generated-from-name"
+                      aria-invalid={!slugValid}
+                    />
+                  </FormField>
+                )}
                 <FormField label="Description">
                   <Input value={draft.description} onInput={(event) => update({ description: event.currentTarget.value })} placeholder="Short summary" />
                 </FormField>
                 <FormField label="Workdir" hint="Optional. Overrides the default workspace for assigned task runs.">
-                  <Input value={draft.workdir} onInput={(event) => update({ workdir: event.currentTarget.value })} placeholder="/path/to/project" />
+                  <PathSuggestInput
+                    value={draft.workdir}
+                    onInput={(event) => update({ workdir: event.currentTarget.value })}
+                    pathContext={isNew ? null : { projectId: selectedId }}
+                    preferAbsoluteSelection
+                    placeholder="/path/to/project"
+                  />
                 </FormField>
                 <FormField label="Worktrees" hint="Execute runs use the source checkout as truth and merge back only after success.">
                   <Select

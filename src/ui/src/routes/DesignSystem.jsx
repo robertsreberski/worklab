@@ -34,6 +34,7 @@ import { LiveRunPanel } from "../components/LiveRunPanel.jsx";
 import { LoadingState } from "../components/LoadingState.jsx";
 import { MarkdownContent } from "../components/Markdown.jsx";
 import { MentionableTextarea } from "../components/MentionableTextarea.jsx";
+import { PathSuggestInput } from "../components/PathSuggestInput.jsx";
 import { AttachmentChips } from "../components/AttachmentChips.jsx";
 import { Metric } from "../components/Metric.jsx";
 import { Modal } from "../components/Modal.jsx";
@@ -215,6 +216,7 @@ export const DESIGN_SYSTEM_COMPONENT_COVERAGE = [
   { name: "Modal", group: "component", coverage: "visible" },
   { name: "PaneLayout", group: "component", coverage: "visible" },
   { name: "PaneRow", group: "component", coverage: "visible" },
+  { name: "PathSuggestInput", group: "component", coverage: "visible" },
   { name: "ProjectPicker", group: "component", coverage: "visible" },
   { name: "ResourceGroup", group: "component", coverage: "visible" },
   { name: "ResourceList", group: "component", coverage: "visible" },
@@ -543,6 +545,9 @@ export function DesignSystem() {
               </FormField>
               <FormField label="Path or URL" class="span-2">
                 <PathOrUrlInput kind="url" value="http://localhost:3000/mcp" readOnly />
+              </FormField>
+              <FormField label="Path suggestions" class="span-2">
+                <PathSuggestInput value="/Users/worklab/path-forward" readOnly />
               </FormField>
               <FormField label="Tags" class="span-2">
                 <TagInput value={tags} onChange={setTags} />

@@ -31,9 +31,11 @@ export function findPathTrigger(text, caret) {
   };
 }
 
-export function insertPathSuggestion(text, trigger, suggestion) {
+export function insertPathSuggestion(text, trigger, suggestion, options = {}) {
   if (!trigger || !suggestion?.path) return { value: text, caret: trigger?.end ?? 0 };
-  const insertion = suggestion.path;
+  const insertion = options.preferAbsolute && suggestion.absolute_path
+    ? suggestion.absolute_path
+    : suggestion.path;
   const next = `${text.slice(0, trigger.start)}${insertion}${text.slice(trigger.end)}`;
   const caret = trigger.start + insertion.length;
   return { value: next, caret };

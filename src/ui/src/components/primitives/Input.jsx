@@ -8,13 +8,19 @@ export function Input({
   disabled,
   readOnly,
   invalid,
+  inputRef,
   size = "md",
   class: className = "",
   ...rest
 }) {
   const cls = `input ${size} ${invalid ? "invalid" : ""} ${className}`.trim();
+  const setRef = (node) => {
+    if (typeof inputRef === "function") inputRef(node);
+    else if (inputRef && typeof inputRef === "object") inputRef.current = node;
+  };
   return (
     <input
+      ref={setRef}
       type={type}
       class={cls}
       value={value ?? ""}
