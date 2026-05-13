@@ -68,6 +68,7 @@ describe("service file generators", () => {
     expect(launchdPlist(params)).toContain("<key>KeepAlive</key><true/>");
     expect(systemdUnit(params)).toContain("ExecStart=/usr/bin/node /repo/src/cli/index.js serve");
     expect(systemdUnit(params)).toContain("Restart=always");
+    expect(systemdUnit(params)).toContain("TimeoutStopSec=70s");
     expect(systemdUnit(params)).toContain("WORKLAB_DATA_DIR=/data");
     expect(systemdUnit(params)).toContain("WORKLAB_PORT=9000");
   });
@@ -86,5 +87,6 @@ describe("service file generators", () => {
     expect(params.env.WORKLAB_DRAIN_TIMEOUT_MS).toBe("30000");
     expect(launchdPlist(params)).toContain("<key>WORKLAB_DRAIN_TIMEOUT_MS</key><string>30000</string>");
     expect(systemdUnit(params)).toContain("WORKLAB_DRAIN_TIMEOUT_MS=30000");
+    expect(systemdUnit(params)).toContain("TimeoutStopSec=40s");
   });
 });

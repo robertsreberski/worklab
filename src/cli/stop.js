@@ -9,7 +9,7 @@ export async function stop(args = []) {
   applyConfigArgs(args);
   const config = loadConfig();
   try {
-    const stopped = await stopUserService();
+    const stopped = await stopUserService({ config });
     console.log(`stopped ${stopped.platform} service: ${stopped.file}`);
     return;
   } catch (err) {
