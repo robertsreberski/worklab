@@ -100,6 +100,52 @@ describe("spawn-run todo inheritance (P2)", () => {
     }
   });
 
+  it("passes a recovery transport override to the worker environment", async () => {
+    const db = makeTestDb();
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-transport-override-"));
+    try {
+      const broker = stubBroker();
+      const { taskId } = seedTaskAndAgent(db);
+      const parentRunId = seedParentRun(db, taskId, populatedState);
+      const task = db.prepare("SELECT id, title, stage FROM tasks WHERE id = ?").get(taskId);
+      let spawnArgs = null;
+
+      spawnTaskRun({
+        db,
+        broker,
+        spawn: (args) => {
+          spawnArgs = args;
+          return stubSpawn()(args);
+        },
+        workerBinary: "/bin/true",
+        logger: { warn: () => {}, error: () => {}, info: () => {} },
+        repoRoot: dataDir,
+        dataDir,
+        workspace: dataDir,
+        runTimeoutMs: 60_000,
+        runIdleWarningMs: 0,
+        logInlineLimit: 0,
+        active: new Map(),
+        activeByRunId: new Map(),
+        onWorkerExit: () => {},
+        task,
+        stage: "execute",
+        mode: "execute",
+        agentName: "coder",
+        parentRunId,
+        diagnosticsSeed: {
+          continuation_of_run_id: parentRunId,
+          continuation_reason: "provider_retryable",
+          pi_transport_override: "sse",
+        },
+      });
+
+      expect(spawnArgs.env.WORKLAB_PI_CODEX_TRANSPORT).toBe("sse");
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("leaves the empty default for stage_progression and manual_retry", async () => {
     const db = makeTestDb();
     const dataDir = mkdtempSync(join(tmpdir(), "worklab-todo-inherit-"));

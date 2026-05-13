@@ -12,6 +12,22 @@ import { checkBudget } from "./budget.js";
 import { compactRecoveryRunSummary } from "./failure-classifier.js";
 import { modeForStage, safeParseJson } from "./run-handler.js";
 
+const PI_CODEX_WEBSOCKET_TRANSPORTS = new Set(["auto", "websocket", "websocket-cached"]);
+
+function websocketTransportFallback(diagnostics = {}, settings = {}) {
+  const errorDetails = diagnostics.error_details || {};
+  const code = diagnostics.pi_error_code || errorDetails.pi_error_code || null;
+  const transport = diagnostics.pi_transport
+    || errorDetails.pi_transport
+    || settings.agent_pi_codex_transport
+    || null;
+  if (code !== "websocket_error" || !PI_CODEX_WEBSOCKET_TRANSPORTS.has(transport)) return {};
+  return {
+    pi_transport_override: "sse",
+    pi_transport_fallback_reason: "websocket_error",
+  };
+}
+
 export function createRecoveryContinuation({
   db,
   logger,
@@ -256,6 +272,7 @@ export function createRecoveryContinuation({
       ...safeParseJson(run?.diagnostics_json, {}),
       ...(res?.diagnostics || {}),
     };
+    const transportFallback = websocketTransportFallback(diagnostics, settings);
     const delegationRetryGuidance = failureKind === "invalid_delegation"
       ? [
           `The previous delegation request exceeded policy: ${diagnostics.delegation_validation_error || res?.error || "invalid delegation"}.`,
@@ -317,6 +334,7 @@ export function createRecoveryContinuation({
       retryable_provider_error: recovery.providerInfo?.retryable || undefined,
       provider_error_subkind: recovery.providerInfo?.subkind || undefined,
       provider_request_id: recovery.providerInfo?.requestId || undefined,
+      ...transportFallback,
     });
 
     const startContinuation = () => {
@@ -345,6 +363,7 @@ export function createRecoveryContinuation({
           provider_error_subkind: recovery.providerInfo?.subkind || undefined,
           provider_request_id: recovery.providerInfo?.requestId || undefined,
           resume_snapshot: resumeSnapshot || undefined,
+          ...transportFallback,
         },
       });
       patchRunDiagnostics(runId, {

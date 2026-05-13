@@ -676,6 +676,8 @@ export function spawnWorker({
       const allWarnings = [...warnings, ...finalWarnings];
       const providerSessionId = finalPayload?.provider_session_id
         || finalPayload?.providerSessionId
+        || workerDiagnostics?.provider_session_id
+        || errorDetails?.provider_session_id
         || null;
       const fileEditArtifacts = extractRunArtifacts(rawEvents, {
         includePending: false,

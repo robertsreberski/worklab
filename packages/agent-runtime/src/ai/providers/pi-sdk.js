@@ -1,4 +1,5 @@
 import { Agent } from "@mariozechner/pi-agent-core";
+import * as openAiCodexResponses from "@mariozechner/pi-ai/openai-codex-responses";
 import { randomUUID } from "node:crypto";
 import { estimateCost } from "../cost.js";
 import { backendCapabilities } from "../backend.js";
@@ -216,6 +217,7 @@ function readRuntimeSettings(explicitSettings) {
 }
 
 const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
+const PI_CODEX_WEBSOCKET_TRANSPORTS = new Set(["auto", "websocket", "websocket-cached"]);
 
 function resolvePiTransport(model, runtimeWarnings, requested) {
   if (model?.api !== "openai-codex-responses") return "auto";
@@ -229,6 +231,67 @@ function resolvePiTransport(model, runtimeWarnings, requested) {
     value: raw,
   });
   return "sse";
+}
+
+function isPlainObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function sanitizeDiagnosticsObject(value) {
+  if (!isPlainObject(value)) return null;
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (
+        item == null
+        || typeof item === "string"
+        || typeof item === "number"
+        || typeof item === "boolean"
+      ) {
+        out[key] = item;
+      }
+    }
+    return Object.keys(out).length ? out : null;
+  }
+}
+
+function piWebSocketDebugStats(providerSessionId, transport) {
+  if (!providerSessionId || !PI_CODEX_WEBSOCKET_TRANSPORTS.has(transport)) return null;
+  try {
+    const stats = openAiCodexResponses.getOpenAICodexWebSocketDebugStats?.(providerSessionId);
+    return sanitizeDiagnosticsObject(stats);
+  } catch {
+    return null;
+  }
+}
+
+function normalizeTransportFailureDiagnostic(diagnostic) {
+  if (!isPlainObject(diagnostic) || diagnostic.type !== "provider_transport_failure") return null;
+  const details = isPlainObject(diagnostic.details) ? diagnostic.details : {};
+  const error = isPlainObject(diagnostic.error) ? diagnostic.error : {};
+  return {
+    type: "provider_transport_failure",
+    error_message: typeof error.message === "string" ? error.message : null,
+    error_name: typeof error.name === "string" ? error.name : null,
+    configured_transport: typeof details.configuredTransport === "string" ? details.configuredTransport : null,
+    fallback_transport: typeof details.fallbackTransport === "string" ? details.fallbackTransport : null,
+    phase: typeof details.phase === "string" ? details.phase : null,
+    events_emitted: typeof details.eventsEmitted === "boolean" ? details.eventsEmitted : null,
+    request_bytes: Number.isFinite(Number(details.requestBytes)) ? Number(details.requestBytes) : null,
+  };
+}
+
+function latestTransportFailureDiagnostic(messages = []) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const diagnostics = Array.isArray(messages[i]?.diagnostics) ? messages[i].diagnostics : [];
+    for (let j = diagnostics.length - 1; j >= 0; j -= 1) {
+      const normalized = normalizeTransportFailureDiagnostic(diagnostics[j]);
+      if (normalized) return normalized;
+    }
+  }
+  return null;
 }
 
 function piNativeTeammates(nativeSubagents) {
@@ -346,6 +409,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let toolResultsSeen = 0;
   let lastToolName = null;
   let piTransport = "auto";
+  let agent = null;
   const subagentResults = [];
   const providerSessionId = options.sessionId
     || options.providerSessionId
@@ -426,7 +490,7 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       ...(structuredTool ? [structuredTool] : []),
     ];
 
-    const agent = new Agent({
+    agent = new Agent({
       initialState: {
         systemPrompt: appendStructuredOutputInstruction(systemPrompt, options.outputSchema),
         model: runtime.model,
@@ -589,6 +653,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     const transcript = agent.state.messages || [];
     const assistantMessages = transcript.filter((message) => message?.role === "assistant");
     const lastAssistant = assistantMessages[assistantMessages.length - 1] || null;
+    const piTransportFailure = latestTransportFailureDiagnostic(assistantMessages);
+    const piWebSocketDebug = piWebSocketDebugStats(providerSessionId, piTransport);
     const finalText = textFromContent(lastAssistant?.content) || assistantTexts.join("");
     const finalThinking = thinkingFromContent(lastAssistant?.content) || assistantThinking.join("");
     const text = finalText;
@@ -634,6 +700,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       max_turns_hit: maxTurnsHit,
       provider_session_id: providerSessionId,
       pi_transport: piTransport,
+      ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
+      ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
     } : null;
     const diagnostics = {
       provider_session_id: providerSessionId,
@@ -646,6 +714,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       ...(piErrorCode ? { pi_error_code: piErrorCode } : {}),
       ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
       ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
+      ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
+      ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
       ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
       ...(subagentResults.length ? {
         pi_subagents: {
@@ -687,6 +757,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
     };
   } catch (err) {
     externalAbort ||= !!options.abortSignal?.aborted;
+    const assistantMessages = Array.isArray(agent?.state?.messages)
+      ? agent.state.messages.filter((message) => message?.role === "assistant")
+      : [];
+    const piTransportFailure = latestTransportFailureDiagnostic(assistantMessages);
+    const piWebSocketDebug = piWebSocketDebugStats(providerSessionId, piTransport);
     const exceptionCode = pickPiErrorCodeFromException(err);
     const errorMessage = normalizePiErrorMessage(
       piErrorPayload?.error_message || err?.message || String(err),
@@ -706,6 +781,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       max_turns_hit: maxTurnsHit,
       provider_session_id: providerSessionId,
       pi_transport: piTransport,
+      ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
+      ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
     } : null;
     return {
       text: assistantTexts.join("") || null,
@@ -737,6 +814,8 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           : {}),
         ...(piErrorPayload?.request_id ? { pi_request_id: piErrorPayload.request_id } : {}),
         ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
+        ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
+        ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
         ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
         ...(compaction?.diagnostics?.() || {}),
       },

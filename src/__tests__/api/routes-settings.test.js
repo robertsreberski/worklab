@@ -52,7 +52,7 @@ describe("settings", () => {
     expect(res.body.settings.agent_search_result_limit).toBe(100);
     expect(res.body.settings.agent_provider_recovery_enabled).toBe(true);
     expect(res.body.settings.agent_provider_recovery_base_delay_ms).toBe(30000);
-    expect(res.body.settings.agent_pi_codex_transport).toBe("websocket-cached");
+    expect(res.body.settings.agent_pi_codex_transport).toBe("sse");
     expect(res.body.settings.agent_verification_adjudicator_mode).toBe("off");
     expect(res.body.settings.agent_verification_adjudicator_model).toBe("");
     expect(res.body.settings).not.toHaveProperty("agent_verification_adjudicator_base_url");

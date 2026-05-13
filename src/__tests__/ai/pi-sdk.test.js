@@ -14,7 +14,7 @@ const EMPTY_USAGE = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-function abortedStream(message = "terminated", { code = null, requestId = null, reason = "aborted", stopReason = "aborted" } = {}) {
+function abortedStream(message = "terminated", { code = null, requestId = null, reason = "aborted", stopReason = "aborted", diagnostics = null } = {}) {
   return (model) => {
     const stream = createAssistantMessageEventStream();
     queueMicrotask(() => {
@@ -30,6 +30,7 @@ function abortedStream(message = "terminated", { code = null, requestId = null, 
         timestamp: Date.now(),
         ...(code ? { code } : {}),
         ...(requestId ? { requestId } : {}),
+        ...(diagnostics ? { diagnostics } : {}),
       };
       stream.push({ type: "error", reason, error });
     });
@@ -282,6 +283,50 @@ describe("generatePiResponse Codex transport", () => {
     expect(result.error).toBeNull();
     expect(streamOptions).toMatchObject({ transport: "websocket-cached" });
     expect(result.diagnostics.pi_transport).toBe("websocket-cached");
+  });
+
+  it("adds upstream WebSocket diagnostics when cached WebSocket fails", async () => {
+    const transportDiagnostic = {
+      type: "provider_transport_failure",
+      timestamp: 123,
+      error: { name: "Error", message: "WebSocket error" },
+      details: {
+        configuredTransport: "websocket-cached",
+        phase: "after_message_stream_start",
+        eventsEmitted: true,
+        requestBytes: 1234,
+      },
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn: abortedStream("WebSocket error", {
+        reason: "error",
+        stopReason: "error",
+        diagnostics: [transportDiagnostic],
+      }),
+      allowedTools: [],
+      skills: [],
+      mcpServers: {},
+      providerSessionId: "pi-session-ws",
+      piCodexTransport: "websocket-cached",
+    });
+
+    expect(result.error).toBe("WebSocket error");
+    expect(result.diagnostics.pi_transport_failure).toMatchObject({
+      type: "provider_transport_failure",
+      error_message: "WebSocket error",
+      configured_transport: "websocket-cached",
+      phase: "after_message_stream_start",
+      events_emitted: true,
+      request_bytes: 1234,
+    });
+    expect(result.errorDetails.pi_transport_failure).toMatchObject({
+      error_message: "WebSocket error",
+      configured_transport: "websocket-cached",
+    });
   });
 });
 

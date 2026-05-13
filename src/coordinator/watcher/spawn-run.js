@@ -20,6 +20,7 @@ import { readSettings } from "../../core/settings.js";
 import { inspectWorktreeSupport, prepareRunWorktree } from "../../core/worktrees.js";
 
 const WORKTREE_TASK_MODES = new Set(["plan", "execute", "review"]);
+const PI_CODEX_TRANSPORTS = new Set(["sse", "auto", "websocket", "websocket-cached"]);
 
 function shouldUseProjectWorktree(mode, project) {
   return WORKTREE_TASK_MODES.has(mode)
@@ -213,6 +214,9 @@ export function spawnTaskRun({
     } : {}),
     ...(execenvPath ? { WORKLAB_EXECENV_PATH: execenvPath } : {}),
     ...(reusableSessionId ? { WORKLAB_PROVIDER_SESSION_ID: reusableSessionId } : {}),
+    ...(PI_CODEX_TRANSPORTS.has(diagnosticsSeed?.pi_transport_override)
+      ? { WORKLAB_PI_CODEX_TRANSPORT: diagnosticsSeed.pi_transport_override }
+      : {}),
   };
   if (mode === "review" && parentRunId) env.WORKLAB_PRIOR_RUN_ID = parentRunId;
 
