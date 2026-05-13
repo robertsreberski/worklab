@@ -197,6 +197,29 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("bounds goal badges and colors lead-cycle timeline rows semantically", () => {
+    const css = readFileSync(stylesPath, "utf8");
+    const goalsSource = readFileSync(goalsPath, "utf8");
+    const goalBadgeRule = declarationsForSelector(css, ".entity-badge--goal");
+    const labelRule = declarationsForSelector(css, ".badge-token-label");
+    const successMarkerRule = declarationsForSelector(css, ".goal-cycle-row.is-success .goal-cycle-marker");
+    const progressMarkerRule = declarationsForSelector(css, ".goal-cycle-row.is-progress .goal-cycle-marker");
+    const warnMarkerRule = declarationsForSelector(css, ".goal-cycle-row.is-warn .goal-cycle-marker");
+    const impactRule = declarationsForSelector(css, ".goal-cycle-impact-chip");
+
+    expect(goalBadgeRule).toContain("max-width: min(100%, 220px)");
+    expect(labelRule).toContain("overflow: hidden");
+    expect(labelRule).toContain("text-overflow: ellipsis");
+    expect(successMarkerRule).toContain("var(--status-done)");
+    expect(progressMarkerRule).toContain("var(--accent)");
+    expect(warnMarkerRule).toContain("var(--status-error)");
+    expect(impactRule).toContain("max-width: 100%");
+    expect(goalsSource).toContain('class={`goal-cycle-row is-${row.tone}`}');
+    expect(goalsSource).toContain("timeline_review_label");
+    expect(goalsSource).toContain("goal_status_label");
+    expect(goalsSource).toContain("goal-cycle-impact-chip");
+  });
+
   it("keeps route metadata rules from overriding badge glyph internals", () => {
     const css = readFileSync(stylesPath, "utf8");
 

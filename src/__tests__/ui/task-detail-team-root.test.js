@@ -17,6 +17,16 @@ describe("TaskDetail team-root controls", () => {
     expect(source).toContain("Lead cycle runs coordinate the team roster");
   });
 
+  it("uses a short project-scoped goal badge label for synthetic team roots", () => {
+    const source = readFileSync(taskDetailSourcePath, "utf8");
+
+    expect(source).toContain("taskGoalBadgeLabel");
+    expect(source).toContain("taskGoalBadgeTitle");
+    expect(source).toContain("label={taskGoalBadgeLabel}");
+    expect(source).toContain("title={taskGoalBadgeTitle}");
+    expect(source).not.toContain('label={task.goal_contract?.objective || "Unknown"}');
+  });
+
   it("blocks direct edit-mode changes for synthetic team roots", () => {
     const source = readFileSync(taskEditSourcePath, "utf8");
 

@@ -1431,7 +1431,10 @@ a.badge-token:focus-visible {
 .entity-badge--kb { --badge-token-tone: var(--status-review); }
 .entity-badge--skill { --badge-token-tone: var(--status-progress); }
 .entity-badge--agent { --badge-token-tone: var(--accent); }
-.entity-badge--goal { --badge-token-tone: var(--status-done); }
+.entity-badge--goal {
+  --badge-token-tone: var(--status-done);
+  max-width: min(100%, 220px);
+}
 .entity-badge--team { --badge-token-tone: var(--status-review); }
 .entity-badge--run { --badge-token-tone: var(--text-muted); }
 .entity-badge--project .badge-token-glyph {
@@ -1961,6 +1964,19 @@ a.badge-token:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.badge.primary,
+.badge.trigger {
+  background: var(--status-done-bg-10);
+  color: var(--status-done);
+}
+.badge.warn {
+  background: var(--status-error-bg-10);
+  color: var(--status-error);
+}
+.badge.muted {
+  background: var(--surface-sunken);
+  color: var(--text-subtle);
 }
 .badge.accent { background: var(--accent-soft); color: var(--accent); }
 
@@ -6639,6 +6655,15 @@ html.assistant-resizing * {
   padding: var(--sp-3) 0;
   border-bottom: 1px solid var(--border);
 }
+.goal-cycle-row.is-success {
+  border-bottom-color: color-mix(in srgb, var(--status-done) 22%, var(--border));
+}
+.goal-cycle-row.is-progress {
+  border-bottom-color: color-mix(in srgb, var(--accent) 22%, var(--border));
+}
+.goal-cycle-row.is-warn {
+  border-bottom-color: color-mix(in srgb, var(--status-error) 22%, var(--border));
+}
 .goal-cycle-row:first-child {
   padding-top: 0;
 }
@@ -6654,6 +6679,22 @@ html.assistant-resizing * {
   border: 2px solid var(--accent-line);
   border-radius: 50%;
   background: var(--surface);
+}
+.goal-cycle-row.is-success .goal-cycle-marker {
+  border-color: var(--status-done);
+  background: var(--status-done-bg-20);
+}
+.goal-cycle-row.is-progress .goal-cycle-marker {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.goal-cycle-row.is-warn .goal-cycle-marker {
+  border-color: var(--status-error);
+  background: var(--status-error-bg-20);
+}
+.goal-cycle-row.is-muted .goal-cycle-marker {
+  border-color: var(--text-subtle);
+  background: var(--surface-sunken);
 }
 .goal-cycle-content {
   display: grid;
@@ -6689,9 +6730,16 @@ html.assistant-resizing * {
   line-height: 1.35;
 }
 .goal-cycle-review {
-  color: var(--text);
+  color: var(--accent);
   font-size: var(--text-sm);
   font-weight: 700;
+  padding: 1px var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+.goal-cycle-impact-chip {
+  max-width: 100%;
 }
 .goal-cycle-foot a {
   font-size: var(--text-sm);

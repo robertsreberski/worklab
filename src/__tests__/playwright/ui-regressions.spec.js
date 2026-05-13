@@ -5142,6 +5142,45 @@ test("desktop Library selected routes replace the list with full-width detail", 
   }
 });
 
+test("desktop Projects and Goals selected routes replace the list with full-width detail", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 1000 });
+  for (const route of [
+    { hash: `#/projects/${projectSlug}`, label: "project" },
+    { hash: `#/goals/${goalId}`, label: "goal" },
+  ]) {
+    await page.goto(`${baseUrl}/${route.hash}`);
+    await expect(page.locator(".pane-detail")).toBeVisible();
+    const metrics = await page.evaluate(() => {
+      const appMain = document.querySelector(".app-main");
+      const pane = document.querySelector(".two-pane");
+      const list = document.querySelector(".pane-list");
+      const detail = document.querySelector(".pane-detail");
+      const mainRect = appMain?.getBoundingClientRect();
+      const paneRect = pane?.getBoundingClientRect();
+      const detailRect = detail?.getBoundingClientRect();
+      return {
+        listExists: !!list,
+        paneClass: pane?.className || "",
+        mainLeft: mainRect ? Math.round(mainRect.left) : -1,
+        mainRight: mainRect ? Math.round(mainRect.right) : -1,
+        paneLeft: paneRect ? Math.round(paneRect.left) : -1,
+        paneRight: paneRect ? Math.round(paneRect.right) : -1,
+        detailLeft: detailRect ? Math.round(detailRect.left) : -1,
+        detailRight: detailRect ? Math.round(detailRect.right) : -1,
+        overflow: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+
+    expect(metrics.listExists, `${route.label} list column`).toBe(false);
+    expect(metrics.paneClass, `${route.label} full detail class`).toContain("two-pane-detail-only");
+    expect(metrics.paneLeft, `${route.label} pane left`).toBe(metrics.mainLeft);
+    expect(metrics.paneRight, `${route.label} pane right`).toBe(metrics.mainRight);
+    expect(metrics.detailLeft, `${route.label} detail left`).toBe(metrics.mainLeft);
+    expect(metrics.detailRight, `${route.label} detail right`).toBe(metrics.mainRight);
+    expect(metrics.overflow, `${route.label} overflow`).toBeLessThanOrEqual(0);
+  }
+});
+
 test("dropdown inside mobile bottom sheet portals out and stays visible", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${baseUrl}/#/runs`);

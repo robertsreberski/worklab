@@ -146,15 +146,42 @@ function leadCycleRunId(cycle = {}) {
   return text(cycle.run_id || cycle.id);
 }
 
+function leadCycleProcessStatus(cycle = {}) {
+  return text(cycle?.process_status || cycle?.status || "").toLowerCase();
+}
+
 function leadCycleStatusVariant(cycle = {}) {
-  const status = cycle?.process_status || cycle?.status || "";
+  const status = leadCycleProcessStatus(cycle);
   if (status === "succeeded" || status === "complete") return "primary";
+  if (status === "running" || status === "in_progress") return "accent";
+  if (status === "failed" || status === "error" || status === "cancelled") return "warn";
+  return "muted";
+}
+
+function leadCycleTone(cycle = {}) {
+  const status = leadCycleProcessStatus(cycle);
+  if (status === "succeeded" || status === "complete") return "success";
+  if (status === "running" || status === "in_progress") return "progress";
   if (status === "failed" || status === "error" || status === "cancelled") return "warn";
   return "muted";
 }
 
 function leadCycleStatus(cycle = {}) {
-  return text(cycle.process_status || cycle.status || "unknown");
+  const status = leadCycleProcessStatus(cycle);
+  if (status === "succeeded" || status === "complete") return "Completed";
+  if (status === "running" || status === "in_progress") return "Running";
+  if (status === "failed" || status === "error") return "Failed";
+  if (status === "cancelled") return "Cancelled";
+  return text(cycle.process_status || cycle.status || "Unknown");
+}
+
+function leadCycleGoalStatus(cycle = {}) {
+  const status = text(cycle.goal_status).toLowerCase();
+  if (!status || status === "in_progress") return null;
+  if (status === "blocked") return { label: "Goal blocked", variant: "warn" };
+  if (status === "complete") return { label: "Goal complete", variant: "accent" };
+  if (status === "paused") return { label: "Goal paused", variant: "muted" };
+  return { label: `Goal ${status.replaceAll("_", " ")}`, variant: "muted" };
 }
 
 function eventLabel(event) {
@@ -163,19 +190,23 @@ function eventLabel(event) {
   return text(event) ? `after ${text(event)}` : null;
 }
 
-function formatImpactCount(value, singular, plural) {
+function formatImpactCount(value, key, singular, plural, tone) {
   const count = Number(value) || 0;
   if (count <= 0) return null;
-  return `${count} ${count === 1 ? singular : plural}`;
+  return {
+    key,
+    label: `${count} ${count === 1 ? singular : plural}`,
+    tone,
+  };
 }
 
 function leadCycleImpact(cycle = {}) {
   return [
-    formatImpactCount(cycle.tasks_created, "created", "created"),
-    formatImpactCount(cycle.tasks_assigned, "assigned", "assigned"),
-    formatImpactCount(cycle.tasks_deleted, "deleted", "deleted"),
-    formatImpactCount(cycle.tasks_skipped, "skipped", "skipped"),
-    formatImpactCount(cycle.notes_posted, "noted", "noted"),
+    formatImpactCount(cycle.tasks_created, "created", "task created", "tasks created", "accent"),
+    formatImpactCount(cycle.tasks_assigned, "assigned", "task assigned", "tasks assigned", "accent"),
+    formatImpactCount(cycle.tasks_deleted, "deleted", "task removed", "tasks removed", "warn"),
+    formatImpactCount(cycle.tasks_skipped, "skipped", "task skipped", "tasks skipped", "warn"),
+    formatImpactCount(cycle.notes_posted, "comments", "comment", "comments", "muted"),
   ].filter(Boolean);
 }
 
@@ -237,7 +268,9 @@ export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
     const runId = leadCycleRunId(cycle);
     const taskId = text(cycle.task_id || goal.root_task_id);
     const dueLabel = timeUntil(cycle.next_review_due_at, { now });
-    const reviewLabel = dueLabel || eventLabel(cycle.next_review_event);
+    const triggerLabel = eventLabel(cycle.next_review_event);
+    const reviewLabel = dueLabel || triggerLabel;
+    const goalStatus = leadCycleGoalStatus(cycle);
     return {
       id: runId || `${cycle.started_at || index}`,
       run_id: runId || null,
@@ -245,16 +278,20 @@ export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
       href: runId && taskId ? `#/tasks/${encodeURIComponent(taskId)}?run=${encodeURIComponent(runId)}` : null,
       status: leadCycleStatus(cycle),
       status_variant: leadCycleStatusVariant(cycle),
+      tone: leadCycleTone(cycle),
       started_label: cycle.started_at ? relativeTime(cycle.started_at) : null,
       summary: text(cycle.summary),
       checkpoint_note: text(cycle.checkpoint_note),
       validation_summary: text(cycle.validation_summary),
       goal_status: text(cycle.goal_status),
+      goal_status_label: goalStatus?.label || null,
+      goal_status_variant: goalStatus?.variant || null,
       goal_refinement: objectValue(cycle.goal_refinement),
       goal_refinement_applied: objectValue(cycle.goal_refinement_applied),
       refinement: goalRefinementSummary(cycle),
       review_label: reviewLabel,
-      event_label: eventLabel(cycle.next_review_event),
+      timeline_review_label: triggerLabel,
+      event_label: triggerLabel,
       impact: leadCycleImpact(cycle),
       deletions: deletionRows(cycle),
       tasks_created: Number(cycle.tasks_created) || 0,
@@ -292,7 +329,7 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
       { key: "assigned", label: "Assigned", value: Number(latest?.tasks_assigned ?? goal?.latest_cycle?.tasks_assigned ?? 0) || 0 },
       { key: "deleted", label: "Deleted", value: Number(latest?.tasks_deleted ?? goal?.latest_cycle?.tasks_deleted ?? 0) || 0 },
       { key: "skipped", label: "Skipped", value: Number(latest?.tasks_skipped ?? goal?.latest_cycle?.tasks_skipped ?? 0) || 0 },
-      { key: "noted", label: "Noted", value: Number(latest?.notes_posted ?? goal?.latest_cycle?.notes_posted ?? 0) || 0 },
+      { key: "comments", label: "Comments", value: Number(latest?.notes_posted ?? goal?.latest_cycle?.notes_posted ?? 0) || 0 },
     ],
   };
 }
@@ -503,14 +540,14 @@ function LeadCycleTimeline({ goal }) {
   return (
     <ol class="goal-cycle-timeline">
       {rows.map((row) => (
-        <li key={row.id} class="goal-cycle-row">
+        <li key={row.id} class={`goal-cycle-row is-${row.tone}`}>
           <div class="goal-cycle-marker" aria-hidden="true" />
           <div class="goal-cycle-content">
             <div class="goal-cycle-head">
               <Badge variant={row.status_variant}>{row.status}</Badge>
-              {row.goal_status ? <Chip variant="muted">{row.goal_status.replace("_", " ")}</Chip> : null}
+              {row.goal_status_label ? <Chip variant={row.goal_status_variant || "muted"}>{row.goal_status_label}</Chip> : null}
               {row.started_label ? <span class="muted">{row.started_label}</span> : null}
-              {row.review_label ? <span class="goal-cycle-review">{row.review_label}</span> : null}
+              {row.timeline_review_label ? <span class="goal-cycle-review">{row.timeline_review_label}</span> : null}
             </div>
             <div class="goal-cycle-summary">{row.summary || row.checkpoint_note || "Lead cycle completed."}</div>
             {(row.checkpoint_note || row.validation_summary) && (
@@ -530,7 +567,11 @@ function LeadCycleTimeline({ goal }) {
               </div>
             ) : null}
             <div class="goal-cycle-foot">
-              {row.impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
+              {row.impact.map((item) => (
+                <Chip key={item.key} variant={item.tone || "muted"} class={`goal-cycle-impact-chip is-${item.key}`}>
+                  {item.label}
+                </Chip>
+              ))}
               {row.cost_usd ? <span class="muted">${Number(row.cost_usd).toFixed(4)}</span> : null}
               {row.href && <EntityBadge kind="run" label={row.run_id || "Unknown"} id={row.run_id} href={row.href} />}
             </div>
@@ -1071,7 +1112,7 @@ export function Goals({ selectedId = null, mode = null, detailOnly = false }) {
         )}
         detail={body}
         listFirst
-        fullDetail={detailOnly && !!selectedId}
+        fullDetail={!!selectedId}
         class="resource-list-layout goals-layout"
       />
     </AppShell>
