@@ -2388,10 +2388,10 @@ a.badge-token:focus-visible {
   justify-content: flex-end;
   gap: var(--sp-2);
 }
-.resource-overlay-modal {
-  width: min(1120px, calc(100vw - 32px));
-  height: min(860px, calc(100vh - 32px));
-  max-height: calc(100vh - 32px);
+.modal.resource-overlay-modal {
+  width: min(max(1120px, 80vw), calc(100vw - 32px));
+  height: min(80vh, calc(var(--shell-height, 100vh) - 32px));
+  max-height: min(80vh, calc(var(--shell-height, 100vh) - 32px));
   overflow: hidden;
 }
 .resource-overlay-modal .modal-body {
@@ -12034,10 +12034,12 @@ button.settings-overview-card:focus-visible,
     max-height: min(86vh, 640px);
     border-radius: var(--radius-md) var(--radius-md) 0 0;
   }
-  .resource-overlay-modal {
-    width: 100%;
-    height: min(86vh, 640px);
-    max-height: min(86vh, 640px);
+  .modal.resource-overlay-modal {
+    width: 100vw;
+    max-width: 100vw;
+    height: var(--shell-height);
+    max-height: var(--shell-height);
+    border-radius: 0;
   }
   .modal::before {
     content: "";
@@ -12047,6 +12049,10 @@ button.settings-overview-card:focus-visible,
     margin-top: var(--sp-2);
     border-radius: var(--radius-pill);
     background: var(--border-strong);
+  }
+  .modal.resource-overlay-modal::before {
+    content: none;
+    display: none;
   }
   .modal.sm,
   .modal.md,
