@@ -21,6 +21,7 @@ import {
 } from "../../ui/src/routes/settings/helpers.js";
 
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
+const settingsShellSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/SettingsShell.jsx");
 const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
 const providersSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/ProvidersTab.jsx");
 const aboutHeroPath = resolve(import.meta.dirname, "../../ui/public/about/worklab-about-hero.png");
@@ -103,13 +104,14 @@ describe("settings UI duration conversions", () => {
 
   it("uses one aligned route shell for Settings, Providers, and About", () => {
     const source = readFileSync(settingsSourcePath, "utf8");
+    const shellSource = readFileSync(settingsShellSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
     const pageRule = cssRule(styles, ".settings-page");
     const shellRule = cssRule(styles, ".settings-route-shell");
 
-    expect(source).toContain("function SettingsTabs");
-    expect(source).toContain("function SettingsRouteShell");
-    expect(source).toContain('class="settings-route-content"');
+    expect(shellSource).toContain("function SettingsTabs");
+    expect(shellSource).toContain("function SettingsRouteShell");
+    expect(shellSource).toContain('class="settings-route-content"');
     expect(source).toContain('title="Providers"');
     expect(source).toContain('title="About Worklab"');
     expect(source).not.toContain('<div class="ds-page-head">');
@@ -139,7 +141,7 @@ describe("settings UI duration conversions", () => {
   });
 
   it("presents About as a polished visual surface with a project-local generated asset", () => {
-    const source = readFileSync(settingsSourcePath, "utf8");
+    const source = readFileSync(settingsShellSourcePath, "utf8");
     const styles = readFileSync(settingsStylesPath, "utf8");
 
     expect(source).toContain('class="settings-about-hero"');

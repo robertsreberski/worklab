@@ -25,7 +25,7 @@ export function ensureCurrentSchemaColumnsBeforeSchema(db) {
     ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
   ]);
   ensureColumns(db, "projects", [
-    ["team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL"],
+    ["team_id", "team_id TEXT"],
     ["archived", "archived INTEGER NOT NULL DEFAULT 0"],
     ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
   ]);
