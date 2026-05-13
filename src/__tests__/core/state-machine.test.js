@@ -426,6 +426,39 @@ describe("workflow stage reducer", () => {
       expect(r.sideEffects.find((s) => s.type === "post_review_comment")?.notes).toMatch(/npm test foo/);
     });
 
+    it("block mode approves with a warning when substantial evidence matched and only some rows are unmatched", () => {
+      const r = nextStage("review", {
+        type: "run_succeeded",
+        stage: "review",
+        result: {
+          decision: "approve",
+          summary: "ok",
+          verification_evidence: [
+            { kind: "test", command_or_url: "npm test foo", exit_code_or_status: "0", snippet: "passed" },
+            { kind: "manual_check", command_or_url: "git status --short", exit_code_or_status: "0", snippet: "clean" },
+          ],
+        },
+        hasArtifacts: true,
+        verificationMode: "block",
+        evidenceCrossCheck: {
+          totalChecked: 2,
+          matchedCount: 1,
+          unmatchedCount: 1,
+          unmatchedRows: [
+            {
+              evidence_index: 1,
+              command_or_url: "git status --short",
+              reason: "No matching logged tool call.",
+            },
+          ],
+        },
+      });
+      expect(r.stage).toBe("done");
+      expect(r.sideEffects).toContainEqual({ type: "set_completed_at" });
+      expect(r.sideEffects).toContainEqual(expect.objectContaining({ type: "verification_warning" }));
+      expect(r.sideEffects).not.toContainEqual({ type: "set_last_failure_kind", kind: "review_unverified" });
+    });
+
     it("block mode reports adjudicator timeouts as cross-check infrastructure failures", () => {
       const r = nextStage("review", {
         type: "run_succeeded",

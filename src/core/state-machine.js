@@ -172,15 +172,23 @@ export function nextStage(currentStage, event) {
             : [];
           const cross = event.evidenceCrossCheck || null;
           const checkableEvidenceCount = evidence.filter((row) => row?.kind && row.kind !== "n_a").length;
-          const validEvidenceCount = cross
+          const matchedEvidenceCount = cross
             ? (cross.matchedCount || 0)
             : checkableEvidenceCount;
-          const evidenceMissing = event.hasArtifacts && validEvidenceCount === 0;
-          const evidenceFabricated = event.hasArtifacts && evidence.length > 0 && (cross?.unmatchedCount || 0) > 0;
-          const gateApplies = (evidenceMissing || evidenceFabricated) && gateMode !== "off";
+          const unmatchedEvidenceCount = cross?.unmatchedCount || 0;
+          const evidenceMissing = event.hasArtifacts && checkableEvidenceCount === 0;
+          const evidenceUnsupported = event.hasArtifacts
+            && checkableEvidenceCount > 0
+            && matchedEvidenceCount === 0
+            && unmatchedEvidenceCount > 0;
+          const evidencePartial = event.hasArtifacts
+            && matchedEvidenceCount > 0
+            && unmatchedEvidenceCount > 0;
+          const blockingGateApplies = (evidenceMissing || evidenceUnsupported) && gateMode !== "off";
+          const warningGateApplies = (evidenceMissing || evidenceUnsupported || evidencePartial) && gateMode !== "off";
 
-          if (gateApplies && gateMode === "block") {
-            const reason = evidenceFabricated
+          if (blockingGateApplies && gateMode === "block") {
+            const reason = evidenceUnsupported
               ? verificationFabricationReason(cross)
               : "review approved without verification_evidence";
             return change("review", [
@@ -204,9 +212,12 @@ export function nextStage(currentStage, event) {
             { type: "clear_last_failure_kind" },
             { type: "set_completed_at" },
           ];
-          if (gateApplies && gateMode === "warn") {
-            const message = evidenceFabricated
-              ? `Approve emitted with ${cross.unmatchedCount}/${cross.totalChecked} verification_evidence rows unmatched by the run's tool log; would have been bounced under block mode.`
+          if (warningGateApplies && (gateMode === "warn" || gateMode === "block")) {
+            const modeNote = gateMode === "block"
+              ? "approval continued because at least one evidence row matched"
+              : "would have been bounced under strict zero-match enforcement";
+            const message = unmatchedEvidenceCount > 0
+              ? `Approve emitted with ${cross.unmatchedCount}/${cross.totalChecked} verification_evidence rows unmatched by the run's tool log; ${modeNote}.`
               : "Approve emitted without verification_evidence; the task has artifacts that should have been verified.";
             approveSideEffects.unshift({ type: "verification_warning", message });
           }

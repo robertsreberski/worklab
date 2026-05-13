@@ -1260,6 +1260,31 @@ describe("task-watcher", () => {
     expect(spawn).toHaveBeenCalledTimes(1);
   });
 
+  it("does not auto-rerun review_unverified tasks without a human retry", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "checker");
+    const taskId = seedTask(db, {
+      reviewer: "checker",
+      stage: "review",
+      runPolicy: "auto_plan_execute",
+    });
+    db.prepare("UPDATE tasks SET last_failure_kind = 'review_unverified' WHERE id = ?").run(taskId);
+    db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, ended_at, status, process_status) VALUES ('exec-1', ?, 'execute', 'owner', ?, ?, 'complete', 'succeeded')")
+      .run(taskId, Date.now() - 2000, Date.now() - 1000);
+
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: Promise.resolve({ exitCode: 0, status: "complete", processStatus: "succeeded", finalText: "ok" }),
+      cancel: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({ db, broker: stubBroker(), spawn, workerBinary: "/fake" });
+
+    watcher.maybeAutoStart(taskId);
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("rejects plan run_requested without planner or owner", async () => {
     const db = makeTestDb();
     const taskId = seedTask(db, { stage: "plan" });
