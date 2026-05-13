@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS projects (
   workdir TEXT,
   worktree_mode TEXT NOT NULL DEFAULT 'off',
   tags_json TEXT NOT NULL DEFAULT '[]',
-  team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+  team_id TEXT,
   archived INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

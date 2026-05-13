@@ -22,11 +22,13 @@ const goalsPath = resolve(repoRoot, "src/ui/src/routes/Goals.jsx");
 const projectsPath = resolve(repoRoot, "src/ui/src/routes/Projects.jsx");
 const providersPath = resolve(repoRoot, "src/ui/src/routes/settings/ProvidersTab.jsx");
 const runCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunCards.jsx");
+const taskRailPath = resolve(repoRoot, "src/ui/src/routes/task-detail/TaskRail.jsx");
 const teamsPath = resolve(repoRoot, "src/ui/src/routes/library/TeamsTab.jsx");
 const taskDetailPath = resolve(repoRoot, "src/ui/src/routes/TaskDetail.jsx");
 const taskEditPath = resolve(repoRoot, "src/ui/src/routes/TaskEdit.jsx");
 const runInputPreviewPath = resolve(repoRoot, "src/ui/src/routes/task-detail/RunInputPreviewModal.jsx");
 const settingsPath = resolve(repoRoot, "src/ui/src/routes/Settings.jsx");
+const settingsShellPath = resolve(repoRoot, "src/ui/src/routes/settings/SettingsShell.jsx");
 const workflowCardsPath = resolve(repoRoot, "src/ui/src/routes/task-detail/WorkflowCards.jsx");
 const assistantDockPath = resolve(repoRoot, "src/ui/src/components/AssistantDock.jsx");
 const commentListPath = resolve(repoRoot, "src/ui/src/components/CommentList.jsx");
@@ -297,7 +299,7 @@ describe("design system stylesheet", () => {
   });
 
   it("builds rail action stacks on the shared ActionDock layout", () => {
-    for (const filePath of [taskDetailPath, providersPath]) {
+    for (const filePath of [taskRailPath, providersPath]) {
       const source = readFileSync(filePath, "utf8");
       expect(source).toMatch(/import\s+\{[^}]*ActionDock[^}]*\}\s+from/);
       expect(source).toMatch(/<ActionDock[\s\S]*class="task-actions-stack"/);
@@ -558,7 +560,9 @@ describe("design system stylesheet", () => {
 
   it("builds settings panel groups on the shared PanelGrid layout", () => {
     const settingsSource = readFileSync(settingsPath, "utf8");
-    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*InlineHead[^}]*Page[^}]*PanelGrid[^}]*SectionStack[^}]*Toolbar[^}]*\}/);
+    const settingsShellSource = readFileSync(settingsShellPath, "utf8");
+    expect(settingsSource).toMatch(/import\s+\{[^}]*ControlGroup[^}]*ControlGroupStack[^}]*InlineHead[^}]*PanelGrid[^}]*SectionStack[^}]*Toolbar[^}]*\}/);
+    expect(settingsShellSource).toMatch(/import\s+\{[^}]*PageHeader[^}]*PanelGrid[^}]*\}\s+from/);
     expect(settingsSource).toMatch(/<Button[\s\S]*class=\{activeSectionId === item\.id \? "is-active" : ""\}/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-overview-grid"/);
     expect(settingsSource).toMatch(/<PanelGrid\s+class="settings-panel-grid"/);
@@ -583,7 +587,7 @@ describe("design system stylesheet", () => {
   });
 
   it("builds counted route groups on the shared SectionGroup layout", () => {
-    for (const filePath of [projectsPath, teamsPath, runCardsPath, kbDetailPath, taskDetailPath]) {
+    for (const filePath of [projectsPath, teamsPath, runCardsPath, kbDetailPath, taskRailPath]) {
       const source = readFileSync(filePath, "utf8");
       expect(source).toMatch(/import\s+\{[^}]*SectionGroup[^}]*\}\s+from/);
       expect(source).toMatch(/<SectionGroup[\s\S]+class="(?:project-task-group|project-knowledge-group|project-task-output-lane|team-goal-dashboard-group|run-artifacts-section|run-artifact-group|knowledge-usage-group|task-dependencies-section|dependency-group)"/);
@@ -597,8 +601,8 @@ describe("design system stylesheet", () => {
     expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<div[^>]+class="run-artifacts-section"/);
     expect(readFileSync(runCardsPath, "utf8")).not.toMatch(/<section[^>]+class="run-artifact-group"/);
     expect(readFileSync(kbDetailPath, "utf8")).not.toMatch(/<div[^>]+class="knowledge-usage-group"/);
-    expect(readFileSync(taskDetailPath, "utf8")).not.toMatch(/<div[^>]+class="task-dependencies-section"/);
-    expect(readFileSync(taskDetailPath, "utf8")).not.toMatch(/<div[^>]+class="dependency-group"/);
+    expect(readFileSync(taskRailPath, "utf8")).not.toMatch(/<div[^>]+class="task-dependencies-section"/);
+    expect(readFileSync(taskRailPath, "utf8")).not.toMatch(/<div[^>]+class="dependency-group"/);
   });
 
   it("builds nested section stacks on the shared SectionStack layout", () => {
@@ -624,7 +628,7 @@ describe("design system stylesheet", () => {
       [agentEditPath, "agent-learning-list"],
       [runInputPreviewPath, "run-input-preview-message-list"],
       [settingsPath, "settings-list"],
-      [taskDetailPath, "rail-agents-stack"],
+      [taskRailPath, "rail-agents-stack"],
       [workflowCardsPath, "task-automation-list"],
       [projectsPath, "project-task-child-list"],
       [projectsPath, "project-task-attention-list"],

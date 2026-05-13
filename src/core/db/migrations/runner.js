@@ -766,7 +766,7 @@ export function runMigrations(db) {
       workdir TEXT,
       worktree_mode TEXT NOT NULL DEFAULT 'off',
       tags_json TEXT NOT NULL DEFAULT '[]',
-      team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
+      team_id TEXT,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -892,7 +892,7 @@ export function runMigrations(db) {
   addColumnIfMissing(db, "automations", "task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE");
 
   // v33: teams. Add team-scoped columns to existing tables idempotently.
-  addColumnIfMissing(db, "projects", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
+  addColumnIfMissing(db, "projects", "team_id", "team_id TEXT");
   addColumnIfMissing(db, "tasks", "team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL");
   addColumnIfMissing(db, "tasks", "is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0");
   addColumnIfMissing(db, "tasks", "goal_status", "goal_status TEXT");
