@@ -73,13 +73,15 @@ function normaliseBlock(block) {
   if (block.type === "thinking") return { type: "thinking", text: block.text || block.thinking || "" };
   if (block.type === "text") return { type: "text", text: block.text || "" };
   if (block.type === "tool_result") {
-    const output = block.output ?? block.content ?? block.result ?? "";
+    const output = toolResultDisplayValue(block);
     return {
       type: "tool_result",
       tool_use_id: block.tool_use_id,
       output,
       content: block.content,
       result: block.result,
+      error: block.error,
+      message: block.message,
       is_error: Boolean(block.is_error || block.error),
       raw_result: block.raw_result,
     };
@@ -94,6 +96,20 @@ function normaliseBlock(block) {
     };
   }
   return block;
+}
+
+function hasDisplayValue(value) {
+  if (value == null) return false;
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function toolResultDisplayValue(toolResult) {
+  const explicit = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
+  if (hasDisplayValue(explicit)) return explicit;
+  if (hasDisplayValue(toolResult?.error)) return toolResult.error;
+  if (hasDisplayValue(toolResult?.message)) return toolResult.message;
+  return explicit ?? "";
 }
 
 function mergeStreamingText(current, next) {
@@ -409,7 +425,7 @@ function TimelineEvent({ event, isLast, streaming }) {
   } else if (type === "tool_result" || type === "tool_output") {
     const isError = event.is_error || event.error;
     railIcon = <RailIcon name={isError ? "alert-triangle" : "check"} tone={isError ? "error" : "ok"} />;
-    const resultText = event.content ?? event.output ?? event.result ?? "";
+    const resultText = toolResultDisplayValue(event);
     content = (
       <CollapsibleBlock
         title={isError ? "Error" : "Result"}

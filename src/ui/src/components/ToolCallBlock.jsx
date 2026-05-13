@@ -107,6 +107,18 @@ function isEmptyOutputValue(value) {
   return false;
 }
 
+function hasDisplayValue(value) {
+  return !isEmptyOutputValue(value);
+}
+
+function toolResultDisplayValue(toolResult) {
+  const explicit = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
+  if (hasDisplayValue(explicit)) return explicit;
+  if (hasDisplayValue(toolResult?.error)) return toolResult.error;
+  if (hasDisplayValue(toolResult?.message)) return toolResult.message;
+  return explicit;
+}
+
 function ToolCallBody({
   toolUse,
   toolResult,
@@ -171,7 +183,7 @@ export function ToolCallBlock({ toolUse, toolResult, structuredOutput, messageSt
   const missing = !toolResult && !structuredOutput && messageStatus !== "streaming";
   const isError = Boolean(toolResult?.is_error || toolResult?.error);
   const truncated = Boolean(toolResult?.truncated);
-  const rawOutput = toolResult?.output ?? toolResult?.content ?? toolResult?.result;
+  const rawOutput = toolResultDisplayValue(toolResult);
   const outputIsEmpty = isEmptyOutputValue(rawOutput);
   const isFileEdit = toolUse?.name === "file_edit";
   const isStructuredOutput = toolUse?.name === "StructuredOutput";
