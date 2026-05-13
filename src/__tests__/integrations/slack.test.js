@@ -26,7 +26,7 @@ function fakeSlackApp() {
   const client = {
     auth: { test: vi.fn(async () => ({ ok: true, user_id: "UBOT" })) },
     assistant: { threads: { setStatus: vi.fn(async () => ({ ok: true })) } },
-    conversations: { open: vi.fn(async () => ({ ok: true, channel: { id: "DROBERT" } })) },
+    conversations: { open: vi.fn(async () => ({ ok: true, channel: { id: "D_USER" } })) },
     chat: { postMessage: vi.fn(async (params) => ({ ok: true, channel: params.channel, ts: "999.0001" })) },
   };
   const app = {
@@ -47,7 +47,7 @@ const triageJson = JSON.stringify({
   reply_text: "I will check.",
   notify_user: false,
   user_message: "",
-  journal_bullets: ["Robert was asked to check something."],
+  journal_bullets: ["The user was asked to check something."],
   memory_facts: ["Slack triage test fact."],
   action_items: ["Check the request"],
 });
@@ -65,7 +65,7 @@ describe("slack integration", () => {
     dirs.push(dataDir);
     writeSettings(db, {
       slack_enabled: true,
-      slack_user_id: "UROBERT",
+      slack_user_id: "U_USER",
       slack_agent_name: "assistant",
       slack_model: "pi:openai-codex:gpt-5.5",
       slack_effort: "xhigh",

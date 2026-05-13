@@ -83,7 +83,7 @@ describe("settings", () => {
       consolidation_hour: 5,
       default_embedding_model: "openai:text-embedding-3-small",
       slack_enabled: true,
-      slack_user_id: "UROBERT",
+      slack_user_id: "U_USER",
       slack_agent_name: "assistant",
       slack_model: "pi:openai-codex:gpt-5.5",
       slack_effort: "xhigh",
@@ -115,7 +115,7 @@ describe("settings", () => {
     expect(res.body.settings.consolidation_hour).toBe(5);
     expect(res.body.settings.default_embedding_model).toBe("openai:text-embedding-3-small");
     expect(res.body.settings.slack_enabled).toBe(true);
-    expect(res.body.settings.slack_user_id).toBe("UROBERT");
+    expect(res.body.settings.slack_user_id).toBe("U_USER");
     expect(res.body.settings.slack_channel_ids).toEqual(["C1", "C2"]);
     expect(res.body.settings.slack_notify_task_errors).toBe(false);
     expect(res.body.settings.assistant_model).toBe("pi:openai-codex:gpt-5.4");
