@@ -20,7 +20,7 @@ export function renderSkills(skills) {
 
 export function formatHistory(messages = []) {
   return messages.map((message) => {
-    const who = message.role === "assistant" ? "Assistant" : "Robert";
+    const who = message.role === "assistant" ? "Assistant" : "User";
     const status = message.status && message.status !== "complete" ? ` (${message.status})` : "";
     return `${who}${status}: ${clip(message.body, 1200)}`;
   }).filter(Boolean).join("\n\n");

@@ -21,8 +21,8 @@ function assistantJson(overrides = {}) {
     schema: "worklab.assistant.v1",
     reply_text: "Created the task.",
     summary: "Created a Worklab task.",
-    journal_bullets: ["Robert asked the assistant to create a task."],
-    memory_facts: ["Robert uses the in-app assistant for Worklab administration."],
+    journal_bullets: ["The user asked the assistant to create a task."],
+    memory_facts: ["The user uses the in-app assistant for Worklab administration."],
     action_items: ["Review the new task"],
     ...overrides,
   });
@@ -199,7 +199,7 @@ describe("assistant routes", () => {
     const journalPath = join(dataDir, "agents", "assistant", "JOURNAL.md");
     const memoryPath = join(dataDir, "agents", "assistant", "MEMORY.md");
     expect(existsSync(journalPath)).toBe(true);
-    expect(readFileSync(journalPath, "utf8")).toContain("Robert asked the assistant");
+    expect(readFileSync(journalPath, "utf8")).toContain("The user asked the assistant");
     expect(readFileSync(memoryPath, "utf8")).toContain("in-app assistant");
   });
 
