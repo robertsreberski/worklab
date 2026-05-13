@@ -904,7 +904,7 @@ function SettingsGeneral() {
                         <DurationInput unit="seconds" value={settings.agent_provider_recovery_base_delay_ms ?? 30000} min={0} step={5} onChange={(value) => setSettings({ ...settings, agent_provider_recovery_base_delay_ms: value })} ariaLabel="Provider recovery base delay" />
                       </FormField>
                       <FormField label="Codex transport">
-                        <Select variant="native" value={settings.agent_pi_codex_transport || "websocket-cached"} options={PI_CODEX_TRANSPORT_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_pi_codex_transport: value })} />
+                        <Select variant="native" value={settings.agent_pi_codex_transport || "sse"} options={PI_CODEX_TRANSPORT_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_pi_codex_transport: value })} />
                       </FormField>
                       <FormField label="Adjudicator">
                         <Select variant="native" value={settings.agent_verification_adjudicator_mode || "off"} options={VERIFICATION_ADJUDICATOR_MODE_OPTIONS} onChange={(value) => setSettings({ ...settings, agent_verification_adjudicator_mode: value })} />

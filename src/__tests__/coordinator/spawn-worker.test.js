@@ -843,6 +843,36 @@ describe("spawnWorker", () => {
     expect(run.cost_usd).toBeCloseTo(0.0001);
   });
 
+  it("persists provider_session_id from failed worker diagnostics", async () => {
+    const db = makeTestDb();
+    const broker = stubBroker();
+    const { taskId, runId } = seedTaskAndRun(db);
+    const script = {
+      events: [
+        {
+          type: "error",
+          message: "WebSocket error",
+          failureKind: "provider_unavailable",
+          diagnostics: { provider_session_id: "failed-session", pi_error_code: "websocket_error" },
+          details: { provider_session_id: "failed-session", pi_error_code: "websocket_error" },
+        },
+      ],
+      exitCode: 1,
+    };
+    const handle = spawnWorker({
+      binary: fakeBinary,
+      args: ["--task", taskId, "--mode", "execute", "--agent", "coder"],
+      env: { FAKE_WORKER_SCRIPT: JSON.stringify(script), WORKLAB_RUN_ID: runId },
+      runId, taskId, broker, db,
+    });
+
+    await handle.done;
+    const run = db.prepare("SELECT diagnostics_json, provider_session_id FROM task_runs WHERE id = ?").get(runId);
+    const diag = JSON.parse(run.diagnostics_json);
+    expect(diag.provider_session_id).toBe("failed-session");
+    expect(run.provider_session_id).toBe("failed-session");
+  });
+
   it("persists final usage cost without applying hidden per-agent cost budgets", async () => {
     const db = makeTestDb();
     const broker = stubBroker();

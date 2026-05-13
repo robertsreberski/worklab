@@ -1709,7 +1709,10 @@ describe("task-watcher", () => {
 
   it("starts a recovery continuation after a provider WebSocket error", async () => {
     const db = makeTestDb();
-    writeSettings(db, { agent_provider_recovery_base_delay_ms: 0 });
+    writeSettings(db, {
+      agent_provider_recovery_base_delay_ms: 0,
+      agent_pi_codex_transport: "websocket-cached",
+    });
     seedAgent(db, "coder");
     const taskId = seedTask(db, { owner: "coder" });
     const resolvers = [];
@@ -1729,6 +1732,10 @@ describe("task-watcher", () => {
       processStatus: "failed",
       failureKind: "provider_unavailable",
       error: "WebSocket error",
+      diagnostics: {
+        pi_transport: "websocket-cached",
+        pi_error_code: "websocket_error",
+      },
     });
     await new Promise((r) => setTimeout(r, 20));
 
@@ -1738,7 +1745,10 @@ describe("task-watcher", () => {
       continuation_reason: "provider_retryable",
       retryable_provider_error: true,
       provider_error_subkind: "terminated",
+      pi_transport_override: "sse",
+      pi_transport_fallback_reason: "websocket_error",
     });
+    expect(spawn.mock.calls[1][0].env.WORKLAB_PI_CODEX_TRANSPORT).toBe("sse");
   });
 
   it("recovery continuation does not reset failure_count (only user retry does)", async () => {

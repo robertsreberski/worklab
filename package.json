@@ -31,7 +31,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@mariozechner/pi-ai": "^0.72.1",
+    "@mariozechner/pi-ai": "^0.73.1",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
     "@worklab/agent-runtime": "*",

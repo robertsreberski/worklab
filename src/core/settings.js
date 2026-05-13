@@ -60,7 +60,7 @@ export const DEFAULT_SETTINGS = {
   agent_recovery_continuation_limit: 3,
   agent_provider_recovery_enabled: true,
   agent_provider_recovery_base_delay_ms: 30000,
-  agent_pi_codex_transport: "websocket-cached",
+  agent_pi_codex_transport: "sse",
   // intelligence-ramp Phase 4: gate the review→done transition on
   // verification_evidence. "warn" (default) emits a runtime warning but still
   // approves; "block" refuses the transition; "off" disables the gate

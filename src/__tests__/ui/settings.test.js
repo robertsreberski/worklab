@@ -266,6 +266,10 @@ describe("settings UI duration conversions", () => {
     expect(payload.agent_learning_auto_approve_threshold).toBe(0.7);
   });
 
+  it("defaults the Pi Codex transport payload to SSE", () => {
+    expect(settingsPayload({}).agent_pi_codex_transport).toBe("sse");
+  });
+
   it("keeps runtime idle warning payload in milliseconds", () => {
     const payload = runtimePayload({
       host: "127.0.0.1",
