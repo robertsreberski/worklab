@@ -412,11 +412,12 @@ describe("design system stylesheet", () => {
 
   it("builds agent capability panels on the shared FormSection component", () => {
     const agentEditSource = readFileSync(agentEditPath, "utf8");
+    const css = readFileSync(stylesPath, "utf8");
     expect(agentEditSource).toMatch(/import\s+\{\s*FormSection\s*\}/);
     expect(agentEditSource).toMatch(/import\s+\{\s*Button\s*\}/);
     expect(agentEditSource).toMatch(/import\s+\{[^}]*InlineHead[^}]*PanelGrid[^}]*Toolbar[^}]*\}\s+from/);
     expect(agentEditSource).toMatch(/import\s+\{[^}]*Toolbar[^}]*\}\s+from/);
-    expect(agentEditSource).toMatch(/<FormSection\s+class="capability-panel"/);
+    expect(agentEditSource).toMatch(/<FormSection\s+class=\{panelClass\}/);
     expect(agentEditSource).toMatch(/<InlineHead\s+class="capability-panel-head"/);
     expect(agentEditSource).toMatch(/<PanelGrid\s+class="capability-grid"\s+role="group"/);
     expect(agentEditSource).toMatch(/<InlineHead\s+class="agent-learning-item-head"/);
@@ -424,6 +425,8 @@ describe("design system stylesheet", () => {
     expect(agentEditSource).toMatch(/<Toolbar\s+class="agent-memory-actions"/);
     expect(agentEditSource).toMatch(/<Toolbar\s+class="agent-learning-actions"/);
     expect(agentEditSource).toMatch(/<Button\s+variant="ghost"\s+size="sm"\s+class="link-button capability-reset"/);
+    expect(agentEditSource).toMatch(/title="Skills"[\s\S]*descriptionLines=\{3\}/);
+    expect(css).toMatch(/\.capability-panel--clamp-descriptions\s+\.capability-tile-description\s*\{[^}]*-webkit-line-clamp:\s*var\(--capability-description-lines,\s*3\)/);
     expect(agentEditSource).not.toMatch(/<section\s+class="capability-panel"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="capability-panel-head"/);
     expect(agentEditSource).not.toMatch(/<div\s+class="capability-grid"/);
