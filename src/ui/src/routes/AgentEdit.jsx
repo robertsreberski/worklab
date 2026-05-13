@@ -39,6 +39,7 @@ import { useAppResume } from "../lib/pageVisibility.js";
 
 const EFFORT_OPTIONS = ["none", "low", "medium", "high", "xhigh", "max"];
 const BUILTIN_TOOLS = ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebFetch", "WebSearch"];
+const LEARNING_MEMORY_LIST_LIMIT = 8;
 const BUILTIN_TOOL_DESCRIPTIONS = {
   Read: "Read a local file with line numbers.",
   Write: "Write content to a local file.",
@@ -257,7 +258,14 @@ export function learningMemoryStatusTone(memory) {
   }
 }
 
-export function learningMemoryMeta(memories = []) {
+export function learningMemoryMeta(memories = [], summary = null) {
+  if (summary && typeof summary === "object") {
+    return [
+      { label: "Active", value: String(summary.active ?? 0) },
+      { label: "Draft", value: String(summary.draft ?? 0) },
+      { label: "Approved", value: String(summary.approved ?? 0) },
+    ];
+  }
   const active = (memories || []).filter((memory) => memory.status !== "archived");
   const draft = active.filter((memory) => memory.status === "draft").length;
   const approved = active.filter((memory) => memory.status === "approved").length;
@@ -378,6 +386,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const [memoryState, setMemoryState] = useState(null);
   const [memoryError, setMemoryError] = useState(null);
   const [learningMemories, setLearningMemories] = useState([]);
+  const [learningSummary, setLearningSummary] = useState(null);
+  const [learningListMeta, setLearningListMeta] = useState(null);
   const [learningError, setLearningError] = useState(null);
   const [learningBusyId, setLearningBusyId] = useState(null);
   const [consolidating, setConsolidating] = useState(false);
@@ -404,21 +414,27 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       setMemoryState(null);
       setMemoryError(null);
       setLearningMemories([]);
+      setLearningSummary(null);
+      setLearningListMeta(null);
       setLearningError(null);
       return;
     }
     try {
       const [res, learning] = await Promise.all([
         api.getAgentMemory(name),
-        api.listAgentMemories(name, { limit: 50 }),
+        api.listAgentMemories(name, { limit: LEARNING_MEMORY_LIST_LIMIT }),
       ]);
       setMemoryState(res.memory || null);
       setLearningMemories(learning.memories || []);
+      setLearningSummary(learning.summary || null);
+      setLearningListMeta(learning.meta || null);
       setMemoryError(null);
       setLearningError(null);
     } catch (err) {
       setMemoryState(null);
       setLearningMemories([]);
+      setLearningSummary(null);
+      setLearningListMeta(null);
       setMemoryError(err?.message || "Memory state unavailable");
       setLearningError(err?.message || "Learning memories unavailable");
     }
@@ -605,6 +621,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
     try {
       const res = await api.patchAgentMemory(name, memory.id, patch);
       setLearningMemories((items) => items.map((item) => item.id === memory.id ? res.memory : item));
+      await loadMemory();
       pushToast("Learning memory updated", { variant: "success" });
     } catch (err) {
       pushToast(`Memory update failed: ${err.message}`, { variant: "error" });
@@ -672,7 +689,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const memoryLabel = memoryFreshnessLabel(memoryState);
   const memoryStatus = memoryFreshnessStatus(memoryState);
   const activeLearningMemories = learningMemories.filter((memory) => memory.status !== "archived");
-  const draftLearningCount = activeLearningMemories.filter((memory) => memory.status === "draft").length;
+  const draftLearningCount = Number(learningSummary?.draft ?? activeLearningMemories.filter((memory) => memory.status === "draft").length);
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
   const saveDisabled = !agent.display_name || modelSaveBlocked;
@@ -754,12 +771,17 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
             class="entity-rail-card agent-learning-card"
           >
             {learningError && <div class="agent-memory-error">{learningError}</div>}
-            <EntityMetaList items={learningMemoryMeta(learningMemories)} />
+            <EntityMetaList items={learningMemoryMeta(learningMemories, learningSummary)} />
+            {learningListMeta?.has_more && (
+              <div class="agent-learning-empty">
+                Showing {learningListMeta.returned} of {learningSummary?.active ?? learningSummary?.total ?? "many"} active memories.
+              </div>
+            )}
             {activeLearningMemories.length === 0 ? (
               <div class="agent-learning-empty">No structured memories yet.</div>
             ) : (
-              <SectionStack class="agent-learning-list">
-                {activeLearningMemories.slice(0, 8).map((memory) => {
+              <SectionStack class="agent-learning-list wl-scrollbar">
+                {activeLearningMemories.map((memory) => {
                   const busy = learningBusyId === memory.id;
                   const dirty = memory.content !== memory.original_content && memory.original_content !== undefined;
                   return (

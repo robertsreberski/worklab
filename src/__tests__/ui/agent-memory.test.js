@@ -94,4 +94,16 @@ describe("agent memory UI helpers", () => {
       { label: "Approved", value: "1" },
     ]);
   });
+
+  it("uses API learning-memory summary counts when available", () => {
+    expect(learningMemoryMeta([{ status: "draft" }], {
+      active: 12,
+      draft: 3,
+      approved: 9,
+    })).toEqual([
+      { label: "Active", value: "12" },
+      { label: "Draft", value: "3" },
+      { label: "Approved", value: "9" },
+    ]);
+  });
 });

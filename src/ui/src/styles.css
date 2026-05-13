@@ -6824,10 +6824,16 @@ html.assistant-resizing * {
 }
 .ds-section-stack.agent-learning-list {
   gap: var(--sp-3);
+  max-height: min(52vh, 560px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  padding-right: var(--sp-1);
 }
 .agent-learning-item {
   display: grid;
   gap: var(--sp-2);
+  min-width: 0;
   padding: var(--sp-3);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: var(--radius-sm);
@@ -6854,6 +6860,9 @@ html.assistant-resizing * {
 }
 .agent-learning-textarea {
   min-height: 64px;
+  max-height: 160px;
+  overflow: auto;
+  overflow-wrap: anywhere;
   resize: vertical;
   font-size: var(--text-xs);
   line-height: 1.45;
@@ -6863,6 +6872,7 @@ html.assistant-resizing * {
   color: var(--muted);
   font-size: var(--text-xs);
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 .agent-editor-layout .entity-editor-main > .form-section {
   padding: 0;
