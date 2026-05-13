@@ -72,6 +72,45 @@ export function modelDisplayName(value, options = []) {
   return parts[parts.length - 1] || raw;
 }
 
+function pathSeparator(value) {
+  if (value.includes("\\") && !value.includes("/")) return "\\";
+  if (value.includes("/")) return "/";
+  return "";
+}
+
+function joinPathSegments(segments, separator) {
+  if (segments[0] === "") return `${separator}${segments.slice(1).join(separator)}`;
+  return segments.join(separator);
+}
+
+export function middleTruncatePath(value, maxChars = 56) {
+  const raw = String(value || "");
+  const max = Number.isFinite(maxChars) ? Math.max(12, Math.floor(maxChars)) : 56;
+  if (!raw || raw.length <= max) return raw;
+
+  const separator = pathSeparator(raw);
+  if (!separator) return raw;
+
+  const parts = raw.split(separator).filter((part, index) => part || index === 0);
+  if (parts.length < 4) return raw;
+
+  const marker = `${separator}..${separator}`;
+  const isRooted = parts[0] === "" || /^[A-Za-z]:$/.test(parts[0]);
+  const preferredPrefix = Math.min(parts.length - 2, isRooted ? 3 : 2);
+
+  for (let prefixCount = preferredPrefix; prefixCount >= 1; prefixCount -= 1) {
+    const prefix = joinPathSegments(parts.slice(0, prefixCount), separator);
+    for (let suffixCount = parts.length - prefixCount - 1; suffixCount >= 1; suffixCount -= 1) {
+      const suffix = parts.slice(parts.length - suffixCount).join(separator);
+      const candidate = `${prefix}${marker}${suffix}`;
+      if (candidate.length <= max) return candidate;
+    }
+  }
+
+  const tailLength = Math.max(4, max - marker.length - 8);
+  return `${raw.slice(0, 8)}..${raw.slice(-tailLength)}`;
+}
+
 function includesPart(parts, value) {
   const needle = String(value || "").toLowerCase();
   return !!needle && parts.some((part) => String(part || "").toLowerCase().includes(needle));

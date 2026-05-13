@@ -1,5 +1,6 @@
 import { Icon } from "./Icon.jsx";
 import { IconButton } from "./primitives/IconButton.jsx";
+import { middleTruncatePath } from "../lib/display.js";
 
 function attachmentKey(attachment, index) {
   return attachment.id || attachment.upload_id || attachment.client_id || `${attachment.kind}-${index}`;
@@ -18,6 +19,11 @@ function attachmentMeta(attachment) {
     attachment.size_bytes != null ? `${attachment.size_bytes} bytes` : "",
   ].filter(Boolean);
   return parts.join(" - ");
+}
+
+function attachmentDisplayMeta(attachment) {
+  const meta = attachmentMeta(attachment);
+  return attachment.kind === "path" ? middleTruncatePath(meta, 64) : meta;
 }
 
 export function AttachmentChips({
@@ -40,11 +46,11 @@ export function AttachmentChips({
     <div class={`attachment-tray ${className}`.trim()}>
       <div class="attachment-chip-row">
         {attachments.map((attachment, index) => (
-          <span class={`attachment-chip ${attachment.kind}`} key={attachmentKey(attachment, index)}>
+          <span class={`attachment-chip ${attachment.kind}`} key={attachmentKey(attachment, index)} title={attachmentMeta(attachment) || attachmentTitle(attachment)}>
             <Icon name={attachment.kind === "path" ? "folder" : "upload"} size={13} />
             <span class="attachment-chip-copy">
               <span class="attachment-chip-title">{attachmentTitle(attachment)}</span>
-              <span class="attachment-chip-meta">{attachmentMeta(attachment)}</span>
+              <span class="attachment-chip-meta">{attachmentDisplayMeta(attachment)}</span>
             </span>
             {attachment.href && (
               <a class="attachment-chip-link" href={attachment.href} target="_blank" rel="noreferrer">

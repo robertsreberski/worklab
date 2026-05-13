@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agentModelEffortLabel,
   hasRunError,
+  middleTruncatePath,
   taskDisplayKey,
   taskRecoveryLabel,
   taskRecoveryState,
@@ -22,6 +23,15 @@ describe("task display helpers", () => {
   it("describes agents with full model reference and effort", () => {
     expect(agentModelEffortLabel({ model: "pi:openai-codex:gpt-5.5", effort: "medium" })).toBe("pi:openai-codex:gpt-5.5 · medium effort");
     expect(agentModelEffortLabel({ model: "claude:claude-sonnet-4-6" })).toBe("claude:claude-sonnet-4-6");
+  });
+
+  it("middle-truncates long display paths without changing short or non-path text", () => {
+    expect(middleTruncatePath("/Users/worklab/projects/mobile-layout-project/src/ui/src/routes/TaskDetail.jsx", 43))
+      .toBe("/Users/worklab/../src/routes/TaskDetail.jsx");
+    expect(middleTruncatePath("C:\\Users\\worklab\\projects\\mobile-layout-project\\src\\routes\\TaskDetail.jsx", 44))
+      .toBe("C:\\Users\\worklab\\..\\routes\\TaskDetail.jsx");
+    expect(middleTruncatePath("/Users/worklab/app", 42)).toBe("/Users/worklab/app");
+    expect(middleTruncatePath("long-unbreakable-token-without-separators", 18)).toBe("long-unbreakable-token-without-separators");
   });
 
   it("hides stale run errors while a rerun is active", () => {

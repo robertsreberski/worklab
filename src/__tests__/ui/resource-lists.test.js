@@ -379,6 +379,7 @@ describe("resource list helpers", () => {
 
   it("shares resource-row metadata primitives across the primary resource screens", () => {
     const metaComponent = source("src/ui/src/components/ResourceRowMeta.jsx");
+    expect(metaComponent).toContain("middleTruncatePath");
     expect(metaComponent).toContain("BadgeToken");
     expect(metaComponent).toContain("function ResourceRowTags");
     expect(metaComponent).toContain("function ResourceRowChip");
@@ -451,6 +452,7 @@ describe("resource list helpers", () => {
     expect(pathRule).toContain("max-width");
     expect(pathRule).toContain("overflow: hidden");
     expect(pathRule).not.toContain("border-radius");
+    expect(pathValueRule).toContain("display: block");
     expect(pathValueRule).toContain("overflow: hidden");
     expect(pathValueRule).toContain("text-overflow: ellipsis");
     expect(pathValueRule).toContain("white-space: nowrap");

@@ -1,5 +1,6 @@
 import { Icon } from "./Icon.jsx";
 import { BadgeToken } from "./primitives/BadgeToken.jsx";
+import { middleTruncatePath } from "../lib/display.js";
 
 const RESOURCE_ROW_CHIP_TONES = new Set(["muted", "neutral", "info", "accent", "warn", "disabled", "entity"]);
 
@@ -67,11 +68,12 @@ export function ResourceRowWorktreeChip({ mode }) {
 
 export function ResourceRowPath({ value, label = "path", icon = "folder" }) {
   if (!value) return null;
+  const displayValue = middleTruncatePath(value, 56);
   return (
     <span class="resource-row-path" title={value} aria-label={`${label} ${value}`}>
       {icon && <Icon name={icon} size={11} />}
       <span class="resource-row-path-label">{label}</span>
-      <span class="resource-row-path-value">{value}</span>
+      <span class="resource-row-path-value">{displayValue}</span>
     </span>
   );
 }
