@@ -15,15 +15,57 @@
 // schedule a fresh `coordinator_resume` continuation that picks up the
 // snapshot rather than starting from scratch.
 
-export function reconcileStaleRunningRuns(db, logger) {
+import { buildTranscriptTailSnapshot } from "@worklab/agent-runtime/agent/transcript.js";
+import { readJsonlEventsFromFile } from "../../core/index.js";
+
+function unwrapSdkEvent(event) {
+  return event?.type === "sdk_event" && event.event ? event.event : event;
+}
+
+function drainedShutdownEvent(events) {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.type !== "drained") continue;
+    if (!event.reason || event.reason === "coordinator_shutdown") return event;
+  }
+  return null;
+}
+
+function recoverDrainedSnapshot(row, { dataDir, logger } = {}) {
+  if (!row?.raw_output_path || !dataDir) return null;
+  let events = [];
+  try {
+    events = readJsonlEventsFromFile(row.raw_output_path, { dataDir });
+  } catch (err) {
+    logger?.warn?.({ err: err.message, runId: row.id }, "failed to inspect stale run raw log");
+    return null;
+  }
+  const drained = drainedShutdownEvent(events);
+  if (!drained) return null;
+  const snapshot = buildTranscriptTailSnapshot(events.map(unwrapSdkEvent));
+  if (!snapshot) {
+    return { drained, transcriptTailJson: null };
+  }
+  return {
+    drained,
+    transcriptTailJson: JSON.stringify({
+      ...snapshot,
+      resume_kind: "drained",
+      drain_acknowledged: true,
+      recovered_from_raw_log: true,
+    }),
+  };
+}
+
+export function reconcileStaleRunningRuns(db, logger, { dataDir = null } = {}) {
   const now = Date.now();
   const reconcile = db.transaction(() => {
     const stale = db.prepare(
-      `SELECT id, task_id, stage FROM task_runs
+      `SELECT id, task_id, stage, raw_output_path FROM task_runs
        WHERE process_status = 'running' OR status = 'running'`,
     ).all();
-    if (stale.length === 0) return 0;
-    const markRun = db.prepare(
+    if (stale.length === 0) return { abandoned: 0, recoveredDrained: 0 };
+    const markAbandonedRun = db.prepare(
       `UPDATE task_runs
        SET process_status = 'abandoned', status = 'error', ended_at = ?,
            failure_kind = 'abandoned', error_text = ?,
@@ -31,23 +73,54 @@ export function reconcileStaleRunningRuns(db, logger) {
            cancel_reason = COALESCE(cancel_reason, 'coordinator restarted while run was active')
        WHERE id = ?`,
     );
+    const markDrainedRun = db.prepare(
+      `UPDATE task_runs
+       SET process_status = 'cancelled', status = 'cancelled', ended_at = ?,
+           failure_kind = 'cancelled_shutdown',
+           error_text = COALESCE(error_text, ?),
+           cancel_initiator = COALESCE(cancel_initiator, 'coordinator_shutdown'),
+           cancel_reason = COALESCE(cancel_reason, 'coordinator stopped while run was draining'),
+           transcript_tail_json = COALESCE(transcript_tail_json, ?)
+       WHERE id = ?`,
+    );
     const markTask = db.prepare(
       `UPDATE tasks
        SET stage = CASE WHEN stage = 'done' THEN stage ELSE COALESCE(?, stage, 'plan') END,
            error_text = COALESCE(error_text, ?),
-           stage_reason = COALESCE(stage_reason, 'abandoned'),
+           stage_reason = COALESCE(stage_reason, ?),
            updated_at = ?
        WHERE id = ?`,
     );
+    let abandoned = 0;
+    let recoveredDrained = 0;
     for (const row of stale) {
       const retryStage = row.stage || "plan";
-      markRun.run(now, "coordinator restarted", row.id);
-      markTask.run(retryStage, "Previous run did not finish", now, row.task_id);
+      const drained = recoverDrainedSnapshot(row, { dataDir, logger });
+      if (drained) {
+        markDrainedRun.run(
+          now,
+          "coordinator stopped before finalizing drained run",
+          drained.transcriptTailJson,
+          row.id,
+        );
+        markTask.run(retryStage, "Previous run stopped during coordinator shutdown", "coordinator_shutdown", now, row.task_id);
+        recoveredDrained += 1;
+      } else {
+        markAbandonedRun.run(now, "coordinator restarted", row.id);
+        markTask.run(retryStage, "Previous run did not finish", "abandoned", now, row.task_id);
+        abandoned += 1;
+      }
     }
-    return stale.length;
+    return { abandoned, recoveredDrained };
   });
-  const count = reconcile();
-  if (count > 0) logger?.warn?.({ count }, "reconciled stale running runs at boot");
+  const counts = reconcile();
+  const count = counts.abandoned + counts.recoveredDrained;
+  if (count > 0) {
+    logger?.warn?.(
+      { count, abandoned: counts.abandoned, recovered_drained: counts.recoveredDrained },
+      "reconciled stale running runs at boot",
+    );
+  }
   return count;
 }
 

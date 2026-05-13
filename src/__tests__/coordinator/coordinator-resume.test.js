@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { makeTestDb } from "../helpers/test-db.js";
 import { createTaskWatcher } from "../../coordinator/task-watcher.js";
 import { newRunId, newTaskId } from "../../core/ids.js";
@@ -53,7 +56,48 @@ function seedDrainedRun(db, taskId, { stage = "execute", mode = "execute", agent
   return runId;
 }
 
+function seedStaleDrainedRun(db, taskId, dataDir, { stage = "execute", mode = "execute", agentName = "coder" } = {}) {
+  const runId = newRunId();
+  const now = Date.now() - 60_000;
+  const rawDir = join(dataDir, "logs", "runs");
+  mkdirSync(rawDir, { recursive: true });
+  const rawLogPath = join(rawDir, `${runId}.jsonl`);
+  const events = [
+    {
+      type: "assistant",
+      message: { content: [{ type: "text", text: "I updated the admin CSS and was preparing to commit it." }] },
+      _event_seq: 1,
+    },
+    {
+      type: "drained",
+      reason: "coordinator_shutdown",
+      deadline_at: now + 60_000,
+      ts: now + 5_000,
+      _event_seq: 2,
+    },
+  ];
+  writeFileSync(rawLogPath, events.map((event) => JSON.stringify(event)).join("\n") + "\n");
+  db.prepare(
+    `INSERT INTO task_runs
+      (id, task_id, mode, stage, agent_name, started_at, status, process_status, raw_output_path)
+     VALUES (?, ?, ?, ?, ?, ?, 'running', 'running', ?)`,
+  ).run(runId, taskId, mode, stage, agentName, now, rawLogPath);
+  return runId;
+}
+
 describe("coordinator resume — drained-snapshot recovery", () => {
+  const tempDirs = [];
+
+  afterEach(() => {
+    for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function tempDataDir() {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-drained-recovery-"));
+    tempDirs.push(dir);
+    return dir;
+  }
+
   it("schedules a continuation with continuation_reason=coordinator_resume on boot", async () => {
     const db = makeTestDb();
     seedAgent(db, "coder");
@@ -97,6 +141,46 @@ describe("coordinator resume — drained-snapshot recovery", () => {
 
     // (skip explicit shutdown — spawn().done never resolves in this test
     // double; Vitest tears the worker down at the end of the suite)
+  });
+
+  it("recovers a stale running row from a raw-log drained event before scheduling continuation", async () => {
+    const db = makeTestDb();
+    seedAgent(db, "coder");
+    const taskId = seedTask(db);
+    const dataDir = tempDataDir();
+    const drainedRunId = seedStaleDrainedRun(db, taskId, dataDir);
+
+    const broker = stubBroker();
+    const spawn = vi.fn(() => ({
+      pid: 1,
+      done: new Promise(() => {}),
+      cancel: vi.fn(),
+      drain: vi.fn(),
+    }));
+    const watcher = createTaskWatcher({
+      db, broker, spawn, workerBinary: "/fake",
+      repoRoot: "/repo", dataDir, workspace: "/work",
+    });
+    await watcher.coordinatorResumeBootstrap;
+    await new Promise((r) => setImmediate(r));
+
+    const recovered = db.prepare(
+      "SELECT status, process_status, failure_kind, cancel_initiator, transcript_tail_json FROM task_runs WHERE id = ?",
+    ).get(drainedRunId);
+    expect(recovered.status).toBe("cancelled");
+    expect(recovered.process_status).toBe("cancelled");
+    expect(recovered.failure_kind).toBe("cancelled_shutdown");
+    expect(recovered.cancel_initiator).toBe("coordinator_shutdown");
+    const snapshot = JSON.parse(recovered.transcript_tail_json);
+    expect(snapshot.resume_kind).toBe("drained");
+    expect(snapshot.drain_acknowledged).toBe(true);
+    expect(snapshot.turns?.[0]?.assistant_text).toContain("admin CSS");
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const spawnCall = spawn.mock.calls[0][0];
+    expect(spawnCall.diagnosticsSeed.continuation_reason).toBe("coordinator_resume");
+    expect(spawnCall.diagnosticsSeed.continuation_of_run_id).toBe(drainedRunId);
+    expect(spawnCall.diagnosticsSeed.resume_snapshot.resume_kind).toBe("drained");
   });
 
   it("does not re-schedule when a continuation row already exists", async () => {
