@@ -62,7 +62,9 @@
     "lint": "eslint src packages",
     "lint:boundaries": "eslint src packages --rule '{\"no-restricted-imports\":\"warn\"}'",
     "lint:size": "node scripts/guard-file-size.js",
-    "pack:check": "npm pack --dry-run --json | node scripts/validate-npm-pack.js"
+    "pack:check": "npm pack --dry-run --json | node scripts/validate-npm-pack.js",
+    "release:validate": "node scripts/release/validate-release.mjs",
+    "release:publish": "node scripts/release/publish-release.mjs"
   },
   "engines": {
     "node": ">=20"

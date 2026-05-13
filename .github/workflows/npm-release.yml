@@ -1,0 +1,94 @@
+name: npm release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish npm packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release tag and package graph
+        run: node scripts/release/validate-release.mjs --tag "$GITHUB_REF_NAME"
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build UI
+        run: npm run build:ui
+
+      - name: Validate CLI package contents
+        run: npm run pack:check
+
+      - name: Validate workspace package contents
+        run: npm pack --workspace packages/agent-runtime --dry-run --json
+
+      - name: Check whitespace
+        run: git diff --check
+
+      - name: Publish packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: node scripts/release/publish-release.mjs --tag "$GITHUB_REF_NAME"
+
+      - name: Verify public npm metadata
+        env:
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm view "@worklab-ai/agent-runtime@${VERSION}" version --json
+          npm view "@worklab-ai/worklab@${VERSION}" version bin dependencies --json
+          npm dist-tag ls @worklab-ai/agent-runtime
+          npm dist-tag ls @worklab-ai/worklab
+
+      - name: Smoke test published CLI
+        env:
+          NPM_CONFIG_USERCONFIG: /dev/null
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          TMP_PREFIX="$(mktemp -d)"
+          TMP_DATA="$(mktemp -d)"
+          LOG_FILE="$(mktemp)"
+          npm install -g --prefix "$TMP_PREFIX" --prefer-online "@worklab-ai/worklab@${VERSION}"
+          "$TMP_PREFIX/bin/worklab" --help
+          WORKLAB_DATA_DIR="$TMP_DATA" WORKLAB_PORT=9787 "$TMP_PREFIX/bin/worklab" serve >"$LOG_FILE" 2>&1 &
+          SERVER_PID=$!
+          cleanup() {
+            kill "$SERVER_PID" >/dev/null 2>&1 || true
+            wait "$SERVER_PID" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          for _ in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:9787/api/health; then
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "published Worklab package did not become healthy" >&2
+          sed -n '1,160p' "$LOG_FILE" >&2
+          exit 1
