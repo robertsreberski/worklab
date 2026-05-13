@@ -688,9 +688,21 @@ describe("design system stylesheet", () => {
     for (const [filePath, className] of sources) {
       const source = readFileSync(filePath, "utf8");
       expect(source).toMatch(/import\s+\{[^}]*SectionStack[^}]*\}\s+from/);
-      expect(source).toMatch(new RegExp(`<SectionStack\\s+class="${className}"`));
+      expect(source).toMatch(new RegExp(`<SectionStack\\s+class="${className}(?:\\s|")`));
       expect(source).not.toMatch(new RegExp(`<div\\s+class="${className}"`));
     }
+  });
+
+  it("bounds the Agent Edit learning-memory rail list", () => {
+    const agentEditSource = readFileSync(agentEditPath, "utf8");
+    const styles = readFileSync(stylesPath, "utf8");
+
+    expect(agentEditSource).toMatch(/const LEARNING_MEMORY_LIST_LIMIT = 8;/);
+    expect(agentEditSource).toMatch(/api\.listAgentMemories\(name,\s*\{\s*limit:\s*LEARNING_MEMORY_LIST_LIMIT\s*\}\)/);
+    expect(agentEditSource).not.toMatch(/activeLearningMemories\.slice\(0,\s*8\)/);
+    expect(agentEditSource).toMatch(/class="agent-learning-list wl-scrollbar"/);
+    expect(styles).toMatch(/\.ds-section-stack\.agent-learning-list\s*\{[^}]*max-height:\s*min\(52vh,\s*560px\);[^}]*overflow-y:\s*auto;[^}]*overflow-x:\s*hidden;/s);
+    expect(styles).toMatch(/\.agent-learning-textarea\s*\{[^}]*max-height:\s*160px;[^}]*overflow:\s*auto;[^}]*overflow-wrap:\s*anywhere;/s);
   });
 
   it("builds run card action rows on the shared Toolbar layout", () => {
