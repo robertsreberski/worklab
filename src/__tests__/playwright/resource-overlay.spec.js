@@ -161,6 +161,50 @@ test("resource overlay scroll container receives focus and scrolls detail conten
   await expect.poll(async () => scroll.evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 });
 
+test("resource overlay uses broad desktop sizing and full mobile sizing", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await page.goto(`${baseUrl}/#/tasks/${taskId}`, { waitUntil: "domcontentloaded" });
+  await page.locator(".activity-item-body .entity-badge--agent").click();
+  await expect(page.locator(".resource-overlay-modal")).toBeVisible();
+  await expect.poll(async () => page.locator(".modal-backdrop").evaluate((node) => getComputedStyle(node).transform)).toBe("none");
+
+  const desktop = await page.locator(".resource-overlay-modal").evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      viewportWidth: document.documentElement.clientWidth,
+      viewportHeight: document.documentElement.clientHeight,
+    };
+  });
+  expect(Math.abs(desktop.width - desktop.viewportWidth * 0.8)).toBeLessThanOrEqual(24);
+  expect(Math.abs(desktop.height - desktop.viewportHeight * 0.8)).toBeLessThanOrEqual(24);
+  expect(desktop.width).toBeLessThanOrEqual(desktop.viewportWidth);
+  expect(desktop.height).toBeLessThanOrEqual(desktop.viewportHeight);
+
+  await page.locator(".resource-overlay-modal .modal-head").getByRole("button", { name: "Close" }).click();
+  await expect(page.locator(".resource-overlay-modal")).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator(".activity-item-body .entity-badge--agent").click();
+  await expect(page.locator(".resource-overlay-modal")).toBeVisible();
+  await expect.poll(async () => page.locator(".modal-backdrop").evaluate((node) => getComputedStyle(node).transform)).toBe("none");
+
+  const mobile = await page.locator(".resource-overlay-modal").evaluate((node) => {
+    const rect = node.getBoundingClientRect();
+    return {
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      overflow: document.documentElement.scrollWidth - window.innerWidth,
+      viewportWidth: document.documentElement.clientWidth,
+      viewportHeight: document.documentElement.clientHeight,
+    };
+  });
+  expect(mobile.width).toBe(mobile.viewportWidth);
+  expect(mobile.height).toBe(mobile.viewportHeight);
+  expect(mobile.overflow).toBeLessThanOrEqual(0);
+});
+
 test("resource overlay open-page action navigates to the full route", async ({ page }) => {
   await page.goto(`${baseUrl}/#/tasks/${taskId}`, { waitUntil: "domcontentloaded" });
   await page.locator(".activity-item-body .entity-badge--agent").click();
