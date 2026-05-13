@@ -8197,13 +8197,13 @@ html.assistant-resizing * {
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
-.activity-row .activity-meta span {
+.activity-row .activity-meta > span {
   display: inline-flex;
   align-items: center;
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.activity-row .activity-meta span + span::before {
+.activity-row .activity-meta > span + span::before {
   content: "";
   width: 3px;
   height: 3px;
@@ -8805,7 +8805,7 @@ button.settings-overview-card:focus-visible,
   gap: var(--sp-3);
   align-items: start;
 }
-.settings-note span,
+.settings-note > span,
 .settings-row-sub,
 .settings-inline-status {
   display: block;

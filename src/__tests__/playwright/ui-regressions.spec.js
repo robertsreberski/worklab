@@ -153,6 +153,29 @@ async function expectNoCriticalHorizontalClipping(page, selector, label = "") {
   expect(clipped, `${label}: critical UI clipped`).toEqual([]);
 }
 
+async function expectBadgeGlyphCentered(locator, label = "") {
+  const metrics = await locator.evaluate((node) => {
+    const glyph = node.querySelector(".badge-token-glyph");
+    if (!glyph) return { missing: true };
+    const range = document.createRange();
+    range.selectNodeContents(glyph);
+    const glyphRect = glyph.getBoundingClientRect();
+    const textRect = range.getBoundingClientRect();
+    const glyphStyle = window.getComputedStyle(glyph);
+    return {
+      missing: false,
+      display: glyphStyle.display,
+      placeItems: glyphStyle.placeItems,
+      deltaX: ((textRect.left + textRect.width / 2) - (glyphRect.left + glyphRect.width / 2)),
+    };
+  });
+
+  expect(metrics.missing, `${label}: badge glyph exists`).toBe(false);
+  expect(metrics.display, `${label}: badge glyph display`).toBe("grid");
+  expect(metrics.placeItems, `${label}: badge glyph centering`).toContain("center");
+  expect(Math.abs(metrics.deltaX), `${label}: glyph text center delta`).toBeLessThanOrEqual(0.5);
+}
+
 async function modalLayoutMetrics(page) {
   return await page.evaluate(() => {
     const modal = document.querySelector(".modal");
@@ -1703,6 +1726,21 @@ test("activity open link scrolls to targeted task run", async ({ page }) => {
         && targetBox.bottom <= window.innerHeight;
     });
   }).toBe(true);
+});
+
+test("agent badge glyphs stay centered inside route metadata", async ({ page }) => {
+  await page.goto(`${baseUrl}/#/runs`);
+  const runAgentBadge = page
+    .locator(".activity-row", { hasText: "UI regression task" })
+    .locator(".activity-meta .agent-link.entity-badge--agent")
+    .first();
+  await expect(runAgentBadge).toBeVisible();
+  await expectBadgeGlyphCentered(runAgentBadge, "runs activity agent badge");
+
+  await page.goto(`${baseUrl}/#/settings`);
+  const settingsAgentBadge = page.locator(".settings-note .agent-link.entity-badge--agent").first();
+  await expect(settingsAgentBadge).toBeVisible();
+  await expectBadgeGlyphCentered(settingsAgentBadge, "settings note agent badge");
 });
 
 test("task detail run expansion only changes border color", async ({ page }) => {
