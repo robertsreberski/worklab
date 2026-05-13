@@ -420,6 +420,17 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("keeps project context polish scoped to the project detail read section", () => {
+    const source = readFileSync(projectsPath, "utf8");
+
+    expect(source).toMatch(/<FormSection[^>]+class="project-context-section knowledge-read-section"/);
+    expect(source).toContain('class="project-context-overview"');
+    expect(source).toContain('class="project-context-meta-grid"');
+    expect(source).toContain('class="project-context-repository project-repository-status"');
+    expect(source).toContain('class="project-context-body"');
+    expect(source).not.toContain('class="knowledge-read-section project-context-section"');
+  });
+
   it("renders knowledge relation badges from resolved entry objects instead of slugs", () => {
     const kbDetailSource = readFileSync(kbDetailPath, "utf8");
 

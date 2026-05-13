@@ -10281,9 +10281,6 @@ button.settings-overview-card:focus-visible,
     justify-content: center;
   }
 }
-.project-description {
-  max-width: 72ch;
-}
 .project-task-progress {
   width: min(100%, 920px);
   display: flex;
@@ -10602,6 +10599,53 @@ button.settings-overview-card:focus-visible,
 .project-workdir-copy {
   justify-self: end;
 }
+.project-context-section {
+  gap: var(--sp-4);
+}
+.project-context-overview {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+  width: min(100%, 72ch);
+  padding-bottom: var(--sp-1);
+}
+.project-description {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-md);
+  line-height: 1.55;
+}
+.project-context-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  width: min(100%, 920px);
+  min-width: 0;
+}
+.project-context-meta-grid .project-workdir-row {
+  height: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: var(--sp-3);
+  background: color-mix(in srgb, var(--surface-elevated) 82%, var(--surface));
+}
+.project-context-section .project-goal-summary {
+  width: min(100%, 920px);
+  margin: 0;
+}
+.project-context-body {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-3);
+  padding-top: var(--sp-2);
+}
+.project-context-article.knowledge-read-article {
+  padding-top: 0;
+}
+.project-context-empty {
+  width: min(100%, 920px);
+}
 @media (max-width: 520px) {
   .project-workdir-row {
     grid-template-columns: max-content minmax(0, 1fr) 32px;
@@ -10627,6 +10671,16 @@ button.settings-overview-card:focus-visible,
 }
 .project-repository-status > span:not(.chip) {
   min-width: min(100%, 220px);
+}
+.project-context-repository.project-repository-status {
+  width: min(100%, 920px);
+  margin: 0;
+  padding-top: var(--sp-1);
+}
+@container project-detail (max-width: 640px) {
+  .project-context-meta-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .task-edit-project-preview {
   margin-top: var(--sp-2);
