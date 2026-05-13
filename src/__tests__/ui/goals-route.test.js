@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGoalResourceGroups,
   goalCockpitSummary,
+  goalLeadTaskDisplay,
   goalLeadCycleTimeline,
   goalAssignmentState,
   goalDraftFrom,
@@ -238,7 +239,7 @@ describe("Goals route helpers", () => {
     ]);
   });
 
-  it("builds a project goal cockpit summary with ledger and open goal work", () => {
+  it("builds a project goal cockpit summary with scoped impact and open goal work", () => {
     const summary = goalCockpitSummary({
       goal_status: "in_progress",
       last_lead_at: 61_000,
@@ -262,7 +263,8 @@ describe("Goals route helpers", () => {
     expect(summary.latest.summary).toBe("Pruned and focused the next pass.");
     expect(summary.latestDecision).toBe("Pruned and focused the next pass.");
     expect(summary.stateStrip.map((item) => item.label)).toEqual(["State", "Definition", "Last review", "Next review"]);
-    expect(summary.ledger.map((item) => [item.key, item.value])).toEqual([
+    expect(summary.impactLabel).toBe("Last decision impact");
+    expect(summary.impact.map((item) => [item.key, item.value])).toEqual([
       ["created", 2],
       ["assigned", 1],
       ["deleted", 1],
@@ -272,18 +274,28 @@ describe("Goals route helpers", () => {
     expect(summary.leadTasks[0]).toMatchObject({ task_key: "T-42", title: "Run smoke" });
   });
 
-  it("falls back to checkpoint text for the cockpit latest decision", () => {
+  it("scopes cockpit impact counters to the latest decision row", () => {
     const summary = goalCockpitSummary({
       goal_status: "in_progress",
       readiness: { ready: true, missing: [] },
       cycles: [{
         id: "run-2",
         process_status: "running",
+        tasks_created: 5,
+        tasks_assigned: 4,
+        tasks_deleted: 3,
+        tasks_skipped: 2,
+        notes_posted: 1,
       }, {
         id: "run-1",
         process_status: "succeeded",
         checkpoint_note: "Keep the existing owners moving; no new delegation.",
         validation_summary: "Checked child task state.",
+        tasks_created: 0,
+        tasks_assigned: 1,
+        tasks_deleted: 0,
+        tasks_skipped: 0,
+        notes_posted: 2,
       }],
     }, { now: 1000 });
 
@@ -291,5 +303,24 @@ describe("Goals route helpers", () => {
     expect(summary.decisionCycle.id).toBe("run-1");
     expect(summary.latestDecision).toBe("Keep the existing owners moving; no new delegation.");
     expect(summary.latestDetails).toEqual(["Checked child task state."]);
+    expect(summary.impactLabel).toBe("Last decision impact");
+    expect(summary.impact.map((item) => [item.key, item.value])).toEqual([
+      ["created", 0],
+      ["assigned", 1],
+      ["deleted", 0],
+      ["skipped", 0],
+      ["comments", 2],
+    ]);
+  });
+
+  it("builds open goal work labels without repeating the task title", () => {
+    expect(goalLeadTaskDisplay({ task_key: "T-42", title: "Run smoke" })).toEqual({
+      badgeLabel: "T-42",
+      title: "Run smoke",
+    });
+    expect(goalLeadTaskDisplay({ id: "task-123", title: "Refine scope" })).toEqual({
+      badgeLabel: "Task",
+      title: "Refine scope",
+    });
   });
 });

@@ -6552,7 +6552,7 @@ html.assistant-resizing * {
   gap: var(--sp-2);
 }
 .goal-cockpit-stat,
-.goal-cockpit-ledger-item {
+.goal-cockpit-impact-item {
   display: grid;
   gap: 3px;
   min-width: 0;
@@ -6562,13 +6562,13 @@ html.assistant-resizing * {
   background: var(--surface-sunken);
 }
 .goal-cockpit-stat span,
-.goal-cockpit-ledger-item span,
+.goal-cockpit-impact-item span,
 .goal-roster-head {
   color: var(--text-muted);
   font-size: var(--text-sm);
 }
 .goal-cockpit-stat strong,
-.goal-cockpit-ledger-item strong {
+.goal-cockpit-impact-item strong {
   min-width: 0;
   color: var(--text);
   font-size: var(--text-md);
@@ -6603,12 +6603,25 @@ html.assistant-resizing * {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
-.goal-cockpit-ledger {
+.goal-cockpit-impact {
+  display: grid;
+  gap: var(--sp-2);
+}
+.goal-cockpit-impact-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+.goal-cockpit-impact-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
   gap: var(--sp-2);
 }
-.goal-cockpit-ledger-item.is-deleted.has-value {
+.goal-cockpit-impact-item.is-deleted.has-value {
   border-color: var(--status-error-border);
   background: var(--status-error-bg-10);
 }
@@ -6746,7 +6759,7 @@ html.assistant-resizing * {
 }
 @media (max-width: 720px) {
   .goal-cockpit-strip,
-  .goal-cockpit-ledger {
+  .goal-cockpit-impact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .goal-lead-roster li {
