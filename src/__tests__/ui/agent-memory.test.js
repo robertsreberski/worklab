@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  agentSupportsFastMode,
   agentSupportsOneMillionContext,
   formatMemoryBytes,
   learningMemoryMeta,
@@ -19,6 +20,16 @@ describe("agent runtime UI helpers", () => {
     expect(agentSupportsOneMillionContext({ value: "claude:claude-opus-4-6" })).toBe(true);
     expect(agentSupportsOneMillionContext({ value: "claude:claude-sonnet-4-6" })).toBe(false);
     expect(agentSupportsOneMillionContext({ value: "codex:gpt-5.5" })).toBe(false);
+  });
+
+  it("shows the fast mode switch only for Codex GPT models", () => {
+    expect(agentSupportsFastMode(null)).toBe(false);
+    expect(agentSupportsFastMode(undefined)).toBe(false);
+    expect(agentSupportsFastMode({ value: "codex:gpt-5.5" })).toBe(true);
+    expect(agentSupportsFastMode({ value: "codex:gpt-5.4" })).toBe(true);
+    expect(agentSupportsFastMode({ value: "codex:gpt-5.4-mini" })).toBe(true);
+    expect(agentSupportsFastMode({ value: "pi:openai-codex:gpt-5.5" })).toBe(false);
+    expect(agentSupportsFastMode({ value: "codex:o4-mini" })).toBe(false);
   });
 });
 

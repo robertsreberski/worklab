@@ -166,6 +166,7 @@ export function AgentsTab({ selectedName = null }) {
                       <ResourceRowId>{modelDisplayName(a.model)}</ResourceRowId>
                       {a.effort && <ResourceRowChip tone="accent" icon="zap">{a.effort} effort</ResourceRowChip>}
                       {a.context_window === "1m" && <ResourceRowChip tone="info" icon="database">1M context</ResourceRowChip>}
+                      {a.fast_mode && <ResourceRowChip tone="info" icon="zap">Fast mode</ResourceRowChip>}
                       {a.enabled === false && <ResourceRowChip tone="disabled" icon="x-circle">disabled</ResourceRowChip>}
                     </ResourceRowTags>
                   </span>
