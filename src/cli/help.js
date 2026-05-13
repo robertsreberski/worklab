@@ -63,6 +63,24 @@ const COMMANDS = [
     common: true,
   },
   {
+    name: "onboard",
+    usage: "worklab onboard [options]",
+    summary: "Run the first-install setup wizard for tools, local providers, embeddings, service, and doctor checks.",
+    description: [
+      "Interactive by default. Use --yes for recommended defaults: Ollama,",
+      "Worklab skills for available Codex and Claude Code CLIs, nomic-embed-text",
+      "embeddings, service start, and final doctor checks.",
+    ],
+    options: [
+      ["--yes", "Accept recommended defaults and non-destructive setup actions."],
+      ["--dry-run", "Print planned setup actions without writing provider/settings/skill changes."],
+      ["--local-provider NAME", "Local provider: ask, ollama, lmstudio, or none. Default: ask."],
+      ["--embedding MODE", "Embedding setup: ask, yes, or no. Default: ask."],
+      ["--no-start", "Configure Worklab without starting the managed service."],
+    ],
+    common: true,
+  },
+  {
     name: "backup",
     usage: "worklab backup [options]",
     summary: "Create a tar.gz backup of the active data directory.",
@@ -101,6 +119,22 @@ const COMMANDS = [
     usage: "worklab mcp [options]",
     summary: "Run the full-access Worklab admin MCP bridge over stdio.",
     common: true,
+  },
+  {
+    name: "install-skill",
+    usage: "worklab install-skill --target codex|claude|all [options]",
+    summary: "Install the Worklab host skill into Codex or Claude Code.",
+    description: [
+      "Default mode creates a symlink from the selected tool's skills directory",
+      "to this checkout's canonical skills/worklab directory. Use --copy when",
+      "a physical copy is required instead of a live link.",
+    ],
+    options: [
+      ["--target TARGET", "Destination tool: codex, claude, or all."],
+      ["--copy", "Install a physical copy instead of the default symlink."],
+      ["--force", "Replace an existing worklab skill directory or symlink."],
+      ["--dry-run", "Print the planned action without writing files."],
+    ],
   },
   {
     name: "install-service",

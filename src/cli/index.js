@@ -19,9 +19,11 @@ const commands = {
   stop: async (argv) => (await import("./stop.js")).stop(argv),
   status: async (argv) => (await import("./status.js")).status(argv),
   doctor: async (argv) => (await import("./doctor.js")).doctor(argv),
+  onboard: async (argv) => (await import("./onboard.js")).onboard(argv),
   backup: async (argv) => (await import("./backup.js")).backup(argv),
   "compact-logs": async (argv) => (await import("./compact-logs.js")).compactLogsCli(argv),
   mcp: async (argv) => (await import("./mcp.js")).mcp(argv),
+  "install-skill": async (argv) => (await import("./install-skill.js")).installSkillCli(argv),
   "install-service": async (argv) => (await import("./install-service.js")).installService(argv),
   "uninstall-service": async (argv) => (await import("./uninstall-service.js")).uninstallService(argv),
 };

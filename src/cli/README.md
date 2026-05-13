@@ -23,6 +23,8 @@ src/cli/
 ├── doctor.js             # environment diagnostics
 ├── backup.js
 ├── mcp.js                # stdio admin MCP bridge
+├── onboard.js            # first-install setup wizard
+├── install-skill.js      # install host skill into Codex / Claude Code
 └── install-service.js / uninstall-service.js
 ```
 

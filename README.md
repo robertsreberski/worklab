@@ -17,14 +17,19 @@ From this checkout:
 ```bash
 npm install
 npm run install:worklab
-worklab start
+worklab onboard
 ```
 
 Open `http://127.0.0.1:7878`.
 
+`worklab onboard` is the first-run setup wizard. It checks Codex and Claude
+Code availability, installs the Worklab host skill into available tools,
+configures a local provider such as Ollama or LM Studio, optionally installs
+the default embedding model, and finishes with service and doctor checks.
+
 `worklab start` builds the UI, installs or refreshes the per-user service, and
-starts Worklab in the background. After the first install, your normal startup
-command is just:
+starts Worklab in the background. `worklab onboard` runs it for you unless you
+pass `--no-start`. After the first install, your normal startup command is just:
 
 ```bash
 worklab start
