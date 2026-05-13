@@ -51,7 +51,7 @@ jobs:
 
       - name: Publish packages
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || vars.NPM_TOKEN }}
         run: node scripts/release/publish-release.mjs --tag "$GITHUB_REF_NAME"
 
       - name: Verify public npm metadata
