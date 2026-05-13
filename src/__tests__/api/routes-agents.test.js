@@ -160,6 +160,49 @@ describe("agents CRUD", () => {
     expect(row.execution_mode).toBe("cli");
   });
 
+  it("defaults fast_mode on for Codex GPT agents and allows disabling it", async () => {
+    const { agent, db } = makeTestServer();
+    const created = await agent.post("/api/agents").send({
+      name: "fast-codex",
+      display_name: "Fast Codex",
+      model: "codex:gpt-5.4-mini",
+      execution_mode: "cli",
+    }).expect(201);
+    expect(created.body.agent.fast_mode).toBe(true);
+    expect(db.prepare("SELECT fast_mode FROM agents WHERE name = 'fast-codex'").get().fast_mode).toBe(1);
+
+    const disabled = await agent.patch("/api/agents/fast-codex").send({ fast_mode: false }).expect(200);
+    expect(disabled.body.agent.fast_mode).toBe(false);
+    expect(db.prepare("SELECT fast_mode FROM agents WHERE name = 'fast-codex'").get().fast_mode).toBe(0);
+  });
+
+  it("rejects explicit fast_mode for non-Codex-GPT agents but treats saved defaults as ineffective", async () => {
+    const { agent, db } = makeTestServer();
+    const piCodex = await agent.post("/api/agents").send({
+      name: "pi-fast",
+      display_name: "Pi Fast",
+      model: "pi:openai-codex:gpt-5.5",
+      execution_mode: "sdk",
+      fast_mode: true,
+    }).expect(400);
+    expect(piCodex.body.error.code).toBe("invalid_fast_mode");
+
+    await agent.post("/api/agents").send({
+      name: "codex-to-claude",
+      display_name: "Codex To Claude",
+      model: "codex:gpt-5.5",
+      execution_mode: "cli",
+    }).expect(201);
+    expect(db.prepare("SELECT fast_mode FROM agents WHERE name = 'codex-to-claude'").get().fast_mode).toBe(1);
+
+    const patched = await agent.patch("/api/agents/codex-to-claude").send({
+      model: "claude:claude-sonnet-4-6",
+      execution_mode: "cli",
+    }).expect(200);
+    expect(patched.body.agent.fast_mode).toBe(false);
+    expect(db.prepare("SELECT fast_mode FROM agents WHERE name = 'codex-to-claude'").get().fast_mode).toBe(1);
+  });
+
   it("accepts 1M context only for eligible Opus Claude agents", async () => {
     const { agent, db } = makeTestServer();
     const created = await agent.post("/api/agents").send({

@@ -50,6 +50,7 @@ export function seedDefaultAgents({ db, templateDir, logger } = {}) {
         model: def.model,
         effort: def.effort || "medium",
         contextWindow: def.context_window || "default",
+        fastMode: def.fast_mode !== false,
         instructions: def.instructions || "",
         skillsAllowlistJson: JSON.stringify(def.skills_allowlist || []),
         skillsAllowlistMode: def.skills_allowlist_mode || "all",

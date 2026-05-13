@@ -22,6 +22,10 @@ import {
   ONE_MILLION_CONTEXT_WINDOW,
 } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
 import {
+  codexModelSupportsFastMode,
+  normalizeFastMode,
+} from "@worklab/agent-runtime/ai/runtime/fast-mode.js";
+import {
   ALLOWLIST_MODE_ALL,
   inferAllowlistMode,
   normalizeAllowlistMode,
@@ -61,6 +65,7 @@ function rowToAgent(row) {
     subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
+    fast_mode: effectiveFastModeForRow(row),
   };
 }
 
@@ -72,6 +77,7 @@ function rowToAgentSummary(row) {
     subagent_mode: normalizeSubagentMode(row.subagent_mode, "advisory"),
     execution_mode: row.execution_mode || "sdk",
     context_window: normalizeContextWindow(row.context_window),
+    fast_mode: effectiveFastModeForRow(row),
   };
 }
 
@@ -82,6 +88,7 @@ const PATCHABLE = [
   "model",
   "effort",
   "context_window",
+  "fast_mode",
   "instructions",
   "skills_allowlist",
   "skills_allowlist_mode",
@@ -136,6 +143,35 @@ function validateContextWindowForAgent({ resolved, contextWindow }) {
     return normalized;
   }
   throw new Error("1M context is only available for Claude Opus 4.7 and Opus 4.6.");
+}
+
+function modelSupportsFastMode(resolved) {
+  return resolved?.sdk === "codex" && codexModelSupportsFastMode(resolved.model);
+}
+
+function effectiveFastModeForRow(row) {
+  let resolved;
+  try {
+    resolved = normalizeModelReference(row.model);
+  } catch {
+    return false;
+  }
+  return modelSupportsFastMode(resolved) && normalizeFastMode(row.fast_mode, true);
+}
+
+function normalizeAgentFastMode(value, fallback = true) {
+  if (value === undefined || value === null || value === "") return !!fallback;
+  if (typeof value !== "boolean") throw new Error("fast_mode must be a boolean");
+  return value;
+}
+
+function validateFastModeForAgent({ resolved, fastMode, explicit = false, fallback = true }) {
+  const normalized = normalizeAgentFastMode(fastMode, fallback);
+  const supported = modelSupportsFastMode(resolved);
+  if (explicit && normalized && !supported) {
+    throw new Error("Fast mode is only available for Codex GPT models.");
+  }
+  return supported ? normalized : false;
 }
 
 function validateModelForAgent({ db, dataDir, model }) {
@@ -356,6 +392,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let subagentMode;
     let executionMode;
     let contextWindow;
+    let fastMode;
     try {
       allowSelfReview = normalizeBooleanField("allow_self_review", req.body.allow_self_review, true);
       browserToolsReviewOnly = normalizeBooleanField("browser_tools_review_only", req.body.browser_tools_review_only, false);
@@ -394,6 +431,23 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
         },
       });
     }
+    try {
+      fastMode = validateFastModeForAgent({
+        resolved,
+        fastMode: req.body.fast_mode,
+        explicit: "fast_mode" in req.body,
+        fallback: true,
+      });
+    } catch (err) {
+      return res.status(400).json({
+        error: {
+          code: "invalid_fast_mode",
+          message: err.message,
+          fast_mode: req.body.fast_mode,
+          model: canonicalModel,
+        },
+      });
+    }
 
     insertAgent(db, {
       name: finalName,
@@ -403,6 +457,7 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       model: canonicalModel,
       effort,
       contextWindow,
+      fastMode,
       instructions,
       skillsAllowlistJson: JSON.stringify(skillsAllow.list),
       skillsAllowlistMode: skillsAllow.mode,
@@ -492,6 +547,8 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
     let targetModel = existing.model;
     let targetResolved = null;
     let targetContextWindow = normalizeContextWindow(existing.context_window);
+    let targetFastMode = normalizeFastMode(existing.fast_mode, true);
+    let fastModeExplicit = false;
     let wroteEffort = false;
 
     for (const k of PATCHABLE) {
@@ -529,10 +586,21 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             return res.status(400).json({ error: { code: "invalid_context_window", message: err.message } });
           }
         }
+        if (k === "fast_mode") {
+          try {
+            fastModeExplicit = true;
+            targetFastMode = normalizeAgentFastMode(req.body[k], targetFastMode);
+            req.body[k] = targetFastMode;
+          } catch (err) {
+            return res.status(400).json({ error: { code: "invalid_fast_mode", message: err.message } });
+          }
+        }
         fields.push(`${k} = ?`);
         if (k.endsWith("_allowlist")) {
           values.push(JSON.stringify(req.body[k] ?? []));
         } else if (k === "enabled") {
+          values.push(req.body[k] ? 1 : 0);
+        } else if (k === "fast_mode") {
           values.push(req.body[k] ? 1 : 0);
         } else if (k === "allow_self_review" || k === "browser_tools_review_only") {
           try {
@@ -589,6 +657,9 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       const effectiveContextWindow = "context_window" in req.body
         ? targetContextWindow
         : normalizeContextWindow(existing.context_window);
+      const effectiveFastMode = "fast_mode" in req.body
+        ? targetFastMode
+        : normalizeFastMode(existing.fast_mode, true);
       let effectiveResolved = targetResolved;
       if (!effectiveResolved && effectiveModel) {
         try { effectiveResolved = normalizeModelReference(effectiveModel); } catch { effectiveResolved = null; }
@@ -617,6 +688,23 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
             code: "invalid_context_window",
             message: err.message,
             context_window: effectiveContextWindow,
+            model: effectiveModel,
+          },
+        });
+      }
+      try {
+        validateFastModeForAgent({
+          resolved: effectiveResolved,
+          fastMode: effectiveFastMode,
+          explicit: fastModeExplicit,
+          fallback: true,
+        });
+      } catch (err) {
+        return res.status(400).json({
+          error: {
+            code: "invalid_fast_mode",
+            message: err.message,
+            fast_mode: effectiveFastMode,
             model: effectiveModel,
           },
         });
