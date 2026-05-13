@@ -12,6 +12,7 @@ import {
   normalizeReasoningEffortForModel,
   readAgentMemoryState,
   readRunSection,
+  summarizeAgentMemories,
   updateAgentMemory,
   uniqueSlug,
 } from "../../core/index.js";
@@ -511,7 +512,21 @@ export function registerAgentRoutes(app, { db, broker, consolidation, dataDir })
       kind: req.query.kind || null,
       limit,
     });
-    res.json({ memories });
+    const status = req.query.status || null;
+    const summary = summarizeAgentMemories(db, {
+      agentName: req.params.name,
+      kind: req.query.kind || null,
+    });
+    const totalForQuery = status ? Number(summary[status] || 0) : summary.total;
+    res.json({
+      memories,
+      summary,
+      meta: {
+        limit,
+        returned: memories.length,
+        has_more: totalForQuery > memories.length,
+      },
+    });
   });
 
   app.patch("/api/agents/:name/memories/:memoryId", (req, res) => {

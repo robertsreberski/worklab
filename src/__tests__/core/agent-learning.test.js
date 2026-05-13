@@ -48,6 +48,31 @@ function seedRun(db, patch = {}) {
 }
 
 describe("agent learning memory", () => {
+  it("caps a single batch of memory candidates and reports overflow as skipped", () => {
+    const db = makeTestDb();
+    seedAgent(db);
+    seedTask(db);
+    seedRun(db);
+
+    const result = recordAgentMemoryCandidates(db, {
+      agentName: "coder",
+      taskId: "task-1",
+      runId: "run-1",
+      autoApproveThreshold: 0.5,
+      candidates: Array.from({ length: 10 }, (_, index) => ({
+        kind: "fact",
+        scope: "agent",
+        content: `Bounded learning memory ${index + 1}.`,
+        evidence: `Evidence ${index + 1}.`,
+        confidence: 0.9,
+      })),
+    });
+
+    expect(result.inserted).toBe(8);
+    expect(result.skipped).toBe(2);
+    expect(listAgentMemories(db, { agentName: "coder", limit: 20 })).toHaveLength(8);
+  });
+
   it("stores structured candidates with provenance and auto-approval threshold", () => {
     const db = makeTestDb();
     seedAgent(db);
@@ -167,6 +192,24 @@ describe("agent learning memory", () => {
     expect(formatAgentLearningContext(memories)).toContain("## Learned procedures");
     expect(formatAgentLearningContext(memories)).toContain("Run `npm run build:ui` after UI changes.");
     expect(formatAgentLearningContext(memories)).not.toContain("draft");
+  });
+
+  it("bounds formatted learning context by line and total character budget", () => {
+    const memories = Array.from({ length: 12 }, (_, index) => ({
+      id: `mem-${index + 1}`,
+      kind: "fact",
+      status: "approved",
+      content: `Memory ${index + 1}: ${"x".repeat(900)}`,
+      confidence: 0.9,
+      updated_at: 1700000000000 + index,
+    }));
+
+    const context = formatAgentLearningContext(memories);
+
+    expect(context.length).toBeLessThanOrEqual(4000);
+    expect(context).toContain("## Learned facts");
+    expect(context).toContain("Additional learning memories omitted");
+    expect(context).not.toContain("x".repeat(700));
   });
 
   it("records memory candidates from a completed run result when native learning is enabled", () => {
