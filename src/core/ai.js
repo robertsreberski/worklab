@@ -511,6 +511,15 @@ function runtimeProviderError(resolved, message) {
   };
 }
 
+function optionalOption(value) {
+  return value !== undefined && value !== null && value !== "" ? value : undefined;
+}
+
+function optionOrEnv(optionValue, envValue) {
+  const explicit = optionalOption(optionValue);
+  return explicit !== undefined ? explicit : optionalOption(envValue);
+}
+
 // Caller-side dependency injection: providers (src/ai/providers/*) must not
 // reach back into core/. generateResponse pre-computes everything those
 // adapters need — normalized effort, settings, skill access dirs, and (for
@@ -533,6 +542,18 @@ export async function generateResponse(systemPrompt, options) {
       return runtimeProviderError(resolved, err?.message || String(err));
     }
   }
+  const codexThreadStartTimeoutMs = optionOrEnv(
+    options.codexThreadStartTimeoutMs,
+    process.env.WORKLAB_CODEX_THREAD_START_TIMEOUT_MS,
+  );
+  const codexThreadStartAttempts = optionOrEnv(
+    options.codexThreadStartAttempts,
+    process.env.WORKLAB_CODEX_THREAD_START_ATTEMPTS,
+  );
+  const codexThreadStartBackoffMs = optionOrEnv(
+    options.codexThreadStartBackoffMs,
+    process.env.WORKLAB_CODEX_THREAD_START_BACKOFF_MS,
+  );
   const baseOptions = {
     ...options,
     model: resolved,
@@ -559,6 +580,9 @@ export async function generateResponse(systemPrompt, options) {
           codexAppServerArgs: [],
         }
         : {}),
+    ...(codexThreadStartTimeoutMs !== undefined ? { codexThreadStartTimeoutMs } : {}),
+    ...(codexThreadStartAttempts !== undefined ? { codexThreadStartAttempts } : {}),
+    ...(codexThreadStartBackoffMs !== undefined ? { codexThreadStartBackoffMs } : {}),
     ...(customContext || {}),
   };
   const nextOptions = {

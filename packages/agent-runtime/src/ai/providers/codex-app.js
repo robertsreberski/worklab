@@ -5,6 +5,14 @@ import { createFileChangePayload } from "../file-change-stats.js";
 import { formatLiveInputGuidance } from "../live-input-prompt.js";
 import { estimateCost } from "../cost.js";
 
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_THREAD_START_ATTEMPTS = 2;
+const DEFAULT_THREAD_START_BACKOFF_MS = 5_000;
+const MIN_THREAD_START_TIMEOUT_MS = 60_000;
+const MAX_THREAD_START_TIMEOUT_MS = 180_000;
+const THREAD_START_PROMPT_CHARS_PER_STEP = 50_000;
+const THREAD_START_TIMEOUT_STEP_MS = 30_000;
+
 const CODEX_APP_CAPABILITIES = {
   kind: "codex-app",
   runtime: "app-server",
@@ -39,6 +47,59 @@ function pushUniqueText(texts, text) {
 
 function userTextInput(text) {
   return [{ type: "text", text: String(text || ""), text_elements: [] }];
+}
+
+function integerOption(value, fallback, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(n)));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function defaultThreadStartTimeoutMs(systemPrompt) {
+  const promptChars = String(systemPrompt || "").length;
+  const sizeSteps = Math.max(0, Math.ceil(promptChars / THREAD_START_PROMPT_CHARS_PER_STEP) - 1);
+  return clamp(
+    MIN_THREAD_START_TIMEOUT_MS + (sizeSteps * THREAD_START_TIMEOUT_STEP_MS),
+    MIN_THREAD_START_TIMEOUT_MS,
+    MAX_THREAD_START_TIMEOUT_MS,
+  );
+}
+
+function threadStartPolicy(systemPrompt, options = {}) {
+  return {
+    timeoutMs: integerOption(
+      options.codexThreadStartTimeoutMs,
+      defaultThreadStartTimeoutMs(systemPrompt),
+      { min: 1, max: Number.MAX_SAFE_INTEGER },
+    ),
+    attempts: integerOption(
+      options.codexThreadStartAttempts,
+      DEFAULT_THREAD_START_ATTEMPTS,
+      { min: 1, max: 5 },
+    ),
+    backoffMs: integerOption(
+      options.codexThreadStartBackoffMs,
+      DEFAULT_THREAD_START_BACKOFF_MS,
+      { min: 0, max: 300_000 },
+    ),
+  };
+}
+
+function delay(ms, signal) {
+  const timeoutMs = Math.max(0, Number(ms) || 0);
+  if (!timeoutMs || signal?.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    timer.unref?.();
+    signal?.addEventListener?.("abort", () => {
+      clearTimeout(timer);
+      resolve();
+    }, { once: true });
+  });
 }
 
 function sandboxForPermissionMode(permissionMode) {
@@ -98,6 +159,35 @@ function isNoActiveTurnToSteer(error) {
   return /no active turn to steer/i.test(codexErrorMessage(error));
 }
 
+function isCodexRequestTimeout(error, method = null) {
+  return error?.code === "CODEX_APP_SERVER_REQUEST_TIMEOUT"
+    && (!method || error.method === method);
+}
+
+function codexErrorDiagnostics(error) {
+  if (!error) return {};
+  if (isCodexRequestTimeout(error)) {
+    return {
+      codex_error_code: "codex_app_server_request_timeout",
+      codex_request_method: error.method || null,
+      codex_request_timeout_ms: error.timeoutMs || null,
+      ...(error.stderrTail ? { stderr_tail: error.stderrTail } : {}),
+    };
+  }
+  return error.code ? { codex_error_code: String(error.code) } : {};
+}
+
+function withoutCodexRequestErrorDiagnostics(diagnostics) {
+  const {
+    codex_error_code: _codexErrorCode,
+    codex_request_method: _codexRequestMethod,
+    codex_request_timeout_ms: _codexRequestTimeoutMs,
+    stderr_tail: _stderrTail,
+    ...rest
+  } = diagnostics || {};
+  return rest;
+}
+
 function codexNativeTeammates(nativeSubagents) {
   if (nativeSubagents?.provider !== "codex" || !Array.isArray(nativeSubagents.teammates)) return [];
   return nativeSubagents.teammates.map((agent) => {
@@ -155,6 +245,12 @@ export function createCodexAppServerClient({
     pending.clear();
   }
 
+  function stderrTail() {
+    const text = stderr.join("").trim();
+    if (!text) return "";
+    return text.length > 8_192 ? text.slice(text.length - 8_192) : text;
+  }
+
   child.stderr.on("data", (chunk) => stderr.push(chunk.toString()));
 
   const rl = createInterface({ input: child.stdout });
@@ -192,7 +288,7 @@ export function createCodexAppServerClient({
     resolveClosed(err);
   });
 
-  function request(method, params, { timeoutMs = 30_000 } = {}) {
+  function request(method, params, { timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {}) {
     if (closed || child.stdin?.destroyed || child.stdin?.writableEnded) {
       return Promise.reject(new Error("codex app-server is not running"));
     }
@@ -201,7 +297,12 @@ export function createCodexAppServerClient({
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         pending.delete(id);
-        reject(new Error(`codex app-server request timed out: ${method}`));
+        reject(Object.assign(new Error(`codex app-server request timed out: ${method}`), {
+          code: "CODEX_APP_SERVER_REQUEST_TIMEOUT",
+          method,
+          timeoutMs,
+          stderrTail: stderrTail(),
+        }));
       }, timeoutMs);
       timer.unref?.();
       pending.set(id, { resolve, reject, timer });
@@ -341,6 +442,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   let errorMessage = null;
   let failureKind = null;
   let usage = {};
+  let codexDiagnostics = {};
   let resolveTurn;
   let resolveTurnReady;
   let turnReadyResolved = false;
@@ -373,66 +475,124 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     emitEvent({ type: "assistant", message: { content: [{ type: "text", text }] } });
   }
 
-  const client = createCodexAppServerClient({
-    command: options.codexAppServerCommand,
-    args: options.codexAppServerArgs,
-    cwd: options.cwd,
-    env: options.codexAppServerEnv,
-    onNotification: (notification) => {
-      const { method, params = {} } = notification;
-      if (method === "turn/started") {
-        setActiveTurnId(params.turn?.id, { steerReady: true });
-        emitEvent({ type: "cli_event", raw: { type: "turn_started", turn: params.turn } });
+  function handleNotification(notification) {
+    const { method, params = {} } = notification;
+    if (method === "turn/started") {
+      setActiveTurnId(params.turn?.id, { steerReady: true });
+      emitEvent({ type: "cli_event", raw: { type: "turn_started", turn: params.turn } });
+      return;
+    }
+    if (method === "turn/completed") {
+      setActiveTurnId(params.turn?.id);
+      turnCompleted = true;
+      if (params.turn?.status === "failed") {
+        errorMessage = params.turn?.error?.message || params.turn?.error || "Codex turn failed";
+        failureKind = "provider_unavailable";
+      }
+      emitEvent({ type: "cli_event", raw: { type: "turn_completed", turn: params.turn } });
+      resolveTurn(params.turn);
+      return;
+    }
+    if (method === "thread/tokenUsage/updated") {
+      usage = usageFromTokenUsage(params.tokenUsage);
+      return;
+    }
+    if (method === "item/agentMessage/delta") {
+      const current = agentTextByItem.get(params.itemId) || "";
+      agentTextByItem.set(params.itemId, `${current}${params.delta || ""}`);
+      return;
+    }
+    if (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta") {
+      emitEvent({ type: "assistant", message: { content: [{ type: "thinking", text: params.delta || "" }] } });
+      return;
+    }
+    if (method === "warning" || method === "error" || method === "configWarning" || method === "guardianWarning") {
+      emitEvent({
+        type: "runtime_warning",
+        warning_kind: method.replace(/\W+/g, "_"),
+        message: params.message || params.error || JSON.stringify(params),
+      });
+      return;
+    }
+    if (method === "item/started" || method === "item/completed") {
+      const raw = mapThreadItem(method, params.item);
+      if (params.item?.type === "agentMessage") {
+        const text = params.item.text || agentTextByItem.get(params.item.id) || "";
+        if (method === "item/completed") handleAgentText(text);
         return;
       }
-      if (method === "turn/completed") {
-        setActiveTurnId(params.turn?.id);
-        turnCompleted = true;
-        if (params.turn?.status === "failed") {
-          errorMessage = params.turn?.error?.message || params.turn?.error || "Codex turn failed";
-          failureKind = "provider_unavailable";
+      if (raw) emitEvent(normalizeCodexItemEvent(raw, codexItemContext) || raw);
+    }
+  }
+
+  let client = null;
+  function createClient() {
+    return createCodexAppServerClient({
+      command: options.codexAppServerCommand,
+      args: options.codexAppServerArgs,
+      cwd: options.cwd,
+      env: options.codexAppServerEnv,
+      onNotification: handleNotification,
+    });
+  }
+
+  async function initializeClient(nextClient) {
+    await nextClient.request("initialize", {
+      clientInfo: { name: "worklab", title: "Worklab", version: "0" },
+      capabilities: { experimentalApi: true },
+    });
+  }
+
+  async function requestThreadStart(params) {
+    const policy = threadStartPolicy(systemPrompt, options);
+    const startedAt = Date.now();
+    let lastError = null;
+    for (let attempt = 1; attempt <= policy.attempts; attempt += 1) {
+      if (!client) {
+        client = createClient();
+        await initializeClient(client);
+      }
+      try {
+        const thread = await client.request("thread/start", params, { timeoutMs: policy.timeoutMs });
+        codexDiagnostics = {
+          ...withoutCodexRequestErrorDiagnostics(codexDiagnostics),
+          codex_thread_start_attempts: attempt,
+          codex_thread_start_timeout_ms: policy.timeoutMs,
+          codex_thread_start_duration_ms: Date.now() - startedAt,
+          ...(attempt > 1 ? { codex_thread_start_retried: true } : {}),
+        };
+        return thread;
+      } catch (err) {
+        lastError = err;
+        codexDiagnostics = {
+          ...codexDiagnostics,
+          ...codexErrorDiagnostics(err),
+          codex_thread_start_attempts: attempt,
+          codex_thread_start_timeout_ms: policy.timeoutMs,
+          codex_thread_start_duration_ms: Date.now() - startedAt,
+          ...(attempt > 1 ? { codex_thread_start_retried: true } : {}),
+        };
+        if (!isCodexRequestTimeout(err, "thread/start") || attempt >= policy.attempts || options.abortSignal?.aborted) {
+          throw err;
         }
-        emitEvent({ type: "cli_event", raw: { type: "turn_completed", turn: params.turn } });
-        resolveTurn(params.turn);
-        return;
-      }
-      if (method === "thread/tokenUsage/updated") {
-        usage = usageFromTokenUsage(params.tokenUsage);
-        return;
-      }
-      if (method === "item/agentMessage/delta") {
-        const current = agentTextByItem.get(params.itemId) || "";
-        agentTextByItem.set(params.itemId, `${current}${params.delta || ""}`);
-        return;
-      }
-      if (method === "item/reasoning/summaryTextDelta" || method === "item/reasoning/textDelta") {
-        emitEvent({ type: "assistant", message: { content: [{ type: "thinking", text: params.delta || "" }] } });
-        return;
-      }
-      if (method === "warning" || method === "error" || method === "configWarning" || method === "guardianWarning") {
         emitEvent({
           type: "runtime_warning",
-          warning_kind: method.replace(/\W+/g, "_"),
-          message: params.message || params.error || JSON.stringify(params),
+          warning_kind: "codex_thread_start_retry",
+          message: `Codex app-server thread/start timed out after ${policy.timeoutMs}ms; retrying with a fresh app-server.`,
         });
-        return;
+        client.close();
+        client = null;
+        await delay(policy.backoffMs, options.abortSignal);
       }
-      if (method === "item/started" || method === "item/completed") {
-        const raw = mapThreadItem(method, params.item);
-        if (params.item?.type === "agentMessage") {
-          const text = params.item.text || agentTextByItem.get(params.item.id) || "";
-          if (method === "item/completed") handleAgentText(text);
-          return;
-        }
-        if (raw) emitEvent(normalizeCodexItemEvent(raw, codexItemContext) || raw);
-      }
-    },
-  });
+    }
+    throw lastError || new Error("codex app-server request timed out: thread/start");
+  }
+
   const abortHandler = () => {
     if (threadId && activeTurnId) {
-      client.request("turn/interrupt", { threadId, turnId: activeTurnId }).catch(() => {});
+      client?.request("turn/interrupt", { threadId, turnId: activeTurnId }).catch(() => {});
     }
-    client.close();
+    client?.close();
   };
 
   async function steerLiveInput() {
@@ -492,14 +652,12 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
   }
 
   try {
+    client = createClient();
     if (options.abortSignal) {
       if (options.abortSignal.aborted) abortHandler();
       else options.abortSignal.addEventListener("abort", abortHandler, { once: true });
     }
-    await client.request("initialize", {
-      clientInfo: { name: "worklab", title: "Worklab", version: "0" },
-      capabilities: { experimentalApi: true },
-    });
+    await initializeClient(client);
     let collaborationMode = codexCollaborationModePayload(options.nativeSubagents, {
       model: resolved.model,
       effort: normalizedEffort,
@@ -533,7 +691,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
     // returned thread id as provider_session_id so the run log links the
     // chain. TODO(intelligence-ramp): add thread/load + reusableSessionId
     // pass-through when the codex protocol supports resume.
-    const thread = await client.request("thread/start", {
+    const thread = await requestThreadStart({
       model: resolved.model,
       modelProvider: "openai",
       serviceTier: "fast",
@@ -658,6 +816,7 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       error: errorMessage,
       failureKind,
       diagnostics: {
+        ...codexDiagnostics,
         ...(codexErrorCode ? { codex_error_code: codexErrorCode } : {}),
         ...(hadPartialProgress && failureKind === "provider_unavailable"
           ? { had_partial_progress: true }
@@ -682,13 +841,14 @@ export async function generateCodexAppResponse(systemPrompt, options = {}) {
       error: err?.message || String(err),
       failureKind: failureKind || "provider_unavailable",
       diagnostics: {
-        ...(err?.code ? { codex_error_code: String(err.code) } : {}),
+        ...codexDiagnostics,
+        ...codexErrorDiagnostics(err),
         ...(events.length > 0 || texts.length > 0 ? { had_partial_progress: true } : {}),
       },
     };
   } finally {
     options.abortSignal?.removeEventListener?.("abort", abortHandler);
-    client.close();
+    client?.close();
   }
 }
 
