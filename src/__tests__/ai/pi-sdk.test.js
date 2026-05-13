@@ -330,6 +330,92 @@ describe("generatePiResponse Codex transport", () => {
   });
 });
 
+describe("generatePiResponse structured output finalization", () => {
+  const outputSchema = {
+    type: "object",
+    properties: {
+      schema: { type: "string" },
+      summary: { type: "string" },
+    },
+    required: ["schema", "summary"],
+    additionalProperties: false,
+  };
+
+  it("retries once in-session when Pi stops with no text or structured result", async () => {
+    const contexts = [];
+    let streamCount = 0;
+    const structured = { schema: "worklab.v2", summary: "Done" };
+    const streamFn = (model, context) => {
+      streamCount += 1;
+      contexts.push(context);
+      if (streamCount === 1) return completeStream("")(model, context);
+      return toolCallStream("StructuredOutput", structured)(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: ["Bash"],
+      skills: [],
+      mcpServers: {},
+      outputSchema,
+    });
+
+    expect(streamCount).toBe(2);
+    expect(contexts[1].tools.map((tool) => tool.name)).toEqual(["StructuredOutput"]);
+    expect(result.error).toBeNull();
+    expect(result.structuredResult).toEqual(structured);
+    expect(result.structuredResultSource).toBe("StructuredOutput");
+    expect(result.runtimeWarnings).toContainEqual(expect.objectContaining({
+      warning_kind: "structured_output_finalization_retry",
+      reason: "empty_final_output",
+    }));
+    expect(result.diagnostics).toMatchObject({
+      structured_output_finalization_retry_attempts: 1,
+      structured_output_finalization_retry_reason: "empty_final_output",
+      structured_output_finalization_retry_failed: false,
+      last_tool_name: "StructuredOutput",
+    });
+  });
+
+  it("keeps diagnostics when the structured output finalization retry also returns nothing", async () => {
+    const contexts = [];
+    let streamCount = 0;
+    const streamFn = (model, context) => {
+      streamCount += 1;
+      contexts.push(context);
+      return completeStream("")(model, context);
+    };
+
+    const result = await generatePiResponse("sys", {
+      model: resolveModel("pi:openai-codex:gpt-5.5"),
+      effort: "low",
+      messages: [{ role: "user", content: "hello" }],
+      streamFn,
+      allowedTools: ["Bash"],
+      skills: [],
+      mcpServers: {},
+      outputSchema,
+    });
+
+    expect(streamCount).toBe(2);
+    expect(contexts[1].tools.map((tool) => tool.name)).toEqual(["StructuredOutput"]);
+    expect(result.error).toBeNull();
+    expect(result.structuredResult).toBeUndefined();
+    expect(result.runtimeWarnings).toContainEqual(expect.objectContaining({
+      warning_kind: "structured_output_finalization_retry",
+      reason: "empty_final_output",
+    }));
+    expect(result.diagnostics).toMatchObject({
+      structured_output_finalization_retry_attempts: 1,
+      structured_output_finalization_retry_reason: "empty_final_output",
+      structured_output_finalization_retry_failed: true,
+    });
+  });
+});
+
 describe("generatePiResponse live input", () => {
   it("continues with live input that arrives just after the first assistant response", async () => {
     const liveInput = createLiveInputQueue();

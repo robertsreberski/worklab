@@ -203,6 +203,7 @@ export function spawnWorker({
         kind: rawEvent.warning_kind || "runtime",
         source: rawEvent.source || null,
         message: typeof rawEvent.message === "string" ? rawEvent.message : "",
+        last_tool_name: rawEvent.last_tool_name || rawEvent.lastToolName || rawEvent.diagnostics?.last_tool_name || null,
         ts: rawEvent.ts || Date.now(),
       });
     }

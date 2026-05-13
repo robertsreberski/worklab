@@ -32,6 +32,7 @@ function emitRuntimeWarnings(emit, response) {
   for (const warning of warnings) {
     emit({
       type: "runtime_warning",
+      ...(warning && typeof warning === "object" && !Array.isArray(warning) ? warning : {}),
       warning_kind: warning?.warning_kind || warning?.warningKind || "runtime",
       message: warning?.message || String(warning || "runtime warning"),
       ts: Date.now(),
@@ -110,7 +111,11 @@ export function emitFinalResult(ctx, result) {
       });
     }
     if (result.parsedResultFatal || !result.worklabResult) {
-      emit({ type: "worklab_result_error", message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result" });
+      emit({
+        type: "worklab_result_error",
+        message: result.parsedResultFatalMessage || result.parsedResultError || "Invalid worklab_result",
+        ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
+      });
       return 1;
     }
     emit({
@@ -147,6 +152,7 @@ export function emitFinalResult(ctx, result) {
       emit({
         type: "worklab_result_error",
         message: result.parsedResultFatalMessage || result.parsedResultError || "Reviewer did not return a valid worklab_result or verdict",
+        ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
       });
       return 1;
     }
@@ -179,6 +185,7 @@ export function emitFinalResult(ctx, result) {
       emit({
         type: "worklab_result_error",
         message: result.parsedResultError || "Lead cycle did not return a valid worklab.lead_cycle.v1 result",
+        ...(result.diagnostics && typeof result.diagnostics === "object" ? { diagnostics: result.diagnostics } : {}),
       });
       return 1;
     }

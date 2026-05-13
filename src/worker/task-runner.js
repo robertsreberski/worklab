@@ -147,6 +147,7 @@ export async function runTask(ctx) {
       effort: result.effort,
       providerSessionId: result.providerSessionId || null,
       runtimeWarnings: result.runtimeWarnings,
+      diagnostics: result.diagnostics || null,
       worklabResult: parsedResult.result,
       parsedResultError: parsedResult.error || null,
       parsedResultFatal: !!parsedResult.fatal,

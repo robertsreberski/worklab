@@ -101,6 +101,39 @@ function appendStructuredOutputInstruction(systemPrompt, outputSchema) {
   ].join("\n");
 }
 
+function structuredOutputFinalizationPrompt() {
+  return [
+    "The previous assistant turn ended without submitting the required structured result.",
+    "Do not run tools, inspect files, or redo work.",
+    "Call only `StructuredOutput` once with the final object matching the requested schema, based on the completed transcript above.",
+    "Do not print prose before or after the tool call.",
+  ].join("\n");
+}
+
+function shouldRetryStructuredOutputFinalization({
+  outputSchema,
+  structuredResult,
+  finalText,
+  stopReason,
+  externalAbort,
+  maxTurnsHit,
+}) {
+  if (!outputSchema) return false;
+  if (structuredResult !== null && structuredResult !== undefined) return false;
+  if (String(finalText || "").trim()) return false;
+  if (externalAbort || maxTurnsHit) return false;
+  return stopReason !== "error" && stopReason !== "aborted";
+}
+
+function structuredOutputRetryDiagnostics(attempts, reason, failed) {
+  if (!attempts) return {};
+  return {
+    structured_output_finalization_retry_attempts: attempts,
+    structured_output_finalization_retry_reason: reason,
+    structured_output_finalization_retry_failed: !!failed,
+  };
+}
+
 async function resolveApiKey(provider, { apiKeys, resolvePiApiKey, runtimeWarnings }) {
   if (apiKeys?.has(provider)) return apiKeys.get(provider);
   if (typeof resolvePiApiKey !== "function") return undefined;
@@ -410,6 +443,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
   let lastToolName = null;
   let piTransport = "auto";
   let agent = null;
+  let removeAbortHandler = null;
+  let structuredOutputFinalizationRetryAttempts = 0;
+  let structuredOutputFinalizationRetryReason = null;
+  let structuredOutputFinalizationRetryFailed = false;
   const subagentResults = [];
   const providerSessionId = options.sessionId
     || options.providerSessionId
@@ -620,7 +657,10 @@ export async function generatePiResponse(systemPrompt, options = {}) {
           },
         };
       }
-      else options.abortSignal.addEventListener("abort", abortHandler, { once: true });
+      else {
+        options.abortSignal.addEventListener("abort", abortHandler, { once: true });
+        removeAbortHandler = () => options.abortSignal.removeEventListener?.("abort", abortHandler);
+      }
     }
 
     if (options.liveInput) {
@@ -644,24 +684,71 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       })();
     }
 
-    try {
-      await agent.prompt(toAgentMessages(options.messages, runtime.model));
-    } finally {
-      if (options.abortSignal) options.abortSignal.removeEventListener?.("abort", abortHandler);
+    await agent.prompt(toAgentMessages(options.messages, runtime.model));
+
+    const captureState = () => {
+      const transcript = agent.state.messages || [];
+      const assistantMessages = transcript.filter((message) => message?.role === "assistant");
+      const lastAssistant = assistantMessages[assistantMessages.length - 1] || null;
+      return {
+        transcript,
+        assistantMessages,
+        lastAssistant,
+        piTransportFailure: latestTransportFailureDiagnostic(assistantMessages),
+        piWebSocketDebug: piWebSocketDebugStats(providerSessionId, piTransport),
+        finalText: textFromContent(lastAssistant?.content) || assistantTexts.join(""),
+        finalThinking: thinkingFromContent(lastAssistant?.content) || assistantThinking.join(""),
+        stopReason: lastAssistant?.stopReason || null,
+      };
+    };
+
+    let state = captureState();
+    externalAbort ||= !!options.abortSignal?.aborted;
+    if (shouldRetryStructuredOutputFinalization({
+      outputSchema: options.outputSchema,
+      structuredResult,
+      finalText: state.finalText,
+      stopReason: state.stopReason,
+      externalAbort,
+      maxTurnsHit,
+    })) {
+      structuredOutputFinalizationRetryAttempts = 1;
+      structuredOutputFinalizationRetryReason = "empty_final_output";
+      runtimeWarnings.push({
+        warning_kind: "structured_output_finalization_retry",
+        source: "pi",
+        reason: structuredOutputFinalizationRetryReason,
+        message: "Pi stopped without text or structured output; retrying once in the same session with only StructuredOutput enabled.",
+      });
+      const previousTools = agent.state.tools;
+      try {
+        agent.state.tools = structuredTool ? [structuredTool] : [];
+        agent.followUp({
+          role: "user",
+          content: structuredOutputFinalizationPrompt(),
+          timestamp: Date.now(),
+        });
+        await agent.continue();
+      } finally {
+        agent.state.tools = previousTools;
+      }
+      structuredOutputFinalizationRetryFailed = structuredResult === null || structuredResult === undefined;
+      state = captureState();
     }
 
-    const transcript = agent.state.messages || [];
-    const assistantMessages = transcript.filter((message) => message?.role === "assistant");
-    const lastAssistant = assistantMessages[assistantMessages.length - 1] || null;
-    const piTransportFailure = latestTransportFailureDiagnostic(assistantMessages);
-    const piWebSocketDebug = piWebSocketDebugStats(providerSessionId, piTransport);
-    const finalText = textFromContent(lastAssistant?.content) || assistantTexts.join("");
-    const finalThinking = thinkingFromContent(lastAssistant?.content) || assistantThinking.join("");
+    const {
+      transcript,
+      assistantMessages,
+      lastAssistant,
+      piTransportFailure,
+      piWebSocketDebug,
+      finalText,
+      finalThinking,
+      stopReason,
+    } = state;
     const text = finalText;
     const usage = usageFromMessages(transcript);
     for (const child of subagentResults) addUsage(usage, usageFromRuntimeResult(child));
-    const stopReason = lastAssistant?.stopReason || null;
-    externalAbort ||= !!options.abortSignal?.aborted;
     const estimatedCost = estimateCost({
       resolveCustomPricing: options.resolveCustomPricing,
       model: reference,
@@ -700,6 +787,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       max_turns_hit: maxTurnsHit,
       provider_session_id: providerSessionId,
       pi_transport: piTransport,
+      ...structuredOutputRetryDiagnostics(
+        structuredOutputFinalizationRetryAttempts,
+        structuredOutputFinalizationRetryReason,
+        structuredOutputFinalizationRetryFailed,
+      ),
       ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
       ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
     } : null;
@@ -716,6 +808,12 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
       ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
       ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
+      ...(lastToolName ? { last_tool_name: lastToolName } : {}),
+      ...structuredOutputRetryDiagnostics(
+        structuredOutputFinalizationRetryAttempts,
+        structuredOutputFinalizationRetryReason,
+        structuredOutputFinalizationRetryFailed,
+      ),
       ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
       ...(subagentResults.length ? {
         pi_subagents: {
@@ -783,6 +881,11 @@ export async function generatePiResponse(systemPrompt, options = {}) {
       pi_transport: piTransport,
       ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
       ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
+      ...structuredOutputRetryDiagnostics(
+        structuredOutputFinalizationRetryAttempts,
+        structuredOutputFinalizationRetryReason,
+        true,
+      ),
     } : null;
     return {
       text: assistantTexts.join("") || null,
@@ -816,11 +919,18 @@ export async function generatePiResponse(systemPrompt, options = {}) {
         ...(piErrorPayload ? { pi_error_payload: piErrorPayload } : {}),
         ...(piTransportFailure ? { pi_transport_failure: piTransportFailure } : {}),
         ...(piWebSocketDebug ? { pi_websocket_debug: piWebSocketDebug } : {}),
+        ...(lastToolName ? { last_tool_name: lastToolName } : {}),
+        ...structuredOutputRetryDiagnostics(
+          structuredOutputFinalizationRetryAttempts,
+          structuredOutputFinalizationRetryReason,
+          true,
+        ),
         ...(hadPartialProgress ? { had_partial_progress: true, tool_results_seen: toolResultsSeen } : {}),
         ...(compaction?.diagnostics?.() || {}),
       },
     };
   } finally {
+    removeAbortHandler?.();
     await closePiMcpClients(mcpClients);
   }
 }
