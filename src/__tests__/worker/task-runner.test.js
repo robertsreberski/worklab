@@ -134,6 +134,30 @@ describe("task runner result parsing", () => {
     });
   });
 
+  it("preserves provider diagnostics on generated task parse failures", async () => {
+    mocks.generateResponse.mockResolvedValue({
+      text: "",
+      usage: {},
+      durationMs: 1,
+      numTurns: 1,
+      model: "pi:openai-codex:gpt-5.5",
+      effort: "medium",
+      diagnostics: {
+        last_tool_name: "journal_summary",
+        structured_output_finalization_retry_attempts: 1,
+      },
+    });
+
+    const result = await runTask(taskContext());
+
+    expect(result.parsedResultFatal).toBe(true);
+    expect(result.parsedResultError).toBe("missing final output");
+    expect(result.diagnostics).toMatchObject({
+      last_tool_name: "journal_summary",
+      structured_output_finalization_retry_attempts: 1,
+    });
+  });
+
   it("uses provider structuredResult when present, marking the run structured", async () => {
     const structured = {
       schema: "worklab.v2",

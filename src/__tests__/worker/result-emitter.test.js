@@ -81,4 +81,45 @@ describe("emitFinalResult", () => {
       diagnostics: { pi_transport: "sse", turn_count: 19 },
     });
   });
+
+  it("emits parse-failure diagnostics with terminal worklab_result_error events", () => {
+    const emit = vi.fn();
+
+    const exitCode = emitFinalResult({ emit }, {
+      kind: "task",
+      parsedResultError: "missing final output",
+      parsedResultFatal: true,
+      runtimeWarnings: [{
+        warning_kind: "structured_output_finalization_retry",
+        source: "pi",
+        reason: "empty_final_output",
+        message: "retrying structured output finalization",
+      }],
+      diagnostics: {
+        last_tool_name: "journal_summary",
+        structured_output_finalization_retry_attempts: 1,
+      },
+    });
+
+    expect(exitCode).toBe(1);
+    expect(emit.mock.calls.map(([event]) => event.type)).toEqual([
+      "runtime_warning",
+      "runtime_warning",
+      "worklab_result_error",
+    ]);
+    expect(emit.mock.calls[0][0]).toMatchObject({
+      type: "runtime_warning",
+      warning_kind: "structured_output_finalization_retry",
+      source: "pi",
+      reason: "empty_final_output",
+    });
+    expect(emit.mock.calls[2][0]).toMatchObject({
+      type: "worklab_result_error",
+      message: "missing final output",
+      diagnostics: {
+        last_tool_name: "journal_summary",
+        structured_output_finalization_retry_attempts: 1,
+      },
+    });
+  });
 });
