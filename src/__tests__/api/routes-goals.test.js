@@ -23,6 +23,18 @@ describe("/api/goals", () => {
       team_id: team.slug,
     }).expect(201);
 
+    const rootBeforeList = db.prepare(`
+      SELECT id, title, is_team_root
+      FROM tasks
+      WHERE team_id = ? AND project_id = ? AND is_team_root = 1
+    `).get(team.id, project.id);
+    expect(rootBeforeList).toMatchObject({
+      id: expect.any(String),
+      title: "Lead cycle: Goal Team / Goal Project",
+      is_team_root: 1,
+    });
+    expect(rootBeforeList.title).not.toContain("[team]");
+
     const list = await agent.get("/api/goals").expect(200);
 
     expect(list.body.goals).toHaveLength(1);

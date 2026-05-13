@@ -9,6 +9,7 @@ import {
   loadRepositoryInstructions,
   repositoryInstructionsPromptMetadata,
   getTeamProjectGoal,
+  ensureTeamRootTask,
   compactTeam,
   resolveProjectRow,
   uniqueProjectSlug,
@@ -271,6 +272,9 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
         }
       }
       const row = getProjectById(db, id);
+      if (row.team_id && !row.archived) {
+        ensureTeamRootTask(db, { teamId: row.team_id, projectId: row.id, now: Date.now() });
+      }
       broker?.broadcast?.("global", { type: "project_created", id, slug: row.slug });
       res.status(201).json({ project: attachTeams(db, projectFromRow(row)) });
     } catch (error) {
@@ -284,7 +288,7 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
       const row = projectOr404(db, req.params.id);
       const project = projectFromRow(row);
       const teamGoal = project.team_id
-        ? getTeamProjectGoal(db, { teamId: project.team_id, projectId: project.id, now: Date.now() })
+        ? getTeamProjectGoal(db, { teamId: project.team_id, projectId: project.id, now: Date.now(), ensureRoot: false })
         : null;
       const tasks = listProjectTasksWithRunSnapshots(db, row.id).map((taskRow) => projectTaskSummary(taskRow, {
         projectTeamId: project.team_id || null,
@@ -329,6 +333,9 @@ export function registerProjectRoutes(app, { db, broker, dataDir }) {
         }
       }
       const row = getProjectById(db, existing.id);
+      if (row.team_id && !row.archived) {
+        ensureTeamRootTask(db, { teamId: row.team_id, projectId: row.id, now: Date.now() });
+      }
       const wasArchived = !!existing.archived;
       const isArchived = !!row.archived;
       if (wasArchived !== isArchived) {
