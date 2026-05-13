@@ -820,10 +820,10 @@ export function DesignSystem() {
               <CommentAuthor authorType="agent" authorId="builder" agents={DEMO_AGENTS} />
             </div>
             <div class="ds-catalog-row">
-              <EntityBadge kind="task" id="T-321" label="T-321 Gather P2 evidence" href="#/tasks/T-321" />
+              <EntityBadge kind="task" id="T-321" label="T-321 Gather release evidence" href="#/tasks/T-321" />
               <EntityBadge kind="project" id="p-7" label="Path Forward App" href="#/projects/p-7" />
-              <EntityBadge kind="kb" id="rsm-style" label="RSM Style Guidance" href="#/library/knowledge/rsm-style" />
-              <EntityBadge kind="skill" id="external-mcp" label="Automattic Context MCP" href="#/library/skills/external-mcp" />
+              <EntityBadge kind="kb" id="style-guide" label="Style Guidance" href="#/library/knowledge/style-guide" />
+              <EntityBadge kind="skill" id="context" label="Context MCP" href="#/library/skills/context" />
               <EntityBadge kind="agent" id="planner" label="Planner" href="#/library/agents/planner" />
               <EntityBadge kind="goal" id="goal-1" label="Launch readiness" href="#/goals/goal-1" />
               <EntityBadge kind="run" id="run-1" label="run-1" href="#/tasks/T-321?run=run-1" />

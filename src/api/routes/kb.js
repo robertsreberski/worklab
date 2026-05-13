@@ -106,14 +106,7 @@ const NOISY_SUBCATEGORY_TAGS = new Set([
   "implementation",
   "validation",
   "evidence",
-  "automattic",
   "benchmark",
-  "benchmark-reset",
-  "automattic-benchmark",
-  "automattic-benchmark-reset",
-  "pokemario",
-  "wpcom",
-  "wp-sandbox",
 ]);
 
 const UNKNOWN_KNOWLEDGE_TITLE = "Unknown Knowledge";

@@ -11,8 +11,8 @@ describe("normalizeProjectWorkdir", () => {
   });
 
   it("expands home-relative project workdirs", () => {
-    expect(normalizeProjectWorkdir("~/worklab-workspace/pokemario"))
-      .toBe(resolve(homedir(), "worklab-workspace/pokemario"));
+    expect(normalizeProjectWorkdir("~/worklab-workspace/example-project"))
+      .toBe(resolve(homedir(), "worklab-workspace/example-project"));
     expect(normalizeProjectWorkdir("~")).toBe(resolve(homedir()));
   });
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Bundled project default policies for new projects. Operators may copy this file to ~/.worklab/projects/_defaults.json to override. The values below are derived from the runtime audit at docs/audits/automattic-benchmark-reset-runtime-audit.md.",
+  "_comment": "Bundled project default policies for new projects. Operators may copy this file to ~/.worklab/projects/_defaults.json to override.",
   "run_policy": "auto_plan_execute",
   "delegation": {
     "allow_unlisted": true

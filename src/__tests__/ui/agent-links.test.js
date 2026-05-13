@@ -11,7 +11,7 @@ const agentLinkSource = readFileSync(
 );
 
 const agents = [
-  { name: "automattic-sandbox-engineer", display_name: "Automattic Sandbox Engineer" },
+  { name: "sandbox-engineer", display_name: "Sandbox Engineer" },
   { name: "code-reviewer", display_name: "Code Reviewer" },
   { name: "reviewer", display_name: "Reviewer" },
   { name: "wordpress-qa-reviewer", display_name: "WordPress QA Reviewer" },
@@ -19,30 +19,30 @@ const agents = [
 
 describe("agent link helpers", () => {
   it("builds agent edit links from slugs", () => {
-    expect(agentHref("automattic-sandbox-engineer")).toBe("#/library/agents/automattic-sandbox-engineer");
+    expect(agentHref("sandbox-engineer")).toBe("#/library/agents/sandbox-engineer");
   });
 
   it("keeps bare agent slugs as plain text", () => {
     expect(splitAgentReferences(
-      "Daily budget for automattic-sandbox-engineer reached ($59.7195 of $50.00).",
+      "Daily budget for sandbox-engineer reached ($59.7195 of $50.00).",
       agents,
     )).toEqual([
-      "Daily budget for automattic-sandbox-engineer reached ($59.7195 of $50.00).",
+      "Daily budget for sandbox-engineer reached ($59.7195 of $50.00).",
     ]);
   });
 
   it("keeps bare agent display names as plain text", () => {
     expect(splitAgentReferences(
-      "Daily budget for Automattic Sandbox Engineer reached ($59.7195 of $50.00).",
+      "Daily budget for Sandbox Engineer reached ($59.7195 of $50.00).",
       agents,
     )).toEqual([
-      "Daily budget for Automattic Sandbox Engineer reached ($59.7195 of $50.00).",
+      "Daily budget for Sandbox Engineer reached ($59.7195 of $50.00).",
     ]);
   });
 
   it("does not replace partial slug matches", () => {
-    expect(splitAgentReferences("xautomattic-sandbox-engineer is not a reference", agents)).toEqual([
-      "xautomattic-sandbox-engineer is not a reference",
+    expect(splitAgentReferences("xsandbox-engineer is not a reference", agents)).toEqual([
+      "xsandbox-engineer is not a reference",
     ]);
   });
 

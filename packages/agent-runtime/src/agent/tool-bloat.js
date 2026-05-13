@@ -1,10 +1,9 @@
 // Tool-result bloat containment.
 //
-// The runtime audit (docs/audits/automattic-benchmark-reset-runtime-audit.md)
-// found that 28% of runs trip the context_bloat warning, with single
-// tool_result payloads reaching 1.44 MB. This module caps tool_result
-// payloads before they reach the model and substitutes a compact reference
-// text so the agent can still cite the artifact.
+// Single tool_result payloads can reach several megabytes and frequently trip
+// the context_bloat warning. This module caps tool_result payloads before they
+// reach the model and substitutes a compact reference text so the agent can
+// still cite the artifact.
 //
 // Persistence is delegated to the host via a `persistArtifact({ filename, buffer,
 // toolName, toolUseId }) -> path | null` callback. Worklab's createToolOutputSink

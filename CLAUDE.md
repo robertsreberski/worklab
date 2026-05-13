@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Worklab is a single-user, local AI agent orchestration app: an Express API + Preact UI + SQLite (better-sqlite3) backend that spawns worker processes to run agents against tasks via Claude Agent SDK, OpenAI Agents SDK, Vercel AI SDK, Claude Code CLI, and Codex CLI. It also exposes a token-protected admin MCP endpoint with full Worklab API access.
 
-The task/agent workflow is being redesigned ("v2"). The authoritative references are `src/core/state-machine.js` (the deterministic orchestrator that owns every task transition) and `packages/agent-runtime/src/ai/result/decisions.js` (the canonical stage/decision vocabulary that the `worklab.v2` contract enforces). The runtime audits under `docs/audits/automattic-benchmark-reset-*.md` document the implementation history, and the agentic-teams change set adds the sibling `worklab.lead_cycle.v1` contract for team-lead runs. Older PRD/architecture/phase-plan docs were intentionally deleted — do **not** reintroduce behaviors from them; treat the source, tests, and those audits as the ground truth.
+The task/agent workflow is being redesigned ("v2"). The authoritative references are `src/core/state-machine.js` (the deterministic orchestrator that owns every task transition) and `packages/agent-runtime/src/ai/result/decisions.js` (the canonical stage/decision vocabulary that the `worklab.v2` contract enforces). The agentic-teams change set adds the sibling `worklab.lead_cycle.v1` contract for team-lead runs. Older PRD/architecture/phase-plan docs were intentionally deleted — do **not** reintroduce behaviors from them; treat the source and tests as the ground truth.
 
 `AGENTS.md` and `CONTRIBUTING.md` apply in full. The notes below highlight what isn't already obvious from those.
 
@@ -68,20 +68,20 @@ Before finalizing substantial changes: `npm test`, `npm run build:ui`, `git diff
 
 Stick to the tokens defined in `styles.css` and the primitives in `components/primitives/` rather than inventing new variants.
 
-## Runtime audit (May 2026) — what landed on `runtime-audit-implementation`
+## Runtime behaviour notes
 
-Branch `runtime-audit-implementation` carries the bulk of the recommendations from `docs/audits/automattic-benchmark-reset-runtime-audit.md`. Things to know when working on / against it:
+Background on runtime behaviour you need when touching the worker, coordinator, or recovery paths:
 
 - `packages/agent-runtime/src/agent/tool-bloat.js` caps any single tool_result aggregate at `agent_tool_payload_max_bytes` (default 256 KB) and persists the originals under `<runArtifactDir>/tool-output/`. The runtime warning kind for truncations is `tool_payload_truncated`; `task_runs.diagnostics_json` carries `tool_results_truncated` (count).
 - `packages/agent-runtime/src/ai/result/lenient-parse.js` (`parseWorklabResultLenient`) is the fallback parser the worker invokes before declaring `invalid_result`. When it recovers, `diagnostics.result_recovered_via = "lenient"`.
-- `cancelled_shutdown` is a distinct failure kind from `cancelled_stale` (R5). It does not count against failure budgets. The shutdown watchdog is configurable via `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) or the equivalent `worklab start/stop/restart --drain-timeout-ms` CLI flag. On shutdown the coordinator sends a `worklab_drain` message over the worker IPC pipe; the worker aborts its AbortController, emits a `drained` event, and exits cleanly. spawn-worker persists a transcript-tail snapshot tagged `resume_kind: "drained"` so the next coordinator boot can schedule a fresh continuation with `continuation_reason: "coordinator_resume"` instead of re-running the work.
+- `cancelled_shutdown` is a distinct failure kind from `cancelled_stale`. It does not count against failure budgets. The shutdown watchdog is configurable via `WORKLAB_DRAIN_TIMEOUT_MS` (default 60 s) or the equivalent `worklab start/stop/restart --drain-timeout-ms` CLI flag. On shutdown the coordinator sends a `worklab_drain` message over the worker IPC pipe; the worker aborts its AbortController, emits a `drained` event, and exits cleanly. spawn-worker persists a transcript-tail snapshot tagged `resume_kind: "drained"` so the next coordinator boot can schedule a fresh continuation with `continuation_reason: "coordinator_resume"` instead of re-running the work.
 - `task_runs.parent_relationship` (`stage_progression | recovery_continuation | manual_retry`) disambiguates the overloaded `parent_run_id`.
 - `tasks.lifetime_*_count` columns are monotonic and survive `reset_failure_count`. `getTaskHealth(db, id)` returns them; the task detail endpoint exposes them as `task.health`.
-- Recovery continuations come in four flavours: `provider_retryable` (default), `schema_correction` (capped at 2), `finalisation` (single shot when the parent ran `journal_summary` and then dropped — R2), and `coordinator_resume` (R5; scheduled at boot for runs the previous coordinator drained cleanly on shutdown — receives the parent's transcript-tail snapshot through `diagnosticsSeed.resume_snapshot`).
-- `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so pi-sdk reuses the parent's session_id (R12; other providers are a follow-up).
-- `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note` (R10).
+- Recovery continuations come in four flavours: `provider_retryable` (default), `schema_correction` (capped at 2), `finalisation` (single shot when the parent ran `journal_summary` and then dropped), and `coordinator_resume` (scheduled at boot for runs the previous coordinator drained cleanly on shutdown — receives the parent's transcript-tail snapshot through `diagnosticsSeed.resume_snapshot`).
+- `WORKLAB_PROVIDER_SESSION_ID` is set by the spawn path for recovery continuations so pi-sdk reuses the parent's session_id (other providers are a follow-up).
+- `POST /api/tasks/:id/cancel` accepts a structured `reason_kind` enum (`wrong_direction | agent_stuck | context_bloat | scope_change | other`) plus an optional `reason_note`.
 
-All R# / A# recommendations from the audit have landed (see `docs/audits/automattic-benchmark-reset-implementation-plan.md` § Status by recommendation for the per-commit map). A few `TODO(audit-followup)` markers remain for the audit's open questions and for parts that were deliberately left out of scope (e.g. session_id reuse on providers other than pi-sdk).
+A few `TODO(audit-followup)` markers remain in the code for open questions and parts that were deliberately left out of scope (e.g. session_id reuse on providers other than pi-sdk).
 
 ## Teams + lead-cycle (v33)
 

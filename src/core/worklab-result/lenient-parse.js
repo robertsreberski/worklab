@@ -1,10 +1,9 @@
 // Lenient worklab.v2 result parser.
 //
-// The runtime audit (docs/audits/automattic-benchmark-reset-runtime-audit.md)
-// observed two reviewer runs (`01i6FI78ATSpwGYTahdrR`, `YxLgWnIaRWboZZVjyGFQY`)
-// where the final text was valid JSON wrapped in markdown fences or prefixed
-// by a verdict heading. The strict parser rejected them and the harness
-// surfaced an `invalid_result` failure with no recovery.
+// Reviewer runs occasionally return final text that is valid JSON wrapped in
+// markdown fences or prefixed by a verdict heading. The strict parser rejects
+// those, and without a fallback the harness surfaces an `invalid_result`
+// failure with no recovery.
 //
 // This module exposes a fallback parser that strips fences, finds the largest
 // balanced JSON object in the text, and normalises it through the strict
