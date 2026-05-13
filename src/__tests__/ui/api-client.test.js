@@ -45,6 +45,28 @@ describe("ui API client", () => {
     });
   });
 
+  it("checks and applies app updates through named helpers", async () => {
+    global.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ update: { update_available: true } }),
+    }));
+
+    await api.getUpdate({ refresh: "1" });
+    await api.applyUpdate("0.2.0");
+
+    expect(global.fetch).toHaveBeenCalledWith("/api/update?refresh=1", {
+      method: "GET",
+      headers: { "Content-Type": "application/json" },
+      body: undefined,
+    });
+    expect(global.fetch).toHaveBeenCalledWith("/api/update/apply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ version: "0.2.0" }),
+    });
+  });
+
   it("sends assistant messages through a named helper", async () => {
     global.fetch = vi.fn(async () => ({
       ok: true,

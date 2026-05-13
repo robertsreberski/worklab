@@ -114,6 +114,10 @@ export const api = {
   suggestFiles: (query, options) => request("GET", `/files/suggest?${new URLSearchParams(query)}`, null, options),
   searchStatus: () => request("GET", "/search/status"),
   uploadAttachment,
+  // app updates
+  getHealth: () => request("GET", "/health"),
+  getUpdate: (query, options) => request("GET", withQuery("/update", query), null, options),
+  applyUpdate: (version) => request("POST", "/update/apply", { version }),
   // settings
   getSettings: (options) => request("GET", "/settings", null, options),
   patchSettings: (patch) => request("PATCH", "/settings", patch),

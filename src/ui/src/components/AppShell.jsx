@@ -5,12 +5,16 @@
 
 import { createContext } from "preact";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import { api } from "../lib/api.js";
 import { Icon } from "./Icon.jsx";
 import { ToastHost } from "./Toast.jsx";
+import { Banner } from "./Banner.jsx";
 import { KeyboardHelpDrawer } from "./KeyboardHelpDrawer.jsx";
 import { AssistantDock } from "./AssistantDock.jsx";
+import { Button } from "./primitives/Button.jsx";
 import { useGlobalShortcuts } from "../lib/useGlobalShortcuts.js";
 import { useSSE } from "../lib/useSSE.js";
+import { pushToast } from "../lib/toast.js";
 import { navigateHash } from "../lib/navigation.js";
 import { useFocusTrap } from "../lib/useFocusTrap.js";
 import { ensureNotificationServiceWorker, maybeShowRunNotification, runNotificationRoute } from "../lib/browserNotifications.js";
@@ -67,6 +71,7 @@ const MORE_ROUTES = MORE_ROUTE_IDS
   .map((route) => ({ ...route, href: route.href || `#/${route.id}` }));
 const EMPTY_SECTIONS = [];
 const ASSISTANT_PREF_KEY = "worklab.assistantDockOpen";
+const UPDATE_DISMISS_KEY = "worklab.updateBannerDismissedVersion";
 
 function currentHash() {
   return typeof window === "undefined" ? "" : window.location.hash || "";
@@ -93,6 +98,48 @@ function assistantInitialOpen() {
   const stored = window.localStorage?.getItem?.(ASSISTANT_PREF_KEY);
   if (stored === "open") return true;
   return false;
+}
+
+function dismissedUpdateVersion() {
+  if (typeof window === "undefined") return "";
+  return window.localStorage?.getItem?.(UPDATE_DISMISS_KEY) || "";
+}
+
+function latestUpdateVersion(update) {
+  return update?.package?.latest_version || "";
+}
+
+function shouldShowUpdateBanner(update, dismissedVersion) {
+  const latest = latestUpdateVersion(update);
+  return !!(update?.update_available && update?.install?.supported && latest && dismissedVersion !== latest);
+}
+
+function UpdateBanner({ update, dismissedVersion, applying, onApply, onDismiss }) {
+  if (!shouldShowUpdateBanner(update, dismissedVersion)) return null;
+  const current = update?.package?.current_version || "-";
+  const latest = latestUpdateVersion(update);
+  return (
+    <div class="app-update-banner-wrap">
+      <Banner
+        variant="info"
+        title="Worklab update available"
+        detail={`Version ${latest} is available. Current version is ${current}.`}
+        class="app-update-banner"
+        actions={(
+          <Button
+            size="sm"
+            variant="primary"
+            loading={applying}
+            iconLeft={<Icon name="download" size={14} />}
+            onClick={onApply}
+          >
+            Update and restart
+          </Button>
+        )}
+        onDismiss={onDismiss}
+      />
+    </div>
+  );
 }
 
 export function useAppChrome(chrome, deps = []) {
@@ -312,6 +359,9 @@ export function AppShell({
   const [sectionSheetOpen, setSectionSheetOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(assistantInitialOpen);
   const [assistantWidth, setAssistantWidth] = useState(assistantInitialWidth);
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [updateApplying, setUpdateApplying] = useState(false);
+  const [dismissedVersion, setDismissedVersion] = useState(dismissedUpdateVersion);
   const [viewportWidth, setViewportWidth] = useState(
     typeof window === "undefined" ? 0 : window.innerWidth,
   );
@@ -397,8 +447,62 @@ export function AppShell({
     if (embedded) return;
     ensureNotificationServiceWorker().catch(() => {});
   }, [embedded]);
+
+  useEffect(() => {
+    if (embedded) return;
+    let cancelled = false;
+    api.getUpdate().then((response) => {
+      if (!cancelled) setUpdateStatus(response.update || null);
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [embedded]);
+
+  function dismissUpdateBanner() {
+    const latest = latestUpdateVersion(updateStatus);
+    if (!latest) return;
+    setDismissedVersion(latest);
+    try {
+      window.localStorage?.setItem?.(UPDATE_DISMISS_KEY, latest);
+    } catch {}
+  }
+
+  function pollForRestartedVersion(targetVersion, attempts = 0) {
+    window.setTimeout(async () => {
+      try {
+        const health = await api.getHealth();
+        if (health?.package?.version === targetVersion) {
+          window.location.reload();
+          return;
+        }
+      } catch {}
+      if (attempts < 90) {
+        pollForRestartedVersion(targetVersion, attempts + 1);
+      } else {
+        setUpdateApplying(false);
+      }
+    }, 1000);
+  }
+
+  async function applyUpdate() {
+    const latest = latestUpdateVersion(updateStatus);
+    if (!latest) return;
+    setUpdateApplying(true);
+    try {
+      const response = await api.applyUpdate(latest);
+      setUpdateStatus(response.update ? { ...response.update, job: response.apply } : updateStatus);
+      pushToast("Update queued. Worklab will restart.", { variant: "success" });
+      pollForRestartedVersion(latest);
+    } catch (err) {
+      setUpdateApplying(false);
+      pushToast(`Update failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
   useSSE("global", (event) => {
     if (embedded) return;
+    if (event?.type === "update_apply_queued" && event.update) {
+      setUpdateStatus(event.update);
+    }
     maybeShowRunNotification(event, {
       onClick: (runEvent) => {
         const route = runNotificationRoute(runEvent);
@@ -500,6 +604,13 @@ export function AppShell({
         </aside>
         <div class="app-body app-content">
           {activeTopbar}
+          <UpdateBanner
+            update={updateStatus}
+            dismissedVersion={dismissedVersion}
+            applying={updateApplying}
+            onApply={applyUpdate}
+            onDismiss={dismissUpdateBanner}
+          />
           <main id="main" class="app-main scrollable-body wl-scrollbar">{children}</main>
           {activeDock && (
             <div class="app-mobile-action-dock mobile-action-dock entity-edit-mobile-dock" aria-label="Page actions">

@@ -18,8 +18,12 @@ import {
   settingsPayload,
   slackRejectedSenderLabel,
   slackUserMatchesBot,
+  updateInstallDescription,
+  updateStatusMeta,
+  updateVersionDetail,
 } from "../../ui/src/routes/settings/helpers.js";
 
+const appShellSourcePath = resolve(import.meta.dirname, "../../ui/src/components/AppShell.jsx");
 const settingsSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/Settings.jsx");
 const settingsShellSourcePath = resolve(import.meta.dirname, "../../ui/src/routes/settings/SettingsShell.jsx");
 const settingsStylesPath = resolve(import.meta.dirname, "../../ui/src/styles.css");
@@ -303,6 +307,29 @@ describe("settings UI duration conversions", () => {
       status: "enabled",
       label: "Installed (launchd)",
     });
+  });
+
+  it("summarizes app update status and install mode for Settings", () => {
+    expect(updateStatusMeta(null)).toEqual({ status: "disabled", label: "Unknown" });
+    expect(updateStatusMeta({ update_available: true })).toEqual({ status: "running", label: "Update available" });
+    expect(updateStatusMeta({ status: "local_newer" })).toEqual({ status: "enabled", label: "Local newer" });
+    expect(updateStatusMeta({ status: "current" })).toEqual({ status: "enabled", label: "Current" });
+    expect(updateStatusMeta({ status: "unknown", error: "registry timeout" })).toEqual({ status: "error", label: "Check failed" });
+
+    expect(updateVersionDetail({
+      package: { current_version: "0.1.3", latest_version: "0.2.0" },
+    })).toBe("0.1.3 -> 0.2.0");
+    expect(updateInstallDescription({ mode: "source_checkout", supported: false })).toBe("Source checkout; update from git or npm manually.");
+    expect(updateInstallDescription({ mode: "global_npm", supported: true })).toBe("Global npm install; one-click update is available.");
+  });
+
+  it("wires a global app update banner from AppShell", () => {
+    const source = readFileSync(appShellSourcePath, "utf8");
+
+    expect(source).toContain("function UpdateBanner");
+    expect(source).toContain("api.getUpdate");
+    expect(source).toContain("api.applyUpdate");
+    expect(source).toContain("worklab.updateBannerDismissedVersion");
   });
 
   it("summarizes search index health for the settings overview", () => {

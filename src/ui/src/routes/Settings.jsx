@@ -59,6 +59,9 @@ import {
   slackStatusMeta,
   slackUserMatchesBot,
   textFromList,
+  updateInstallDescription,
+  updateStatusMeta,
+  updateVersionDetail,
 } from "./settings/helpers.js";
 import {
   AboutTab,
@@ -134,6 +137,9 @@ function SettingsGeneral() {
   const [mcpHealthBusy, setMcpHealthBusy] = useState({});
   const [slackStatus, setSlackStatus] = useState(null);
   const [restarting, setRestarting] = useState(false);
+  const [updateStatus, setUpdateStatus] = useState(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [updateError, setUpdateError] = useState(null);
   const [notificationSettingsState, setNotificationSettingsState] = useState(() => notificationSettings());
   const [notificationServerStatus, setNotificationServerStatus] = useState(null);
   const [notificationBusy, setNotificationBusy] = useState(false);
@@ -194,6 +200,18 @@ function SettingsGeneral() {
     return response;
   }, []);
 
+  const loadUpdateStatus = useCallback(async ({ refresh = false } = {}) => {
+    try {
+      const response = await api.getUpdate(refresh ? { refresh: "1" } : undefined);
+      setUpdateStatus(response.update || null);
+      setUpdateError(null);
+      return response.update || null;
+    } catch (err) {
+      setUpdateError(err.message || "Update check failed");
+      return null;
+    }
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     loadSettings({ signal: controller.signal }).catch((err) => {
@@ -211,9 +229,10 @@ function SettingsGeneral() {
     });
     loadSlackStatus().catch(() => setSlackStatus(null));
     loadNotificationStatus().catch(() => setNotificationServerStatus(null));
+    loadUpdateStatus();
     loadMcp().catch((err) => pushToast(`MCP failed: ${err.message}`, { variant: "error" }));
     return () => controller.abort();
-  }, [loadMcp, loadNotificationStatus, loadRuntime, loadSettings, loadSlackStatus]);
+  }, [loadMcp, loadNotificationStatus, loadRuntime, loadSettings, loadSlackStatus, loadUpdateStatus]);
 
   const settingsDirty = useMemo(() => baseline ? !jsonEqual(settings, baseline) : false, [settings, baseline]);
   const runtimeDirty = useMemo(() => runtimeBaseline ? !jsonEqual(runtimeDraft, runtimeBaseline) : false, [runtimeDraft, runtimeBaseline]);
@@ -228,6 +247,7 @@ function SettingsGeneral() {
     loadSlackStatus().catch(() => setSlackStatus(null));
     setNotificationSettingsState(notificationSettings());
     loadNotificationStatus().catch(() => setNotificationServerStatus(null));
+    loadUpdateStatus();
     if (!isDirty) {
       loadSettings().catch((err) => setLoadError(err.message || "Settings failed"));
       loadRuntime();
@@ -335,6 +355,31 @@ function SettingsGeneral() {
       pushToast(`Restart failed: ${err.message}`, { variant: "error" });
     } finally {
       setRestarting(false);
+    }
+  }
+
+  async function refreshUpdateStatus() {
+    setUpdateBusy(true);
+    try {
+      await loadUpdateStatus({ refresh: true });
+      pushToast("Update check refreshed.", { variant: "success" });
+    } finally {
+      setUpdateBusy(false);
+    }
+  }
+
+  async function applyAppUpdate() {
+    const latest = updateStatus?.package?.latest_version;
+    if (!latest) return;
+    setUpdateBusy(true);
+    try {
+      const response = await api.applyUpdate(latest);
+      setUpdateStatus(response.update ? { ...response.update, job: response.apply } : updateStatus);
+      pushToast("Update queued. Worklab will restart.", { variant: "success" });
+    } catch (err) {
+      pushToast(`Update failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setUpdateBusy(false);
     }
   }
 
@@ -488,6 +533,7 @@ function SettingsGeneral() {
   const notificationMeta = notificationStatus(notificationSettingsState);
   const notificationModeDetail = notificationSettingsState?.mode === "pwa" ? "Web Push notifications" : "Browser notifications";
   const serviceMeta = serviceStatusMeta(runtime);
+  const updateMeta = updateStatusMeta(updateStatus);
   const searchMeta = searchIndexMeta(indexStatus);
   const mcpSummary = mcpAvailabilitySummary(mcpStatus, mcpRows);
   const builtinMcpServers = (mcpStatus?.servers || []).filter((server) => server.source === "builtin");
@@ -643,6 +689,24 @@ function SettingsGeneral() {
                   <FieldNote label="Repository" value={runtime?.readOnly?.repoRoot} mono />
                   <FieldNote label="Service" value={serviceMeta.label} />
                 </PanelGrid>
+              </SettingPanel>
+              <SettingPanel icon="download" title="App updates" meta={updateVersionDetail(updateStatus)} status={updateMeta.status} statusLabel={updateMeta.label}>
+                <PanelGrid class="settings-note-grid">
+                  <FieldNote label="Current" value={updateStatus?.package?.current_version} />
+                  <FieldNote label="Latest" value={updateStatus?.package?.latest_version} />
+                  <FieldNote label="Install" value={updateInstallDescription(updateStatus?.install)} />
+                  <FieldNote label="Last check" value={updateStatus?.checked_at ? new Date(updateStatus.checked_at).toLocaleString() : "-"} />
+                  <FieldNote label="Job" value={updateStatus?.job?.status} />
+                  {updateError && <FieldNote label="Error" value={updateError} />}
+                </PanelGrid>
+                <Toolbar class="settings-update-actions">
+                  <Button size="sm" loading={updateBusy} iconLeft={<Icon name="refresh-cw" size={14} />} onClick={refreshUpdateStatus}>Check</Button>
+                  {updateStatus?.update_available && updateStatus?.install?.supported && (
+                    <Button size="sm" variant="primary" loading={updateBusy} iconLeft={<Icon name="download" size={14} />} onClick={applyAppUpdate}>
+                      Update and restart
+                    </Button>
+                  )}
+                </Toolbar>
               </SettingPanel>
             </PanelGrid>
             <AdvancedSettings summary="Network and process settings" count={4}>

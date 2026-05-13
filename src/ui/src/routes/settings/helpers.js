@@ -336,6 +336,32 @@ export function serviceStatusMeta(runtime) {
   return { status: "disabled", label: "Not installed" };
 }
 
+export function updateStatusMeta(update) {
+  if (!update) return { status: "disabled", label: "Unknown" };
+  if (update.job?.status === "queued" || update.job?.status === "running") return { status: "running", label: "Updating" };
+  if (update.update_available) return { status: "running", label: "Update available" };
+  if (update.status === "local_newer") return { status: "enabled", label: "Local newer" };
+  if (update.status === "current") return { status: "enabled", label: "Current" };
+  if (update.error) return { status: "error", label: "Check failed" };
+  return { status: "disabled", label: "Unknown" };
+}
+
+export function updateVersionDetail(update) {
+  const current = update?.package?.current_version;
+  const latest = update?.package?.latest_version;
+  if (current && latest) return `${current} -> ${latest}`;
+  return current || latest || "-";
+}
+
+export function updateInstallDescription(install = {}) {
+  if (install.mode === "global_npm" && install.supported) return "Global npm install; one-click update is available.";
+  if (install.mode === "source_checkout") return "Source checkout; update from git or npm manually.";
+  if (install.mode === "package_install") return "Package install; update manually from the terminal.";
+  if (install.mode === "package_global_mismatch") return "Global package path does not match the running Worklab package.";
+  if (install.reason === "npm_cli_not_found") return "npm CLI for the service Node was not found.";
+  return "One-click update is not available for this install.";
+}
+
 export function searchIndexMeta(status) {
   if (!status) return { status: "disabled", label: "Unknown" };
   if (Number(status.errors || 0) > 0) return { status: "error", label: "Has errors" };

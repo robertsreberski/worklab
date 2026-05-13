@@ -3258,6 +3258,14 @@ a.badge-token:focus-visible {
 
 .app-body { min-width: 0; display: flex; flex-direction: column; }
 .app-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.app-update-banner-wrap {
+  flex: 0 0 auto;
+  padding: var(--sp-3) var(--sp-4) 0;
+}
+.app-update-banner {
+  border-left-color: var(--status-progress);
+  background: color-mix(in srgb, var(--status-progress) 9%, var(--surface));
+}
 .app-mobile-action-dock { display: none; }
 /* §08 Ambient assistant — overlay, not a layout column. The dock is
    `position: fixed` and slides over the right side; the main grid keeps its
