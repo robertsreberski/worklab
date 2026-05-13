@@ -33,6 +33,7 @@ import { DetailHead, InlineHead, PanelGrid, SectionMarker, SectionStack, Toolbar
 import { modelDisplayName, modelOptionDescription } from "../lib/display.js";
 import { executionModeIncompatibilityReason } from "@worklab/agent-runtime/ai/runtime/model-refs.js";
 import { claudeModelSupportsOneMillionContext, normalizeContextWindow } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
+import { codexModelSupportsFastMode, normalizeFastMode } from "@worklab/agent-runtime/ai/runtime/fast-mode.js";
 import { useUnsavedChangesGuard } from "../lib/navigation.js";
 import { useAppResume } from "../lib/pageVisibility.js";
 
@@ -65,6 +66,7 @@ const emptyAgent = {
   model: "claude:claude-sonnet-4-6",
   effort: "medium",
   context_window: "default",
+  fast_mode: true,
   instructions: "",
   skills_allowlist: [],
   skills_allowlist_mode: "all",
@@ -130,11 +132,22 @@ function modelIdFromOption(option = {}) {
   if (!option) return "";
   if (option.model) return option.model;
   const value = String(option.value || "");
-  return value.startsWith("claude:") ? value.slice("claude:".length) : "";
+  const i = value.lastIndexOf(":");
+  return i >= 0 ? value.slice(i + 1) : value;
+}
+
+function modelSdkFromOption(option = {}) {
+  if (!option) return "";
+  if (option.sdk) return option.sdk;
+  return String(option.value || "").split(":", 1)[0] || "";
 }
 
 export function agentSupportsOneMillionContext(option) {
   return claudeModelSupportsOneMillionContext(modelIdFromOption(option));
+}
+
+export function agentSupportsFastMode(option) {
+  return modelSdkFromOption(option) === "codex" && codexModelSupportsFastMode(modelIdFromOption(option));
 }
 
 function modelGroupLabel(group) {
@@ -375,6 +388,8 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
   const normalizedEffort = normalizeEffort(selectedModel, agent?.effort);
   const oneMillionContextEligible = agentSupportsOneMillionContext(selectedModel);
   const normalizedContextWindow = oneMillionContextEligible ? normalizeContextWindow(agent?.context_window) : "default";
+  const fastModeEligible = agentSupportsFastMode(selectedModel);
+  const normalizedFastMode = fastModeEligible ? normalizeFastMode(agent?.fast_mode, true) : false;
   const visibleTools = supportedBuiltinTools(selectedModel);
   const supportsToolUse = visibleTools.length > 0;
   const modelChanged = !!baseline && agent?.model !== baseline.model;
@@ -436,6 +451,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       name: isNew ? undefined : agent.name,
       effort: normalizedEffort,
       context_window: normalizedContextWindow,
+      fast_mode: normalizedFastMode,
       skills_allowlist_mode: skillsMode,
       skills_allowlist: skillsMode === "all"
         ? []
@@ -544,6 +560,9 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
       sdk: String(model || "").split(":", 1)[0] || "claude",
       effort: normalizeEffort(opt, agent.effort),
       context_window: agentSupportsOneMillionContext(opt) ? normalizeContextWindow(agent.context_window) : "default",
+      fast_mode: agentSupportsFastMode(opt)
+        ? (agentSupportsFastMode(selectedModel) ? normalizeFastMode(agent.fast_mode, true) : true)
+        : false,
       builtin_allowlist: opt?.capabilities?.tool_use === false
         ? []
         : agent.builtin_allowlist.filter((t) => supportedBuiltinTools(opt).includes(t)),
@@ -645,6 +664,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
           : normalizedEffort,
       mono: false,
     },
+    fastModeEligible ? { label: "Fast mode", value: normalizedFastMode ? "On" : "Off", mono: false } : null,
   ];
   const memoryLabel = memoryFreshnessLabel(memoryState);
   const memoryStatus = memoryFreshnessStatus(memoryState);
@@ -849,6 +869,12 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                 <span>1M context</span>
               </>
             )}
+            {normalizedFastMode && (
+              <>
+                <span class="pane-row-dot">·</span>
+                <span>Fast mode</span>
+              </>
+            )}
           </>
         )}
         actions={headerActions}
@@ -950,6 +976,16 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                     onChange={(next) => setAgent({ ...agent, context_window: next ? "1m" : "default" })}
                     label="Use 1M context"
                     description="Available for Claude Opus 4.7 and Opus 4.6."
+                  />
+                </FormField>
+              )}
+              {fastModeEligible && (
+                <FormField switchInside>
+                  <Switch
+                    checked={normalizedFastMode}
+                    onChange={(next) => setAgent({ ...agent, fast_mode: next })}
+                    label="Fast mode"
+                    description="Available for Codex GPT models."
                   />
                 </FormField>
               )}
