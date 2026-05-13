@@ -1,19 +1,49 @@
 # npm Release
 
-Worklab publishes as a scoped public CLI package:
+Worklab publishes from one repo tag to all public npm packages:
 
 ```bash
 npm install -g @worklab-ai/worklab
 worklab start
 ```
 
-The global executable remains `worklab`. The CLI package depends on the public
-runtime package `@worklab-ai/agent-runtime`, so publish the runtime first.
+The release workflow publishes every non-private package that has
+`publishConfig`, currently:
 
-## Preflight
+- `@worklab-ai/agent-runtime`
+- `@worklab-ai/worklab`
+
+## One-Version Rule
+
+The tag is the source of truth. For tag `vX.Y.Z`:
+
+- The root package version must be `X.Y.Z`.
+- Every publishable workspace package version must be `X.Y.Z`.
+- Internal dependencies between publishable packages must be exact `X.Y.Z`
+  versions, not ranges.
+
+The private example workspace is not published.
+
+## GitHub Setup
+
+Add a repository secret named `NPM_TOKEN`. Use a granular npm token with publish
+access to every `@worklab-ai/*` package in this repo.
+
+## Release
+
+Prepare the next version locally:
 
 ```bash
-git status --short --branch
+npm pkg set version=0.1.3
+npm pkg set version=0.1.3 --workspace packages/agent-runtime
+npm pkg set "dependencies.@worklab-ai/agent-runtime=0.1.3"
+npm install --package-lock-only
+```
+
+Run the same local gates used by the workflow:
+
+```bash
+npm run release:validate -- --tag "v$(node -p "require('./package.json').version")"
 npm test
 npm run build:ui
 npm run pack:check
@@ -21,45 +51,28 @@ npm pack --workspace packages/agent-runtime --dry-run --json
 git diff --check
 ```
 
-Confirm the package names are still unpublished or show the intended version:
+Commit and push the version change, then create one repo tag:
 
 ```bash
-npm view @worklab-ai/agent-runtime version
-npm view @worklab-ai/worklab version
+git push origin main
+git tag "v$(node -p "require('./package.json').version")"
+git push origin "v$(node -p "require('./package.json').version")"
 ```
 
-Authenticate before publishing:
-
-```bash
-npm login
-npm whoami
-```
-
-## Publish
-
-```bash
-npm publish --workspace packages/agent-runtime --access public --dry-run
-npm publish --workspace packages/agent-runtime --access public
-npm publish --access public --dry-run
-npm publish --access public
-```
+The `npm release` GitHub Actions workflow publishes missing package versions in
+dependency order and skips versions that already exist, so rerunning the same
+tag is safe.
 
 ## Post-Publish Smoke
 
-Use a clean terminal or temporary global prefix:
+The workflow verifies public metadata, installs the CLI from npm with a clean
+npm config, runs `worklab --help`, starts `worklab serve` with a temporary data
+directory, and checks `/api/health`.
+
+Manual smoke command:
 
 ```bash
-npm view @worklab-ai/worklab version bin dependencies
-npm install -g @worklab-ai/worklab
-worklab --help
-WORKLAB_DATA_DIR="$(mktemp -d)" WORKLAB_PORT=9787 worklab serve
-curl http://127.0.0.1:9787/api/health
-```
-
-Then tag and push the release:
-
-```bash
-git tag "v$(node -p "require('./package.json').version")"
-git push origin HEAD
-git push origin "v$(node -p "require('./package.json').version")"
+TMP_PREFIX="$(mktemp -d)"
+NPM_CONFIG_USERCONFIG=/dev/null npm install -g --prefix "$TMP_PREFIX" @worklab-ai/worklab@latest
+"$TMP_PREFIX/bin/worklab" --help
 ```
