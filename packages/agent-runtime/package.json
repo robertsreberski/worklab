@@ -1,10 +1,27 @@
 {
   "name": "@worklab/agent-runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Agent runtime supporting Claude SDK, Claude CLI, Codex CLI, and PI SDK out of the box",
   "type": "module",
-  "private": true,
   "license": "GPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/robertsreberski/worklab.git",
+    "directory": "packages/agent-runtime"
+  },
+  "bugs": {
+    "url": "https://github.com/robertsreberski/worklab/issues"
+  },
+  "homepage": "https://github.com/robertsreberski/worklab/tree/main/packages/agent-runtime#readme",
+  "keywords": [
+    "ai",
+    "agents",
+    "runtime",
+    "worklab"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "exports": {
     ".": "./src/index.js",
     "./ai": "./src/ai/index.js",
