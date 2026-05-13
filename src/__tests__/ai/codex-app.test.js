@@ -62,12 +62,20 @@ rl.on("line", (line) => {
   } else if (request.method === "collaborationMode/list") {
     send({ id: request.id, result: { modes: [{ id: "default", label: "Default" }] } });
   } else if (request.method === "thread/start") {
+    if (mode === "thread_start_timeout") return;
+    if (mode === "thread_start_timeout_once") {
+      const markerPath = logPath ? logPath + ".thread-start-seen" : "thread-start-seen";
+      if (!fs.existsSync(markerPath)) {
+        fs.writeFileSync(markerPath, "1");
+        return;
+      }
+    }
     send({ id: request.id, result: { thread: { id: "thread1", forkedFromId: null, preview: "", ephemeral: true, modelProvider: "openai", createdAt: 1, updatedAt: 1, status: { type: "idle" }, path: null, cwd: request.params.cwd, cliVersion: "fake", source: "codex app-server", agentNickname: null, agentRole: null, gitInfo: null, name: null, turns: [] }, model: request.params.model, modelProvider: "openai", serviceTier: "fast", cwd: request.params.cwd, instructionSources: [], approvalPolicy: request.params.approvalPolicy, approvalsReviewer: "user", sandbox: { type: "dangerFullAccess" }, permissionProfile: null, reasoningEffort: request.params.config?.model_reasoning_effort || null } });
   } else if (request.method === "turn/start") {
     send({ id: request.id, result: { turn: { id: "turn1", items: [], status: "inProgress", error: null, startedAt: 1, completedAt: null, durationMs: null } } });
     if (mode === "delayed_turn_started") setTimeout(turnStarted, 100);
     else turnStarted();
-    if (mode === "complete_immediately" || mode === "collab_event") setTimeout(() => complete("Initial"), 10);
+    if (mode === "complete_immediately" || mode === "collab_event" || mode === "thread_start_timeout_once") setTimeout(() => complete("Initial"), 10);
   } else if (request.method === "turn/steer") {
     if (mode === "delayed_turn_started" && !startedSent) {
       send({ id: request.id, error: { code: -32000, message: "no active turn to steer" } });
@@ -134,6 +142,7 @@ describe("generateCodexAppResponse", () => {
       const turnStart = requests.find((request) => request.method === "turn/start");
 
       expect(result.error).toBeNull();
+      expect(result.diagnostics.codex_thread_start_timeout_ms).toBe(60_000);
       expect(turnStart.params.outputSchema).toEqual(customSchema);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -316,6 +325,81 @@ describe("generateCodexAppResponse", () => {
       });
     } finally {
       liveInput.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("retries thread/start with a fresh app-server after a startup timeout", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    const events = [];
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "thread_start_timeout_once" },
+        codexThreadStartTimeoutMs: 20,
+        codexThreadStartAttempts: 2,
+        codexThreadStartBackoffMs: 0,
+        onEvent: (event) => events.push(event),
+      });
+      const requests = readRequests(logPath);
+
+      expect(result.error).toBeNull();
+      expect(requests.filter((request) => request.method === "initialize")).toHaveLength(2);
+      expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(2);
+      expect(result.diagnostics).toMatchObject({
+        codex_thread_start_attempts: 2,
+        codex_thread_start_retried: true,
+        codex_thread_start_timeout_ms: 20,
+      });
+      expect(result.providerSessionId).toBe("thread1");
+      expect(events).toContainEqual(expect.objectContaining({
+        type: "runtime_warning",
+        warning_kind: "codex_thread_start_retry",
+      }));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("returns retryable diagnostics when thread/start times out on every attempt", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "thread_start_timeout" },
+        codexThreadStartTimeoutMs: 20,
+        codexThreadStartAttempts: 2,
+        codexThreadStartBackoffMs: 0,
+      });
+      const requests = readRequests(logPath);
+
+      expect(result.failureKind).toBe("provider_unavailable");
+      expect(result.error).toBe("codex app-server request timed out: thread/start");
+      expect(result.diagnostics).toMatchObject({
+        codex_error_code: "codex_app_server_request_timeout",
+        codex_request_method: "thread/start",
+        codex_thread_start_attempts: 2,
+        codex_thread_start_retried: true,
+        codex_thread_start_timeout_ms: 20,
+      });
+      expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(2);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
