@@ -2,12 +2,31 @@
 // claimed verification commands actually appear in the tool log. Catches the
 // "rubber-stamp with fabricated evidence" failure mode that the soft prompt
 // can't prevent on its own.
+import { existsSync, readFileSync } from "node:fs";
 import { getAgentLogEvents } from "./db/queries/agent-logs.js";
+import { getRunById } from "./db/queries/runs.js";
 import { adjudicateVerificationEvidenceRow } from "./verification-adjudicator.js";
+
+const DEFAULT_ADJUDICATOR_ROW_LIMIT = 8;
 
 function safeParse(jsonText, fallback) {
   if (!jsonText) return fallback;
   try { return JSON.parse(jsonText); } catch { return fallback; }
+}
+
+function parseJsonlEvents(content) {
+  const events = [];
+  for (const line of String(content || "").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object") events.push(parsed);
+    } catch {
+      // Ignore partial or malformed lines; compact DB events remain fallback.
+    }
+  }
+  return events;
 }
 
 function normalizeText(value) {
@@ -92,6 +111,21 @@ function firstStringByKey(value, keys) {
   return "";
 }
 
+function previewValue(block, key) {
+  return typeof block?.[`${key}_preview`] === "string" ? block[`${key}_preview`] : "";
+}
+
+function parsePreviewObject(preview) {
+  const text = String(preview || "").trim();
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function signalHaystack(signal) {
   return normalizeText([
     signal.name,
@@ -145,7 +179,7 @@ function structuredToolClaimMatch(claim, signal) {
 
 // Walk a single event blob and yield every tool-call's name + a flattened
 // string of its arguments / command for matching.
-function* iterToolCallSignals(events) {
+function* iterToolCallSignals(events, { logSource = "compact_db" } = {}) {
   if (!Array.isArray(events)) return;
   for (const event of events) {
     const inner = event?.type === "sdk_event" && event.event ? event.event : event;
@@ -155,14 +189,26 @@ function* iterToolCallSignals(events) {
     for (const block of blocks) {
       if (block?.type !== "tool_use" && block?.type !== "toolCall") continue;
       const name = String(block.name || "").trim();
-      const args = block.input ?? block.arguments ?? {};
+      const payloadKey = "input" in block || "input_preview" in block
+        ? "input"
+        : "arguments" in block || "arguments_preview" in block
+          ? "arguments"
+          : "arg" in block || "arg_preview" in block
+            ? "arg"
+            : null;
+      const preview = payloadKey ? previewValue(block, payloadKey) : "";
+      const parsedPreview = parsePreviewObject(preview);
+      const hasPayload = payloadKey && block[payloadKey] !== undefined;
+      const args = hasPayload ? block[payloadKey] : (parsedPreview || {});
       let serialized = "";
       try {
-        serialized = typeof args === "string" ? args : JSON.stringify(args);
+        serialized = hasPayload
+          ? (typeof args === "string" ? args : JSON.stringify(args))
+          : preview;
       } catch {
         serialized = String(args || "");
       }
-      const command = typeof args === "string" ? args : firstStringByKey(args, ["command", "cmd", "script"]);
+      const command = typeof args === "string" ? args : firstStringByKey(args, ["command", "cmd", "script"]) || (!hasPayload ? preview : "");
       const url = typeof args === "string" ? "" : firstStringByKey(args, ["url", "uri", "href"]);
       const textValues = flattenStrings(args);
       yield {
@@ -172,22 +218,39 @@ function* iterToolCallSignals(events) {
         command,
         url,
         urls: [...new Set([...extractUrls(serialized), ...extractUrls(textValues.join(" "))].map(normalizeUrl))],
+        log_source: !hasPayload && preview ? "compact_preview" : logSource,
       };
     }
+  }
+}
+
+function readRawLogEvents(db, runId) {
+  if (!db || !runId) return null;
+  const run = getRunById(db, runId);
+  const rawPath = run?.raw_output_path;
+  if (!rawPath || !existsSync(rawPath)) return null;
+  try {
+    const events = parseJsonlEvents(readFileSync(rawPath, "utf8"));
+    return events.length ? events : null;
+  } catch {
+    return null;
   }
 }
 
 export function collectToolSignals(db, runIds) {
   const signals = [];
   for (const runId of runIds.filter(Boolean)) {
-    const row = getAgentLogEvents(db, runId);
-    const events = safeParse(row?.events, []);
+    const rawEvents = readRawLogEvents(db, runId);
+    const row = rawEvents ? null : getAgentLogEvents(db, runId);
+    const events = rawEvents || safeParse(row?.events, []);
+    const logSource = rawEvents ? "raw_log" : "compact_db";
     let index = 0;
-    for (const sig of iterToolCallSignals(events)) {
+    for (const sig of iterToolCallSignals(events, { logSource })) {
       signals.push({
         id: `${runId}:${index}`,
         run_id: runId,
         index,
+        log_source: sig.log_source || logSource,
         ...sig,
       });
       index += 1;
@@ -230,6 +293,7 @@ function evidenceMatch(evidence, signals) {
       matched: true,
       match_source: "deterministic",
       matched_tool_call: direct.signal.id,
+      signal: direct.signal,
       reason: direct.reason,
       confidence: 1,
     };
@@ -244,6 +308,7 @@ function evidenceMatch(evidence, signals) {
         match_source: "deterministic",
         matched_tool_call: `multiple: ${ids.join(", ")}`,
         matched_tool_calls: ids,
+        signal: matches[0]?.signal || null,
         reason: "Every grouped command segment matched a logged tool call.",
         confidence: 1,
       };
@@ -267,6 +332,7 @@ function rowDetail({ row, index }, match) {
     snippet: row.snippet || "",
     match_source: match.matched ? match.match_source : null,
     matched_tool_call: match.matched ? match.matched_tool_call : null,
+    log_source: match.matched ? match.signal?.log_source || null : null,
     ...(match.matched_tool_calls ? { matched_tool_calls: match.matched_tool_calls } : {}),
     reason: match.reason || "",
     confidence: Number.isFinite(match.confidence) ? match.confidence : 0,
@@ -322,7 +388,8 @@ export async function crossCheckVerificationEvidenceWithAdjudicator(
 
   const signalIds = new Set(signals.map((signal) => signal.id));
   const rows = base.rows.map((row) => ({ ...row }));
-  for (const unmatched of base.unmatchedRows) {
+  const adjudicatorLimit = Math.max(0, Number(adjudicator?.maxRows ?? DEFAULT_ADJUDICATOR_ROW_LIMIT) || 0);
+  for (const unmatched of base.unmatchedRows.slice(0, adjudicatorLimit)) {
     const decision = await adjudicateVerificationEvidenceRow({
       db,
       dataDir,
@@ -335,8 +402,10 @@ export async function crossCheckVerificationEvidenceWithAdjudicator(
     const row = rows.find((candidate) => candidate.evidence_index === unmatched.evidence_index);
     if (!row) continue;
     if (decision?.decision === "match" && signalIds.has(decision.matched_tool_call_id)) {
+      const signal = signals.find((candidate) => candidate.id === decision.matched_tool_call_id);
       row.match_source = "adjudicator";
       row.matched_tool_call = decision.matched_tool_call_id;
+      row.log_source = signal?.log_source || null;
       row.reason = decision.reason || "Adjudicator matched this row to a logged tool call.";
       row.confidence = decision.confidence;
     } else {

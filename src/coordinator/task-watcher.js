@@ -23,7 +23,10 @@ import { retryableProviderFailureInfo } from "@worklab/agent-runtime/ai/failure.
 import { delegationDepth } from "../core/delegation.js";
 import { reconcileRunWorktree } from "../core/worktrees.js";
 import { loadTaskArtifacts } from "../core/run-artifacts.js";
-import { crossCheckVerificationEvidenceWithAdjudicator } from "../core/verification-evidence.js";
+import {
+  crossCheckVerificationEvidence,
+  crossCheckVerificationEvidenceWithAdjudicator,
+} from "../core/verification-evidence.js";
 import { getTaskById, setTaskParentReviewPolicy } from "../core/db/queries/tasks.js";
 import {
   getRunById,
@@ -156,6 +159,7 @@ export function createTaskWatcher({
     if (!task) return false;
     const stage = taskStage(task);
     if (task.run_policy !== AUTO_RUN_POLICY) return false;
+    if (task.last_failure_kind === "review_unverified") return false;
     if (!["plan", "execute", "review"].includes(stage)) return false;
     if (!agentForTaskStage(task, stage)) return false;
     if (active.has(taskId) || pendingStarts.has(taskId)) return false;
@@ -1953,18 +1957,30 @@ export function createTaskWatcher({
           hasArtifacts = false;
         }
         try {
-          evidenceCrossCheck = await crossCheckVerificationEvidenceWithAdjudicator(db, {
+          const deterministicCrossCheck = crossCheckVerificationEvidence(db, {
             reviewRunId: runId,
             parentRunId: run.parent_run_id || null,
             evidence: result?.verification_evidence,
-            dataDir,
-            adjudicator: {
-              mode: settings?.agent_verification_adjudicator_mode || "off",
-              model: settings?.agent_verification_adjudicator_model || null,
-              timeoutMs: settings?.agent_verification_adjudicator_timeout_ms || null,
-            },
-            logger,
           });
+          evidenceCrossCheck = deterministicCrossCheck;
+          const shouldAdjudicate = (settings?.agent_verification_adjudicator_mode || "off") === "on"
+            && (deterministicCrossCheck?.unmatchedCount || 0) > 0
+            && (deterministicCrossCheck?.matchedCount || 0) === 0;
+          if (shouldAdjudicate) {
+            evidenceCrossCheck = await crossCheckVerificationEvidenceWithAdjudicator(db, {
+              reviewRunId: runId,
+              parentRunId: run.parent_run_id || null,
+              evidence: result?.verification_evidence,
+              dataDir,
+              adjudicator: {
+                mode: "on",
+                model: settings?.agent_verification_adjudicator_model || null,
+                timeoutMs: settings?.agent_verification_adjudicator_timeout_ms || null,
+                maxRows: 8,
+              },
+              logger,
+            });
+          }
           if (evidenceCrossCheck?.totalChecked) {
             patchRunDiagnostics(runId, { verification_cross_check: evidenceCrossCheck });
           }

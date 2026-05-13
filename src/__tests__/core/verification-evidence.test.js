@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   crossCheckVerificationEvidence,
   crossCheckVerificationEvidenceWithAdjudicator,
@@ -12,6 +15,20 @@ function seedRunWithEvents(db, runId, events) {
     .run(runId, now);
   db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
     .run(`log-${runId}`, runId, JSON.stringify(events), now);
+}
+
+function seedRunWithRawLog(db, runId, { compactEvents = [], rawEvents = [] } = {}) {
+  const now = Date.now();
+  const root = mkdtempSync(join(tmpdir(), "worklab-evidence-"));
+  const rawDir = join(root, "logs", "runs");
+  mkdirSync(rawDir, { recursive: true });
+  const rawPath = join(rawDir, `${runId}.jsonl`);
+  writeFileSync(rawPath, rawEvents.map((event) => JSON.stringify(event)).join("\n") + "\n");
+  db.prepare("INSERT INTO task_runs (id, mode, agent_name, started_at, status, raw_output_path) VALUES (?, 'review', 'reviewer', ?, 'succeeded', ?)")
+    .run(runId, now, rawPath);
+  db.prepare("INSERT INTO agent_logs (id, task_run_id, events, status, created_at) VALUES (?, ?, ?, 'complete', ?)")
+    .run(`log-${runId}`, runId, JSON.stringify(compactEvents), now);
+  return rawPath;
 }
 
 function seedAdjudicatorModel(db, {
@@ -90,6 +107,106 @@ describe("crossCheckVerificationEvidence", () => {
         match_source: null,
       }),
     ]);
+  });
+
+  it("matches evidence against the full raw JSONL log when compact DB events omitted the tool input", () => {
+    const db = makeTestDb();
+    seedRunWithRawLog(db, "review-raw", {
+      compactEvents: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{
+                type: "tool_use",
+                id: "cmd-1",
+                name: "command_execution",
+                input_omitted: true,
+                input_preview: "{\"command\":\"/bin/zsh -lc 'other command'\"}",
+              }],
+            },
+          },
+        },
+      ],
+      rawEvents: [
+        {
+          type: "sdk_event",
+          event: {
+            type: "assistant",
+            message: {
+              content: [{
+                type: "tool_use",
+                id: "cmd-1",
+                name: "command_execution",
+                input: { command: "/bin/zsh -lc 'git status --short --branch --untracked-files=normal'" },
+              }],
+            },
+          },
+        },
+      ],
+    });
+
+    const result = crossCheckVerificationEvidence(db, {
+      reviewRunId: "review-raw",
+      evidence: [
+        {
+          kind: "manual_check",
+          command_or_url: "git status --short --branch --untracked-files=normal",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      totalChecked: 1,
+      matchedCount: 1,
+      unmatchedCount: 0,
+    });
+    expect(result.matchedRows[0]).toMatchObject({
+      match_source: "deterministic",
+      log_source: "raw_log",
+    });
+  });
+
+  it("uses compact input_preview as a fallback when raw JSONL is unavailable", () => {
+    const db = makeTestDb();
+    seedRunWithEvents(db, "review-compact", [
+      {
+        type: "sdk_event",
+        event: {
+          type: "assistant",
+          message: {
+            content: [{
+              type: "tool_use",
+              id: "cmd-1",
+              name: "command_execution",
+              input_omitted: true,
+              input_preview: "{\"command\":\"/bin/zsh -lc 'composer test -- --filter OrchestratedTranslationJobExecutorTest'\"}",
+            }],
+          },
+        },
+      },
+    ]);
+
+    const result = crossCheckVerificationEvidence(db, {
+      reviewRunId: "review-compact",
+      evidence: [
+        {
+          kind: "test",
+          command_or_url: "composer test -- --filter OrchestratedTranslationJobExecutorTest",
+        },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      totalChecked: 1,
+      matchedCount: 1,
+      unmatchedCount: 0,
+    });
+    expect(result.matchedRows[0]).toMatchObject({
+      match_source: "deterministic",
+      log_source: "compact_preview",
+    });
   });
 
   it("matches MCP tool evidence written as tool name plus key=value arguments", () => {
