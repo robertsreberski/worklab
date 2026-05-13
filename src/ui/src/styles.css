@@ -9579,6 +9579,15 @@ button.settings-overview-card:focus-visible,
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+.capability-panel--clamp-descriptions {
+  --capability-description-lines: 3;
+}
+.capability-panel--clamp-descriptions .capability-tile-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: var(--capability-description-lines, 3);
+}
 .capability-tile-detail {
   color: var(--text-subtle);
 }

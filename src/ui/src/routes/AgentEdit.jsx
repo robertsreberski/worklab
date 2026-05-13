@@ -276,6 +276,7 @@ function CapabilityGroup({
   mode = "all",
   onChange,
   emptyText,
+  descriptionLines = null,
   collapseAllSelected = false,
 }) {
   const selectedNames = normalizedNames(selected);
@@ -291,6 +292,8 @@ function CapabilityGroup({
   const summary = hasAvailable
     ? (!explicit ? "All available" : allSelected ? "Custom: all" : `${includedCount}/${availableItems.length} allowed`)
     : "None available";
+  const panelClass = `capability-panel ${descriptionLines ? "capability-panel--clamp-descriptions" : ""}`.trim();
+  const panelStyle = descriptionLines ? { "--capability-description-lines": String(descriptionLines) } : undefined;
 
   function applySelection(next) {
     const availableNext = next.filter((id) => availableIds.includes(id));
@@ -315,7 +318,7 @@ function CapabilityGroup({
   }
 
   return (
-    <FormSection class="capability-panel">
+    <FormSection class={panelClass} style={panelStyle}>
       <InlineHead class="capability-panel-head">
         <div class="min-w-0">
           <div class="capability-panel-title">{title}</div>
@@ -1062,6 +1065,7 @@ export function AgentEdit({ name, onSaved, onDeleted }) {
                   mode={skillsMode}
                   onChange={(next, mode) => setAgent({ ...agent, skills_allowlist: next, skills_allowlist_mode: mode })}
                   emptyText="No skills defined yet."
+                  descriptionLines={3}
                 />
                 <CapabilityGroup
                   title="MCP servers"
