@@ -5,6 +5,7 @@ import {
   resolveProjectRow,
   resolveTaskId,
   resolveTaskRow,
+  replaceTaskInstructionAttachments,
   resumeWaitingParents,
   STAGES,
   taskStage,
@@ -35,7 +36,6 @@ import {
 } from "./constants.js";
 import { routeError, rerunResponseError } from "./errors.js";
 import { enrichTask, rowToTask } from "./serialization.js";
-import { replaceTaskInstructionAttachments } from "../../../core/task-attachments.js";
 
 function normaliseDependencyIds(value) {
   if (!Array.isArray(value)) return [];

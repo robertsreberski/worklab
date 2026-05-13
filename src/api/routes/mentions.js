@@ -12,6 +12,12 @@ import {
   listProjectsByNamePrefix,
 } from "../../core/db/queries/projects.js";
 import {
+  searchGoalsForMention,
+} from "../../core/db/queries/goals.js";
+import {
+  searchRunsForMention,
+} from "../../core/db/queries/runs.js";
+import {
   listTasksByTitlePrefix,
 } from "../../core/db/queries/tasks.js";
 import {
@@ -261,53 +267,11 @@ function searchType(type, { db, dataDir, q, limit }) {
   }
   if (type === "goal") {
     if (!db) return [];
-    const like = `%${q}%`;
-    return db.prepare(`
-      SELECT
-        g.id,
-        g.status,
-        g.project_id,
-        g.team_id,
-        g.root_task_id,
-        p.name AS project_name,
-        p.slug AS project_slug,
-        t.name AS team_name,
-        t.slug AS team_slug
-      FROM goals g
-      LEFT JOIN projects p ON p.id = g.project_id
-      LEFT JOIN teams t ON t.id = g.team_id
-      WHERE g.id LIKE ?
-         OR g.root_task_id LIKE ?
-         OR p.name LIKE ?
-         OR p.slug LIKE ?
-         OR t.name LIKE ?
-         OR t.slug LIKE ?
-      ORDER BY COALESCE(g.last_lead_at, g.updated_at) DESC
-      LIMIT ?
-    `).all(like, like, like, like, like, like, limit);
+    return searchGoalsForMention(db, q, limit);
   }
   if (type === "run") {
     if (!db) return [];
-    const like = `%${q}%`;
-    return db.prepare(`
-      SELECT
-        r.id,
-        r.task_id,
-        r.mode,
-        r.stage,
-        r.status,
-        r.process_status,
-        r.started_at,
-        t.task_key,
-        t.title AS task_title
-      FROM task_runs r
-      LEFT JOIN tasks t ON t.id = r.task_id
-      WHERE r.id LIKE ?
-         OR t.task_key LIKE ?
-         OR t.title LIKE ?
-      ORDER BY r.started_at DESC, r.rowid DESC
-      LIMIT ?
-    `).all(like, like, like, limit);
+    return searchRunsForMention(db, q, limit);
   }
   switch (type) {
     case "agent": return listAgentsByNamePrefix(db, q, limit);

@@ -50,6 +50,35 @@ export function listGoals(db, { includeArchived = true, limit = 500 } = {}) {
   `).all(limit);
 }
 
+export function searchGoalsForMention(db, query, limit) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const like = `%${q}%`;
+  return db.prepare(`
+    SELECT
+      g.id,
+      g.status,
+      g.project_id,
+      g.team_id,
+      g.root_task_id,
+      p.name AS project_name,
+      p.slug AS project_slug,
+      t.name AS team_name,
+      t.slug AS team_slug
+    FROM goals g
+    LEFT JOIN projects p ON p.id = g.project_id
+    LEFT JOIN teams t ON t.id = g.team_id
+    WHERE g.id LIKE ?
+       OR g.root_task_id LIKE ?
+       OR p.name LIKE ?
+       OR p.slug LIKE ?
+       OR t.name LIKE ?
+       OR t.slug LIKE ?
+    ORDER BY COALESCE(g.last_lead_at, g.updated_at) DESC
+    LIMIT ?
+  `).all(like, like, like, like, like, like, limit);
+}
+
 export function upsertGoal(db, {
   id,
   teamId,

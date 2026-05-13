@@ -20,6 +20,15 @@ export function listAllCommentBodiesForKbUsage(db) {
   return db.prepare("SELECT task_id, body FROM task_comments").all();
 }
 
+export function listProjectCommentBodiesForKbUsage(db) {
+  return db.prepare(`
+    SELECT t.project_id, c.body
+    FROM task_comments c
+    JOIN tasks t ON t.id = c.task_id
+    WHERE t.project_id IS NOT NULL
+  `).all();
+}
+
 export function insertSystemComment(db, { id, taskId, body, createdAt }) {
   db.prepare(
     `INSERT INTO task_comments (id, task_id, author_type, body, created_at)
