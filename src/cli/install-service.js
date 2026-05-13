@@ -4,6 +4,7 @@ import { homedir, platform, userInfo } from "node:os";
 import { join } from "node:path";
 import { loadConfig } from "../core/index.js";
 import { applyConfigArgs } from "./args.js";
+import { gracefulStopCoordinator, gracefulStopTimeoutMs } from "./service-drain.js";
 
 const LAUNCHD_LABEL = "ai.worklab";
 
@@ -59,6 +60,12 @@ function systemdEnvLines(env) {
     .join("\n");
 }
 
+function systemdTimeoutStopSec(env) {
+  const drainTimeoutMs = Number(env?.WORKLAB_DRAIN_TIMEOUT_MS);
+  const base = Number.isFinite(drainTimeoutMs) && drainTimeoutMs >= 0 ? drainTimeoutMs : 60_000;
+  return `${Math.ceil(Math.min(base + 10_000, 10 * 60_000 + 10_000) / 1000)}s`;
+}
+
 export function serviceParams(config = loadConfig()) {
   const cli = join(config.repoRoot, "src", "cli", "index.js");
   return {
@@ -103,6 +110,7 @@ WorkingDirectory=${cwd}
 ${envLines ? `${envLines}\n` : ""}ExecStart=${node} ${cli} serve
 Restart=always
 RestartSec=5
+TimeoutStopSec=${systemdTimeoutStopSec(env)}
 StandardOutput=append:${join(dataDir, "logs", "worklab.out.log")}
 StandardError=append:${join(dataDir, "logs", "worklab.err.log")}
 
@@ -168,6 +176,10 @@ function bootstrapLaunchdService(file) {
   execFileSync("launchctl", ["kickstart", "-k", target], { stdio: "inherit" });
 }
 
+function disableLaunchdService() {
+  try { execFileSync("launchctl", ["disable", launchdTarget()], { stdio: "ignore" }); } catch { /* not loaded */ }
+}
+
 export async function startUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
@@ -188,22 +200,27 @@ export async function restartUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
   if (p === "darwin") {
+    disableLaunchdService();
+    await gracefulStopCoordinator({ config, timeoutMs: gracefulStopTimeoutMs(config) });
     bootstrapLaunchdService(file);
     return { platform: p, file };
   }
   if (p === "linux") {
-    execFileSync("systemctl", ["--user", "restart", "worklab"], { stdio: "inherit" });
+    execFileSync("systemctl", ["--user", "stop", "worklab"], { stdio: "inherit" });
+    execFileSync("systemctl", ["--user", "start", "worklab"], { stdio: "inherit" });
     return { platform: p, file };
   }
   throw new Error(`service restart is not supported on ${p}`);
 }
 
-export async function stopUserService() {
+export async function stopUserService({ config = loadConfig() } = {}) {
   const p = platform();
   const file = serviceFilePath(p);
   if (p === "darwin") {
     if (!existsSync(file)) throw new Error(`launchd service is not installed: ${file}`);
-    execFileSync("launchctl", ["unload", "-w", file], { stdio: "ignore" });
+    disableLaunchdService();
+    await gracefulStopCoordinator({ config, timeoutMs: gracefulStopTimeoutMs(config) });
+    try { execFileSync("launchctl", ["bootout", launchdDomain(), file], { stdio: "ignore" }); } catch { /* not loaded */ }
     return { platform: p, file };
   }
   if (p === "linux") {
