@@ -12,6 +12,7 @@ import {
 } from "../../core/index.js";
 import { getRunById, getRunRawOutputPath } from "../../core/db/queries/runs.js";
 import { getAgentLogByRunId } from "../../core/db/queries/agent-logs.js";
+import { collectGitDiffArtifactsForRun } from "../../core/artifact-collection.js";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
@@ -33,7 +34,10 @@ function safeJson(value, fallback) {
 function normalizeRun(row, liveInputState = null, events = null) {
   const processStatus = row.process_status || "running";
   const supported = supportsLiveInputProvider(row.provider_kind);
-  const artifacts = artifactsForRunRow(row, { events });
+  const artifacts = artifactsForRunRow(row, {
+    events,
+    extraArtifacts: collectGitDiffArtifactsForRun(row),
+  });
   return {
     ...row,
     process_status: processStatus,

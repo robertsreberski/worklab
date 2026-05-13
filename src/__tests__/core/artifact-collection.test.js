@@ -1,8 +1,11 @@
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  captureGitArtifactState,
+  collectGitDiffArtifacts,
   collectQaOutputArtifacts,
   collectWorkspaceDeltaArtifacts,
   createWorkspaceSnapshot,
@@ -91,6 +94,43 @@ describe("artifact collection", () => {
       unavailable_reason: null,
     });
     expect(artifacts[0].hunks).toEqual([{ start: 2, end: 2 }, { start: 4, end: 4 }]);
+  });
+
+  it("collects net line stats from git diff numstat", () => {
+    const workdir = makeRoot();
+    execFileSync("git", ["init"], { cwd: workdir, stdio: "ignore" });
+    execFileSync("git", ["config", "user.email", "worklab@example.com"], { cwd: workdir });
+    execFileSync("git", ["config", "user.name", "Worklab Test"], { cwd: workdir });
+    mkdirSync(join(workdir, "src"), { recursive: true });
+    writeFileSync(join(workdir, "src", "app.js"), "one\ntwo\nthree\n");
+    execFileSync("git", ["add", "."], { cwd: workdir });
+    execFileSync("git", ["commit", "-m", "initial"], { cwd: workdir, stdio: "ignore" });
+
+    const before = captureGitArtifactState(workdir);
+    writeFileSync(join(workdir, "src", "app.js"), "one\nTWO\nthree\nfour\n");
+    writeFileSync(join(workdir, "src", "new.js"), "created\n");
+    execFileSync("git", ["add", "."], { cwd: workdir });
+    execFileSync("git", ["commit", "-m", "update"], { cwd: workdir, stdio: "ignore" });
+    const after = captureGitArtifactState(workdir);
+
+    const artifacts = collectGitDiffArtifacts(before, after, {
+      runId: "run-git",
+      endedAt: 1234,
+    });
+
+    expect(artifacts.map((artifact) => artifact.display_path)).toEqual(["src/app.js", "src/new.js"]);
+    expect(artifacts.find((artifact) => artifact.display_path === "src/app.js")).toMatchObject({
+      source: "git_diff",
+      line_stats_source: "git_diff",
+      added_lines: 2,
+      removed_lines: 1,
+      has_line_delta: true,
+      last_run_id: "run-git",
+    });
+    expect(artifacts.find((artifact) => artifact.display_path === "src/new.js")).toMatchObject({
+      added_lines: 1,
+      removed_lines: 0,
+    });
   });
 
   it("collects QA output files with safe run artifact links", () => {

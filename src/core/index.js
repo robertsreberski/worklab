@@ -238,6 +238,8 @@ export {
 
 export {
   captureGitArtifactState,
+  collectGitDiffArtifacts,
+  collectGitDiffArtifactsForRun,
   collectGitArtifacts,
   collectQaOutputArtifacts,
   collectWorkspaceDeltaArtifacts,

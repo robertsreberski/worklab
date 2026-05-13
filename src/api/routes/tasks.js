@@ -51,6 +51,7 @@ import {
   insertAuthoredComment,
   listTaskComments,
 } from "../../core/db/queries/comments.js";
+import { collectGitDiffArtifactsForRun } from "../../core/artifact-collection.js";
 import { DEFAULT_RUN_POLICY } from "./tasks/constants.js";
 import { routeError, sendRouteError } from "./tasks/errors.js";
 import {
@@ -542,7 +543,7 @@ export function registerTaskRoutes(app, { db, broker, watcher, logger, dataDir, 
         includeCursor: runView !== "full" || runLimit != null,
       });
       const task = enrichTask(db, rowToTask(row), config);
-      const taskArtifacts = loadTaskArtifacts(db, row.id);
+      const taskArtifacts = loadTaskArtifacts(db, row.id, { artifactResolver: collectGitDiffArtifactsForRun });
       task.artifacts = taskArtifacts.artifacts;
       task.artifact_summary = taskArtifacts.summary;
       // §9.3 is_locked: derived from coordinator.active.has(taskId). Null when
