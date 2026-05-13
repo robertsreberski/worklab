@@ -11,7 +11,7 @@ import {
   DEFAULT_VERIFICATION_ADJUDICATOR_MODEL,
   DEFAULT_VERIFICATION_ADJUDICATOR_TIMEOUT_MS,
   parseVerificationAdjudicatorModelReference,
-} from "./verification-adjudicator.js";
+} from "./verification-adjudicator-settings.js";
 
 export const DEFAULT_SETTINGS = {
   consolidation_hour: 3,

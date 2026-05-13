@@ -2,7 +2,34 @@ import { describe, it, expect } from "vitest";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { newTaskId } from "../../core/ids.js";
-import { SCHEMA_VERSION } from "../../core/db/schema/current.js";
+import { SCHEMA_SQL, SCHEMA_VERSION } from "../../core/db/schema/current.js";
+
+function schemaSnapshot(db) {
+  const objects = db.prepare(`
+    SELECT type, name
+    FROM sqlite_master
+    WHERE name NOT LIKE 'sqlite_%'
+    ORDER BY type, name
+  `).all();
+  const columns = {};
+  const tables = db.prepare(`
+    SELECT name
+    FROM sqlite_master
+    WHERE type = 'table'
+      AND name NOT LIKE 'sqlite_%'
+    ORDER BY name
+  `).all();
+  for (const { name } of tables) {
+    columns[name] = db.prepare(`PRAGMA table_info(${name})`).all().map((row) => ({
+      name: row.name,
+      type: row.type,
+      notnull: row.notnull,
+      dflt_value: row.dflt_value,
+      pk: row.pk,
+    }));
+  }
+  return { objects, columns };
+}
 
 describe("openDb + runMigrations", () => {
   it("creates all tables on first call", () => {
@@ -36,6 +63,103 @@ describe("openDb + runMigrations", () => {
     ).run(taskId, "ok", now, now);
     expect(db.prepare("SELECT COUNT(*) AS c FROM tasks").get().c).toBe(1);
     expect(db.prepare("SELECT run_policy FROM tasks WHERE id = ?").get(taskId).run_policy).toBe("auto_plan_execute");
+  });
+
+  it("keeps the declared current schema in sync with fresh migrations", () => {
+    const current = openDb(":memory:");
+    current.exec(SCHEMA_SQL);
+    const migrated = openDb(":memory:");
+    runMigrations(migrated);
+
+    expect(schemaSnapshot(migrated)).toEqual(schemaSnapshot(current));
+  });
+
+  it("adds current index columns before replaying current schema on partial upgrades", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE teams (
+        id TEXT PRIMARY KEY,
+        slug TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE goals (
+        id TEXT PRIMARY KEY,
+        team_id TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'in_progress',
+        contract_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(team_id, project_id)
+      );
+      CREATE TABLE lead_cycles (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT,
+        run_id TEXT UNIQUE,
+        team_id TEXT,
+        project_id TEXT,
+        reason TEXT NOT NULL DEFAULT 'manual',
+        process_status TEXT NOT NULL DEFAULT 'queued',
+        status TEXT NOT NULL DEFAULT 'running',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `);
+
+    runMigrations(db);
+
+    expect(db.prepare("PRAGMA table_info(teams)").all().map((row) => row.name)).toContain("status");
+    expect(db.prepare("PRAGMA table_info(goals)").all().map((row) => row.name)).toContain("root_task_id");
+    expect(db.prepare("PRAGMA table_info(lead_cycles)").all().map((row) => row.name)).toEqual(expect.arrayContaining([
+      "next_review_due_at",
+      "next_review_event",
+      "next_review_consumed_at",
+    ]));
+  });
+
+  it("rebuilds legacy task tables even when optional workflow columns are absent", () => {
+    const db = openDb(":memory:");
+    db.exec(`
+      CREATE TABLE tasks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        instructions TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'todo',
+        executor_agent TEXT,
+        priority INTEGER NOT NULL DEFAULT 0,
+        tags TEXT NOT NULL DEFAULT '[]',
+        error_text TEXT,
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
+      );
+    `);
+    const now = Date.now();
+    db.prepare(`
+      INSERT INTO tasks
+        (id, title, instructions, status, executor_agent, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run("legacy-no-reviewer", "Legacy task", "Keep instructions", "todo", "old-owner", now, now);
+
+    runMigrations(db);
+
+    const row = db.prepare(`
+      SELECT title, instructions, stage, owner_agent, reviewer_agent, run_policy, failure_count
+      FROM tasks
+      WHERE id = 'legacy-no-reviewer'
+    `).get();
+    expect(row).toMatchObject({
+      title: "Legacy task",
+      instructions: "Keep instructions",
+      stage: "execute",
+      owner_agent: "old-owner",
+      reviewer_agent: null,
+      run_policy: "manual",
+      failure_count: 0,
+    });
   });
 
   it("creates the run todo state column with an empty checklist default", () => {
