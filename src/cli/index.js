@@ -20,6 +20,7 @@ const commands = {
   status: async (argv) => (await import("./status.js")).status(argv),
   doctor: async (argv) => (await import("./doctor.js")).doctor(argv),
   onboard: async (argv) => (await import("./onboard.js")).onboard(argv),
+  auth: async (argv) => (await import("./auth.js")).authCli(argv),
   backup: async (argv) => (await import("./backup.js")).backup(argv),
   "compact-logs": async (argv) => (await import("./compact-logs.js")).compactLogsCli(argv),
   update: async (argv) => (await import("./update.js")).update(argv),

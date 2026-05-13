@@ -69,14 +69,28 @@ const COMMANDS = [
     description: [
       "Interactive by default. Use --yes for recommended defaults: Ollama,",
       "Worklab skills for available Codex and Claude Code CLIs, nomic-embed-text",
-      "embeddings, service start, and final doctor checks.",
+      "embeddings, service start, hosted auth guidance, and final doctor checks.",
     ],
     options: [
       ["--yes", "Accept recommended defaults and non-destructive setup actions."],
       ["--dry-run", "Print planned setup actions without writing provider/settings/skill changes."],
       ["--local-provider NAME", "Local provider: ask, ollama, lmstudio, or none. Default: ask."],
-      ["--embedding MODE", "Embedding setup: ask, yes, or no. Default: ask."],
+      ["--embedding MODE", "Embedding setup: ask, yes, local, openai, or no. Default: ask."],
       ["--no-start", "Configure Worklab without starting the managed service."],
+    ],
+    common: true,
+  },
+  {
+    name: "auth",
+    usage: "worklab auth pi openai-codex [options]",
+    summary: "Create Pi OAuth auth for OpenAI Codex and store it in pi-auth.json.",
+    description: [
+      "Runs the pi-ai OAuth login flow and writes credentials to the active",
+      "Worklab data directory as pi-auth.json. Environment keys still take",
+      "precedence when OPENAI_CODEX_API_KEY or CODEX_API_KEY is set.",
+    ],
+    options: [
+      ["--dry-run", "Print the auth target path without starting OAuth or writing files."],
     ],
     common: true,
   },

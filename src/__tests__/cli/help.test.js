@@ -14,6 +14,7 @@ describe("CLI help", () => {
     expect(help).toContain("compact-logs");
     expect(help).toContain("install-skill");
     expect(help).toContain("onboard");
+    expect(help).toContain("auth");
     expect(help).toContain("doctor performance");
     expect(help).toContain("--port PORT");
     expect(help).toContain("--data-dir DIR");
@@ -28,6 +29,15 @@ describe("CLI help", () => {
     expect(help).toContain("--local-provider NAME");
     expect(help).toContain("--embedding MODE");
     expect(help).toContain("--no-start");
+    expect(help).toContain("openai");
+  });
+
+  it("documents auth options", () => {
+    const help = formatCommandHelp("auth");
+
+    expect(help).toContain("Usage: worklab auth pi openai-codex [options]");
+    expect(help).toContain("--dry-run");
+    expect(help).toContain("pi-auth.json");
   });
 
   it("documents install-skill options", () => {

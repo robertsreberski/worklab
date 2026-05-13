@@ -146,4 +146,83 @@ describe("worklab onboard", () => {
     expect(lstatSync(join(codexHome, "skills", "worklab")).isSymbolicLink()).toBe(true);
     expect(lstatSync(join(claudeHome, "skills", "worklab")).isSymbolicLink()).toBe(true);
   });
+
+  it("configures OpenAI embeddings when requested and an API key is available", async () => {
+    const root = tmp();
+    const dataDir = join(root, "data");
+    process.env.OPENAI_API_KEY = "sk-test";
+
+    const fetchImpl = vi.fn(async (url) => {
+      if (String(url).endsWith("/v1/embeddings")) {
+        return new Response(JSON.stringify({ data: [{ embedding: [1, 0] }] }), { status: 200 });
+      }
+      return new Response("{}", { status: 200 });
+    });
+
+    const result = await onboard([
+      "--data-dir", dataDir,
+      "--workspace", join(root, "workspace"),
+      "--local-provider", "none",
+      "--embedding", "openai",
+      "--no-start",
+    ], {
+      env: {
+        ...originalEnv,
+        OPENAI_API_KEY: "sk-test",
+        PATH: "",
+      },
+      stdout: () => {},
+      fetchImpl,
+      execFileSyncImpl: vi.fn(),
+      doctorImpl: vi.fn(),
+    });
+
+    const db = openDb(join(dataDir, "worklab.db"));
+    expect(readSettings(db).default_embedding_model).toBe("openai:text-embedding-3-small");
+    db.close();
+    expect(result.embedding.model).toBe("openai:text-embedding-3-small");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://api.openai.com/v1/embeddings",
+      expect.objectContaining({
+        headers: expect.objectContaining({ authorization: "Bearer sk-test" }),
+      }),
+    );
+  });
+
+  it("prints hosted auth and OpenAI key next steps without failing onboarding", async () => {
+    const root = tmp();
+    const dataDir = join(root, "data");
+    const lines = [];
+
+    const result = await onboard([
+      "--data-dir", dataDir,
+      "--workspace", join(root, "workspace"),
+      "--local-provider", "none",
+      "--embedding", "openai",
+      "--no-start",
+    ], {
+      env: {
+        ...originalEnv,
+        OPENAI_API_KEY: "",
+        CODEX_API_KEY: "",
+        OPENAI_CODEX_API_KEY: "",
+        PATH: "",
+      },
+      stdout: (line) => lines.push(line),
+      fetchImpl: vi.fn(),
+      execFileSyncImpl: vi.fn(),
+      doctorImpl: vi.fn(),
+    });
+
+    const output = lines.join("\n");
+    expect(result.embedding.configured).toBe(false);
+    expect(output).toContain("Hosted auth");
+    expect(output).toContain("worklab auth pi openai-codex");
+    expect(output).toContain("OPENAI_API_KEY");
+    expect(output).toContain("https://platform.openai.com/api-keys");
+
+    const db = openDb(join(dataDir, "worklab.db"));
+    expect(readSettings(db).default_embedding_model).toBe("");
+    db.close();
+  });
 });

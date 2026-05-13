@@ -7,6 +7,7 @@ import process from "node:process";
 import {
   createProvider,
   discoverModels,
+  getBuiltinProviderAvailability,
   getIndexStatus,
   indexAllSources,
   listModels,
@@ -22,6 +23,7 @@ import {
   writeSettings,
 } from "../core/index.js";
 import { applyConfigArgs, argValue, hasFlag } from "./args.js";
+import { loginPiOAuth } from "./auth.js";
 import { doctor } from "./doctor.js";
 import { installSkill } from "./install-skill.js";
 import { start } from "./start.js";
@@ -31,8 +33,10 @@ const DEFAULT_OLLAMA_EMBEDDING_MODEL = "nomic-embed-text";
 const OLLAMA_BASE_URL = "http://localhost:11434";
 const LMSTUDIO_BASE_URL = "http://localhost:1234";
 const LOCAL_PROVIDER_CHOICES = new Set(["ask", "ollama", "lmstudio", "none"]);
-const EMBEDDING_CHOICES = new Set(["ask", "yes", "no"]);
+const EMBEDDING_CHOICES = new Set(["ask", "yes", "no", "none", "local", "openai"]);
 const CONFIG_VALUE_FLAGS = new Set(["--port", "--host", "--data-dir", "--workspace", "--drain-timeout-ms"]);
+const DEFAULT_OPENAI_EMBEDDING_MODEL = "text-embedding-3-small";
+const OPENAI_API_KEY_URL = "https://platform.openai.com/api-keys";
 
 const PROVIDER_PRESETS = {
   ollama: {
@@ -337,18 +341,101 @@ function embeddingModelFromLmStudio(db, providerId) {
   return match ? `vercel:${providerId}:${match.model_name}` : "";
 }
 
-async function setupEmbedding({ db, dataDir, args, localProvider, dryRun, assumeYes, prompts, execFileSyncImpl, env, stdout, fetchImpl }) {
-  let choice = normalizeChoice(argValue(args, "--embedding"), EMBEDDING_CHOICES, "ask", "--embedding");
-  if (localProvider.choice === "none") choice = "no";
-  if (choice === "ask") {
-    choice = (assumeYes || await prompts.confirm("Install and configure the default embedding model?", true))
-      ? "yes"
-      : "no";
+function localEmbeddingAvailable(localProvider) {
+  return localProvider?.choice === "ollama" || localProvider?.choice === "lmstudio";
+}
+
+function openAiKeyAvailable(env = process.env) {
+  return Boolean(env.OPENAI_API_KEY);
+}
+
+function openAiKeyInstructions(dataDir) {
+  return `Create an OpenAI API key at ${OPENAI_API_KEY_URL}, add OPENAI_API_KEY=... to ${join(dataDir, ".env")}, then run worklab restart.`;
+}
+
+function normalizeEmbeddingChoice(value, allowed, fallback, flag) {
+  const choice = normalizeChoice(value, allowed, fallback, flag);
+  return choice === "no" ? "none" : choice;
+}
+
+function defaultEmbeddingChoice({ localProvider, env }) {
+  if (localEmbeddingAvailable(localProvider)) return "local";
+  if (openAiKeyAvailable(env)) return "openai";
+  return "none";
+}
+
+async function resolveEmbeddingChoice({ args, assumeYes, prompts, localProvider, env }) {
+  let choice = normalizeEmbeddingChoice(argValue(args, "--embedding"), EMBEDDING_CHOICES, "ask", "--embedding");
+  if (choice === "yes") choice = defaultEmbeddingChoice({ localProvider, env });
+  if (choice !== "ask") return choice;
+  if (assumeYes) return defaultEmbeddingChoice({ localProvider, env });
+
+  const choices = [];
+  if (localEmbeddingAvailable(localProvider)) choices.push("local");
+  choices.push("openai", "none");
+  return prompts.choice(
+    "Choose default embedding backend",
+    choices,
+    defaultEmbeddingChoice({ localProvider, env }),
+  );
+}
+
+async function setupHostedAuth({ config, args, dryRun, assumeYes, prompts, env, stdout, authPiImpl }) {
+  const availability = getBuiltinProviderAvailability({
+    env,
+    path: env.PATH || process.env.PATH || "",
+    dataDir: config.dataDir,
+  });
+  const codex = availability["pi:openai-codex"];
+  const openai = availability.openai;
+  const result = {
+    piOpenAICodex: { available: codex.available, auth: codex.auth, path: join(config.dataDir, "pi-auth.json") },
+    openai: { available: openai.available, auth: openai.auth },
+  };
+
+  out(stdout, "Hosted auth");
+  if (codex.available) {
+    out(stdout, ` - Pi OpenAI Codex: configured (${codex.auth})`);
+  } else {
+    out(stdout, ` - Pi OpenAI Codex: not configured (${codex.reason})`);
+    out(stdout, ` - Run: worklab auth pi openai-codex ${configArgs(args).join(" ")}`.trim());
+    if (!dryRun && !assumeYes && await prompts.confirm("Authenticate Pi OpenAI Codex now?", false)) {
+      result.piOpenAICodex.login = await authPiImpl({
+        providerId: "openai-codex",
+        dataDir: config.dataDir,
+        dryRun,
+        stdout,
+      });
+      result.piOpenAICodex.available = true;
+      result.piOpenAICodex.auth = "pi-oauth";
+    }
   }
-  if (choice === "no") return { configured: false, model: null };
+
+  if (openai.available) {
+    out(stdout, " - OpenAI API key: configured");
+  } else {
+    out(stdout, " - OpenAI API key: not set");
+    out(stdout, ` - ${openAiKeyInstructions(config.dataDir)}`);
+  }
+
+  return result;
+}
+
+async function setupEmbedding({ db, dataDir, args, localProvider, dryRun, assumeYes, prompts, execFileSyncImpl, env, stdout, fetchImpl }) {
+  const choice = await resolveEmbeddingChoice({ args, assumeYes, prompts, localProvider, env });
+  if (choice === "none") return { configured: false, model: null };
 
   let modelRef = "";
-  if (localProvider.choice === "ollama") {
+  if (choice === "openai") {
+    if (!openAiKeyAvailable(env)) {
+      return {
+        configured: false,
+        model: null,
+        reason: `OPENAI_API_KEY is not set. ${openAiKeyInstructions(dataDir)}`,
+      };
+    }
+    modelRef = `openai:${DEFAULT_OPENAI_EMBEDDING_MODEL}`;
+  } else if (choice === "local" && localProvider.choice === "ollama") {
     runCommand("ollama", ["pull", DEFAULT_OLLAMA_EMBEDDING_MODEL], {
       dryRun,
       execFileSyncImpl,
@@ -356,7 +443,7 @@ async function setupEmbedding({ db, dataDir, args, localProvider, dryRun, assume
       stdout,
     });
     modelRef = `ollama:${DEFAULT_OLLAMA_EMBEDDING_MODEL}`;
-  } else if (localProvider.choice === "lmstudio" && localProvider.provider?.id) {
+  } else if (choice === "local" && localProvider.choice === "lmstudio" && localProvider.provider?.id) {
     modelRef = dryRun
       ? `vercel:${localProvider.provider.id}:<embedding-model>`
       : embeddingModelFromLmStudio(db, localProvider.provider.id);
@@ -367,6 +454,12 @@ async function setupEmbedding({ db, dataDir, args, localProvider, dryRun, assume
         reason: "No enabled LM Studio embedding model was discovered.",
       };
     }
+  } else if (choice === "local") {
+    return {
+      configured: false,
+      model: null,
+      reason: "No local embedding provider is configured.",
+    };
   }
 
   if (!modelRef) return { configured: false, model: null };
@@ -425,6 +518,7 @@ export async function onboard(args = process.argv.slice(3), deps = {}) {
     config,
     tools: {},
     skills: [],
+    hostedAuth: null,
     localProvider: null,
     embedding: null,
     start: null,
@@ -452,6 +546,17 @@ export async function onboard(args = process.argv.slice(3), deps = {}) {
 
     out(stdout, "Worklab host skills");
     result.skills = await installAvailableSkills({ tools: result.tools, dryRun, env, stdout, prompts });
+
+    result.hostedAuth = await setupHostedAuth({
+      config,
+      args,
+      dryRun,
+      assumeYes,
+      prompts,
+      env,
+      stdout,
+      authPiImpl: deps.authPiImpl || loginPiOAuth,
+    });
 
     const providerChoice = await resolveLocalProviderChoice({ args, assumeYes, prompts });
     result.localProvider = { choice: providerChoice };
