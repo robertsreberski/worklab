@@ -149,6 +149,67 @@ describe("generateCodexAppResponse", () => {
     }
   });
 
+  it("defaults Codex fast mode on for GPT models", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.4-mini", reference: "codex:gpt-5.4-mini" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "complete_immediately" },
+      });
+      const requests = readRequests(logPath);
+      const threadStart = requests.find((request) => request.method === "thread/start");
+      const turnStart = requests.find((request) => request.method === "turn/start");
+
+      expect(result.error).toBeNull();
+      expect(threadStart.params.serviceTier).toBe("fast");
+      expect(threadStart.params.config).toMatchObject({
+        service_tier: "fast",
+        features: { fast_mode: true },
+      });
+      expect(turnStart.params.serviceTier).toBe("fast");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not request the fast service tier when fastMode is disabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
+    const logPath = join(dir, "requests.jsonl");
+    const script = writeFakeCodexAppServer(dir);
+    try {
+      const result = await generateCodexAppResponse("system", {
+        model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
+        effort: "medium",
+        messages: [{ role: "user", content: "do work" }],
+        cwd: dir,
+        permissionMode: "bypassPermissions",
+        fastMode: false,
+        codexAppServerCommand: script,
+        codexAppServerArgs: [],
+        codexAppServerEnv: { FAKE_CODEX_REQUEST_LOG: logPath, FAKE_CODEX_MODE: "complete_immediately" },
+      });
+      const requests = readRequests(logPath);
+      const threadStart = requests.find((request) => request.method === "thread/start");
+      const turnStart = requests.find((request) => request.method === "turn/start");
+
+      expect(result.error).toBeNull();
+      expect(threadStart.params.serviceTier).toBeUndefined();
+      expect(threadStart.params.config.service_tier).toBeUndefined();
+      expect(threadStart.params.config.features.fast_mode).toBe(false);
+      expect(turnStart.params.serviceTier).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("enables Codex collaboration mode for native teammate subagents", async () => {
     const dir = mkdtempSync(join(tmpdir(), "worklab-codex-app-"));
     const logPath = join(dir, "requests.jsonl");

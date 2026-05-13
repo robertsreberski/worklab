@@ -47,6 +47,7 @@ describe("consolidate runner", () => {
       model: "codex:gpt-5.5",
       effort: "xhigh",
       execution_mode: "cli",
+      fast_mode: 0,
     });
     mocks.generateResponse.mockResolvedValue({
       text: "# New Memory\n- Codex CLI mode preserved.",
@@ -69,6 +70,7 @@ describe("consolidate runner", () => {
         model: { sdk: "codex", model: "gpt-5.5", reference: "codex:gpt-5.5" },
         effort: "xhigh",
         executionMode: "cli",
+        fastMode: false,
       }),
     );
   });

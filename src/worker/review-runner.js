@@ -143,6 +143,7 @@ export async function runReview(ctx) {
       effort: agent.effort || "medium",
       executionMode: agent.execution_mode || "sdk",
       contextWindow: agent.context_window || "default",
+      fastMode: agent.fast_mode !== undefined ? !!agent.fast_mode : true,
       db,
       dataDir: config.dataDir,
       skills,
