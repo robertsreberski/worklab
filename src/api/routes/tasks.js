@@ -201,9 +201,14 @@ function taskBaseWorkdir(db, config, taskRow) {
   return project?.workdir || config?.workspace || config?.repoRoot || process.cwd();
 }
 
+function deferCreatedTaskSideEffects(callback) {
+  // `finish` can fire before the HTTP client has consumed the response.
+  setImmediate(() => setImmediate(callback));
+}
+
 function scheduleTaskCreatedSideEffects(res, { watcher, logger, taskId, taskKey, ownerAgent }) {
   res.once("finish", () => {
-    setTimeout(() => {
+    deferCreatedTaskSideEffects(() => {
       if (!String(ownerAgent || "").trim()) {
         try {
           watcher?.maybeScheduleUnassignedTeamTask?.(taskId, "task_created_unassigned");
@@ -216,7 +221,7 @@ function scheduleTaskCreatedSideEffects(res, { watcher, logger, taskId, taskKey,
       } catch (err) {
         logger?.warn?.({ err: err.message, taskId, taskKey }, "created task auto-start scheduling failed");
       }
-    }, 0);
+    });
   });
 }
 
