@@ -12,9 +12,32 @@ describe("CLI help", () => {
     expect(help).toContain("Usage: worklab <command> [options]");
     expect(help).toContain("Local agent orchestration app");
     expect(help).toContain("compact-logs");
+    expect(help).toContain("install-skill");
+    expect(help).toContain("onboard");
     expect(help).toContain("doctor performance");
     expect(help).toContain("--port PORT");
     expect(help).toContain("--data-dir DIR");
+  });
+
+  it("documents onboard options", () => {
+    const help = formatCommandHelp("onboard");
+
+    expect(help).toContain("Usage: worklab onboard [options]");
+    expect(help).toContain("--yes");
+    expect(help).toContain("--dry-run");
+    expect(help).toContain("--local-provider NAME");
+    expect(help).toContain("--embedding MODE");
+    expect(help).toContain("--no-start");
+  });
+
+  it("documents install-skill options", () => {
+    const help = formatCommandHelp("install-skill");
+
+    expect(help).toContain("Usage: worklab install-skill --target codex|claude|all [options]");
+    expect(help).toContain("--target TARGET");
+    expect(help).toContain("--copy");
+    expect(help).toContain("--force");
+    expect(help).toContain("--dry-run");
   });
 
   it("documents compact-logs options", () => {

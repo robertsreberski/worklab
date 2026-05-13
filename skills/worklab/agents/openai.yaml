@@ -1,0 +1,4 @@
+interface:
+  display_name: "Worklab"
+  short_description: "Operate Worklab resources and runtime"
+  default_prompt: "Use $worklab to inspect and operate Worklab agents, tasks, projects, skills, MCP servers, providers, settings, automations, KB, and runs."
