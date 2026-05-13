@@ -59,22 +59,36 @@ jobs:
           NPM_CONFIG_USERCONFIG: /dev/null
         run: |
           set -euo pipefail
+          retry() {
+            for _ in $(seq 1 30); do
+              "$@" && return 0
+              sleep 5
+            done
+            "$@"
+          }
           VERSION="${GITHUB_REF_NAME#v}"
-          npm view "@worklab-ai/agent-runtime@${VERSION}" version --json
-          npm view "@worklab-ai/worklab@${VERSION}" version bin dependencies --json
-          npm dist-tag ls @worklab-ai/agent-runtime
-          npm dist-tag ls @worklab-ai/worklab
+          retry npm view "@worklab-ai/agent-runtime@${VERSION}" version --json
+          retry npm view "@worklab-ai/worklab@${VERSION}" version bin dependencies --json
+          retry npm dist-tag ls @worklab-ai/agent-runtime
+          retry npm dist-tag ls @worklab-ai/worklab
 
       - name: Smoke test published CLI
         env:
           NPM_CONFIG_USERCONFIG: /dev/null
         run: |
           set -euo pipefail
+          retry() {
+            for _ in $(seq 1 30); do
+              "$@" && return 0
+              sleep 5
+            done
+            "$@"
+          }
           VERSION="${GITHUB_REF_NAME#v}"
           TMP_PREFIX="$(mktemp -d)"
           TMP_DATA="$(mktemp -d)"
           LOG_FILE="$(mktemp)"
-          npm install -g --prefix "$TMP_PREFIX" --prefer-online "@worklab-ai/worklab@${VERSION}"
+          retry npm install -g --prefix "$TMP_PREFIX" --prefer-online "@worklab-ai/worklab@${VERSION}"
           "$TMP_PREFIX/bin/worklab" --help
           WORKLAB_DATA_DIR="$TMP_DATA" WORKLAB_PORT=9787 "$TMP_PREFIX/bin/worklab" serve >"$LOG_FILE" 2>&1 &
           SERVER_PID=$!
