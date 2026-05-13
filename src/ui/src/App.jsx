@@ -1,6 +1,9 @@
 import { lazy, Suspense } from "preact/compat";
-import { useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { AppShellEmbedContext } from "./components/AppShell.jsx";
 import { LoadingState } from "./components/LoadingState.jsx";
+import { Modal } from "./components/Modal.jsx";
+import { Button } from "./components/primitives/Button.jsx";
 import { Commander } from "./routes/Commander.jsx";
 import {
   consumeAllowedHash,
@@ -9,7 +12,10 @@ import {
   navigateHash,
   normalizeHash,
   parseHashRoute,
+  registerOverlayNavigationHandler,
+  requestGuardedAction,
 } from "./lib/navigation.js";
+import { resourceOverlayNavigationFromHash, resourceOverlayTargetFromHref } from "./lib/resourceOverlay.js";
 
 function lazyNamed(loader, exportName) {
   return lazy(() => loader().then((module) => ({ default: module[exportName] })));
@@ -54,8 +60,57 @@ function RouteFallback() {
   return <LoadingState caption="Loading route..." />;
 }
 
+function ResourceOverlayBody({ target }) {
+  if (target.route === "library") {
+    return <Library tab={target.tab || "agents"} rest={target.rest} query={target.query} />;
+  }
+  if (target.route === "projects") {
+    return <Projects selectedId={target.rest[0] || null} mode={target.rest[1] || null} />;
+  }
+  if (target.route === "goals") {
+    return <Goals selectedId={target.rest[0] || null} mode={target.rest[1] || null} />;
+  }
+  if (target.route === "tasks") {
+    if (target.rest[1] === "edit") {
+      return <TaskEdit mode="edit" id={target.rest[0]} />;
+    }
+    return <TaskDetail key={`${target.rest[0] || ""}:${target.query?.run || ""}`} id={target.rest[0]} runParam={target.query?.run || null} />;
+  }
+  if (target.route === "runs") {
+    return <Runs />;
+  }
+  return <LoadingState caption="Resource unavailable." />;
+}
+
+function ResourceOverlay({ target, onClose, onOpenPage }) {
+  return (
+    <Modal
+      open={!!target}
+      onClose={onClose}
+      title={`${target.title} details`}
+      size="lg"
+      class="resource-overlay-modal"
+      style={{ width: "min(1120px, calc(100vw - 32px))" }}
+      footer={(
+        <>
+          <Button variant="secondary" onClick={onOpenPage}>Open page</Button>
+          <Button variant="ghost" onClick={onClose}>Close</Button>
+        </>
+      )}
+    >
+      <AppShellEmbedContext.Provider value>
+        <Suspense fallback={<RouteFallback />}>
+          <ResourceOverlayBody target={target} />
+        </Suspense>
+      </AppShellEmbedContext.Provider>
+    </Modal>
+  );
+}
+
 export function App() {
   const [{ route, rest, query }, setRoute] = useState(() => parseHashRoute(window.location.hash));
+  const [resourceOverlayTarget, setResourceOverlayTarget] = useState(null);
+  const resourceOverlayOpenerRef = useRef(null);
 
   useEffect(() => {
     let currentHash = isAppRouteHash(window.location.hash) ? normalizeHash(window.location.hash) : "#/tasks";
@@ -94,6 +149,64 @@ export function App() {
 
   useEffect(() => scheduleIdlePreload(preloadSecondaryRoutes), []);
 
+  useEffect(() => {
+    function onDocumentClick(event) {
+      if (
+        event.defaultPrevented
+        || event.button !== 0
+        || event.metaKey
+        || event.ctrlKey
+        || event.shiftKey
+        || event.altKey
+      ) return;
+      const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+      const anchor = target?.closest?.("a.entity-badge[href]");
+      if (!anchor || anchor.target === "_blank") return;
+      const overlayTarget = resourceOverlayTargetFromHref(anchor.getAttribute("href"));
+      if (!overlayTarget) return;
+      event.preventDefault();
+      event.stopPropagation();
+      resourceOverlayOpenerRef.current = anchor;
+      setResourceOverlayTarget(overlayTarget);
+    }
+
+    document.addEventListener("click", onDocumentClick, true);
+    return () => document.removeEventListener("click", onDocumentClick, true);
+  }, []);
+
+  useEffect(() => {
+    if (!resourceOverlayTarget) return undefined;
+    return registerOverlayNavigationHandler((hash) => {
+      const next = resourceOverlayNavigationFromHash(hash);
+      if (next.action === "open") {
+        setResourceOverlayTarget(next.target);
+        return true;
+      }
+      if (next.action === "close") {
+        setResourceOverlayTarget(null);
+        return true;
+      }
+      return false;
+    });
+  }, [resourceOverlayTarget]);
+
+  const closeResourceOverlay = useCallback(() => {
+    requestGuardedAction(() => {
+      const opener = resourceOverlayOpenerRef.current;
+      setResourceOverlayTarget(null);
+      window.setTimeout(() => opener?.focus?.(), 0);
+    });
+  }, []);
+
+  const openResourceOverlayPage = useCallback(() => {
+    const target = resourceOverlayTarget;
+    if (!target?.href) return;
+    requestGuardedAction(() => {
+      setResourceOverlayTarget(null);
+      navigateHash(target.href, { bypassOverlay: true });
+    });
+  }, [resourceOverlayTarget]);
+
   // Global keyboard shortcuts now live in AppShell via useGlobalShortcuts.
 
   let body;
@@ -120,5 +233,16 @@ export function App() {
     body = <Commander />;
   }
 
-  return <Suspense fallback={<RouteFallback />}>{body}</Suspense>;
+  return (
+    <Suspense fallback={<RouteFallback />}>
+      {body}
+      {resourceOverlayTarget && (
+        <ResourceOverlay
+          target={resourceOverlayTarget}
+          onClose={closeResourceOverlay}
+          onOpenPage={openResourceOverlayPage}
+        />
+      )}
+    </Suspense>
+  );
 }

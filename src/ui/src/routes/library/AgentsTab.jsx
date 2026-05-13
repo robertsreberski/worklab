@@ -185,11 +185,11 @@ export function AgentsTab({ selectedName = null }) {
       name={selectedName}
       onSaved={(name) => {
         reload();
-        if (selectedName === "new") window.location.hash = `#/library/agents/${encodeURIComponent(name)}`;
+        if (selectedName === "new") navigateHash(`#/library/agents/${encodeURIComponent(name)}`);
       }}
       onDeleted={() => {
         reload();
-        window.location.hash = "#/library/agents";
+        navigateHash("#/library/agents");
       }}
     />
   ) : (
