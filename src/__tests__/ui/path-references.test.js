@@ -14,11 +14,11 @@ describe("path reference textarea helpers", () => {
   });
 
   it("opens suggestions for absolute and home paths", () => {
-    const absolute = "see /Users/robert/Per";
+    const absolute = "see /Users/test/Pro";
     expect(findPathTrigger(absolute, absolute.length)).toEqual({
       start: 4,
       end: absolute.length,
-      prefix: "/Users/robert/Per",
+      prefix: "/Users/test/Pro",
     });
     const home = "see ~/Personal_Repositories/work";
     expect(findPathTrigger(home, home.length)).toEqual({
@@ -48,13 +48,13 @@ describe("path reference textarea helpers", () => {
     const trigger = findPathTrigger(text, text.length);
     const suggestion = {
       path: "src/core/",
-      absolute_path: "/Users/robert/Personal_Repositories/worklab/src/core",
+      absolute_path: "/Users/test/example-project/src/core",
       kind: "directory",
     };
 
     expect(insertPathSuggestion(text, trigger, suggestion, { preferAbsolute: true })).toEqual({
-      value: "/Users/robert/Personal_Repositories/worklab/src/core",
-      caret: "/Users/robert/Personal_Repositories/worklab/src/core".length,
+      value: "/Users/test/example-project/src/core",
+      caret: "/Users/test/example-project/src/core".length,
     });
   });
 });
