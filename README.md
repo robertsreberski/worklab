@@ -12,15 +12,22 @@ into a terminal session.
 
 Requirements: Node.js 20 or newer.
 
-From this checkout:
+Install the CLI from npm:
+
+```bash
+npm install -g @worklab-ai/worklab
+worklab onboard
+```
+
+Open `http://127.0.0.1:7878`.
+
+For development from this checkout:
 
 ```bash
 npm install
 npm run install:worklab
 worklab onboard
 ```
-
-Open `http://127.0.0.1:7878`.
 
 `worklab onboard` is the first-run setup wizard. It checks Codex and Claude
 Code availability, installs the Worklab host skill into available tools,
@@ -163,6 +170,7 @@ Useful focused checks:
 
 ```bash
 npm run build:ui
+npm run pack:check
 npm run lint
 npm run lint:size
 ./scripts/guard-imports.sh
