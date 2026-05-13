@@ -6323,6 +6323,22 @@ html.assistant-resizing * {
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
+.team-goal-objective {
+  display: grid;
+  gap: var(--sp-1);
+}
+.team-goal-objective span {
+  color: var(--text-subtle);
+  font-size: var(--text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.team-goal-objective strong {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
 .team-goal-actions,
 .project-goal-links {
   flex-wrap: wrap;
@@ -6339,6 +6355,21 @@ html.assistant-resizing * {
 }
 .project-goal-links {
   font-size: var(--text-sm);
+}
+.team-project-row {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3) 0;
+}
+.team-project-row + .team-project-row {
+  border-top: 1px solid var(--border);
+}
+.team-project-main,
+.team-project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: center;
 }
 .team-goal-chip {
   max-width: 150px;

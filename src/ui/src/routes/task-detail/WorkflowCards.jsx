@@ -287,6 +287,7 @@ export function TaskPlanCard({
   onCancel,
   onSave,
   mentions = null,
+  readOnly = false,
 }) {
   const planBody = task?.plan_body || "";
   const displayPlanBody = collapseDuplicateParagraphs(planBody);
@@ -302,7 +303,7 @@ export function TaskPlanCard({
       title="Plan"
       class="task-plan-card"
       headerRight={
-        editing ? (
+        readOnly ? null : editing ? (
           <>
             <Button variant="ghost" size="sm" onClick={onCancel} disabled={saving}>Cancel</Button>
             <Button variant="primary" size="sm" onClick={onSave} disabled={saving}>
@@ -331,7 +332,7 @@ export function TaskPlanCard({
           <MarkdownContent content={displayPlanBody} maxHeight={360} mentions={mentions} />
         </div>
       ) : (
-        <div class="task-plan-empty">No plan yet. Run plan or write one.</div>
+        <div class="task-plan-empty">{readOnly ? "No plan recorded." : "No plan yet. Run plan or write one."}</div>
       )}
     </Card>
   );

@@ -57,17 +57,24 @@ export function TaskRail({
   runningRunStream,
   onAssigneeChange,
   onDelete,
+  readOnly = false,
 }) {
   if (!task) return null;
   return (
     <div class="task-detail-rail-content">
-      <Card variant="spacious" kicker="Assignment" title="Roles" class="rail-agents-card">
-        <SectionStack class="rail-agents-stack">
-          <AgentRailRow role="owner" value={task.owner_agent || ""} onChange={(value) => onAssigneeChange("owner_agent", value)} agents={agents} caption={task.owner_agent ? "Runs work" : undefined} />
-          <AgentRailRow role="planner" value={task.planner_agent || ""} onChange={(value) => onAssigneeChange("planner_agent", value)} agents={agents} />
-          <AgentRailRow role="reviewer" value={task.reviewer_agent || ""} onChange={(value) => onAssigneeChange("reviewer_agent", value)} agents={agents} />
-        </SectionStack>
-      </Card>
+      {readOnly ? (
+        <Card variant="spacious" kicker="Goal" title="Lead cycle anchor" class="rail-agents-card">
+          <p class="muted">This task is managed by the project goal. Use the Goal page for outcome changes and lead-cycle reviews.</p>
+        </Card>
+      ) : (
+        <Card variant="spacious" kicker="Assignment" title="Roles" class="rail-agents-card">
+          <SectionStack class="rail-agents-stack">
+            <AgentRailRow role="owner" value={task.owner_agent || ""} onChange={(value) => onAssigneeChange("owner_agent", value)} agents={agents} caption={task.owner_agent ? "Runs work" : undefined} />
+            <AgentRailRow role="planner" value={task.planner_agent || ""} onChange={(value) => onAssigneeChange("planner_agent", value)} agents={agents} />
+            <AgentRailRow role="reviewer" value={task.reviewer_agent || ""} onChange={(value) => onAssigneeChange("reviewer_agent", value)} agents={agents} />
+          </SectionStack>
+        </Card>
+      )}
 
       <Card variant="spacious" kicker="Context" title="Metadata" class="task-metadata-card task-context-card">
         <TaskContextList task={task} />
@@ -88,57 +95,59 @@ export function TaskRail({
         <RunArtifactsSection task={task} runningRun={runningRun} streamState={runningRunStream} />
       </Card>
 
-      <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
-        <ActionDock
-          class="task-actions-stack"
-          secondary={(
-            <Button
-              variant="secondary"
-              iconLeft={<Icon name="database" size={13} />}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(taskDisplayKey(task));
-                  pushToast("Task key copied", { variant: "success" });
-                } catch {
-                  pushToast("Copy failed", { variant: "error" });
-                }
-              }}
-            >
-              Copy task key
-            </Button>
-          )}
-          overflow={(
-            <Button
-              variant="secondary"
-              iconLeft={<Icon name="copy" size={13} />}
-              onClick={async () => {
-                try {
-                  const copy = {
-                    title: `Copy of ${task.title}`,
-                    instructions: task.instructions,
-                    owner_agent: task.owner_agent,
-                    planner_agent: task.planner_agent,
-                    reviewer_agent: task.reviewer_agent,
-                    run_policy: task.run_policy || DEFAULT_RUN_POLICY,
-                    project_id: task.project_id || null,
-                    tags: task.tags,
-                  };
-                  const r = await api.createTask(copy);
-                  pushToast("Task duplicated", { variant: "success" });
-                  navigateHash(`#/tasks/${taskRouteId(r.task)}`);
-                } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
-              }}
-            >
-              Duplicate
-            </Button>
-          )}
-          primary={(
-            <Button variant="destructive" iconLeft={<Icon name="trash" size={13} />} onClick={onDelete}>
-              Delete task
-            </Button>
-          )}
-        />
-      </Card>
+      {!readOnly && (
+        <Card variant="spacious" kicker="Actions" title="Maintenance" class="task-maintenance-card">
+          <ActionDock
+            class="task-actions-stack"
+            secondary={(
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="database" size={13} />}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(taskDisplayKey(task));
+                    pushToast("Task key copied", { variant: "success" });
+                  } catch {
+                    pushToast("Copy failed", { variant: "error" });
+                  }
+                }}
+              >
+                Copy task key
+              </Button>
+            )}
+            overflow={(
+              <Button
+                variant="secondary"
+                iconLeft={<Icon name="copy" size={13} />}
+                onClick={async () => {
+                  try {
+                    const copy = {
+                      title: `Copy of ${task.title}`,
+                      instructions: task.instructions,
+                      owner_agent: task.owner_agent,
+                      planner_agent: task.planner_agent,
+                      reviewer_agent: task.reviewer_agent,
+                      run_policy: task.run_policy || DEFAULT_RUN_POLICY,
+                      project_id: task.project_id || null,
+                      tags: task.tags,
+                    };
+                    const r = await api.createTask(copy);
+                    pushToast("Task duplicated", { variant: "success" });
+                    navigateHash(`#/tasks/${taskRouteId(r.task)}`);
+                  } catch (err) { pushToast(`Duplicate failed: ${err.message}`, { variant: "error" }); }
+                }}
+              >
+                Duplicate
+              </Button>
+            )}
+            primary={(
+              <Button variant="destructive" iconLeft={<Icon name="trash" size={13} />} onClick={onDelete}>
+                Delete task
+              </Button>
+            )}
+          />
+        </Card>
+      )}
     </div>
   );
 }

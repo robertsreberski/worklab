@@ -1,5 +1,5 @@
 // §6.x Teams — minimal pane layout. List teams, edit roster/charter/budget,
-// view recent lead cycles, and trigger a manual run-lead. Reuses the
+// review assigned projects, and trigger a manual run-lead. Reuses the
 // PaneLayout pattern from Agents/Projects.
 
 import { useEffect, useMemo, useState, useCallback, useRef } from "preact/hooks";
@@ -20,7 +20,6 @@ import { Input } from "../../components/primitives/Input.jsx";
 import { Textarea } from "../../components/primitives/Textarea.jsx";
 import { MentionableTextarea } from "../../components/MentionableTextarea.jsx";
 import { Switch } from "../../components/primitives/Switch.jsx";
-import { GoalContractDetails } from "../../components/GoalContractDetails.jsx";
 import { EntityBadge } from "../../components/EntityBadge.jsx";
 import { FormField } from "../../components/FormField.jsx";
 import { FormGrid } from "../../components/FormGrid.jsx";
@@ -237,6 +236,7 @@ export function buildTeamGoalDashboardGroups(goals = []) {
 
 function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
   const project = goal?.project || {};
+  const contract = goal?.contract || {};
   const statusLabel = goalStatusLabel(goal);
   const paused = Boolean(goal?.contract?.paused_at);
   return (
@@ -257,32 +257,23 @@ function TeamGoalCard({ goal, onRun, onAction, compact = false }) {
         </div>
         <Badge variant={goalStatusVariant(goal)}>{statusLabel}</Badge>
       </InlineHead>
-      <GoalContractDetails goal={goal} />
+      <div class="team-goal-objective">
+        <span>Outcome</span>
+        <strong>{contract.objective || "No project goal set."}</strong>
+      </div>
       <Toolbar class="team-goal-actions">
         <Button size="sm" variant="primary" onClick={() => onRun?.(goal)} disabled={!goal?.team_id || !goal?.project_id}>
-          Run lead
+          Review goal
         </Button>
         <Button size="sm" variant="secondary" onClick={() => onAction?.(goal, paused ? "resume" : "pause")}>
           {paused ? "Resume" : "Pause"}
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => onAction?.(goal, "clear")}>
-          Clear
-        </Button>
         {goal?.root_task_id && (
           <EntityBadge
             kind="goal"
-            label={goal?.contract?.objective || "Unknown"}
+            label="Open goal"
             id={goal.goal_id || goal.root_task_id}
             href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`}
-            class="team-cycle-link"
-          />
-        )}
-        {goal?.root_task_id && (
-          <EntityBadge
-            kind="task"
-            label={goal?.contract?.objective || "Unknown"}
-            id={goal.root_task_id}
-            href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`}
             class="team-cycle-link"
           />
         )}
@@ -619,77 +610,10 @@ function TeamEditor({ team, members, agents, onSaved, isNew }) {
   );
 }
 
-function LeadCycleRow({ cycle }) {
-  const taskHref = leadCycleTaskHref(cycle);
-  const rawLogHref = leadCycleRawLogHref(cycle);
-  const status = cycle?.process_status || cycle?.status || "unknown";
-  const statusVariant = cycle?.process_status === "succeeded" ? "primary" : cycle?.process_status === "failed" ? "warn" : "muted";
-  const impact = formatLeadCycleImpact(cycle);
-  const refinement = formatLeadCycleRefinement(cycle);
-  const nextReview = leadCycleNextReviewLabel(cycle);
-
-  return (
-    <li class="team-cycle-row">
-      <div class="team-cycle-main">
-        <div class="team-cycle-meta">
-          <span>{relativeTime(cycle?.started_at)}</span>
-          <Badge variant={statusVariant}>{status}</Badge>
-          {cycle?.goal_status ? <Chip variant="muted">{String(cycle.goal_status).replace("_", " ")}</Chip> : null}
-          {cycle?.cost_usd ? <span class="muted">${Number(cycle.cost_usd).toFixed(4)}</span> : null}
-          {nextReview ? <span class="team-cycle-review">{nextReview}</span> : null}
-        </div>
-        {cycle?.summary ? <div class="team-cycle-summary">{cycle.summary}</div> : null}
-        {(cycle?.checkpoint_note || cycle?.validation_summary) && (
-          <div class="team-cycle-notes">
-            {cycle.checkpoint_note ? <span>{cycle.checkpoint_note}</span> : null}
-            {cycle.validation_summary ? <span>{cycle.validation_summary}</span> : null}
-          </div>
-        )}
-        {impact.length ? (
-          <div class="team-cycle-impact">
-            {impact.map((item) => <Chip key={item} variant="muted">{item}</Chip>)}
-          </div>
-        ) : null}
-        {refinement ? (
-          <div class={`team-cycle-refinement is-${refinement.status}`}>
-            <span>{refinement.label}</span>
-            {refinement.fields?.map((field) => <Chip key={field} variant="muted">{field.replace("_", " ")}</Chip>)}
-            {refinement.skipped?.map((item) => (
-              <span key={`${item.field}:${item.reason}`}>{item.field}: {item.reason}</span>
-            ))}
-            {refinement.rationale ? <span>{refinement.rationale}</span> : null}
-          </div>
-        ) : null}
-        {Array.isArray(cycle?.task_deletions) && cycle.task_deletions.length ? (
-          <div class="team-cycle-tombstones">
-            {cycle.task_deletions.map((item) => (
-              <span key={`${cycle.run_id || cycle.id}:${item.target_task_id || item.task_key || item.title}`}>
-                {(item.task_key || item.target_task_id || "Task")} deleted: {item.title || "Untitled"}
-              </span>
-            ))}
-          </div>
-        ) : null}
-      </div>
-      {(taskHref || rawLogHref) && (
-        <Toolbar class="team-cycle-actions">
-          {taskHref && (
-            <EntityBadge kind="task" label={cycle?.task_title || cycle?.task_key || "Unknown"} href={taskHref} class="team-cycle-link" />
-          )}
-          {rawLogHref && (
-            <a class="team-cycle-link" href={rawLogHref} target="_blank" rel="noreferrer">
-              <Icon name="terminal" size={13} />
-              <span>Raw log</span>
-            </a>
-          )}
-        </Toolbar>
-      )}
-    </li>
-  );
-}
-
 function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, onRunGoal, onGoalAction }) {
   const [running, setRunning] = useState(false);
   const setupGaps = teamSetupGaps(team, members, projects);
+  const goalsByProjectId = new Map((goals || []).map((goal) => [goal.project_id, goal]));
   async function runLeadNow() {
     setRunning(true);
     try {
@@ -739,22 +663,6 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
             <p>{team.goal || <em>(no team charter set)</em>}</p>
           </Card>
           <TeamSetupGapsCard gaps={setupGaps} />
-          <Card title={`Project goals (${goals.length})`}>
-            {goals.length ? (
-              <div class="team-goal-grid is-detail">
-                {goals.map((goal) => (
-                  <TeamGoalCard
-                    key={`${goal.team_id}:${goal.project_id}`}
-                    goal={goal}
-                    onRun={onRunGoal}
-                    onAction={onGoalAction}
-                  />
-                ))}
-              </div>
-            ) : (
-              <p class="muted">Assign this team to a project to create a durable project goal contract.</p>
-            )}
-          </Card>
           <Card title={`Roster (${members.length})`}>
             {members.length === 0 ? (
               <p class="muted">No members.</p>
@@ -777,21 +685,31 @@ function TeamDetail({ team, members, projects, cycles, goals = [], onChanged, on
             ) : (
               <ul>
                 {projects.map((p) => (
-                  <li key={p.id}>
-                    <EntityBadge kind="project" label={p.name} id={p.slug} href={`#/projects/${encodeURIComponent(p.slug)}`} /> ({p.slug})
-                    {p.archived ? <Badge variant="muted"> archived </Badge> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-          <Card title={`Recent lead cycles (${cycles.length})`}>
-            {cycles.length === 0 ? (
-              <p class="muted">No cycles yet.</p>
-            ) : (
-              <ul class="team-cycle-list">
-                {cycles.map((c) => (
-                  <LeadCycleRow key={c.id || `${c.task_id}-${c.started_at}`} cycle={c} />
+                  (() => {
+                    const goal = goalsByProjectId.get(p.id);
+                    const contract = goal?.contract || {};
+                    return (
+                      <li key={p.id} class="team-project-row">
+                        <div class="team-project-main">
+                          <EntityBadge kind="project" label={p.name} id={p.slug} href={`#/projects/${encodeURIComponent(p.slug)}`} />
+                          {goal ? <Badge variant={goalStatusVariant(goal)}>{goalStatusLabel(goal)}</Badge> : <Badge variant="muted">No goal</Badge>}
+                          {p.archived ? <Badge variant="muted"> archived </Badge> : null}
+                        </div>
+                        {contract.objective ? <p class="muted">{contract.objective}</p> : null}
+                        {goal?.goal_id && (
+                          <Toolbar class="team-project-actions">
+                            <EntityBadge kind="goal" label="Open goal" href={`#/goals/${encodeURIComponent(goal.goal_id)}`} />
+                            <Button size="sm" variant="secondary" onClick={() => onRunGoal?.(goal)} disabled={!goal?.team_id || !goal?.project_id}>
+                              Review goal
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => onGoalAction?.(goal, goal?.contract?.paused_at ? "resume" : "pause")}>
+                              {goal?.contract?.paused_at ? "Resume" : "Pause"}
+                            </Button>
+                          </Toolbar>
+                        )}
+                      </li>
+                    );
+                  })()
                 ))}
               </ul>
             )}

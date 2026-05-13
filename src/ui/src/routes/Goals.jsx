@@ -12,7 +12,6 @@ import { PaneLayout } from "../components/PaneLayout.jsx";
 import { PaneRow } from "../components/PaneRow.jsx";
 import { ResourceGroup, ResourceList, ResourceListToolbar } from "../components/ResourceListToolbar.jsx";
 import { ResourceRowChip, ResourceRowTags } from "../components/ResourceRowMeta.jsx";
-import { GoalContractDetails } from "../components/GoalContractDetails.jsx";
 import { EntityBadge } from "../components/EntityBadge.jsx";
 import { DetailHead, SectionStack, Toolbar } from "../components/layout/index.js";
 import { Button } from "../components/primitives/Button.jsx";
@@ -143,6 +142,7 @@ function latestCheckpoint(goal = {}) {
 }
 
 function leadCycleRunId(cycle = {}) {
+  if (!cycle || typeof cycle !== "object") return "";
   return text(cycle.run_id || cycle.id);
 }
 
@@ -233,7 +233,7 @@ export function goalLeadCycleTimeline(goal = {}, { now = Date.now() } = {}) {
   const source = Array.isArray(goal?.cycles) && goal.cycles.length
     ? goal.cycles
     : goal?.latest_cycle ? [goal.latest_cycle] : [];
-  return source.map((cycle, index) => {
+  return source.filter(Boolean).map((cycle, index) => {
     const runId = leadCycleRunId(cycle);
     const taskId = text(cycle.task_id || goal.root_task_id);
     const dueLabel = timeUntil(cycle.next_review_due_at, { now });
@@ -284,7 +284,7 @@ export function goalCockpitSummary(goal = {}, { now = Date.now() } = {}) {
     stateStrip: [
       { label: "State", value: goalStatusLabel(goal) },
       { label: "Definition", value: readiness.ready ? "Ready" : `${readiness.missing.length} missing` },
-      { label: "Last cycle", value: goal.last_lead_at ? relativeTime(goal.last_lead_at) : "None" },
+      { label: "Last review", value: goal.last_lead_at ? relativeTime(goal.last_lead_at) : "None" },
       { label: "Next review", value: nextReview },
     ],
     ledger: [
@@ -403,7 +403,6 @@ export function goalReferenceLinks(goal = {}) {
   const links = [];
   const projectHrefId = text(goal.project?.slug || goal.project_id);
   const teamHrefId = text(goal.team_slug || goal.team_id);
-  const rootTaskId = text(goal.root_task_id);
   const latest = goal.latest_cycle || null;
   if (projectHrefId) {
     links.push({ kind: "internal", label: "Project", href: `#/projects/${encodeURIComponent(projectHrefId)}` });
@@ -419,9 +418,6 @@ export function goalReferenceLinks(goal = {}) {
       href: `#/tasks/${encodeURIComponent(latest.task_id)}?run=${encodeURIComponent(latestRunId)}`,
     });
   }
-  if (rootTaskId) {
-    links.push({ kind: "internal", label: "Lead-cycle anchor", href: `#/tasks/${encodeURIComponent(rootTaskId)}` });
-  }
   for (const link of normalizeGoalLinkDraft(goal.contract?.links)) {
     links.push({
       kind: "reference",
@@ -431,6 +427,51 @@ export function goalReferenceLinks(goal = {}) {
     });
   }
   return links;
+}
+
+function GoalOutcomeDetails({ goal }) {
+  const contract = goal?.contract || {};
+  const checkpoint = latestCheckpoint(goal);
+  return (
+    <div class="team-goal-contract">
+      {contract.north_star ? (
+        <div>
+          <span>North star</span>
+          <strong>{contract.north_star}</strong>
+        </div>
+      ) : null}
+      <div>
+        <span>Objective</span>
+        <strong>{contract.objective || "(not set)"}</strong>
+      </div>
+      <div>
+        <span>Done when</span>
+        <strong>{contract.stopping_condition || "(not set)"}</strong>
+      </div>
+      <div>
+        <span>Validate with</span>
+        <strong>{contract.validation_loop || "(not set)"}</strong>
+      </div>
+      {contract.constraints?.length ? (
+        <div>
+          <span>Constraints</span>
+          <strong>{contract.constraints.join(", ")}</strong>
+        </div>
+      ) : null}
+      {checkpoint ? (
+        <div>
+          <span>Last checkpoint</span>
+          <strong>{checkpoint.checkpoint_note || checkpoint.validation_summary || "(empty checkpoint)"}</strong>
+        </div>
+      ) : null}
+      {goal?.goal_status_reason ? (
+        <div>
+          <span>Status reason</span>
+          <strong>{goal.goal_status_reason}</strong>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function GoalRow({ goal, active }) {
@@ -512,7 +553,7 @@ function LeadCycleTimeline({ goal }) {
 function LeadCycleCockpit({ goal }) {
   const cockpit = goalCockpitSummary(goal);
   return (
-    <Card title="Lead cycle cockpit">
+    <Card title="Project outcome">
       <div class="goal-cockpit">
         <div class="goal-cockpit-strip">
           {cockpit.stateStrip.map((item) => (
@@ -524,8 +565,8 @@ function LeadCycleCockpit({ goal }) {
         </div>
         <div class="goal-cockpit-decision">
           <div>
-            <span class="muted">Latest decision</span>
-            <strong title={cockpit.latestDecision || undefined}>{cockpit.latestDecision || "No lead-cycle decision yet."}</strong>
+            <span class="muted">Last decision</span>
+            <strong title={cockpit.latestDecision || undefined}>{cockpit.latestDecision || "No review decision yet."}</strong>
           </div>
           {cockpit.latestDetails.map((detail, index) => (
             <p key={detail} class={index > 0 ? "muted" : undefined} title={detail}>{detail}</p>
@@ -541,7 +582,7 @@ function LeadCycleCockpit({ goal }) {
         </div>
         <div class="goal-lead-roster">
           <div class="goal-roster-head">
-            <span class="muted">Lead-created task roster</span>
+            <span class="muted">Open goal work</span>
             <Chip variant="muted">{cockpit.leadTasks.length}</Chip>
           </div>
           {cockpit.leadTasks.length ? (
@@ -556,7 +597,7 @@ function LeadCycleCockpit({ goal }) {
               ))}
             </ul>
           ) : (
-            <p class="muted">No active lead-created tasks.</p>
+            <p class="muted">No open goal work.</p>
           )}
         </div>
       </div>
@@ -575,10 +616,10 @@ function GoalDetail({ goal, onChanged }) {
     setRunning(true);
     try {
       const res = await api.runGoal(goal.goal_id, { reason: "manual" });
-      pushToast(res?.runId ? "Lead cycle queued" : "Goal run requested", { variant: "success" });
+      pushToast(res?.runId ? "Goal review queued" : "Goal run requested", { variant: "success" });
       onChanged?.();
     } catch (err) {
-      pushToast(`Lead cycle failed: ${err.message}`, { variant: "error" });
+      pushToast(`Goal review failed: ${err.message}`, { variant: "error" });
     } finally {
       setRunning(false);
     }
@@ -601,7 +642,7 @@ function GoalDetail({ goal, onChanged }) {
   const detailActions = (
     <>
       <Button variant="primary" loading={running} onClick={runLeadCycle} iconLeft={<Icon name="play" size={13} />}>
-        Run lead cycle
+        Review goal
       </Button>
       <Button variant="secondary" loading={updating} onClick={setPaused}>
         {paused ? "Resume" : "Pause"}
@@ -649,8 +690,8 @@ function GoalDetail({ goal, onChanged }) {
               </div>
             </Card>
           )}
-          <Card title="Contract">
-            <GoalContractDetails goal={goal} />
+          <Card title="Outcome">
+            <GoalOutcomeDetails goal={goal} />
           </Card>
           <Card title="Links">
             {referenceLinks.length ? (
@@ -672,7 +713,7 @@ function GoalDetail({ goal, onChanged }) {
               <p class="muted">No links attached.</p>
             )}
           </Card>
-          <Card title={`Lead cycle timeline (${cycleTimeline.length})`}>
+          <Card title={`Recent lead cycles (${cycleTimeline.length})`}>
             <LeadCycleTimeline goal={goal} />
           </Card>
         </SectionStack>

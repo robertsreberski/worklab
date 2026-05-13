@@ -132,8 +132,15 @@ describe("team setup guidance", () => {
 
     expect(teamsSource).toContain("Team charter");
     expect(teamsSource).toContain("#/goals/");
+    expect(teamsSource).not.toContain("<GoalContractDetails goal={goal}");
+    expect(teamsSource).not.toContain("onAction?.(goal, \"clear\")");
+    expect(teamsSource).not.toContain("kind=\"task\"");
+    expect(teamsSource).not.toContain("Raw log");
+    expect(teamsSource).not.toContain("Recent lead cycles");
     expect(projectsSource).toContain("Project goal");
     expect(projectsSource).toContain("#/goals/");
+    expect(projectsSource).not.toContain("goal.root_task_title");
+    expect(projectsSource).not.toContain("href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`");
     // Team-goal chips should stay native links to the goal page, not a
     // Commander-only task filter.
     expect(commanderSource).toContain("#/goals/");

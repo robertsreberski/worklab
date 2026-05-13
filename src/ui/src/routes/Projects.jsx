@@ -120,7 +120,7 @@ function formatProjectAge(value) {
   return new Date(Number(value)).toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function ProjectGoalSummary({ goal }) {
+function ProjectGoalSummary({ goal, onRun, running = false }) {
   if (!goal) return null;
   const contract = goal.contract || {};
   const checkpoint = latestProjectGoalCheckpoint(goal);
@@ -134,6 +134,12 @@ function ProjectGoalSummary({ goal }) {
         <Chip variant={projectGoalChipVariant(goal)}>{projectGoalStatusLabel(goal)}</Chip>
       </InlineHead>
       <div class="team-goal-contract">
+        {contract.north_star ? (
+          <div>
+            <span>North star</span>
+            <strong>{contract.north_star}</strong>
+          </div>
+        ) : null}
         <div>
           <span>Objective</span>
           <strong>{contract.objective || "(not set)"}</strong>
@@ -155,14 +161,14 @@ function ProjectGoalSummary({ goal }) {
       </div>
       <div class="project-goal-links">
         {goal.goal_id || goal.root_task_id ? (
-          <EntityBadge kind="goal" label={contract.objective || "Unknown"} href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
+          <EntityBadge kind="goal" label="Open goal" href={`#/goals/${encodeURIComponent(goal.goal_id || goal.root_task_id)}`} />
         ) : null}
         {goal.team_slug || goal.team_id ? (
           <EntityBadge kind="team" label={goal.team_name || "Unknown"} href={`#/library/teams/${encodeURIComponent(goal.team_slug || goal.team_id)}`} />
         ) : null}
-        {goal.root_task_id ? (
-          <EntityBadge kind="task" label={goal.root_task_title || contract.objective || "Unknown"} href={`#/tasks/${encodeURIComponent(goal.root_task_id)}`} />
-        ) : null}
+        <Button size="sm" variant="secondary" loading={running} onClick={() => onRun?.(goal)} disabled={!goal.goal_id}>
+          Review goal
+        </Button>
       </div>
     </div>
   );
@@ -580,6 +586,7 @@ function ProjectDetail({ selectedId, onChanged }) {
   const [knowledgeEntries, setKnowledgeEntries] = useState([]);
   const [mentions, setMentions] = useState(null);
   const [error, setError] = useState(null);
+  const [runningGoal, setRunningGoal] = useState(false);
   const reloadAbortRef = useRef(null);
 
   const reload = useCallback(() => {
@@ -658,6 +665,20 @@ function ProjectDetail({ selectedId, onChanged }) {
       navigateHash("#/projects");
     } catch (err) {
       pushToast(`Archive failed: ${err.message}`, { variant: "error" });
+    }
+  }
+
+  async function runProjectGoal(goal) {
+    if (!goal?.goal_id || runningGoal) return;
+    setRunningGoal(true);
+    try {
+      const res = await api.runGoal(goal.goal_id, { reason: "manual" });
+      pushToast(res?.runId ? "Goal review queued" : "Goal run requested", { variant: "success" });
+      reload();
+    } catch (err) {
+      pushToast(`Goal review failed: ${err.message}`, { variant: "error" });
+    } finally {
+      setRunningGoal(false);
     }
   }
   const newProjectTaskHash = `#/tasks/new?project=${encodeURIComponent(project.slug || project.id)}`;
@@ -768,7 +789,7 @@ function ProjectDetail({ selectedId, onChanged }) {
                   </span>
                 </div>
               )}
-              <ProjectGoalSummary goal={project.team_goal} />
+              <ProjectGoalSummary goal={project.team_goal} onRun={runProjectGoal} running={runningGoal} />
               {project.context?.trim() ? (
                 <article class="knowledge-read-article">
                   <MarkdownContent content={project.context} className="markdown doc-content knowledge-read-markdown" expandable={false} mentions={mentions} />
