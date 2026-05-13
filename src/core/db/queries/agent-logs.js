@@ -11,7 +11,7 @@ const AGENT_LOG_COLUMNS = `
 export function getAgentLogByRunId(db, runId, { includeEvents = true } = {}) {
   const eventsColumn = includeEvents ? "events" : "NULL AS events";
   return db.prepare(`
-    SELECT ${AGENT_LOG_COLUMNS}, ${eventsColumn}, json_array_length(events) AS event_count
+    SELECT ${AGENT_LOG_COLUMNS}, ${eventsColumn}, COALESCE(events_original_count, json_array_length(events)) AS event_count
     FROM agent_logs
     WHERE task_run_id = ?
   `).get(runId);

@@ -1,4 +1,4 @@
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 
 import { EventTimeline } from "../../components/EventTimeline.jsx";
 import { FileTree } from "../../components/FileTree.jsx";
@@ -384,6 +384,7 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
     initialEventLimit: live ? 10 : 200,
     maxEvents: live ? 10 : 200,
   });
+  const fullHistoryRequestedRef = useRef(null);
   const { events, loading } = runStream;
   const metrics = runMetricItems(run);
   const resultPreview = runResultPreview(run);
@@ -396,6 +397,13 @@ export function RunCard({ run, expanded, highlighted, onToggle, subscribe, agent
     : null;
   const warnings = Array.isArray(run.warnings) ? run.warnings : [];
   const worktreeState = worktreeDisplayState(run);
+  useEffect(() => {
+    if (!expanded || live || !run?.id || loading) return;
+    if (!runStream.eventsTruncated || runStream.fullHistoryLoaded) return;
+    if (fullHistoryRequestedRef.current === run.id) return;
+    fullHistoryRequestedRef.current = run.id;
+    runStream.loadFullHistory();
+  }, [expanded, live, loading, run?.id, runStream.eventsTruncated, runStream.fullHistoryLoaded]);
   return (
     <details
       open={expanded}

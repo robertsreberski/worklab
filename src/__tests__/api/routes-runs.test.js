@@ -299,6 +299,100 @@ describe("GET /api/runs/:id", () => {
     expect(res.body.log.events.at(-1)).toMatchObject({ type: "tool_result", tool_use_id: "tool-1" });
   });
 
+  it("hydrates full run history from raw JSONL when SQLite events are compacted", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-full-"));
+    try {
+      const { agent, db } = makeTestServer({ dataDir });
+      const taskId = newTaskId();
+      const runId = newRunId();
+      const now = Date.now();
+      const rawDir = join(dataDir, "logs", "runs");
+      const rawPath = join(rawDir, `${runId}.jsonl`);
+      mkdirSync(rawDir, { recursive: true });
+      const rawEvents = [
+        { type: "text", text: "before", _event_seq: 1 },
+        { type: "tool_use", tool_use_id: "tool-1", name: "shell", input: { cmd: "npm test" }, _event_seq: 2 },
+        { type: "tool_result", tool_use_id: "tool-1", output: "all green", is_error: false, _event_seq: 3 },
+      ];
+      writeFileSync(rawPath, rawEvents.map((event) => JSON.stringify(event)).join("\n") + "\n");
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+      db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, raw_output_path) VALUES (?, ?, 'execute', 'a', ?, 'complete', ?)")
+        .run(runId, taskId, now, rawPath);
+      db.prepare(`
+        INSERT INTO agent_logs
+          (id, task_run_id, events, status, created_at, events_compacted_at, events_original_count, events_original_bytes,
+           events_compaction_strategy, events_compaction_version, events_compacted_bytes)
+        VALUES (?, ?, ?, 'complete', ?, ?, ?, ?, 'slim-db', 2, ?)
+      `).run(
+        "log-raw-full",
+        runId,
+        JSON.stringify([
+          { type: "tool_use", tool_use_id: "tool-1", name: "shell", input_omitted: true, input_preview: "{\"cmd\":\"npm test\"}", _event_seq: 2 },
+          { type: "tool_result", tool_use_id: "tool-1", output_omitted: true, output_preview: "all green", _event_seq: 3 },
+        ]),
+        now,
+        now,
+        rawEvents.length,
+        300,
+        200,
+      );
+
+      const res = await agent.get(`/api/runs/${runId}`).expect(200);
+
+      expect(res.body.log.source).toBe("raw_output_path");
+      expect(res.body.log.payload_fidelity).toBe("full");
+      expect(res.body.log.event_count).toBe(3);
+      expect(res.body.log.events_truncated).toBe(false);
+      expect(res.body.log.events[1]).toMatchObject({ type: "tool_use", input: { cmd: "npm test" } });
+      expect(res.body.log.events[2]).toMatchObject({ type: "tool_result", output: "all green" });
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps compact SQLite tail hydration fast when raw JSONL is available", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "worklab-run-tail-"));
+    try {
+      const { agent, db } = makeTestServer({ dataDir });
+      const taskId = newTaskId();
+      const runId = newRunId();
+      const now = Date.now();
+      const rawDir = join(dataDir, "logs", "runs");
+      const rawPath = join(rawDir, `${runId}.jsonl`);
+      mkdirSync(rawDir, { recursive: true });
+      writeFileSync(rawPath, [
+        JSON.stringify({ type: "tool_use", tool_use_id: "tool-1", name: "shell", input: { cmd: "npm test" }, _event_seq: 1 }),
+        JSON.stringify({ type: "tool_result", tool_use_id: "tool-1", output: "all green", _event_seq: 2 }),
+      ].join("\n") + "\n");
+      db.prepare("INSERT INTO tasks (id, title, created_at, updated_at) VALUES (?, ?, ?, ?)").run(taskId, "t", now, now);
+      db.prepare("INSERT INTO task_runs (id, task_id, mode, agent_name, started_at, status, raw_output_path) VALUES (?, ?, 'execute', 'a', ?, 'complete', ?)")
+        .run(runId, taskId, now, rawPath);
+      db.prepare(`
+        INSERT INTO agent_logs
+          (id, task_run_id, events, status, created_at, events_original_count, events_compaction_strategy, events_compaction_version)
+        VALUES (?, ?, ?, 'complete', ?, 2, 'slim-db', 2)
+      `).run(
+        "log-raw-tail",
+        runId,
+        JSON.stringify([
+          { type: "tool_use", tool_use_id: "tool-1", name: "shell", input_omitted: true, input_preview: "{\"cmd\":\"npm test\"}", _event_seq: 1 },
+          { type: "tool_result", tool_use_id: "tool-1", output_omitted: true, output_preview: "all green", _event_seq: 2 },
+        ]),
+        now,
+      );
+
+      const res = await agent.get(`/api/runs/${runId}?events=tail&limit=2`).expect(200);
+
+      expect(res.body.log.source).toBe("agent_logs.events");
+      expect(res.body.log.payload_fidelity).toBe("compacted");
+      expect(res.body.log.event_count).toBe(2);
+      expect(res.body.log.events[0]).toMatchObject({ input_omitted: true });
+      expect(res.body.log.events[1]).toMatchObject({ output_omitted: true });
+    } finally {
+      rmSync(dataDir, { recursive: true, force: true });
+    }
+  });
+
   it("can return run metadata without hydrating event payloads", async () => {
     const { agent, db } = makeTestServer();
     const taskId = newTaskId();

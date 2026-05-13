@@ -352,8 +352,10 @@ function applyRunHydration(entry, data, maxEvents, { fullHistory = false } = {})
     entry.eventsTruncated = entry.maxEvents !== null && entry.events.length < entry.eventCount;
   }
   if (fullHistory) {
-    entry.fullHistoryLoaded = true;
-    entry.eventsTruncated = false;
+    const stillTruncated = Boolean(data?.log?.events_truncated)
+      || data?.log?.payload_fidelity === "compacted";
+    entry.fullHistoryLoaded = !stillTruncated;
+    entry.eventsTruncated = stillTruncated;
     entry.eventCount = Math.max(Number(entry.eventCount || 0), entry.events.length);
   }
   const status = data?.run?.process_status || data?.run?.status;
