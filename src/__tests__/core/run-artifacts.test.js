@@ -6,6 +6,7 @@ import {
   formatTaskArtifactsForPrompt,
   loadTaskArtifacts,
   normalizeStoredArtifacts,
+  runArtifactSummary,
 } from "../../core/run-artifacts.js";
 import { makeTestDb } from "../helpers/test-db.js";
 
@@ -242,6 +243,110 @@ describe("core run artifacts", () => {
       last_run_id: "run-new",
     });
     expect(artifacts[0].hunks).toEqual([{ start: 5, end: 7 }]);
+  });
+
+  it("prefers same-run workspace net line stats over file edit operation churn", () => {
+    const artifacts = aggregateRunArtifacts([
+      {
+        id: "run-net",
+        started_at: 1000,
+        ended_at: 1500,
+        artifacts: [
+          {
+            path: "src/a.js",
+            display_path: "src/a.js",
+            kind: "update",
+            status: "completed",
+            artifact_type: "code_change",
+            source: "file_edit",
+            added_lines: 1,
+            removed_lines: 0,
+            has_line_delta: true,
+          },
+          {
+            path: "src/a.js",
+            display_path: "src/a.js",
+            kind: "update",
+            status: "completed",
+            artifact_type: "code_change",
+            source: "file_edit",
+            added_lines: 0,
+            removed_lines: 1,
+            has_line_delta: true,
+          },
+        ],
+      },
+      {
+        id: "run-net",
+        started_at: 1000,
+        ended_at: 1500,
+        artifacts: [{
+          path: "/Users/me/project/src/a.js",
+          display_path: "src/a.js",
+          kind: "update",
+          status: "completed",
+          artifact_type: "code_change",
+          source: "workspace_delta",
+          added_lines: 0,
+          removed_lines: 0,
+          has_line_delta: true,
+          before_lines: 1,
+          after_lines: 1,
+        }],
+      },
+    ]);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      display_path: "src/a.js",
+      added_lines: 0,
+      removed_lines: 0,
+      before_lines: 1,
+      after_lines: 1,
+      line_stats_source: "workspace_delta",
+      sources: expect.arrayContaining(["file_edit", "workspace_delta"]),
+    });
+    expect(runArtifactSummary(artifacts)).toMatchObject({ files: 1, added_lines: 0, removed_lines: 0 });
+  });
+
+  it("overlays git diff artifacts when reading stored run rows", () => {
+    const artifacts = artifactsForRunRow({
+      id: "run-git",
+      started_at: 1000,
+      ended_at: 1500,
+      artifacts_json: JSON.stringify([{
+        path: "src/a.js",
+        display_path: "src/a.js",
+        kind: "update",
+        status: "completed",
+        artifact_type: "code_change",
+        source: "file_edit",
+        added_lines: 1,
+        removed_lines: 1,
+        has_line_delta: true,
+      }]),
+    }, {
+      extraArtifacts: [{
+        path: "src/a.js",
+        display_path: "src/a.js",
+        kind: "update",
+        status: "completed",
+        artifact_type: "code_change",
+        source: "git_diff",
+        added_lines: 4,
+        removed_lines: 2,
+        has_line_delta: true,
+        run_ids: ["run-git"],
+      }],
+    });
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      added_lines: 4,
+      removed_lines: 2,
+      line_stats_source: "git_diff",
+      sources: expect.arrayContaining(["file_edit", "git_diff"]),
+    });
   });
 
   it("renders compacted line ranges in the prompt with new file / deleted markers", () => {

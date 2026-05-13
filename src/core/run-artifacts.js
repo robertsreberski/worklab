@@ -49,6 +49,13 @@ const ARTIFACT_TYPE_RANK = {
   git_commit: 4,
   code_change: 5,
 };
+const LINE_STATS_SOURCE_RANK = {
+  legacy_path: 0,
+  stored: 1,
+  file_edit: 2,
+  workspace_delta: 3,
+  git_diff: 4,
+};
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -219,6 +226,19 @@ function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function lineStatsSourceRank(source) {
+  return LINE_STATS_SOURCE_RANK[source] ?? 1;
+}
+
+function lineStatsSourceFor(change, incomingSource, meta = {}) {
+  return change?.line_stats_source
+    || change?.lineStatsSource
+    || meta.line_stats_source
+    || meta.lineStatsSource
+    || incomingSource
+    || "stored";
+}
+
 function basename(path) {
   return String(path || "").split("/").filter(Boolean).pop() || "";
 }
@@ -387,6 +407,7 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     added_lines: 0,
     removed_lines: 0,
     has_line_delta: false,
+    line_stats_source: null,
     before_lines: null,
     after_lines: null,
     unavailable_reason: null,
@@ -405,19 +426,60 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
   const incomingRunId = meta.run_id || meta.runId || null;
   const crossSourceDuplicate = isCrossSourceDuplicate(existing, incomingSource, incomingRunId);
   const incomingHasLineDelta = added != null || removed != null;
-  const shouldAccumulateLineStats = !crossSourceDuplicate || !existing.has_line_delta || !incomingHasLineDelta;
+  const incomingLineStatsSource = lineStatsSourceFor(change, incomingSource, meta);
+  const existingLineStatsSource = existing.line_stats_source || existing.source || "stored";
+  const shouldReplaceLineStats = crossSourceDuplicate
+    && incomingHasLineDelta
+    && (
+      !existing.has_line_delta
+      || lineStatsSourceRank(incomingLineStatsSource) >= lineStatsSourceRank(existingLineStatsSource)
+    );
+  const shouldAccumulateLineStats = incomingHasLineDelta && !crossSourceDuplicate;
+  let nextAdded = existing.added_lines;
+  let nextRemoved = existing.removed_lines;
+  let nextBefore = existing.before_lines;
+  let nextAfter = existing.after_lines;
+  let nextLineStatsSource = existing.line_stats_source || null;
+  let nextUnavailableReason = existing.unavailable_reason;
+  if (shouldReplaceLineStats) {
+    nextAdded = added || 0;
+    nextRemoved = removed || 0;
+    nextBefore = before != null ? before : existing.before_lines;
+    nextAfter = after != null ? after : existing.after_lines;
+    nextLineStatsSource = incomingLineStatsSource;
+    nextUnavailableReason = stats.unavailable_reason || null;
+  } else if (shouldAccumulateLineStats) {
+    nextAdded = existing.added_lines + (added || 0);
+    nextRemoved = existing.removed_lines + (removed || 0);
+    nextBefore = existing.before_lines == null && before != null ? before : existing.before_lines;
+    nextAfter = after != null ? after : existing.after_lines;
+    nextLineStatsSource = nextLineStatsSource
+      && lineStatsSourceRank(nextLineStatsSource) >= lineStatsSourceRank(incomingLineStatsSource)
+      ? nextLineStatsSource
+      : incomingLineStatsSource;
+  } else if (!existing.has_line_delta && incomingHasLineDelta) {
+    nextAdded = added || 0;
+    nextRemoved = removed || 0;
+    nextBefore = before != null ? before : existing.before_lines;
+    nextAfter = after != null ? after : existing.after_lines;
+    nextLineStatsSource = incomingLineStatsSource;
+  } else {
+    nextBefore = existing.before_lines == null && before != null ? before : existing.before_lines;
+    nextAfter = after != null && (!crossSourceDuplicate || existing.after_lines == null) ? after : existing.after_lines;
+    nextUnavailableReason = stats.unavailable_reason || existing.unavailable_reason;
+  }
   let nextHunks = normalizeHunks(existing.hunks);
   if (incomingHunks) {
     const sameRun = !existing.last_run_id || !incomingRunId || existing.last_run_id === incomingRunId;
-    if (!crossSourceDuplicate || nextHunks.length === 0) {
+    if (shouldReplaceLineStats) {
+      nextHunks = clampHunks(incomingHunks);
+    } else if (!crossSourceDuplicate || nextHunks.length === 0) {
       nextHunks = sameRun
         ? mergeHunkRanges(existing.hunks, incomingHunks)
         : clampHunks(incomingHunks);
     }
   }
   const preferredPath = !isAbsolutePath(rawPath) && isAbsolutePath(existing.path) ? rawPath : existing.path;
-  const nextAdded = shouldAccumulateLineStats ? existing.added_lines + (added || 0) : existing.added_lines;
-  const nextRemoved = shouldAccumulateLineStats ? existing.removed_lines + (removed || 0) : existing.removed_lines;
   map.set(key, {
     ...existing,
     ...mergeRunMetadata(existing, meta),
@@ -443,9 +505,10 @@ function mergeArtifact(map, change, payloadStatus, isError = false, meta = {}) {
     added_lines: nextAdded,
     removed_lines: nextRemoved,
     has_line_delta: existing.has_line_delta || added != null || removed != null,
-    before_lines: existing.before_lines == null && before != null ? before : existing.before_lines,
-    after_lines: after != null && (!crossSourceDuplicate || existing.after_lines == null) ? after : existing.after_lines,
-    unavailable_reason: stats.unavailable_reason || existing.unavailable_reason,
+    line_stats_source: nextLineStatsSource,
+    before_lines: nextBefore,
+    after_lines: nextAfter,
+    unavailable_reason: nextUnavailableReason,
     hunks: nextHunks,
   });
   return key;
@@ -562,6 +625,7 @@ export function normalizeStoredArtifacts(value, options = {}) {
       event_count: item.event_count,
       first_event_seq: item.first_event_seq,
       last_event_seq: item.last_event_seq,
+      line_stats_source: item.line_stats_source || item.lineStatsSource,
     }, status, isFailedStatus(status), {
       run_id: item.last_run_id || item.first_run_id || run?.id,
       started_at: item.first_seen_at || run?.started_at,
@@ -570,6 +634,7 @@ export function normalizeStoredArtifacts(value, options = {}) {
       event_count: item.event_count,
       first_event_seq: item.first_event_seq,
       last_event_seq: item.last_event_seq,
+      line_stats_source: item.line_stats_source || item.lineStatsSource,
     });
     const merged = byPath.get(key);
     if (merged) {
@@ -675,6 +740,7 @@ export function aggregateRunArtifacts(runs = []) {
         event_count: artifact.event_count,
         first_event_seq: artifact.first_event_seq,
         last_event_seq: artifact.last_event_seq,
+        line_stats_source: artifact.line_stats_source,
       }, artifact.status || "completed", isFailedStatus(artifact.status), {
         run_id: artifact.last_run_id || run?.id,
         started_at: artifact.first_seen_at || run?.started_at,
@@ -682,6 +748,7 @@ export function aggregateRunArtifacts(runs = []) {
         event_count: artifact.event_count,
         first_event_seq: artifact.first_event_seq,
         last_event_seq: artifact.last_event_seq,
+        line_stats_source: artifact.line_stats_source,
       });
       const merged = byPath.get(key);
       if (merged) {
@@ -699,27 +766,48 @@ function parseArtifactPathsJson(value) {
   return Array.isArray(parsed) ? parsed : [];
 }
 
-export function artifactsForRunRow(row, { events = null } = {}) {
+export function artifactsForRunRow(row, { events = null, extraArtifacts = [] } = {}) {
   if (!row) return [];
   const stored = normalizeStoredArtifacts(row.artifacts_json || row.artifacts, { run: row });
-  if (stored.length) return stored;
+  const overlay = normalizeStoredArtifacts(extraArtifacts, { run: row });
+  if (stored.length) {
+    return overlay.length
+      ? aggregateRunArtifacts([
+        { ...row, artifacts: stored },
+        { ...row, artifacts: overlay },
+      ])
+      : stored;
+  }
   if (Array.isArray(events)) {
     const fromEvents = extractRunArtifacts(events, {
       includePending: false,
       includeFailed: false,
       run: row,
     });
-    if (fromEvents.length) return fromEvents;
+    if (fromEvents.length) {
+      return overlay.length
+        ? aggregateRunArtifacts([
+          { ...row, artifacts: fromEvents },
+          { ...row, artifacts: overlay },
+        ])
+        : fromEvents;
+    }
   }
-  return artifactsFromPaths(parseArtifactPathsJson(row.artifact_paths_json || row.artifact_paths), {
+  const fallback = artifactsFromPaths(parseArtifactPathsJson(row.artifact_paths_json || row.artifact_paths), {
     ...row,
     run_id: row.id,
     started_at: row.started_at,
     ended_at: row.ended_at,
   });
+  return overlay.length
+    ? aggregateRunArtifacts([
+      { ...row, artifacts: fallback },
+      { ...row, artifacts: overlay },
+    ])
+    : fallback;
 }
 
-export function loadTaskArtifacts(db, taskId, { excludeRunId = null, fallbackToLogs = true } = {}) {
+export function loadTaskArtifacts(db, taskId, { excludeRunId = null, fallbackToLogs = true, artifactResolver = null } = {}) {
   if (!db || !taskId) return { artifacts: [], summary: runArtifactSummary([]) };
   const rows = db.prepare(`
     SELECT id, status, process_status, mode, stage, started_at, ended_at,
@@ -739,7 +827,10 @@ export function loadTaskArtifacts(db, taskId, { excludeRunId = null, fallbackToL
     }
     return {
       ...row,
-      artifacts: artifactsForRunRow(row, { events }),
+      artifacts: artifactsForRunRow(row, {
+        events,
+        extraArtifacts: typeof artifactResolver === "function" ? artifactResolver(row) : [],
+      }),
     };
   });
   const artifacts = aggregateRunArtifacts(runs);

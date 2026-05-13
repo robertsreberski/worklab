@@ -28,6 +28,17 @@ function numberOrNull(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function parseJsonObject(value) {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) return value;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function realPath(value) {
   if (!value) return null;
   try {
@@ -337,6 +348,83 @@ export function collectGitArtifacts(before, after, { runId, endedAt = Date.now()
     first_seen_at: endedAt || null,
     last_seen_at: endedAt || null,
   }]);
+}
+
+function gitNameStatusMap(before, after) {
+  if (!before?.root || !before?.head || !after?.head) return new Map();
+  const output = git(["diff", "--name-status", "--find-renames", before.head, after.head], before.root);
+  const map = new Map();
+  for (const line of String(output || "").split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    const status = parts[0] || "";
+    const code = status.slice(0, 1);
+    const path = normalizeArtifactPath(code === "R" || code === "C" ? parts[2] : parts[1]);
+    if (!path) continue;
+    map.set(path, code === "A" ? "add" : code === "D" ? "delete" : "update");
+  }
+  return map;
+}
+
+export function collectGitDiffArtifacts(before, after, { runId, endedAt = Date.now() } = {}) {
+  if (!before?.is_repo || !after?.is_repo || before.root !== after.root) return [];
+  if (!before.head || !after.head || before.head === after.head) return [];
+  const output = git(["diff", "--numstat", "--find-renames", before.head, after.head], before.root);
+  if (!output) return [];
+  const kinds = gitNameStatusMap(before, after);
+  const artifacts = [];
+  for (const line of output.split("\n")) {
+    if (!line.trim()) continue;
+    const parts = line.split("\t");
+    if (parts.length < 3) continue;
+    const path = normalizeArtifactPath(parts.slice(2).join("\t"));
+    if (!path) continue;
+    const added = numberOrNull(parts[0]);
+    const removed = numberOrNull(parts[1]);
+    const hasLineDelta = added != null || removed != null;
+    artifacts.push({
+      path,
+      display_path: path,
+      kind: kinds.get(path) || "update",
+      status: "completed",
+      artifact_type: artifactTypeForPath(path, { source: "git_diff" }),
+      source: "git_diff",
+      sources: ["git_diff"],
+      temporary: false,
+      size_bytes: null,
+      event_count: 0,
+      added_lines: hasLineDelta ? (added || 0) : 0,
+      removed_lines: hasLineDelta ? (removed || 0) : 0,
+      has_line_delta: hasLineDelta,
+      line_stats_source: "git_diff",
+      before_lines: null,
+      after_lines: null,
+      unavailable_reason: hasLineDelta ? null : "binary_diff",
+      hunks: [],
+      run_ids: runId ? [runId] : [],
+      first_run_id: runId || null,
+      last_run_id: runId || null,
+      first_seen_at: endedAt || null,
+      last_seen_at: endedAt || null,
+    });
+  }
+  return normalizeStoredArtifacts(artifacts);
+}
+
+export function collectGitDiffArtifactsForRun(row, { endedAt = row?.ended_at || Date.now() } = {}) {
+  if (!row) return [];
+  const processStatus = row.process_status || row.status;
+  if (processStatus === "running") return [];
+  const worktree = parseJsonObject(row.worktree_json || row.worktree);
+  const root = worktree.source_git_root || worktree.source_workdir || row.source_workdir || null;
+  const beforeHead = worktree.source_head_before || worktree.source_head || worktree.base_head || null;
+  const afterHead = worktree.source_head_after || worktree.branch_head || null;
+  if (!root || !beforeHead || !afterHead || beforeHead === afterHead) return [];
+  return collectGitDiffArtifacts(
+    { is_repo: true, root, head: beforeHead },
+    { is_repo: true, root, head: afterHead },
+    { runId: row.id, endedAt },
+  );
 }
 
 export function safeRunArtifactPath(baseDir, requestedPath) {

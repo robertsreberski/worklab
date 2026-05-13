@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { makeTestServer } from "../helpers/test-server.js";
@@ -38,6 +39,23 @@ function seedAgent(db, name, patch = {}) {
 
 function waitForDeferredCreateSideEffects() {
   return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
+}
+
+function createCommittedGitChange() {
+  const workdir = mkdtempSync(join(tmpdir(), "worklab-task-git-"));
+  execFileSync("git", ["init"], { cwd: workdir, stdio: "ignore" });
+  execFileSync("git", ["config", "user.email", "worklab@example.com"], { cwd: workdir });
+  execFileSync("git", ["config", "user.name", "Worklab Test"], { cwd: workdir });
+  mkdirSync(join(workdir, "src"), { recursive: true });
+  writeFileSync(join(workdir, "src", "app.js"), "one\ntwo\nthree\n");
+  execFileSync("git", ["add", "."], { cwd: workdir });
+  execFileSync("git", ["commit", "-m", "initial"], { cwd: workdir, stdio: "ignore" });
+  const before = execFileSync("git", ["rev-parse", "HEAD"], { cwd: workdir, encoding: "utf8" }).trim();
+  writeFileSync(join(workdir, "src", "app.js"), "one\nTWO\nthree\nfour\n");
+  execFileSync("git", ["add", "."], { cwd: workdir });
+  execFileSync("git", ["commit", "-m", "update"], { cwd: workdir, stdio: "ignore" });
+  const after = execFileSync("git", ["rev-parse", "HEAD"], { cwd: workdir, encoding: "utf8" }).trim();
+  return { workdir, before, after };
 }
 
 describe("GET /api/tasks", () => {
@@ -773,6 +791,62 @@ describe("GET /api/tasks/:id", () => {
     expect(res.body.task.artifact_summary).toMatchObject({ files: 2, added_lines: 5, removed_lines: 1, run_count: 2 });
     expect(res.body.task.artifacts.map((item) => item.path).sort()).toEqual(["src/a.js", "src/b.js"]);
     expect(res.body.runs[0].artifact_summary.files).toBe(1);
+  });
+
+  it("uses git-backed net artifact counts in task detail", async () => {
+    const repo = createCommittedGitChange();
+    try {
+      const { agent, db } = makeTestServer();
+      const { body: { task } } = await agent.post("/api/tasks").send({ title: "t" });
+      const now = Date.now();
+      const worktree = {
+        mode: "worktree",
+        status: "merged",
+        source_git_root: repo.workdir,
+        source_workdir: repo.workdir,
+        source_head_before: repo.before,
+        source_head_after: repo.after,
+      };
+      const staleArtifacts = [{
+        path: "src/app.js",
+        display_path: "src/app.js",
+        kind: "update",
+        status: "completed",
+        artifact_type: "code_change",
+        source: "file_edit",
+        added_lines: 1,
+        removed_lines: 1,
+        has_line_delta: true,
+      }];
+      db.prepare(`
+        INSERT INTO task_runs
+          (id, task_id, mode, agent_name, started_at, ended_at, status, process_status,
+           workspace_mode, source_workdir, worktree_json, artifact_paths_json, artifacts_json, artifact_summary_json)
+        VALUES ('run-git-task', ?, 'execute', 'alpha', ?, ?, 'complete', 'succeeded',
+                'worktree', ?, ?, ?, ?, ?)
+      `).run(
+        task.id,
+        now - 100,
+        now,
+        repo.workdir,
+        JSON.stringify(worktree),
+        JSON.stringify(["src/app.js"]),
+        JSON.stringify(staleArtifacts),
+        JSON.stringify({ files: 1, added_lines: 1, removed_lines: 1, pending_files: 0, unavailable_count: 0, run_count: 1 }),
+      );
+
+      const res = await agent.get(`/api/tasks/${task.id}`).expect(200);
+
+      expect(res.body.task.artifact_summary).toMatchObject({ files: 1, added_lines: 2, removed_lines: 1 });
+      expect(res.body.task.artifacts[0]).toMatchObject({
+        display_path: "src/app.js",
+        line_stats_source: "git_diff",
+      });
+      expect(res.body.runs[0].artifact_summary).toMatchObject({ files: 1, added_lines: 2, removed_lines: 1 });
+      expect(res.body.runs[0].artifacts[0]).toMatchObject({ added_lines: 2, removed_lines: 1 });
+    } finally {
+      rmSync(repo.workdir, { recursive: true, force: true });
+    }
   });
 
   it("includes live input state on task detail runs", async () => {

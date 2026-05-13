@@ -26,6 +26,7 @@ import { getAgentLogByRunId } from "./db/queries/agent-logs.js";
 import { loadRunSnapshot, resolveTaskProjectRunContext } from "./projects.js";
 import { resolveRunArtifactDir } from "./run-artifact-paths.js";
 import { formatTaskArtifactsForPrompt, loadTaskArtifacts } from "./run-artifacts.js";
+import { collectGitDiffArtifactsForRun } from "./artifact-collection.js";
 import { taskInstructionAttachments } from "./task-attachments.js";
 import { buildDelegationContext } from "./delegation.js";
 import { buildNativeSubagentContext } from "./native-subagents.js";
@@ -519,7 +520,7 @@ export function loadResolvedBlockerContext(db, taskId, { limit = 8 } = {}) {
     const latestExecute = getLatestExecuteRunSummary(db, blocker.id);
     const logRow = latestExecute ? getAgentLogByRunId(db, latestExecute.id) : null;
     const events = logRow ? parseEvents(logRow.events) : [];
-    const taskArtifacts = loadTaskArtifacts(db, blocker.id);
+    const taskArtifacts = loadTaskArtifacts(db, blocker.id, { artifactResolver: collectGitDiffArtifactsForRun });
     return {
       id: blocker.id,
       task_key: blocker.task_key || null,
@@ -765,7 +766,10 @@ export function buildTaskRunInput({ config, db, taskId, agentName, runId, mode, 
   const runtimeDateContext = buildRuntimeDateContext({ now: setup.runStartedAt || now, timezone: config?.timezone });
   const messages = buildTaskRunMessages({ mode, task, runtimeDateContext });
   const currentRunComments = selectCurrentRunComments(db, taskId, runId, commentRows);
-  const taskArtifacts = loadTaskArtifacts(db, taskId, { excludeRunId: runId });
+  const taskArtifacts = loadTaskArtifacts(db, taskId, {
+    excludeRunId: runId,
+    artifactResolver: collectGitDiffArtifactsForRun,
+  });
   const resolvedBlockers = loadResolvedBlockerContext(db, taskId);
 
   const cache = contextCache || getProcessContextCache();

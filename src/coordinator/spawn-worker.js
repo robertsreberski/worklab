@@ -23,6 +23,7 @@ import { compactEventsForSqlite } from "../core/run-log-compaction.js";
 import { runTodoStateSummary } from "../core/run-todos.js";
 import {
   captureGitArtifactState,
+  collectGitDiffArtifacts,
   collectGitArtifacts,
   collectQaOutputArtifacts,
   collectWorkspaceDeltaArtifacts,
@@ -696,10 +697,12 @@ export function spawnWorker({
       const gitArtifactAfter = env.WORKLAB_WORKSPACE
         ? captureGitArtifactState(env.WORKLAB_WORKSPACE)
         : null;
+      const gitDiffArtifacts = collectGitDiffArtifacts(gitArtifactBefore, gitArtifactAfter, { runId, endedAt });
       const gitArtifacts = collectGitArtifacts(gitArtifactBefore, gitArtifactAfter, { runId, endedAt });
       const artifacts = aggregateRunArtifacts([
         { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: fileEditArtifacts },
         { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: workspaceArtifactResult.artifacts },
+        { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: gitDiffArtifacts },
         { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: qaArtifactResult.artifacts },
         { id: runId, started_at: startedAt, ended_at: endedAt, artifacts: gitArtifacts },
       ]);

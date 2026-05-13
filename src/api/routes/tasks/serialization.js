@@ -15,6 +15,7 @@ import {
   listTaskSummaryRowsByIds,
 } from "../../../core/db/queries/tasks.js";
 import { getAgentLogEvents } from "../../../core/db/queries/agent-logs.js";
+import { collectGitDiffArtifactsForRun } from "../../../core/artifact-collection.js";
 import {
   getLastNonRunningTaskRun,
   getLatestExecuteRunSummary,
@@ -150,7 +151,7 @@ function latestExecuteRunSummary(db, taskId) {
 function compactDependencySummary(db, row) {
   const summary = compactTaskSummary(row);
   if (!summary) return null;
-  const artifacts = loadTaskArtifacts(db, summary.id);
+  const artifacts = loadTaskArtifacts(db, summary.id, { artifactResolver: collectGitDiffArtifactsForRun });
   return {
     ...summary,
     latest_execute_run: latestExecuteRunSummary(db, summary.id),
@@ -513,7 +514,13 @@ function rowToRun(row) {
     ...run
   } = row;
   const hasLog = Boolean(log_id);
-  const artifacts = artifactsForRunRow({ ...run, artifacts_json, artifact_summary_json });
+  const runRow = { ...run, artifacts_json, artifact_summary_json, worktree_json };
+  const artifacts = artifactsForRunRow(runRow, {
+    extraArtifacts: collectGitDiffArtifactsForRun(runRow),
+  });
+  const artifactSummary = artifacts.length
+    ? runArtifactSummary(artifacts)
+    : safeParseJson(artifact_summary_json, null) || runArtifactSummary(artifacts);
   const diagnostics = safeParseJson(diagnostics_json, null);
   return {
     ...run,
@@ -525,7 +532,7 @@ function rowToRun(row) {
     stage: run.stage || (run.mode === "review" ? "review" : "execute"),
     artifact_paths: artifactPaths(artifacts),
     artifacts,
-    artifact_summary: safeParseJson(artifact_summary_json, null) || runArtifactSummary(artifacts),
+    artifact_summary: artifactSummary,
     result: run.result_json ? JSON.parse(run.result_json) : null,
     warnings: safeParseJson(warnings_json, []),
     diagnostics,
