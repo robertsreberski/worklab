@@ -430,6 +430,58 @@ describe("shared run stream subscriptions", () => {
     unsubscribe();
   });
 
+  it("keeps truncation visible when full-history hydration falls back to compact events", async () => {
+    const snapshots = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      const requestUrl = String(url);
+      return {
+        ok: true,
+        json: async () => ({
+          run: { id: "run-compact-fallback", status: "complete", process_status: "succeeded" },
+          log: requestUrl.includes("events=tail")
+            ? {
+                events: [{ type: "tool_result", tool_use_id: "tool-1", output_preview: "tail", _event_seq: 10 }],
+                event_count: 10,
+                events_truncated: true,
+                payload_fidelity: "compacted",
+              }
+            : {
+                events: [{ type: "tool_result", tool_use_id: "tool-1", output_preview: "full fallback", _event_seq: 10 }],
+                event_count: 10,
+                events_truncated: true,
+                payload_fidelity: "compacted",
+              },
+        }),
+      };
+    });
+
+    const unsubscribe = subscribeRunState("run-compact-fallback", (snapshot) => snapshots.push(snapshot), {
+      subscribe: false,
+      initialEventLimit: 1,
+      maxEvents: 1,
+    });
+
+    await vi.waitFor(() => {
+      const latest = snapshots.at(-1);
+      expect(latest.eventsTruncated).toBe(true);
+      expect(latest.fullHistoryLoaded).toBe(false);
+    });
+
+    await loadFullRunHistory("run-compact-fallback", { subscribe: false });
+
+    await vi.waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      const latest = snapshots.at(-1);
+      expect(latest.events.map((event) => event._event_seq)).toEqual([10]);
+      expect(latest.events[0].output_preview).toBe("full fallback");
+      expect(latest.eventCount).toBe(10);
+      expect(latest.eventsTruncated).toBe(true);
+      expect(latest.fullHistoryLoaded).toBe(false);
+    });
+
+    unsubscribe();
+  });
+
   it("force refreshes the current tail after app resume", async () => {
     const snapshots = [];
     globalThis.fetch = vi.fn(async () => {
