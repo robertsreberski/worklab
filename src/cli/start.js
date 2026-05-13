@@ -45,7 +45,7 @@ export function ensureUiReady(
     log("build: skipped (using bundled UI)");
     return { action: "skip", reason: "bundled-ui" };
   }
-  throw new Error("Worklab UI assets are missing. In a source checkout, run `npm run build:ui`. In an npm install, reinstall @worklab/worklab because the package is missing src/ui/dist.");
+  throw new Error("Worklab UI assets are missing. In a source checkout, run `npm run build:ui`. In an npm install, reinstall @worklab-ai/worklab because the package is missing src/ui/dist.");
 }
 
 export async function waitForHealth(config = loadConfig(), { timeoutMs = 15000 } = {}) {

@@ -5,7 +5,7 @@ import { backfillTaskKeys } from "../../task-keys.js";
 import {
   canonicalizeLegacyModelReference,
   parseRuntimeModelReference,
-} from "@worklab/agent-runtime/ai/runtime/model-refs.js";
+} from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
 
 // Legacy task_runs.status mapping kept inside the migration helpers — the rest
 // of the codebase reads `process_status` directly. Old DBs may have only the

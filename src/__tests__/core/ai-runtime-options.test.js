@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const mockRun = vi.fn();
 
-vi.mock("@worklab/agent-runtime", () => ({
+vi.mock("@worklab-ai/agent-runtime", () => ({
   createRuntime: () => ({ run: mockRun }),
 }));
 

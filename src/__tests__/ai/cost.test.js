@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimateCost, resolvePricing } from "@worklab/agent-runtime/ai/cost.js";
+import { estimateCost, resolvePricing } from "@worklab-ai/agent-runtime/ai/cost.js";
 import { openDb } from "../../core/db/open.js";
 import { runMigrations } from "../../core/db/migrations/runner.js";
 import { createProvider, upsertModel } from "../../core/providers.js";

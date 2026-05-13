@@ -1,4 +1,4 @@
-import { normalizeCodexItemEvent } from "@worklab/agent-runtime/ai/streaming/codex-events.js";
+import { normalizeCodexItemEvent } from "@worklab-ai/agent-runtime/ai/streaming/codex-events.js";
 import { getAgentLogEvents } from "./db/queries/agent-logs.js";
 
 const DEFAULT_CONTEXT_LIMIT = 25;

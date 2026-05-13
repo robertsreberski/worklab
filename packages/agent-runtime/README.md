@@ -1,4 +1,4 @@
-# @worklab/agent-runtime
+# @worklab-ai/agent-runtime
 
 Generic agent runtime that supports four backends out of the box:
 
@@ -12,7 +12,7 @@ Hosts wire in their own pricing, persistence, credential, and compaction-recordi
 ## Install
 
 ```bash
-npm install @worklab/agent-runtime
+npm install @worklab-ai/agent-runtime
 ```
 
 Peer requirements:
@@ -25,7 +25,7 @@ Peer requirements:
 ## Quick start
 
 ```js
-import { createRuntime } from "@worklab/agent-runtime";
+import { createRuntime } from "@worklab-ai/agent-runtime";
 
 const runtime = createRuntime({
   // Host integration (all optional)
@@ -155,7 +155,7 @@ The package does **not** validate `structuredResult` against your schema — it 
 
 ## Tool-result bloat handling
 
-`@worklab/agent-runtime/agent/tool-bloat.js` enforces a 256 KB default cap per `tool_result`. When a payload exceeds the cap, the kernel:
+`@worklab-ai/agent-runtime/agent/tool-bloat.js` enforces a 256 KB default cap per `tool_result`. When a payload exceeds the cap, the kernel:
 
 1. Calls your `persistArtifact({ filename, buffer, toolName, toolUseId })` callback (if you supplied one).
 2. Substitutes a compact text reference in the agent's transcript.
@@ -165,17 +165,17 @@ Hosts that don't supply `persistArtifact` get the truncation summary but no on-d
 
 ## Context compaction
 
-`@worklab/agent-runtime/agent/compaction.js` provides `createAgentCompactionManager(...)` which the Pi SDK provider invokes automatically. Configure via the agent's settings (`agent_compaction_*` keys). When a compaction completes, the kernel hands a structured row to your `onCompactionRecorded(record)` callback so the host can persist it however it likes.
+`@worklab-ai/agent-runtime/agent/compaction.js` provides `createAgentCompactionManager(...)` which the Pi SDK provider invokes automatically. Configure via the agent's settings (`agent_compaction_*` keys). When a compaction completes, the kernel hands a structured row to your `onCompactionRecorded(record)` callback so the host can persist it however it likes.
 
 ## Advanced exports
 
 The package exposes its inner pieces via subpath imports:
 
 ```js
-import { resolveRuntimeBridge, listRuntimeBridges, runtimeCapabilities } from "@worklab/agent-runtime/ai/runtime/registry.js";
-import { generateClaudeResponse } from "@worklab/agent-runtime/ai/providers/claude-sdk.js";
-import { createAgentCompactionManager, estimateFirstTurnInput } from "@worklab/agent-runtime/agent/compaction.js";
-import { configureToolRuntime, readToolRuntime } from "@worklab/agent-runtime/agent/tools/shared/runtime-context.js";
+import { resolveRuntimeBridge, listRuntimeBridges, runtimeCapabilities } from "@worklab-ai/agent-runtime/ai/runtime/registry.js";
+import { generateClaudeResponse } from "@worklab-ai/agent-runtime/ai/providers/claude-sdk.js";
+import { createAgentCompactionManager, estimateFirstTurnInput } from "@worklab-ai/agent-runtime/agent/compaction.js";
+import { configureToolRuntime, readToolRuntime } from "@worklab-ai/agent-runtime/agent/tools/shared/runtime-context.js";
 // ...
 ```
 
@@ -183,7 +183,7 @@ These are stable but treated as advanced API. Most consumers should reach for `c
 
 ## Example consumer
 
-See [`examples/echo-agent/`](../../examples/echo-agent/) for a runnable consumer that imports `@worklab/agent-runtime`, runs a single Claude SDK turn with the Bash tool, and prints the result.
+See [`examples/echo-agent/`](../../examples/echo-agent/) for a runnable consumer that imports `@worklab-ai/agent-runtime`, runs a single Claude SDK turn with the Bash tool, and prints the result.
 
 ## License
 

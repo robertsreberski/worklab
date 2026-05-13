@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { buildCliCommand, generateCliResponse } from "@worklab/agent-runtime/ai/providers/claude-cli.js";
+import { buildCliCommand, generateCliResponse } from "@worklab-ai/agent-runtime/ai/providers/claude-cli.js";
 import { parseModelReference, canonicalizeLegacyModelReference } from "../../core/ai.js";
 import { WORKLAB_RESULT_JSON_SCHEMA } from "../../core/worklab-result/contract.js";
 import { buildExecuteSystemPrompt } from "../../core/prompts/system-prompt.js";
@@ -107,13 +107,13 @@ describe("CLI provider adapters", () => {
       disallowedTools: ["WebSearch"],
       permissionMode: "bypassPermissions",
       maxTurns: 12,
-      skillDirs: ["/tmp/worklab-skills"],
+      skillDirs: ["/tmp-ai/worklab-skills"],
     });
     expect(cmd.args).toEqual(expect.arrayContaining([
       "--effort", "high",
       "--permission-mode", "bypassPermissions",
       "--max-turns", "12",
-      "--add-dir", "/tmp/worklab-skills",
+      "--add-dir", "/tmp-ai/worklab-skills",
       "--tools", "Read,Bash",
       "--allowedTools", "Read Bash mcp__worklab__*",
       "--disallowedTools", "WebSearch",

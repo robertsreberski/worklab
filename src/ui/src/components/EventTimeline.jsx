@@ -1,6 +1,6 @@
 import { AgentEventTimeline } from "./AgentEventTimeline.jsx";
 import { normalizeCommentText } from "../lib/commentFormatting.js";
-import { normalizeCodexItemEvent } from "@worklab/agent-runtime/ai/streaming/codex-events.js";
+import { normalizeCodexItemEvent } from "@worklab-ai/agent-runtime/ai/streaming/codex-events.js";
 
 function visibleTextFromEvent(ev) {
   if (ev?.type === "sdk_event") return visibleTextFromEvent(ev.event);

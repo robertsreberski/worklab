@@ -9,7 +9,7 @@ import {
   estimateFirstTurnInput,
   isLikelyContextTermination,
   resolveAgentCompactionPolicy,
-} from "@worklab/agent-runtime/agent/compaction.js";
+} from "@worklab-ai/agent-runtime/agent/compaction.js";
 
 function seedRun(db, runId = "run_1") {
   db.prepare("INSERT INTO task_runs (id, mode, agent_name, started_at) VALUES (?, 'execute', 'agent', 1)")

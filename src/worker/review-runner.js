@@ -15,7 +15,7 @@ import {
   validateWorklabResultSemantics,
 } from "../core/worklab-result/contract.js";
 import { parseWorklabResultLenient } from "../core/worklab-result/lenient-parse.js";
-import { estimateFirstTurnInput } from "@worklab/agent-runtime/agent/compaction.js";
+import { estimateFirstTurnInput } from "@worklab-ai/agent-runtime/agent/compaction.js";
 import { createSdkEventCoalescer } from "./event-coalescer.js";
 import { maxTurnsForModel } from "./util.js";
 

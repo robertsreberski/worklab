@@ -4,7 +4,7 @@ import { createInterface } from "node:readline";
 
 import { createLiveInputQueue, loadConfig, normalizeLiveInputBody, openDb } from "./core/index.js";
 import { renderToolSurfaceMarkdown } from "./mcp/agent/tools/index.js";
-import { configureToolRuntime } from "@worklab/agent-runtime/agent/tools/shared/runtime-context.js";
+import { configureToolRuntime } from "@worklab-ai/agent-runtime/agent/tools/shared/runtime-context.js";
 
 const WORKLAB_TOOL_SURFACE_MARKDOWN = renderToolSurfaceMarkdown(null);
 
