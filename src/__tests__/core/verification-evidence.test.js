@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -55,6 +56,17 @@ function seedAdjudicatorModel(db, {
 }
 
 describe("crossCheckVerificationEvidence", () => {
+  it("can be imported directly without settings/adjudicator import-order failures", () => {
+    expect(() => execFileSync(process.execPath, [
+      "--input-type=module",
+      "-e",
+      "await import('./src/core/verification-evidence.js')",
+    ], {
+      cwd: process.cwd(),
+      stdio: "pipe",
+    })).not.toThrow();
+  });
+
   it("returns zeros when there is no evidence", () => {
     const db = makeTestDb();
     const result = crossCheckVerificationEvidence(db, { reviewRunId: "r1", evidence: [] });

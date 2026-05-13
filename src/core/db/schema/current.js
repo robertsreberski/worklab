@@ -124,9 +124,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   completed_at INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_task_key ON tasks(task_key) WHERE task_key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_client_request_id ON tasks(client_request_id) WHERE client_request_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_tasks_stage ON tasks(stage, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_project_stage ON tasks(project_id, stage, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tasks_visible_updated ON tasks(is_team_root, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent ON tasks(parent_task_id, subtask_order);
+CREATE INDEX IF NOT EXISTS idx_tasks_root ON tasks(root_task_id, updated_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_tasks_team_root_unique ON tasks(team_id, project_id) WHERE is_team_root = 1;
 CREATE INDEX IF NOT EXISTS idx_tasks_team ON tasks(team_id) WHERE team_id IS NOT NULL;
 
@@ -234,6 +237,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_project_started ON task_runs(project_id, sta
 CREATE INDEX IF NOT EXISTS idx_runs_started_cost_summary ON task_runs(started_at DESC, agent_name, cost_usd, status, process_status);
 CREATE INDEX IF NOT EXISTS idx_runs_team_kind ON task_runs(team_id, kind, started_at DESC) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_runs_kind_status ON task_runs(kind, process_status, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_runs_process ON task_runs(process_status, started_at DESC);
 
 CREATE TABLE IF NOT EXISTS goals (
   id TEXT PRIMARY KEY,

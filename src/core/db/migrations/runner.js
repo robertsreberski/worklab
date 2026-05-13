@@ -59,6 +59,159 @@ function ensureEmbeddingVectorPresentColumn(db, { backfill = false } = {}) {
   }
 }
 
+function ensureColumns(db, table, columns) {
+  if (!tableExists(db, table)) return;
+  for (const [column, ddl] of columns) {
+    addColumnIfMissing(db, table, column, ddl);
+  }
+}
+
+function ensureCurrentSchemaColumnsBeforeSchema(db) {
+  ensureColumns(db, "teams", [
+    ["status", "status TEXT NOT NULL DEFAULT 'active'"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "projects", [
+    ["team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL"],
+    ["archived", "archived INTEGER NOT NULL DEFAULT 0"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "tasks", [
+    ["task_key", "task_key TEXT"],
+    ["client_request_id", "client_request_id TEXT"],
+    ["project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL"],
+    ["team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL"],
+    ["is_team_root", "is_team_root INTEGER NOT NULL DEFAULT 0"],
+    ["stage", "stage TEXT NOT NULL DEFAULT 'plan'"],
+    ["parent_task_id", "parent_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL"],
+    ["root_task_id", "root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL"],
+    ["subtask_order", "subtask_order INTEGER NOT NULL DEFAULT 0"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "task_runs", [
+    ["task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE"],
+    ["project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL"],
+    ["team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL"],
+    ["kind", "kind TEXT NOT NULL DEFAULT 'task'"],
+    ["agent_name", "agent_name TEXT NOT NULL DEFAULT ''"],
+    ["status", "status TEXT NOT NULL DEFAULT 'running'"],
+    ["process_status", "process_status TEXT NOT NULL DEFAULT 'running'"],
+    ["started_at", "started_at INTEGER NOT NULL DEFAULT 0"],
+    ["cost_usd", "cost_usd REAL"],
+  ]);
+  ensureColumns(db, "goals", [
+    ["team_id", "team_id TEXT"],
+    ["project_id", "project_id TEXT"],
+    ["root_task_id", "root_task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL"],
+    ["status", "status TEXT NOT NULL DEFAULT 'in_progress'"],
+    ["status_reason", "status_reason TEXT"],
+    ["contract_json", "contract_json TEXT NOT NULL DEFAULT '{}'"],
+    ["last_lead_at", "last_lead_at INTEGER"],
+    ["created_at", "created_at INTEGER NOT NULL DEFAULT 0"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "lead_cycles", [
+    ["goal_id", "goal_id TEXT REFERENCES goals(id) ON DELETE SET NULL"],
+    ["run_id", "run_id TEXT REFERENCES task_runs(id) ON DELETE CASCADE"],
+    ["task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL"],
+    ["team_id", "team_id TEXT REFERENCES teams(id) ON DELETE SET NULL"],
+    ["project_id", "project_id TEXT REFERENCES projects(id) ON DELETE SET NULL"],
+    ["reason", "reason TEXT NOT NULL DEFAULT 'manual'"],
+    ["process_status", "process_status TEXT NOT NULL DEFAULT 'queued'"],
+    ["status", "status TEXT NOT NULL DEFAULT 'running'"],
+    ["failure_kind", "failure_kind TEXT"],
+    ["error_text", "error_text TEXT"],
+    ["goal_status", "goal_status TEXT"],
+    ["goal_status_reason", "goal_status_reason TEXT"],
+    ["summary", "summary TEXT"],
+    ["checkpoint_note", "checkpoint_note TEXT"],
+    ["validation_summary", "validation_summary TEXT"],
+    ["task_creations_json", "task_creations_json TEXT NOT NULL DEFAULT '[]'"],
+    ["task_assignments_json", "task_assignments_json TEXT NOT NULL DEFAULT '[]'"],
+    ["task_deletions_json", "task_deletions_json TEXT NOT NULL DEFAULT '[]'"],
+    ["task_creation_skips_json", "task_creation_skips_json TEXT NOT NULL DEFAULT '[]'"],
+    ["goal_refinement_json", "goal_refinement_json TEXT NOT NULL DEFAULT '{}'"],
+    ["goal_refinement_applied_json", "goal_refinement_applied_json TEXT NOT NULL DEFAULT '{}'"],
+    ["advisory_notes_json", "advisory_notes_json TEXT NOT NULL DEFAULT '[]'"],
+    ["next_review_hint_json", "next_review_hint_json TEXT NOT NULL DEFAULT '{}'"],
+    ["started_at", "started_at INTEGER"],
+    ["ended_at", "ended_at INTEGER"],
+    ["next_review_due_at", "next_review_due_at INTEGER"],
+    ["next_review_event", "next_review_event TEXT"],
+    ["next_review_consumed_at", "next_review_consumed_at INTEGER"],
+    ["tasks_created", "tasks_created INTEGER NOT NULL DEFAULT 0"],
+    ["tasks_assigned", "tasks_assigned INTEGER NOT NULL DEFAULT 0"],
+    ["tasks_deleted", "tasks_deleted INTEGER NOT NULL DEFAULT 0"],
+    ["tasks_skipped", "tasks_skipped INTEGER NOT NULL DEFAULT 0"],
+    ["notes_posted", "notes_posted INTEGER NOT NULL DEFAULT 0"],
+    ["cost_usd", "cost_usd REAL"],
+    ["created_at", "created_at INTEGER NOT NULL DEFAULT 0"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "agent_logs", [
+    ["task_run_id", "task_run_id TEXT"],
+    ["model", "model TEXT"],
+    ["effort", "effort TEXT"],
+    ["input_tokens", "input_tokens INTEGER"],
+    ["output_tokens", "output_tokens INTEGER"],
+    ["cache_read_tokens", "cache_read_tokens INTEGER"],
+    ["cache_creation_tokens", "cache_creation_tokens INTEGER"],
+    ["cost_usd", "cost_usd REAL"],
+    ["duration_ms", "duration_ms INTEGER"],
+    ["num_turns", "num_turns INTEGER"],
+    ["status", "status TEXT NOT NULL DEFAULT 'complete'"],
+  ]);
+  ensureColumns(db, "custom_models", [
+    ["provider_id", "provider_id TEXT"],
+    ["enabled", "enabled INTEGER NOT NULL DEFAULT 1"],
+  ]);
+  ensureColumns(db, "embeddings", [
+    ["kind", "kind TEXT NOT NULL DEFAULT ''"],
+    ["source_ref", "source_ref TEXT NOT NULL DEFAULT ''"],
+    ["agent", "agent TEXT"],
+  ]);
+  ensureColumns(db, "automations", [
+    ["enabled", "enabled INTEGER NOT NULL DEFAULT 1"],
+    ["next_fire_at", "next_fire_at INTEGER"],
+    ["task_id", "task_id TEXT REFERENCES tasks(id) ON DELETE CASCADE"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "automation_runs", [
+    ["automation_id", "automation_id TEXT"],
+    ["run_id", "run_id TEXT"],
+    ["fired_at", "fired_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "automation_triggers", [
+    ["automation_id", "automation_id TEXT"],
+    ["task_id", "task_id TEXT"],
+    ["run_id", "run_id TEXT"],
+    ["fired_at", "fired_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "assistant_messages", [
+    ["thread_id", "thread_id TEXT"],
+    ["created_at", "created_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "assistant_runs", [
+    ["thread_id", "thread_id TEXT"],
+    ["status", "status TEXT NOT NULL DEFAULT 'running'"],
+    ["started_at", "started_at INTEGER NOT NULL DEFAULT 0"],
+  ]);
+  ensureColumns(db, "assistant_agent_logs", [
+    ["assistant_run_id", "assistant_run_id TEXT"],
+  ]);
+  ensureColumns(db, "agent_memories", [
+    ["agent_name", "agent_name TEXT"],
+    ["status", "status TEXT NOT NULL DEFAULT 'draft'"],
+    ["scope", "scope TEXT NOT NULL DEFAULT 'agent'"],
+    ["project_id", "project_id TEXT"],
+    ["task_id", "task_id TEXT"],
+    ["run_id", "run_id TEXT"],
+    ["updated_at", "updated_at INTEGER NOT NULL DEFAULT 0"],
+    ["kind", "kind TEXT NOT NULL DEFAULT 'note'"],
+    ["content_key", "content_key TEXT NOT NULL DEFAULT ''"],
+  ]);
+}
+
 function normalizeMigratedTaskStage({ stage, status } = {}) {
   if (stage === "draft") return "plan";
   if (stage === "verify" || stage === "qa") return "review";
@@ -273,7 +426,13 @@ function ensureCurrentLeadCycleColumns(db) {
 }
 
 function backfillTeamGoalContracts(db) {
-  if (!tableExists(db, "tasks") || !tableExists(db, "teams") || !hasColumn(db, "tasks", "goal_contract_json")) return;
+  if (
+    !tableExists(db, "tasks")
+    || !tableExists(db, "teams")
+    || !hasColumn(db, "tasks", "goal_contract_json")
+    || !hasColumn(db, "tasks", "team_id")
+    || !hasColumn(db, "teams", "goal")
+  ) return;
   const rows = db.prepare(`
     SELECT t.id, t.goal_contract_json, tm.goal
     FROM tasks t
@@ -567,6 +726,10 @@ function rebuildTaskWorkflowTables(db) {
     || taskColumns.includes("executor_agent")
     || taskColumns.includes("source_schedule_id");
   if (tasksHasLegacy) {
+    const rootTaskExpression = taskColumns.includes("root_task_id")
+      ? "COALESCE(root_task_id, id)"
+      : "id";
+    const failureCountExpression = taskColumn("failure_count", taskColumn("retry_count", "0"));
     db.exec(`
       PRAGMA foreign_keys = OFF;
       BEGIN;
@@ -615,33 +778,35 @@ function rebuildTaskWorkflowTables(db) {
         id,
         ${taskColumn("task_key")},
         ${taskColumn("project_id")},
-        COALESCE(root_task_id, id),
-        parent_task_id,
-        delegated_by_run_id,
-        delegated_to_agent,
+        ${rootTaskExpression},
+        ${taskColumn("parent_task_id")},
+        ${taskColumn("delegated_by_run_id")},
+        ${taskColumn("delegated_to_agent")},
         ${ownerExpression},
         ${taskColumn("planner_agent")},
-        client_request_id,
+        ${taskColumn("client_request_id")},
         title,
-        instructions,
+        ${taskColumn("instructions", "''")},
         ${stageExpression},
-        stage_reason,
+        ${taskColumn("stage_reason")},
         ${taskColumn("run_policy", "'manual'")},
-        join_policy,
-        subtask_order,
-        required,
-        pending_actions_json,
+        ${taskColumn("join_policy", "'all_required'")},
+        ${taskColumn("subtask_order", "0")},
+        ${taskColumn("required", "1")},
+        ${taskColumn("pending_actions_json", "'[]'")},
         ${taskColumn("pending_questions_json", "'[]'")},
-        blocking_issues_json,
+        ${taskColumn("blocking_issues_json", "'[]'")},
         ${taskColumn("plan_body", "''")},
         ${taskColumn("plan_updated_at")},
         ${taskColumn("plan_updated_by")},
         ${taskColumn("plan_source_run_id")},
-        reviewer_agent,
-        tags,
-        error_text,
-        ${taskColumns.includes("failure_count") ? "failure_count" : "retry_count"},
-        created_at, updated_at, completed_at
+        ${taskColumn("reviewer_agent")},
+        ${taskColumn("tags", "'[]'")},
+        ${taskColumn("error_text")},
+        ${failureCountExpression},
+        ${taskColumn("created_at", "0")},
+        ${taskColumn("updated_at", "0")},
+        ${taskColumn("completed_at")}
       FROM tasks;
       DROP TABLE tasks;
       ALTER TABLE tasks__new RENAME TO tasks;
@@ -753,6 +918,7 @@ export function runMigrations(db) {
       workdir TEXT,
       worktree_mode TEXT NOT NULL DEFAULT 'off',
       tags_json TEXT NOT NULL DEFAULT '[]',
+      team_id TEXT REFERENCES teams(id) ON DELETE SET NULL,
       archived INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
@@ -790,6 +956,7 @@ export function runMigrations(db) {
     addColumnIfMissing(db, "task_runs", "kind", "kind TEXT NOT NULL DEFAULT 'task'");
     addColumnIfMissing(db, "task_runs", "cost_usd", "cost_usd REAL");
   }
+  ensureCurrentSchemaColumnsBeforeSchema(db);
   ensureEmbeddingVectorPresentColumn(db);
   db.exec(SCHEMA_SQL);
   ensureCurrentLeadCycleColumns(db);
