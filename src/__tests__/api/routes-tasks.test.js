@@ -37,7 +37,7 @@ function seedAgent(db, name, patch = {}) {
 }
 
 function waitForDeferredCreateSideEffects() {
-  return new Promise((resolve) => setTimeout(resolve, 0));
+  return new Promise((resolve) => setImmediate(() => setImmediate(resolve)));
 }
 
 describe("GET /api/tasks", () => {
