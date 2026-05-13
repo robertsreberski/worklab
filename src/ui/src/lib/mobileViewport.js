@@ -71,9 +71,9 @@ export function computeViewportState({
   const visibleHeight = positiveRound(visualViewport?.height) || layoutHeight;
   const offsetTop = Math.max(0, Math.round(Number(visualViewport?.offsetTop) || 0));
   const textTargetActive = isTextEntryTarget(activeElement);
-  // Match prior-implementation's verbatim formula: appHeight is the larger of the layout viewport
-  // and visibleHeight + offsetTop. Unconditional — no textTargetActive gate. This is
-  // the proven-good math; deviating from it has no evidence-based justification.
+  // appHeight is the larger of the layout viewport and visibleHeight + offsetTop.
+  // Unconditional — no textTargetActive gate. This is the proven-good math;
+  // deviating from it has no evidence-based justification.
   const appHeight = Math.max(layoutHeight, visibleHeight + offsetTop);
   const keyboardHeight = Math.max(0, appHeight - (visibleHeight + offsetTop));
   const keyboardOpen = textTargetActive && keyboardHeight > keyboardThreshold;

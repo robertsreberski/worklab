@@ -247,9 +247,9 @@ describe("mobile viewport metrics", () => {
     }).keyboardOpen).toBe(false);
   });
 
-  it("computes appHeight unconditionally as Math.max(layoutHeight, visibleHeight + offsetTop) — matching prior-implementation", () => {
+  it("computes appHeight unconditionally as Math.max(layoutHeight, visibleHeight + offsetTop)", () => {
     // No text input focused, residual offsetTop after keyboard dismiss.
-    // Assistant-ai's formula returns the larger value (852); we match that exactly.
+    // The formula returns the larger value (852); we match that exactly.
     expect(computeViewportState({
       innerHeight: 844,
       clientHeight: 844,

@@ -39,8 +39,8 @@ describe("run formatting helpers", () => {
   });
 
   it("builds run summary titles from phase only", () => {
-    expect(formatRunSummaryTitle({ stage: "execute", mode: "review", agent_name: "assistant" }, "7m")).toBe("Execute");
-    expect(formatRunSummaryTitle({ mode: "review", agent_name: "assistant" }, "now")).toBe("Review");
+    expect(formatRunSummaryTitle({ stage: "execute", mode: "review", agent_name: "sample-agent" }, "7m")).toBe("Execute");
+    expect(formatRunSummaryTitle({ mode: "review", agent_name: "sample-agent" }, "now")).toBe("Review");
     expect(formatRunSummaryTitle({ stage: "plan" })).toBe("Plan");
   });
 
