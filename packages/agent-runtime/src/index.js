@@ -1,4 +1,4 @@
-// Public entry for @worklab/agent-runtime.
+// Public entry for @worklab-ai/agent-runtime.
 //
 // Most consumers should reach for `createRuntime` (see runtime.js) — it
 // binds the host integration callbacks once and returns a `.run()` method.

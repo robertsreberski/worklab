@@ -84,7 +84,7 @@ export {
   formatSkillBodyWithPathNote,
   getSkillAccessDirs,
   inferSkillsRoot,
-} from "@worklab/agent-runtime/agent/prompt/skill-index.js";
+} from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
 
 function safeArchivePath(name) {
   const raw = String(name || "");

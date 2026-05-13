@@ -1,4 +1,4 @@
-// Minimal consumer of @worklab/agent-runtime.
+// Minimal consumer of @worklab-ai/agent-runtime.
 //
 // Demonstrates the createRuntime → runtime.run() flow with Claude SDK and a
 // single Bash tool call. Run with:
@@ -8,7 +8,7 @@
 // Without the API key the script prints what it would do and exits without
 // hitting the network.
 
-import { createRuntime, runtimeCapabilities } from "@worklab/agent-runtime";
+import { createRuntime, runtimeCapabilities } from "@worklab-ai/agent-runtime";
 
 async function main() {
   const runtime = createRuntime({

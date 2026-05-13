@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { buildSkillIndex } from "@worklab/agent-runtime/agent/prompt/skill-index.js";
+import { buildSkillIndex } from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
 import { stripWorklabResultJson } from "../worklab-result/contract.js";
 import { formatAttachmentsForPrompt } from "../task-attachments.js";
 import { buildPlanningDirective, formatPlanningHarnessSection } from "../../core/planning-harness.js";

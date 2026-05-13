@@ -1,13 +1,13 @@
 import { getModel as getPiModel, getModels as getPiModels, getSupportedThinkingLevels } from "@mariozechner/pi-ai";
-import { getSkillAccessDirs } from "@worklab/agent-runtime/agent/prompt/skill-index.js";
+import { getSkillAccessDirs } from "@worklab-ai/agent-runtime/agent/prompt/skill-index.js";
 import {
   canonicalizeLegacyModelReference,
   normalizeRuntimeModelReference,
   parseRuntimeModelReference,
-} from "@worklab/agent-runtime/ai/runtime/model-refs.js";
-import { claudeModelSupportsOneMillionContext } from "@worklab/agent-runtime/ai/runtime/context-windows.js";
-import { codexModelSupportsFastMode } from "@worklab/agent-runtime/ai/runtime/fast-mode.js";
-import { createRuntime } from "@worklab/agent-runtime";
+} from "@worklab-ai/agent-runtime/ai/runtime/model-refs.js";
+import { claudeModelSupportsOneMillionContext } from "@worklab-ai/agent-runtime/ai/runtime/context-windows.js";
+import { codexModelSupportsFastMode } from "@worklab-ai/agent-runtime/ai/runtime/fast-mode.js";
+import { createRuntime } from "@worklab-ai/agent-runtime";
 import { customPricingResolverFor } from "./custom-pricing.js";
 import { resolvePiApiKey } from "./pi-oauth.js";
 import { compactionRecorderFor } from "./run-compactions.js";

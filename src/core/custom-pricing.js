@@ -7,7 +7,7 @@ import {
   pricingHasRates,
   unknownPricing,
   zeroPricing,
-} from "@worklab/agent-runtime/ai/cost.js";
+} from "@worklab-ai/agent-runtime/ai/cost.js";
 
 const LOCAL_PROVIDER_TYPES = new Set(["ollama", "lmstudio", "vllm"]);
 

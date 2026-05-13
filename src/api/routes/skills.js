@@ -10,7 +10,7 @@ import {
   SkillImportError,
   uniqueSlug,
 } from "../../core/index.js";
-import { parseStoredAllowlist, storedAllowlistMode } from "@worklab/agent-runtime/agent/allowlists.js";
+import { parseStoredAllowlist, storedAllowlistMode } from "@worklab-ai/agent-runtime/agent/allowlists.js";
 import {
   listAgentSkillsAllowlists,
   listAgentSkillsAllowlistsWithNames,

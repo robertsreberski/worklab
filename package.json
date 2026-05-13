@@ -1,5 +1,5 @@
 {
-  "name": "@worklab/worklab",
+  "name": "@worklab-ai/worklab",
   "version": "0.1.0",
   "description": "Local AI agent orchestration tool",
   "type": "module",
@@ -24,6 +24,23 @@
   "publishConfig": {
     "access": "public"
   },
+  "files": [
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md",
+    "data-template/",
+    "skills/worklab/",
+    "src/api/",
+    "src/cli/",
+    "src/core/",
+    "src/coordinator/",
+    "src/coordinator.js",
+    "src/integrations/",
+    "src/mcp/",
+    "src/ui/dist/",
+    "src/worker/",
+    "src/worker.js"
+  ],
   "workspaces": [
     "packages/*",
     "examples/*"
@@ -44,7 +61,8 @@
     "test:coverage": "vitest run --coverage",
     "lint": "eslint src packages",
     "lint:boundaries": "eslint src packages --rule '{\"no-restricted-imports\":\"warn\"}'",
-    "lint:size": "node scripts/guard-file-size.js"
+    "lint:size": "node scripts/guard-file-size.js",
+    "pack:check": "npm pack --dry-run --json | node scripts/validate-npm-pack.js"
   },
   "engines": {
     "node": ">=20"
@@ -53,7 +71,7 @@
     "@mariozechner/pi-ai": "^0.73.1",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
-    "@worklab/agent-runtime": "^0.1.0",
+    "@worklab-ai/agent-runtime": "^0.1.0",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
     "cors": "^2.8.5",
