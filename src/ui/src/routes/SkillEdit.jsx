@@ -120,12 +120,12 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
   }
 
   const title = isNew ? "New skill" : skillDisplayName(skill);
-  const slugLabel = isNew ? "Slug after create" : skill.name;
+  const slugLabel = isNew ? "" : skill.name;
   const priorityLabel = skill.meta.priority === "always" ? "Always inline" : "On demand";
   const usageCount = usage?.explicit?.length || 0;
   const fileCount = Array.isArray(skill.files) ? skill.files.length : 0;
   const contextMeta = [
-    { label: "Slug", value: isNew ? "Generated after create" : skill.name },
+    !isNew ? { label: "Slug", value: skill.name } : null,
     { label: "Availability", value: skill.meta.enabled !== false ? "Available" : "Disabled", mono: false },
     { label: "Priority", value: priorityLabel, mono: false },
     !isNew ? { label: "Used by", value: `${usageCount} explicit agent${usageCount === 1 ? "" : "s"}`, mono: false } : null,
@@ -209,7 +209,7 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
           mobileTopbar: <MobileTopbar title={isNew ? "New skill" : slugLabel} backLabel="Skills" onBack={cancel} />,
           mobileActionDock,
           drawerTitle: "Settings",
-          drawerKicker: slugLabel,
+          drawerKicker: isNew ? "New" : slugLabel,
           drawerContent: renderSkillRail(),
           sections: SKILL_EDIT_SECTIONS,
         }}
@@ -228,8 +228,12 @@ export function SkillEdit({ name, onSaved, onDeleted }) {
         title={title}
         meta={(
           <>
-            <span class="pane-row-mono">{slugLabel}</span>
-            <span class="pane-row-dot">·</span>
+            {!isNew && (
+              <>
+                <span class="pane-row-mono">{slugLabel}</span>
+                <span class="pane-row-dot">·</span>
+              </>
+            )}
             <span>{priorityLabel}</span>
             {!isNew && (
               <>

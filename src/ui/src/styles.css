@@ -1539,6 +1539,9 @@ a.badge-token:focus-visible {
 .mentionable {
   position: relative;
 }
+.path-suggest-input {
+  position: relative;
+}
 .mention-picker {
   position: fixed;
   z-index: var(--z-popover);

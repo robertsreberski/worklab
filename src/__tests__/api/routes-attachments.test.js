@@ -127,4 +127,31 @@ describe("task attachments API", () => {
       .expect(200);
     expect(hidden.body.results.map((item) => item.path)).toContain("src/.secret");
   });
+
+  it("suggests local paths from an explicit project workdir", async () => {
+    const workdir = makeTempDir("worklab-suggest-project-workdir-");
+    const dataDir = makeTempDir("worklab-suggest-project-data-");
+    mkdirSync(join(workdir, "src"), { recursive: true });
+    writeFileSync(join(workdir, "src", "project.js"), "project");
+    const { agent } = makeTestServer({
+      dataDir,
+      config: { dataDir, repoRoot: dataDir, workspace: dataDir },
+    });
+    const project = await agent.post("/api/projects").send({
+      name: "Suggestion Project",
+      workdir,
+    }).expect(201);
+
+    const res = await agent
+      .get(`/api/files/suggest?project_id=${project.body.project.slug}&prefix=src/pro&limit=10`)
+      .expect(200);
+
+    expect(res.body.base_workdir).toBe(workdir);
+    expect(res.body.results).toContainEqual(expect.objectContaining({
+      kind: "file",
+      name: "project.js",
+      path: "src/project.js",
+      absolute_path: join(workdir, "src", "project.js"),
+    }));
+  });
 });

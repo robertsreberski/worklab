@@ -171,7 +171,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
     : categoryKey.includes("ref") ? "reference"
     : null;
   const tagCount = Array.isArray(entry.tags) ? entry.tags.length : 0;
-  const slugLabel = isNew ? "Slug after create" : slug;
+  const slugLabel = isNew ? "" : slug;
   const selectedProject = projects.find((project) => project.id === entry.project_id) || null;
   const saveButtonVariant = isDirty || isNew ? "primary" : "secondary";
   const saveButtonLabel = isNew ? "Create" : "Save";
@@ -179,7 +179,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
   const usageTaskCount = usage?.tasks?.length || 0;
   const usageAgentCount = usage?.agents?.length || 0;
   const contextMeta = [
-    { label: "Slug", value: slugLabel },
+    !isNew ? { label: "Slug", value: slugLabel } : null,
     { label: "Project", value: selectedProject?.name || "Global", mono: false },
     { label: "Category", value: entry.category || "Uncategorized", mono: false },
     { label: "Subcategory", value: entry.subcategory || "None", mono: false },
@@ -252,7 +252,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
           mobileTopbar: <MobileTopbar title={isNew ? "New entry" : slugLabel} backLabel="Knowledge" onBack={cancel} />,
           mobileActionDock,
           drawerTitle: "Details",
-          drawerKicker: slugLabel,
+          drawerKicker: isNew ? "New" : slugLabel,
           drawerContent: renderKbRail(),
           sections: KB_EDIT_SECTIONS,
         }}
@@ -265,8 +265,12 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
         title={title || "(untitled)"}
         meta={(
           <>
-            <span class="pane-row-mono">{slugLabel}</span>
-            <span class="pane-row-dot">·</span>
+            {!isNew && (
+              <>
+                <span class="pane-row-mono">{slugLabel}</span>
+                <span class="pane-row-dot">·</span>
+              </>
+            )}
             <span>{tagCount} tag{tagCount === 1 ? "" : "s"}</span>
           </>
         )}
@@ -319,7 +323,7 @@ export function KbEdit({ slug, onSaved, onDeleted, prefill = null, tagSuggestion
                   />
                 </FormField>
               </FormGrid>
-              <AdvancedMeta items={[{ label: "Slug", value: isNew ? "Generated after create" : slug }]} />
+              {!isNew && <AdvancedMeta items={[{ label: "Slug", value: slug }]} />}
             </FormSection>
 
             <SectionMarker id="kb-edit-body" num="02" kicker="Body" meta="Markdown" />
