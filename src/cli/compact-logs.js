@@ -1,16 +1,18 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { openDb } from "../core/db/open.js";
-import { runMigrations } from "../core/db/migrations/runner.js";
-import { autoPromotedRunResultInfo, kbList, kbRead } from "../core/kb.js";
-import { loadConfig } from "../core/config.js";
 import {
+  autoPromotedRunResultInfo,
   DEFAULT_SQLITE_LOG_COMPACTION_OPTIONS,
+  kbList,
+  kbRead,
+  loadConfig,
+  openDb,
+  runMigrations,
   SQLITE_LOG_COMPACTION_STRATEGY,
   SQLITE_LOG_COMPACTION_VERSION,
   compactEventsForSqlite,
   jsonByteLength,
-} from "../core/run-log-compaction.js";
+} from "../core/index.js";
 import { argValue, hasFlag } from "./args.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;

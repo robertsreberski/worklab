@@ -15,10 +15,16 @@ import {
 } from "../../core/index.js";
 import {
   getTaskHeaderForKbUsage,
+  listProjectTaskTextForKbUsage,
   listTaskHeadersForKbUsage,
 } from "../../core/db/queries/tasks.js";
-import { listAllCommentBodiesForKbUsage } from "../../core/db/queries/comments.js";
+import {
+  listAllCommentBodiesForKbUsage,
+  listProjectCommentBodiesForKbUsage,
+} from "../../core/db/queries/comments.js";
 import { listAgentInstructionsForKbUsage } from "../../core/db/queries/agents.js";
+import { listProjectsForKbTagMatching } from "../../core/db/queries/projects.js";
+import { runExists } from "../../core/db/queries/runs.js";
 import { withMentions } from "../lib/with-mentions.js";
 
 const CreateSchema = z.object({
@@ -250,7 +256,7 @@ function attachAutoPromotedInfo(dataDir, entries) {
 
 function sourceRunExists(db, runId) {
   if (!db || !runId) return false;
-  return !!db.prepare("SELECT id FROM task_runs WHERE id = ?").get(runId);
+  return runExists(db, runId);
 }
 
 function autoPromotedCleanupCandidates({ dataDir, db }) {
@@ -290,15 +296,10 @@ function taskUsageProjectId(db, entry) {
     if (!projectId) return;
     counts.set(projectId, (counts.get(projectId) || 0) + 1);
   };
-  for (const row of db.prepare("SELECT project_id, title, instructions FROM tasks WHERE project_id IS NOT NULL").all()) {
+  for (const row of listProjectTaskTextForKbUsage(db)) {
     if (matches(row.title) || matches(row.instructions)) add(row.project_id);
   }
-  for (const row of db.prepare(`
-    SELECT t.project_id, c.body
-    FROM task_comments c
-    JOIN tasks t ON t.id = c.task_id
-    WHERE t.project_id IS NOT NULL
-  `).all()) {
+  for (const row of listProjectCommentBodiesForKbUsage(db)) {
     if (matches(row.body)) add(row.project_id);
   }
   const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
@@ -331,7 +332,7 @@ function tagProjectId(db, meta) {
     ...(Array.isArray(meta.tags) ? meta.tags.map(slugToken) : []),
   ].filter(Boolean));
   const matches = [];
-  const projects = db.prepare("SELECT id, slug, name, tags_json, archived FROM projects").all();
+  const projects = listProjectsForKbTagMatching(db);
   for (const project of projects) {
     const aliases = projectAliases(project);
     if (aliases.some((alias) => tokens.has(alias))) matches.push(project);

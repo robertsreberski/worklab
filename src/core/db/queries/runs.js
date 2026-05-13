@@ -6,6 +6,11 @@ export function getRunById(db, runId) {
   return db.prepare("SELECT * FROM task_runs WHERE id = ?").get(runId);
 }
 
+export function runExists(db, runId) {
+  if (!runId) return false;
+  return !!db.prepare("SELECT id FROM task_runs WHERE id = ?").get(runId);
+}
+
 export function getRunRawOutputPath(db, runId) {
   return db.prepare("SELECT raw_output_path FROM task_runs WHERE id = ?").get(runId);
 }
@@ -14,6 +19,31 @@ export function getRunCoreFields(db, runId) {
   return db
     .prepare("SELECT id, process_status, status, provider_kind FROM task_runs WHERE id = ?")
     .get(runId);
+}
+
+export function searchRunsForMention(db, query, limit) {
+  const q = String(query || "").trim();
+  if (!q) return [];
+  const like = `%${q}%`;
+  return db.prepare(`
+    SELECT
+      r.id,
+      r.task_id,
+      r.mode,
+      r.stage,
+      r.status,
+      r.process_status,
+      r.started_at,
+      t.task_key,
+      t.title AS task_title
+    FROM task_runs r
+    LEFT JOIN tasks t ON t.id = r.task_id
+    WHERE r.id LIKE ?
+       OR t.task_key LIKE ?
+       OR t.title LIKE ?
+    ORDER BY r.started_at DESC, r.rowid DESC
+    LIMIT ?
+  `).all(like, like, like, limit);
 }
 
 export function getRunDiagnostics(db, runId) {

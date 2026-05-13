@@ -3,7 +3,7 @@
 // before the agent emits its final Worklab result.
 
 import { z } from "zod";
-import { inspectRunWorktree, syncRunWorktreeFromSource } from "../../../core/worktrees.js";
+import { inspectRunWorktree, syncRunWorktreeFromSource } from "../../../core/index.js";
 import { safeParse, withDb } from "./shared.js";
 
 export const worktreeSyncSchema = z.object({

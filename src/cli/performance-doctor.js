@@ -1,8 +1,7 @@
 import Database from "better-sqlite3";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { loadConfig } from "../core/config.js";
-import { worklabBaseUrl } from "../core/index.js";
+import { loadConfig, worklabBaseUrl } from "../core/index.js";
 import { hasFlag } from "./args.js";
 
 const DEFAULT_ENDPOINTS = [

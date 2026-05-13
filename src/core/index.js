@@ -229,6 +229,14 @@ export { resolveRunArtifactDir } from "./run-artifact-paths.js";
 export { readRunLog } from "./run-logs.js";
 
 export {
+  DEFAULT_SQLITE_LOG_COMPACTION_OPTIONS,
+  SQLITE_LOG_COMPACTION_STRATEGY,
+  SQLITE_LOG_COMPACTION_VERSION,
+  compactEventsForSqlite,
+  jsonByteLength,
+} from "./run-log-compaction.js";
+
+export {
   captureGitArtifactState,
   collectGitArtifacts,
   collectQaOutputArtifacts,

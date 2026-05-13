@@ -88,6 +88,10 @@ export function listProjectsByNamePrefix(db, query, limit) {
   `).all(contains, contains, q, like, like, limit);
 }
 
+export function listProjectsForKbTagMatching(db) {
+  return db.prepare("SELECT id, slug, name, tags_json, archived FROM projects").all();
+}
+
 export function listProjectsByIds(db, ids) {
   if (!ids.length) return [];
   const placeholders = ids.map(() => "?").join(", ");

@@ -44,6 +44,10 @@ export function listTaskHeadersForKbUsage(db) {
   return db.prepare("SELECT id, task_key, title, instructions, stage FROM tasks").all();
 }
 
+export function listProjectTaskTextForKbUsage(db) {
+  return db.prepare("SELECT project_id, title, instructions FROM tasks WHERE project_id IS NOT NULL").all();
+}
+
 export function getTaskHeaderForKbUsage(db, id) {
   return db.prepare("SELECT id, task_key, title, stage FROM tasks WHERE id = ?").get(id);
 }
