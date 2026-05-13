@@ -197,6 +197,17 @@ describe("design system stylesheet", () => {
     }
   });
 
+  it("keeps route metadata rules from overriding badge glyph internals", () => {
+    const css = readFileSync(stylesPath, "utf8");
+
+    expect(css).not.toMatch(/\.activity-row\s+\.activity-meta\s+span\s*\{/);
+    expect(css).not.toMatch(/\.activity-row\s+\.activity-meta\s+span\s*\+\s*span::before\s*\{/);
+    expect(css).not.toMatch(/\.settings-note\s+span,/);
+    expect(css).toMatch(/\.activity-row\s+\.activity-meta\s*>\s*span\s*\{/);
+    expect(css).toMatch(/\.activity-row\s+\.activity-meta\s*>\s*span\s*\+\s*span::before\s*\{/);
+    expect(css).toMatch(/\.settings-note\s*>\s*span,/);
+  });
+
   it("wraps and clips button labels through the Button primitive", () => {
     const buttonSource = readFileSync(buttonPath, "utf8");
     const css = readFileSync(stylesPath, "utf8");
