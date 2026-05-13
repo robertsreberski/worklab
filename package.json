@@ -1,6 +1,6 @@
 {
   "name": "@worklab-ai/worklab",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Local AI agent orchestration tool",
   "type": "module",
   "license": "GPL-3.0-only",
@@ -71,7 +71,7 @@
     "@mariozechner/pi-ai": "^0.73.1",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "@slack/bolt": "^4.7.1",
-    "@worklab-ai/agent-runtime": "^0.1.1",
+    "@worklab-ai/agent-runtime": "^0.1.0",
     "better-sqlite3": "^11.7.0",
     "chokidar": "^4.0.0",
     "cors": "^2.8.5",

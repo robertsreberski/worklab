@@ -59,7 +59,7 @@ curl http://127.0.0.1:9787/api/health
 Then tag and push the release:
 
 ```bash
-git tag v0.1.0
+git tag "v$(node -p "require('./package.json').version")"
 git push origin HEAD
-git push origin v0.1.0
+git push origin "v$(node -p "require('./package.json').version")"
 ```
