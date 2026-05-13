@@ -115,6 +115,18 @@ const COMMANDS = [
     common: true,
   },
   {
+    name: "update",
+    usage: "worklab update [options]",
+    summary: "Check npm for a newer Worklab version or apply a supported global npm update.",
+    options: [
+      ["--json", "Print machine-readable JSON."],
+      ["--refresh", "Bypass the cached npm registry check."],
+      ["--apply", "Install the requested npm version globally and restart the managed service."],
+      ["--version VERSION", "Target version for --apply. Must match npm latest."],
+    ],
+    common: true,
+  },
+  {
     name: "mcp",
     usage: "worklab mcp [options]",
     summary: "Run the full-access Worklab admin MCP bridge over stdio.",

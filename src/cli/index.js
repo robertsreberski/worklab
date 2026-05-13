@@ -22,6 +22,7 @@ const commands = {
   onboard: async (argv) => (await import("./onboard.js")).onboard(argv),
   backup: async (argv) => (await import("./backup.js")).backup(argv),
   "compact-logs": async (argv) => (await import("./compact-logs.js")).compactLogsCli(argv),
+  update: async (argv) => (await import("./update.js")).update(argv),
   mcp: async (argv) => (await import("./mcp.js")).mcp(argv),
   "install-skill": async (argv) => (await import("./install-skill.js")).installSkillCli(argv),
   "install-service": async (argv) => (await import("./install-service.js")).installService(argv),

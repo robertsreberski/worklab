@@ -1,6 +1,6 @@
 import express from "express";
 import cors from "cors";
-import { SCHEMA_VERSION } from "../core/index.js";
+import { readPackageMetadata, SCHEMA_VERSION } from "../core/index.js";
 import { getSchemaVersion, tableExists } from "../core/db/queries/schema.js";
 import { createSseBroker } from "./sse.js";
 import { registerTaskRoutes } from "./routes/tasks.js";
@@ -24,6 +24,7 @@ import { registerTeamRoutes } from "./routes/teams.js";
 import { registerSlackRoutes } from "./routes/slack.js";
 import { registerAssistantRoutes } from "./routes/assistant.js";
 import { registerNotificationRoutes } from "./routes/notifications.js";
+import { registerUpdateRoutes } from "./routes/update.js";
 import { registerAdminMcpRoutes } from "../mcp/admin/server.js";
 
 const DEFAULT_SLOW_API_MS = 250;
@@ -70,7 +71,16 @@ function apiTimingMiddleware(logger) {
   };
 }
 
-export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, slack, assistant: assistantOptions, notifications }) {
+function packageHealth(repoRoot) {
+  try {
+    const pkg = readPackageMetadata(repoRoot);
+    return { name: pkg.name, version: pkg.version };
+  } catch {
+    return null;
+  }
+}
+
+export function createServer({ db, logger, watcher, dataDir, repoRoot, consolidation, automationManager, events, config, runtimeControls, updateControls, slack, assistant: assistantOptions, notifications }) {
   const app = express();
   const broker = createSseBroker();
 
@@ -90,6 +100,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
     routes: {
       projects: tableExists(db, "projects"),
     },
+    package: packageHealth(config?.repoRoot || repoRoot),
   }));
   app.get("/api/events/stream", (req, res) => broker.subscribe("global", res));
 
@@ -98,6 +109,7 @@ export function createServer({ db, logger, watcher, dataDir, repoRoot, consolida
   registerGoalRoutes(app, { db, broker, watcher });
   registerTaskRoutes(app, { db, broker, logger, watcher, dataDir, repoRoot, config });
   registerSettingsRoutes(app, { db, broker, logger, events, dataDir, config, runtimeControls });
+  registerUpdateRoutes(app, { config, broker, updateControls });
   registerActivityRoutes(app, { db, logger });
   registerRunRoutes(app, { db, broker, dataDir, watcher });
   registerAgentRoutes(app, { db, broker, consolidation, dataDir });

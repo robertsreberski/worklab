@@ -146,6 +146,19 @@ export {
   writeRuntimeSettings,
 } from "./runtime-settings.js";
 
+export {
+  comparePackageVersions,
+  getUpdateStatus,
+  queueUpdateApply,
+  readPackageMetadata,
+  readUpdateState,
+  resolveInstallMode,
+  updateJobIsActive,
+  updateLogPath,
+  updateStatePath,
+  writeUpdateState,
+} from "./update-check.js";
+
 // ---------- Configuration + bootstrap ----------
 export { config, loadConfig, localClientHost, worklabBaseUrl } from "./config.js";
 export {

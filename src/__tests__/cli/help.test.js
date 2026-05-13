@@ -56,6 +56,16 @@ describe("CLI help", () => {
     expect(help).toContain("--json");
   });
 
+  it("documents update options", () => {
+    const help = formatCommandHelp("update");
+
+    expect(help).toContain("Usage: worklab update [options]");
+    expect(help).toContain("--json");
+    expect(help).toContain("--refresh");
+    expect(help).toContain("--apply");
+    expect(help).toContain("--version VERSION");
+  });
+
   it("resolves top-level, command, and nested command help topics", () => {
     expect(resolveHelpTopic(undefined, ["--help"])).toBe(null);
     expect(resolveHelpTopic("compact-logs", ["--help"])).toBe("compact-logs");
