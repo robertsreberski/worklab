@@ -379,6 +379,7 @@ export {
   recordRunResultLearning,
   searchAgentMemories,
   selectAgentLearningMemories,
+  summarizeAgentMemories,
   updateAgentMemory,
   upsertAgentMemory,
 } from "./agent-learning.js";

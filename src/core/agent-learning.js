@@ -4,6 +4,9 @@ import { newAgentMemoryId } from "./ids.js";
 export const AGENT_MEMORY_KINDS = ["fact", "preference", "procedure", "failure", "decision", "episode"];
 export const AGENT_MEMORY_SCOPES = ["agent", "project", "task", "global"];
 export const AGENT_MEMORY_STATUSES = ["draft", "approved", "archived"];
+export const MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH = 8;
+export const AGENT_LEARNING_CONTEXT_MAX_CHARS = 4000;
+export const AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS = 600;
 
 const KIND_ORDER = new Map([
   ["procedure", 0],
@@ -199,6 +202,9 @@ export function recordAgentMemoryCandidates(db, {
   now = Date.now(),
 } = {}) {
   const stats = { inserted: 0, updated: 0, skipped: 0, memories: [] };
+  const items = Array.isArray(candidates) ? candidates : [];
+  const overflow = Math.max(0, items.length - MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH);
+  stats.skipped += overflow;
   const tx = db.transaction((items) => {
     for (const candidate of items || []) {
       const result = upsertAgentMemory(db, candidate, {
@@ -214,7 +220,7 @@ export function recordAgentMemoryCandidates(db, {
       if (result.memory) stats.memories.push(result.memory);
     }
   });
-  tx(candidates);
+  tx(items.slice(0, MAX_AGENT_MEMORY_CANDIDATES_PER_BATCH));
   return stats;
 }
 
@@ -290,6 +296,36 @@ export function listAgentMemories(db, { agentName, status = null, kind = null, l
       rowid DESC
     LIMIT ?
   `).all(...params, capped).map(rowToMemory);
+}
+
+export function summarizeAgentMemories(db, { agentName, kind = null } = {}) {
+  const where = [];
+  const params = [];
+  if (agentName) {
+    where.push("agent_name = ?");
+    params.push(agentName);
+  }
+  if (kind) {
+    where.push("kind = ?");
+    params.push(kind);
+  }
+  const filter = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const rows = db.prepare(`
+    SELECT status, COUNT(*) AS count
+    FROM agent_memories
+    ${filter}
+    GROUP BY status
+  `).all(...params);
+  const summary = { total: 0, active: 0, draft: 0, approved: 0, archived: 0 };
+  for (const row of rows) {
+    const count = Number(row.count || 0);
+    summary.total += count;
+    if (row.status === "draft") summary.draft += count;
+    else if (row.status === "approved") summary.approved += count;
+    else if (row.status === "archived") summary.archived += count;
+    if (row.status !== "archived") summary.active += count;
+  }
+  return summary;
 }
 
 function queryTokens(query) {
@@ -444,7 +480,22 @@ const SECTION_BY_KIND = {
   episode: "Episodes",
 };
 
-export function formatAgentLearningContext(memories = []) {
+function truncateLearningLine(value, maxChars = AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const max = Math.max(16, Number(maxChars) || AGENT_LEARNING_CONTEXT_LINE_MAX_CHARS);
+  return text.length > max ? `${text.slice(0, max - 3).trim()}...` : text;
+}
+
+function renderLearningSections(sections, omitted) {
+  const body = sections
+    .filter((section) => section.lines.length)
+    .map((section) => `## ${section.title}\n\n${section.lines.join("\n")}`)
+    .join("\n\n");
+  const note = omitted > 0 ? `\n\n- Additional learning memories omitted: ${omitted}.` : "";
+  return `${body}${note}`.trim();
+}
+
+export function formatAgentLearningContext(memories = [], options = {}) {
   const approved = (memories || []).filter((memory) => memory?.status === "approved" && memory.content);
   if (!approved.length) return "";
   const byKind = new Map();
@@ -452,15 +503,26 @@ export function formatAgentLearningContext(memories = []) {
     if (!byKind.has(memory.kind)) byKind.set(memory.kind, []);
     byKind.get(memory.kind).push(memory);
   }
-  return AGENT_MEMORY_KINDS
+  const sections = AGENT_MEMORY_KINDS
     .filter((kind) => byKind.has(kind))
     .map((kind) => {
       const rows = byKind.get(kind);
-      const body = rows.map((memory) => {
-        const confidence = Number.isFinite(memory.confidence) ? ` (${Math.round(memory.confidence * 100)}%)` : "";
-        return `- ${memory.content}${confidence}`;
-      }).join("\n");
-      return `## ${SECTION_BY_KIND[kind] || "Learned memories"}\n\n${body}`;
-    })
-    .join("\n\n");
+      return {
+        title: SECTION_BY_KIND[kind] || "Learned memories",
+        lines: rows.map((memory) => {
+          const confidence = Number.isFinite(memory.confidence) ? ` (${Math.round(memory.confidence * 100)}%)` : "";
+          return truncateLearningLine(`- ${memory.content}${confidence}`, options.lineMaxChars);
+        }),
+      };
+    });
+  const maxChars = Math.max(256, Number(options.maxChars) || AGENT_LEARNING_CONTEXT_MAX_CHARS);
+  let omitted = 0;
+  let rendered = renderLearningSections(sections, omitted);
+  while (rendered.length > maxChars && sections.some((section) => section.lines.length)) {
+    const last = [...sections].reverse().find((section) => section.lines.length);
+    last.lines.pop();
+    omitted += 1;
+    rendered = renderLearningSections(sections, omitted);
+  }
+  return rendered.length > maxChars ? truncateLearningLine(rendered, maxChars) : rendered;
 }
